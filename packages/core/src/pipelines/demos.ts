@@ -1,0 +1,130 @@
+import { eq } from "drizzle-orm";
+import path from "node:path";
+import { getEnv } from "../config";
+import type { Db } from "../db";
+import { demos } from "../db/schema";
+import { enqueue, type Job } from "../jobs/queue";
+import { PermanentError } from "../jobs/errors";
+import type { JobContext, JobResult } from "../jobs/worker";
+import { normalizeDemo, probe, thumbnail } from "../media/ffmpeg";
+import { WORK_DIR } from "../paths";
+import { getStorage, storageKey } from "../storage";
+
+const MIN_DURATION_MS = 8_000;
+const MAX_DURATION_MS = 60_000;
+
+/** Register uploaded footage and queue probing/normalization. */
+export async function createDemo(
+  db: Db,
+  opts: { businessId: string; filePath: string },
+): Promise<typeof demos.$inferSelect> {
+  const inserted = await db
+    .insert(demos)
+    .values({ businessId: opts.businessId, status: "uploaded" })
+    .returning();
+  const demo = inserted[0]!;
+
+  const rawPath = await getStorage().put(
+    "raw",
+    storageKey({
+      businessId: opts.businessId,
+      entity: "demo",
+      id: demo.id,
+      filename: path.basename(opts.filePath),
+    }),
+    opts.filePath,
+  );
+  await db.update(demos).set({ rawPath, updatedAt: new Date() }).where(eq(demos.id, demo.id));
+
+  await enqueue(db, {
+    type: "ingest_demo",
+    idempotencyKey: `ingest:${demo.id}`,
+    payload: { demoId: demo.id },
+  });
+  return { ...demo, rawPath };
+}
+
+/** Job handler: probe -> sanity checks -> normalize -> thumbnail -> ready. */
+export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobResult> {
+  const { demoId } = job.payload as { demoId: string };
+  const rows = await ctx.db.select().from(demos).where(eq(demos.id, demoId)).limit(1);
+  const demo = rows[0];
+  if (!demo?.rawPath) throw new PermanentError(`demo ${demoId} not found or has no raw file`);
+
+  try {
+    if (getEnv().DRY_RUN) {
+      // Fake a valid vertical 20s phone clip so the rest of the pipeline runs.
+      await ctx.db
+        .update(demos)
+        .set({
+          status: "ready",
+          probe: { width: 1080, height: 1920, durationMs: 20_000, hasAudio: true, dryRun: true },
+          durationMs: 20_000,
+          normalizedPath: demo.rawPath,
+          updatedAt: new Date(),
+        })
+        .where(eq(demos.id, demoId));
+      return { kind: "done" };
+    }
+
+    await ctx.db
+      .update(demos)
+      .set({ status: "probing", updatedAt: new Date() })
+      .where(eq(demos.id, demoId));
+
+    const storage = getStorage();
+    const localRaw = path.join(WORK_DIR, "ingest", demoId, "raw.mp4");
+    await storage.download(demo.rawPath, localRaw);
+
+    const info = await probe(localRaw);
+    // Lo-fi is intentional — sanity checks only, each with a human-readable reason.
+    if (info.height <= info.width) {
+      throw new PermanentError("הסרטון אופקי — צריך וידאו אנכי (9:16)");
+    }
+    if (info.durationMs < MIN_DURATION_MS || info.durationMs > MAX_DURATION_MS) {
+      throw new PermanentError("אורך הסרטון חייב להיות בין 8 ל-60 שניות");
+    }
+
+    await ctx.db
+      .update(demos)
+      .set({ status: "normalizing", probe: info, updatedAt: new Date() })
+      .where(eq(demos.id, demoId));
+
+    const localNormalized = path.join(WORK_DIR, "ingest", demoId, "normalized.mp4");
+    const localThumb = path.join(WORK_DIR, "ingest", demoId, "thumb.jpg");
+    await normalizeDemo(localRaw, localNormalized);
+    await thumbnail(localNormalized, localThumb);
+
+    const keyBase = { businessId: demo.businessId, entity: "demo" as const, id: demoId };
+    const normalizedPath = await storage.put(
+      "assets",
+      storageKey({ ...keyBase, filename: "normalized.mp4" }),
+      localNormalized,
+    );
+    const thumbPath = await storage.put(
+      "assets",
+      storageKey({ ...keyBase, filename: "thumb.jpg" }),
+      localThumb,
+    );
+
+    await ctx.db
+      .update(demos)
+      .set({
+        status: "ready",
+        durationMs: info.durationMs,
+        normalizedPath,
+        thumbPath,
+        updatedAt: new Date(),
+      })
+      .where(eq(demos.id, demoId));
+    return { kind: "done" };
+  } catch (err) {
+    if (err instanceof PermanentError) {
+      await ctx.db
+        .update(demos)
+        .set({ status: "rejected", rejectReason: err.message, updatedAt: new Date() })
+        .where(eq(demos.id, demoId));
+    }
+    throw err;
+  }
+}
