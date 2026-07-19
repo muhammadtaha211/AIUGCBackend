@@ -1,8 +1,26 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Repo root, resolved from this file's location (packages/core/src -> ../../..). */
-export const REPO_ROOT = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../..");
+/** Repo root: from this file's location (packages/core/src -> ../../..) when running
+ *  from source (tsx/vitest); bundlers rewrite import.meta.url into a non-Node URL,
+ *  so under them (e.g. apps/web via Next.js) walk up from cwd to the workspace file. */
+function resolveRepoRoot(): string {
+  try {
+    return path.resolve(fileURLToPath(new URL(".", import.meta.url)), "../../..");
+  } catch {
+    let dir = process.cwd();
+    for (let i = 0; i < 8; i++) {
+      if (existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    return process.cwd();
+  }
+}
+
+export const REPO_ROOT = resolveRepoRoot();
 
 export const PROMPTS_DIR = path.join(REPO_ROOT, "prompts");
 

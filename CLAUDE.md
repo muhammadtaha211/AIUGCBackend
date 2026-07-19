@@ -66,14 +66,16 @@ The manual test must be runnable by the founder without reading the code. If the
 
 ## Commands
 
-Nothing is built yet — populate this section as scripts land, and keep it current. Target shape:
+Populate this section as scripts land, and keep it current.
 
 ```
-pnpm dev            # web app
-pnpm worker         # job worker
-pnpm pipeline <cmd> # CLI entrypoints (e.g. pipeline render --demo ./demo.mp4 --hook h_012 --silent)
-pnpm db:migrate     # supabase migrations
+pnpm dev            # web app (onboarding) — http://localhost:3000
+pnpm typecheck      # all packages
+pnpm test           # core tests (PGlite, no Docker)
+pnpm lint / format  # prettier
 ```
+
+Still to come: `pnpm worker` (job loop), `pnpm pipeline <cmd>` (CLI entrypoints), `pnpm db:migrate`.
 
 ## When unsure
 

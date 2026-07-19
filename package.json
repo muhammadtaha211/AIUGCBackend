@@ -6,6 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev": "pnpm --filter @aiugc/web dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "lint": "prettier --check .",

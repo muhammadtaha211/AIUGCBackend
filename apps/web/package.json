@@ -1,0 +1,33 @@
+{
+  "name": "@aiugc/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aiugc/core": "workspace:*",
+    "@anthropic-ai/sdk": "^0.111.0",
+    "@electric-sql/pglite": "^0.2.14",
+    "@supabase/supabase-js": "^2.47.10",
+    "drizzle-orm": "^0.36.4",
+    "next": "^15.4.0",
+    "pino": "^9.5.0",
+    "postgres": "^3.4.5",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/node": "^20.14.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.5.4"
+  }
+}
