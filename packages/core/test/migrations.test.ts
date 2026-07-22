@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createTestDb } from "./helpers/pglite";
 import * as schema from "../src/db/schema";
 
@@ -56,6 +56,36 @@ describe("migrations", () => {
       .from(schema.appConfig)
       .where(eq(schema.appConfig.key, "imagegen_cost_agorot"));
     expect(cost[0]?.value).toEqual(expect.any(Number));
+
+    await pg.close();
+  });
+
+  it("0005/0006: persona_images replaces persona_clips, one default per persona", async () => {
+    const { db, pg } = await createTestDb();
+
+    const [persona] = await db
+      .insert(schema.personas)
+      .values({ name: "נועה", voiceId: "voice_noa" })
+      .returning();
+
+    const [first] = await db
+      .insert(schema.personaImages)
+      .values({ personaId: persona!.id, filePath: "assets/p1.jpg", isDefault: true })
+      .returning();
+    expect(first!.isDefault).toBe(true);
+
+    // Non-default siblings are fine; a second default violates the partial index.
+    await db
+      .insert(schema.personaImages)
+      .values({ personaId: persona!.id, filePath: "assets/p2.jpg" });
+    await expect(
+      db
+        .insert(schema.personaImages)
+        .values({ personaId: persona!.id, filePath: "assets/p3.jpg", isDefault: true }),
+    ).rejects.toThrow(/duplicate key/i);
+
+    // persona_clips is gone entirely.
+    await expect(db.execute(sql`select 1 from persona_clips`)).rejects.toThrow(/does not exist/i);
 
     await pg.close();
   });

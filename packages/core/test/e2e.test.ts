@@ -8,7 +8,7 @@ import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { runLane } from "../src/jobs/worker";
-import { addHookClip, addPersona, addPersonaClip, addStructure } from "../src/pipelines/bank";
+import { addHookClip, addPersona, addPersonaImage, addStructure } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { approveComposite, createComposite } from "../src/pipelines/composites";
 import {
@@ -230,11 +230,12 @@ describe("founder workflow (dry-run, end to end)", () => {
     { timeout: 60_000 },
     async () => {
       const persona = await addPersona(db, { name: "נועה", voiceId: "voice_noa" });
-      const personaClip = await addPersonaClip(db, {
+      // The first image for a persona becomes the default automatically.
+      const personaImage = await addPersonaImage(db, {
         personaId: persona.id,
-        filePath: tempFile("persona.mp4"),
-        durationMs: 30_000,
+        filePath: tempFile("persona.jpg", "fake persona photo"),
       });
+      expect(personaImage.isDefault).toBe(true);
       const structure = await addStructure(db, {
         title: "לא האמנתי עד שניסיתי",
         skeleton: { beats: ["hook", "story", "reveal", "cta"] },
@@ -268,10 +269,11 @@ describe("founder workflow (dry-run, end to end)", () => {
       await drainAll();
       await approveAudio(db, audio.id);
 
+      // Only the persona is named — lipsync resolves its default image.
       const render = await createBRender(db, {
         businessId,
         audioRenderId: audio.id,
-        personaClipId: personaClip.id,
+        personaId: persona.id,
       });
       await drainAll(); // lipsync submit -> poll -> render_video
 
@@ -322,10 +324,9 @@ describe("founder workflow (dry-run, end to end)", () => {
         tone: "friendly",
       });
       const persona = await addPersona(db, { name: "דנה", voiceId: "voice_dana" });
-      await addPersonaClip(db, {
+      await addPersonaImage(db, {
         personaId: persona.id,
-        filePath: tempFile("persona2.mp4"),
-        durationMs: 30_000,
+        filePath: tempFile("persona2.jpg", "fake persona photo"),
       });
 
       // The category gate: a non-physical business is refused.
@@ -374,11 +375,14 @@ describe("founder workflow (dry-run, end to end)", () => {
       await drainAll();
       await approveAudio(db, audio.id);
 
-      // The hard gate: an unapproved composite never reaches lipsync.
+      // The hard gate: an unapproved composite never reaches lipsync — even
+      // with a renderable personaId present, the composite takes precedence
+      // and there is no silent fallback to the persona's default image.
       await expect(
         createBRender(db, {
           businessId: shop.id,
           audioRenderId: audio.id,
+          personaId: persona.id,
           compositeId: composite.id,
         }),
       ).rejects.toThrow(/approved/);
@@ -387,9 +391,9 @@ describe("founder workflow (dry-run, end to end)", () => {
       const render = await createBRender(db, {
         businessId: shop.id,
         audioRenderId: audio.id,
+        personaId: persona.id,
         compositeId: composite.id,
       });
-      // No personaClipId at all — completing proves the image-mode lipsync path.
       await drainAll();
 
       const queue = await listQcQueue(db);

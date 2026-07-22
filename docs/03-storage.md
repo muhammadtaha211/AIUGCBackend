@@ -10,11 +10,11 @@ through `storageKey()`, which is the single place to change when migrating provi
 
 Path convention: `<bucket>/<business_id|bank>/<entity>/<id>/<filename>`
 
-| Bucket    | Contents                                                                                     | Written by                   |
-| --------- | -------------------------------------------------------------------------------------------- | ---------------------------- |
-| `raw`     | user uploads exactly as received                                                             | `createDemo`                 |
-| `assets`  | normalized demos, thumbnails, hook bank, persona clips                                       | ingest handler, `bank add-*` |
-| `renders` | audio previews (`audio/<id>/audio.mp3`), final videos (`video/<id>/final.mp4`), video thumbs | tts + render handlers        |
+| Bucket    | Contents                                                                                     | Written by                                        |
+| --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `raw`     | user uploads exactly as received                                                             | `createDemo`                                      |
+| `assets`  | normalized demos, thumbnails, hook bank, persona reference images                            | ingest handler, `bank add-*`, `persona add-image` |
+| `renders` | audio previews (`audio/<id>/audio.mp3`), final videos (`video/<id>/final.mp4`), video thumbs | tts + render handlers                             |
 
 Founder bank assets use the `bank/` prefix (no business). Everything is 1080×1920 H.264 MP4
 after normalization; audio is mp3 44.1kHz.
@@ -53,4 +53,4 @@ Decision deferred until Supabase egress actually shows up on a bill (at V0 scale
 - Browser/customer access is **signed URLs only** (`storage.signedUrl(path, expiresIn)`), minted
   by server code after an RLS-scoped ownership check on the referencing row.
 - The worker and CLI use the service role key.
-- fal.ai receives 1-hour signed URLs for the persona clip + audio inputs (see 04).
+- fal.ai receives 1-hour signed URLs for the source image + audio inputs (see 04).

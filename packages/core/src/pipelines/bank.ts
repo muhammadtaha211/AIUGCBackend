@@ -1,6 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
+import path from "node:path";
 import type { Db } from "../db";
-import { hookClips, jobs, personaClips, personas, structures, videoRenders } from "../db/schema";
+import { hookClips, jobs, personaImages, personas, structures, videoRenders } from "../db/schema";
 import type { TextSafeArea } from "../providers/remotion";
 import { getStorage, storageKey } from "../storage";
 
@@ -40,22 +41,39 @@ export async function addPersona(
   return inserted[0]!;
 }
 
-export async function addPersonaClip(
+/** The first image for a persona becomes the default; --default moves the flag. */
+export async function addPersonaImage(
   db: Db,
-  opts: { personaId: string; filePath: string; durationMs: number },
+  opts: { personaId: string; filePath: string; isDefault?: boolean },
 ) {
+  const existing = await db
+    .select()
+    .from(personaImages)
+    .where(eq(personaImages.personaId, opts.personaId))
+    .limit(1);
+  const isDefault = Boolean(opts.isDefault) || existing.length === 0;
+  if (isDefault) {
+    await db
+      .update(personaImages)
+      .set({ isDefault: false })
+      .where(and(eq(personaImages.personaId, opts.personaId), eq(personaImages.isDefault, true)));
+  }
   const inserted = await db
-    .insert(personaClips)
-    .values({ personaId: opts.personaId, filePath: "pending", durationMs: opts.durationMs })
+    .insert(personaImages)
+    .values({ personaId: opts.personaId, filePath: "pending", isDefault })
     .returning();
-  const clip = inserted[0]!;
+  const image = inserted[0]!;
   const filePath = await getStorage().put(
     "assets",
-    storageKey({ entity: "persona_clip", id: clip.id, filename: "clip.mp4" }),
+    storageKey({
+      entity: "persona_image",
+      id: image.id,
+      filename: `image${path.extname(opts.filePath) || ".jpg"}`,
+    }),
     opts.filePath,
   );
-  await db.update(personaClips).set({ filePath }).where(eq(personaClips.id, clip.id));
-  return { ...clip, filePath };
+  await db.update(personaImages).set({ filePath }).where(eq(personaImages.id, image.id));
+  return { ...image, filePath };
 }
 
 export async function addStructure(db: Db, opts: { title: string; skeleton: unknown }) {

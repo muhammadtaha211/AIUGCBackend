@@ -4,13 +4,11 @@ import path from "node:path";
 import { z } from "zod";
 import { getConfigValue } from "../appConfig";
 import { assertBudget, recordUsage } from "../budget";
-import { getEnv } from "../config";
 import type { Db } from "../db";
-import { composites, personaClips } from "../db/schema";
+import { composites, personaImages } from "../db/schema";
 import { PermanentError } from "../jobs/errors";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
-import { thumbnail } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import { getImagegenProvider } from "../providers/imagegen";
 import { getStorage, storageKey } from "../storage";
@@ -18,7 +16,7 @@ import { requireQuestionnaire } from "./businesses";
 
 /**
  * Fixed prompt (locked format, like the hook bank): a natural UGC-style
- * product-in-hand shot. The persona comes from the reference stills, the
+ * product-in-hand shot. The persona comes from the reference images, the
  * product from the last image.
  */
 const COMPOSITE_PROMPT =
@@ -26,8 +24,8 @@ const COMPOSITE_PROMPT =
   "as if filming themselves recommending it. Casual selfie framing, natural indoor lighting, " +
   "authentic UGC style, vertical 9:16. Keep the person's face and the product exactly as shown.";
 
-/** Max persona reference stills sent alongside the product photo. */
-const MAX_REFERENCE_STILLS = 3;
+/** Max persona reference images sent alongside the product photo. */
+const MAX_REFERENCE_IMAGES = 3;
 
 /**
  * Register a product photo and queue composite generation. Physical products
@@ -80,8 +78,9 @@ export async function approveComposite(db: Db, compositeId: string): Promise<voi
 }
 
 /**
- * Job handler: persona stills + product photo -> nano-banana -> stored image.
- * Submit checkpoints the provider job id BEFORE polling (same as lipsync).
+ * Job handler: persona reference images + product photo -> nano-banana ->
+ * stored image. Submit checkpoints the provider job id BEFORE polling (same
+ * as lipsync).
  */
 export async function handleGenerateComposite(job: Job, ctx: JobContext): Promise<JobResult> {
   const { compositeId } = job.payload as { compositeId: string };
@@ -108,43 +107,24 @@ export async function handleGenerateComposite(job: Job, ctx: JobContext): Promis
         .set({ status: "generating" })
         .where(eq(composites.id, compositeId));
 
-      // Persona identity: stills extracted from base clips (V0 has no
-      // dedicated identity images).
-      const clips = await ctx.db
+      // Persona identity: the persona's reference images.
+      const images = await ctx.db
         .select()
-        .from(personaClips)
-        .where(eq(personaClips.personaId, composite.personaId))
-        .limit(MAX_REFERENCE_STILLS);
-      if (clips.length === 0) {
-        throw new PermanentError("persona has no clips to extract reference stills from");
-      }
-
-      mkdirSync(localDir, { recursive: true });
-      const stillUrls: string[] = [];
-      for (const [i, clip] of clips.entries()) {
-        const localStill = path.join(localDir, `still-${i}.jpg`);
-        if (getEnv().DRY_RUN) {
-          writeFileSync(localStill, "DRY_RUN placeholder persona still");
-        } else {
-          const localClip = path.join(localDir, `clip-${i}.mp4`);
-          await storage.download(clip.filePath, localClip);
-          await thumbnail(localClip, localStill);
-        }
-        const stillPath = await storage.put(
-          "assets",
-          storageKey({
-            businessId: composite.businessId,
-            entity: "composite",
-            id: compositeId,
-            filename: `still-${i}.jpg`,
-          }),
-          localStill,
+        .from(personaImages)
+        .where(eq(personaImages.personaId, composite.personaId))
+        .limit(MAX_REFERENCE_IMAGES);
+      if (images.length === 0) {
+        throw new PermanentError(
+          "persona has no reference images — add one with `aiugc persona add-image`",
         );
-        stillUrls.push(await storage.signedUrl(stillPath, 3600));
+      }
+      const referenceUrls: string[] = [];
+      for (const image of images) {
+        referenceUrls.push(await storage.signedUrl(image.filePath, 3600));
       }
 
       const { providerJobId } = await provider.submit({
-        imageUrls: [...stillUrls, await storage.signedUrl(composite.productImagePath, 3600)],
+        imageUrls: [...referenceUrls, await storage.signedUrl(composite.productImagePath, 3600)],
         prompt: COMPOSITE_PROMPT,
       });
       const costAgorot = await getConfigValue(ctx.db, "imagegen_cost_agorot", z.number().int());

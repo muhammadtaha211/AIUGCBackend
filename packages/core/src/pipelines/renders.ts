@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -12,7 +12,7 @@ import {
   composites,
   demos,
   hookClips,
-  personaClips,
+  personaImages,
   scripts,
   sets,
   videoRenders,
@@ -28,8 +28,8 @@ import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
 import type { VariantParams } from "./sets";
 
-/** ~agorot per GPU second (fal.ai infinitalk 720p ≈ $0.60/s ≈ ₪2.2/s). */
-const GPU_COST_AGOROT_PER_SECOND = 222;
+/** ~agorot per GPU second (fal.ai infinitalk single-image 720p ≈ $0.40/s ≈ ₪1.5/s; verified 2026-07). */
+const GPU_COST_AGOROT_PER_SECOND = 150;
 
 /**
  * Service B step 1: InfiniteTalk lip-sync on the hosted provider.
@@ -58,8 +58,9 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       if (!audio?.filePath) throw new PermanentError("audio render has no file");
       if (!audio.approvedAt) throw new PermanentError("audio is not approved (hard gate)");
 
-      // Source: approved composite (single-image mode) or persona base clip.
-      let source: { videoUrl?: string; imageUrl?: string };
+      // Source image: an approved composite takes precedence (hard gate),
+      // then an explicit persona image, then the persona's default image.
+      let imagePath: string;
       if (params.compositeId) {
         const composite = (
           await ctx.db
@@ -72,21 +73,39 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
         if (!composite.approvedAt) {
           throw new PermanentError("composite is not approved (hard gate)");
         }
-        source = { imageUrl: await storage.signedUrl(composite.outputPath, 3600) };
-      } else {
-        const clip = (
+        imagePath = composite.outputPath;
+      } else if (params.personaImageId) {
+        const image = (
           await ctx.db
             .select()
-            .from(personaClips)
-            .where(eq(personaClips.id, params.personaClipId!))
+            .from(personaImages)
+            .where(eq(personaImages.id, params.personaImageId))
             .limit(1)
         )[0];
-        if (!clip) throw new PermanentError("persona clip not found");
-        source = { videoUrl: await storage.signedUrl(clip.filePath, 3600) };
+        if (!image) throw new PermanentError("persona image not found");
+        imagePath = image.filePath;
+      } else if (params.personaId) {
+        const image = (
+          await ctx.db
+            .select()
+            .from(personaImages)
+            .where(
+              and(eq(personaImages.personaId, params.personaId), eq(personaImages.isDefault, true)),
+            )
+            .limit(1)
+        )[0];
+        if (!image) {
+          throw new PermanentError(
+            "persona has no reference images — add one with `aiugc persona add-image`",
+          );
+        }
+        imagePath = image.filePath;
+      } else {
+        throw new PermanentError("service B params name no composite, persona image, or persona");
       }
 
       const { providerJobId } = await provider.submit({
-        ...source,
+        imageUrl: await storage.signedUrl(imagePath, 3600),
         audioUrl: await storage.signedUrl(audio.filePath, 3600),
       });
       await recordUsage(ctx.db, {

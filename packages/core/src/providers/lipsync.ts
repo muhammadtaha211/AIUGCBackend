@@ -3,16 +3,15 @@ import { PermanentError, TransientError } from "../jobs/errors";
 
 /**
  * InfiniteTalk lip-sync behind a swappable interface. Reference implementation
- * is the hosted fal.ai endpoint, in one of two modes: video-to-video (persona
- * base clip + TTS audio) or single-image (approved product-in-hand composite +
- * TTS audio, `fal-ai/infinitalk`). Polling, not webhooks: the CLI phase has no
- * public URL and the worker polls identically pre- and post-launch.
+ * is the hosted fal.ai single-image endpoint (`fal-ai/infinitalk`): one
+ * reference image (persona image or approved composite) + TTS audio → talking
+ * head. Image+audio is the only mode — no video-to-video (locked decision).
+ * Polling, not webhooks: the CLI phase has no public URL and the worker polls
+ * identically pre- and post-launch.
  */
 export interface LipsyncSubmitInput {
-  /** Persona base clip (video-to-video mode). Exactly one of videoUrl/imageUrl. */
-  videoUrl?: string;
-  /** Approved composite image (single-image mode). */
-  imageUrl?: string;
+  /** Reference image: persona image or approved product-in-hand composite. */
+  imageUrl: string;
   audioUrl: string;
 }
 
@@ -28,9 +27,8 @@ export interface LipsyncProvider {
 }
 
 const FAL_BASE = "https://queue.fal.run/fal-ai/infinitalk";
-const FAL_ENDPOINT = `${FAL_BASE}/video-to-video`;
 
-/** The single-image endpoint requires a text prompt; ours is fixed. */
+/** The endpoint requires a text prompt; ours is fixed. */
 const IMAGE_MODE_PROMPT =
   "A person talks to the camera naturally, subtle head movement, UGC selfie style.";
 
@@ -42,22 +40,14 @@ class FalLipsync implements LipsyncProvider {
   }
 
   async submit(input: LipsyncSubmitInput): Promise<{ providerJobId: string }> {
-    if (!input.videoUrl && !input.imageUrl) {
-      throw new PermanentError("lipsync submit needs a videoUrl or an imageUrl");
-    }
-    const response = input.imageUrl
-      ? await this.request(FAL_BASE, {
-          method: "POST",
-          body: JSON.stringify({
-            image_url: input.imageUrl,
-            audio_url: input.audioUrl,
-            prompt: IMAGE_MODE_PROMPT,
-          }),
-        })
-      : await this.request(FAL_ENDPOINT, {
-          method: "POST",
-          body: JSON.stringify({ video_url: input.videoUrl, audio_url: input.audioUrl }),
-        });
+    const response = await this.request(FAL_BASE, {
+      method: "POST",
+      body: JSON.stringify({
+        image_url: input.imageUrl,
+        audio_url: input.audioUrl,
+        prompt: IMAGE_MODE_PROMPT,
+      }),
+    });
     const json = (await response.json()) as { request_id: string };
     return { providerJobId: json.request_id };
   }

@@ -31,11 +31,11 @@ aiugc set create ... --audio <audioRenderId>
 
 # service B
 aiugc bank add-persona --name "נועה" --voice <elevenVoiceId>
-aiugc bank add-persona-clip base.mp4 --persona <id> --duration 30000
+aiugc persona add-image <personaId> face.jpg          # first image becomes the default
 aiugc bank add-structure --title "..." --skeleton skeleton.json
 aiugc copy b-script --business <bizId> --persona <id> --structure <id>
 aiugc tts <scriptId> && aiugc work --once && aiugc audio approve <id>
-aiugc render-b --business <bizId> --audio <id> --persona-clip <id>
+aiugc render-b --business <bizId> --audio <id> --persona <personaId>
 aiugc work --once
 aiugc qc list && aiugc qc approve <renderId>           # founder gate
 
@@ -64,7 +64,7 @@ No pipeline code moves. The worker deploys unchanged.
 
 ## Build sequence from here (founder's roadmap)
 
-1. **Provision**: Supabase project (apply migrations 0000–0002, create the three buckets), API
+1. **Provision**: Supabase project (apply migrations 0000–0006, create the three buckets), API
    keys (Anthropic, ElevenLabs, fal), a worker box with ffmpeg — flip `DRY_RUN` off.
 2. **Remotion compositions** (`ServiceA`, `ServiceB`) against the fixed props contract in
    `providers/remotion.ts`; calibrate `words_per_second` per voice with test renders; wire
@@ -79,8 +79,9 @@ No pipeline code moves. The worker deploys unchanged.
 ## Verification (what exists and runs today)
 
 - `pnpm typecheck` / `pnpm lint` — clean across the workspace.
-- `pnpm test` — 22 tests: migrations against real Postgres (PGlite), the job queue's full
+- `pnpm test` — 25 tests: migrations against real Postgres (PGlite), the job queue's full
   failure matrix, caption chunking properties, the billing state machine, and the **end-to-end
   founder workflow in DRY_RUN** (ingest → copy → silent set → voiced set with the approval gate
-  enforced → winner loop → Service B lipsync/QC/release).
+  enforced → winner loop → Service B image+audio lipsync/QC/release, including the composite
+  path).
 - `aiugc --help` and every command above run today (DRY_RUN without keys).

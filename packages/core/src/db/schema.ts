@@ -170,20 +170,22 @@ export const personas = pgTable("personas", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const personaClips = pgTable("persona_clips", {
+// Reference images are the only InfiniteTalk source (image + audio; no
+// video-to-video). At most one default per persona — partial unique index in
+// the hand-written 0006 migration.
+export const personaImages = pgTable("persona_images", {
   id: uuid("id").primaryKey().defaultRandom(),
   personaId: uuid("persona_id")
     .notNull()
     .references(() => personas.id),
   filePath: text("file_path").notNull(),
-  durationMs: integer("duration_ms").notNull(),
-  kind: text("kind").notNull().default("base"),
+  isDefault: boolean("is_default").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // Product-in-hand composites (Service B, physical products only): a generated
-// image of a persona holding the customer's product. The approved image becomes
-// the single-image InfiniteTalk source instead of the persona base clip.
+// image of a persona holding the customer's product. The approved image takes
+// precedence over the persona's reference image as the InfiniteTalk source.
 export const composites = pgTable(
   "composites",
   {

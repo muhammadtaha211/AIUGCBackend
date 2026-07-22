@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   addHookClip,
   addPersona,
-  addPersonaClip,
+  addPersonaImage,
   addStructure,
   approveAudio,
   buildHandlers,
@@ -261,21 +261,6 @@ bank
   );
 
 bank
-  .command("add-persona-clip <file>")
-  .requiredOption("--persona <id>")
-  .requiredOption("--duration <ms>")
-  .action(
-    run(async (file: string, opts: { persona: string; duration: string }) => {
-      const clip = await addPersonaClip(getDb(), {
-        personaId: opts.persona,
-        filePath: file,
-        durationMs: Number(opts.duration),
-      });
-      console.log(`persona clip added: ${clip.id}`);
-    }),
-  );
-
-bank
   .command("add-structure")
   .requiredOption("--title <title>")
   .requiredOption("--skeleton <jsonFile>", "beat outline + script skeleton JSON")
@@ -286,6 +271,24 @@ bank
         skeleton: JSON.parse(readFileSync(opts.skeleton, "utf8")),
       });
       console.log(`structure added: ${structure.id}`);
+    }),
+  );
+
+// --- persona reference images ---------------------------------------------------
+
+const persona = program.command("persona").description("persona reference images");
+
+persona
+  .command("add-image <personaId> <file>")
+  .option("--default", "make this the persona's default reference image")
+  .action(
+    run(async (personaId: string, file: string, opts: { default?: boolean }) => {
+      const image = await addPersonaImage(getDb(), {
+        personaId,
+        filePath: file,
+        isDefault: opts.default,
+      });
+      console.log(`persona image added: ${image.id}${image.isDefault ? " (default)" : ""}`);
     }),
   );
 
@@ -355,16 +358,25 @@ program
   .description("Service B: lip-sync + assembly (lands in the QC queue)")
   .requiredOption("--business <id>")
   .requiredOption("--audio <audioRenderId>", "approved audio render")
-  .requiredOption("--persona-clip <id>")
+  .option("--persona <id>", "render on the persona's default reference image")
+  .option("--persona-image <id>", "explicit persona image (overrides the default)")
   .action(
-    run(async (opts: { business: string; audio: string; personaClip: string }) => {
-      const render = await createBRender(getDb(), {
-        businessId: opts.business,
-        audioRenderId: opts.audio,
-        personaClipId: opts.personaClip,
-      });
-      console.log(`b render queued: ${render.id}`);
-    }),
+    run(
+      async (opts: {
+        business: string;
+        audio: string;
+        persona?: string;
+        personaImage?: string;
+      }) => {
+        const render = await createBRender(getDb(), {
+          businessId: opts.business,
+          audioRenderId: opts.audio,
+          personaId: opts.persona,
+          personaImageId: opts.personaImage,
+        });
+        console.log(`b render queued: ${render.id}`);
+      },
+    ),
   );
 
 // --- QC gate --------------------------------------------------------------------

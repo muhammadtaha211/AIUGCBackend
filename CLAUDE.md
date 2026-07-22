@@ -7,7 +7,7 @@ Read this fully before every task. It is the source of truth for what this proje
 A Hebrew-first AI UGC ad platform for advertisers targeting Israelis. Two services, one shared pipeline:
 
 - **Service A — Hook+Demo generator.** One fixed format: a 2s pre-rendered AI reaction clip (from a closed, founder-curated bank) with a Hebrew text hook burned on → hard cut into the customer's own phone-filmed product demo → burned Hebrew RTL captions (v1: evenly-paced benefit captions) → optional Hebrew voiceover (ElevenLabs V3), loosely synced by design. Variants are the product: one demo + one questionnaire → many ads (hook clip × hook line × copy angle × voiced/silent).
-- **Service B — Hebrew AI avatar ads.** 5–10 consistent generated personas, ElevenLabs V3 + InfiniteTalk lip-sync, talking head with product B-roll cutaways (reuses A's engine). Self-serve behind a founder QC-release gate; DFY tier on the same pipeline.
+- **Service B — Hebrew AI avatar ads.** 5–10 consistent generated personas, each a small bank of reference images + a pinned ElevenLabs voice. A render is a single reference image (the persona's default, an explicit image, or an approved product-in-hand composite) + ElevenLabs V3 audio through InfiniteTalk lip-sync — talking head with product B-roll cutaways (reuses A's engine). Self-serve behind a founder QC-release gate; DFY tier on the same pipeline.
 
 Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre-validation. The founder is user #1, generating cold-outreach sample ads via CLI before the UI exists. Full product/backend spec: `docs/backend-handover.md` — read it when a task touches pipeline logic, schema, or external services.
 
@@ -32,6 +32,7 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 9. All output video: vertical 9:16, 1080×1920, H.264 MP4. All user-facing copy: Hebrew.
 10. Boring tech, minimal moving parts. No new infrastructure, framework, or paid service without the founder asking for it.
 11. Runtime image generation (nano-banana composites) is founder-approved for Service B product-in-hand composites only. The Service A hook-bank rule (#2 — no runtime face/video generation for hooks) is untouched.
+12. Service B renders from a single reference image (or an approved composite) + audio via InfiniteTalk. No video-to-video.
 
 ## How to work — every task
 

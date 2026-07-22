@@ -40,9 +40,11 @@ export interface VariantParams {
   mode: "silent" | "voiced";
   captionScriptId?: string;
   audioRenderId?: string;
-  /** Service B: */
-  personaClipId?: string;
-  /** Approved product-in-hand composite — switches lipsync to single-image mode. */
+  /** Service B: resolves to the persona's default reference image at render time. */
+  personaId?: string;
+  /** Explicit persona reference image — overrides the persona's default. */
+  personaImageId?: string;
+  /** Approved product-in-hand composite — takes precedence as the lipsync source. */
   compositeId?: string;
   lipsyncUrl?: string;
 }
@@ -183,15 +185,17 @@ export async function moreLikeThis(
 
 /**
  * Service B render: lip-sync first, then assembly; lands in the QC queue.
- * Source is either a persona base clip (video-to-video) or an approved
- * product-in-hand composite (single-image mode).
+ * The lipsync source is always image+audio: an approved product-in-hand
+ * composite takes precedence, then an explicit persona image, then the
+ * persona's default reference image (resolved at render time).
  */
 export async function createBRender(
   db: Db,
   opts: {
     businessId: string;
     audioRenderId: string;
-    personaClipId?: string;
+    personaId?: string;
+    personaImageId?: string;
     compositeId?: string;
   },
 ) {
@@ -202,8 +206,8 @@ export async function createBRender(
     .limit(1);
   if (!audio[0]?.approvedAt) throw new Error("audio must be approved before rendering (hard gate)");
 
-  if (!opts.personaClipId && !opts.compositeId) {
-    throw new Error("either personaClipId or compositeId is required");
+  if (!opts.personaId && !opts.personaImageId && !opts.compositeId) {
+    throw new Error("a personaId, personaImageId, or compositeId is required");
   }
   if (opts.compositeId) {
     const composite = await db
@@ -228,7 +232,8 @@ export async function createBRender(
       service: "b",
       params: {
         audioRenderId: opts.audioRenderId,
-        personaClipId: opts.personaClipId,
+        personaId: opts.personaId,
+        personaImageId: opts.personaImageId,
         compositeId: opts.compositeId,
       },
       watermarked,

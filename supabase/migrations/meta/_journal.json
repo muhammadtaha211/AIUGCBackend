@@ -15,6 +15,13 @@
       "when": 1784754198093,
       "tag": "0003_composites_and_images",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784756527894,
+      "tag": "0005_persona_images",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 - `0002_supabase_rls.sql` — **Supabase-only** (auth trigger + RLS); skipped on PGlite/plain PG
 - `0003_composites_and_images.sql` — generated: composites table + `images` usage kind
 - `0004_image_config_seed.sql` — hand-written: `images` daily cap + `imagegen_cost_agorot`
+- `0005_persona_images.sql` — generated: `persona_images` table, drops `persona_clips`
+- `0006_persona_images_default.sql` — hand-written: partial unique index (one default image per
+  persona)
 
 ## Design rules
 
@@ -41,13 +44,16 @@ tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become 
   list of segments" requirement — V2 step-captions are inserts, not a migration.
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
   `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`.
-- **personas** / **persona_clips** — identity jsonb, pinned ElevenLabs `voice_id`; base clips as
-  separate rows (a persona accumulates looks/angles).
+- **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id`; reference
+  images as separate rows (a persona accumulates looks/angles). `is_default` marks the image a
+  render uses when a variant names only the persona — at most one per persona (partial unique
+  index, 0006). Reference images are the only InfiniteTalk source; there are no persona base
+  clips and no video-to-video.
 - **composites** — product-in-hand images (Service B, `category === "physical_product"` only):
   business, persona, product photo path, generated output path, status
   `queued→generating→ready|failed`, and **`approved_at`** — a hard gate exactly like audio:
-  lipsync refuses composites without it. The approved image becomes the single-image
-  InfiniteTalk source instead of the persona base clip.
+  lipsync refuses composites without it. The approved image takes precedence over the persona's
+  reference image as the InfiniteTalk source.
 - **structures** — the weekly "clonable winners" menu: `skeleton jsonb` (beat outline + script
   skeleton), persona-fit tags, source ref, week.
 - **sounds** — weekly curated trending list (metadata only; sounds are attached natively at post
@@ -121,7 +127,7 @@ get read-only access. Policies:
   Service B output before the founder releases it; a rejected-and-regenerated render is
   internal.
 - Catalog SELECT for any authenticated user: hook_clips/personas/structures (active rows),
-  persona_clips, sounds, plans.
+  sounds, plans. (0002's persona_clips policy is dropped with the table in 0005.)
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
   pronunciation_entries.
 - `handle_new_user()` trigger mirrors `auth.users` inserts into `public.users`.

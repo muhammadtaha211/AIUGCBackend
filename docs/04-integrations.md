@@ -49,11 +49,21 @@ keyless (the e2e test relies on this).
 
 ## InfiniteTalk lip-sync — `providers/lipsync.ts`
 
-- **Context**: the founder validated output quality via HiggsField (a consumer app); no infra
-  was ever set up. Given zero infra background, the reference implementation is the **hosted
-  fal.ai endpoint** (`fal-ai/infinitalk/video-to-video`: persona base clip + TTS audio →
-  lip-synced clip; ~$0.30/s @480p, ~$0.60/s @720p ≈ ₪67 per 30s at 720p — this is why a
-  Service B render costs 15 credits).
+- **Image+audio is the only mode** (locked decision — no video-to-video): one reference image +
+  TTS audio → talking head via the hosted fal.ai endpoint **`fal-ai/infinitalk`**
+  (`image_url` + `audio_url` + a fixed UGC-style text prompt). The image is resolved by the
+  render pipeline: an approved product-in-hand composite takes precedence, then an explicit
+  persona image, then the persona's default reference image. Context: the founder validated
+  output quality via HiggsField (a consumer app); given zero infra background, hosted fal is
+  the reference implementation.
+- **Pricing** (verified 2026-07): $0.20/s @480p, doubled to $0.40/s @720p — ≈ ₪44 per 30s at
+  720p. `GPU_COST_AGOROT_PER_SECOND = 150` in `pipelines/renders.ts` estimates conservatively
+  at the 720p rate (the submit body doesn't pin `resolution`; fal defaults to 480p). The
+  15-credit Service B price was set under the older, pricier video-to-video rate.
+- **Long clips**: InfiniteTalk generates in overlapping chunks (sliding window), so length is
+  audio-driven by design. The fal schema exposes `num_frames` 41–721 (default 145 ≈ 6s @25fps);
+  whether the endpoint auto-extends to the audio length or needs `num_frames` set explicitly is
+  **unverified** — confirm with the first paid render before batch use.
 - Swappable by design: `interface LipsyncProvider { submit(); poll() }` — RunPod
   serverless/Modal/WaveSpeed become alternate implementations if volume justifies owning a
   template.
@@ -61,10 +71,6 @@ keyless (the e2e test relies on this).
   identically pre- and post-launch, and fal's queue API supports it directly. Submit → job
   `state.providerJobId` checkpoint → reschedule 15s → poll every 30s. A webhook endpoint is a
   later optimization in the web app, not a redesign.
-- **Two submit modes**: video-to-video (`fal-ai/infinitalk/video-to-video`, persona base clip)
-  and single-image (`fal-ai/infinitalk`: an approved product-in-hand composite + a fixed text
-  prompt). The render pipeline picks image mode when the variant params reference an approved
-  composite; the persona-clip path is unchanged.
 - Inputs are 1-hour signed URLs; the output URL is downloaded by the render handler.
 - Budget: `gpu_seconds` usage row at submit (quantity = audio seconds); hard rolling-24h cap
   parks further submissions (`BudgetError`) without burning attempts.
@@ -72,8 +78,8 @@ keyless (the e2e test relies on this).
 ## nano-banana composites — `providers/imagegen.ts`
 
 - Product-in-hand composite images for Service B (**physical products only**): 2–3 persona
-  reference stills (extracted from base clips with ffmpeg `thumbnail` — V0 has no dedicated
-  identity images) + the customer's product photo + a fixed UGC-style prompt → one 9:16 image.
+  reference images (`persona_images` rows) + the customer's product photo + a fixed UGC-style
+  prompt → one 9:16 image.
 - Endpoint: **`fal-ai/nano-banana/edit`** (Gemini 2.5 Flash Image; verified 2026-07 —
   `image_urls` + `prompt` + `aspect_ratio: "9:16"`, $0.039/image). Same queue submit/poll shape
   as lipsync, with the provider job id checkpointed before polling.
