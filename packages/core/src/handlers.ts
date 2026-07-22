@@ -7,6 +7,7 @@ import {
   generateHookLines,
   generateVoScript,
 } from "./pipelines/copy";
+import { handleGenerateComposite } from "./pipelines/composites";
 import { handleIngestDemo } from "./pipelines/demos";
 import { handleJanitor } from "./pipelines/janitor";
 import { handleLipsync, handleRenderVideo } from "./pipelines/renders";
@@ -23,7 +24,8 @@ async function handleGenerateCopy(job: Job, ctx: JobContext): Promise<JobResult>
     voiceId?: string;
     personaId?: string;
     structureId?: string;
-    targetSeconds?: number;
+    pointers?: string;
+    durationPreset?: number;
   };
   switch (payload.kind) {
     case "hook_lines":
@@ -49,7 +51,8 @@ async function handleGenerateCopy(job: Job, ctx: JobContext): Promise<JobResult>
         businessId: payload.businessId,
         personaId: payload.personaId!,
         structureId: payload.structureId!,
-        targetSeconds: payload.targetSeconds,
+        pointers: payload.pointers,
+        durationPreset: payload.durationPreset,
       });
       break;
   }
@@ -62,6 +65,7 @@ export function buildHandlers(): HandlerRegistry {
     ingest_demo: handleIngestDemo,
     generate_copy: handleGenerateCopy,
     synth_tts: handleSynthTts,
+    generate_composite: handleGenerateComposite,
     lipsync: handleLipsync,
     render_video: handleRenderVideo,
     janitor: handleJanitor,

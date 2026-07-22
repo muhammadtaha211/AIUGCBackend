@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { sql } from "drizzle-orm";
@@ -10,11 +10,14 @@ import { buildHandlers } from "../src/handlers";
 import { runLane } from "../src/jobs/worker";
 import { addHookClip, addPersona, addPersonaClip, addStructure } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
+import { approveComposite, createComposite } from "../src/pipelines/composites";
 import {
+  assertWithinWordBudget,
   generateBenefitCaptions,
   generateBScript,
   generateHookLines,
   generateVoScript,
+  updateScriptText,
 } from "../src/pipelines/copy";
 import { creditBalance } from "../src/pipelines/credits";
 import { createDemo } from "../src/pipelines/demos";
@@ -32,6 +35,7 @@ import { tempStorage } from "./helpers/storage";
 
 let db: Db;
 let pg: { close(): Promise<void> };
+let storageRoot: string;
 let cleanupStorage: () => void;
 const eq = sql;
 void eq;
@@ -68,6 +72,7 @@ beforeAll(async () => {
   pg = testDb.pg;
   const ts = tempStorage();
   setStorage(ts.storage);
+  storageRoot = ts.root;
   cleanupStorage = ts.cleanup;
 });
 
@@ -239,7 +244,26 @@ describe("founder workflow (dry-run, end to end)", () => {
         businessId,
         personaId: persona.id,
         structureId: structure.id,
+        pointers: "לפתוח עם המשלוח המהיר ולסגור עם קריאה לפעולה",
+        durationPreset: 15,
       });
+      const params = script.params as {
+        pointers?: string;
+        durationPreset?: number;
+        wordBudget?: number;
+      };
+      expect(params.pointers).toContain("המשלוח המהיר");
+      expect(params.durationPreset).toBe(15);
+      expect(params.wordBudget).toBeGreaterThan(0);
+
+      // "Write it myself" / post-generation edit: new immutable row, user_edited.
+      const edited = await updateScriptText(db, script.id, `${script.text} נסו עכשיו`);
+      expect(edited.userEdited).toBe(true);
+      // The validation helper rejects text over the word budget.
+      expect(() =>
+        assertWithinWordBudget("מילה ".repeat(params.wordBudget! + 1), params.wordBudget!),
+      ).toThrow(/ארוך מדי/);
+
       const audio = await requestAudio(db, { scriptId: script.id }); // voice from persona
       await drainAll();
       await approveAudio(db, audio.id);
@@ -264,12 +288,112 @@ describe("founder workflow (dry-run, end to end)", () => {
       expect(row.status).toBe("released");
       expect(row.releasedAt).not.toBeNull();
 
+      // Karaoke caption chunks (from the approved audio) made it into the
+      // render props — the DRY_RUN render echoes its props into the output.
+      const renderedProps = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+      expect(renderedProps).toContain('"kind":"service_b"');
+      expect(renderedProps).toContain('"captions":[{"text":');
+
       // Lipsync submit was checkpointed with the provider job id (resumable).
       const lipsyncJobs = await db
         .select()
         .from(dbSchema.jobs)
         .where(sql`${dbSchema.jobs.type} = 'lipsync'`);
       expect((lipsyncJobs[0]!.state as { providerJobId?: string }).providerJobId).toBeTruthy();
+    },
+  );
+
+  it(
+    "service B composite: product photo -> persona-holding-product -> approve gate -> image-mode lipsync",
+    { timeout: 60_000 },
+    async () => {
+      // Composites are physical-product only, so this leg gets its own business.
+      const shop = await createBusiness(db, {
+        ownerEmail: "founder@example.com",
+        name: "קרם הפנים",
+        ownerRole: "admin",
+      });
+      await setQuestionnaire(db, shop.id, {
+        category: "physical_product",
+        product_name: "קרם הפנים",
+        what_it_does: "קרם לחות טבעי לעור רגיש",
+        advantages: ["רכיבים טבעיים בלבד", "מתאים לעור רגיש"],
+        target_audience: "נשים 25-45",
+        tone: "friendly",
+      });
+      const persona = await addPersona(db, { name: "דנה", voiceId: "voice_dana" });
+      await addPersonaClip(db, {
+        personaId: persona.id,
+        filePath: tempFile("persona2.mp4"),
+        durationMs: 30_000,
+      });
+
+      // The category gate: a non-physical business is refused.
+      await expect(
+        createComposite(db, {
+          businessId, // the local_service business from earlier legs
+          personaId: persona.id,
+          productImageFile: tempFile("product.jpg", "fake product photo"),
+        }),
+      ).rejects.toThrow(/physical/);
+
+      const composite = await createComposite(db, {
+        businessId: shop.id,
+        personaId: persona.id,
+        productImageFile: tempFile("product.jpg", "fake product photo"),
+      });
+      await drainAll(); // generate_composite: submit -> poll -> stored image
+
+      const generated = (
+        await db
+          .select()
+          .from(dbSchema.composites)
+          .where(sql`${dbSchema.composites.id} = ${composite.id}`)
+      )[0]!;
+      expect(generated.status).toBe("ready");
+      expect(generated.outputPath).toMatch(/^assets\//);
+      // One usage row per generation, kind "images", cost from app_config.
+      const imageUsage = await db
+        .select()
+        .from(dbSchema.usageEvents)
+        .where(sql`${dbSchema.usageEvents.kind} = 'images'`);
+      expect(imageUsage).toHaveLength(1);
+      expect(imageUsage[0]!.costEstimateAgorot).toBeGreaterThan(0);
+
+      // Script + approved audio for the render.
+      const structure = await addStructure(db, {
+        title: "המוצר שהפתיע אותי",
+        skeleton: { beats: ["hook", "demo", "cta"] },
+      });
+      const script = await generateBScript(db, {
+        businessId: shop.id,
+        personaId: persona.id,
+        structureId: structure.id,
+      });
+      const audio = await requestAudio(db, { scriptId: script.id });
+      await drainAll();
+      await approveAudio(db, audio.id);
+
+      // The hard gate: an unapproved composite never reaches lipsync.
+      await expect(
+        createBRender(db, {
+          businessId: shop.id,
+          audioRenderId: audio.id,
+          compositeId: composite.id,
+        }),
+      ).rejects.toThrow(/approved/);
+
+      await approveComposite(db, composite.id);
+      const render = await createBRender(db, {
+        businessId: shop.id,
+        audioRenderId: audio.id,
+        compositeId: composite.id,
+      });
+      // No personaClipId at all — completing proves the image-mode lipsync path.
+      await drainAll();
+
+      const queue = await listQcQueue(db);
+      expect(queue.map((r) => r.id)).toContain(render.id);
     },
   );
 });

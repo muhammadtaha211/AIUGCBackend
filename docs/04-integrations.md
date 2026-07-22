@@ -15,8 +15,8 @@ keyless (the e2e test relies on this).
 - **Prompt versioning**: prompts are files — `prompts/<name>/v<N>.md` with `{{var}}`
   interpolation (`src/prompts.ts`). A revision is a new file, never an edit; every generated
   script row records `prompt_version = "<name>@v<N>"`, so any output is traceable to the exact
-  template. Current prompts: `hook_lines`, `benefit_captions`, `vo_script`, `b_script`,
-  `content_policy` (all v1).
+  template. Current prompts: `hook_lines`, `benefit_captions`, `vo_script`, `b_script`
+  (v3 adds customer pointers + duration preset), `content_policy`.
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
   app_config; default 2.2 w/s until each voice is calibrated with test renders) and passed into
   the prompt as hard constraints.
@@ -61,9 +61,28 @@ keyless (the e2e test relies on this).
   identically pre- and post-launch, and fal's queue API supports it directly. Submit → job
   `state.providerJobId` checkpoint → reschedule 15s → poll every 30s. A webhook endpoint is a
   later optimization in the web app, not a redesign.
+- **Two submit modes**: video-to-video (`fal-ai/infinitalk/video-to-video`, persona base clip)
+  and single-image (`fal-ai/infinitalk`: an approved product-in-hand composite + a fixed text
+  prompt). The render pipeline picks image mode when the variant params reference an approved
+  composite; the persona-clip path is unchanged.
 - Inputs are 1-hour signed URLs; the output URL is downloaded by the render handler.
 - Budget: `gpu_seconds` usage row at submit (quantity = audio seconds); hard rolling-24h cap
   parks further submissions (`BudgetError`) without burning attempts.
+
+## nano-banana composites — `providers/imagegen.ts`
+
+- Product-in-hand composite images for Service B (**physical products only**): 2–3 persona
+  reference stills (extracted from base clips with ffmpeg `thumbnail` — V0 has no dedicated
+  identity images) + the customer's product photo + a fixed UGC-style prompt → one 9:16 image.
+- Endpoint: **`fal-ai/nano-banana/edit`** (Gemini 2.5 Flash Image; verified 2026-07 —
+  `image_urls` + `prompt` + `aspect_ratio: "9:16"`, $0.039/image). Same queue submit/poll shape
+  as lipsync, with the provider job id checkpointed before polling.
+- **Approval is a hard gate exactly like audio**: `approveComposite()` sets `approved_at`;
+  `createBRender` and the lipsync handler both refuse a composite without it.
+- Costs: one `usage_events` row per generation, kind `images`, cost estimate from
+  `app_config.imagegen_cost_agorot` (not a constant). No credit charge in V0 — the `images`
+  daily cap is the abuse guard; cost is absorbed into Service B render pricing.
+- DRY_RUN: placeholder stills (no ffmpeg), instant `dryrun://` result, placeholder output file.
 
 ## Remotion (assembly) — `providers/remotion.ts`
 

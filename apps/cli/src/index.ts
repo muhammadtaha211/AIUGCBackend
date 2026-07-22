@@ -166,17 +166,27 @@ copy
   .requiredOption("--business <id>")
   .requiredOption("--persona <id>")
   .requiredOption("--structure <id>")
-  .option("--seconds <n>", "target video length", "30")
+  .option("--seconds <n>", "duration preset: 15 or 30", "30")
+  .option("--pointers <text>", "rough notes on what the avatar should say")
   .action(
-    run(async (opts: { business: string; persona: string; structure: string; seconds: string }) => {
-      const row = await generateBScript(getDb(), {
-        businessId: opts.business,
-        personaId: opts.persona,
-        structureId: opts.structure,
-        targetSeconds: Number(opts.seconds),
-      });
-      console.log(`b script: ${row.id}\n${row.text}`);
-    }),
+    run(
+      async (opts: {
+        business: string;
+        persona: string;
+        structure: string;
+        seconds: string;
+        pointers?: string;
+      }) => {
+        const row = await generateBScript(getDb(), {
+          businessId: opts.business,
+          personaId: opts.persona,
+          structureId: opts.structure,
+          pointers: opts.pointers,
+          durationPreset: Number(opts.seconds),
+        });
+        console.log(`b script: ${row.id}\n${row.text}`);
+      },
+    ),
   );
 
 program

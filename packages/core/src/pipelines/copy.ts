@@ -210,15 +210,27 @@ export async function generateVoScript(
 }
 
 // ---------------------------------------------------------------------------
-// Service B script — adapt a curated structure skeleton to the product
+// Service B script — adapt a curated structure skeleton to the product,
+// steered by the customer's rough pointers when they typed any
 // ---------------------------------------------------------------------------
+
+const durationPresetSchema = z.union([z.literal(15), z.literal(30)]);
 
 export async function generateBScript(
   db: Db,
-  opts: { businessId: string; personaId: string; structureId: string; targetSeconds?: number },
+  opts: {
+    businessId: string;
+    personaId: string;
+    structureId: string;
+    /** Rough free-text notes from the customer on what the avatar should say. */
+    pointers?: string;
+    /** Target video length in seconds; 15 or 30. */
+    durationPreset?: number;
+  },
 ): Promise<Script> {
   const questionnaire = await requireQuestionnaire(db, opts.businessId);
-  const targetSeconds = opts.targetSeconds ?? 30;
+  const durationPreset = durationPresetSchema.parse(opts.durationPreset ?? 30);
+  const pointers = opts.pointers?.trim() || undefined;
 
   const personaRows = await db
     .select()
@@ -237,7 +249,7 @@ export async function generateBScript(
   if (!structure) throw new Error(`structure ${opts.structureId} not found`);
 
   const wps = await wordsPerSecond(db, persona.voiceId);
-  const wordBudget = Math.floor(targetSeconds * wps);
+  const wordBudget = Math.floor(durationPreset * wps);
 
   let text: string;
   let promptVersion = "dry_run";
@@ -254,9 +266,10 @@ export async function generateBScript(
         questionnaire: JSON.stringify(questionnaire, null, 2),
         persona: JSON.stringify({ name: persona.name, ...(persona.identity as object) }),
         skeleton: JSON.stringify(structure.skeleton, null, 2),
+        pointers: pointers ?? "(אין — התבסס על השאלון בלבד)",
         word_budget: wordBudget,
         words_per_second: wps,
-        target_seconds: targetSeconds,
+        duration_preset: durationPreset,
       },
       scriptOutput,
     );
@@ -272,11 +285,23 @@ export async function generateBScript(
       structureId: opts.structureId,
       kind: "b_script",
       text,
-      params: { targetSeconds, wordBudget },
+      params: { pointers, durationPreset, wordBudget },
       promptVersion,
     })
     .returning();
   return rows[0]!;
+}
+
+/**
+ * Reject text over the word budget. The web edit path ("write it myself" /
+ * post-generation edits) calls this before updateScriptText, so an oversized
+ * script never reaches TTS.
+ */
+export function assertWithinWordBudget(text: string, wordBudget: number): void {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  if (words > wordBudget) {
+    throw new Error(`התסריט ארוך מדי: ${words} מילים, המקסימום הוא ${wordBudget}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

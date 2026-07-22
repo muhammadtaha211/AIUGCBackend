@@ -31,6 +31,7 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 8. Service B renders go through the QC-release queue (`qc_pending → released/rejected`) before the customer sees them. Auto-release is a config flag, not a code path to build around.
 9. All output video: vertical 9:16, 1080×1920, H.264 MP4. All user-facing copy: Hebrew.
 10. Boring tech, minimal moving parts. No new infrastructure, framework, or paid service without the founder asking for it.
+11. Runtime image generation (nano-banana composites) is founder-approved for Service B product-in-hand composites only. The Service A hook-bank rule (#2 — no runtime face/video generation for hooks) is untouched.
 
 ## How to work — every task
 

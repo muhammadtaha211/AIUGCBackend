@@ -22,7 +22,7 @@ export interface Storage {
 
 export function storageKey(parts: {
   businessId?: string;
-  entity: "demo" | "hook_clip" | "persona_clip" | "audio" | "video" | "thumb";
+  entity: "demo" | "hook_clip" | "persona_clip" | "audio" | "video" | "thumb" | "composite";
   id: string;
   filename: string;
 }): string {

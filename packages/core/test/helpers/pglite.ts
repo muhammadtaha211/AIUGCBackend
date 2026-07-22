@@ -10,7 +10,12 @@ const MIGRATIONS_DIR = fileURLToPath(new URL("../../../../supabase/migrations/",
 
 // 0002_supabase_rls.sql is deliberately absent: it references the Supabase
 // auth schema, which only exists on Supabase.
-const PORTABLE_MIGRATIONS = ["0000_init.sql", "0001_extras_and_seed.sql"];
+const PORTABLE_MIGRATIONS = [
+  "0000_init.sql",
+  "0001_extras_and_seed.sql",
+  "0003_composites_and_images.sql",
+  "0004_image_config_seed.sql",
+];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */
 export async function createTestDb(): Promise<{ db: Db; pg: PGlite }> {

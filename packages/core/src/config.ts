@@ -39,6 +39,7 @@ export const dailyCapsSchema = z.object({
   tts_chars: z.number().int(),
   gpu_seconds: z.number().int(),
   llm_tokens: z.number().int(),
+  images: z.number().int(),
 });
 
 export const retentionDaysSchema = z.object({

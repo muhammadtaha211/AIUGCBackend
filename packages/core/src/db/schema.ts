@@ -36,6 +36,13 @@ export const scriptKind = pgEnum("script_kind", [
 
 export const audioStatus = pgEnum("audio_status", ["queued", "generating", "ready", "failed"]);
 
+export const compositeStatus = pgEnum("composite_status", [
+  "queued",
+  "generating",
+  "ready",
+  "failed",
+]);
+
 export const alignmentSource = pgEnum("alignment_source", ["elevenlabs", "whisperx"]);
 
 export const serviceKind = pgEnum("service_kind", ["a", "b"]);
@@ -55,7 +62,7 @@ export const errorClass = pgEnum("error_class", ["transient", "permanent", "budg
 
 export const usageProvider = pgEnum("usage_provider", ["anthropic", "elevenlabs", "fal"]);
 
-export const usageKind = pgEnum("usage_kind", ["llm_tokens", "tts_chars", "gpu_seconds"]);
+export const usageKind = pgEnum("usage_kind", ["llm_tokens", "tts_chars", "gpu_seconds", "images"]);
 
 export const subscriptionStatus = pgEnum("subscription_status", [
   "active",
@@ -173,6 +180,30 @@ export const personaClips = pgTable("persona_clips", {
   kind: text("kind").notNull().default("base"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Product-in-hand composites (Service B, physical products only): a generated
+// image of a persona holding the customer's product. The approved image becomes
+// the single-image InfiniteTalk source instead of the persona base clip.
+export const composites = pgTable(
+  "composites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    personaId: uuid("persona_id")
+      .notNull()
+      .references(() => personas.id),
+    productImagePath: text("product_image_path"),
+    outputPath: text("output_path"),
+    status: compositeStatus("status").notNull().default("queued"),
+    // The hard gate, same as audio: lipsync refuses composites without approved_at.
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("composites_business_idx").on(t.businessId)],
+);
 
 export const structures = pgTable("structures", {
   id: uuid("id").primaryKey().defaultRandom(),

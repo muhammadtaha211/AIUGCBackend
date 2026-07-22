@@ -9,6 +9,7 @@ import { getEnv } from "../config";
 import type { Db } from "../db";
 import {
   audioRenders,
+  composites,
   demos,
   hookClips,
   personaClips,
@@ -57,17 +58,35 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       if (!audio?.filePath) throw new PermanentError("audio render has no file");
       if (!audio.approvedAt) throw new PermanentError("audio is not approved (hard gate)");
 
-      const clip = (
-        await ctx.db
-          .select()
-          .from(personaClips)
-          .where(eq(personaClips.id, params.personaClipId!))
-          .limit(1)
-      )[0];
-      if (!clip) throw new PermanentError("persona clip not found");
+      // Source: approved composite (single-image mode) or persona base clip.
+      let source: { videoUrl?: string; imageUrl?: string };
+      if (params.compositeId) {
+        const composite = (
+          await ctx.db
+            .select()
+            .from(composites)
+            .where(eq(composites.id, params.compositeId))
+            .limit(1)
+        )[0];
+        if (!composite?.outputPath) throw new PermanentError("composite has no output image");
+        if (!composite.approvedAt) {
+          throw new PermanentError("composite is not approved (hard gate)");
+        }
+        source = { imageUrl: await storage.signedUrl(composite.outputPath, 3600) };
+      } else {
+        const clip = (
+          await ctx.db
+            .select()
+            .from(personaClips)
+            .where(eq(personaClips.id, params.personaClipId!))
+            .limit(1)
+        )[0];
+        if (!clip) throw new PermanentError("persona clip not found");
+        source = { videoUrl: await storage.signedUrl(clip.filePath, 3600) };
+      }
 
       const { providerJobId } = await provider.submit({
-        videoUrl: await storage.signedUrl(clip.filePath, 3600),
+        ...source,
         audioUrl: await storage.signedUrl(audio.filePath, 3600),
       });
       await recordUsage(ctx.db, {
@@ -125,7 +144,7 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
     const props =
       render.service === "a"
         ? await buildServiceAProps(ctx.db, render, localDir)
-        : await buildServiceBProps(render, localDir);
+        : await buildServiceBProps(ctx.db, render, localDir);
 
     const outPath = path.join(localDir, "final.mp4");
     await renderVideo(props, outPath);
@@ -245,11 +264,24 @@ async function buildServiceAProps(
 }
 
 async function buildServiceBProps(
+  db: Db,
   render: typeof videoRenders.$inferSelect,
   localDir: string,
 ): Promise<RenderVideoProps> {
   const params = render.params as VariantParams;
   if (!params.lipsyncUrl) throw new PermanentError("service B render has no lipsync output yet");
+
+  // Same karaoke chunks the voiced Service A variant burns (chunkWords output
+  // stored on the audio render). A talking head without captions is not a
+  // shippable ad — missing timestamps fail the render rather than degrade it.
+  const audio = (
+    await db.select().from(audioRenders).where(eq(audioRenders.id, params.audioRenderId!)).limit(1)
+  )[0];
+  if (!audio?.approvedAt) throw new PermanentError("audio is not approved (hard gate)");
+  if (!audio.wordTimestamps) {
+    throw new PermanentError("audio render is missing word timestamps");
+  }
+  const captions = audio.wordTimestamps as CaptionChunk[];
 
   const talkingHeadPath = path.join(localDir, "talking-head.mp4");
   if (params.lipsyncUrl.startsWith("dryrun://")) {
@@ -264,7 +296,7 @@ async function buildServiceBProps(
     kind: "service_b",
     talkingHeadPath,
     brollPaths: [], // product B-roll cutaways: wired when the composition lands
-    captions: [],
+    captions,
     watermark: render.watermarked,
   };
 }

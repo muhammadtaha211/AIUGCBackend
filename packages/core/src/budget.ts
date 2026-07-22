@@ -4,7 +4,7 @@ import type { Db } from "./db";
 import { appConfig, usageEvents } from "./db/schema";
 import { BudgetError } from "./jobs/errors";
 
-export type UsageKind = "llm_tokens" | "tts_chars" | "gpu_seconds";
+export type UsageKind = "llm_tokens" | "tts_chars" | "gpu_seconds" | "images";
 export type UsageProvider = "anthropic" | "elevenlabs" | "fal";
 
 /**

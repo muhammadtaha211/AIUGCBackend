@@ -19,6 +19,47 @@ describe("migrations", () => {
     await pg.close();
   });
 
+  it("0003/0004: composites table, images usage kind, image config seeds", async () => {
+    const { db, pg } = await createTestDb();
+
+    const [user] = await db
+      .insert(schema.users)
+      .values({ email: "founder@test.local" })
+      .returning();
+    const [biz] = await db
+      .insert(schema.businesses)
+      .values({ ownerUserId: user!.id, name: "Test Biz" })
+      .returning();
+    const [persona] = await db
+      .insert(schema.personas)
+      .values({ name: "נועה", voiceId: "voice_noa" })
+      .returning();
+
+    const [composite] = await db
+      .insert(schema.composites)
+      .values({ businessId: biz!.id, personaId: persona!.id })
+      .returning();
+    expect(composite!.status).toBe("queued");
+    expect(composite!.approvedAt).toBeNull();
+
+    // The usage_kind enum accepts the new "images" value.
+    await db.insert(schema.usageEvents).values({ provider: "fal", kind: "images", quantity: 1 });
+
+    const caps = await db
+      .select()
+      .from(schema.appConfig)
+      .where(eq(schema.appConfig.key, "daily_caps"));
+    expect(caps[0]?.value).toMatchObject({ images: expect.any(Number) });
+
+    const cost = await db
+      .select()
+      .from(schema.appConfig)
+      .where(eq(schema.appConfig.key, "imagegen_cost_agorot"));
+    expect(cost[0]?.value).toEqual(expect.any(Number));
+
+    await pg.close();
+  });
+
   it("enforce the circular sets -> video_renders FK from 0001", async () => {
     const { db, pg } = await createTestDb();
 

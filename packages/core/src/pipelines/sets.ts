@@ -6,6 +6,7 @@ import type { Db } from "../db";
 import {
   audioRenders,
   businesses,
+  composites,
   demos,
   events,
   sets,
@@ -41,6 +42,8 @@ export interface VariantParams {
   audioRenderId?: string;
   /** Service B: */
   personaClipId?: string;
+  /** Approved product-in-hand composite — switches lipsync to single-image mode. */
+  compositeId?: string;
   lipsyncUrl?: string;
 }
 
@@ -178,10 +181,19 @@ export async function moreLikeThis(
   });
 }
 
-/** Service B render: lip-sync first, then assembly; lands in the QC queue. */
+/**
+ * Service B render: lip-sync first, then assembly; lands in the QC queue.
+ * Source is either a persona base clip (video-to-video) or an approved
+ * product-in-hand composite (single-image mode).
+ */
 export async function createBRender(
   db: Db,
-  opts: { businessId: string; audioRenderId: string; personaClipId: string },
+  opts: {
+    businessId: string;
+    audioRenderId: string;
+    personaClipId?: string;
+    compositeId?: string;
+  },
 ) {
   const audio = await db
     .select()
@@ -189,6 +201,22 @@ export async function createBRender(
     .where(eq(audioRenders.id, opts.audioRenderId))
     .limit(1);
   if (!audio[0]?.approvedAt) throw new Error("audio must be approved before rendering (hard gate)");
+
+  if (!opts.personaClipId && !opts.compositeId) {
+    throw new Error("either personaClipId or compositeId is required");
+  }
+  if (opts.compositeId) {
+    const composite = await db
+      .select()
+      .from(composites)
+      .where(eq(composites.id, opts.compositeId))
+      .limit(1);
+    if (!composite[0]) throw new Error(`composite ${opts.compositeId} not found`);
+    // The hard gate, same as audio: never lipsync an unapproved composite.
+    if (!composite[0].approvedAt) {
+      throw new Error("composite must be approved before rendering (hard gate)");
+    }
+  }
 
   const { watermarked, chargeCredits } = await enforceQuota(db, opts.businessId, 1, "b");
   const costs = await getConfigValue(db, "credit_costs", creditCostsSchema);
@@ -198,7 +226,11 @@ export async function createBRender(
     .values({
       businessId: opts.businessId,
       service: "b",
-      params: { audioRenderId: opts.audioRenderId, personaClipId: opts.personaClipId },
+      params: {
+        audioRenderId: opts.audioRenderId,
+        personaClipId: opts.personaClipId,
+        compositeId: opts.compositeId,
+      },
       watermarked,
     })
     .returning();

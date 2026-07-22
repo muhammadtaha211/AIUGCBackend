@@ -7,6 +7,8 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 - `0000_init.sql` — generated DDL (all tables, enums, indexes, FKs)
 - `0001_extras_and_seed.sql` — portable extras (circular FK, partial unique index) + seed rows
 - `0002_supabase_rls.sql` — **Supabase-only** (auth trigger + RLS); skipped on PGlite/plain PG
+- `0003_composites_and_images.sql` — generated: composites table + `images` usage kind
+- `0004_image_config_seed.sql` — hand-written: `images` daily cap + `imagegen_cost_agorot`
 
 ## Design rules
 
@@ -41,6 +43,11 @@ tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become 
   `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`.
 - **personas** / **persona_clips** — identity jsonb, pinned ElevenLabs `voice_id`; base clips as
   separate rows (a persona accumulates looks/angles).
+- **composites** — product-in-hand images (Service B, `category === "physical_product"` only):
+  business, persona, product photo path, generated output path, status
+  `queued→generating→ready|failed`, and **`approved_at`** — a hard gate exactly like audio:
+  lipsync refuses composites without it. The approved image becomes the single-image
+  InfiniteTalk source instead of the persona base clip.
 - **structures** — the weekly "clonable winners" menu: `skeleton jsonb` (beat outline + script
   skeleton), persona-fit tags, source ref, week.
 - **sounds** — weekly curated trending list (metadata only; sounds are attached natively at post
@@ -77,8 +84,8 @@ tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become 
 - **jobs** — see [02-jobs.md](02-jobs.md). `idempotency_key` UNIQUE; `state jsonb` checkpoints
   external side effects (e.g. the fal request id); `(status, run_at)` index drives the claim.
 - **usage_events** — one row per external call: provider, kind (`llm_tokens|tts_chars|
-gpu_seconds`), quantity, cost estimate in agorot, job/business refs. Feeds the rolling-24h
-  spend caps and any future per-business analytics.
+gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feeds the
+  rolling-24h spend caps and any future per-business analytics.
 
 ### Billing (details in [05-billing.md](05-billing.md))
 
@@ -98,9 +105,10 @@ gpu_seconds`), quantity, cost estimate in agorot, job/business refs. Feeds the r
 
 - **events** — append-only analytics: `star` (with the variant's params — the platform's
   format-performance data), `qc_release`, `qc_reject`, `content_policy_flag`.
-- **app_config** — key/value jsonb knobs (all seeded in 0001): `auto_release_b`, `daily_caps`,
-  `words_per_second` (per voice, calibrated once with test renders), `retention_days`,
-  `audio_preview_daily_limit`, `credit_costs`, `dunning`.
+- **app_config** — key/value jsonb knobs (seeded in 0001/0004): `auto_release_b`, `daily_caps`
+  (now including `images`), `words_per_second` (per voice, calibrated once with test renders),
+  `retention_days`, `audio_preview_daily_limit`, `credit_costs`, `dunning`,
+  `imagegen_cost_agorot` (per-image cost estimate; a fal price change is an UPDATE here).
 
 ## Row-level security (0002, Supabase only)
 
