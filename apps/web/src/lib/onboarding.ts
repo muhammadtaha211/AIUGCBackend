@@ -3,8 +3,8 @@
  * material lives here; the demo video is uploaded after sign-in.
  *
  * Field names mirror `questionnaireSchema` in packages/core/src/pipelines/businesses.ts
- * (product_name, what_it_does, features, target_audience, tone, link); a completed draft
- * maps onto it 1:1 when the backend is wired.
+ * (category, product_name, what_it_does, advantages, target_audience, tone, link); a completed
+ * draft maps onto it 1:1 when the backend is wired.
  */
 
 export type BusinessType = "physical" | "app" | "service" | "other";

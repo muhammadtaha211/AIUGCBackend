@@ -5,11 +5,13 @@ import { businesses, users } from "../db/schema";
 
 /** The "caption once" asset — every piece of generated copy derives from this. */
 export const questionnaireSchema = z.object({
+  category: z.enum(["app_or_digital", "physical_product", "local_service", "other"]),
   product_name: z.string().min(1),
   what_it_does: z.string().min(1),
-  features: z.array(z.string().min(1)).min(1).max(8),
+  advantages: z.array(z.string().min(1)).min(1).max(8),
   target_audience: z.string().min(1),
-  tone: z.string().optional(),
+  // Ad style key only — Hebrew labels live in the UI layer.
+  tone: z.enum(["friendly", "direct", "professional"]),
   link: z.string().optional(),
 });
 

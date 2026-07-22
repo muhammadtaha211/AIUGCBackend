@@ -23,7 +23,7 @@ aiugc work --once                                      # renders -> released, fi
 aiugc status                                           # paths to final.mp4
 
 # voiced variant
-aiugc copy vo --business <bizId> --demo <demoId> --features "משלוח מהיר"
+aiugc copy vo --business <bizId> --demo <demoId> --advantages "משלוח מהיר"
 aiugc tts <scriptId> --voice <voiceId>
 aiugc work --once && <listen to the mp3>
 aiugc audio approve <audioRenderId>                    # the hard gate

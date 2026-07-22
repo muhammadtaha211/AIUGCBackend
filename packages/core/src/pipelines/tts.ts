@@ -162,7 +162,7 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
         const ratio = durationMs / demoDurationMs;
         const params = script.params as {
           wordBudget?: number;
-          selectedFeatures?: string[];
+          selectedAdvantages?: string[];
           voiceId?: string;
         };
 
@@ -181,7 +181,7 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
           const newScript = await generateVoScript(ctx.db, {
             businessId: script.businessId,
             demoId: script.demoId!,
-            selectedFeatures: params.selectedFeatures ?? [],
+            selectedAdvantages: params.selectedAdvantages ?? [],
             voiceId: params.voiceId,
             wordBudgetOverride: newBudget,
           });

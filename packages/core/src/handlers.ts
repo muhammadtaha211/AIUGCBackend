@@ -19,7 +19,7 @@ async function handleGenerateCopy(job: Job, ctx: JobContext): Promise<JobResult>
     businessId: string;
     demoId?: string;
     n?: number;
-    selectedFeatures?: string[];
+    selectedAdvantages?: string[];
     voiceId?: string;
     personaId?: string;
     structureId?: string;
@@ -40,7 +40,7 @@ async function handleGenerateCopy(job: Job, ctx: JobContext): Promise<JobResult>
       await generateVoScript(ctx.db, {
         businessId: payload.businessId,
         demoId: payload.demoId!,
-        selectedFeatures: payload.selectedFeatures ?? [],
+        selectedAdvantages: payload.selectedAdvantages ?? [],
         voiceId: payload.voiceId,
       });
       break;

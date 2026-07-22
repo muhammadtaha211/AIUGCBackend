@@ -157,8 +157,8 @@ export async function generateVoScript(
   opts: {
     businessId: string;
     demoId: string;
-    /** Questionnaire features the user ticked as visible in the footage. */
-    selectedFeatures: string[];
+    /** Questionnaire advantages the user ticked as visible in the footage. */
+    selectedAdvantages: string[];
     voiceId?: string;
     /** Override for the length-fit regeneration path. */
     wordBudgetOverride?: number;
@@ -184,7 +184,7 @@ export async function generateVoScript(
       "vo_script",
       {
         questionnaire: JSON.stringify(questionnaire, null, 2),
-        selected_features: opts.selectedFeatures.map((f) => `- ${f}`).join("\n"),
+        selected_advantages: opts.selectedAdvantages.map((a) => `- ${a}`).join("\n"),
         demo_seconds: demoSeconds,
         word_budget: wordBudget,
         words_per_second: wps,
@@ -202,7 +202,7 @@ export async function generateVoScript(
       demoId: opts.demoId,
       kind: "vo_script",
       text,
-      params: { selectedFeatures: opts.selectedFeatures, wordBudget, voiceId: opts.voiceId },
+      params: { selectedAdvantages: opts.selectedAdvantages, wordBudget, voiceId: opts.voiceId },
       promptVersion,
     })
     .returning();

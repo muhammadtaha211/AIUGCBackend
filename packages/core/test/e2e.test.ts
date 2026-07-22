@@ -93,10 +93,12 @@ describe("founder workflow (dry-run, end to end)", () => {
     });
     businessId = business.id;
     await setQuestionnaire(db, businessId, {
+      category: "local_service",
       product_name: "מסעדת הבית",
       what_it_does: "אוכל ביתי במשלוח עד הבית",
-      features: ["משלוח תוך 30 דקות", "תפריט מתחלף יומי", "מחיר קבוע"],
+      advantages: ["משלוח תוך 30 דקות", "תפריט מתחלף יומי", "מחיר קבוע"],
       target_audience: "משפחות עסוקות",
+      tone: "friendly",
     });
 
     const demo = await createDemo(db, { businessId, filePath: tempFile("demo.mp4") });
@@ -158,7 +160,7 @@ describe("founder workflow (dry-run, end to end)", () => {
       const script = await generateVoScript(db, {
         businessId,
         demoId,
-        selectedFeatures: ["משלוח תוך 30 דקות"],
+        selectedAdvantages: ["משלוח תוך 30 דקות"],
       });
       const audio = await requestAudio(db, { scriptId: script.id, voiceId: "voice_test" });
       await drainAll();

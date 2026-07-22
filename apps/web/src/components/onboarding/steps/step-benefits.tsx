@@ -6,7 +6,7 @@ import { TextField } from "@/components/ui/field";
 import type { BusinessType } from "@/lib/onboarding";
 import { StepHeader } from "./step-chrome";
 
-/** questionnaireSchema allows up to 8 features. */
+/** questionnaireSchema allows up to 8 advantages. */
 const MAX_BENEFITS = 8;
 
 const EXAMPLES: Record<BusinessType | "default", string[]> = {

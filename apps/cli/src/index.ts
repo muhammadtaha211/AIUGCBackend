@@ -144,14 +144,17 @@ copy
   .command("vo")
   .requiredOption("--business <id>")
   .requiredOption("--demo <id>")
-  .requiredOption("--features <list>", "comma-separated questionnaire features visible in footage")
+  .requiredOption(
+    "--advantages <list>",
+    "comma-separated questionnaire advantages visible in footage",
+  )
   .option("--voice <voiceId>")
   .action(
-    run(async (opts: { business: string; demo: string; features: string; voice?: string }) => {
+    run(async (opts: { business: string; demo: string; advantages: string; voice?: string }) => {
       const row = await generateVoScript(getDb(), {
         businessId: opts.business,
         demoId: opts.demo,
-        selectedFeatures: csv(opts.features),
+        selectedAdvantages: csv(opts.advantages),
         voiceId: opts.voice,
       });
       console.log(`vo script: ${row.id}\n${row.text}`);
