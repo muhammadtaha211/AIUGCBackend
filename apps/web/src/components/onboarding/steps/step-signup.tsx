@@ -15,7 +15,10 @@ type StepSignupProps = {
   whatItDoes: string;
   benefitCount: number;
   audience: string;
-  onDone: (email: string) => void;
+  /** Surfaced when a signed-in return visit failed to save the draft. */
+  initialError?: string | null;
+  /** Persists the draft; resolves to a Hebrew error, or null when navigating away. */
+  onDone: () => Promise<string | null>;
   onBack: () => void;
 };
 
@@ -24,6 +27,7 @@ export function StepSignup({
   whatItDoes,
   benefitCount,
   audience,
+  initialError,
   onDone,
   onBack,
 }: StepSignupProps) {
@@ -31,6 +35,7 @@ export function StepSignup({
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string; confirm?: string }>({});
+  const [formError, setFormError] = useState<string | null>(initialError ?? null);
   const [submitting, setSubmitting] = useState<"email" | "google" | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {
@@ -42,15 +47,30 @@ export function StepSignup({
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
+    setFormError(null);
     setSubmitting("email");
-    await signUp(email.trim(), password);
-    onDone(email.trim());
+    const result = await signUp(email.trim(), password);
+    if (!result.ok) {
+      setFormError(result.error);
+      setSubmitting(null);
+      return;
+    }
+    const doneError = await onDone();
+    if (doneError) {
+      setFormError(doneError);
+      setSubmitting(null);
+    }
   }
 
   async function handleGoogle() {
+    setFormError(null);
     setSubmitting("google");
+    // On success the browser navigates to Google — we only return on failure.
     const result = await signUpWithGoogle();
-    onDone(result.email);
+    if (!result.ok) {
+      setFormError(result.error);
+      setSubmitting(null);
+    }
   }
 
   const recap = [
@@ -79,6 +99,15 @@ export function StepSignup({
       </ul>
 
       <div className="mt-6">
+        {formError && (
+          <p
+            role="alert"
+            className="mb-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
+          >
+            {formError}
+          </p>
+        )}
+
         <Button
           type="button"
           variant="secondary"

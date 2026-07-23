@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { GoogleG } from "@/components/ui/icons";
-import { signIn } from "@/lib/auth";
+import { signIn, signUpWithGoogle } from "@/lib/auth";
+import { clearDraft, loadDraft } from "@/lib/onboarding";
 
 export function LoginForm() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,16 +24,38 @@ export function LoginForm() {
     setError(null);
     setSubmitting("email");
     const result = await signIn(email.trim(), password);
-    setSubmitting(null);
-    if (!result.ok) setError(result.error);
+    if (!result.ok) {
+      setSubmitting(null);
+      setError(result.error);
+      return;
+    }
+    // A wizard draft left from before the account existed: finish it now.
+    // The server is idempotent — existing owners just get their business back.
+    const draft = loadDraft();
+    if (draft) {
+      try {
+        const response = await fetch("/api/onboarding/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(draft),
+        });
+        if (response.ok) clearDraft();
+      } catch {
+        // Leave the draft in place; /home works without it.
+      }
+    }
+    router.push("/home");
   }
 
   async function handleGoogle() {
     setError(null);
     setSubmitting("google");
-    const result = await signIn("", "");
-    setSubmitting(null);
-    if (!result.ok) setError(result.error);
+    // On success the browser navigates to Google — we only return on failure.
+    const result = await signUpWithGoogle();
+    if (!result.ok) {
+      setSubmitting(null);
+      setError(result.error);
+    }
   }
 
   return (

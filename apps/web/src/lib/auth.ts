@@ -1,59 +1,93 @@
 /**
- * Auth stub — the UI is final, the wiring isn't.
- * TODO: replace with Supabase Auth (auth.signUp / signInWithPassword /
- * signInWithOAuth) once the Supabase project exists. Keep the same signatures.
+ * Supabase Auth wrappers for the browser. Session state lives only in the
+ * Supabase auth cookies (@supabase/ssr) — no local session storage.
+ * Every failure surfaces as a Hebrew message the forms can show inline.
  */
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { isAuthApiError } from "@supabase/supabase-js";
+import { createClient } from "./supabase/client";
 
-export async function signUp(_email: string, _password: string): Promise<{ ok: true }> {
-  await delay(900);
-  return { ok: true };
-}
+export type AuthResult = { ok: true } | { ok: false; error: string };
 
-export async function signUpWithGoogle(): Promise<{ ok: true; email: string }> {
-  await delay(700);
-  return { ok: true, email: "" };
-}
+const GENERIC_ERROR = "משהו השתבש. נסו שוב בעוד רגע.";
 
-export async function signIn(
-  _email: string,
-  _password: string,
-): Promise<{ ok: false; error: string }> {
-  await delay(700);
-  // No accounts exist yet — every attempt honestly fails.
-  return { ok: false, error: "לא מצאנו חשבון עם הפרטים האלה." };
-}
-
-/** Dev session — localStorage stand-in for a real auth session, same TODO as above. */
-
-export type Session = { email: string };
-
-const SESSION_KEY = "aiugc.session.v1";
-
-export function saveSession(email: string): void {
-  try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ email }));
-  } catch {
-    // Storage unavailable — the redirect still happens, the session just won't persist.
+/** Map Supabase auth error codes to inline Hebrew messages. */
+function hebrewAuthError(error: unknown): string {
+  const code = isAuthApiError(error) ? error.code : undefined;
+  switch (code) {
+    case "invalid_credentials":
+      return "לא מצאנו חשבון עם הפרטים האלה.";
+    case "user_already_exists":
+    case "email_exists":
+      return "כבר קיים חשבון עם האימייל הזה — אפשר פשוט להיכנס.";
+    case "email_not_confirmed":
+      return "האימייל עוד לא אושר — בדקו את תיבת הדואר שלכם.";
+    case "over_request_rate_limit":
+    case "over_email_send_rate_limit":
+      return "יותר מדי ניסיונות — חכו רגע ונסו שוב.";
+    case "weak_password":
+      return "הסיסמה חלשה מדי — נסו סיסמה ארוכה יותר.";
+    case "validation_failed":
+      return "כתובת המייל לא נראית תקינה.";
+    case "email_provider_disabled":
+    case "signup_disabled":
+      return "ההרשמה באימייל כבויה כרגע — צריך להפעיל את ספק ה־Email בהגדרות Supabase.";
+    default:
+      return GENERIC_ERROR;
   }
 }
 
-export function loadSession(): Session | null {
+export async function signUp(email: string, password: string): Promise<AuthResult> {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Session>;
-    return typeof parsed.email === "string" ? { email: parsed.email } : null;
+    const { data, error } = await createClient().auth.signUp({ email, password });
+    if (error) return { ok: false, error: hebrewAuthError(error) };
+    if (!data.session) {
+      // Email confirmation is enabled in the dashboard — no session yet.
+      return { ok: false, error: "שלחנו מייל אישור. אשרו אותו ואז היכנסו דרך מסך הכניסה." };
+    }
+    return { ok: true };
   } catch {
-    return null;
+    return { ok: false, error: GENERIC_ERROR };
   }
 }
 
-export function clearSession(): void {
+export async function signIn(email: string, password: string): Promise<AuthResult> {
   try {
-    localStorage.removeItem(SESSION_KEY);
+    const { error } = await createClient().auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: hebrewAuthError(error) };
+    return { ok: true };
   } catch {
-    // Nothing to clean up if storage is unavailable.
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Google OAuth (PKCE). On success the browser navigates away to Google and
+ * comes back through /auth/callback — this only returns when something failed
+ * (e.g. the provider isn't configured in the Supabase dashboard yet).
+ */
+export async function signUpWithGoogle(): Promise<AuthResult> {
+  try {
+    const { error } = await createClient().auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) {
+      return {
+        ok: false,
+        error: "ההתחברות עם Google לא זמינה כרגע — אפשר להמשיך עם אימייל וסיסמה.",
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+export async function signOut(): Promise<void> {
+  try {
+    await createClient().auth.signOut();
+  } catch {
+    // Cookies are cleared locally even if the network call fails.
   }
 }

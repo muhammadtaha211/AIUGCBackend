@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveSession } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/client";
 import {
   clearDraft,
   emptyDraft,
@@ -49,16 +49,50 @@ function ProgressHeader({ value }: { value: number }) {
   );
 }
 
+/** POST the draft to the server; resolves to a Hebrew error, or null on success. */
+async function postDraft(draft: OnboardingDraft): Promise<string | null> {
+  try {
+    const response = await fetch("/api/onboarding/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    if (!response.ok) return body?.error ?? "השמירה נכשלה. נסו שוב בעוד רגע.";
+    return null;
+  } catch {
+    return "בעיית תקשורת — בדקו את החיבור ונסו שוב.";
+  }
+}
+
 export function OnboardingFlow() {
   const router = useRouter();
   const [draft, setDraft] = useState<OnboardingDraft>(emptyDraft);
   const [hydrated, setHydrated] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = loadDraft();
     if (saved) setDraft(saved);
-    setHydrated(true);
-  }, []);
+
+    // Returning from the OAuth redirect (or already signed in) with a finished
+    // draft: persist it server-side and land on the homepage — no wizard flash.
+    (async () => {
+      if (saved && saved.step === STEPS.length - 1) {
+        const { data } = await createClient().auth.getSession();
+        if (data.session) {
+          const error = await postDraft(saved);
+          if (error === null) {
+            clearDraft();
+            router.replace("/home");
+            return;
+          }
+          setCompletionError("החשבון מחובר אבל השמירה נכשלה — רעננו את העמוד כדי לנסות שוב.");
+        }
+      }
+      setHydrated(true);
+    })();
+  }, [router]);
 
   useEffect(() => {
     if (hydrated) saveDraft(draft);
@@ -80,11 +114,13 @@ export function OnboardingFlow() {
     }));
   }
 
-  /** Signup done: open the dev session, drop the draft, land on the homepage. */
-  function completeSignup(email: string) {
-    saveSession(email);
+  /** Account exists (password or OAuth): persist the draft, land on the homepage. */
+  async function completeSignup(): Promise<string | null> {
+    const error = await postDraft(draft);
+    if (error) return error;
     clearDraft();
     router.push("/home");
+    return null;
   }
 
   const stepId = STEPS[draft.step] ?? "business";
@@ -141,6 +177,7 @@ export function OnboardingFlow() {
             whatItDoes={draft.whatItDoes}
             benefitCount={draft.benefits.filter((benefit) => benefit.trim()).length}
             audience={draft.audience}
+            initialError={completionError}
             onDone={completeSignup}
             onBack={() => goTo(3)}
           />

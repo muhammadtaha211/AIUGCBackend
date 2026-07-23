@@ -24,7 +24,7 @@ prompts/               Versioned Claude prompt files: prompts/<name>/v<N>.md
 packages/core/         ALL business logic: db, jobs, providers, pipelines, config
 apps/cli/              `aiugc` CLI — thin wrapper over core
 apps/worker/           Job loop — thin wrapper over core
-apps/web/              Next.js self-serve app — onboarding-first, runs keyless (PGlite + dev auth)
+apps/web/              Next.js self-serve app — onboarding-first, Supabase Auth (needs apps/web/.env.local)
 ```
 
 ## Quickstart

@@ -4,7 +4,7 @@
  *
  * Field names mirror `questionnaireSchema` in packages/core/src/pipelines/businesses.ts
  * (category, product_name, what_it_does, advantages, target_audience, tone, link); a completed
- * draft maps onto it 1:1 when the backend is wired.
+ * draft maps onto it via `draftToQuestionnairePayload` below.
  */
 
 export type BusinessType = "physical" | "app" | "service" | "other";
@@ -63,6 +63,31 @@ export const TONE_LABELS: Record<Tone, { title: string; description: string }> =
   direct: { title: "ישיר ותכליתי", description: "ישר לעניין — מה המוצר ולמה עכשיו" },
   professional: { title: "מקצועי ואמין", description: "רציני ומרגיע, בגובה העיניים" },
 };
+
+/**
+ * Map a draft onto the core questionnaire payload. Pure and permissive —
+ * missing answers become empty values the server-side `questionnaireSchema`
+ * re-validation rejects with a Hebrew 400.
+ */
+const CATEGORY_BY_BUSINESS_TYPE: Record<BusinessType, string> = {
+  physical: "physical_product",
+  app: "app_or_digital",
+  service: "local_service",
+  other: "other",
+};
+
+export function draftToQuestionnairePayload(draft: OnboardingDraft): Record<string, unknown> {
+  const link = draft.link.trim();
+  return {
+    category: draft.businessType ? CATEGORY_BY_BUSINESS_TYPE[draft.businessType] : "",
+    product_name: draft.productName.trim(),
+    what_it_does: draft.whatItDoes.trim(),
+    advantages: draft.benefits.map((benefit) => benefit.trim()).filter((b) => b.length > 0),
+    target_audience: draft.audience.trim(),
+    tone: draft.tone ?? "",
+    ...(link ? { link } : {}),
+  };
+}
 
 const STORAGE_KEY = "aiugc.onboarding.v1";
 

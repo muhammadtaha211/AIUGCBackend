@@ -1,7 +1,11 @@
 # apps/web — Self-serve web app: onboarding-first design
 
-Date: 2026-07-16. Status: implemented (built autonomously from the founder's brief; this doc
-records the decisions for review).
+Date: 2026-07-16. Status: superseded on 2026-07-23 — the driver pattern below (dev/supabase auth
+drivers, HMAC cookie session, PGlite web db, /dashboard, api/auth/\*) was removed when the real
+Supabase project came online. apps/web now uses Supabase Auth via @supabase/ssr (cookie sessions),
+POST /api/onboarding/complete persists the wizard draft through core (`createBusiness` +
+`setQuestionnaire`, owner row resolved by auth uid), and /home replaces /dashboard. The onboarding
+UX described here still applies as redesigned in 2026-07-18-onboarding-editorial-redesign-design.md.
 
 ## Goal
 
