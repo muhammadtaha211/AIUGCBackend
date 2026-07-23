@@ -9,7 +9,9 @@ const INVALID_MESSAGE = "חסרים פרטים בשאלון — חזרו למס�
 /**
  * Persist the wizard draft: users row (id = auth uid) -> business ->
  * questionnaire, via the same core functions the CLI uses. Idempotent — an
- * existing owner gets their business back and nothing is created.
+ * existing owner gets their business back and nothing is created — unless the
+ * body carries allowCreate: true (the signed-in "הוסף עסק" wizard), which
+ * creates an additional business for the same owner.
  */
 export async function POST(request: Request) {
   const supabase = await createServerSupabase();
@@ -27,8 +29,10 @@ export async function POST(request: Request) {
   }
 
   let payload: Record<string, unknown>;
+  let allowCreate = false;
   try {
-    const body = (await request.json()) as Partial<OnboardingDraft>;
+    const body = (await request.json()) as Partial<OnboardingDraft> & { allowCreate?: boolean };
+    allowCreate = body.allowCreate === true;
     payload = draftToQuestionnairePayload({ ...emptyDraft, ...body });
   } catch {
     return NextResponse.json({ ok: false, error: INVALID_MESSAGE }, { status: 400 });
@@ -53,13 +57,16 @@ export async function POST(request: Request) {
     }
 
     // Idempotent: an existing account signing in mid-wizard keeps its business.
-    const owned = await db
-      .select()
-      .from(businesses)
-      .where(eq(businesses.ownerUserId, user.id))
-      .limit(1);
-    if (owned[0]) {
-      return NextResponse.json({ ok: true, businessId: owned[0].id });
+    // allowCreate (signed-in "הוסף עסק") deliberately skips the guard.
+    if (!allowCreate) {
+      const owned = await db
+        .select()
+        .from(businesses)
+        .where(eq(businesses.ownerUserId, user.id))
+        .limit(1);
+      if (owned[0]) {
+        return NextResponse.json({ ok: true, businessId: owned[0].id });
+      }
     }
 
     // Pass the resolved row's stored email so core's ensureUser (which matches

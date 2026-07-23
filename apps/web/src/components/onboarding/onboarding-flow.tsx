@@ -14,14 +14,16 @@ import {
   type BusinessType,
   type OnboardingDraft,
 } from "@/lib/onboarding";
+import { BUSINESS_COOKIE } from "@/lib/service-b-ui";
 import { OnboardingShell } from "./onboarding-shell";
 import { StepAudience } from "./steps/step-audience";
 import { StepBenefits } from "./steps/step-benefits";
 import { StepBusiness } from "./steps/step-business";
+import { StepCreate } from "./steps/step-create";
 import { StepProduct } from "./steps/step-product";
 import { StepSignup } from "./steps/step-signup";
 
-function ProgressHeader({ value }: { value: number }) {
+function ProgressHeader({ value, label }: { value: number; label: string }) {
   // Starts at 0 and fills on the next frame, so the first appearance animates too.
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -33,7 +35,7 @@ function ProgressHeader({ value }: { value: number }) {
     <div>
       <div className="flex items-baseline justify-between text-sm">
         <span className="font-medium text-gray-300">
-          {value >= STEP_PROGRESS.signup ? "שלב אחרון" : "המודעה הראשונה שלכם"}
+          {value >= STEP_PROGRESS.signup ? "שלב אחרון" : label}
         </span>
         <span dir="ltr" className="tabular-nums text-gray-500">
           {value}%
@@ -49,29 +51,47 @@ function ProgressHeader({ value }: { value: number }) {
   );
 }
 
-/** POST the draft to the server; resolves to a Hebrew error, or null on success. */
-async function postDraft(draft: OnboardingDraft): Promise<string | null> {
+/** POST the draft to the server; resolves to the created business, or a Hebrew error. */
+async function postDraft(
+  draft: OnboardingDraft,
+  allowCreate = false,
+): Promise<{ businessId: string } | { error: string }> {
   try {
     const response = await fetch("/api/onboarding/complete", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(draft),
+      body: JSON.stringify(allowCreate ? { ...draft, allowCreate } : draft),
     });
-    const body = (await response.json().catch(() => null)) as { error?: string } | null;
-    if (!response.ok) return body?.error ?? "השמירה נכשלה. נסו שוב בעוד רגע.";
-    return null;
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      businessId?: string;
+    } | null;
+    if (!response.ok || !body?.businessId) {
+      return { error: body?.error ?? "השמירה נכשלה. נסו שוב בעוד רגע." };
+    }
+    return { businessId: body.businessId };
   } catch {
-    return "בעיית תקשורת — בדקו את החיבור ונסו שוב.";
+    return { error: "בעיית תקשורת — בדקו את החיבור ונסו שוב." };
   }
 }
 
-export function OnboardingFlow() {
+type OnboardingFlowProps = {
+  /**
+   * "signup" — the public wizard: draft persisted to localStorage, ends with
+   * account creation. "additional" — the signed-in "הוסף עסק" wizard: state is
+   * in-memory only and the final step creates another business (allowCreate).
+   */
+  mode?: "signup" | "additional";
+};
+
+export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
   const router = useRouter();
   const [draft, setDraft] = useState<OnboardingDraft>(emptyDraft);
-  const [hydrated, setHydrated] = useState(false);
+  const [hydrated, setHydrated] = useState(mode === "additional");
   const [completionError, setCompletionError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (mode === "additional") return;
     const saved = loadDraft();
     if (saved) setDraft(saved);
 
@@ -81,8 +101,8 @@ export function OnboardingFlow() {
       if (saved && saved.step === STEPS.length - 1) {
         const { data } = await createClient().auth.getSession();
         if (data.session) {
-          const error = await postDraft(saved);
-          if (error === null) {
+          const result = await postDraft(saved);
+          if ("businessId" in result) {
             clearDraft();
             router.replace("/home");
             return;
@@ -92,11 +112,11 @@ export function OnboardingFlow() {
       }
       setHydrated(true);
     })();
-  }, [router]);
+  }, [mode, router]);
 
   useEffect(() => {
-    if (hydrated) saveDraft(draft);
-  }, [draft, hydrated]);
+    if (hydrated && mode === "signup") saveDraft(draft);
+  }, [draft, hydrated, mode]);
 
   const patch = (partial: Partial<OnboardingDraft>) => setDraft((d) => ({ ...d, ...partial }));
 
@@ -116,9 +136,18 @@ export function OnboardingFlow() {
 
   /** Account exists (password or OAuth): persist the draft, land on the homepage. */
   async function completeSignup(): Promise<string | null> {
-    const error = await postDraft(draft);
-    if (error) return error;
+    const result = await postDraft(draft);
+    if ("error" in result) return result.error;
     clearDraft();
+    router.push("/home");
+    return null;
+  }
+
+  /** Signed-in "הוסף עסק": create an additional business and make it the selected one. */
+  async function completeAdditional(): Promise<string | null> {
+    const result = await postDraft(draft, true);
+    if ("error" in result) return result.error;
+    document.cookie = `${BUSINESS_COOKIE}=${result.businessId}; path=/; max-age=31536000`;
     router.push("/home");
     return null;
   }
@@ -171,7 +200,16 @@ export function OnboardingFlow() {
           />
         );
       case "signup":
-        return (
+        return mode === "additional" ? (
+          <StepCreate
+            productName={draft.productName}
+            whatItDoes={draft.whatItDoes}
+            benefitCount={draft.benefits.filter((benefit) => benefit.trim()).length}
+            audience={draft.audience}
+            onCreate={completeAdditional}
+            onBack={() => goTo(3)}
+          />
+        ) : (
           <StepSignup
             productName={draft.productName}
             whatItDoes={draft.whatItDoes}
@@ -186,20 +224,23 @@ export function OnboardingFlow() {
   })();
 
   // One shell for every step: the scene stays put, only the questionnaire changes.
-  return (
-    <OnboardingShell>
-      {stepId === "business" ? (
-        <div key={draft.step} className="step-in w-full">
-          {step}
+  const content =
+    stepId === "business" ? (
+      <div key={draft.step} className="step-in w-full">
+        {step}
+      </div>
+    ) : (
+      <div id="onboarding-content" className="w-full max-w-2xl pt-6 sm:pt-10">
+        <ProgressHeader
+          value={STEP_PROGRESS[stepId]}
+          label={mode === "additional" ? "עסק חדש" : "המודעה הראשונה שלכם"}
+        />
+        <div key={draft.step} className="step-in mt-5">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-6 sm:p-10">{step}</div>
         </div>
-      ) : (
-        <div id="onboarding-content" className="w-full max-w-2xl pt-6 sm:pt-10">
-          <ProgressHeader value={STEP_PROGRESS[stepId]} />
-          <div key={draft.step} className="step-in mt-5">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-6 sm:p-10">{step}</div>
-          </div>
-        </div>
-      )}
-    </OnboardingShell>
-  );
+      </div>
+    );
+
+  // In additional mode the /home/new-business page provides the chrome.
+  return mode === "signup" ? <OnboardingShell>{content}</OnboardingShell> : content;
 }

@@ -77,6 +77,8 @@ pnpm test           # core tests (PGlite, no Docker)
 pnpm lint / format  # prettier
 ```
 
+Never run `next build` while `pnpm dev` is serving — the build replaces `.next` and the running dev server starts 404-ing its own chunks (symptom: every page stuck on its loading state, DevTools shows 404 on `/_next/static/chunks/main-app.js`). Recovery: stop dev, delete `apps/web/.next`, start dev again.
+
 Still to come: `pnpm worker` (job loop), `pnpm pipeline <cmd>` (CLI entrypoints), `pnpm db:migrate`.
 
 ## When unsure
