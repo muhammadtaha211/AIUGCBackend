@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { CaptionChunk } from "../captions";
 import { getEnv } from "../config";
+import { PermanentError, TransientError } from "../jobs/errors";
 
 /**
  * Remotion render contract. Remotion exists specifically because browser text
@@ -46,16 +47,47 @@ export interface RenderServiceBProps {
 
 export type RenderVideoProps = RenderServiceAProps | RenderServiceBProps;
 
+/** @aiugc/remotion, loaded lazily — see loadRemotion(). */
+interface RemotionRenderModule {
+  renderServiceB(props: Omit<RenderServiceBProps, "kind">, outPath: string): Promise<void>;
+}
+
+/**
+ * The compositions live in @aiugc/remotion, which pulls in React, webpack and
+ * @remotion/renderer's native binaries. The specifier is held in a variable so
+ * no bundler follows it: @aiugc/core is transpiled into the Next.js server
+ * build, which must never carry the renderer. Only the worker gets here, under
+ * tsx, which resolves the workspace TypeScript source.
+ */
+async function loadRemotion(): Promise<RemotionRenderModule> {
+  const specifier = "@aiugc/remotion/render";
+  return (await import(specifier)) as RemotionRenderModule;
+}
+
 export async function renderVideo(props: RenderVideoProps, outPath: string): Promise<void> {
   if (getEnv().DRY_RUN) {
     mkdirSync(path.dirname(outPath), { recursive: true });
     writeFileSync(outPath, `DRY_RUN placeholder render: ${JSON.stringify(props).slice(0, 500)}`);
     return;
   }
-  // Real implementation: @remotion/renderer against the ServiceA/ServiceB
-  // compositions on the worker box (free license: company <= 3 people).
-  throw new Error(
-    "Remotion compositions are not built yet — run with DRY_RUN=1, or implement " +
-      "apps/worker rendering per docs/04-integrations.md §Remotion",
-  );
+
+  if (props.kind === "service_a") {
+    throw new Error(
+      "Remotion compositions are not built yet — run with DRY_RUN=1, or implement " +
+        "apps/worker rendering per docs/04-integrations.md §Remotion",
+    );
+  }
+
+  const { kind, ...serviceB } = props;
+  const { renderServiceB } = await loadRemotion();
+  try {
+    await renderServiceB(serviceB, outPath);
+  } catch (err) {
+    // Bad inputs (missing local file, props that fail the composition schema)
+    // will fail every retry identically; everything else — headless Chrome
+    // crashes, font fetches, encoder hiccups — is worth another attempt.
+    const message = `remotion render failed: ${err instanceof Error ? err.message : String(err)}`;
+    if (err instanceof Error && err.name === "RenderPropsError") throw new PermanentError(message);
+    throw new TransientError(message);
+  }
 }

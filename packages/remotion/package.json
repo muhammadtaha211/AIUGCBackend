@@ -1,0 +1,36 @@
+{
+  "name": "@aiugc/remotion",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./render": "./src/render.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "fixtures": "tsx scripts/make-fixtures.ts",
+    "studio": "tsx scripts/make-fixtures.ts && remotion studio src/index.ts",
+    "render:sample": "tsx scripts/render-sample.ts",
+    "render:sample:watermark": "tsx scripts/render-sample.ts --watermark"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.499",
+    "@remotion/google-fonts": "^4.0.499",
+    "@remotion/media-utils": "^4.0.499",
+    "@remotion/renderer": "^4.0.499",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "remotion": "^4.0.499",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.499",
+    "@types/node": "^20.14.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.8"
+  }
+}
