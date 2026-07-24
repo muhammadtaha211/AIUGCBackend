@@ -66,9 +66,12 @@ No pipeline code moves. The worker deploys unchanged.
 
 1. **Provision**: Supabase project (apply migrations 0000–0006, create the three buckets), API
    keys (Anthropic, ElevenLabs, fal), a worker box with ffmpeg — flip `DRY_RUN` off.
-2. **Remotion compositions** (`ServiceA`, `ServiceB`) against the fixed props contract in
-   `providers/remotion.ts`; calibrate `words_per_second` per voice with test renders; wire
-   `@remotion/renderer` into `renderVideo()`.
+2. ~~**Remotion compositions**~~ — **done for Service B**: `@aiugc/remotion` renders the
+   `ServiceB` composition against the props contract in `providers/remotion.ts`, wired into
+   `renderVideo()` ([04-integrations.md](04-integrations.md)). Still open: the `ServiceA`
+   composition (`renderVideo()` throws for `kind: "service_a"`), B-roll cutaway logic
+   (`brollPaths` is accepted and ignored), and calibrating `words_per_second` per voice with test
+   renders.
 3. **WhisperX fallback**: small python CLI on the worker box behind `forcedAlign()` — only
    needed if eleven_v3 turns out not to return alignment.
 4. **Outreach loop starts here** — everything above is enough to ship samples from the CLI.

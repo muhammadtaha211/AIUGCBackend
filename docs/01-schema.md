@@ -115,6 +115,11 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   (now including `images`), `words_per_second` (per voice, calibrated once with test renders),
   `retention_days`, `audio_preview_daily_limit`, `credit_costs`, `dunning`,
   `imagegen_cost_agorot` (per-image cost estimate; a fal price change is an UPDATE here).
+  Two TTS knobs are **opt-in and unseeded** — read with `getConfigValueOr`, so a missing row is
+  the default and toggling them is an INSERT/DELETE, never a migration:
+  `tts_enhance` (boolean; absent = `false` = no v3 audio-tag pass) and `tts_stability` (number;
+  absent = `voice_settings` omitted from the ElevenLabs body — v3 takes 0.0 / 0.5 / 1.0 =
+  creative / natural / robust).
 
 ## Row-level security (0002, Supabase only)
 

@@ -16,7 +16,8 @@ keyless (the e2e test relies on this).
   interpolation (`src/prompts.ts`). A revision is a new file, never an edit; every generated
   script row records `prompt_version = "<name>@v<N>"`, so any output is traceable to the exact
   template. Current prompts: `hook_lines`, `benefit_captions`, `vo_script`, `b_script`
-  (v3 adds customer pointers + duration preset), `content_policy`.
+  (v3 adds customer pointers + duration preset), `content_policy`, `tts_enhance`
+  (ElevenLabs v3 audio tags — see §ElevenLabs).
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
   app_config; default 2.2 w/s until each voice is calibrated with test renders) and passed into
   the prompt as hard constraints.
@@ -30,8 +31,11 @@ keyless (the e2e test relies on this).
 
 ## ElevenLabs V3 (Hebrew TTS) — `providers/elevenlabs.ts`
 
-- `synthesize({text, voiceId}) → {audio, charAlignment?}` against
+- `synthesize({text, voiceId, stability?}) → {audio, charAlignment?}` against
   `POST /v1/text-to-speech/{voice}/with-timestamps` with `model_id: "eleven_v3"`.
+  `stability` comes from `app_config.tts_stability`; absent → `voice_settings` is omitted from the
+  body entirely and the provider default applies (v3 accepts 0.0 / 0.5 / 1.0 =
+  creative / natural / robust).
 - **Timestamp verification result**: the with-timestamps endpoint exists and returns
   **character-level** alignment, but official docs do not confirm `eleven_v3` support — so the
   contract treats alignment as optional. Present → words are derived by grouping characters
@@ -43,6 +47,37 @@ keyless (the e2e test relies on this).
 - The pronunciation map is applied **before** the call; the exact sent text is stored as
   `rendered_text`.
 - Word timings → 2–4-word karaoke chunks (`chunkWords`, locked decision, property-tested).
+
+### Optional v3 audio-tag enhancement (`app_config.tts_enhance`, absent = off)
+
+- **What it is**: one Anthropic call (`prompts/tts_enhance/v1.md`) that inserts bracketed English
+  v3 audio tags (`[sighs]`, `[excited]`, `[short pause]`…) and light punctuation into a finished
+  Hebrew script, so the voice reads it with emotion. The prompt caps density at ~2–4 tags per
+  15-second script — this is one person talking to a phone camera, not theatre — and forbids
+  touching the Hebrew words.
+- **Where it sits**: inside `handleSynthTts`'s regenerate loop, **before** the pronunciation map:
+  `script.text → enhance (if on) → pronunciation map → synthesize`. Because it is inside the
+  loop, a tighter regenerated script gets its own enhancement pass rather than reusing stale tags.
+  Structurally it is the same kind of transform as the pronunciation map: a TTS-time rewrite of
+  the sent text only.
+- **Fails open to the original text, always.** `enhanceWithAudioTags` never throws: an API error,
+  a tripped `llm_tokens` budget cap, or a model that touched the Hebrew all return `script.text`
+  unchanged, with a warn line. The guard is `sameWordSequence()` — strip bracket spans and
+  punctuation from both sides and compare the word arrays; any word edited, dropped, added or
+  reordered discards the enhancement. Enhancement can therefore never block or fail a render.
+- **Tags never reach a caption.** Alignment is computed over the SENT text, so tag tokens must be
+  removed before chunking. ElevenLabs path: `stripTagWords()` drops whole bracket **spans** from
+  the word timings — `wordsFromCharAlignment` splits on whitespace, so `[short pause]` arrives as
+  `[short` + `pause]`, and the span is dropped from the token that opens the bracket through the
+  one that closes it, ignoring punctuation stuck to either end (`…[sighs]`, `[excited]!`). An
+  unclosed `[` is not a tag and its words are kept. WhisperX path: forced alignment is handed
+  `stripAudioTags(rendered)`, the spoken text only.
+- **Storage**: the `scripts` row stays clean plain Hebrew — tags exist only in what was sent, and
+  therefore in `audio_renders.rendered_text`. Regenerating or re-reading a script is unaffected.
+- Costs: one extra `llm_tokens` usage row per enhance call, under the same daily cap as
+  copywriting.
+- DRY_RUN: no API call; the text is prefixed with a real `[excited]` tag so tag-stripping and
+  caption chunking run for real.
 - Costs: `tts_chars` usage row per call; capped per rolling 24h; previews additionally
   rate-capped per business/day (config).
 - DRY_RUN: fabricated audio + uniform 2.2 w/s alignment so length-fit and chunking run for real.
@@ -101,8 +136,64 @@ keyless (the e2e test relies on this).
   with a props-driven `watermark` layer. All media are **local paths** — the render handler
   downloads from storage first. Output 1080×1920/30fps/H.264; **no music track exists in the
   contract at all** (locked decision).
-- Implementation is `@remotion/renderer` on the worker box; the compositions are the next build
-  step (see 06). DRY_RUN writes a placeholder artifact so the pipeline is exercised end-to-end.
+- Implementation is `@remotion/renderer` on the worker box. DRY_RUN writes a placeholder artifact
+  so the pipeline is exercised end-to-end.
+
+### `packages/remotion` (`@aiugc/remotion`) — built
+
+- **One package, one public export**: `@aiugc/remotion/render` → `src/render.ts`
+  (`renderServiceB(props, outPath)` + `RenderPropsError`). `providers/remotion.ts` imports it
+  through a specifier held in a variable so no bundler follows it — the Next.js server build must
+  never carry React, webpack and the renderer's native binaries; only the worker (under `tsx`)
+  resolves the workspace source.
+- **Compositions** (`src/Root.tsx`): `ServiceB` is the only one the pipeline renders.
+  `ServiceB-Watermarked` and `PlaceholderTalkingHead` are founder preview scaffolding.
+  **`ServiceA` is not built** — `renderVideo()` still throws for `kind: "service_a"`.
+- **`ServiceB`** (`src/ServiceB.tsx`): full-bleed `OffthreadVideo` of the lip-synced talking head
+  (its embedded audio IS the final audio — no separate track, no music), a slow 1 → 1.025
+  micro-motion scale across the clip, burned RTL captions, and the props-driven watermark
+  (tiled, rotated, 12% opacity). Chunks with word timings render karaoke-style (active word
+  `#FFE04A`, 1.06 scale); chunks with an empty `words` array — the even-spaced captions — render
+  as a plain line. Each word sits in its own `unicodeBidi: isolate` span so numbers and Latin
+  product names keep their LTR run without flipping Hebrew word order.
+- **`brollSrcs` is accepted and ignored.** The prop is validated and passed through, but cutaway
+  logic (when to cut away, for how long, how to hide the lip-sync) is unbuilt. Empty is the
+  normal case and renders cleanly.
+- **Font**: Heebo 800 (`hebrew` + `latin` subsets) via `@remotion/google-fonts/Heebo` — never a
+  system font, since the render box is headless Chrome. **`loadFont` fetches from Google at
+  render time, so the render host needs outbound network**; a font fetch failure is one of the
+  transient failures worth a retry.
+- **Loopback file server** (`src/serve-files.ts`): Remotion's asset downloader rejects `file://`,
+  but every path in the render contract is a local file. So the exact input files — and nothing
+  else — are served over `http://127.0.0.1:<ephemeral port>/<index><ext>` for the lifetime of one
+  render, with range/HEAD/OPTIONS support (the browser's video element range-requests while
+  probing metadata) and `closeAllConnections()` on teardown, because Chrome's keep-alive sockets
+  otherwise block `close()`.
+- **Duration is derived, never passed in**: `calculateServiceBMetadata` probes the talking head
+  with `getVideoMetadata()` in the browser and sets
+  `durationInFrames = max(1, round(seconds × 30))`. The lip-sync output is exactly as long as the
+  approved audio, so the ad ends when it ends — and the worker box needs no `ffprobe` for this
+  step.
+- **Encode**: `renderMedia` with `codec: "h264"`, `audioCodec: "aac"`, `crf: 20` (matching the
+  normalize step in `media/ffmpeg.ts`), 1080×1920 @30fps from `src/schema.ts`. The webpack bundle
+  is built once per process (`getBundle()`) and cached; a failed bundle clears the cache so a
+  long-lived worker can retry.
+- **Error mapping** (`providers/remotion.ts`): `RenderPropsError` — a missing local input file, or
+  props that fail the zod composition schema — becomes a `PermanentError` (it will fail every
+  retry identically). Everything else — headless Chrome crashes, font fetches, encoder hiccups —
+  becomes a `TransientError`.
+- **Founder preview (PowerShell)**:
+
+  ```powershell
+  pnpm --filter @aiugc/remotion fixtures                  # placeholder clip + tone; first run downloads Chrome Headless
+  pnpm --filter @aiugc/remotion studio                    # fixtures, then Remotion Studio
+  pnpm --filter @aiugc/remotion render:sample             # -> packages/remotion/out/sample.mp4
+  pnpm --filter @aiugc/remotion render:sample:watermark   # -> out/sample-watermarked.mp4
+  ```
+
+  Fixtures cost nothing: no TTS, no GPU, no lip-sync — Remotion renders a gradient clip over a
+  synthesized 220Hz WAV tone, which also proves the talking head's own audio survives the render.
+  `render:sample` runs the same `renderServiceB()` the worker runs.
 
 ## ffmpeg/ffprobe — `media/ffmpeg.ts`
 
