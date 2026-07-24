@@ -22,7 +22,12 @@ interface ElevenLabsAlignment {
   character_end_times_seconds: number[];
 }
 
-export async function synthesize(opts: { text: string; voiceId: string }): Promise<TtsResult> {
+export async function synthesize(opts: {
+  text: string;
+  voiceId: string;
+  /** v3 accepts 0.0 / 0.5 / 1.0 = creative / natural / robust. Omitted = provider default. */
+  stability?: number;
+}): Promise<TtsResult> {
   const env = getEnv();
   if (env.DRY_RUN) return dryRunSynthesize(opts.text);
   if (!env.ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not set");
@@ -33,7 +38,11 @@ export async function synthesize(opts: { text: string; voiceId: string }): Promi
     response = await fetch(url, {
       method: "POST",
       headers: { "xi-api-key": env.ELEVENLABS_API_KEY, "content-type": "application/json" },
-      body: JSON.stringify({ text: opts.text, model_id: ELEVENLABS_MODEL }),
+      body: JSON.stringify({
+        text: opts.text,
+        model_id: ELEVENLABS_MODEL,
+        ...(opts.stability === undefined ? {} : { voice_settings: { stability: opts.stability } }),
+      }),
     });
   } catch (err) {
     throw new TransientError(`elevenlabs request failed: ${String(err)}`);

@@ -9,3 +9,19 @@ export async function getConfigValue<T>(db: Db, key: string, schema: z.ZodType<T
   if (!rows[0]) throw new Error(`app_config row "${key}" is missing (seed not applied?)`);
   return schema.parse(rows[0].value);
 }
+
+/**
+ * Same, for opt-in knobs that have no seeded row: a missing key is the default,
+ * so turning the feature on is an INSERT and turning it off is a DELETE — no
+ * migration either way.
+ */
+export async function getConfigValueOr<T, D>(
+  db: Db,
+  key: string,
+  schema: z.ZodType<T>,
+  fallback: D,
+): Promise<T | D> {
+  const rows = await db.select().from(appConfig).where(eq(appConfig.key, key)).limit(1);
+  if (!rows[0]) return fallback;
+  return schema.parse(rows[0].value);
+}
