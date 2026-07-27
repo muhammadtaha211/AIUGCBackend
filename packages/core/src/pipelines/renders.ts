@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { getConfigValue } from "../appConfig";
+import { getConfigValue, getConfigValueOr } from "../appConfig";
 import { assertBudget, recordUsage } from "../budget";
 import { evenlySpacedCaptions, type CaptionChunk } from "../captions";
 import { getEnv } from "../config";
@@ -22,14 +22,47 @@ import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { thumbnail } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
-import { getLipsyncProvider } from "../providers/lipsync";
+import {
+  framesForAudio,
+  getLipsyncProvider,
+  lipsyncResolutionSchema,
+  type LipsyncResolution,
+} from "../providers/lipsync";
 import { renderVideo, type RenderVideoProps, type TextSafeArea } from "../providers/remotion";
 import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
 import type { VariantParams } from "./sets";
 
-/** ~agorot per GPU second (fal.ai infinitalk single-image 720p ≈ $0.40/s ≈ ₪1.5/s; verified 2026-07). */
-const GPU_COST_AGOROT_PER_SECOND = 150;
+/**
+ * ~agorot per GPU second, by the resolution we pin on the submit body (fal.ai
+ * infinitalk: $0.20/s @480p, doubled to $0.40/s @720p — verified live
+ * 2026-07-25; ≈ ₪3.75/$).
+ */
+export const GPU_COST_AGOROT_PER_SECOND: Record<LipsyncResolution, number> = {
+  "480p": 75,
+  "720p": 150,
+};
+
+const DEFAULT_LIPSYNC_FPS = 25;
+const DEFAULT_LIPSYNC_RESOLUTION: LipsyncResolution = "720p";
+
+/**
+ * The two knobs that shape the fal submit body. Both are plain app_config
+ * strings with no seeded row, so dropping to 480p is one INSERT, no deploy.
+ */
+export async function lipsyncSettings(
+  db: Db,
+): Promise<{ fps: number; resolution: LipsyncResolution }> {
+  return {
+    fps: await getConfigValueOr(db, "lipsync_fps", z.number().positive(), DEFAULT_LIPSYNC_FPS),
+    resolution: await getConfigValueOr(
+      db,
+      "lipsync_resolution",
+      lipsyncResolutionSchema,
+      DEFAULT_LIPSYNC_RESOLUTION,
+    ),
+  };
+}
 
 /**
  * Service B step 1: InfiniteTalk lip-sync on the hosted provider.
@@ -57,6 +90,12 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       )[0];
       if (!audio?.filePath) throw new PermanentError("audio render has no file");
       if (!audio.approvedAt) throw new PermanentError("audio is not approved (hard gate)");
+      // The frame count IS the video length — a missing duration would silently
+      // render the wrong ad, so it fails here instead.
+      if (!audio.durationMs) throw new PermanentError("audio render has no duration");
+
+      const { fps, resolution } = await lipsyncSettings(ctx.db);
+      const numFrames = framesForAudio(audio.durationMs, fps);
 
       // Source image: an approved composite takes precedence (hard gate),
       // then an explicit persona image, then the persona's default image.
@@ -107,13 +146,15 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       const { providerJobId } = await provider.submit({
         imageUrl: await storage.signedUrl(imagePath, 3600),
         audioUrl: await storage.signedUrl(audio.filePath, 3600),
+        numFrames,
+        resolution,
       });
+      const gpuSeconds = Math.ceil(audio.durationMs / 1000);
       await recordUsage(ctx.db, {
         provider: "fal",
         kind: "gpu_seconds",
-        quantity: Math.ceil((audio.durationMs ?? 30_000) / 1000),
-        costEstimateAgorot:
-          Math.ceil((audio.durationMs ?? 30_000) / 1000) * GPU_COST_AGOROT_PER_SECOND,
+        quantity: gpuSeconds,
+        costEstimateAgorot: gpuSeconds * GPU_COST_AGOROT_PER_SECOND[resolution],
         jobId: job.id,
         businessId: render.businessId,
       });
@@ -300,7 +341,14 @@ async function buildServiceBProps(
   if (!audio.wordTimestamps) {
     throw new PermanentError("audio render is missing word timestamps");
   }
+  if (!audio.filePath) throw new PermanentError("audio render has no file");
   const captions = audio.wordTimestamps as CaptionChunk[];
+
+  // The approved mp3 becomes the render's audio track — the same bytes the
+  // customer approved and the same file these timestamps were computed against.
+  // The lip-sync clip's own audio (fal's re-encode of this mp3) is muted.
+  const voiceoverPath = path.join(localDir, "vo.mp3");
+  await getStorage().download(audio.filePath, voiceoverPath);
 
   const talkingHeadPath = path.join(localDir, "talking-head.mp4");
   if (params.lipsyncUrl.startsWith("dryrun://")) {
@@ -314,6 +362,7 @@ async function buildServiceBProps(
   return {
     kind: "service_b",
     talkingHeadPath,
+    voiceoverPath,
     brollPaths: [], // product B-roll cutaways: wired when the composition lands
     captions,
     watermark: render.watermarked,

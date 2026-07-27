@@ -20,6 +20,23 @@ export function frameToMs(frame: number): number {
 }
 
 /**
+ * Service B length. The approved audio is the source of truth — it is what the
+ * customer signed off on and what the captions are timed against — so the ad is
+ * exactly as long as the VO: a longer talking head is trimmed by the
+ * composition duration, a shorter one holds its final frame (see ServiceB) for
+ * the remaining frames instead of cutting to black.
+ */
+export function serviceBDurations(
+  voiceoverSeconds: number,
+  talkingHeadSeconds: number,
+): { durationInFrames: number; talkingHeadDurationInFrames: number } {
+  return {
+    durationInFrames: Math.max(1, Math.round(voiceoverSeconds * FPS)),
+    talkingHeadDurationInFrames: Math.max(1, Math.round(talkingHeadSeconds * FPS)),
+  };
+}
+
+/**
  * Index of the chunk to show at `ms`, or -1 for none.
  * A chunk holds until the next one starts; the last chunk holds until its own
  * endMs so the ad doesn't end on a frozen caption.

@@ -4,6 +4,7 @@ import { serviceBSchema } from "../src/schema";
 
 const valid = {
   talkingHeadSrc: "http://127.0.0.1:1234/0.mp4",
+  voiceoverSrc: "http://127.0.0.1:1234/1.mp3",
   brollSrcs: [],
   captions: sampleCaptions,
   watermark: false,
@@ -26,6 +27,11 @@ describe("serviceBSchema", () => {
 
   it("rejects a missing talking head", () => {
     const { talkingHeadSrc, ...rest } = valid;
+    expect(serviceBSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("rejects a missing voiceover — Service B always has approved audio", () => {
+    const { voiceoverSrc, ...rest } = valid;
     expect(serviceBSchema.safeParse(rest).success).toBe(false);
   });
 

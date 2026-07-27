@@ -1,21 +1,26 @@
 import { loadFont } from "@remotion/google-fonts/Heebo";
-import { getVideoMetadata } from "@remotion/media-utils";
+import { getAudioDurationInSeconds, getVideoMetadata } from "@remotion/media-utils";
 import type React from "react";
 import {
   AbsoluteFill,
+  Audio,
+  Freeze,
   OffthreadVideo,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
   type CalculateMetadataFunction,
 } from "remotion";
-import { FPS, type CaptionChunk, type ServiceBProps } from "./schema";
-import { activeChunkIndex, activeWordIndex, frameToMs } from "./timing";
+import { type CaptionChunk, type ServiceBProps } from "./schema";
+import { activeChunkIndex, activeWordIndex, frameToMs, serviceBDurations } from "./timing";
 
 /**
  * Service B: lip-synced talking head + burned Hebrew karaoke captions.
- * The talking head's embedded audio IS the final audio — there is no separate
- * audio track and no music, ever (locked decision).
+ * The approved mp3 is the audio track and the talking head is muted: its
+ * embedded audio is the GPU provider's re-encode of that same mp3, which
+ * arrives with a glitch in the first second and would be encoded a third time
+ * here. Playing the approved file directly also guarantees caption sync — it is
+ * the exact file the timestamps were computed against. No music, ever (locked).
  */
 
 // Never rely on system fonts: the render box is headless Chrome and the design
@@ -41,7 +46,13 @@ const TEXT_OUTLINE = [
   "0 8px 26px rgba(0,0,0,0.6)",
 ].join(", ");
 
-export const ServiceB: React.FC<ServiceBProps> = ({ talkingHeadSrc, captions, watermark }) => {
+export const ServiceB: React.FC<ServiceBProps> = ({
+  talkingHeadSrc,
+  talkingHeadDurationInFrames,
+  voiceoverSrc,
+  captions,
+  watermark,
+}) => {
   // TODO: brollSrcs is accepted and ignored — cutaway logic (when to cut away,
   // for how long, how to hide the lip-sync) is its own task.
   const frame = useCurrentFrame();
@@ -53,13 +64,23 @@ export const ServiceB: React.FC<ServiceBProps> = ({ talkingHeadSrc, captions, wa
     extrapolateRight: "clamp",
   });
 
+  // The composition runs as long as the VO, so a talking head that came back
+  // shorter would leave black frames under the last words. Freeze holds its
+  // final frame instead — outside the scale wrapper, so the micro-motion keeps
+  // drifting and the hold reads as stillness rather than a frozen render.
+  const lastClipFrame = Math.max(0, (talkingHeadDurationInFrames ?? durationInFrames) - 1);
+
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
+      <Audio src={voiceoverSrc} />
       <AbsoluteFill style={{ transform: `scale(${scale})` }}>
-        <OffthreadVideo
-          src={talkingHeadSrc}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
+        <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
+          <OffthreadVideo
+            src={talkingHeadSrc}
+            muted
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        </Freeze>
       </AbsoluteFill>
       <Captions captions={captions} ms={frameToMs(frame)} />
       {watermark ? <Watermark /> : null}
@@ -151,14 +172,22 @@ const Watermark: React.FC = () => (
 );
 
 /**
- * Duration comes from the talking-head clip itself — the lip-sync output is
- * exactly as long as the approved audio, and the ad ends when it ends.
- * Probed in the browser (Studio and the headless render both have one), so the
- * worker box needs no ffprobe for this step.
+ * Duration comes from the approved VO, never from the clip: the ad must not cut
+ * the voiceover off mid-sentence. The clip is probed too, only to tell the
+ * composition where to start holding its final frame. Both probes run in the
+ * browser (Studio and the headless render both have one), so the worker box
+ * needs no ffprobe for this step.
  */
 export const calculateServiceBMetadata: CalculateMetadataFunction<ServiceBProps> = async ({
   props,
 }) => {
-  const { durationInSeconds } = await getVideoMetadata(props.talkingHeadSrc);
-  return { durationInFrames: Math.max(1, Math.round(durationInSeconds * FPS)) };
+  const [voiceoverSeconds, clip] = await Promise.all([
+    getAudioDurationInSeconds(props.voiceoverSrc),
+    getVideoMetadata(props.talkingHeadSrc),
+  ]);
+  const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(
+    voiceoverSeconds,
+    clip.durationInSeconds,
+  );
+  return { durationInFrames, props: { ...props, talkingHeadDurationInFrames } };
 };

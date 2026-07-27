@@ -1,7 +1,9 @@
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { sampleDurationInFrames } from "../src/fixtures";
 import { getBundle } from "../src/render";
+import { FPS } from "../src/schema";
 
 /**
  * Generates the local preview fixtures. Zero external API cost: no TTS, no
@@ -11,16 +13,23 @@ import { getBundle } from "../src/render";
 
 const FIXTURE_DIR = fileURLToPath(new URL("../public/fixtures/", import.meta.url));
 export const TONE_FIXTURE = `${FIXTURE_DIR}tone.wav`;
+/** Stands in for the approved mp3: same length as the placeholder clip, a
+ *  different pitch from its embedded tone so the two are told apart by ear. */
+export const VOICEOVER_FIXTURE = `${FIXTURE_DIR}voiceover.wav`;
 export const TALKING_HEAD_FIXTURE = `${FIXTURE_DIR}talking-head.mp4`;
 
 export async function ensureFixtures(): Promise<void> {
   mkdirSync(FIXTURE_DIR, { recursive: true });
 
-  // The tone must exist before bundling: Remotion copies public/ into the
-  // bundle, and the placeholder composition loads it with staticFile().
+  // The tones must exist before bundling: Remotion copies public/ into the
+  // bundle, and the compositions load them with staticFile().
   if (!existsSync(TONE_FIXTURE)) {
-    writeToneWav(TONE_FIXTURE, 12);
+    writeToneWav(TONE_FIXTURE, 12, 220);
     console.log(`wrote ${TONE_FIXTURE}`);
+  }
+  if (!existsSync(VOICEOVER_FIXTURE)) {
+    writeToneWav(VOICEOVER_FIXTURE, sampleDurationInFrames / FPS, 330);
+    console.log(`wrote ${VOICEOVER_FIXTURE}`);
   }
 
   if (existsSync(TALKING_HEAD_FIXTURE)) return;
@@ -43,16 +52,15 @@ export async function ensureFixtures(): Promise<void> {
   console.log(`wrote ${TALKING_HEAD_FIXTURE}`);
 }
 
-/** 16-bit mono PCM WAV — a soft 220Hz tone that wobbles, so the sample render
- *  proves the talking head's own audio survives (there is no other audio). */
-function writeToneWav(file: string, seconds: number): void {
+/** 16-bit mono PCM WAV — a soft tone that wobbles, standing in for speech. */
+function writeToneWav(file: string, seconds: number, hz: number): void {
   const sampleRate = 44100;
   const sampleCount = sampleRate * seconds;
   const data = Buffer.alloc(sampleCount * 2);
   for (let i = 0; i < sampleCount; i++) {
     const t = i / sampleRate;
     const envelope = 0.18 * (0.6 + 0.4 * Math.sin(2 * Math.PI * 0.5 * t));
-    data.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 220 * t) * envelope * 32767), i * 2);
+    data.writeInt16LE(Math.round(Math.sin(2 * Math.PI * hz * t) * envelope * 32767), i * 2);
   }
 
   const header = Buffer.alloc(44);

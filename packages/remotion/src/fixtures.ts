@@ -1,4 +1,5 @@
-import type { CaptionChunk } from "./schema";
+import { FPS, type CaptionChunk } from "./schema";
+import { msToFrame } from "./timing";
 
 /**
  * Founder preview fixture: a realistic Hebrew VO script shaped exactly like
@@ -53,3 +54,12 @@ export const sampleCaptions: CaptionChunk[] = (() => {
   }
   return chunks;
 })();
+
+/**
+ * Length of the placeholder talking head AND of the fixture voiceover — the
+ * fixtures stand in for a lip-sync clip and the approved mp3 it was driven by,
+ * so they have to be the same length. Half a second of tail after the last
+ * caption, as a real VO has.
+ */
+export const sampleDurationInFrames =
+  msToFrame(sampleCaptions[sampleCaptions.length - 1]!.endMs) + FPS / 2;

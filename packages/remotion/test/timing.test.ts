@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { sampleCaptions } from "../src/fixtures";
 import type { CaptionChunk } from "../src/schema";
-import { activeChunkIndex, activeWordIndex, frameToMs, msToFrame } from "../src/timing";
+import {
+  activeChunkIndex,
+  activeWordIndex,
+  frameToMs,
+  msToFrame,
+  serviceBDurations,
+} from "../src/timing";
 
 const chunks: CaptionChunk[] = [
   {
@@ -34,6 +40,33 @@ describe("ms/frame math", () => {
     expect(msToFrame(16)).toBe(0);
     expect(frameToMs(30)).toBe(1000);
     expect(frameToMs(15)).toBe(500);
+  });
+});
+
+describe("serviceBDurations", () => {
+  it("runs as long as the voiceover when the clip came back short, and holds the rest", () => {
+    const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(10, 8);
+    expect(durationInFrames).toBe(300);
+    expect(talkingHeadDurationInFrames).toBe(240);
+    // 60 frames of held final frame rather than 2s of cut-off voiceover.
+    expect(durationInFrames - talkingHeadDurationInFrames).toBe(60);
+  });
+
+  it("trims a clip that outruns the voiceover", () => {
+    const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(8, 10);
+    expect(durationInFrames).toBe(240);
+    expect(talkingHeadDurationInFrames).toBe(300);
+  });
+
+  it("holds nothing when they match", () => {
+    const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(9.5, 9.5);
+    expect(durationInFrames).toBe(285);
+    expect(talkingHeadDurationInFrames).toBe(285);
+  });
+
+  it("never renders a zero-frame composition", () => {
+    expect(serviceBDurations(0, 0).durationInFrames).toBe(1);
+    expect(serviceBDurations(0, 0).talkingHeadDurationInFrames).toBe(1);
   });
 });
 

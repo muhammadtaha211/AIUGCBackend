@@ -39,6 +39,12 @@ export interface RenderServiceBProps {
   kind: "service_b";
   /** Lip-synced talking-head clip (InfiniteTalk output, downloaded locally). */
   talkingHeadPath: string;
+  /**
+   * Local mp3 path — the approved audio, which IS the final audio track: the
+   * talking head is muted so the render never re-encodes the GPU clip's audio,
+   * and the captions are timed against exactly this file. Always required.
+   */
+  voiceoverPath: string;
   /** Product B-roll cutaways that hide lip-sync during risky stretches. */
   brollPaths: string[];
   captions: CaptionChunk[];

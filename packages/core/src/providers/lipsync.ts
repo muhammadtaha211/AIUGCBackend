@@ -1,5 +1,7 @@
+import { z } from "zod";
 import { getEnv } from "../config";
 import { PermanentError, TransientError } from "../jobs/errors";
+import { logger } from "../logger";
 
 /**
  * InfiniteTalk lip-sync behind a swappable interface. Reference implementation
@@ -13,6 +15,34 @@ export interface LipsyncSubmitInput {
   /** Reference image: persona image or approved product-in-hand composite. */
   imageUrl: string;
   audioUrl: string;
+  /** Derived from the approved audio — see `framesForAudio`. */
+  numFrames: number;
+  resolution: LipsyncResolution;
+}
+
+/** fal-ai/infinitalk `num_frames` bounds (live schema, verified 2026-07-25). */
+export const LIPSYNC_MIN_FRAMES = 41;
+export const LIPSYNC_MAX_FRAMES = 721;
+
+export const lipsyncResolutionSchema = z.enum(["480p", "720p"]);
+export type LipsyncResolution = z.infer<typeof lipsyncResolutionSchema>;
+
+/**
+ * fal renders exactly `num_frames` — it does NOT extend to the audio length.
+ * Left unset it uses the schema default (145 ≈ 5.8s @25fps) and cuts the script
+ * mid-sentence, which is what the first paid render did. Past the schema
+ * maximum we fail loudly rather than truncate: silent truncation is the bug.
+ */
+export function framesForAudio(durationMs: number, fps: number): number {
+  const frames = Math.round((durationMs / 1000) * fps);
+  if (frames > LIPSYNC_MAX_FRAMES) {
+    const maxSeconds = Math.floor(LIPSYNC_MAX_FRAMES / fps);
+    throw new PermanentError(
+      `הסקריפט ארוך מדי לסרטון אחד: אורך האודיו ${(durationMs / 1000).toFixed(1)} שניות, ` +
+        `והמקסימום הוא ${maxSeconds} שניות. קצרו את הסקריפט ונסו שוב.`,
+    );
+  }
+  return Math.max(frames, LIPSYNC_MIN_FRAMES);
 }
 
 export interface LipsyncProvider {
@@ -40,14 +70,26 @@ class FalLipsync implements LipsyncProvider {
   }
 
   async submit(input: LipsyncSubmitInput): Promise<{ providerJobId: string }> {
-    const response = await this.request(FAL_BASE, {
-      method: "POST",
-      body: JSON.stringify({
-        image_url: input.imageUrl,
-        audio_url: input.audioUrl,
-        prompt: IMAGE_MODE_PROMPT,
-      }),
-    });
+    const body = {
+      image_url: input.imageUrl,
+      audio_url: input.audioUrl,
+      prompt: IMAGE_MODE_PROMPT,
+      num_frames: input.numFrames,
+      resolution: input.resolution,
+    };
+    // The exact parameters, in the worker terminal, without a debugger.
+    logger.info(
+      {
+        endpoint: FAL_BASE,
+        body: {
+          ...body,
+          image_url: withoutQuery(body.image_url),
+          audio_url: withoutQuery(body.audio_url),
+        },
+      },
+      "fal infinitalk submit",
+    );
+    const response = await this.request(FAL_BASE, { method: "POST", body: JSON.stringify(body) });
     const json = (await response.json()) as { request_id: string };
     return { providerJobId: json.request_id };
   }
@@ -90,6 +132,12 @@ class FalLipsync implements LipsyncProvider {
     }
     return response;
   }
+}
+
+/** Inputs are signed URLs — the path is useful in a log, the token is not. */
+function withoutQuery(url: string): string {
+  const q = url.indexOf("?");
+  return q === -1 ? url : `${url.slice(0, q)}?<signed>`;
 }
 
 /** DRY_RUN: completes immediately with a placeholder URL. */

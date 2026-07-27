@@ -28,10 +28,24 @@ export const captionChunkSchema = z.object({
 
 export const serviceBSchema = z.object({
   talkingHeadSrc: z.string(),
+  /**
+   * The approved VO — the composition's only audio track and the clock the
+   * whole render runs on. Never optional: Service B always has approved audio,
+   * so a missing one is a bug that must fail the render, not fall back to the
+   * talking head's own (re-encoded) audio.
+   */
+  voiceoverSrc: z.string(),
   /** B-roll cutaways. Empty is normal and must render cleanly. */
   brollSrcs: z.array(z.string()),
   captions: z.array(captionChunkSchema),
   watermark: z.boolean(),
+  /**
+   * Filled in by `calculateServiceBMetadata` (which probes the clip), not by
+   * the caller — it marks where the talking head runs out and the final frame
+   * has to be held. Absent means "no hold", which is what Studio shows before
+   * metadata resolves.
+   */
+  talkingHeadDurationInFrames: z.number().optional(),
 });
 
 export type WordTiming = z.infer<typeof wordTimingSchema>;

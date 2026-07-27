@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { sampleCaptions } from "../src/fixtures";
 import { renderServiceB } from "../src/render";
-import { ensureFixtures, TALKING_HEAD_FIXTURE } from "./make-fixtures";
+import { ensureFixtures, TALKING_HEAD_FIXTURE, VOICEOVER_FIXTURE } from "./make-fixtures";
 
 /**
  * Founder preview render — the same code path the worker runs, on local
@@ -19,6 +19,7 @@ const startedAt = Date.now();
 await renderServiceB(
   {
     talkingHeadPath: TALKING_HEAD_FIXTURE,
+    voiceoverPath: VOICEOVER_FIXTURE,
     brollPaths: [],
     captions: sampleCaptions,
     watermark,

@@ -15,6 +15,8 @@ import { serviceBSchema, type CaptionChunk, type ServiceBProps } from "./schema"
  */
 export interface RenderServiceBInput {
   talkingHeadPath: string;
+  /** The approved mp3 — the render's audio track (the clip's own is muted). */
+  voiceoverPath: string;
   brollPaths: string[];
   captions: CaptionChunk[];
   watermark: boolean;
@@ -42,16 +44,21 @@ export function getBundle(): Promise<string> {
 }
 
 export async function renderServiceB(input: RenderServiceBInput, outPath: string): Promise<void> {
-  const files = [input.talkingHeadPath, ...input.brollPaths];
+  const files = [input.talkingHeadPath, input.voiceoverPath, ...input.brollPaths];
   for (const file of files) {
-    if (!existsSync(file)) throw new RenderPropsError(`render input file is missing: ${file}`);
+    // `!file` covers an untyped caller dropping the voiceover: that has to fail
+    // permanently here, not crash the file server on an undefined path.
+    if (!file || !existsSync(file)) {
+      throw new RenderPropsError(`render input file is missing: ${file}`);
+    }
   }
 
   const served = await serveLocalFiles(files);
   try {
     const props = serviceBSchema.safeParse({
       talkingHeadSrc: served.urls[0]!,
-      brollSrcs: served.urls.slice(1),
+      voiceoverSrc: served.urls[1]!,
+      brollSrcs: served.urls.slice(2),
       captions: input.captions,
       watermark: input.watermark,
     } satisfies ServiceBProps);

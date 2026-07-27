@@ -1,9 +1,8 @@
 import type React from "react";
 import { Audio, Composition, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { ServiceB, calculateServiceBMetadata } from "./ServiceB";
-import { sampleCaptions } from "./fixtures";
+import { sampleCaptions, sampleDurationInFrames } from "./fixtures";
 import { FPS, HEIGHT, WIDTH, serviceBSchema } from "./schema";
-import { msToFrame } from "./timing";
 
 /**
  * `ServiceB` is the only composition the pipeline renders. The other two are
@@ -14,13 +13,11 @@ import { msToFrame } from "./timing";
 
 const previewProps = {
   talkingHeadSrc: staticFile("fixtures/talking-head.mp4"),
+  voiceoverSrc: staticFile("fixtures/voiceover.wav"),
   brollSrcs: [],
   captions: sampleCaptions,
   watermark: false,
 };
-
-const FIXTURE_DURATION_IN_FRAMES =
-  msToFrame(sampleCaptions[sampleCaptions.length - 1]!.endMs) + FPS / 2;
 
 export const RemotionRoot: React.FC = () => (
   <>
@@ -33,7 +30,7 @@ export const RemotionRoot: React.FC = () => (
       width={WIDTH}
       height={HEIGHT}
       fps={FPS}
-      durationInFrames={FIXTURE_DURATION_IN_FRAMES}
+      durationInFrames={sampleDurationInFrames}
     />
     <Composition
       id="ServiceB-Watermarked"
@@ -44,7 +41,7 @@ export const RemotionRoot: React.FC = () => (
       width={WIDTH}
       height={HEIGHT}
       fps={FPS}
-      durationInFrames={FIXTURE_DURATION_IN_FRAMES}
+      durationInFrames={sampleDurationInFrames}
     />
     <Composition
       id="PlaceholderTalkingHead"
@@ -52,16 +49,18 @@ export const RemotionRoot: React.FC = () => (
       width={WIDTH}
       height={HEIGHT}
       fps={FPS}
-      durationInFrames={FIXTURE_DURATION_IN_FRAMES}
+      durationInFrames={sampleDurationInFrames}
     />
   </>
 );
 
-/** Stands in for an InfiniteTalk clip: a drifting gradient plus a tone, so the
- *  sample render proves that the talking head's own audio survives the render. */
+/** Stands in for an InfiniteTalk clip: a drifting gradient plus a 220Hz tone.
+ *  The tone is deliberately audible and deliberately NOT the voiceover fixture
+ *  (330Hz): hearing it in a sample render means the clip's audio leaked through
+ *  instead of being muted. */
 const PlaceholderTalkingHead: React.FC = () => {
   const frame = useCurrentFrame();
-  const hue = interpolate(frame, [0, FIXTURE_DURATION_IN_FRAMES], [210, 320]);
+  const hue = interpolate(frame, [0, sampleDurationInFrames], [210, 320]);
   const bob = Math.sin(frame / 9) * 14;
 
   return (
