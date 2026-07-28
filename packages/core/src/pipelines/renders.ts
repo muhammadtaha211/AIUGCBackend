@@ -13,6 +13,7 @@ import {
   demos,
   hookClips,
   personaImages,
+  personas,
   scripts,
   sets,
   videoRenders,
@@ -45,14 +46,17 @@ export const GPU_COST_AGOROT_PER_SECOND: Record<LipsyncResolution, number> = {
 
 const DEFAULT_LIPSYNC_FPS = 25;
 const DEFAULT_LIPSYNC_RESOLUTION: LipsyncResolution = "720p";
+/** 80ms @25fps of headroom over fal's "audio must outlast the frames" rule. */
+const DEFAULT_LIPSYNC_SAFETY_FRAMES = 2;
 
 /**
- * The two knobs that shape the fal submit body. Both are plain app_config
- * strings with no seeded row, so dropping to 480p is one INSERT, no deploy.
+ * The three knobs that shape the fal submit body. All are plain app_config
+ * rows with no seed, so dropping to 480p — or widening the safety margin after
+ * another 422 — is one INSERT, no deploy.
  */
 export async function lipsyncSettings(
   db: Db,
-): Promise<{ fps: number; resolution: LipsyncResolution }> {
+): Promise<{ fps: number; resolution: LipsyncResolution; safetyFrames: number }> {
   return {
     fps: await getConfigValueOr(db, "lipsync_fps", z.number().positive(), DEFAULT_LIPSYNC_FPS),
     resolution: await getConfigValueOr(
@@ -61,7 +65,49 @@ export async function lipsyncSettings(
       lipsyncResolutionSchema,
       DEFAULT_LIPSYNC_RESOLUTION,
     ),
+    safetyFrames: await getConfigValueOr(
+      db,
+      "lipsync_safety_frames",
+      z.number().int().nonnegative(),
+      DEFAULT_LIPSYNC_SAFETY_FRAMES,
+    ),
   };
+}
+
+/**
+ * InfiniteTalk requires a text prompt. The one-liner this replaced left the face
+ * blank and staring through the pause between sentences — an audio-driven model
+ * has nothing to animate while the audio is silent unless the prompt says where
+ * the expression should live. Directing it into the face and forbidding head and
+ * torso motion outright read markedly more natural on the same image and audio.
+ */
+export const DEFAULT_LIPSYNC_PROMPT =
+  "Talks to the camera like they're telling a friend something exciting — warm, casual, " +
+  "enthusiastic. Expression lives entirely in the face: eyes, eyebrows, a small smile " +
+  "breaking through. Head stays level and steady — no bobbing, no rhythmic nodding, no " +
+  "swaying. Shoulders and torso still, as if the arm holding the phone is bracing them. " +
+  "Hands stay down, never near the face. Fixed close camera, no pan, no zoom, no movement. " +
+  "Single continuous shot. Casual handheld phone video, not cinematic.";
+
+/** `personas.identity` is free-form jsonb; only this shape is a real override. */
+const motionPromptSchema = z.object({ motionPrompt: z.string() });
+
+/**
+ * Persona override → app_config `lipsync_prompt` → the default above. Personas
+ * differ in how much they should move and the persona row is the only place that
+ * knows, but an identity that is null, not an object, or carries a non-string
+ * motionPrompt falls through instead of failing a paid render.
+ */
+export async function resolveLipsyncPrompt(db: Db, personaId?: string): Promise<string> {
+  if (personaId) {
+    const persona = (
+      await db.select().from(personas).where(eq(personas.id, personaId)).limit(1)
+    )[0];
+    const identity = motionPromptSchema.safeParse(persona?.identity);
+    const override = identity.success ? identity.data.motionPrompt.trim() : "";
+    if (override) return override;
+  }
+  return getConfigValueOr(db, "lipsync_prompt", z.string().min(1), DEFAULT_LIPSYNC_PROMPT);
 }
 
 /**
@@ -94,12 +140,15 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       // render the wrong ad, so it fails here instead.
       if (!audio.durationMs) throw new PermanentError("audio render has no duration");
 
-      const { fps, resolution } = await lipsyncSettings(ctx.db);
-      const numFrames = framesForAudio(audio.durationMs, fps);
+      const { fps, resolution, safetyFrames } = await lipsyncSettings(ctx.db);
+      const numFrames = framesForAudio(audio.durationMs, fps, safetyFrames);
 
       // Source image: an approved composite takes precedence (hard gate),
       // then an explicit persona image, then the persona's default image.
+      // The persona behind that image also owns the motion prompt, so both
+      // travel out of the same branch.
       let imagePath: string;
+      let personaId: string | undefined;
       if (params.compositeId) {
         const composite = (
           await ctx.db
@@ -113,6 +162,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
           throw new PermanentError("composite is not approved (hard gate)");
         }
         imagePath = composite.outputPath;
+        personaId = composite.personaId;
       } else if (params.personaImageId) {
         const image = (
           await ctx.db
@@ -123,6 +173,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
         )[0];
         if (!image) throw new PermanentError("persona image not found");
         imagePath = image.filePath;
+        personaId = image.personaId;
       } else if (params.personaId) {
         const image = (
           await ctx.db
@@ -139,6 +190,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
           );
         }
         imagePath = image.filePath;
+        personaId = params.personaId;
       } else {
         throw new PermanentError("service B params name no composite, persona image, or persona");
       }
@@ -146,6 +198,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       const { providerJobId } = await provider.submit({
         imageUrl: await storage.signedUrl(imagePath, 3600),
         audioUrl: await storage.signedUrl(audio.filePath, 3600),
+        prompt: await resolveLipsyncPrompt(ctx.db, personaId),
         numFrames,
         resolution,
       });

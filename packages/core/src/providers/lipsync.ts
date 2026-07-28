@@ -15,6 +15,12 @@ export interface LipsyncSubmitInput {
   /** Reference image: persona image or approved product-in-hand composite. */
   imageUrl: string;
   audioUrl: string;
+  /**
+   * The endpoint's required motion prompt, already resolved (persona override →
+   * app_config → default) — see `resolveLipsyncPrompt`. The provider takes it as
+   * an input rather than reading config or the DB itself.
+   */
+  prompt: string;
   /** Derived from the approved audio — see `framesForAudio`. */
   numFrames: number;
   resolution: LipsyncResolution;
@@ -32,11 +38,22 @@ export type LipsyncResolution = z.infer<typeof lipsyncResolutionSchema>;
  * Left unset it uses the schema default (145 ≈ 5.8s @25fps) and cuts the script
  * mid-sentence, which is what the first paid render did. Past the schema
  * maximum we fail loudly rather than truncate: silent truncation is the bug.
+ *
+ * fal also requires the audio to outlast the request by a frame
+ * (`audio_seconds >= (num_frames + 1) / fps`), so asking for the audio's exact
+ * frame count 422s every render that lands on a frame boundary — 11.04s @25fps
+ * asked for 276 and came back "must be at least 11.08s". Hence floor, never
+ * round, minus `safetyFrames` on top: our duration is our own probe of the mp3
+ * while fal decodes it independently, and encoder delay/padding shifts the
+ * measured length a few ms either way. Under-requesting is visually free — the
+ * composition runs on the approved mp3 and holds the talking head's last frame
+ * — while a one-frame overshoot fails the whole render.
  */
-export function framesForAudio(durationMs: number, fps: number): number {
-  const frames = Math.round((durationMs / 1000) * fps);
+export function framesForAudio(durationMs: number, fps: number, safetyFrames: number): number {
+  const frames = Math.floor((durationMs * fps) / 1000) - safetyFrames;
   if (frames > LIPSYNC_MAX_FRAMES) {
-    const maxSeconds = Math.floor(LIPSYNC_MAX_FRAMES / fps);
+    // Floored to a tenth so the limit we quote is one fal would actually take.
+    const maxSeconds = Math.floor(((LIPSYNC_MAX_FRAMES + safetyFrames) / fps) * 10) / 10;
     throw new PermanentError(
       `הסקריפט ארוך מדי לסרטון אחד: אורך האודיו ${(durationMs / 1000).toFixed(1)} שניות, ` +
         `והמקסימום הוא ${maxSeconds} שניות. קצרו את הסקריפט ונסו שוב.`,
@@ -58,10 +75,6 @@ export interface LipsyncProvider {
 
 const FAL_BASE = "https://queue.fal.run/fal-ai/infinitalk";
 
-/** The endpoint requires a text prompt; ours is fixed. */
-const IMAGE_MODE_PROMPT =
-  "A person talks to the camera naturally, subtle head movement, UGC selfie style.";
-
 class FalLipsync implements LipsyncProvider {
   private headers(): Record<string, string> {
     const key = getEnv().FAL_KEY;
@@ -73,7 +86,7 @@ class FalLipsync implements LipsyncProvider {
     const body = {
       image_url: input.imageUrl,
       audio_url: input.audioUrl,
-      prompt: IMAGE_MODE_PROMPT,
+      prompt: input.prompt,
       num_frames: input.numFrames,
       resolution: input.resolution,
     };
