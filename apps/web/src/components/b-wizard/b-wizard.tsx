@@ -46,7 +46,9 @@ export function BWizard({ businessId, businessName, category }: BWizardProps) {
   const [persona, setPersona] = useState<Persona | null>(null);
   const [composite, setComposite] = useState<CompositeState | null>(null);
   const [pointers, setPointers] = useState("");
-  const [duration, setDuration] = useState<15 | 30>(15);
+  // 30s was removed from the wizard: its word budget can produce audio past the
+  // lipsync frame ceiling, failing after the customer already paid for TTS.
+  const duration = 15;
   const [script, setScript] = useState<ScriptState | null>(null);
   const [editedText, setEditedText] = useState("");
   const [audio, setAudio] = useState<AudioState | null>(null);
@@ -135,7 +137,6 @@ export function BWizard({ businessId, businessName, category }: BWizardProps) {
               pointers={pointers}
               setPointers={setPointers}
               duration={duration}
-              setDuration={setDuration}
               script={script}
               setScript={setScript}
               editedText={editedText}

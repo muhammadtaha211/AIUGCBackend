@@ -60,8 +60,9 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
 
 ## Credits
 
-Unit: 1 credit ≈ one Service A render. Config (`credit_costs`): A=1, **B=15** (a 30s 720p
-lip-sync run costs ~₪67 in GPU alone). Placeholder plans (founder tunes before launch):
+Unit: 1 credit ≈ one Service A render. Config (`credit_costs`): A=1, **B=15** (GPU at fal's
+verified per-output-second rates: a 30s run ≈ ₪45 at native 720p, ≈ ₪25 on the 480p + Topaz
+upscale path — see [04-integrations.md](04-integrations.md)). Placeholder plans (founder tunes before launch):
 starter ₪299/40cr (A only), pro ₪599/100cr, studio ₪999/200cr.
 
 Semantics (all in `credits.ts` + `sets.ts:enforceQuota`):

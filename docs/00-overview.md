@@ -31,7 +31,7 @@ One pnpm monorepo, boring-tech throughout:
 - **Supabase cloud from day 1** so the CLI phase and the web launch share one database, one
   storage layout, one job queue. (Local dev/tests run against PGlite + a filesystem storage
   backend — no Docker needed.)
-- **One worker process, two lanes** (heavy = render/lipsync, light = everything else) so a
+- **One worker process, two lanes** (heavy = render/lipsync/upscale, light = everything else) so a
   minutes-long render never blocks an audio preview. Render concurrency is exactly 1 by
   construction. See [02-jobs.md](02-jobs.md).
 - **`DRY_RUN=1` stubs every external provider** with deterministic fakes, so the entire pipeline
@@ -47,10 +47,11 @@ supabase/migrations/    0000 (drizzle-generated DDL) · 0001 (extras+seed) · 00
 packages/core/src/
   db/                   drizzle schema + driver-agnostic client
   jobs/                 queue (SKIP LOCKED), worker lanes, failure taxonomy, daily scheduler
-  providers/            anthropic · elevenlabs · lipsync (fal) · remotion · whisperx
+  providers/            anthropic · elevenlabs · imagegen · lipsync · upscale (fal) · remotion ·
+                        whisperx (dormant fallback)
   media/ffmpeg.ts       probe/normalize/thumbnail/atempo
-  pipelines/            businesses · demos · copy · pronunciation · tts · sets · renders ·
-                        qc · credits · billing · janitor · bank
+  pipelines/            businesses · demos · copy · pronunciation · tts · composites · sets ·
+                        renders · qc · credits · billing · janitor · bank
   storage.ts            Supabase Storage / local filesystem backends
   captions.ts           word alignment -> 2–4-word karaoke chunks (pure, tested)
   budget.ts             rolling-24h spend caps + usage recording

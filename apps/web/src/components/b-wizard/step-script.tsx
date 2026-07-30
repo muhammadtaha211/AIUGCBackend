@@ -4,7 +4,6 @@ import { useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
-import { OptionCard } from "@/components/ui/option-card";
 import { countWords, needsTextSave, withEditedText, type ScriptState } from "@/lib/service-b-ui";
 import { postJson } from "@/lib/use-api";
 
@@ -13,8 +12,8 @@ type StepScriptProps = {
   personaId: string;
   pointers: string;
   setPointers: (value: string) => void;
-  duration: 15 | 30;
-  setDuration: (value: 15 | 30) => void;
+  /** Only 15s ships: a 30s word budget can outrun the lipsync frame ceiling. */
+  duration: 15;
   script: ScriptState | null;
   setScript: (script: ScriptState | null) => void;
   editedText: string;
@@ -32,7 +31,6 @@ export function StepScript({
   pointers,
   setPointers,
   duration,
-  setDuration,
   script,
   setScript,
   editedText,
@@ -112,23 +110,7 @@ export function StepScript({
             onChange={(event) => setPointers(event.target.value)}
           />
 
-          <div>
-            <p className="mb-1.5 text-sm font-medium text-gray-200">אורך הסרטון</p>
-            <div role="radiogroup" aria-label="אורך הסרטון" className="grid grid-cols-2 gap-3">
-              <OptionCard
-                title="15 שניות"
-                description="קצר וקולע"
-                selected={duration === 15}
-                onSelect={() => setDuration(15)}
-              />
-              <OptionCard
-                title="30 שניות"
-                description="מקום להרחיב"
-                selected={duration === 30}
-                onSelect={() => setDuration(30)}
-              />
-            </div>
-          </div>
+          <p className="text-sm text-gray-400">הסרטון יהיה באורך של כ־15 שניות.</p>
         </div>
 
         {error && (

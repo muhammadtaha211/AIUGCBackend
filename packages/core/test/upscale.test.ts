@@ -11,6 +11,7 @@ import { PermanentError } from "../src/jobs/errors";
 import { runLane } from "../src/jobs/worker";
 import { addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
+import { rejectRender } from "../src/pipelines/qc";
 import { upscaleFactorFor } from "../src/pipelines/renders";
 import { createBRender, type VariantParams } from "../src/pipelines/sets";
 import { approveAudio, requestAudio } from "../src/pipelines/tts";
@@ -273,5 +274,34 @@ describe("upscale pipeline (dry-run, real DB + jobs + storage)", () => {
     expect(row.status).toBe("qc_pending");
     expect(row.releasedAt).toBeNull();
     expect(row.filePath).toMatch(/^renders\//);
+  });
+
+  it("a QC regeneration re-rolls: no seed, clip paths, or upscale error on the new params", async () => {
+    // The previous test flipped auto_release_b on; this render must stay qc_pending.
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: false })
+      .where(sql`${dbSchema.appConfig.key} = 'auto_release_b'`);
+
+    const renderId = await queueBRender();
+    await drainAll();
+    const params = await paramsOf(renderId);
+    // Plant an upscaleError too, so all four stripped keys are exercised.
+    await db
+      .update(dbSchema.videoRenders)
+      .set({ params: { ...params, upscaleError: "fal 400: something" } })
+      .where(sql`${dbSchema.videoRenders.id} = ${renderId}`);
+
+    const { regeneratedRenderId } = await rejectRender(db, renderId, "עיניים מוזרות");
+    expect(regeneratedRenderId).toBeDefined();
+
+    const retry = await paramsOf(regeneratedRenderId!);
+    expect(retry.seed).toBeUndefined();
+    expect(retry.lipsyncPlatePath).toBeUndefined();
+    expect(retry.lipsyncPath).toBeUndefined();
+    expect(retry.upscaleError).toBeUndefined();
+    // The inputs that define the take carry over unchanged.
+    expect(retry.audioRenderId).toBe(params.audioRenderId);
+    expect(retry.personaId).toBe(params.personaId);
   });
 });

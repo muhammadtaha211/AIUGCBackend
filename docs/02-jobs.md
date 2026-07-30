@@ -37,7 +37,7 @@ founder's `aiugc work` and the server worker can run against the same database s
 
 Handlers that own a domain row mirror terminal failures onto it (demo → `rejected`,
 audio_render → `failed`, video_render → `failed` + **credit refund**). The daily janitor sweeps
-dead render/lipsync jobs as a second net: marks their renders failed and refunds
+dead render/lipsync/upscale jobs as a second net: marks their renders failed and refunds
 (`refundRenderIfNeeded` is idempotent — one refund per debit, ever).
 
 ## Idempotency per external call
@@ -46,7 +46,11 @@ dead render/lipsync jobs as a second net: marks their renders failed and refunds
   call is logged to `usage_events` first-class, so double-spend is visible and capped.
 - **fal.ai (GPU)**: the expensive one. `handleLipsync` writes `state.providerJobId` via
   `checkpoint()` **immediately after submission acceptance**; any retry/crash resumes polling
-  that id instead of resubmitting a paid GPU run.
+  that id instead of resubmitting a paid GPU run. The Topaz **upscale** deliberately inverts
+  this on a failed poll — it clears the id and resubmits with a fresh signed input URL (cents,
+  not shekels; see [04-integrations.md](04-integrations.md) §Topaz). Known gap for both poll
+  loops: **no deadline** — a provider job that never completes reschedules forever (reschedules
+  consume no attempt), so it never goes dead, never errors, never refunds.
 - **Remotion/ffmpeg**: local and idempotent by construction (same inputs → overwrite outputs).
 - **Gateway charges**: `gateway_events.gateway_event_id` UNIQUE — processing a duplicate
   callback/charge report is a no-op ([05-billing.md](05-billing.md)).
@@ -59,7 +63,7 @@ Each handler enqueues its successor in code — no DAG engine:
 Service A silent : ingest_demo ─▶ ready ─┐ (user picks copy + set)      ┌▶ released
                                           └ createSet ─▶ render_video ──┘
 Service A voiced : synth_tts ─▶ audio ready ─▶ ⏸ HUMAN: approveAudio ⏸ ─▶ createSet ─▶ render_video
-Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (submit ▶ poll…) ─▶ render_video ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
+Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (submit ▶ poll…) ─▶ upscale (submit ▶ poll…) ─▶ render_video ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
 Daily            : janitor · billing_renewals (idempotency key = date; enqueued by any running worker, hourly)
 ```
 
@@ -75,8 +79,9 @@ tighter-budget script regeneration → atempo ≤5% → else fail with a human-r
 
 `apps/worker` runs two sequential lanes (`runLane`):
 
-- **heavy** — `render_video`, `lipsync`: strictly one at a time → Remotion render concurrency
-  is 1 by construction; lipsync jobs cost the lane nothing while pending (they reschedule).
+- **heavy** — `render_video`, `lipsync`, `upscale`: strictly one at a time → Remotion render
+  concurrency is 1 by construction; lipsync/upscale jobs cost the lane nothing while pending
+  (they reschedule).
 - **light** — everything else: audio previews and copy stay responsive during a long render.
 
 `aiugc work [--once]` runs the identical lanes inline for the CLI phase. Scaling path (not

@@ -64,7 +64,7 @@ No pipeline code moves. The worker deploys unchanged.
 
 ## Build sequence from here (founder's roadmap)
 
-1. **Provision**: Supabase project (apply migrations 0000–0006, create the three buckets), API
+1. **Provision**: Supabase project (apply migrations 0000–0007, create the three buckets), API
    keys (Anthropic, ElevenLabs, fal), a worker box with ffmpeg — flip `DRY_RUN` off.
 2. ~~**Remotion compositions**~~ — **done for Service B**: `@aiugc/remotion` renders the
    `ServiceB` composition against the props contract in `providers/remotion.ts`, wired into
@@ -72,8 +72,9 @@ No pipeline code moves. The worker deploys unchanged.
    composition (`renderVideo()` throws for `kind: "service_a"`), B-roll cutaway logic
    (`brollPaths` is accepted and ignored), and calibrating `words_per_second` per voice with test
    renders.
-3. **WhisperX fallback**: small python CLI on the worker box behind `forcedAlign()` — only
-   needed if eleven_v3 turns out not to return alignment.
+3. ~~**WhisperX fallback**~~ — **not needed**: eleven_v3 returns character alignment in
+   production (`alignment_source = "elevenlabs"`). `forcedAlign()` stays in the tree as a
+   dormant, unwired fallback; wire the python CLI only if alignment ever comes back absent.
 4. **Outreach loop starts here** — everything above is enough to ship samples from the CLI.
 5. **Web app** (during outreach): auth + upload + the flows above as thin routes; merchant
    onboarding with Grow + Green Invoice; callback endpoint; checkout.

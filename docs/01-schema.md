@@ -12,6 +12,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 - `0005_persona_images.sql` — generated: `persona_images` table, drops `persona_clips`
 - `0006_persona_images_default.sql` — hand-written: partial unique index (one default image per
   persona)
+- `0007_rls_composites_persona_images.sql` — **Supabase-only**: SELECT policies for the tables
+  created after 0002 (composites owner-scoped; persona_images of active personas readable by
+  any authenticated user)
 
 ## Design rules
 
@@ -69,7 +72,8 @@ tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become 
   longest-match-first, business entries shadow globals (`applyPronunciationMap`).
 - **audio_renders** — the audio preview + hard gate. Holds `rendered_text` (exact
   post-pronunciation-map text sent to TTS — reproducibility), `word_timestamps jsonb`
-  (2–4-word karaoke chunks, ready for Remotion), `alignment_source` (`elevenlabs|whisperx`),
+  (2–4-word karaoke chunks, ready for Remotion), `alignment_source` (`elevenlabs|whisperx` —
+  `elevenlabs` in practice; whisperx is a dormant fallback, see 04),
   `stretch_ratio` (≤1.05), and **`approved_at`** — every render path checks it.
 
 ### Variants & renders
@@ -79,11 +83,15 @@ tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become 
   the demo, so they're held per set). **`parent_variant_id`** makes "more like this" one insert:
   a new set holding the starred variant's params and varying the requested axes
   (`moreLikeThis()`); the FK to video_renders is added in 0001 (circular with `set_id`).
-- **video_renders** — one row per variant/render. `params jsonb` is the fully resolved cell.
-  Status: `queued→rendering→(qc_pending)→released | rejected | failed`. Service A skips
-  `qc_pending`; Service B enters it unless `auto_release_b`. `watermarked`, `starred_at`,
-  `released_at`, `rejected_reason`, `error`. QC rejection + regeneration inserts a **new row**
-  with the same params (no re-debit).
+- **video_renders** — one row per variant/render. `params jsonb` is the fully resolved cell;
+  for Service B the pipeline also accumulates `seed` (pinned before the lipsync submit),
+  `lipsyncUrl`, `lipsyncPlatePath`, `lipsyncPath` (the clip Remotion composes) and
+  `upscaleError` (set on upscale fallback — forces the QC gate) on it (`VariantParams`,
+  `pipelines/sets.ts`). Status: `queued→rendering→(qc_pending)→released | rejected | failed`.
+  Service A skips `qc_pending`; Service B enters it unless `auto_release_b`. `watermarked`,
+  `starred_at`, `released_at`, `rejected_reason`, `error`. QC rejection + regeneration inserts
+  a **new row** with the same params minus the seed and the per-render output keys (no
+  re-debit).
 
 ### Jobs & usage
 
@@ -91,7 +99,9 @@ tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become 
   external side effects (e.g. the fal request id); `(status, run_at)` index drives the claim.
 - **usage_events** — one row per external call: provider, kind (`llm_tokens|tts_chars|
 gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feeds the
-  rolling-24h spend caps and any future per-business analytics.
+  rolling-24h spend caps and any future per-business analytics. **Known gap**: `usage_kind` has
+  no value for the Topaz upscale, so upscale calls write no row — cost-per-video is understated
+  until the enum gets a migration (see 04 §Topaz).
 
 ### Billing (details in [05-billing.md](05-billing.md))
 
@@ -115,11 +125,14 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   (now including `images`), `words_per_second` (per voice, calibrated once with test renders),
   `retention_days`, `audio_preview_daily_limit`, `credit_costs`, `dunning`,
   `imagegen_cost_agorot` (per-image cost estimate; a fal price change is an UPDATE here).
-  Two TTS knobs are **opt-in and unseeded** — read with `getConfigValueOr`, so a missing row is
-  the default and toggling them is an INSERT/DELETE, never a migration:
-  `tts_enhance` (boolean; absent = `false` = no v3 audio-tag pass) and `tts_stability` (number;
+  Several knobs are **opt-in and unseeded** — read with `getConfigValueOr`, so a missing row is
+  the code default and toggling them is an INSERT/DELETE, never a migration:
+  `tts_enhance` (boolean; absent = `false` = no v3 audio-tag pass), `tts_stability` (number;
   absent = `voice_settings` omitted from the ElevenLabs body — v3 takes 0.0 / 0.5 / 1.0 =
-  creative / natural / robust).
+  creative / natural / robust), and the four lipsync knobs (`pipelines/renders.ts`):
+  `lipsync_fps` (default 25), `lipsync_resolution` (`480p|720p`, default `720p`),
+  `lipsync_safety_frames` (default 2) and `lipsync_prompt` (default
+  `DEFAULT_LIPSYNC_PROMPT`; a persona's `identity.motionPrompt` overrides both).
 
 ## Row-level security (0002, Supabase only)
 
@@ -132,7 +145,8 @@ get read-only access. Policies:
   Service B output before the founder releases it; a rejected-and-regenerated render is
   internal.
 - Catalog SELECT for any authenticated user: hook_clips/personas/structures (active rows),
-  sounds, plans. (0002's persona_clips policy is dropped with the table in 0005.)
+  sounds, plans, and persona_images of active personas (0007). (0002's persona_clips policy is
+  dropped with the table in 0005; composites get an owner-scoped SELECT in 0007.)
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
   pronunciation_entries.
 - `handle_new_user()` trigger mirrors `auth.users` inserts into `public.users`.
