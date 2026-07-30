@@ -93,6 +93,14 @@ class DryRunImagegen implements ImagegenProvider {
   }
 }
 
+let override: ImagegenProvider | undefined;
+
+/** Test hook (same shape as `setLipsyncProvider`). */
+export function setImagegenProvider(provider: ImagegenProvider | undefined): void {
+  override = provider;
+}
+
 export function getImagegenProvider(): ImagegenProvider {
+  if (override) return override;
   return getEnv().DRY_RUN ? new DryRunImagegen() : new FalImagegen();
 }

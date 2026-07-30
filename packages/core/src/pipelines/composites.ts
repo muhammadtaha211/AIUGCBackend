@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq, like } from "drizzle-orm";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -108,16 +108,23 @@ export async function handleGenerateComposite(job: Job, ctx: JobContext): Promis
         .set({ status: "generating" })
         .where(eq(composites.id, compositeId));
 
-      // Persona identity: the persona's reference images.
+      // Persona identity: the persona's reference images. Rows whose upload
+      // never finished hold the "pending" placeholder (no "/") — they must not
+      // reach the provider. Default first: the composite must show the same
+      // face lipsync will render, and lipsync uses the default image.
       const images = await ctx.db
         .select()
         .from(personaImages)
-        .where(eq(personaImages.personaId, composite.personaId))
+        .where(
+          and(
+            eq(personaImages.personaId, composite.personaId),
+            like(personaImages.filePath, "%/%"),
+          ),
+        )
+        .orderBy(desc(personaImages.isDefault), desc(personaImages.createdAt))
         .limit(MAX_REFERENCE_IMAGES);
       if (images.length === 0) {
-        throw new PermanentError(
-          "persona has no reference images — add one with `aiugc persona add-image`",
-        );
+        throw new PermanentError("לדמות אין תמונת ייחוס תקינה — העלו תמונה חדשה לדמות ונסו שוב");
       }
       const referenceUrls: string[] = [];
       for (const image of images) {

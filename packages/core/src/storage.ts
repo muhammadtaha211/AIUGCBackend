@@ -42,7 +42,9 @@ function splitPath(storagePath: string): { bucket: Bucket; key: string } {
 
 /** The one message every backend throws for an absent object (shown to the user as-is). */
 export function missingObjectError(storagePath: string): PermanentError {
-  return new PermanentError(`קובץ המקור לא נמצא באחסון (${storagePath})`);
+  // The key holds business UUIDs — keep it off the user-facing message; the
+  // worker's `log.warn({ err })` serializes the property for debugging.
+  return Object.assign(new PermanentError("קובץ המקור לא נמצא באחסון"), { storagePath });
 }
 
 /** Supabase reports a missing key as 404 / "Object not found"; anything else stays transient. */

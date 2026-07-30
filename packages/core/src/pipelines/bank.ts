@@ -63,15 +63,22 @@ export async function addPersonaImage(
     .values({ personaId: opts.personaId, filePath: "pending", isDefault })
     .returning();
   const image = inserted[0]!;
-  const filePath = await getStorage().put(
-    "assets",
-    storageKey({
-      entity: "persona_image",
-      id: image.id,
-      filename: `image${path.extname(opts.filePath) || ".jpg"}`,
-    }),
-    opts.filePath,
-  );
+  let filePath: string;
+  try {
+    filePath = await getStorage().put(
+      "assets",
+      storageKey({
+        entity: "persona_image",
+        id: image.id,
+        filename: `image${path.extname(opts.filePath) || ".jpg"}`,
+      }),
+      opts.filePath,
+    );
+  } catch (err) {
+    // A failed upload must not strand the "pending" placeholder row.
+    await db.delete(personaImages).where(eq(personaImages.id, image.id));
+    throw err;
+  }
   await db.update(personaImages).set({ filePath }).where(eq(personaImages.id, image.id));
   return { ...image, filePath };
 }
