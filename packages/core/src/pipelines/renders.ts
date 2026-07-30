@@ -18,10 +18,10 @@ import {
   sets,
   videoRenders,
 } from "../db/schema";
-import { PermanentError } from "../jobs/errors";
+import { PermanentError, TransientError } from "../jobs/errors";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
-import { thumbnail } from "../media/ffmpeg";
+import { probe, thumbnail, type ProbeResult } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import {
   framesForAudio,
@@ -30,6 +30,7 @@ import {
   type LipsyncResolution,
 } from "../providers/lipsync";
 import { renderVideo, type RenderVideoProps, type TextSafeArea } from "../providers/remotion";
+import { getUpscaleProvider } from "../providers/upscale";
 import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
 import type { VariantParams } from "./sets";
@@ -195,12 +196,22 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
         throw new PermanentError("service B params name no composite, persona image, or persona");
       }
 
+      // Generated exactly once per render and persisted BEFORE the submit, so a
+      // retry or a resubmit asks fal for the same take instead of paying for a
+      // different one.
+      let seed = params.seed;
+      if (typeof seed !== "number") {
+        seed = Math.floor(Math.random() * 2_147_483_648); // [0, 2147483647]
+        await mergeParams(ctx.db, videoRenderId, { seed });
+      }
+
       const { providerJobId } = await provider.submit({
         imageUrl: await storage.signedUrl(imagePath, 3600),
         audioUrl: await storage.signedUrl(audio.filePath, 3600),
         prompt: await resolveLipsyncPrompt(ctx.db, personaId),
         numFrames,
         resolution,
+        seed,
       });
       const gpuSeconds = Math.ceil(audio.durationMs / 1000);
       await recordUsage(ctx.db, {
@@ -219,16 +230,10 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
     if (result.status === "pending") return { kind: "reschedule", delayMs: 30_000 };
     if (result.status === "failed") throw new PermanentError(`lipsync failed: ${result.reason}`);
 
-    await ctx.db
-      .update(videoRenders)
-      .set({
-        params: { ...params, lipsyncUrl: result.videoUrl },
-        updatedAt: new Date(),
-      })
-      .where(eq(videoRenders.id, videoRenderId));
+    await mergeParams(ctx.db, videoRenderId, { lipsyncUrl: result.videoUrl });
     await enqueue(ctx.db, {
-      type: "render_video",
-      idempotencyKey: `render:${videoRenderId}`,
+      type: "upscale",
+      idempotencyKey: `upscale:${videoRenderId}`,
       payload: { videoRenderId },
     });
     return { kind: "done" };
@@ -236,6 +241,201 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
     await failRenderOnPermanent(ctx.db, videoRenderId, err);
     throw err;
   }
+}
+
+/**
+ * The lip-sync plate comes back at the resolution we pay for (480p by default),
+ * and Remotion composes it into a 1080x1920 frame — so it goes through Topaz
+ * Starlight first. `upscale_factor` is computed per clip rather than pinned:
+ * output above 1080p costs $0.08/s instead of $0.02/s and Remotion would only
+ * scale it back down. Floor, never round up.
+ */
+const UPSCALE_TARGET_WIDTH = 1080;
+const UPSCALE_MAX_FACTOR = 4;
+
+export function upscaleFactorFor(width: number): number {
+  const factor = Math.floor((UPSCALE_TARGET_WIDTH / width) * 100) / 100;
+  return Math.min(Math.max(factor, 1), UPSCALE_MAX_FACTOR);
+}
+
+/**
+ * DRY_RUN has no ffprobe and the stub copies the plate through unchanged, so one
+ * fake describes both probes: a 480-wide plate, i.e. a real 2.25x upscale.
+ */
+const DRY_RUN_PROBE: ProbeResult = {
+  width: 480,
+  height: 854,
+  durationMs: 10_000,
+  hasAudio: true,
+};
+
+/** Frames added or dropped here would drift the captions against the voiceover. */
+const UPSCALE_DURATION_DRIFT_MS = 100;
+
+/**
+ * Service B step 2: Topaz Starlight upscale of the lip-sync plate.
+ *
+ * Both the plate and the upscaled clip are kept: the plate is the input fal
+ * fetches over a signed URL (so a resubmit can mint a fresh one) and the
+ * fallback if the upscale never lands.
+ */
+export async function handleUpscale(job: Job, ctx: JobContext): Promise<JobResult> {
+  const { videoRenderId } = job.payload as { videoRenderId: string };
+  const render = await loadRender(ctx.db, videoRenderId);
+  const params = render.params as VariantParams;
+  const provider = getUpscaleProvider();
+  const state = job.state as {
+    providerJobId?: string;
+    platePath?: string;
+    plateDurationMs?: number;
+  };
+  const storage = getStorage();
+  const localDir = path.join(WORK_DIR, "upscale", videoRenderId);
+  // From the job's own state, never from params: a QC regeneration copies the
+  // rejected render's params, and its plate is not this render's plate.
+  let platePath = state.platePath;
+
+  try {
+    if (!state.providerJobId) {
+      mkdirSync(localDir, { recursive: true });
+      const localPlate = path.join(localDir, "plate.mp4");
+      if (platePath) {
+        await storage.download(platePath, localPlate);
+      } else {
+        if (!params.lipsyncUrl) throw new PermanentError("render has no lipsync output yet");
+        if (params.lipsyncUrl.startsWith("dryrun://")) {
+          writeFileSync(localPlate, "DRY_RUN placeholder lipsync clip");
+        } else {
+          const response = await fetch(params.lipsyncUrl);
+          if (!response.ok) throw new PermanentError(`lipsync download failed: ${response.status}`);
+          writeFileSync(localPlate, Buffer.from(await response.arrayBuffer()));
+        }
+        platePath = await storage.put(
+          "renders",
+          storageKey({
+            businessId: render.businessId,
+            entity: "video",
+            id: videoRenderId,
+            filename: "lipsync-plate.mp4",
+          }),
+          localPlate,
+        );
+        await mergeParams(ctx.db, videoRenderId, { lipsyncPlatePath: platePath });
+      }
+
+      const plate = getEnv().DRY_RUN ? DRY_RUN_PROBE : await probe(localPlate);
+      const factor = upscaleFactorFor(plate.width);
+      ctx.log.info(
+        { width: plate.width, height: plate.height, factor },
+        "upscale: probed the lipsync plate",
+      );
+      if (factor <= 1) {
+        ctx.log.info("upscale: plate is already at the output width — skipping");
+        await mergeParams(ctx.db, videoRenderId, { lipsyncPath: platePath });
+        await enqueueRenderVideo(ctx.db, videoRenderId);
+        return { kind: "done" };
+      }
+
+      const { providerJobId } = await provider.submit({
+        videoUrl: await storage.signedUrl(platePath, 3600),
+        upscaleFactor: factor,
+      });
+      const next = { providerJobId, platePath, plateDurationMs: plate.durationMs };
+      await ctx.checkpoint(next);
+      return { kind: "reschedule", delayMs: 15_000, state: next };
+    }
+
+    const result = await provider.poll(state.providerJobId);
+    if (result.status === "pending") return { kind: "reschedule", delayMs: 30_000 };
+    if (result.status === "failed") {
+      // Deliberately the opposite of handleLipsync: clearing the provider job id
+      // makes the retry resubmit with a fresh signed input URL, which is the
+      // likeliest thing that went wrong — and a resubmit here costs cents where
+      // a lipsync resubmit costs shekels.
+      await ctx.checkpoint({ platePath, plateDurationMs: state.plateDurationMs });
+      throw new TransientError(`upscale failed: ${result.reason}`);
+    }
+    if (!platePath) throw new PermanentError("upscale finished but the plate is missing");
+
+    mkdirSync(localDir, { recursive: true });
+    const localUpscaled = path.join(localDir, "upscaled.mp4");
+    if (result.videoUrl.startsWith("dryrun://")) {
+      await storage.download(platePath, localUpscaled); // stub: input through unchanged
+    } else {
+      const response = await fetch(result.videoUrl);
+      if (!response.ok) throw new PermanentError(`upscale download failed: ${response.status}`);
+      writeFileSync(localUpscaled, Buffer.from(await response.arrayBuffer()));
+    }
+
+    // The upscaled clip's own metadata is what goes downstream — Remotion reads
+    // the frame count off this exact file, never off the plate.
+    const upscaled = getEnv().DRY_RUN ? DRY_RUN_PROBE : await probe(localUpscaled);
+    const plateDurationMs = state.plateDurationMs;
+    if (
+      plateDurationMs !== undefined &&
+      Math.abs(upscaled.durationMs - plateDurationMs) > UPSCALE_DURATION_DRIFT_MS
+    ) {
+      ctx.log.warn(
+        { plateDurationMs, upscaledDurationMs: upscaled.durationMs },
+        "upscale: duration changed — captions may drift against the voiceover",
+      );
+    }
+    ctx.log.info(
+      { width: upscaled.width, height: upscaled.height, durationMs: upscaled.durationMs },
+      "upscale: probed the upscaled clip",
+    );
+
+    const lipsyncPath = await storage.put(
+      "renders",
+      storageKey({
+        businessId: render.businessId,
+        entity: "video",
+        id: videoRenderId,
+        filename: "lipsync-upscaled.mp4",
+      }),
+      localUpscaled,
+    );
+    // upscaleError is cleared: a successful upscale is not a degraded render,
+    // even if this render inherited the mark from a rejected one.
+    await mergeParams(ctx.db, videoRenderId, { lipsyncPath, upscaleError: undefined });
+    await enqueueRenderVideo(ctx.db, videoRenderId);
+    return { kind: "done" };
+  } catch (err) {
+    // A failed upscale must not cost the customer the render: fall back to the
+    // plate and let the founder look at it (never auto-released).
+    if (err instanceof PermanentError && platePath) {
+      ctx.log.warn({ err }, "upscale: falling back to the lipsync plate");
+      await mergeParams(ctx.db, videoRenderId, {
+        lipsyncPath: platePath,
+        upscaleError: err.message,
+      });
+      await enqueueRenderVideo(ctx.db, videoRenderId);
+      return { kind: "done" };
+    }
+    await failRenderOnPermanent(ctx.db, videoRenderId, err);
+    throw err;
+  }
+}
+
+async function enqueueRenderVideo(db: Db, videoRenderId: string): Promise<void> {
+  await enqueue(db, {
+    type: "render_video",
+    idempotencyKey: `render:${videoRenderId}`,
+    payload: { videoRenderId },
+  });
+}
+
+/** Merge keys into the render's params jsonb — never replace the object. */
+async function mergeParams(
+  db: Db,
+  videoRenderId: string,
+  patch: Partial<VariantParams>,
+): Promise<void> {
+  const render = await loadRender(db, videoRenderId);
+  await db
+    .update(videoRenders)
+    .set({ params: { ...(render.params as VariantParams), ...patch }, updatedAt: new Date() })
+    .where(eq(videoRenders.id, videoRenderId));
 }
 
 /**
@@ -291,7 +491,10 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
     }
 
     const autoReleaseB = await getConfigValue(ctx.db, "auto_release_b", z.boolean());
-    const released = render.service === "a" || autoReleaseB;
+    // A degraded render (the upscale failed and we fell back to the plate) always
+    // gets a human look, even with auto_release_b on.
+    const degraded = Boolean((render.params as VariantParams).upscaleError);
+    const released = render.service === "a" || (autoReleaseB && !degraded);
     await ctx.db
       .update(videoRenders)
       .set({
@@ -382,7 +585,9 @@ async function buildServiceBProps(
   localDir: string,
 ): Promise<RenderVideoProps> {
   const params = render.params as VariantParams;
-  if (!params.lipsyncUrl) throw new PermanentError("service B render has no lipsync output yet");
+  // Written by handleUpscale: the upscaled clip, or the plate when the upscale
+  // was skipped or fell back. Remotion reads the frame count off this file.
+  if (!params.lipsyncPath) throw new PermanentError("service B render has no lipsync clip yet");
 
   // Same karaoke chunks the voiced Service A variant burns (chunkWords output
   // stored on the audio render). A talking head without captions is not a
@@ -404,13 +609,7 @@ async function buildServiceBProps(
   await getStorage().download(audio.filePath, voiceoverPath);
 
   const talkingHeadPath = path.join(localDir, "talking-head.mp4");
-  if (params.lipsyncUrl.startsWith("dryrun://")) {
-    writeFileSync(talkingHeadPath, "DRY_RUN placeholder lipsync clip");
-  } else {
-    const response = await fetch(params.lipsyncUrl);
-    if (!response.ok) throw new PermanentError(`lipsync download failed: ${response.status}`);
-    writeFileSync(talkingHeadPath, Buffer.from(await response.arrayBuffer()));
-  }
+  await getStorage().download(params.lipsyncPath, talkingHeadPath);
 
   return {
     kind: "service_b",

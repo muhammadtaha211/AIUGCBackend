@@ -275,7 +275,7 @@ describe("founder workflow (dry-run, end to end)", () => {
         audioRenderId: audio.id,
         personaId: persona.id,
       });
-      await drainAll(); // lipsync submit -> poll -> render_video
+      await drainAll(); // lipsync submit -> poll -> upscale submit -> poll -> render_video
 
       const queue = await listQcQueue(db);
       expect(queue.map((r) => r.id)).toContain(render.id);
@@ -302,6 +302,22 @@ describe("founder workflow (dry-run, end to end)", () => {
         .from(dbSchema.jobs)
         .where(sql`${dbSchema.jobs.type} = 'lipsync'`);
       expect((lipsyncJobs[0]!.state as { providerJobId?: string }).providerJobId).toBeTruthy();
+
+      // The Topaz step ran between lipsync and assembly, and both video files
+      // are kept: the plate fal produced and the upscaled clip Remotion used.
+      const upscaleJobs = await db
+        .select()
+        .from(dbSchema.jobs)
+        .where(sql`${dbSchema.jobs.type} = 'upscale'`);
+      expect((upscaleJobs[0]!.state as { providerJobId?: string }).providerJobId).toBeTruthy();
+      const renderParams = row.params as {
+        lipsyncPlatePath?: string;
+        lipsyncPath?: string;
+        seed?: number;
+      };
+      expect(renderParams.lipsyncPlatePath).toMatch(/lipsync-plate\.mp4$/);
+      expect(renderParams.lipsyncPath).toMatch(/lipsync-upscaled\.mp4$/);
+      expect(typeof renderParams.seed).toBe("number");
     },
   );
 

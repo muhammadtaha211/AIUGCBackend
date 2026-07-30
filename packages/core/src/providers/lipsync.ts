@@ -24,6 +24,11 @@ export interface LipsyncSubmitInput {
   /** Derived from the approved audio — see `framesForAudio`. */
   numFrames: number;
   resolution: LipsyncResolution;
+  /**
+   * Pinned per render so a retry or a resubmit reproduces the same take instead
+   * of paying for a different one. Omitted = fal picks its own.
+   */
+  seed?: number;
 }
 
 /** fal-ai/infinitalk `num_frames` bounds (live schema, verified 2026-07-25). */
@@ -89,6 +94,7 @@ class FalLipsync implements LipsyncProvider {
       prompt: input.prompt,
       num_frames: input.numFrames,
       resolution: input.resolution,
+      ...(input.seed !== undefined ? { seed: input.seed } : {}),
     };
     // The exact parameters, in the worker terminal, without a debugger.
     logger.info(

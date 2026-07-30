@@ -10,7 +10,7 @@ import {
 import { handleGenerateComposite } from "./pipelines/composites";
 import { handleIngestDemo } from "./pipelines/demos";
 import { handleJanitor } from "./pipelines/janitor";
-import { handleLipsync, handleRenderVideo } from "./pipelines/renders";
+import { handleLipsync, handleRenderVideo, handleUpscale } from "./pipelines/renders";
 import { handleSynthTts } from "./pipelines/tts";
 
 /** Async copy generation for the self-serve layer (the CLI calls the functions directly). */
@@ -67,6 +67,7 @@ export function buildHandlers(): HandlerRegistry {
     synth_tts: handleSynthTts,
     generate_composite: handleGenerateComposite,
     lipsync: handleLipsync,
+    upscale: handleUpscale,
     render_video: handleRenderVideo,
     janitor: handleJanitor,
     billing_renewals: handleBillingRenewals,

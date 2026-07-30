@@ -26,5 +26,6 @@ export * from "./providers/elevenlabs";
 export * from "./providers/imagegen";
 export * from "./providers/lipsync";
 export * from "./providers/remotion";
+export * from "./providers/upscale";
 export * from "./providers/whisperx";
 export * from "./storage";

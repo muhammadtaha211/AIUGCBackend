@@ -47,6 +47,14 @@ export interface VariantParams {
   /** Approved product-in-hand composite — takes precedence as the lipsync source. */
   compositeId?: string;
   lipsyncUrl?: string;
+  /** Service B: pinned before the first lipsync submit, reused on every resubmit. */
+  seed?: number;
+  /** The lip-sync output as fal returned it (480p/720p plate), in our storage. */
+  lipsyncPlatePath?: string;
+  /** The clip Remotion composes: the upscaled plate, or the plate itself. */
+  lipsyncPath?: string;
+  /** Set when the upscale was skipped after failing — forces the QC gate. */
+  upscaleError?: string;
 }
 
 export async function createSet(
