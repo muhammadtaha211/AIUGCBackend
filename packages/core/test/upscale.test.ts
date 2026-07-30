@@ -155,8 +155,14 @@ describe("upscale pipeline (dry-run, real DB + jobs + storage)", () => {
     businessId = business.id;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     setUpscaleProvider(undefined);
+    // The fallback test flips auto_release_b on; restore the seed default so
+    // no test depends on which tests ran before it.
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: false })
+      .where(sql`${dbSchema.appConfig.key} = 'auto_release_b'`);
   });
 
   afterAll(async () => {
@@ -277,12 +283,6 @@ describe("upscale pipeline (dry-run, real DB + jobs + storage)", () => {
   });
 
   it("a QC regeneration re-rolls: no seed, clip paths, or upscale error on the new params", async () => {
-    // The previous test flipped auto_release_b on; this render must stay qc_pending.
-    await db
-      .update(dbSchema.appConfig)
-      .set({ value: false })
-      .where(sql`${dbSchema.appConfig.key} = 'auto_release_b'`);
-
     const renderId = await queueBRender();
     await drainAll();
     const params = await paramsOf(renderId);

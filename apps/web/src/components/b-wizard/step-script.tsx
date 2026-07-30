@@ -110,7 +110,13 @@ export function StepScript({
             onChange={(event) => setPointers(event.target.value)}
           />
 
-          <p className="text-sm text-gray-400">הסרטון יהיה באורך של כ־15 שניות.</p>
+          {/* No concrete duration: the 15s preset is a word budget (15 ×
+              app_config.words_per_second), and words_per_second is uncalibrated —
+              measured narration runs ~2.1–3.8 words/sec, so real output spans
+              roughly 9–16s. Name a number only once it's calibrated per voice. */}
+          <p className="text-sm text-gray-400">
+            הסרטון יהיה קצר וקולע — באורך שמתאים לפרסום ברשתות החברתיות.
+          </p>
         </div>
 
         {error && (
