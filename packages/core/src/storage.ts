@@ -1,7 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { getEnv } from "./config";
+import { PermanentError } from "./jobs/errors";
 import { LOCAL_STORAGE_DIR } from "./paths";
 
 /**
@@ -12,7 +13,12 @@ import { LOCAL_STORAGE_DIR } from "./paths";
  */
 export type Bucket = "raw" | "assets" | "renders";
 
-/** Storage path format: "<bucket>/<key>", where key follows {business_id|bank}/{entity}/{id}/{filename}. */
+/**
+ * Storage path format: "<bucket>/<key>", where key follows {business_id|bank}/{entity}/{id}/{filename}.
+ * Contract: fetching an object that does not exist (download, signedUrl) throws
+ * `missingObjectError` — a PermanentError, because a missing object will never
+ * appear on retry. Network/auth failures stay plain errors (transient).
+ */
 export interface Storage {
   put(bucket: Bucket, key: string, localFile: string): Promise<string>;
   download(storagePath: string, localFile: string): Promise<void>;
@@ -34,6 +40,20 @@ function splitPath(storagePath: string): { bucket: Bucket; key: string } {
   return { bucket: storagePath.slice(0, slash) as Bucket, key: storagePath.slice(slash + 1) };
 }
 
+/** The one message every backend throws for an absent object (shown to the user as-is). */
+export function missingObjectError(storagePath: string): PermanentError {
+  return new PermanentError(`קובץ המקור לא נמצא באחסון (${storagePath})`);
+}
+
+/** Supabase reports a missing key as 404 / "Object not found"; anything else stays transient. */
+function isMissingObject(error: { message: string; status?: number; statusCode?: string }): boolean {
+  return (
+    error.status === 404 ||
+    String(error.statusCode ?? "") === "404" ||
+    /object not found/i.test(error.message)
+  );
+}
+
 /** Filesystem-backed storage for the CLI phase / local dev (no Supabase project needed). */
 class LocalStorage implements Storage {
   async put(bucket: Bucket, key: string, localFile: string): Promise<string> {
@@ -45,8 +65,10 @@ class LocalStorage implements Storage {
 
   async download(storagePath: string, localFile: string): Promise<void> {
     const { bucket, key } = splitPath(storagePath);
+    const src = path.join(LOCAL_STORAGE_DIR, bucket, key);
+    if (!existsSync(src)) throw missingObjectError(storagePath);
     mkdirSync(path.dirname(localFile), { recursive: true });
-    copyFileSync(path.join(LOCAL_STORAGE_DIR, bucket, key), localFile);
+    copyFileSync(src, localFile);
   }
 
   async remove(storagePath: string): Promise<void> {
@@ -56,7 +78,9 @@ class LocalStorage implements Storage {
 
   async signedUrl(storagePath: string): Promise<string> {
     const { bucket, key } = splitPath(storagePath);
-    return `file://${path.join(LOCAL_STORAGE_DIR, bucket, key).replaceAll("\\", "/")}`;
+    const src = path.join(LOCAL_STORAGE_DIR, bucket, key);
+    if (!existsSync(src)) throw missingObjectError(storagePath);
+    return `file://${src.replaceAll("\\", "/")}`;
   }
 }
 
@@ -74,7 +98,10 @@ class SupabaseStorage implements Storage {
   async download(storagePath: string, localFile: string): Promise<void> {
     const { bucket, key } = splitPath(storagePath);
     const { data, error } = await this.client.storage.from(bucket).download(key);
-    if (error) throw new Error(`storage download failed (${storagePath}): ${error.message}`);
+    if (error) {
+      if (isMissingObject(error)) throw missingObjectError(storagePath);
+      throw new Error(`storage download failed (${storagePath}): ${error.message}`);
+    }
     mkdirSync(path.dirname(localFile), { recursive: true });
     writeFileSync(localFile, Buffer.from(await data.arrayBuffer()));
   }
@@ -90,7 +117,10 @@ class SupabaseStorage implements Storage {
     const { data, error } = await this.client.storage
       .from(bucket)
       .createSignedUrl(key, expiresInSeconds);
-    if (error) throw new Error(`signed url failed (${storagePath}): ${error.message}`);
+    if (error) {
+      if (isMissingObject(error)) throw missingObjectError(storagePath);
+      throw new Error(`signed url failed (${storagePath}): ${error.message}`);
+    }
     return data.signedUrl;
   }
 }

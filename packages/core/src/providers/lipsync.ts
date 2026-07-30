@@ -169,6 +169,14 @@ class DryRunLipsync implements LipsyncProvider {
   }
 }
 
+let override: LipsyncProvider | undefined;
+
+/** Test hook (same shape as `setUpscaleProvider`): the failure paths DRY_RUN can't reach. */
+export function setLipsyncProvider(provider: LipsyncProvider | undefined): void {
+  override = provider;
+}
+
 export function getLipsyncProvider(): LipsyncProvider {
+  if (override) return override;
   return getEnv().DRY_RUN ? new DryRunLipsync() : new FalLipsync();
 }

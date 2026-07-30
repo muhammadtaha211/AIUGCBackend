@@ -7,6 +7,7 @@ import { assertBudget, recordUsage } from "../budget";
 import type { Db } from "../db";
 import { composites, personaImages } from "../db/schema";
 import { PermanentError } from "../jobs/errors";
+import { assertPollDeadline } from "../jobs/poll";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { WORK_DIR } from "../paths";
@@ -95,7 +96,7 @@ export async function handleGenerateComposite(job: Job, ctx: JobContext): Promis
   }
 
   const provider = getImagegenProvider();
-  const state = job.state as { providerJobId?: string };
+  const state = job.state as { providerJobId?: string; submittedAt?: number };
   const storage = getStorage();
   const localDir = path.join(WORK_DIR, "composite", compositeId);
 
@@ -136,12 +137,18 @@ export async function handleGenerateComposite(job: Job, ctx: JobContext): Promis
         jobId: job.id,
         businessId: composite.businessId,
       });
-      await ctx.checkpoint({ providerJobId });
-      return { kind: "reschedule", delayMs: 5_000, state: { providerJobId } };
+      const submittedAt = Date.now();
+      await ctx.checkpoint({ providerJobId, submittedAt });
+      return { kind: "reschedule", delayMs: 5_000, state: { providerJobId, submittedAt } };
     }
 
     const result = await provider.poll(state.providerJobId);
-    if (result.status === "pending") return { kind: "reschedule", delayMs: 10_000 };
+    if (result.status === "pending") {
+      // submittedAt ?? now backfills state written before the deadline existed.
+      const submittedAt = state.submittedAt ?? Date.now();
+      await assertPollDeadline(ctx.db, ctx.log, { providerJobId: state.providerJobId, submittedAt });
+      return { kind: "reschedule", delayMs: 10_000, state: { ...state, submittedAt } };
+    }
     if (result.status === "failed") {
       throw new PermanentError(`composite generation failed: ${result.reason}`);
     }

@@ -1,7 +1,7 @@
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Storage } from "../../src/storage";
+import { missingObjectError, type Storage } from "../../src/storage";
 
 /** Temp-dir storage backend so tests never touch the repo's .storage/. */
 export function tempStorage(): { storage: Storage; root: string; cleanup: () => void } {
@@ -19,6 +19,7 @@ export function tempStorage(): { storage: Storage; root: string; cleanup: () => 
       return `${bucket}/${key}`;
     },
     async download(storagePath, localFile) {
+      if (!existsSync(resolve(storagePath))) throw missingObjectError(storagePath);
       mkdirSync(path.dirname(localFile), { recursive: true });
       copyFileSync(resolve(storagePath), localFile);
     },
@@ -26,6 +27,7 @@ export function tempStorage(): { storage: Storage; root: string; cleanup: () => 
       rmSync(resolve(storagePath), { force: true });
     },
     async signedUrl(storagePath) {
+      if (!existsSync(resolve(storagePath))) throw missingObjectError(storagePath);
       return `file://${resolve(storagePath).replaceAll("\\", "/")}`;
     },
   };

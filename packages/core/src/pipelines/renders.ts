@@ -19,6 +19,7 @@ import {
   videoRenders,
 } from "../db/schema";
 import { PermanentError, TransientError } from "../jobs/errors";
+import { assertPollDeadline } from "../jobs/poll";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { probe, thumbnail, type ProbeResult } from "../media/ffmpeg";
@@ -121,7 +122,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
   const render = await loadRender(ctx.db, videoRenderId);
   const params = render.params as VariantParams;
   const provider = getLipsyncProvider();
-  const state = job.state as { providerJobId?: string };
+  const state = job.state as { providerJobId?: string; submittedAt?: number };
 
   try {
     if (!state.providerJobId) {
@@ -222,12 +223,18 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
         jobId: job.id,
         businessId: render.businessId,
       });
-      await ctx.checkpoint({ providerJobId });
-      return { kind: "reschedule", delayMs: 15_000, state: { providerJobId } };
+      const submittedAt = Date.now();
+      await ctx.checkpoint({ providerJobId, submittedAt });
+      return { kind: "reschedule", delayMs: 15_000, state: { providerJobId, submittedAt } };
     }
 
     const result = await provider.poll(state.providerJobId);
-    if (result.status === "pending") return { kind: "reschedule", delayMs: 30_000 };
+    if (result.status === "pending") {
+      // submittedAt ?? now backfills state written before the deadline existed.
+      const submittedAt = state.submittedAt ?? Date.now();
+      await assertPollDeadline(ctx.db, ctx.log, { providerJobId: state.providerJobId, submittedAt });
+      return { kind: "reschedule", delayMs: 30_000, state: { ...state, submittedAt } };
+    }
     if (result.status === "failed") throw new PermanentError(`lipsync failed: ${result.reason}`);
 
     await mergeParams(ctx.db, videoRenderId, { lipsyncUrl: result.videoUrl });
@@ -288,6 +295,7 @@ export async function handleUpscale(job: Job, ctx: JobContext): Promise<JobResul
     providerJobId?: string;
     platePath?: string;
     plateDurationMs?: number;
+    submittedAt?: number;
   };
   const storage = getStorage();
   const localDir = path.join(WORK_DIR, "upscale", videoRenderId);
@@ -340,19 +348,34 @@ export async function handleUpscale(job: Job, ctx: JobContext): Promise<JobResul
         videoUrl: await storage.signedUrl(platePath, 3600),
         upscaleFactor: factor,
       });
-      const next = { providerJobId, platePath, plateDurationMs: plate.durationMs };
+      const next = {
+        providerJobId,
+        platePath,
+        plateDurationMs: plate.durationMs,
+        // Survives a resubmit: the poll deadline measures from the FIRST submit.
+        submittedAt: state.submittedAt ?? Date.now(),
+      };
       await ctx.checkpoint(next);
       return { kind: "reschedule", delayMs: 15_000, state: next };
     }
 
     const result = await provider.poll(state.providerJobId);
-    if (result.status === "pending") return { kind: "reschedule", delayMs: 30_000 };
+    if (result.status === "pending") {
+      // submittedAt ?? now backfills state written before the deadline existed.
+      const submittedAt = state.submittedAt ?? Date.now();
+      await assertPollDeadline(ctx.db, ctx.log, { providerJobId: state.providerJobId, submittedAt });
+      return { kind: "reschedule", delayMs: 30_000, state: { ...state, submittedAt } };
+    }
     if (result.status === "failed") {
       // Deliberately the opposite of handleLipsync: clearing the provider job id
       // makes the retry resubmit with a fresh signed input URL, which is the
       // likeliest thing that went wrong — and a resubmit here costs cents where
       // a lipsync resubmit costs shekels.
-      await ctx.checkpoint({ platePath, plateDurationMs: state.plateDurationMs });
+      await ctx.checkpoint({
+        platePath,
+        plateDurationMs: state.plateDurationMs,
+        submittedAt: state.submittedAt,
+      });
       throw new TransientError(`upscale failed: ${result.reason}`);
     }
     if (!platePath) throw new PermanentError("upscale finished but the plate is missing");
