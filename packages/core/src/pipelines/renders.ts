@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -182,7 +182,13 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
             .select()
             .from(personaImages)
             .where(
-              and(eq(personaImages.personaId, params.personaId), eq(personaImages.isDefault, true)),
+              // A stranded "pending" placeholder (no "/") must never be signed,
+              // even if it carries the default flag.
+              and(
+                eq(personaImages.personaId, params.personaId),
+                eq(personaImages.isDefault, true),
+                like(personaImages.filePath, "%/%"),
+              ),
             )
             .limit(1)
         )[0];
@@ -253,25 +259,31 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
 /**
  * The lip-sync plate comes back at the resolution we pay for (480p by default),
  * and Remotion composes it into a 1080x1920 frame — so it goes through Topaz
- * Starlight first. `upscale_factor` is computed per clip rather than pinned:
- * output above 1080p costs $0.08/s instead of $0.02/s and Remotion would only
- * scale it back down. Floor, never round up.
+ * Starlight first. `upscale_factor` is computed per clip rather than pinned,
+ * and must fit BOTH dimensions: fal bills the "above 1080p" tier ($0.08/s
+ * instead of $0.02/s) when EITHER output dimension exceeds it, and the
+ * composition is 1080x1920 so anything larger is pure waste Remotion scales
+ * back down. Floor, never round up.
  */
+// The Remotion ServiceB composition frame — the upscale target, not a video standard.
 const UPSCALE_TARGET_WIDTH = 1080;
+const UPSCALE_TARGET_HEIGHT = 1920;
 const UPSCALE_MAX_FACTOR = 4;
 
-export function upscaleFactorFor(width: number): number {
-  const factor = Math.floor((UPSCALE_TARGET_WIDTH / width) * 100) / 100;
+export function upscaleFactorFor(width: number, height: number): number {
+  const fit = Math.min(UPSCALE_TARGET_WIDTH / width, UPSCALE_TARGET_HEIGHT / height);
+  const factor = Math.floor(fit * 100) / 100;
   return Math.min(Math.max(factor, 1), UPSCALE_MAX_FACTOR);
 }
 
 /**
  * DRY_RUN has no ffprobe and the stub copies the plate through unchanged, so one
  * fake describes both probes: a 480-wide plate, i.e. a real 2.25x upscale.
+ * Height 848, not 854: at 854 the height would bind (854 * 2.25 > 1920).
  */
 const DRY_RUN_PROBE: ProbeResult = {
   width: 480,
-  height: 854,
+  height: 848,
   durationMs: 10_000,
   hasAudio: true,
 };
@@ -332,13 +344,13 @@ export async function handleUpscale(job: Job, ctx: JobContext): Promise<JobResul
       }
 
       const plate = getEnv().DRY_RUN ? DRY_RUN_PROBE : await probe(localPlate);
-      const factor = upscaleFactorFor(plate.width);
+      const factor = upscaleFactorFor(plate.width, plate.height);
       ctx.log.info(
         { width: plate.width, height: plate.height, factor },
         "upscale: probed the lipsync plate",
       );
       if (factor <= 1) {
-        ctx.log.info("upscale: plate is already at the output width — skipping");
+        ctx.log.info("upscale: plate is already at the output size — skipping");
         await mergeParams(ctx.db, videoRenderId, { lipsyncPath: platePath });
         await enqueueRenderVideo(ctx.db, videoRenderId);
         return { kind: "done" };

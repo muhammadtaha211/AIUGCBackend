@@ -21,11 +21,18 @@ export async function addHookClip(
     })
     .returning();
   const clip = inserted[0]!;
-  const filePath = await getStorage().put(
-    "assets",
-    storageKey({ entity: "hook_clip", id: clip.id, filename: "clip.mp4" }),
-    opts.filePath,
-  );
+  let filePath: string;
+  try {
+    filePath = await getStorage().put(
+      "assets",
+      storageKey({ entity: "hook_clip", id: clip.id, filename: "clip.mp4" }),
+      opts.filePath,
+    );
+  } catch (err) {
+    // A failed upload must not strand the "pending" placeholder row.
+    await db.delete(hookClips).where(eq(hookClips.id, clip.id));
+    throw err;
+  }
   await db.update(hookClips).set({ filePath }).where(eq(hookClips.id, clip.id));
   return { ...clip, filePath };
 }
@@ -52,15 +59,12 @@ export async function addPersonaImage(
     .where(eq(personaImages.personaId, opts.personaId))
     .limit(1);
   const isDefault = Boolean(opts.isDefault) || existing.length === 0;
-  if (isDefault) {
-    await db
-      .update(personaImages)
-      .set({ isDefault: false })
-      .where(and(eq(personaImages.personaId, opts.personaId), eq(personaImages.isDefault, true)));
-  }
+  // Inserted as non-default: the flag moves only after the upload succeeds, so
+  // a failed upload leaves the previous default in place (and the partial
+  // unique index on is_default never sees two defaults).
   const inserted = await db
     .insert(personaImages)
-    .values({ personaId: opts.personaId, filePath: "pending", isDefault })
+    .values({ personaId: opts.personaId, filePath: "pending", isDefault: false })
     .returning();
   const image = inserted[0]!;
   let filePath: string;
@@ -79,8 +83,17 @@ export async function addPersonaImage(
     await db.delete(personaImages).where(eq(personaImages.id, image.id));
     throw err;
   }
-  await db.update(personaImages).set({ filePath }).where(eq(personaImages.id, image.id));
-  return { ...image, filePath };
+  if (isDefault) {
+    await db
+      .update(personaImages)
+      .set({ isDefault: false })
+      .where(and(eq(personaImages.personaId, opts.personaId), eq(personaImages.isDefault, true)));
+  }
+  await db
+    .update(personaImages)
+    .set({ filePath, isDefault })
+    .where(eq(personaImages.id, image.id));
+  return { ...image, filePath, isDefault };
 }
 
 export async function addStructure(db: Db, opts: { title: string; skeleton: unknown }) {

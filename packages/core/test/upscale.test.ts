@@ -31,30 +31,49 @@ import { tempStorage } from "./helpers/storage";
  */
 
 describe("upscaleFactorFor", () => {
+  it("regression: a 448x832 plate is height-bound to 2.30, not 2.41 (fal 4x pricing tier)", () => {
+    // Width alone gave 2.41 → a 1078x2002 output; 2002 > 1920 billed the
+    // "above 1080p" tier at $0.08/s instead of $0.02/s (confirmed invoice).
+    const factor = upscaleFactorFor(448, 832);
+    expect(factor).toBe(2.3);
+    expect(448 * factor).toBeLessThanOrEqual(1080);
+    expect(832 * factor).toBeLessThanOrEqual(1920);
+  });
+
   it("takes a 480p plate to 1080 wide", () => {
-    expect(upscaleFactorFor(480)).toBe(2.25);
+    expect(upscaleFactorFor(480, 848)).toBe(2.25);
   });
 
   it("takes a 720p plate to 1080 wide", () => {
-    expect(upscaleFactorFor(720)).toBe(1.5);
+    expect(upscaleFactorFor(720, 1280)).toBe(1.5);
   });
 
-  it("returns 1 (skip) for a plate already at the output width or wider", () => {
-    expect(upscaleFactorFor(1080)).toBe(1);
-    expect(upscaleFactorFor(1440)).toBe(1);
-    expect(upscaleFactorFor(1920)).toBe(1);
+  it("returns 1 (skip) for a plate at or above the target in either dimension", () => {
+    expect(upscaleFactorFor(1080, 1920)).toBe(1);
+    expect(upscaleFactorFor(1440, 2560)).toBe(1);
+    expect(upscaleFactorFor(480, 1920)).toBe(1); // height alone is enough
+    expect(upscaleFactorFor(1080, 854)).toBe(1); // width alone is enough
   });
 
-  it("floors the factor — output above 1080p costs 4x and gets scaled back down", () => {
-    expect(upscaleFactorFor(640)).toBe(1.68); // 1.6875 → 1.68, not 1.69
-    expect(upscaleFactorFor(576)).toBe(1.87); // 1.875 → 1.87, not 1.88
-    expect(upscaleFactorFor(640) * 640).toBeLessThanOrEqual(1080);
-    expect(upscaleFactorFor(576) * 576).toBeLessThanOrEqual(1080);
+  it("floors the factor — the output never exceeds 1080 wide or 1920 tall", () => {
+    expect(upscaleFactorFor(640, 1136)).toBe(1.68); // 1.6875 → 1.68, not 1.69
+    expect(upscaleFactorFor(576, 1024)).toBe(1.87); // 1.875 → 1.87, not 1.88
+    const plates = [
+      [640, 1136],
+      [576, 1024],
+      [448, 832],
+      [480, 854], // height binds: 854 * 2.25 would be 1921.5
+    ] as const;
+    for (const [width, height] of plates) {
+      const factor = upscaleFactorFor(width, height);
+      expect(width * factor).toBeLessThanOrEqual(1080);
+      expect(height * factor).toBeLessThanOrEqual(1920);
+    }
   });
 
   it("clamps at 4x (fal's maximum)", () => {
-    expect(upscaleFactorFor(240)).toBe(4);
-    expect(upscaleFactorFor(200)).toBe(4);
+    expect(upscaleFactorFor(240, 426)).toBe(4);
+    expect(upscaleFactorFor(200, 356)).toBe(4);
   });
 });
 

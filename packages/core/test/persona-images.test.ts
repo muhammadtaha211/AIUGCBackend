@@ -9,7 +9,7 @@ import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { PermanentError } from "../src/jobs/errors";
 import { runLane } from "../src/jobs/worker";
-import { addPersona, addPersonaImage } from "../src/pipelines/bank";
+import { addHookClip, addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { createComposite } from "../src/pipelines/composites";
 import { setImagegenProvider } from "../src/providers/imagegen";
@@ -19,10 +19,11 @@ import { tempStorage } from "./helpers/storage";
 
 /**
  * A persona_images row is inserted with the "pending" placeholder to mint an
- * id for the storage key, then uploaded, then updated. These tests pin down
- * the two guarantees around that pattern: composites never consume a
- * placeholder (and put the default image first), and a failed upload deletes
- * the row it minted.
+ * id for the storage key, then uploaded, then updated (hook clips share the
+ * pattern). These tests pin down the guarantees around it: composites never
+ * consume a placeholder (and put the default image first), a failed upload
+ * deletes the row it minted, and the default flag only moves after a
+ * successful upload.
  */
 
 describe("persona images (placeholder rows, upload cleanup)", () => {
@@ -68,6 +69,18 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
     const file = path.join(dir, name);
     writeFileSync(file, "fake bytes");
     return file;
+  }
+
+  /** A storage backend whose uploads always fail; reads pass through. */
+  function failingStorage(): Storage {
+    return {
+      async put() {
+        throw new Error("disk full");
+      },
+      download: storage.download,
+      remove: storage.remove,
+      signedUrl: storage.signedUrl,
+    };
   }
 
   /** Composites are physical-product only; each test gets its own business. */
@@ -207,15 +220,7 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
 
   it("a failed upload leaves no persona_images row behind", async () => {
     const persona = await addPersona(db, { name: "רות", voiceId: "voice_rut" });
-    const failing: Storage = {
-      async put() {
-        throw new Error("disk full");
-      },
-      download: storage.download,
-      remove: storage.remove,
-      signedUrl: storage.signedUrl,
-    };
-    setStorage(failing);
+    setStorage(failingStorage());
 
     await expect(
       addPersonaImage(db, { personaId: persona.id, filePath: tempFile("face3.jpg") }),
@@ -225,6 +230,47 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
       .select()
       .from(dbSchema.personaImages)
       .where(sql`${dbSchema.personaImages.personaId} = ${persona.id}`);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("a failed --default upload leaves the previous default still flagged", async () => {
+    const persona = await addPersona(db, { name: "מיכל", voiceId: "voice_michal" });
+    const original = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("face4.jpg"),
+    });
+    expect(original.isDefault).toBe(true); // first image becomes the default
+    setStorage(failingStorage());
+
+    await expect(
+      addPersonaImage(db, {
+        personaId: persona.id,
+        filePath: tempFile("face5.jpg"),
+        isDefault: true,
+      }),
+    ).rejects.toThrow("disk full");
+
+    const rows = await db
+      .select()
+      .from(dbSchema.personaImages)
+      .where(sql`${dbSchema.personaImages.personaId} = ${persona.id}`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(original.id);
+    expect(rows[0]!.isDefault).toBe(true);
+  });
+
+  it("a failed hook clip upload leaves no hook_clips row behind", async () => {
+    setStorage(failingStorage());
+
+    await expect(
+      addHookClip(db, {
+        filePath: tempFile("hook.mp4"),
+        durationMs: 2000,
+        textSafeArea: { x: 100, y: 200, w: 880, h: 400 },
+      }),
+    ).rejects.toThrow("disk full");
+
+    const rows = await db.select().from(dbSchema.hookClips);
     expect(rows).toHaveLength(0);
   });
 

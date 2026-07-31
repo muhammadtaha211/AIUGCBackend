@@ -124,7 +124,7 @@ export async function handleGenerateComposite(job: Job, ctx: JobContext): Promis
         .orderBy(desc(personaImages.isDefault), desc(personaImages.createdAt))
         .limit(MAX_REFERENCE_IMAGES);
       if (images.length === 0) {
-        throw new PermanentError("לדמות אין תמונת ייחוס תקינה — העלו תמונה חדשה לדמות ונסו שוב");
+        throw new PermanentError("לדמות אין תמונת ייחוס תקינה — בחרו דמות אחרת ונסו שוב");
       }
       const referenceUrls: string[] = [];
       for (const image of images) {

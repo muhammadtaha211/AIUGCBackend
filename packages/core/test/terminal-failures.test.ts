@@ -289,6 +289,60 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
     expect(refunds.map((r) => r.reason).sort()).toEqual(["debit_render", "refund_failed"]);
   });
 
+  it("lipsync refuses a stranded default persona image instead of signing it", async () => {
+    const biz = await createBusiness(db, {
+      ownerEmail: "founder@example.com",
+      name: "חנות הפרחים",
+      ownerRole: "admin",
+    });
+    const persona = await addPersona(db, { name: "תמר", voiceId: "voice_tamar" });
+    // A placeholder stranded by a failed upload before the cleanup existed,
+    // still carrying the default flag.
+    await db
+      .insert(dbSchema.personaImages)
+      .values({ personaId: persona.id, filePath: "pending", isDefault: true });
+    const script = (
+      await db
+        .insert(dbSchema.scripts)
+        .values({
+          businessId: biz.id,
+          personaId: persona.id,
+          kind: "b_script",
+          text: "ניסיתי מיליון דברים ושום דבר לא עבד עד שגיליתי את זה",
+        })
+        .returning()
+    )[0]!;
+    const audio = await requestAudio(db, { scriptId: script.id, voiceId: "voice_tamar" });
+    await drainAll();
+    await approveAudio(db, audio.id);
+
+    setLipsyncProvider({
+      async submit() {
+        throw new Error("submit must not be called with a placeholder image");
+      },
+      async poll() {
+        throw new Error("poll must not be called with a placeholder image");
+      },
+    });
+
+    const render = await createBRender(db, {
+      businessId: biz.id,
+      audioRenderId: audio.id,
+      personaId: persona.id,
+    });
+    await lanePass();
+
+    const job = (await jobByKey(`lipsync:${render.id}`))!;
+    expect(job.status).toBe("failed");
+    expect(job.errorClass).toBe("permanent");
+    expect(job.attempts).toBe(0);
+    expect(job.lastError).toMatch(/no reference images/);
+    expect(await queuedJobs()).toHaveLength(0);
+
+    const row = await renderRow(render.id);
+    expect(row.status).toBe("failed");
+  });
+
   it("upscale that never finishes hits the deadline and falls back to the plate", async () => {
     const biz = await createBusiness(db, {
       ownerEmail: "founder@example.com",

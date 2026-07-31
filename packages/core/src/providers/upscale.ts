@@ -13,7 +13,7 @@ import { logger } from "../logger";
 export interface UpscaleSubmitInput {
   /** Signed URL of the stored 480p plate — fal fetches the input itself. */
   videoUrl: string;
-  /** Computed per clip from the plate's width — see `upscaleFactorFor`. */
+  /** Computed per clip from the plate's dimensions — see `upscaleFactorFor`. */
   upscaleFactor: number;
 }
 
