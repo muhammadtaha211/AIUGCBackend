@@ -24,6 +24,9 @@ export const REPO_ROOT = resolveRepoRoot();
 
 export const PROMPTS_DIR = path.join(REPO_ROOT, "prompts");
 
+/** Checked-in structure skeletons, inserted into the bank by seedStructures. */
+export const SEED_STRUCTURES_DIR = path.join(REPO_ROOT, "seed", "structures");
+
 /** Local storage backend root (used when no Supabase credentials are configured). */
 export const LOCAL_STORAGE_DIR = path.join(REPO_ROOT, ".storage");
 

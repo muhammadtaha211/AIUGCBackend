@@ -1,7 +1,9 @@
 import { and, desc, eq } from "drizzle-orm";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { Db } from "../db";
 import { hookClips, jobs, personaImages, personas, structures, videoRenders } from "../db/schema";
+import { SEED_STRUCTURES_DIR } from "../paths";
 import type { TextSafeArea } from "../providers/remotion";
 import { getStorage, storageKey } from "../storage";
 
@@ -102,6 +104,28 @@ export async function addStructure(db: Db, opts: { title: string; skeleton: unkn
     .values({ title: opts.title, skeleton: opts.skeleton })
     .returning();
   return inserted[0]!;
+}
+
+/**
+ * Insert every checked-in skeleton (seed/structures/*.json, title = file name)
+ * through the same path as `aiugc bank add-structure`. Titles already in the
+ * bank are skipped, so re-running after adding a new file is safe.
+ */
+export async function seedStructures(db: Db, dir: string = SEED_STRUCTURES_DIR) {
+  const existing = new Set(
+    (await db.select({ title: structures.title }).from(structures)).map((r) => r.title),
+  );
+  const added: string[] = [];
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
+    const title = path.basename(file, ".json");
+    if (existing.has(title)) continue;
+    await addStructure(db, {
+      title,
+      skeleton: JSON.parse(readFileSync(path.join(dir, file), "utf8")),
+    });
+    added.push(title);
+  }
+  return added;
 }
 
 /** Ops views for `aiugc status` (Supabase Studio serves the same need in the browser). */

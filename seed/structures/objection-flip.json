@@ -1,0 +1,25 @@
+{
+  "beats": [
+    {
+      "id": "hook",
+      "intent": "Voice the objection the audience already has, as the persona's own past belief.",
+      "example": "הייתי בטוחה שזה עוד {תחום} שלא באמת עובד"
+    },
+    {
+      "id": "why_skeptical",
+      "intent": "One honest reason the doubt was reasonable. This is what buys trust.",
+      "example": "כי ניסיתי כבר כמה כאלה וכולם היו אותו דבר"
+    },
+    {
+      "id": "flip",
+      "intent": "The specific thing that changed the persona's mind. Must be a real differentiator from the questionnaire, not enthusiasm.",
+      "example": "אבל {מוצר} עושה {יתרון} וזה מה ששינה לי את התמונה"
+    },
+    {
+      "id": "cta",
+      "intent": "Invite the listener to be skeptical too, and check anyway.",
+      "example": "אז תבדקו בעצמכם, אני הייתי במקומכם"
+    }
+  ],
+  "notes": "The highest-trust structure and the best fit for a crowded category. Requires at least one genuinely specific advantage — without it the flip beat collapses into generic praise."
+}

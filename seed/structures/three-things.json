@@ -1,0 +1,30 @@
+{
+  "beats": [
+    {
+      "id": "hook",
+      "intent": "Promise a small, countable amount of insider knowledge. The number must match the beats that follow.",
+      "example": "אלה שלושת הדברים שאתם חייבים לדעת על {תחום}"
+    },
+    {
+      "id": "point_one",
+      "intent": "First advantage from the questionnaire. Lead with the noun, not with 'ראשית'.",
+      "example": "אחת, זה עובד גם כשאין לכם זמן"
+    },
+    {
+      "id": "point_two",
+      "intent": "Second advantage. Keep the same clause shape as the first — the parallelism is the rhythm.",
+      "example": "שתיים, אתם לא צריכים שום ידע מוקדם"
+    },
+    {
+      "id": "point_three",
+      "intent": "Third and strongest advantage. This is where the product name lands.",
+      "example": "ושלוש, {מוצר} עושה את כל זה במקום אחד"
+    },
+    {
+      "id": "cta",
+      "intent": "Short. The list already did the persuading.",
+      "example": "הלינק למטה"
+    }
+  ],
+  "notes": "Keep clauses parallel and short — this structure lives or dies on rhythm. Do not let a beat run long; the word budget is tight across four content beats."
+}

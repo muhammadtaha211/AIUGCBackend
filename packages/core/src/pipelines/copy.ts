@@ -5,6 +5,7 @@ import { recordUsage } from "../budget";
 import { getEnv, wordsPerSecondSchema } from "../config";
 import type { Db } from "../db";
 import { demos, events, personas, scripts, structures } from "../db/schema";
+import { pickHookTemplates } from "../hook-templates";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { requireQuestionnaire } from "./businesses";
@@ -251,28 +252,29 @@ export async function generateBScript(
   const wps = await wordsPerSecond(db, persona.voiceId);
   const wordBudget = Math.floor(durationPreset * wps);
 
+  const hookTemplates = pickHookTemplates();
+  const vars = {
+    questionnaire: JSON.stringify(questionnaire, null, 2),
+    persona: JSON.stringify({ name: persona.name, ...(persona.identity as object) }),
+    skeleton: JSON.stringify(structure.skeleton, null, 2),
+    hook_options: hookTemplates.map((t, i) => `${i + 1}. ${t}`).join("\n"),
+    pointers: pointers ?? "(אין — התבסס על השאלון בלבד)",
+    word_budget: wordBudget,
+    words_per_second: wps,
+    duration_preset: durationPreset,
+  };
+
   let text: string;
-  let promptVersion = "dry_run";
+  let promptVersion: string;
   if (getEnv().DRY_RUN) {
+    // Dry-run still renders the template so prompt_version stays traceable and
+    // a template/vars mismatch surfaces in tests, not in production.
+    ({ promptVersion } = renderPrompt("b_script", vars));
     text =
       "חייבת לספר לכם על משהו שגיליתי השבוע ניסיתי את זה בספקנות מוחלטת ותוך יום " +
       "הבנתי שאין סיכוי שאני חוזרת אחורה זה עושה בדיוק מה שהבטיחו תבדקו בעצמכם";
   } else {
-    const result = await callClaude(
-      db,
-      opts.businessId,
-      "b_script",
-      {
-        questionnaire: JSON.stringify(questionnaire, null, 2),
-        persona: JSON.stringify({ name: persona.name, ...(persona.identity as object) }),
-        skeleton: JSON.stringify(structure.skeleton, null, 2),
-        pointers: pointers ?? "(אין — התבסס על השאלון בלבד)",
-        word_budget: wordBudget,
-        words_per_second: wps,
-        duration_preset: durationPreset,
-      },
-      scriptOutput,
-    );
+    const result = await callClaude(db, opts.businessId, "b_script", vars, scriptOutput);
     text = result.object.script;
     promptVersion = result.promptVersion;
   }
@@ -285,7 +287,9 @@ export async function generateBScript(
       structureId: opts.structureId,
       kind: "b_script",
       text,
-      params: { pointers, durationPreset, wordBudget },
+      // hookTemplates: the exact openers offered this generation, so a winning
+      // hook can be traced back to its template later.
+      params: { pointers, durationPreset, wordBudget, hookTemplates },
       promptVersion,
     })
     .returning();

@@ -1,0 +1,30 @@
+{
+  "beats": [
+    {
+      "id": "hook",
+      "intent": "Name the pain the target audience feels, out loud, in their own words. No product yet.",
+      "example": "אם אתם מתעוררים כל בוקר עייפים למרות שישנתם שמונה שעות"
+    },
+    {
+      "id": "agitate",
+      "intent": "Say why the usual fixes do not work. One sentence, concrete, slightly impatient.",
+      "example": "וניסיתם כבר הכל וזה פשוט לא עוזר כי זה מטפל בסימפטום ולא בסיבה"
+    },
+    {
+      "id": "reveal",
+      "intent": "Introduce the product as the thing that addresses the actual cause. Say the product name.",
+      "example": "ואז מצאתי את {מוצר} שעושה בדיוק את זה"
+    },
+    {
+      "id": "proof",
+      "intent": "One specific advantage from the questionnaire. Concrete, not adjectival.",
+      "example": "תוך שבוע כבר הרגשתי את ההבדל"
+    },
+    {
+      "id": "cta",
+      "intent": "Direct, warm, one action.",
+      "example": "תיכנסו ללינק ותנסו בעצמכם"
+    }
+  ],
+  "notes": "Highest-contrast opener. Works best when target_audience is specific and the pain is nameable."
+}

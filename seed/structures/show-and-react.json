@@ -1,0 +1,30 @@
+{
+  "beats": [
+    {
+      "id": "hook",
+      "intent": "Draw the eye to the product itself. Short, present tense, as if holding it up.",
+      "example": "תראו רגע את זה"
+    },
+    {
+      "id": "react",
+      "intent": "An immediate first-person sensory or emotional reaction. This beat is why the structure exists — it must feel unscripted.",
+      "example": "לא ציפיתי שזה יהיה ככה טוב"
+    },
+    {
+      "id": "what_it_is",
+      "intent": "Say plainly what it is and who it is for. Product name lands here.",
+      "example": "זה {מוצר} ל{קהל יעד}"
+    },
+    {
+      "id": "why_good",
+      "intent": "The single strongest advantage, stated concretely.",
+      "example": "ומה שמטורף בזה זה ש{יתרון}"
+    },
+    {
+      "id": "cta",
+      "intent": "Direct and immediate.",
+      "example": "רוצו לבדוק את זה"
+    }
+  ],
+  "notes": "For physical_product only — assumes something visible on camera, so pair with an approved composite. Do not select for app_or_digital."
+}

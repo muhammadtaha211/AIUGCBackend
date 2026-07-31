@@ -1,0 +1,31 @@
+{
+  "beats": [
+    {
+      "id": "hook",
+      "intent": "State the outcome first, as a personal result. The listener should want the 'how'.",
+      "example": "זה בדיוק מה שעשיתי כדי {תוצאה}"
+    },
+    {
+      "id": "before",
+      "intent": "Where the persona was. Past tense, honest, unglamorous, one clause.",
+      "example": "כי לפני זה הייתי מבזבזת שעות על זה כל שבוע"
+    },
+    {
+      "id": "turn",
+      "intent": "The moment the product entered. Casual, not a product announcement.",
+      "example": "עד שחברה שלי סיפרה לי על {מוצר}",
+      "gender_note": "conjugate to the persona"
+    },
+    {
+      "id": "after",
+      "intent": "The concrete difference. Use the strongest advantage from the questionnaire.",
+      "example": "ומאז זה לוקח לי חמש דקות במקום שעתיים"
+    },
+    {
+      "id": "cta",
+      "intent": "Low pressure, as a recommendation to a friend.",
+      "example": "אז אם גם אתם בסיפור הזה, שווה לכם לבדוק"
+    }
+  ],
+  "notes": "Strongest for services and tools where the benefit is time or effort saved."
+}
