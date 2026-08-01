@@ -2,30 +2,29 @@
   "beats": [
     {
       "id": "hook",
-      "intent": "State the outcome first, as a personal result. The listener should want the 'how'.",
-      "example": "זה בדיוק מה שעשיתי כדי {תוצאה}"
+      "intent": "Declarative promise or personal result. Do NOT open with a question that winds up before it says anything. No product name.",
+      "example": "אני הולכת לגלות לך את הסוד לעור פנים בריא ומטופח"
     },
     {
       "id": "before",
       "intent": "Where the persona was. Past tense, honest, unglamorous, one clause.",
-      "example": "כי לפני זה הייתי מבזבזת שעות על זה כל שבוע"
+      "example": "כי שנים ניסיתי כל מיני מותגים ותמיד אותו סיפור"
     },
     {
-      "id": "turn",
-      "intent": "The moment the product entered. Casual, not a product announcement.",
-      "example": "עד שחברה שלי סיפרה לי על {מוצר}",
-      "gender_note": "conjugate to the persona"
+      "id": "found",
+      "intent": "THE SELLING BEAT. What she found, described entirely by its advantages, still UNNAMED. Talkative register.",
+      "example": "עד שמצאתי משהו שמיוצר בגרמניה עם טכנולוגיה אמיתית ומתאים לכל סוג עור, גם רגיש כמו שלי"
     },
     {
-      "id": "after",
-      "intent": "The concrete difference. Use the strongest advantage from the questionnaire.",
-      "example": "ומאז זה לוקח לי חמש דקות במקום שעתיים"
+      "id": "name",
+      "intent": "The name, late and casual. A recommendation framing works well here.",
+      "example": "מניסיון, עולא ביוטי הוא אחד הטובים שיש"
     },
     {
-      "id": "cta",
-      "intent": "Low pressure, as a recommendation to a friend.",
-      "example": "אז אם גם אתם בסיפור הזה, שווה לכם לבדוק"
+      "id": "close",
+      "intent": "Two to five words.",
+      "example": "ממליצה בחום"
     }
   ],
-  "notes": "Strongest for services and tools where the benefit is time or effort saved."
+  "notes": "Strongest for services and tools where the benefit is time, effort or a visible result. The hook must be declarative — question-form hooks tested badly."
 }

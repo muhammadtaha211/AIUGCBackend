@@ -2,29 +2,29 @@
   "beats": [
     {
       "id": "hook",
-      "intent": "Promise a small, countable amount of insider knowledge. The number must match the beats that follow.",
-      "example": "אלה שלושת הדברים שאתם חייבים לדעת על {תחום}"
+      "intent": "Promise three things about the CATEGORY, not about the product. The number must match the beats that follow. No product name.",
+      "example": "שלושה דברים שאת חייבת לדעת על טיפוח פנים"
     },
     {
-      "id": "point_one",
-      "intent": "First advantage from the questionnaire. Lead with the noun, not with 'ראשית'.",
-      "example": "אחת, זה עובד גם כשאין לכם זמן"
+      "id": "tip_one",
+      "intent": "A genuine, useful tip about the category that the product happens to satisfy. Written as advice, not as a feature. Lead with the noun.",
+      "example": "אחת, הטכנולוגיה קובעת יותר מהמותג"
     },
     {
-      "id": "point_two",
-      "intent": "Second advantage. Keep the same clause shape as the first — the parallelism is the rhythm.",
-      "example": "שתיים, אתם לא צריכים שום ידע מוקדם"
+      "id": "tip_two",
+      "intent": "Second genuine tip. Keep the clause shape parallel to the first — the parallelism is the rhythm.",
+      "example": "שתיים, אם זה לא מתאים לסוג העור שלך זה סתם בזבוז"
     },
     {
-      "id": "point_three",
-      "intent": "Third and strongest advantage. This is where the product name lands.",
-      "example": "ושלוש, {מוצר} עושה את כל זה במקום אחד"
+      "id": "tip_three",
+      "intent": "Third and strongest tip. Still advice about the category, still no product name.",
+      "example": "ושלוש, איכות אמיתית לא חייבת לבוא על חשבון הסביבה"
     },
     {
-      "id": "cta",
-      "intent": "Short. The list already did the persuading.",
-      "example": "הלינק למטה"
+      "id": "name_and_close",
+      "intent": "Name the product as the one option that satisfies all three tips, then stop. Two to five words of close at most.",
+      "example": "המוצר היחיד שמצאתי שעושה את שלושתם נקרא עולא ביוטי, הלינק למטה"
     }
   ],
-  "notes": "Keep clauses parallel and short — this structure lives or dies on rhythm. Do not let a beat run long; the word budget is tight across four content beats."
+  "notes": "The tips must be real category advice the viewer could act on without buying anything — that is what earns the recommendation at the end. Listing three product features instead is the failure mode. Tight on words: five beats against the budget, so keep every clause short."
 }

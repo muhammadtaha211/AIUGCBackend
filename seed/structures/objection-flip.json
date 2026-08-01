@@ -2,24 +2,29 @@
   "beats": [
     {
       "id": "hook",
-      "intent": "Voice the objection the audience already has, as the persona's own past belief.",
-      "example": "הייתי בטוחה שזה עוד {תחום} שלא באמת עובד"
+      "intent": "Voice the objection the audience already holds, as the persona's own past belief. No product name.",
+      "example": "חשבתי שכל קרמי הפנים זה אותו סיפור"
     },
     {
       "id": "why_skeptical",
-      "intent": "One honest reason the doubt was reasonable. This is what buys trust.",
-      "example": "כי ניסיתי כבר כמה כאלה וכולם היו אותו דבר"
+      "intent": "One honest reason the doubt was reasonable. This beat buys the trust.",
+      "example": "כי ניסיתי כל מיני מותגים וכולם אכזבו אותי"
     },
     {
-      "id": "flip",
-      "intent": "The specific thing that changed the persona's mind. Must be a real differentiator from the questionnaire, not enthusiasm.",
-      "example": "אבל {מוצר} עושה {יתרון} וזה מה ששינה לי את התמונה"
+      "id": "exception",
+      "intent": "The earned reveal moment — an exception exists, and she is relieved she found it. STILL UNNAMED. This beat is what makes the name feel like a discovery rather than an insertion.",
+      "example": "חוץ ממוצר אחד, שתודה לאל שמצאתי אותו"
     },
     {
-      "id": "cta",
-      "intent": "Invite the listener to be skeptical too, and check anyway.",
-      "example": "אז תבדקו בעצמכם, אני הייתי במקומכם"
+      "id": "name_and_why",
+      "intent": "Name it, then the advantages immediately after. In this structure only, the advantages may follow the name — the exception beat has already earned it.",
+      "example": "הוא נקרא עולא ביוטי, מיוצר בגרמניה, מתאים לכל סוגי העור וממש איכותי"
+    },
+    {
+      "id": "close",
+      "intent": "Two or three words. Never add reassurance like 'את לא תתחרטי' — it reads as fake straight after a name drop.",
+      "example": "ממליצה בחום"
     }
   ],
-  "notes": "The highest-trust structure and the best fit for a crowded category. Requires at least one genuinely specific advantage — without it the flip beat collapses into generic praise."
+  "notes": "The highest-trust structure and the best fit for a crowded category. Requires at least one genuinely specific advantage; without it the exception beat collapses into generic praise."
 }

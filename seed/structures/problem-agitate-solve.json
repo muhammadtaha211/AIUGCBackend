@@ -2,29 +2,29 @@
   "beats": [
     {
       "id": "hook",
-      "intent": "Name the pain the target audience feels, out loud, in their own words. No product yet.",
-      "example": "אם אתם מתעוררים כל בוקר עייפים למרות שישנתם שמונה שעות"
+      "intent": "Name the pain in the audience's own words. NO product name, not even obliquely as a brand.",
+      "example": "את יודעת את התחושה שאת שמה קרם אחרי קרם והעור עדיין נראה עייף"
     },
     {
       "id": "agitate",
-      "intent": "Say why the usual fixes do not work. One sentence, concrete, slightly impatient.",
-      "example": "וניסיתם כבר הכל וזה פשוט לא עוזר כי זה מטפל בסימפטום ולא בסיבה"
+      "intent": "Why the usual fixes fail. One clause, concrete, slightly impatient. Still no name.",
+      "example": "כי רוב הדברים בשוק פשוט לא מספיק איכותיים בשביל מה שהעור באמת צריך"
     },
     {
-      "id": "reveal",
-      "intent": "Introduce the product as the thing that addresses the actual cause. Say the product name.",
-      "example": "ואז מצאתי את {מוצר} שעושה בדיוק את זה"
+      "id": "solution",
+      "intent": "THE SELLING BEAT. Describe what actually works using the strongest advantages from the questionnaire, while the product is still UNNAMED. The viewer should want it before they know what it is called. Casual, talkative.",
+      "example": "אז סופסוף מצאתי משהו שהולך להציל אותי אני אומרת לך, מיוצר בגרמניה עם טכנולוגיה שבאמת מתאימה לכל סוג עור"
     },
     {
-      "id": "proof",
-      "intent": "One specific advantage from the questionnaire. Concrete, not adjectival.",
-      "example": "תוך שבוע כבר הרגשתי את ההבדל"
+      "id": "name",
+      "intent": "Only now, the name, phrased the way a person names something to a friend. Use a naming construction: קוראים לו / זה נקרא / הוא נקרא. Never 'מצאתי את {מוצר}'.",
+      "example": "קוראים לו עולא ביוטי"
     },
     {
-      "id": "cta",
-      "intent": "Direct, warm, one action.",
-      "example": "תיכנסו ללינק ותנסו בעצמכם"
+      "id": "close",
+      "intent": "Two to five words. Nothing after the name earns the viewer's trust, so do not spend words here.",
+      "example": "שווה לך לבדוק"
     }
   ],
-  "notes": "Highest-contrast opener. Works best when target_audience is specific and the pain is nameable."
+  "notes": "Highest-contrast opener. Best when target_audience is specific and the pain is nameable. The solution beat carries the whole ad — if it is vague, the structure fails."
 }

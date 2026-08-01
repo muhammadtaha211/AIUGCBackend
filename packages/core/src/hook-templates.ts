@@ -1,64 +1,67 @@
 /**
  * Founder-curated hook openers, adapted to spoken Israeli Hebrew.
  *
- * These are the FIRST LINE only — the beat that has to stop the scroll. The
- * rest of the script comes from the structure skeleton. Placeholders in
- * {curly braces} are filled from the questionnaire; a template whose
+ * v2 — two changes from the first pass, both from reading real output:
+ *
+ * 1. NO TEMPLATE NAMES THE PRODUCT. A hook containing the brand name tells the
+ *    viewer it's an ad in the first two seconds, and everything after it is
+ *    discounted. The product is referred to obliquely — זה, המוצר הזה, משהו —
+ *    and the name lands late, in the reveal beat. This was the single biggest
+ *    problem with the first generation of scripts.
+ *
+ * 2. Written in FEMININE SINGULAR throughout, one consistent form. Mixing
+ *    audience forms (אתם רוצות, אתם חייבות) is ungrammatical and was appearing
+ *    in real output because these templates were plural while the persona and
+ *    the product pulled feminine. The prompt converts to whatever form
+ *    target_audience implies — but it converts from one consistent starting
+ *    point, which is what stops the mixing.
+ *
+ * Placeholders in {curly braces} come from the questionnaire. A template whose
  * placeholders the questionnaire cannot support must not be chosen.
- *
- * Grammatical gender: written for a female persona (the common UGC case).
- * Past-tense first person is genderless in Hebrew, so most of these work
- * as-is; the prompt instructs the model to conjugate present-tense verbs and
- * self-reference to the persona's gender.
- *
- * Why a random subset rather than all 25 in the prompt: a model handed 25
- * options converges on the same three or four. Injecting a random handful per
- * generation is what actually produces variety across a customer's ads —
- * the same reason structures are picked at random.
  */
 export const HOOK_TEMPLATES: readonly string[] = [
   // --- sensory / first-reaction -------------------------------------------
-  "לא ציפיתי שזה יהיה כל כך טוב",
-  "תראו את זה רגע — {הצגת המוצר}",
+  "לא ציפיתי שזה יהיה ככה טוב",
+  "תראי רגע את זה",
 
   // --- insider / secret ---------------------------------------------------
-  "סודות של {תחום} שאף אחד לא מספר לכם",
-  "אלה שלושת הדברים הכי חשובים שאתם צריכים לדעת על {תחום}",
-  "אתם רוצים לדעת מה הסוד ל{תוצאה}? זה {מוצר}",
+  "אני הולכת לגלות לך את הסוד ל{תוצאה}",
+  "הסוד ל{תוצאה} הרבה יותר פשוט ממה שחשבת",
+  "אף אחד לא הולך לספר לך את זה על {תחום}",
+  "אלה שלושת הדברים שאת חייבת לדעת על {תחום}",
 
   // --- warning / mistake --------------------------------------------------
-  "אלה הדברים הכי גרועים שאתם יכולים לעשות כש{בעיה}",
-  "{פתרון מיושן} פשוט מת ב-2026, כולם עברו ל{מוצר}",
+  "אלה הדברים הכי גרועים שאת יכולה לעשות כש{בעיה}",
+  "{פתרון מיושן} פשוט מת ב-2026",
   "אנשים כבר לא משתמשים ב{פתרון מיושן}, ובצדק — {למה זה לא עובד}",
-  "{בעיה} לא מתרשמת מ{פתרון מיושן}, הסוד זה {מוצר}",
+  "{בעיה} לא מתרשמת מ{פתרון מיושן}, וזה מה שכן עובד",
 
   // --- social proof -------------------------------------------------------
-  "ראיתי המון אנשים משתמשים ב{מוצר} ומספרים על שיפור ענק",
-  "אנשים כבר מבינים את זה, ואתם נשארים מאחור",
+  "ראיתי המון אנשים עוברים לזה ומספרים על שיפור ענק",
+  "אנשים כבר מבינים את זה, ואת נשארת מאחור",
 
   // --- superlative --------------------------------------------------------
-  "המוצר הכי טוב ל{תחום} ב-2026",
-  "זה אחד מהמוצרים הכי טובים שיש ל{תחום}",
-  "ה{מוצר} הכי טוב שראיתי בתור {תפקיד מקצועי}",
+  "מצאתי את הדבר הכי טוב ל{תחום} שיש ב-2026",
+  "זה ה{תחום} הכי טוב שראיתי בתור {תפקיד מקצועי}",
 
   // --- personal result ----------------------------------------------------
-  "זה בדיוק המוצר שאיתו {תוצאה}",
-  "אם אתם מנסים {לפתור בעיה} ולא רואים תוצאות, אני עומדת לשנות לכם את החיים",
+  "זה בדיוק מה שעשיתי כדי {תוצאה}",
+  "אם את מנסה {לפתור בעיה} ולא רואה תוצאות, אני עומדת לשנות לך את החיים",
 
   // --- disbelief / too-good -----------------------------------------------
-  "למה אף אחד לא סיפר לי על זה קודם? זה פשוט מטורף",
-  "ממש מפחיד כמה ש{מוצר} טוב",
-  "איך זה בכלל חוקי? זה טוב מדי מכדי להיות אמיתי",
-  "{מוצר} טוב מדי, {סבל מהצלחה}",
+  "למה אף אחד לא סיפר לי על זה קודם, זה פשוט מטורף",
+  "ממש מפחיד כמה שהמוצר הזה טוב",
+  "איך זה בכלל חוקי, זה טוב מדי מכדי להיות אמיתי",
+  "זה טוב מדי, {סבל מהצלחה}",
 
   // --- ease / timing ------------------------------------------------------
   "אף פעם לא היה כזה קל {לפתור בעיה}",
   "עכשיו הזמן הכי טוב {לפתור בעיה}",
 
   // --- loss aversion ------------------------------------------------------
-  "זה מה שאתם מפספסים אם אתם לא משתמשים ב{מוצר}",
-  "אם {כאב של קהל היעד}, אתם חייבים את זה",
-  "{כאב של קהל היעד} — ואתם ממש לא חייבים להישאר שם",
+  "זה מה שאת מפספסת ואף אחד לא מספר לך",
+  "אם {כאב של קהל היעד}, את חייבת את זה",
+  "{כאב של קהל היעד} — ואת ממש לא חייבת להישאר שם",
 ];
 
 /** How many templates to offer the script model per generation. */
@@ -66,8 +69,8 @@ export const HOOK_OPTIONS_PER_GENERATION = 3;
 
 /**
  * A random subset, without repetition. Called once per script generation and
- * rendered into the b_script prompt as {{hook_options}}. The chosen indices
- * are worth recording on scripts.params so a winning hook can be traced back.
+ * rendered into the b_script prompt as {{hook_options}}. The chosen templates
+ * are recorded on scripts.params so a winning hook can be traced back.
  */
 export function pickHookTemplates(
   count: number = HOOK_OPTIONS_PER_GENERATION,
