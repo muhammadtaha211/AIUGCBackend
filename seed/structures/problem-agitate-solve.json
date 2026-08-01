@@ -22,8 +22,8 @@
     },
     {
       "id": "close",
-      "intent": "Two to five words. Nothing after the name earns the viewer's trust, so do not spend words here.",
-      "example": "שווה לך לבדוק"
+      "intent": "Two to five words. Nothing after the name earns the viewer's trust, so do not spend words here. 'ממליצה בחום' is the preferred close.",
+      "example": "ממליצה בחום"
     }
   ],
   "notes": "Highest-contrast opener. Best when target_audience is specific and the pain is nameable. The solution beat carries the whole ad — if it is vague, the structure fails."

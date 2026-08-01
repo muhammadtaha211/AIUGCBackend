@@ -7,8 +7,8 @@
     },
     {
       "id": "before",
-      "intent": "Where the persona was. Past tense, honest, unglamorous, one clause.",
-      "example": "כי שנים ניסיתי כל מיני מותגים ותמיד אותו סיפור"
+      "intent": "Where the persona was. Past tense, honest, unglamorous, one clause. Join it to the hook with a connector that is logically true — usually a contrast or a turning point, rarely 'כי'.",
+      "example": "שנים ניסיתי כל מיני מותגים ותמיד התאכזבתי"
     },
     {
       "id": "found",
