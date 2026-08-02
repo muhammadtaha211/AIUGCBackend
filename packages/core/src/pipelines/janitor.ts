@@ -23,7 +23,7 @@ export async function handleJanitor(_job: Job, ctx: JobContext): Promise<JobResu
     .select()
     .from(jobs)
     .where(
-      and(inArray(jobs.type, ["render_video", "lipsync", "upscale"]), eq(jobs.status, "dead")),
+      and(inArray(jobs.type, ["render_video", "lipsync"]), eq(jobs.status, "dead")),
     );
   for (const dead of deadJobs) {
     const { videoRenderId } = dead.payload as { videoRenderId?: string };

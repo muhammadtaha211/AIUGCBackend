@@ -82,111 +82,64 @@ keyless (the e2e test relies on this).
   rate-capped per business/day (config).
 - DRY_RUN: fabricated audio + uniform 2.2 w/s alignment so length-fit and chunking run for real.
 
-## InfiniteTalk lip-sync — `providers/lipsync.ts`
+## HeyGen avatar lip-sync — `providers/lipsync.ts`
 
 - **Image+audio is the only mode** (locked decision — no video-to-video): one reference image +
-  TTS audio → talking head via the hosted fal.ai endpoint **`fal-ai/infinitalk`**
-  (`image_url` + `audio_url` + a required motion prompt + `num_frames` + `resolution` + `seed`).
-  The image is resolved by the render pipeline: an approved product-in-hand composite takes
-  precedence, then an explicit persona image, then the persona's default reference image. Given
-  zero infra background, hosted fal is the reference implementation.
-- **Model bake-off (2026-07): InfiniteTalk chosen.** Kling Avatars is an acceptable backup;
-  OmniHuman 1.5, HiggsField Speak and Wan 2.5 Speak were rejected. Hard constraint on any
-  replacement: it must handle a 15s script in a **single call** — most alternatives cap out at
-  5–10s per generation.
-- **Motion prompt — resolved by the pipeline, not fixed in the provider**
-  (`pipelines/renders.ts: resolveLipsyncPrompt`): persona `identity.motionPrompt` override →
-  `app_config.lipsync_prompt` → `DEFAULT_LIPSYNC_PROMPT`. The default directs all expression
-  into the face and forbids head/torso/camera movement. Why it matters: the model is
-  audio-driven, so **silence reads as a dead stare** — during a pause it has nothing to animate
-  unless the prompt says where the expression should live. Same reason pause-creating
-  punctuation (e.g. from the tts_enhance pass) is a hazard for Service B scripts.
-- **Pricing** (fal's published rates, verified live 2026-07-25): $0.20/s @480p, doubled to
-  $0.40/s @720p — and fal bills **per second of output video**, not GPU execution time.
-  `GPU_COST_AGOROT_PER_SECOND` in `pipelines/renders.ts` is a per-resolution map (480p → 75
-  agorot/s, 720p → 150); the submit body pins `resolution` from `app_config.lipsync_resolution`
-  (code default 720p). The cheap path is 480p + Topaz upscale (next section): 75 + ~7.5 ≈
-  **82.5 agorot/s vs 150** for native 720p — the ~7.5 is fal's published upscale rate, pending
-  confirmation against a real invoice. The 15-credit Service B price was set under the older,
-  pricier video-to-video rate.
-- **`num_frames` — verified (the first paid render hit this)**: fal renders exactly
-  `num_frames` and does **NOT** auto-extend to the audio length; left unset it uses the schema
-  default (145 ≈ 5.8s @25fps) and cuts the script mid-sentence. Bounds are 41–721
-  (`LIPSYNC_MIN/MAX_FRAMES`, live schema verified 2026-07-25). fal also requires the audio to be
-  strictly longer than the request — `audio_seconds >= (num_frames + 1) / fps` — so asking for
-  the audio's exact frame count 422s whenever it lands on a frame boundary. Hence
-  `framesForAudio` (`providers/lipsync.ts`): **`floor(durationMs × fps / 1000)` minus
-  `lipsync_safety_frames`** (floor, never round; default 2 frames of headroom — app_config, like
-  `lipsync_fps` = 25 and `lipsync_resolution`). Under-requesting is visually free: the
-  composition runs on the approved mp3 and holds the clip's last frame. Past the 721-frame
-  maximum the job fails loudly with a Hebrew `PermanentError` ("script too long"), never a
-  silent truncation. **Known consequence: the 30s duration preset cannot render** — max audio is
-  (721+2)/25 ≈ 28.9s, and `generateBScript` (`pipelines/copy.ts`) still offers (and defaults to)
-  `durationPreset: 30`; only the 15s preset survives the lipsync step today.
-- **Seed**: renders without a seed are **deterministic** — resubmitting the same
-  image+audio+prompt reproduces the same take. So `handleLipsync` generates a seed once per
-  render and persists it on `video_renders.params` **before** the submit: a retry/resubmit asks
-  for the same take instead of paying for a different one, and QC-reject-regenerate deletes the
-  seed (`pipelines/qc.ts`) precisely so the regenerated render is a _different_ take.
-- Swappable by design: `interface LipsyncProvider { submit(); poll() }` — RunPod
-  serverless/Modal/WaveSpeed become alternate implementations if volume justifies owning a
-  template.
-- **Polling, not webhooks** (decision): the CLI phase has no public URL, the worker polls
-  identically pre- and post-launch, and fal's queue API supports it directly. Submit → job
-  `state.providerJobId` checkpoint → reschedule 15s → poll every 30s. A webhook endpoint is a
-  later optimization in the web app, not a redesign. **Known gap: polling has no deadline** — a
-  provider job that never completes keeps rescheduling forever (a reschedule consumes no
-  attempt), with no error surfaced and no refund path. Applies to the upscale poll loop too.
-- Inputs are 1-hour signed URLs; the output URL is downloaded and stored by the **upscale**
-  handler, which the chain runs next (see §Topaz below).
-- **Input image size is a hard-failure hazard**: a 28MB PNG reference image was rejected
-  outright in testing while a 1.6MB JPG worked. Nothing in the pipeline normalizes image
-  uploads yet — customer uploads need normalization before self-serve launch.
+  TTS audio → talking head via HeyGen's **`POST https://api.heygen.com/v3/videos`** with
+  `type: "image"`, `image: { type: "url", url }` and `audio_url`. Auth is the `x-api-key`
+  header (`HEYGEN_API_KEY`). The image is resolved by the render pipeline: an approved
+  product-in-hand composite takes precedence, then an explicit persona image, then the
+  persona's default reference image. (Replaced InfiniteTalk-on-fal 2026-08 — no frame ceiling,
+  no upscale stage, no motion prompt, no seed. `FAL_KEY` stays: nano-banana composites still
+  run through fal.)
+- **Generates to the audio's length** (up to 30 minutes, no frame-count parameter) — nothing
+  cuts mid-sentence and no `num_frames` derivation exists anymore, so the 30s duration preset
+  renders again. **`MAX_LIPSYNC_SECONDS` (600) is a runaway-cost guard, NOT a product limit**:
+  HeyGen bills per second of output, so one bad input could buy 30 minutes of GPU;
+  `handleLipsync` fails longer audio with a Hebrew `PermanentError` before submitting. Never
+  surface it as a duration cap in the UI.
+- **Engine — deliberately not sent**: the docs' engine matrix supports arbitrary-image input on
+  **Avatar IV only**, which is also the default when `engine` is omitted (Avatar V is
+  digital-twin only). A `type: "image"` request with no `engine` field is therefore the
+  documented path.
+- **Output pinned in the submit body**: `aspect_ratio: "9:16"` + `resolution` from
+  `app_config.lipsync_resolution` (code default **1080p**) — 1080p @ 9:16 is exactly the
+  1080×1920 Remotion frame, so nothing is browser-upscaled. Native output is **25fps**; the v3
+  API exposes **no fps or interpolation field**, and 30/60fps would be AI interpolation —
+  never requested.
+- **Pricing**: **$0.0667/s at BOTH 720p and 1080p** — same price, hence the 1080p default —
+  ≈ 25 agorot/s at ₪3.75/$; `GPU_COST_AGOROT_PER_SECOND` maps both tiers to 25. Usage rows
+  keep kind `gpu_seconds` (quantity = audio seconds ≈ output seconds); the provider column
+  stays `fal` until a migration adds a `heygen` enum value. `credit_costs.b_render` is
+  unchanged — per-second billing is a separate change.
+- **No motion prompt**: the image mode accepts an optional `motion_prompt`, but none is sent —
+  the old resolver chain (persona override → `app_config.lipsync_prompt` → default) is
+  deleted, and `personas.identity.motionPrompt` is no longer read (the column itself is
+  untouched).
+- **No seed — deterministic**: HeyGen exposes no seed parameter and reproduces the same video
+  for identical inputs, so a QC regeneration (`pipelines/qc.ts`) only differs if the script or
+  the audio changes; it strips only the rejected render's `lipsyncPath`.
+- **Poll**: `GET /v3/videos/{video_id}` → `data.status` ∈
+  `pending | processing | completed | failed` (`waiting` also appears in the create response
+  and counts as pending); `completed` carries a short-lived presigned `data.video_url`.
+  `handleLipsync` downloads it, probes it (the 1080×1920 sanity log), stores it as
+  **`lipsync.mp4`** (`params.lipsyncPath`) and enqueues `render_video` directly. Submit → job
+  `state.providerJobId` checkpoint → poll every **15s** (HeyGen returns in ~2min);
+  `assertPollDeadline` (app_config `poll_deadline_seconds`) fails a stuck job through the
+  normal terminal path — failed render, credit refund.
+- **Error mapping**: ≥500/429 → `TransientError`, other non-ok → `PermanentError`; submit
+  bodies are logged with signed-URL query strings stripped. Swappable by design:
+  `interface LipsyncProvider { submit(); poll() }`.
+- **Polling, not webhooks** (decision): the CLI phase has no public URL and the worker polls
+  identically pre- and post-launch. A webhook endpoint is a later optimization in the web app,
+  not a redesign.
+- **Input image size is a hard-failure hazard** (observed on the previous provider, unverified
+  on HeyGen): nothing in the pipeline normalizes image uploads yet — customer uploads need
+  normalization before self-serve launch.
 - Budget: `gpu_seconds` usage row at submit (quantity = audio seconds ≈ output-video seconds);
   hard rolling-24h cap parks further submissions (`BudgetError`) without burning attempts.
-
-## Topaz Starlight upscale — `providers/upscale.ts`
-
-- **Why it exists**: the lip-sync plate comes back at the resolution paid for (480p on the cheap
-  path) and Remotion composes a 1080×1920 frame — without this step the browser does the
-  upscaling. Chain position: `lipsync → upscale → render_video`
-  (`handleUpscale`, `pipelines/renders.ts`).
-- **Endpoint**: fal queue **`fal-ai/topaz/upscale/video`**; status/result URLs drop the
-  `upscale/video` sub-path (`queue.fal.run/fal-ai/topaz/requests/<id>[/status]`) — same fal
-  convention as nano-banana/edit. Model: `"Starlight Precise 2.5"`. Same submit/poll shape as
-  lipsync.
-- **`H264_output: true`, deliberately**: fal defaults to H265, and headless Chrome cannot be
-  relied on to decode HEVC — Remotion's `OffthreadVideo` would fail on the result.
-- **`target_fps` deliberately not sent**: it enables frame interpolation, which changes the
-  frame count that `<Freeze>` and the caption timings depend on. (The
-  compression/noise/halo/grain/recover_detail knobs are also unsent — model defaults,
-  validated.) The handler warns if the upscaled clip's duration drifts >100ms from the plate's.
-- **`upscale_factor` is computed at runtime** (`upscaleFactorFor`): the plate is probed, then
-  `floor((1080 / plate_width) × 100) / 100`, clamped to [1, 4]; at ≤ 1.0 the upscale is
-  **skipped** and the plate goes straight to render. Floored, never rounded up: output above
-  1080p costs 4× ($0.08/s vs $0.02/s) and Remotion would only scale it back down.
-- **Both files are kept** in the `renders` bucket: the plate at
-  `<biz>/video/<renderId>/lipsync-plate.mp4` (`params.lipsyncPlatePath`) — it is the input fal
-  fetches over a signed URL (a resubmit mints a fresh one) and the fallback if the upscale never
-  lands; the result at `.../lipsync-upscaled.mp4`, written to `params.lipsyncPath` — the clip
-  Remotion actually composes.
-- **Failure = degraded, never lost**: a `PermanentError` falls back to the plate
-  (`params.lipsyncPath = platePath`, `params.upscaleError` set) and the render proceeds — and a
-  degraded render **always lands in `qc_pending`, even when `auto_release_b` is on**
-  (`handleRenderVideo`). A later successful upscale clears `upscaleError`.
-- **A failed poll clears the provider job id and resubmits — deliberately the OPPOSITE of
-  `handleLipsync`**: the retry submits fresh with a newly signed input URL, since an expired
-  signed URL is the likeliest failure. Safe here because an upscale resubmit costs cents where a
-  lipsync resubmit costs shekels.
-- **Known gaps (stated, not solved)**:
-  - **No `usage_events` row is written for the upscale** — `usage_kind` is a Postgres enum
-    (`llm_tokens|tts_chars|gpu_seconds|images`) and a new kind needs a migration. Until then
-    recorded cost-per-video is understated, and upscale spend is invisible to the rolling daily
-    caps (the handler calls no `assertBudget` either).
-  - **Polling has no deadline** (same as lipsync): a provider that never returns leaves the job
-    rescheduling forever — no error, no refund path.
-- DRY_RUN: instant `dryrun://` result; the handler copies the plate through unchanged, so the
-  whole chain runs keyless.
+- DRY_RUN: instant `dryrun://` result and a placeholder clip file, so the whole chain runs
+  keyless.
 
 ## nano-banana composites — `providers/imagegen.ts`
 
@@ -230,9 +183,9 @@ keyless (the e2e test relies on this).
   **`ServiceA` is not built** — `renderVideo()` still throws for `kind: "service_a"`.
 - **`ServiceB`** (`src/ServiceB.tsx`): full-bleed `OffthreadVideo` of the lip-synced talking
   head — **muted**; the approved mp3 (`voiceoverSrc`, required by the schema) is the
-  composition's only audio track, from frame 0. The fal clip's embedded audio is the provider's
-  re-encode of that same mp3, which arrives with a glitch in the first second and would get
-  encoded a third time here; playing the approved file directly also guarantees caption sync —
+  composition's only audio track, from frame 0. The lip-sync clip's embedded audio is the
+  provider's re-encode of that same mp3, and would get encoded a third time here; playing the
+  approved file directly also guarantees caption sync —
   it is the exact file the timestamps were computed against. No music, ever (locked). Plus: a
   slow 1 → 1.025 micro-motion scale across the clip, burned RTL captions, and the props-driven
   watermark (tiled, rotated, 12% opacity). Chunks with word timings render karaoke-style (active word
@@ -257,7 +210,7 @@ keyless (the e2e test relies on this).
   `durationInFrames = max(1, round(voiceoverSeconds × 30))` — the customer signed off on the
   audio, so the ad must never cut it off. The talking head is probed only for
   `talkingHeadDurationInFrames`, the frame where `<Freeze>` starts holding its final frame if
-  the clip came back shorter (the safety-frame under-request guarantees it does, slightly); the
+  the clip came back a hair shorter than the mp3; the
   hold sits inside the micro-motion wrapper so it reads as stillness, not a frozen render. Both
   probes run in the browser, so the worker box needs no `ffprobe` for this step.
 - **Encode**: `renderMedia` with `codec: "h264"`, `audioCodec: "aac"`, `crf: 20` (matching the

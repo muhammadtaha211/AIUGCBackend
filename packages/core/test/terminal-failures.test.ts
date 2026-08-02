@@ -14,10 +14,9 @@ import { addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { createComposite } from "../src/pipelines/composites";
 import { creditBalance, grantPeriod } from "../src/pipelines/credits";
-import { createBRender, type VariantParams } from "../src/pipelines/sets";
+import { createBRender } from "../src/pipelines/sets";
 import { approveAudio, requestAudio } from "../src/pipelines/tts";
 import { setLipsyncProvider } from "../src/providers/lipsync";
-import { setUpscaleProvider } from "../src/providers/upscale";
 import { getStorage, setStorage, type Storage } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
 import { tempStorage } from "./helpers/storage";
@@ -129,7 +128,6 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
 
   afterEach(() => {
     setLipsyncProvider(undefined);
-    setUpscaleProvider(undefined);
   });
 
   afterAll(async () => {
@@ -341,56 +339,5 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
 
     const row = await renderRow(render.id);
     expect(row.status).toBe("failed");
-  });
-
-  it("upscale that never finishes hits the deadline and falls back to the plate", async () => {
-    const biz = await createBusiness(db, {
-      ownerEmail: "founder@example.com",
-      name: "מסעדת הבית",
-      ownerRole: "admin",
-    });
-    setUpscaleProvider({
-      async submit() {
-        return { providerJobId: "stuck_upscale_1" };
-      },
-      async poll() {
-        return { status: "pending" };
-      },
-    });
-
-    const renderId = await queueBRender(biz.id);
-    // Walk lipsync (dry-run) through to the first upscale poll.
-    const key = `upscale:${renderId}`;
-    let job = await jobByKey(key);
-    for (let i = 0; i < 8 && !(job?.state as { providerJobId?: string })?.providerJobId; i++) {
-      await lanePass();
-      job = await jobByKey(key);
-      await makeRunnable();
-    }
-    const state = job!.state as { providerJobId?: string; submittedAt?: number };
-    expect(state.providerJobId).toBe("stuck_upscale_1");
-    expect(typeof state.submittedAt).toBe("number");
-
-    await db
-      .update(dbSchema.jobs)
-      .set({
-        state: { ...state, submittedAt: Date.now() - (DEFAULT_POLL_DEADLINE_SECONDS + 60) * 1000 },
-      })
-      .where(sql`${dbSchema.jobs.id} = ${job!.id}`);
-    await makeRunnable();
-    await lanePass();
-
-    // Upscale's terminal path is the plate fallback, not a refund: the customer
-    // keeps the render (never auto-released) and the timeout is on the record.
-    job = (await jobByKey(key))!;
-    expect(job.status).toBe("succeeded");
-    await drainAll(); // render_video composes the plate
-
-    const render = await renderRow(renderId);
-    const params = render.params as VariantParams;
-    expect(params.lipsyncPath).toBe(params.lipsyncPlatePath);
-    expect(params.upscaleError).toMatch(/לא הסתיים בזמן/);
-    expect(render.status).toBe("qc_pending");
-    expect(await queuedJobs()).toHaveLength(0);
   });
 });

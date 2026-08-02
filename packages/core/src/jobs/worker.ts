@@ -77,7 +77,7 @@ export interface WorkerLaneOptions {
 
 /**
  * A lane claims and runs jobs strictly sequentially. The worker app runs two
- * lanes in one process: "heavy" (render_video, lipsync, upscale) and "light"
+ * lanes in one process: "heavy" (render_video, lipsync) and "light"
  * (everything else), so a 5-minute Remotion render never blocks an audio
  * preview the user is waiting on.
  */
@@ -95,7 +95,7 @@ export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
   }
 }
 
-export const HEAVY_JOB_TYPES = ["render_video", "lipsync", "upscale"] as const;
+export const HEAVY_JOB_TYPES = ["render_video", "lipsync"] as const;
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {

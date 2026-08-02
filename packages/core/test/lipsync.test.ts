@@ -1,89 +1,146 @@
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
-import { appConfig, personas } from "../src/db/schema";
-import { PermanentError } from "../src/jobs/errors";
-import {
-  DEFAULT_LIPSYNC_PROMPT,
-  GPU_COST_AGOROT_PER_SECOND,
-  lipsyncSettings,
-  resolveLipsyncPrompt,
-} from "../src/pipelines/renders";
-import { framesForAudio, LIPSYNC_MAX_FRAMES, LIPSYNC_MIN_FRAMES } from "../src/providers/lipsync";
+import { appConfig } from "../src/db/schema";
+import { PermanentError, TransientError } from "../src/jobs/errors";
+import { GPU_COST_AGOROT_PER_SECOND, lipsyncResolution } from "../src/pipelines/renders";
+import { HeyGenLipsync } from "../src/providers/lipsync";
 import { createTestDb } from "./helpers/pglite";
 
 /**
- * The first paid render came back 5.8s long for a 10s script: fal renders
- * `num_frames` (default 145) and does not extend to the audio. The next two
- * were rejected 422 for the opposite reason — fal wants the audio to outlast
- * the frames by one. These pin the derivation between those two walls; no live
- * API is touched.
+ * The HeyGen v3 contract, pinned without a live call: the submit body shape
+ * (image+audio pinned to 9:16, no engine/fps/prompt/frames/seed fields), the
+ * poll status mapping, and the HTTP error taxonomy.
  */
 
-describe("framesForAudio", () => {
-  const FPS = 25;
-  const SAFETY = 2;
+describe("HeyGenLipsync", () => {
+  const fetchMock = vi.fn();
 
-  it("leaves fal's required frame of audio headroom (the 422 regression)", () => {
-    // Real submit: 276 frames for 11.04s audio → "must be at least 11.08s".
-    expect(framesForAudio(11_040, FPS, SAFETY)).toBe(274);
-    expect(framesForAudio(11_040, FPS, SAFETY)).not.toBe(276);
+  beforeAll(() => {
+    process.env.HEYGEN_API_KEY = "test_heygen_key";
+    resetEnvCache();
+    vi.stubGlobal("fetch", fetchMock);
   });
 
-  it("derives the frame count from the audio duration", () => {
-    expect(framesForAudio(8_000, FPS, SAFETY)).toBe(198);
-    expect(framesForAudio(15_000, FPS, SAFETY)).toBe(373);
-    expect(framesForAudio(10_000, FPS, SAFETY)).toBe(248); // truncated at 145 once
+  afterEach(() => {
+    fetchMock.mockReset();
   });
 
-  it("floors the partial frame instead of rounding up past the audio", () => {
-    expect(framesForAudio(8_370, FPS, SAFETY)).toBe(207); // 209.25 → 209 − 2
-    expect(framesForAudio(8_020, FPS, SAFETY)).toBe(198); // 200.5 → 200 − 2, not 201
+  afterAll(() => {
+    vi.unstubAllGlobals();
+    delete process.env.HEYGEN_API_KEY;
+    resetEnvCache();
   });
 
-  it("clamps up to the schema minimum for very short audio", () => {
-    expect(framesForAudio(500, FPS, SAFETY)).toBe(LIPSYNC_MIN_FRAMES);
-    expect(framesForAudio(1_720, FPS, SAFETY)).toBe(LIPSYNC_MIN_FRAMES); // exactly 41
-    expect(framesForAudio(2_000, FPS, SAFETY)).toBe(48);
+  function response(status: number, body: unknown) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    };
+  }
+
+  const submitInput = {
+    imageUrl: "https://storage.example/persona.jpg?token=secret",
+    audioUrl: "https://storage.example/vo.mp3?token=secret",
+    resolution: "1080p",
+  } as const;
+
+  it("submits a v3 image+audio body pinned to 9:16 — no engine, fps, prompt, frames, or seed", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response(200, { data: { video_id: "vid_1", status: "waiting", output_format: "mp4" } }),
+    );
+
+    const { providerJobId } = await new HeyGenLipsync().submit(submitInput);
+
+    expect(providerJobId).toBe("vid_1");
+    const [url, init] = fetchMock.mock.calls[0]! as [string, { headers: Record<string, string>; body: string }];
+    expect(url).toBe("https://api.heygen.com/v3/videos");
+    expect(init.headers["x-api-key"]).toBe("test_heygen_key");
+    expect(JSON.parse(init.body)).toEqual({
+      type: "image",
+      image: { type: "url", url: submitInput.imageUrl },
+      audio_url: submitInput.audioUrl,
+      aspect_ratio: "9:16",
+      resolution: "1080p",
+    });
   });
 
-  it("throws PermanentError past the schema maximum instead of truncating", () => {
-    expect(() => framesForAudio(30_000, FPS, SAFETY)).toThrow(PermanentError);
-    expect(() => framesForAudio(30_000, FPS, SAFETY)).toThrow(/28\.9/); // real limit, in Hebrew
+  it("polls GET /v3/videos/{id}: pending/waiting/processing stay pending", async () => {
+    for (const status of ["pending", "waiting", "processing"]) {
+      fetchMock.mockResolvedValueOnce(response(200, { data: { id: "vid_1", status } }));
+      expect(await new HeyGenLipsync().poll("vid_1")).toEqual({ status: "pending" });
+    }
+    const [url] = fetchMock.mock.calls[0]! as [string];
+    expect(url).toBe("https://api.heygen.com/v3/videos/vid_1");
   });
 
-  it("accepts audio right up to the maximum", () => {
-    expect(framesForAudio(28_920, FPS, SAFETY)).toBe(LIPSYNC_MAX_FRAMES);
-    expect(() => framesForAudio(28_960, FPS, SAFETY)).toThrow(PermanentError);
+  it("maps completed to done with the presigned video url", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response(200, {
+        data: { id: "vid_1", status: "completed", video_url: "https://cdn.heygen.com/vid_1.mp4?sig=x" },
+      }),
+    );
+    expect(await new HeyGenLipsync().poll("vid_1")).toEqual({
+      status: "done",
+      videoUrl: "https://cdn.heygen.com/vid_1.mp4?sig=x",
+    });
   });
 
-  it("follows the configured fps", () => {
-    expect(framesForAudio(10_000, 30, SAFETY)).toBe(298);
-    expect(() => framesForAudio(28_000, 30, SAFETY)).toThrow(PermanentError); // 838 > 721
+  it("maps failed to failed with the failure message, and completed-without-url to failed", async () => {
+    fetchMock.mockResolvedValueOnce(
+      response(200, {
+        data: { id: "vid_1", status: "failed", failure_code: "e1", failure_message: "bad audio" },
+      }),
+    );
+    expect(await new HeyGenLipsync().poll("vid_1")).toEqual({ status: "failed", reason: "bad audio" });
+
+    fetchMock.mockResolvedValueOnce(response(200, { data: { id: "vid_1", status: "completed" } }));
+    expect(await new HeyGenLipsync().poll("vid_1")).toEqual({
+      status: "failed",
+      reason: "heygen result has no video url",
+    });
   });
 
-  it("respects the configured safety margin", () => {
-    expect(framesForAudio(11_040, FPS, 0)).toBe(276); // what fal rejected
-    expect(framesForAudio(11_040, FPS, 5)).toBe(271);
-    // The margin moves the ceiling with it: 28.84s is the max at safety 0.
-    expect(framesForAudio(28_840, FPS, 0)).toBe(LIPSYNC_MAX_FRAMES);
-    expect(() => framesForAudio(28_920, FPS, 0)).toThrow(PermanentError);
+  it("an unknown status is failed with the status on the record, not an infinite pend", async () => {
+    fetchMock.mockResolvedValueOnce(response(200, { data: { id: "vid_1", status: "archived" } }));
+    expect(await new HeyGenLipsync().poll("vid_1")).toEqual({
+      status: "failed",
+      reason: "heygen status archived",
+    });
+  });
+
+  it("4xx is a PermanentError, 5xx and 429 are TransientErrors", async () => {
+    fetchMock.mockResolvedValueOnce(response(400, { error: { code: "invalid", message: "no" } }));
+    await expect(new HeyGenLipsync().submit(submitInput)).rejects.toBeInstanceOf(PermanentError);
+
+    fetchMock.mockResolvedValueOnce(response(500, { error: "boom" }));
+    await expect(new HeyGenLipsync().submit(submitInput)).rejects.toBeInstanceOf(TransientError);
+
+    fetchMock.mockResolvedValueOnce(response(429, { error: "slow down" }));
+    await expect(new HeyGenLipsync().poll("vid_1")).rejects.toBeInstanceOf(TransientError);
+  });
+
+  it("a network error is a TransientError", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("ECONNRESET"));
+    await expect(new HeyGenLipsync().submit(submitInput)).rejects.toBeInstanceOf(TransientError);
   });
 });
 
 describe("GPU_COST_AGOROT_PER_SECOND", () => {
-  it("charges 720p at double the 480p rate", () => {
-    expect(GPU_COST_AGOROT_PER_SECOND["480p"]).toBe(75);
-    expect(GPU_COST_AGOROT_PER_SECOND["720p"]).toBe(150);
+  it("charges both tiers the same (HeyGen prices 720p and 1080p identically)", () => {
+    expect(GPU_COST_AGOROT_PER_SECOND["720p"]).toBe(25);
+    expect(GPU_COST_AGOROT_PER_SECOND["1080p"]).toBe(25);
   });
 
-  it("makes a 10s render cost differently per resolution", () => {
-    expect(10 * GPU_COST_AGOROT_PER_SECOND["480p"]).toBe(750);
-    expect(10 * GPU_COST_AGOROT_PER_SECOND["720p"]).toBe(1_500);
+  it("makes a 10s render cost 250 agorot at either resolution", () => {
+    expect(10 * GPU_COST_AGOROT_PER_SECOND["720p"]).toBe(250);
+    expect(10 * GPU_COST_AGOROT_PER_SECOND["1080p"]).toBe(250);
   });
 });
 
-describe("lipsyncSettings", () => {
+describe("lipsyncResolution", () => {
   let db: Db;
   let pg: { close(): Promise<void> };
 
@@ -97,91 +154,12 @@ describe("lipsyncSettings", () => {
     await pg.close();
   });
 
-  it("defaults to 25fps / 720p / 2 safety frames when the app_config rows are absent", async () => {
-    expect(await lipsyncSettings(db)).toEqual({ fps: 25, resolution: "720p", safetyFrames: 2 });
+  it("defaults to 1080p when the app_config row is absent", async () => {
+    expect(await lipsyncResolution(db)).toBe("1080p");
   });
 
-  it("reads the rows when they exist (480p is one INSERT, no deploy)", async () => {
-    await db.insert(appConfig).values([
-      { key: "lipsync_fps", value: 30 },
-      { key: "lipsync_resolution", value: "480p" },
-      { key: "lipsync_safety_frames", value: 4 },
-    ]);
-    expect(await lipsyncSettings(db)).toEqual({ fps: 30, resolution: "480p", safetyFrames: 4 });
-  });
-});
-
-/**
- * The motion prompt is what the paid render taught us: persona first (they don't
- * all move the same), then a global knob, then the default. `identity` is
- * free-form jsonb written by hand, so every shape of garbage in it has to fall
- * through to the next source rather than kill the render.
- */
-describe("resolveLipsyncPrompt", () => {
-  let db: Db;
-  let pg: { close(): Promise<void> };
-
-  beforeAll(async () => {
-    const testDb = await createTestDb();
-    db = testDb.db;
-    pg = testDb.pg;
-  });
-
-  afterAll(async () => {
-    await pg.close();
-  });
-
-  async function addPersona(identity: unknown): Promise<string> {
-    const rows = await db
-      .insert(personas)
-      .values({ name: "בדיקה", voiceId: "voice_1", identity })
-      .returning({ id: personas.id });
-    return rows[0]!.id;
-  }
-
-  it("uses the built-in default when neither the persona nor app_config overrides it", async () => {
-    expect(await resolveLipsyncPrompt(db)).toBe(DEFAULT_LIPSYNC_PROMPT);
-    expect(await resolveLipsyncPrompt(db, await addPersona({}))).toBe(DEFAULT_LIPSYNC_PROMPT);
-  });
-
-  it("falls through a malformed identity instead of throwing", async () => {
-    for (const identity of [
-      "not an object",
-      [],
-      42,
-      { motionPrompt: 7 },
-      { motionPrompt: null },
-      { motionPrompt: "" },
-      { motionPrompt: "   " },
-    ]) {
-      expect(await resolveLipsyncPrompt(db, await addPersona(identity))).toBe(
-        DEFAULT_LIPSYNC_PROMPT,
-      );
-    }
-    // The column is NOT NULL, but jsonb `null` is a value, not a SQL NULL.
-    const jsonNull = (
-      await db
-        .insert(personas)
-        .values({ name: "בדיקה", voiceId: "voice_1", identity: sql`'null'::jsonb` })
-        .returning({ id: personas.id })
-    )[0]!.id;
-    expect(await resolveLipsyncPrompt(db, jsonNull)).toBe(DEFAULT_LIPSYNC_PROMPT);
-    // A render can name a persona that was since deleted.
-    expect(await resolveLipsyncPrompt(db, "00000000-0000-0000-0000-000000000000")).toBe(
-      DEFAULT_LIPSYNC_PROMPT,
-    );
-  });
-
-  it("prefers app_config lipsync_prompt over the default", async () => {
-    await db.insert(appConfig).values({ key: "lipsync_prompt", value: "GLOBAL PROMPT" });
-    expect(await resolveLipsyncPrompt(db)).toBe("GLOBAL PROMPT");
-    expect(await resolveLipsyncPrompt(db, await addPersona({ motionPrompt: "  " }))).toBe(
-      "GLOBAL PROMPT",
-    );
-  });
-
-  it("prefers the persona's identity.motionPrompt over app_config", async () => {
-    const personaId = await addPersona({ gender: "f", motionPrompt: "PERSONA PROMPT" });
-    expect(await resolveLipsyncPrompt(db, personaId)).toBe("PERSONA PROMPT");
+  it("reads the row when it exists (dropping to 720p is one INSERT, no deploy)", async () => {
+    await db.insert(appConfig).values({ key: "lipsync_resolution", value: "720p" });
+    expect(await lipsyncResolution(db)).toBe("720p");
   });
 });

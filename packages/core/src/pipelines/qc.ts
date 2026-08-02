@@ -52,15 +52,12 @@ export async function rejectRender(
 
   if (opts.regenerate === false) return {};
 
-  // The seed exists so a retry is a DIFFERENT take — carrying it over would
-  // reproduce the rejected video byte-for-byte at full GPU cost. The two path
-  // keys would otherwise point at the rejected render's files, and upscaleError
-  // is that render's failure, not this one's.
+  // HeyGen is deterministic on identical inputs (no seed parameter exists), so
+  // a re-render of the same script+audio reproduces the same video — a
+  // meaningful regeneration must change the script or the audio. The path key
+  // would otherwise point at the rejected render's clip.
   const retryParams = { ...(render.params as Record<string, unknown>) };
-  delete retryParams.seed;
-  delete retryParams.lipsyncPlatePath;
   delete retryParams.lipsyncPath;
-  delete retryParams.upscaleError;
 
   const inserted = await db
     .insert(videoRenders)

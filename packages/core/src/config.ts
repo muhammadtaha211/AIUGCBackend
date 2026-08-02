@@ -7,6 +7,7 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ELEVENLABS_API_KEY: z.string().optional(),
   FAL_KEY: z.string().optional(),
+  HEYGEN_API_KEY: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
   DRY_RUN: z
     .string()

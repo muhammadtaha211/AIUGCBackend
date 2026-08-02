@@ -4,10 +4,11 @@ import { PermanentError, TransientError } from "../jobs/errors";
 import { logger } from "../logger";
 
 /**
- * InfiniteTalk lip-sync behind a swappable interface. Reference implementation
- * is the hosted fal.ai single-image endpoint (`fal-ai/infinitalk`): one
- * reference image (persona image or approved composite) + TTS audio → talking
- * head. Image+audio is the only mode — no video-to-video (locked decision).
+ * HeyGen avatar lip-sync behind a swappable interface: one reference image
+ * (persona image or approved product-in-hand composite) + TTS audio → talking
+ * head, via `POST /v3/videos` with `type: "image"`. Image+audio is the only
+ * mode — no video-to-video (locked decision). HeyGen generates to the audio's
+ * length (no frame-count parameter) and bills per second of output video.
  * Polling, not webhooks: the CLI phase has no public URL and the worker polls
  * identically pre- and post-launch.
  */
@@ -15,57 +16,19 @@ export interface LipsyncSubmitInput {
   /** Reference image: persona image or approved product-in-hand composite. */
   imageUrl: string;
   audioUrl: string;
-  /**
-   * The endpoint's required motion prompt, already resolved (persona override →
-   * app_config → default) — see `resolveLipsyncPrompt`. The provider takes it as
-   * an input rather than reading config or the DB itself.
-   */
-  prompt: string;
-  /** Derived from the approved audio — see `framesForAudio`. */
-  numFrames: number;
   resolution: LipsyncResolution;
-  /**
-   * Pinned per render so a retry or a resubmit reproduces the same take instead
-   * of paying for a different one. Omitted = fal picks its own.
-   */
-  seed?: number;
 }
 
-/** fal-ai/infinitalk `num_frames` bounds (live schema, verified 2026-07-25). */
-export const LIPSYNC_MIN_FRAMES = 41;
-export const LIPSYNC_MAX_FRAMES = 721;
-
-export const lipsyncResolutionSchema = z.enum(["480p", "720p"]);
+export const lipsyncResolutionSchema = z.enum(["720p", "1080p"]);
 export type LipsyncResolution = z.infer<typeof lipsyncResolutionSchema>;
 
 /**
- * fal renders exactly `num_frames` — it does NOT extend to the audio length.
- * Left unset it uses the schema default (145 ≈ 5.8s @25fps) and cuts the script
- * mid-sentence, which is what the first paid render did. Past the schema
- * maximum we fail loudly rather than truncate: silent truncation is the bug.
- *
- * fal also requires the audio to outlast the request by a frame
- * (`audio_seconds >= (num_frames + 1) / fps`), so asking for the audio's exact
- * frame count 422s every render that lands on a frame boundary — 11.04s @25fps
- * asked for 276 and came back "must be at least 11.08s". Hence floor, never
- * round, minus `safetyFrames` on top: our duration is our own probe of the mp3
- * while fal decodes it independently, and encoder delay/padding shifts the
- * measured length a few ms either way. Under-requesting is visually free — the
- * composition runs on the approved mp3 and holds the talking head's last frame
- * — while a one-frame overshoot fails the whole render.
+ * Runaway-cost guard, NOT a product limit: HeyGen renders to the audio's
+ * length (up to 30 minutes) at ~$0.0667/s, so one bad input could buy half an
+ * hour of GPU. `handleLipsync` fails anything longer before submitting. Never
+ * surface this as a duration cap in the UI.
  */
-export function framesForAudio(durationMs: number, fps: number, safetyFrames: number): number {
-  const frames = Math.floor((durationMs * fps) / 1000) - safetyFrames;
-  if (frames > LIPSYNC_MAX_FRAMES) {
-    // Floored to a tenth so the limit we quote is one fal would actually take.
-    const maxSeconds = Math.floor(((LIPSYNC_MAX_FRAMES + safetyFrames) / fps) * 10) / 10;
-    throw new PermanentError(
-      `הסקריפט ארוך מדי לסרטון אחד: אורך האודיו ${(durationMs / 1000).toFixed(1)} שניות, ` +
-        `והמקסימום הוא ${maxSeconds} שניות. קצרו את הסקריפט ונסו שוב.`,
-    );
-  }
-  return Math.max(frames, LIPSYNC_MIN_FRAMES);
-}
+export const MAX_LIPSYNC_SECONDS = 600;
 
 export interface LipsyncProvider {
   submit(input: LipsyncSubmitInput): Promise<{ providerJobId: string }>;
@@ -78,62 +41,73 @@ export interface LipsyncProvider {
   >;
 }
 
-const FAL_BASE = "https://queue.fal.run/fal-ai/infinitalk";
+const HEYGEN_VIDEOS = "https://api.heygen.com/v3/videos";
 
-class FalLipsync implements LipsyncProvider {
+export class HeyGenLipsync implements LipsyncProvider {
   private headers(): Record<string, string> {
-    const key = getEnv().FAL_KEY;
-    if (!key) throw new Error("FAL_KEY is not set");
-    return { Authorization: `Key ${key}`, "content-type": "application/json" };
+    const key = getEnv().HEYGEN_API_KEY;
+    if (!key) throw new Error("HEYGEN_API_KEY is not set");
+    return { "x-api-key": key, "content-type": "application/json" };
   }
 
   async submit(input: LipsyncSubmitInput): Promise<{ providerJobId: string }> {
+    // `type: "image"` runs on HeyGen's default engine (the docs' engine matrix
+    // supports arbitrary-image input on Avatar IV only — Avatar V is digital-
+    // twin only), so no `engine` field is sent. No fps field exists in the v3
+    // API: native output is 25fps, and 30/60fps would be AI interpolation,
+    // which is never requested. 1080p @ 9:16 is exactly the 1080x1920 frame
+    // the Remotion composition wants.
     const body = {
-      image_url: input.imageUrl,
+      type: "image",
+      image: { type: "url", url: input.imageUrl },
       audio_url: input.audioUrl,
-      prompt: input.prompt,
-      num_frames: input.numFrames,
+      aspect_ratio: "9:16",
       resolution: input.resolution,
-      ...(input.seed !== undefined ? { seed: input.seed } : {}),
     };
     // The exact parameters, in the worker terminal, without a debugger.
     logger.info(
       {
-        endpoint: FAL_BASE,
+        endpoint: HEYGEN_VIDEOS,
         body: {
           ...body,
-          image_url: withoutQuery(body.image_url),
+          image: { ...body.image, url: withoutQuery(body.image.url) },
           audio_url: withoutQuery(body.audio_url),
         },
       },
-      "fal infinitalk submit",
+      "heygen avatar submit",
     );
-    const response = await this.request(FAL_BASE, { method: "POST", body: JSON.stringify(body) });
-    const json = (await response.json()) as { request_id: string };
-    return { providerJobId: json.request_id };
+    const response = await this.request(HEYGEN_VIDEOS, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const json = (await response.json()) as { data: { video_id: string } };
+    return { providerJobId: json.data.video_id };
   }
 
   async poll(providerJobId: string) {
-    const statusResponse = await this.request(`${FAL_BASE}/requests/${providerJobId}/status`, {
-      method: "GET",
-    });
-    const status = (await statusResponse.json()) as { status: string; error?: unknown };
+    const response = await this.request(`${HEYGEN_VIDEOS}/${providerJobId}`, { method: "GET" });
+    const { data } = (await response.json()) as {
+      data: {
+        status: string;
+        video_url?: string;
+        failure_code?: string;
+        failure_message?: string;
+      };
+    };
 
-    if (status.status === "IN_QUEUE" || status.status === "IN_PROGRESS") {
+    // Documented statuses: pending | processing | completed | failed. The
+    // create response has also shown "waiting", so it counts as pending too.
+    if (data.status === "pending" || data.status === "waiting" || data.status === "processing") {
       return { status: "pending" } as const;
     }
-    if (status.status !== "COMPLETED") {
-      return { status: "failed", reason: `fal status ${status.status}` } as const;
+    if (data.status !== "completed") {
+      const reason = data.failure_message ?? data.failure_code ?? `heygen status ${data.status}`;
+      return { status: "failed", reason } as const;
     }
-
-    const resultResponse = await this.request(`${FAL_BASE}/requests/${providerJobId}`, {
-      method: "GET",
-    });
-    const result = (await resultResponse.json()) as { video?: { url?: string } };
-    if (!result.video?.url) {
-      return { status: "failed", reason: "fal result has no video url" } as const;
+    if (!data.video_url) {
+      return { status: "failed", reason: "heygen result has no video url" } as const;
     }
-    return { status: "done", videoUrl: result.video.url } as const;
+    return { status: "done", videoUrl: data.video_url } as const;
   }
 
   private async request(url: string, init: { method: string; body?: string }): Promise<Response> {
@@ -141,11 +115,11 @@ class FalLipsync implements LipsyncProvider {
     try {
       response = await fetch(url, { ...init, headers: this.headers() });
     } catch (err) {
-      throw new TransientError(`fal request failed: ${String(err)}`);
+      throw new TransientError(`heygen request failed: ${String(err)}`);
     }
     if (!response.ok) {
       const body = await response.text();
-      const message = `fal ${response.status}: ${body.slice(0, 500)}`;
+      const message = `heygen ${response.status}: ${body.slice(0, 500)}`;
       if (response.status >= 500 || response.status === 429) throw new TransientError(message);
       throw new PermanentError(message);
     }
@@ -171,12 +145,12 @@ class DryRunLipsync implements LipsyncProvider {
 
 let override: LipsyncProvider | undefined;
 
-/** Test hook (same shape as `setUpscaleProvider`): the failure paths DRY_RUN can't reach. */
+/** Test hook (same shape as `setStorage`): the failure paths DRY_RUN can't reach. */
 export function setLipsyncProvider(provider: LipsyncProvider | undefined): void {
   override = provider;
 }
 
 export function getLipsyncProvider(): LipsyncProvider {
   if (override) return override;
-  return getEnv().DRY_RUN ? new DryRunLipsync() : new FalLipsync();
+  return getEnv().DRY_RUN ? new DryRunLipsync() : new HeyGenLipsync();
 }
