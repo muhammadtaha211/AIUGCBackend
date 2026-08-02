@@ -104,6 +104,28 @@ export async function thumbnail(input: string, output: string, atMs = 1000): Pro
   ]);
 }
 
+/**
+ * Stream-copy retag of an H.264 file's colour metadata to BT.709 limited
+ * range — no re-encode, runs in ~1s. The fal plate/upscale come back with all
+ * colour fields unset, which forces every downstream decoder (Remotion
+ * included) to guess; measured plate luma is 16–235-ish, so the limited-range
+ * label is truthful. Bitstream-filter only: 1=BT.709 for primaries/transfer/
+ * matrix, video_full_range_flag=0=limited.
+ */
+export async function retagBt709Limited(input: string, output: string): Promise<void> {
+  mkdirSync(path.dirname(output), { recursive: true });
+  await run("ffmpeg", [
+    "-y",
+    "-i",
+    input,
+    "-c",
+    "copy",
+    "-bsf:v",
+    "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
+    output,
+  ]);
+}
+
 export async function measureDurationMs(file: string): Promise<number> {
   const out = await run("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", file]);
   const json = JSON.parse(out) as { format: { duration?: string } };

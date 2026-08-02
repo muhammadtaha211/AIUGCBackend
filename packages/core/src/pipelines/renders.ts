@@ -22,7 +22,7 @@ import { PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
-import { probe, thumbnail, type ProbeResult } from "../media/ffmpeg";
+import { probe, retagBt709Limited, thumbnail, type ProbeResult } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import {
   framesForAudio,
@@ -420,6 +420,21 @@ export async function handleUpscale(job: Job, ctx: JobContext): Promise<JobResul
       "upscale: probed the upscaled clip",
     );
 
+    // fal returns the clip with every colour field unset, leaving Remotion to
+    // guess on its input. Stream-copy retag as BT.709 limited (the measured
+    // truth) — best-effort, because a retag failure must never sink a render
+    // fal has already been paid for.
+    let localFinal = localUpscaled;
+    if (!getEnv().DRY_RUN) {
+      const localRetagged = path.join(localDir, "upscaled-retagged.mp4");
+      try {
+        await retagBt709Limited(localUpscaled, localRetagged);
+        localFinal = localRetagged;
+      } catch (err) {
+        ctx.log.warn({ err }, "upscale: colour retag failed — using the untagged clip");
+      }
+    }
+
     const lipsyncPath = await storage.put(
       "renders",
       storageKey({
@@ -428,7 +443,7 @@ export async function handleUpscale(job: Job, ctx: JobContext): Promise<JobResul
         id: videoRenderId,
         filename: "lipsync-upscaled.mp4",
       }),
-      localUpscaled,
+      localFinal,
     );
     // upscaleError is cleared: a successful upscale is not a degraded render,
     // even if this render inherited the mark from a rejected one.

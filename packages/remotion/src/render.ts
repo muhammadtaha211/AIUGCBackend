@@ -81,6 +81,23 @@ export async function renderServiceB(input: RenderServiceBInput, outPath: string
       audioCodec: "aac",
       // crf 20 matches the normalize step in @aiugc/core media/ffmpeg.
       crf: 20,
+      // Tag AND convert to BT.709 limited range (-color_range tv + zscale);
+      // the default leaves full-range unknown-matrix output that players
+      // display too bright/washed against every other delivery file.
+      colorSpace: "bt709",
+      // colorSpace alone leaves primaries/transfer "unknown" in the H.264 VUI
+      // (the bundled ffmpeg n7.1 only propagates what zscale stamps on the
+      // frames: matrix + range). Relabel the SPS on the final mux — a
+      // bitstream filter, not a re-encode. 1 = BT.709, full_range 0 = limited.
+      ffmpegOverride: ({ type, args }) => {
+        if (type !== "stitcher") return args;
+        return [
+          ...args.slice(0, -1),
+          "-bsf:v",
+          "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
+          args[args.length - 1]!,
+        ];
+      },
       outputLocation: outPath,
       inputProps: props.data,
       logLevel: "error",
