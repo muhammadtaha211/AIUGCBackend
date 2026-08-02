@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { Command } from "commander";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   addHookClip,
   addPersona,
@@ -9,6 +11,7 @@ import {
   approveAudio,
   buildHandlers,
   closeDb,
+  contentTypeForKey,
   createBRender,
   createBusiness,
   createDemo,
@@ -19,6 +22,7 @@ import {
   generateVoScript,
   getDb,
   getEnv,
+  getStorage,
   HEAVY_JOB_TYPES,
   listQcQueue,
   moreLikeThis,
@@ -28,9 +32,11 @@ import {
   releaseRender,
   requestAudio,
   runLane,
+  servedContentType,
   setQuestionnaire,
   starVariant,
   updateScriptText,
+  type Bucket,
 } from "@aiugc/core";
 
 /**
@@ -412,6 +418,44 @@ qc.command("reject <renderId>")
           ? `rejected; regeneration queued as ${regeneratedRenderId}`
           : "rejected",
       );
+    }),
+  );
+
+// --- storage repair --------------------------------------------------------------
+
+program
+  .command("storage")
+  .description("storage object repair")
+  .command("retype <bucket> <path>")
+  .description(
+    "re-upload an object at its existing key with the correct Content-Type " +
+      "(repairs pre-fix text/plain uploads; no db rows change)",
+  )
+  .option("--dry-run", "report what would change without uploading")
+  .action(
+    run(async (bucket: string, key: string, opts: { dryRun?: boolean }) => {
+      if (!["raw", "assets", "renders"].includes(bucket)) {
+        throw new Error(`unknown bucket "${bucket}" (raw | assets | renders)`);
+      }
+      const storage = getStorage();
+      const storagePath = `${bucket}/${key}`;
+      const oldType = await servedContentType(storage, storagePath);
+      const newType = contentTypeForKey(key);
+      if (opts.dryRun) {
+        console.log(`dry-run: would re-upload ${storagePath} as ${newType} (currently ${oldType})`);
+        return;
+      }
+      // pnpm --filter runs from apps/cli, so keep the temp file absolute.
+      const tempDir = mkdtempSync(path.join(tmpdir(), "aiugc-retype-"));
+      try {
+        const tempFile = path.join(tempDir, path.basename(key));
+        await storage.download(storagePath, tempFile);
+        await storage.put(bucket as Bucket, key, tempFile, { upsert: true });
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+      console.log(`old content type: ${oldType}`);
+      console.log(`new content type: ${await servedContentType(storage, storagePath)}`);
     }),
   );
 

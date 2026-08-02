@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import path from "node:path";
 import { getEnv } from "./config";
 import { PermanentError } from "./jobs/errors";
+import { logger } from "./logger";
 import { LOCAL_STORAGE_DIR } from "./paths";
 
 /**
@@ -14,13 +15,48 @@ import { LOCAL_STORAGE_DIR } from "./paths";
 export type Bucket = "raw" | "assets" | "renders";
 
 /**
+ * supabase-js defaults Buffer uploads to text/plain;charset=UTF-8, which
+ * providers that check Content-Type on the signed URL (HeyGen) reject. Every
+ * upload is tagged from its key's extension instead.
+ */
+const MIME_BY_EXTENSION: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+  ".svg": "image/svg+xml",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".json": "application/json",
+};
+
+export function contentTypeForKey(key: string): string {
+  const contentType = MIME_BY_EXTENSION[path.extname(key).toLowerCase()];
+  if (!contentType) {
+    logger.warn({ key }, "no MIME mapping for extension; storing as application/octet-stream");
+    return "application/octet-stream";
+  }
+  return contentType;
+}
+
+/**
  * Storage path format: "<bucket>/<key>", where key follows {business_id|bank}/{entity}/{id}/{filename}.
  * Contract: fetching an object that does not exist (download, signedUrl) throws
  * `missingObjectError` — a PermanentError, because a missing object will never
  * appear on retry. Network/auth failures stay plain errors (transient).
  */
 export interface Storage {
-  put(bucket: Bucket, key: string, localFile: string): Promise<string>;
+  put(
+    bucket: Bucket,
+    key: string,
+    localFile: string,
+    options?: { upsert?: boolean },
+  ): Promise<string>;
   download(storagePath: string, localFile: string): Promise<void>;
   remove(storagePath: string): Promise<void>;
   signedUrl(storagePath: string, expiresInSeconds: number): Promise<string>;
@@ -86,13 +122,23 @@ class LocalStorage implements Storage {
   }
 }
 
-class SupabaseStorage implements Storage {
+/** Exported for tests (stub client asserts on upload params); use `getStorage()` everywhere else. */
+export class SupabaseStorage implements Storage {
   constructor(private client: SupabaseClient) {}
 
-  async put(bucket: Bucket, key: string, localFile: string): Promise<string> {
-    const { error } = await this.client.storage
-      .from(bucket)
-      .upload(key, readFileSync(localFile), { upsert: true });
+  async put(
+    bucket: Bucket,
+    key: string,
+    localFile: string,
+    options?: { upsert?: boolean },
+  ): Promise<string> {
+    const { error } = await this.client.storage.from(bucket).upload(key, readFileSync(localFile), {
+      contentType: contentTypeForKey(key),
+      // Upsert by default: jobs are retryable, and a retry after a crash
+      // between upload and DB write re-runs the same upload — it must
+      // overwrite, not fail with "resource already exists".
+      upsert: options?.upsert ?? true,
+    });
     if (error) throw new Error(`storage upload failed (${bucket}/${key}): ${error.message}`);
     return `${bucket}/${key}`;
   }
@@ -125,6 +171,22 @@ class SupabaseStorage implements Storage {
     }
     return data.signedUrl;
   }
+}
+
+/**
+ * Content-Type the storage host serves for an object — what HeyGen/ElevenLabs
+ * see when they fetch a signed URL. Repair tooling (`aiugc storage retype`);
+ * reads headers only, the body is cancelled.
+ */
+export async function servedContentType(storage: Storage, storagePath: string): Promise<string> {
+  const url = await storage.signedUrl(storagePath, 60);
+  if (url.startsWith("file://")) return "n/a (local storage has no content types)";
+  const response = await fetch(url);
+  await response.body?.cancel();
+  if (!response.ok) {
+    throw new Error(`content-type check failed (${storagePath}): HTTP ${response.status}`);
+  }
+  return response.headers.get("content-type") ?? "unknown";
 }
 
 let instance: Storage | undefined;
