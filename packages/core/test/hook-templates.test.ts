@@ -1,11 +1,14 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
+import { personas } from "../src/db/schema";
 import {
   HOOK_OPTIONS_PER_GENERATION,
   HOOK_TEMPLATES,
   pickHookTemplates,
 } from "../src/hook-templates";
+import { logger } from "../src/logger";
 import { addPersona, addStructure } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { generateBScript } from "../src/pipelines/copy";
@@ -47,6 +50,7 @@ function bScriptVars(hooks: string[], pointers?: string) {
   return {
     questionnaire: JSON.stringify({ product_name: "קרם הפנים" }, null, 2),
     persona: JSON.stringify({ name: "נועה", gender: "f" }),
+    persona_gender: "female",
     skeleton: JSON.stringify({ beats: ["hook", "story", "cta"] }, null, 2),
     hook_options: hooks.map((t, i) => `${i + 1}. ${t}`).join("\n"),
     pointers: pointers ?? "(אין — התבסס על השאלון בלבד)",
@@ -75,6 +79,13 @@ describe("b_script prompt rendering", () => {
     hooks.forEach((hook, i) => expect(text).toContain(`${i + 1}. ${hook}`));
     expect(text).toContain("(אין — התבסס על השאלון בלבד)");
     expect(text).not.toMatch(/\{\{\w+\}\}/);
+  });
+
+  it("states the speaker gender for each gender", () => {
+    for (const gender of ["female", "male"]) {
+      const { text } = renderPrompt("b_script", { ...bScriptVars(hooks), persona_gender: gender });
+      expect(text).toContain(`The speaker is ${gender}.`);
+    }
   });
 });
 
@@ -148,5 +159,24 @@ describe("generateBScript (dry-run, real DB)", () => {
 
     const withoutPointers = await generateBScript(db, { businessId, personaId, structureId });
     expect(withoutPointers.promptVersion).toMatch(/^b_script@v\d+$/);
+  });
+
+  it("defaults a gender-less persona to female and warns with the persona id", async () => {
+    const warn = vi.spyOn(logger, "warn");
+    await generateBScript(db, { businessId, personaId, structureId });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ personaId }),
+      expect.stringContaining("female"),
+    );
+    warn.mockRestore();
+  });
+
+  it("does not warn when the persona has a gender", async () => {
+    const male = await addPersona(db, { name: "יוסי", voiceId: "voice_noa" });
+    await db.update(personas).set({ gender: "male" }).where(eq(personas.id, male.id));
+    const warn = vi.spyOn(logger, "warn");
+    await generateBScript(db, { businessId, personaId: male.id, structureId });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

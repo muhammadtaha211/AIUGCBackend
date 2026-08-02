@@ -7,6 +7,7 @@ import {
   needsTextSave,
   pickSelectedBusiness,
   RENDER_STATUS_LABELS,
+  renderRequestBody,
   renderStageIndex,
   renderStatusLabel,
   wizardSteps,
@@ -46,6 +47,7 @@ describe("wizardSteps (category gating)", () => {
   it("physical products get the composite step", () => {
     expect(wizardSteps("physical_product")).toEqual([
       "persona",
+      "image",
       "composite",
       "script",
       "audio",
@@ -55,8 +57,29 @@ describe("wizardSteps (category gating)", () => {
 
   it("every other category skips it", () => {
     for (const category of ["app_or_digital", "local_service", "other", "", undefined]) {
-      expect(wizardSteps(category)).toEqual(["persona", "script", "audio", "render"]);
+      expect(wizardSteps(category)).toEqual(["persona", "image", "script", "audio", "render"]);
     }
+  });
+});
+
+describe("renderRequestBody (wizard state -> enqueue request)", () => {
+  const base = { scriptId: "script-1", audioId: "audio-1", personaId: "persona-1" };
+
+  it("carries the chosen personaImageId", () => {
+    expect(renderRequestBody({ ...base, personaImageId: "image-1" })).toEqual({
+      ...base,
+      personaImageId: "image-1",
+    });
+  });
+
+  it("omits personaImageId and compositeId when nothing was chosen", () => {
+    expect(renderRequestBody(base)).toEqual(base);
+  });
+
+  it("carries an approved composite alongside the image", () => {
+    expect(
+      renderRequestBody({ ...base, personaImageId: "image-1", compositeId: "comp-1" }),
+    ).toEqual({ ...base, personaImageId: "image-1", compositeId: "comp-1" });
   });
 });
 

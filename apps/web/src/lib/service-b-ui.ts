@@ -66,13 +66,17 @@ export function renderStageIndex(status: string): number {
 // Wizard steps (visibility is category-driven)
 // ---------------------------------------------------------------------------
 
-export type WizardStep = "persona" | "composite" | "script" | "audio" | "render";
+export type WizardStep = "persona" | "image" | "composite" | "script" | "audio" | "render";
 
-/** The composite step exists only for physical products; it is skippable inside the step itself. */
+/**
+ * The composite step exists only for physical products; it is skippable inside
+ * the step itself. The image (background) step skips itself silently when the
+ * persona has no background images.
+ */
 export function wizardSteps(category: string | undefined): WizardStep[] {
   return category === "physical_product"
-    ? ["persona", "composite", "script", "audio", "render"]
-    : ["persona", "script", "audio", "render"];
+    ? ["persona", "image", "composite", "script", "audio", "render"]
+    : ["persona", "image", "script", "audio", "render"];
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +84,9 @@ export function wizardSteps(category: string | undefined): WizardStep[] {
 // ---------------------------------------------------------------------------
 
 export type Persona = { id: string; name: string; imageUrl: string };
+
+/** A kind='background' reference image of the selected persona. */
+export type PersonaImage = { id: string; label?: string; imageUrl: string };
 
 export type CompositeState = {
   id: string;
@@ -125,6 +132,30 @@ export function withEditedText(
   response: { scriptId: string; text: string },
 ): ScriptState {
   return { ...script, scriptId: response.scriptId, text: response.text };
+}
+
+// ---------------------------------------------------------------------------
+// Render enqueue body (wizard state -> POST /renders)
+// ---------------------------------------------------------------------------
+
+/**
+ * The exact body StepRender posts. personaImageId is the background chosen in
+ * the image step; absent means the persona's default image at render time.
+ */
+export function renderRequestBody(opts: {
+  scriptId: string;
+  audioId: string;
+  personaId: string;
+  personaImageId?: string;
+  compositeId?: string;
+}): Record<string, string> {
+  return {
+    scriptId: opts.scriptId,
+    audioId: opts.audioId,
+    personaId: opts.personaId,
+    ...(opts.personaImageId ? { personaImageId: opts.personaImageId } : {}),
+    ...(opts.compositeId ? { compositeId: opts.compositeId } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

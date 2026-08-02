@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,18 +8,21 @@ import {
   type AudioState,
   type CompositeState,
   type Persona,
+  type PersonaImage,
   type RenderState,
   type ScriptState,
   type WizardStep,
 } from "@/lib/service-b-ui";
 import { StepAudio } from "./step-audio";
 import { StepComposite } from "./step-composite";
+import { StepImage } from "./step-image";
 import { StepPersona } from "./step-persona";
 import { StepRender } from "./step-render";
 import { StepScript } from "./step-script";
 
 const STEP_TITLES: Record<WizardStep, string> = {
   persona: "בחירת דמות",
+  image: "בחירת רקע",
   composite: "תמונת מוצר",
   script: "תסריט",
   audio: "הקלטה",
@@ -44,6 +47,7 @@ export function BWizard({ businessId, businessName, category }: BWizardProps) {
   const [fatal, setFatal] = useState<string | null>(null);
 
   const [persona, setPersona] = useState<Persona | null>(null);
+  const [personaImage, setPersonaImage] = useState<PersonaImage | null>(null);
   const [composite, setComposite] = useState<CompositeState | null>(null);
   const [pointers, setPointers] = useState("");
   // 30s was removed from the wizard: its word budget can produce audio past the
@@ -55,12 +59,21 @@ export function BWizard({ businessId, businessName, category }: BWizardProps) {
   const [render, setRender] = useState<RenderState | null>(null);
 
   const step = steps[stepIndex]!;
-  const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
-  const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
+  /** Which way the user last moved — a self-skipping step leaves the same way. */
+  const lastNav = useRef<"back" | "next">("next");
+  const goBack = () => {
+    lastNav.current = "back";
+    setStepIndex((index) => Math.max(0, index - 1));
+  };
+  const goNext = () => {
+    lastNav.current = "next";
+    setStepIndex((index) => Math.min(steps.length - 1, index + 1));
+  };
 
   /** A different persona invalidates everything generated for the previous one. */
   function selectPersona(next: Persona) {
     if (persona && persona.id !== next.id) {
+      setPersonaImage(null);
       setComposite(null);
       setScript(null);
       setEditedText("");
@@ -118,6 +131,18 @@ export function BWizard({ businessId, businessName, category }: BWizardProps) {
             />
           )}
 
+          {step === "image" && persona && (
+            <StepImage
+              personaId={persona.id}
+              selected={personaImage}
+              onSelect={setPersonaImage}
+              onSkip={() => (lastNav.current === "back" ? goBack() : goNext())}
+              onBack={goBack}
+              onContinue={goNext}
+              onFatal={setFatal}
+            />
+          )}
+
           {step === "composite" && persona && (
             <StepComposite
               businessId={businessId}
@@ -162,6 +187,7 @@ export function BWizard({ businessId, businessName, category }: BWizardProps) {
             <StepRender
               businessId={businessId}
               personaId={persona.id}
+              personaImageId={personaImage?.id}
               scriptId={script.scriptId}
               audioId={audio.id}
               compositeId={composite?.approved ? composite.id : undefined}

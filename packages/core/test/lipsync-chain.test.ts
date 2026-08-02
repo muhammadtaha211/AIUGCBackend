@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -268,6 +269,46 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(job.errorClass).toBe("permanent");
     expect(job.lastError).toMatch(/לא הסתיים בזמן/);
     expect((await renderRow(renderId)).status).toBe("failed");
+  });
+
+  it("rejects an explicit persona image that is missing or belongs to another persona", async () => {
+    const noa = await addPersona(db, { name: "נועה השנייה", voiceId: "voice_noa" });
+    const yael = await addPersona(db, { name: "יעל", voiceId: "voice_yael" });
+    const yaelImage = await addPersonaImage(db, {
+      personaId: yael.id,
+      filePath: tempFile("yael.jpg"),
+    });
+    const script = (
+      await db
+        .insert(dbSchema.scripts)
+        .values({ businessId, personaId: yael.id, kind: "b_script", text: "טקסט לבדיקה" })
+        .returning()
+    )[0]!;
+    const audio = await requestAudio(db, { scriptId: script.id, voiceId: "voice_yael" });
+    await drainAll();
+    await approveAudio(db, audio.id);
+
+    await expect(
+      createBRender(db, { businessId, audioRenderId: audio.id, personaImageId: randomUUID() }),
+    ).rejects.toThrow(/not found/);
+    await expect(
+      createBRender(db, {
+        businessId,
+        audioRenderId: audio.id,
+        personaId: noa.id,
+        personaImageId: yaelImage.id,
+      }),
+    ).rejects.toThrow(/different persona/);
+
+    // The matching pair goes through, carrying the explicit image for lipsync.
+    const render = await createBRender(db, {
+      businessId,
+      audioRenderId: audio.id,
+      personaId: yael.id,
+      personaImageId: yaelImage.id,
+    });
+    expect((render.params as VariantParams).personaImageId).toBe(yaelImage.id);
+    await drainAll(); // leave the queue empty for the tests after this one
   });
 
   it("a QC regeneration strips the clip path; a different take needs a script or audio change", async () => {

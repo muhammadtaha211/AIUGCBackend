@@ -6,6 +6,7 @@ import { getEnv, wordsPerSecondSchema } from "../config";
 import type { Db } from "../db";
 import { demos, events, personas, scripts, structures } from "../db/schema";
 import { pickHookTemplates } from "../hook-templates";
+import { logger } from "../logger";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { requireQuestionnaire } from "./businesses";
@@ -252,10 +253,17 @@ export async function generateBScript(
   const wps = await wordsPerSecond(db, persona.voiceId);
   const wordBudget = Math.floor(durationPreset * wps);
 
+  let personaGender = persona.gender;
+  if (!personaGender) {
+    logger.warn({ personaId: persona.id }, "persona has no gender; defaulting speaker to female");
+    personaGender = "female";
+  }
+
   const hookTemplates = pickHookTemplates();
   const vars = {
     questionnaire: JSON.stringify(questionnaire, null, 2),
     persona: JSON.stringify({ name: persona.name, ...(persona.identity as object) }),
+    persona_gender: personaGender,
     skeleton: JSON.stringify(structure.skeleton, null, 2),
     hook_options: hookTemplates.map((t, i) => `${i + 1}. ${t}`).join("\n"),
     pointers: pointers ?? "(אין — התבסס על השאלון בלבד)",

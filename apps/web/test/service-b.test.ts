@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  backgroundImages,
   businessAccess,
   canUseComposites,
   MAX_PHOTO_BYTES,
+  personaThumbnail,
   photoError,
   renderRequestSchema,
   scriptRequestSchema,
@@ -53,6 +55,52 @@ describe("request body schemas", () => {
     expect(renderRequestSchema.safeParse({ scriptId: UUID_A, personaId: UUID_A }).success).toBe(
       false,
     );
+  });
+
+  it("carries an optional personaImageId, rejecting non-uuids", () => {
+    const base = { scriptId: UUID_A, audioId: UUID_B, personaId: UUID_A };
+    const parsed = renderRequestSchema.parse({ ...base, personaImageId: UUID_B });
+    expect(parsed.personaImageId).toBe(UUID_B);
+    expect(renderRequestSchema.safeParse({ ...base, personaImageId: "smile" }).success).toBe(false);
+  });
+});
+
+describe("persona image selection (thumbnail + background picker)", () => {
+  const image = (over: Partial<Parameters<typeof personaThumbnail>[0][number]> = {}) => ({
+    kind: "background",
+    filePath: "personas/p1/img.png",
+    isDefault: false,
+    createdAt: new Date("2026-01-01"),
+    ...over,
+  });
+
+  it("prefers kind='preview' over the default image", () => {
+    const preview = image({ kind: "preview" });
+    const fallback = image({ isDefault: true });
+    expect(personaThumbnail([fallback, preview])).toBe(preview);
+  });
+
+  it("falls back to is_default, then to the newest image", () => {
+    const older = image({ createdAt: new Date("2026-01-01") });
+    const newer = image({ createdAt: new Date("2026-02-01") });
+    const fallback = image({ isDefault: true });
+    expect(personaThumbnail([older, fallback, newer])).toBe(fallback);
+    expect(personaThumbnail([older, newer])).toBe(newer);
+    expect(personaThumbnail([])).toBeUndefined();
+  });
+
+  it("never picks a stranded 'pending' placeholder", () => {
+    const pending = image({ kind: "preview", filePath: "pending" });
+    const stored = image({});
+    expect(personaThumbnail([pending, stored])).toBe(stored);
+    expect(personaThumbnail([pending])).toBeUndefined();
+  });
+
+  it("backgroundImages keeps only stored kind='background' rows", () => {
+    const background = image({});
+    const preview = image({ kind: "preview" });
+    const pending = image({ filePath: "pending" });
+    expect(backgroundImages([background, preview, pending])).toEqual([background]);
   });
 });
 

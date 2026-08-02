@@ -165,6 +165,8 @@ export const personas = pgTable("personas", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
   identity: jsonb("identity").notNull().default({}),
+  // 'female' | 'male'. Null → b_script defaults to 'female' and warns.
+  gender: text("gender"),
   voiceId: text("voice_id").notNull(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -180,6 +182,9 @@ export const personaImages = pgTable("persona_images", {
     .references(() => personas.id),
   filePath: text("file_path").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
+  /** 'preview' (avatar-card thumbnail only) | 'background' (background picker). */
+  kind: text("kind").notNull().default("background"),
+  label: text("label"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

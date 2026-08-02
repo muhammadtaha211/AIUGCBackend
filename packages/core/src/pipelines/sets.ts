@@ -9,6 +9,7 @@ import {
   composites,
   demos,
   events,
+  personaImages,
   sets,
   subscriptions,
   videoRenders,
@@ -220,6 +221,17 @@ export async function createBRender(
     // The hard gate, same as audio: never lipsync an unapproved composite.
     if (!composite[0].approvedAt) {
       throw new Error("composite must be approved before rendering (hard gate)");
+    }
+  }
+  if (opts.personaImageId) {
+    const image = await db
+      .select()
+      .from(personaImages)
+      .where(eq(personaImages.id, opts.personaImageId))
+      .limit(1);
+    if (!image[0]) throw new Error(`persona image ${opts.personaImageId} not found`);
+    if (opts.personaId && image[0].personaId !== opts.personaId) {
+      throw new Error(`persona image ${opts.personaImageId} belongs to a different persona`);
     }
   }
 

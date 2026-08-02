@@ -23,11 +23,47 @@ export const renderRequestSchema = z.object({
   scriptId: z.string().uuid(),
   audioId: z.string().uuid(),
   personaId: z.string().uuid(),
+  /** Explicit persona reference image chosen in the background step. */
+  personaImageId: z.string().uuid().optional(),
   compositeId: z.string().uuid().optional(),
 });
 
 export function isUuid(value: string): boolean {
   return z.string().uuid().safeParse(value).success;
+}
+
+// ---------------------------------------------------------------------------
+// Persona image selection (avatar-card thumbnail + background picker)
+// ---------------------------------------------------------------------------
+
+type PersonaImageRow = { kind: string; filePath: string };
+
+/**
+ * A stranded "pending" placeholder (no "/" in file_path — a crashed
+ * `persona add-image`) must never be signed. Same guard as core's lipsync
+ * default-image resolution.
+ */
+function isStored(image: PersonaImageRow): boolean {
+  return image.filePath.includes("/");
+}
+
+/** Avatar-card thumbnail preference: kind='preview' -> is_default -> newest. */
+export function personaThumbnail<
+  T extends PersonaImageRow & { isDefault: boolean; createdAt: Date },
+>(images: T[]): T | undefined {
+  const newestFirst = [...images]
+    .filter(isStored)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return (
+    newestFirst.find((image) => image.kind === "preview") ??
+    newestFirst.find((image) => image.isDefault) ??
+    newestFirst[0]
+  );
+}
+
+/** The background picker shows only stored kind='background' images. */
+export function backgroundImages<T extends PersonaImageRow>(images: T[]): T[] {
+  return images.filter((image) => image.kind === "background" && isStored(image));
 }
 
 // ---------------------------------------------------------------------------

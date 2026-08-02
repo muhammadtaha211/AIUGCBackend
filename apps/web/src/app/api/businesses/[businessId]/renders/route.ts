@@ -31,7 +31,7 @@ export async function POST(
 
     const body = renderRequestSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
-    const { scriptId, audioId, personaId, compositeId } = body.data;
+    const { scriptId, audioId, personaId, personaImageId, compositeId } = body.data;
 
     const scriptRows = await db
       .select()
@@ -65,10 +65,12 @@ export async function POST(
       }
     }
 
+    // createBRender rejects an unknown image or one of a different persona.
     const render = await createBRender(db, {
       businessId,
       audioRenderId: audioId,
       personaId,
+      personaImageId,
       compositeId,
     });
     return NextResponse.json({ renderId: render.id });

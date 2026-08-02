@@ -5,12 +5,19 @@ import Link from "next/link";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
-import { RENDER_STAGES, renderStageIndex, type RenderState } from "@/lib/service-b-ui";
+import {
+  RENDER_STAGES,
+  renderRequestBody,
+  renderStageIndex,
+  type RenderState,
+} from "@/lib/service-b-ui";
 import { postJson, useJobPoll } from "@/lib/use-api";
 
 type StepRenderProps = {
   businessId: string;
   personaId: string;
+  /** The background chosen in the image step; absent -> persona default. */
+  personaImageId?: string;
   scriptId: string;
   audioId: string;
   compositeId?: string;
@@ -28,6 +35,7 @@ type StepRenderProps = {
 export function StepRender({
   businessId,
   personaId,
+  personaImageId,
   scriptId,
   audioId,
   compositeId,
@@ -43,12 +51,10 @@ export function StepRender({
     if (starting.current) return;
     starting.current = true;
     setStartError(null);
-    const result = await postJson<{ renderId: string }>(`/api/businesses/${businessId}/renders`, {
-      scriptId,
-      audioId,
-      personaId,
-      ...(compositeId ? { compositeId } : {}),
-    });
+    const result = await postJson<{ renderId: string }>(
+      `/api/businesses/${businessId}/renders`,
+      renderRequestBody({ scriptId, audioId, personaId, personaImageId, compositeId }),
+    );
     starting.current = false;
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
