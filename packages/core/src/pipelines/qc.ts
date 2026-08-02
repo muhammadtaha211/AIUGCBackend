@@ -52,10 +52,10 @@ export async function rejectRender(
 
   if (opts.regenerate === false) return {};
 
-  // HeyGen is deterministic on identical inputs (no seed parameter exists), so
-  // a re-render of the same script+audio reproduces the same video — a
-  // meaningful regeneration must change the script or the audio. The path key
-  // would otherwise point at the rejected render's clip.
+  // HeyGen is non-deterministic (its own Avatar IV guide: identical inputs can
+  // differ per generation), so a re-render of the same script+audio is a
+  // legitimate re-roll of the take. The path key would otherwise point at the
+  // rejected render's clip.
   const retryParams = { ...(render.params as Record<string, unknown>) };
   delete retryParams.lipsyncPath;
 

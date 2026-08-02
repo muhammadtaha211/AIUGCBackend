@@ -9,8 +9,8 @@ import { createTestDb } from "./helpers/pglite";
 
 /**
  * The HeyGen v3 contract, pinned without a live call: the submit body shape
- * (image+audio pinned to 9:16, no engine/fps/prompt/frames/seed fields), the
- * poll status mapping, and the HTTP error taxonomy.
+ * (image+audio pinned to 9:16, no engine/fps/frames/seed fields; motion knobs
+ * only when set), the poll status mapping, and the HTTP error taxonomy.
  */
 
 describe("HeyGenLipsync", () => {
@@ -47,7 +47,7 @@ describe("HeyGenLipsync", () => {
     resolution: "1080p",
   } as const;
 
-  it("submits a v3 image+audio body pinned to 9:16 — no engine, fps, prompt, frames, or seed", async () => {
+  it("submits a v3 image+audio body pinned to 9:16 — no engine, fps, frames, seed, or motion knobs when unset", async () => {
     fetchMock.mockResolvedValueOnce(
       response(200, { data: { video_id: "vid_1", status: "waiting", output_format: "mp4" } }),
     );
@@ -64,6 +64,27 @@ describe("HeyGenLipsync", () => {
       audio_url: submitInput.audioUrl,
       aspect_ratio: "9:16",
       resolution: "1080p",
+    });
+  });
+
+  it("sends motion_prompt and expressiveness (the native v3 names) when set", async () => {
+    fetchMock.mockResolvedValueOnce(response(200, { data: { video_id: "vid_2" } }));
+
+    await new HeyGenLipsync().submit({
+      ...submitInput,
+      motionPrompt: "מחוות ידיים טבעיות תוך כדי דיבור",
+      expressiveness: "medium",
+    });
+
+    const [, init] = fetchMock.mock.calls[0]! as [string, { body: string }];
+    expect(JSON.parse(init.body)).toEqual({
+      type: "image",
+      image: { type: "url", url: submitInput.imageUrl },
+      audio_url: submitInput.audioUrl,
+      aspect_ratio: "9:16",
+      resolution: "1080p",
+      motion_prompt: "מחוות ידיים טבעיות תוך כדי דיבור",
+      expressiveness: "medium",
     });
   });
 

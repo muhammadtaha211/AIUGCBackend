@@ -15,6 +15,10 @@ import {
   videoRenders,
 } from "../db/schema";
 import { enqueue } from "../jobs/queue";
+import {
+  lipsyncExpressivenessSchema,
+  type LipsyncExpressiveness,
+} from "../providers/lipsync";
 import { creditBalance, debitRender } from "./credits";
 import { isAdminOwned } from "./businesses";
 
@@ -47,6 +51,10 @@ export interface VariantParams {
   personaImageId?: string;
   /** Approved product-in-hand composite — takes precedence as the lipsync source. */
   compositeId?: string;
+  /** Service B: HeyGen `motion_prompt` — overrides `app_config.lipsync_motion_prompt`. */
+  motionPrompt?: string;
+  /** Service B: HeyGen `expressiveness` — overrides `app_config.lipsync_expressiveness`. */
+  expressiveness?: LipsyncExpressiveness;
   /** The clip Remotion composes: the stored HeyGen output (lipsync.mp4). */
   lipsyncPath?: string;
 }
@@ -199,6 +207,10 @@ export async function createBRender(
     personaId?: string;
     personaImageId?: string;
     compositeId?: string;
+    /** HeyGen motion_prompt for this render — overrides the app_config default. */
+    motionPrompt?: string;
+    /** HeyGen expressiveness (low|medium|high) — overrides the app_config default. */
+    expressiveness?: string;
   },
 ) {
   const audio = await db
@@ -235,6 +247,12 @@ export async function createBRender(
     }
   }
 
+  // Fail a typo'd tier here, not as a HeyGen 400 after the render is queued.
+  const expressiveness =
+    opts.expressiveness === undefined
+      ? undefined
+      : lipsyncExpressivenessSchema.parse(opts.expressiveness);
+
   const { watermarked, chargeCredits } = await enforceQuota(db, opts.businessId, 1, "b");
   const costs = await getConfigValue(db, "credit_costs", creditCostsSchema);
 
@@ -248,6 +266,8 @@ export async function createBRender(
         personaId: opts.personaId,
         personaImageId: opts.personaImageId,
         compositeId: opts.compositeId,
+        motionPrompt: opts.motionPrompt,
+        expressiveness,
       },
       watermarked,
     })

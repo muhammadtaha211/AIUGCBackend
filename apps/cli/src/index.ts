@@ -366,6 +366,14 @@ program
   .requiredOption("--audio <audioRenderId>", "approved audio render")
   .option("--persona <id>", "render on the persona's default reference image")
   .option("--persona-image <id>", "explicit persona image (overrides the default)")
+  .option(
+    "--motion-prompt <text>",
+    "HeyGen motion_prompt: free-text gesture/motion direction (default: not sent)",
+  )
+  .option(
+    "--expressiveness <level>",
+    "HeyGen expressiveness: low|medium|high (default: not sent — HeyGen uses low)",
+  )
   .action(
     run(
       async (opts: {
@@ -373,12 +381,16 @@ program
         audio: string;
         persona?: string;
         personaImage?: string;
+        motionPrompt?: string;
+        expressiveness?: string;
       }) => {
         const render = await createBRender(getDb(), {
           businessId: opts.business,
           audioRenderId: opts.audio,
           personaId: opts.persona,
           personaImageId: opts.personaImage,
+          motionPrompt: opts.motionPrompt,
+          expressiveness: opts.expressiveness,
         });
         console.log(`b render queued: ${render.id}`);
       },

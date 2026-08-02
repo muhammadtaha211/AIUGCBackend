@@ -90,7 +90,7 @@ keyless (the e2e test relies on this).
   header (`HEYGEN_API_KEY`). The image is resolved by the render pipeline: an approved
   product-in-hand composite takes precedence, then an explicit persona image, then the
   persona's default reference image. (Replaced InfiniteTalk-on-fal 2026-08 — no frame ceiling,
-  no upscale stage, no motion prompt, no seed. `FAL_KEY` stays: nano-banana composites still
+  no upscale stage, no seed. `FAL_KEY` stays: nano-banana composites still
   run through fal.)
 - **Generates to the audio's length** (up to 30 minutes, no frame-count parameter) — nothing
   cuts mid-sentence and no `num_frames` derivation exists anymore, so the 30s duration preset
@@ -112,13 +112,22 @@ keyless (the e2e test relies on this).
   keep kind `gpu_seconds` (quantity = audio seconds ≈ output seconds); the provider column
   stays `fal` until a migration adds a `heygen` enum value. `credit_costs.b_render` is
   unchanged — per-second billing is a separate change.
-- **No motion prompt**: the image mode accepts an optional `motion_prompt`, but none is sent —
-  the old resolver chain (persona override → `app_config.lipsync_prompt` → default) is
-  deleted, and `personas.identity.motionPrompt` is no longer read (the column itself is
-  untouched).
-- **No seed — deterministic**: HeyGen exposes no seed parameter and reproduces the same video
-  for identical inputs, so a QC regeneration (`pipelines/qc.ts`) only differs if the script or
-  the audio changes; it strips only the rejected render's `lipsyncPath`.
+- **Motion prompt — optional, absent by default**: the image mode accepts `motion_prompt`
+  (free-text gesture/motion direction) and `expressiveness` (`low`/`medium`/`high`, HeyGen
+  defaults to `low`). Native v3 names verified 2026-08 — the wrappers' `custom_motion_prompt`
+  / `enhance_custom_motion_prompt` do NOT exist on this endpoint. Resolution per render:
+  render param (`render-b --motion-prompt` / `--expressiveness`) → app_config
+  `lipsync_motion_prompt` / `lipsync_expressiveness` → **absent** (the default: the submit
+  body is byte-identical to the no-knob body). This is NOT the old InfiniteTalk resolver —
+  that chain stays deleted and `personas.identity.motionPrompt` is still unread. Caveat:
+  HeyGen's own guide pages disagree on whether the knobs take effect on arbitrary-image input
+  (the API reference carries both fields on the image mode; the image-to-video guide's table
+  says photo-avatars only) — the fields are accepted either way; A/B a render with and
+  without to see the effect.
+- **No seed — NON-deterministic**: HeyGen exposes no seed parameter and its own Avatar IV
+  guide states results are non-deterministic — identical inputs can differ per generation.
+  QC implication: a regeneration (`pipelines/qc.ts`) with an unchanged script+audio is a
+  legitimate re-roll of the take; it strips only the rejected render's `lipsyncPath`.
 - **Poll**: `GET /v3/videos/{video_id}` → `data.status` ∈
   `pending | processing | completed | failed` (`waiting` also appears in the create response
   and counts as pending); `completed` carries a short-lived presigned `data.video_url`.

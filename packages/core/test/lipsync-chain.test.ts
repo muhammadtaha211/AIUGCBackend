@@ -73,7 +73,9 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
   }
 
   /** A Service B render with approved audio, queued at the lipsync step. */
-  async function queueBRender(): Promise<{ renderId: string; audioId: string }> {
+  async function queueBRender(
+    extra?: { motionPrompt?: string; expressiveness?: string },
+  ): Promise<{ renderId: string; audioId: string }> {
     const persona = await addPersona(db, { name: "נועה", voiceId: "voice_noa" });
     await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("persona.jpg") });
     const script = (
@@ -94,6 +96,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
       businessId,
       audioRenderId: audio.id,
       personaId: persona.id,
+      ...extra,
     });
     return { renderId: render.id, audioId: audio.id };
   }
@@ -147,6 +150,12 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
       .update(dbSchema.appConfig)
       .set({ value: false })
       .where(sql`${dbSchema.appConfig.key} = 'auto_release_b'`);
+    // Opt-in knobs: absent is the default state, so restore means delete.
+    await db
+      .delete(dbSchema.appConfig)
+      .where(
+        sql`${dbSchema.appConfig.key} in ('lipsync_motion_prompt', 'lipsync_expressiveness')`,
+      );
   });
 
   afterAll(async () => {
@@ -210,6 +219,58 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(submits[0]!.imageUrl).toContain("persona_image"); // the signed reference image
     expect(submits[0]!.resolution).toBe("1080p"); // the code default, no app_config row
     expect((await paramsOf(renderId)).lipsyncPath).toMatch(/lipsync\.mp4$/);
+  });
+
+  it("render-b --motion-prompt / --expressiveness reach the submit input", async () => {
+    const submits: LipsyncSubmitInput[] = [];
+    setLipsyncProvider({
+      async submit(input) {
+        submits.push(input);
+        return { providerJobId: "job_mp" };
+      },
+      async poll() {
+        return { status: "done", videoUrl: "dryrun://lipsync/job_mp.mp4" };
+      },
+    });
+
+    await queueBRender({ motionPrompt: "מחוות ידיים טבעיות", expressiveness: "high" });
+    await drainAll();
+
+    expect(submits).toHaveLength(1);
+    expect(submits[0]!.motionPrompt).toBe("מחוות ידיים טבעיות");
+    expect(submits[0]!.expressiveness).toBe("high");
+  });
+
+  it("app_config is the fallback and the render param overrides it", async () => {
+    await db.insert(dbSchema.appConfig).values([
+      { key: "lipsync_motion_prompt", value: "ברירת מחדל מהקונפיג" },
+      { key: "lipsync_expressiveness", value: "medium" },
+    ]);
+    const submits: LipsyncSubmitInput[] = [];
+    setLipsyncProvider({
+      async submit(input) {
+        submits.push(input);
+        return { providerJobId: `job_${submits.length}` };
+      },
+      async poll() {
+        return { status: "done", videoUrl: "dryrun://lipsync/job.mp4" };
+      },
+    });
+
+    await queueBRender(); // no render param → the config rows apply
+    await drainAll();
+    await queueBRender({ motionPrompt: "הפרמטר גובר", expressiveness: "low" });
+    await drainAll();
+
+    expect(submits).toHaveLength(2);
+    expect(submits[0]!.motionPrompt).toBe("ברירת מחדל מהקונפיג");
+    expect(submits[0]!.expressiveness).toBe("medium");
+    expect(submits[1]!.motionPrompt).toBe("הפרמטר גובר");
+    expect(submits[1]!.expressiveness).toBe("low");
+  });
+
+  it("an invalid expressiveness fails at createBRender, before anything is queued", async () => {
+    await expect(queueBRender({ expressiveness: "extreme" })).rejects.toThrow();
   });
 
   it("audio over MAX_LIPSYNC_SECONDS fails permanently before any submit", async () => {
@@ -321,8 +382,8 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(regeneratedRenderId).toBeDefined();
 
     const retry = await paramsOf(regeneratedRenderId!);
-    // HeyGen is deterministic on identical inputs — the retry only re-renders;
-    // what must NOT carry over is the rejected render's stored clip path.
+    // HeyGen is non-deterministic — the retry is a legitimate re-roll of the
+    // take; what must NOT carry over is the rejected render's stored clip path.
     expect(retry.lipsyncPath).toBeUndefined();
     expect(retry.audioRenderId).toBe(params.audioRenderId);
     expect(retry.personaId).toBe(params.personaId);

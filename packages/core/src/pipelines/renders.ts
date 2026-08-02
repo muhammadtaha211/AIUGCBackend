@@ -25,6 +25,7 @@ import { probe, thumbnail, type ProbeResult } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import {
   getLipsyncProvider,
+  lipsyncExpressivenessSchema,
   lipsyncResolutionSchema,
   MAX_LIPSYNC_SECONDS,
   type LipsyncResolution,
@@ -108,6 +109,19 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       }
 
       const resolution = await lipsyncResolution(ctx.db);
+      // Motion knobs: render param (CLI flag) > app_config > unset. Unset
+      // means the field is absent from the submit body entirely.
+      const motionPrompt =
+        params.motionPrompt ??
+        (await getConfigValueOr(ctx.db, "lipsync_motion_prompt", z.string(), undefined));
+      const expressiveness =
+        params.expressiveness ??
+        (await getConfigValueOr(
+          ctx.db,
+          "lipsync_expressiveness",
+          lipsyncExpressivenessSchema,
+          undefined,
+        ));
 
       // Source image: an approved composite takes precedence (hard gate),
       // then an explicit persona image, then the persona's default image.
@@ -165,6 +179,8 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
         imageUrl: await storage.signedUrl(imagePath, 3600),
         audioUrl: await storage.signedUrl(audio.filePath, 3600),
         resolution,
+        ...(motionPrompt !== undefined && { motionPrompt }),
+        ...(expressiveness !== undefined && { expressiveness }),
       });
       const gpuSeconds = Math.ceil(audio.durationMs / 1000);
       await recordUsage(ctx.db, {

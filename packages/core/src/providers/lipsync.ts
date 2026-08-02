@@ -17,10 +17,24 @@ export interface LipsyncSubmitInput {
   imageUrl: string;
   audioUrl: string;
   resolution: LipsyncResolution;
+  /**
+   * HeyGen `motion_prompt` (native v3 name — the wrappers' `custom_motion_prompt`
+   * does not exist on this endpoint): free-text gesture/motion direction.
+   * Absent = the field is not sent at all.
+   */
+  motionPrompt?: string;
+  /**
+   * HeyGen `expressiveness` (Avatar IV): energy/range of movement. Absent = not
+   * sent — HeyGen then defaults to "low", today's behavior.
+   */
+  expressiveness?: LipsyncExpressiveness;
 }
 
 export const lipsyncResolutionSchema = z.enum(["720p", "1080p"]);
 export type LipsyncResolution = z.infer<typeof lipsyncResolutionSchema>;
+
+export const lipsyncExpressivenessSchema = z.enum(["low", "medium", "high"]);
+export type LipsyncExpressiveness = z.infer<typeof lipsyncExpressivenessSchema>;
 
 /**
  * Runaway-cost guard, NOT a product limit: HeyGen renders to the audio's
@@ -63,6 +77,10 @@ export class HeyGenLipsync implements LipsyncProvider {
       audio_url: input.audioUrl,
       aspect_ratio: "9:16",
       resolution: input.resolution,
+      // Unset means absent — the body must stay byte-identical to the
+      // no-knob submit, not carry a null.
+      ...(input.motionPrompt !== undefined && { motion_prompt: input.motionPrompt }),
+      ...(input.expressiveness !== undefined && { expressiveness: input.expressiveness }),
     };
     // The exact parameters, in the worker terminal, without a debugger.
     logger.info(
