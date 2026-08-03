@@ -49,6 +49,22 @@ export async function refundRenderIfNeeded(db: Db, videoRenderId: string): Promi
   return true;
 }
 
+/** Founder manual grant (admin console): one append-only row; the note is the why. */
+export async function grantCredits(
+  db: Db,
+  opts: { businessId: string; credits: number; note: string },
+): Promise<void> {
+  if (!Number.isInteger(opts.credits) || opts.credits <= 0) {
+    throw new Error("credits must be a positive integer");
+  }
+  await db.insert(creditLedger).values({
+    businessId: opts.businessId,
+    delta: opts.credits,
+    reason: "grant_manual",
+    note: opts.note,
+  });
+}
+
 export async function grantPeriod(
   db: Db,
   opts: { businessId: string; credits: number; subscriptionId: string },

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema";
 import type { Db } from "../src/db";
 import { createBusiness } from "../src/pipelines/businesses";
-import { creditBalance, grantPeriod } from "../src/pipelines/credits";
+import { creditBalance, grantCredits, grantPeriod } from "../src/pipelines/credits";
 import { processDueRenewals, type BillingGateway } from "../src/pipelines/billing";
 import { createTestDb } from "./helpers/pglite";
 
@@ -120,6 +120,41 @@ describe("billing state machine", { timeout: 60_000 }, () => {
     const second = await processDueRenewals(db, okGateway);
     expect(second.canceled).toBe(1);
     expect(await creditBalance(db, b2.id)).toBe(0);
+    await pg.close();
+  });
+});
+
+describe("manual credit grants (admin console)", { timeout: 60_000 }, () => {
+  it("writes exactly one grant_manual row with the note; rejects bad amounts", async () => {
+    const { db, pg } = await createTestDb();
+    const business = await createBusiness(db, {
+      ownerEmail: `owner-${crypto.randomUUID()}@test.local`,
+      name: "Biz",
+    });
+
+    await grantCredits(db, { businessId: business.id, credits: 25, note: "פיצוי על רינדור תקוע" });
+
+    const rows = await db
+      .select()
+      .from(schema.creditLedger)
+      .where(eq(schema.creditLedger.businessId, business.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.reason).toBe("grant_manual");
+    expect(rows[0]!.delta).toBe(25);
+    expect(rows[0]!.note).toBe("פיצוי על רינדור תקוע");
+    expect(await creditBalance(db, business.id)).toBe(25);
+
+    // The ledger only ever gains positive integer grants from this path.
+    await expect(grantCredits(db, { businessId: business.id, credits: 0, note: "x" })).rejects.toThrow(
+      /positive integer/,
+    );
+    await expect(
+      grantCredits(db, { businessId: business.id, credits: -5, note: "x" }),
+    ).rejects.toThrow(/positive integer/);
+    await expect(
+      grantCredits(db, { businessId: business.id, credits: 2.5, note: "x" }),
+    ).rejects.toThrow(/positive integer/);
+    expect(await creditBalance(db, business.id)).toBe(25);
     await pg.close();
   });
 });

@@ -4,11 +4,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   adminAccess,
+  canChangeRole,
   coverCrop,
   createPersonaSchema,
+  grantSchema,
   imageDimensions,
   imagePatchSchema,
   referenceImageError,
+  roleChangeSchema,
 } from "../src/lib/admin";
 
 describe("adminAccess (role gate)", () => {
@@ -68,6 +71,30 @@ describe("request body schemas", () => {
     expect(imagePatchSchema.safeParse({ makeDefault: true }).success).toBe(true);
     expect(imagePatchSchema.safeParse({}).success).toBe(false);
     expect(imagePatchSchema.safeParse({ kind: "portrait" }).success).toBe(false);
+  });
+
+  it("grant requires a positive integer amount and a non-empty note", () => {
+    const base = { businessId: "11111111-1111-4111-8111-111111111111", note: "פיצוי" };
+    expect(grantSchema.safeParse({ ...base, credits: 10 }).success).toBe(true);
+    expect(grantSchema.safeParse({ ...base, credits: 0 }).success).toBe(false);
+    expect(grantSchema.safeParse({ ...base, credits: -3 }).success).toBe(false);
+    expect(grantSchema.safeParse({ ...base, credits: 2.5 }).success).toBe(false);
+    expect(grantSchema.safeParse({ ...base, credits: 10, note: "  " }).success).toBe(false);
+  });
+
+  it("roleChange allows only the two known roles", () => {
+    expect(roleChangeSchema.safeParse({ role: "admin" }).success).toBe(true);
+    expect(roleChangeSchema.safeParse({ role: "customer" }).success).toBe(true);
+    expect(roleChangeSchema.safeParse({ role: "owner" }).success).toBe(false);
+  });
+});
+
+describe("canChangeRole (lockout prevention)", () => {
+  it("blocks changing your own role, allows anyone else's", () => {
+    const me = "11111111-1111-4111-8111-111111111111";
+    const other = "22222222-2222-4222-8222-222222222222";
+    expect(canChangeRole(me, me)).toBe(false);
+    expect(canChangeRole(me, other)).toBe(true);
   });
 });
 

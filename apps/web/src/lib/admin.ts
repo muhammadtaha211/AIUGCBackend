@@ -29,6 +29,21 @@ export const createPersonaSchema = z.object({
   gender: z.enum(["female", "male"]),
 });
 
+export const grantSchema = z.object({
+  businessId: z.string().uuid(),
+  credits: z.number().int().positive(),
+  note: z.string().trim().min(1).max(500),
+});
+
+export const roleChangeSchema = z.object({
+  role: z.enum(["customer", "admin"]),
+});
+
+/** Lockout prevention: the session admin can never change their own role. */
+export function canChangeRole(sessionUserId: string, targetUserId: string): boolean {
+  return sessionUserId !== targetUserId;
+}
+
 /** One PATCH per image action: label edit, kind toggle, retire, make-default. */
 export const imagePatchSchema = z
   .object({
