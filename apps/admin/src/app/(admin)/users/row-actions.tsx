@@ -5,15 +5,14 @@ import { useState } from "react";
 import { postJson } from "@/lib/use-api";
 
 type RowActionsProps = {
-  businessId: string;
-  ownerId: string;
-  ownerRole: "customer" | "admin";
+  userId: string;
+  role: "customer" | "admin";
   /** The session admin's own row — the role button is disabled (lockout prevention). */
   isSelf: boolean;
 };
 
-/** Per-business actions: manual credit grant and owner role change. */
-export function RowActions({ businessId, ownerId, ownerRole, isSelf }: RowActionsProps) {
+/** Per-user actions: manual credit grant (account-level) and role change. */
+export function RowActions({ userId, role, isSelf }: RowActionsProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [credits, setCredits] = useState("");
@@ -26,7 +25,7 @@ export function RowActions({ businessId, ownerId, ownerRole, isSelf }: RowAction
     setBusy(true);
     setError(null);
     const result = await postJson<{ ok: true }>("/api/admin/grants", {
-      businessId,
+      userId,
       credits: Number(credits),
       note,
     });
@@ -39,13 +38,13 @@ export function RowActions({ businessId, ownerId, ownerRole, isSelf }: RowAction
   }
 
   async function changeRole() {
-    const nextRole = ownerRole === "admin" ? "customer" : "admin";
+    const nextRole = role === "admin" ? "customer" : "admin";
     if (!confirm(nextRole === "admin" ? "להפוך את המשתמש למנהל?" : "להחזיר את המשתמש ללקוח?")) {
       return;
     }
     setBusy(true);
     setError(null);
-    const result = await postJson<{ ok: true }>(`/api/admin/users/${ownerId}/role`, {
+    const result = await postJson<{ ok: true }>(`/api/admin/users/${userId}/role`, {
       role: nextRole,
     });
     setBusy(false);
@@ -71,7 +70,7 @@ export function RowActions({ businessId, ownerId, ownerRole, isSelf }: RowAction
           title={isSelf ? "אי אפשר לשנות את התפקיד של עצמך" : undefined}
           className="text-gray-400 hover:text-white disabled:opacity-50"
         >
-          {ownerRole === "admin" ? "הפוך ללקוח" : "הפוך למנהל"}
+          {role === "admin" ? "הפוך ללקוח" : "הפוך למנהל"}
         </button>
       </div>
 

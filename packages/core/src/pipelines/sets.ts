@@ -19,7 +19,7 @@ import {
   lipsyncExpressivenessSchema,
   type LipsyncExpressiveness,
 } from "../providers/lipsync";
-import { creditBalance, debitRender } from "./credits";
+import { businessOwnerId, creditBalance, debitRender } from "./credits";
 import { isAdminOwned } from "./businesses";
 
 /**
@@ -333,7 +333,7 @@ async function enforceQuota(
 
   const costs = await getConfigValue(db, "credit_costs", creditCostsSchema);
   const total = cellCount * (service === "a" ? costs.a_render : costs.b_render);
-  const balance = await creditBalance(db, businessId);
+  const balance = await creditBalance(db, await businessOwnerId(db, businessId));
   if (balance < total) {
     throw new Error(`insufficient credits: need ${total}, balance is ${balance}`);
   }

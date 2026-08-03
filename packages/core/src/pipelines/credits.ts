@@ -1,14 +1,25 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db";
-import { creditLedger } from "../db/schema";
+import { businesses, creditLedger } from "../db/schema";
 
-/** Ledger is append-only; balance is always SUM(delta). */
-export async function creditBalance(db: Db, businessId: string): Promise<number> {
+/** Ledger is append-only; balance is always SUM(delta), keyed to the account (user). */
+export async function creditBalance(db: Db, userId: string): Promise<number> {
   const rows = await db
     .select({ balance: sql<string>`coalesce(sum(${creditLedger.delta}), 0)` })
     .from(creditLedger)
-    .where(eq(creditLedger.businessId, businessId));
+    .where(eq(creditLedger.userId, userId));
   return Number(rows[0]?.balance ?? 0);
+}
+
+/** Business-scoped rows are owned by the business's owner account. */
+export async function businessOwnerId(db: Db, businessId: string): Promise<string> {
+  const rows = await db
+    .select({ ownerUserId: businesses.ownerUserId })
+    .from(businesses)
+    .where(eq(businesses.id, businessId))
+    .limit(1);
+  if (!rows[0]) throw new Error(`business ${businessId} not found`);
+  return rows[0].ownerUserId;
 }
 
 /** Debit at render enqueue time (reserve); refunded on terminal failure. */
@@ -17,6 +28,7 @@ export async function debitRender(
   opts: { businessId: string; videoRenderId: string; cost: number },
 ): Promise<void> {
   await db.insert(creditLedger).values({
+    userId: await businessOwnerId(db, opts.businessId),
     businessId: opts.businessId,
     delta: -opts.cost,
     reason: "debit_render",
@@ -41,6 +53,7 @@ export async function refundRenderIfNeeded(db: Db, videoRenderId: string): Promi
   if (refund[0]) return false;
 
   await db.insert(creditLedger).values({
+    userId: debit[0].userId,
     businessId: debit[0].businessId,
     delta: -debit[0].delta,
     reason: "refund_failed",
@@ -52,13 +65,13 @@ export async function refundRenderIfNeeded(db: Db, videoRenderId: string): Promi
 /** Founder manual grant (admin console): one append-only row; the note is the why. */
 export async function grantCredits(
   db: Db,
-  opts: { businessId: string; credits: number; note: string },
+  opts: { userId: string; credits: number; note: string },
 ): Promise<void> {
   if (!Number.isInteger(opts.credits) || opts.credits <= 0) {
     throw new Error("credits must be a positive integer");
   }
   await db.insert(creditLedger).values({
-    businessId: opts.businessId,
+    userId: opts.userId,
     delta: opts.credits,
     reason: "grant_manual",
     note: opts.note,
@@ -70,6 +83,7 @@ export async function grantPeriod(
   opts: { businessId: string; credits: number; subscriptionId: string },
 ): Promise<void> {
   await db.insert(creditLedger).values({
+    userId: await businessOwnerId(db, opts.businessId),
     businessId: opts.businessId,
     delta: opts.credits,
     reason: "grant_period",
@@ -77,14 +91,20 @@ export async function grantPeriod(
   });
 }
 
-/** No-rollover: zero out whatever remains at renewal, keeping SUM(delta) truthful. */
+/**
+ * No-rollover: zero out whatever remains at renewal, keeping SUM(delta)
+ * truthful. The remainder is the ACCOUNT balance — subscriptions are still
+ * business-keyed, so a renewal expires the owner's whole remaining balance.
+ */
 export async function expirePeriodRemainder(
   db: Db,
   opts: { businessId: string; subscriptionId: string },
 ): Promise<void> {
-  const balance = await creditBalance(db, opts.businessId);
+  const userId = await businessOwnerId(db, opts.businessId);
+  const balance = await creditBalance(db, userId);
   if (balance > 0) {
     await db.insert(creditLedger).values({
+      userId,
       businessId: opts.businessId,
       delta: -balance,
       reason: "expire_period",

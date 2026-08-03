@@ -112,9 +112,12 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   at most one live subscription per business.
 - **gateway_events** — raw callback/charge log; `gateway_event_id` UNIQUE makes processing
   idempotent.
-- **credit_ledger** — append-only. Reasons: `grant_period`, `grant_manual`, `debit_render`,
-  `refund_failed`, `expire_period`. No-rollover = an `expire_period` row zeroing the remainder
-  at each renewal — the `balance = SUM(delta)` invariant never bends.
+- **credit_ledger** — append-only, keyed to the ACCOUNT since 0011: `user_id` NOT NULL is
+  ownership (`balance = SUM(delta)` per user — one owner's businesses share one balance),
+  `business_id` nullable context on spend rows (user-level grants have none). Reasons:
+  `grant_period`, `grant_manual`, `debit_render`, `refund_failed`, `expire_period`.
+  No-rollover = an `expire_period` row zeroing the remainder at each renewal — the
+  `balance = SUM(delta)` invariant never bends.
 - **orders** — DFY tier tracking (status, price, payment kind: Bit/invoice, notes).
 
 ### Misc
@@ -140,7 +143,8 @@ Write model: **all writes go through the server** (service role bypasses RLS); b
 get read-only access. Policies:
 
 - Owner-scoped SELECT: businesses, demos, demo_segments, scripts, audio_renders, sets,
-  video_renders, credit_ledger, subscriptions, orders — via `owns_business()` (SECURITY DEFINER).
+  video_renders, subscriptions, orders — via `owns_business()` (SECURITY DEFINER).
+  credit_ledger is scoped directly by `user_id = auth.uid()` since 0012 (account-level credits).
 - **video_renders additionally hides `qc_pending`/`rejected` rows** — customers never see
   Service B output before the founder releases it; a rejected-and-regenerated render is
   internal.

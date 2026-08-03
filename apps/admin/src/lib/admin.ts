@@ -33,7 +33,7 @@ export const createPersonaSchema = z.object({
 });
 
 export const grantSchema = z.object({
-  businessId: z.string().uuid(),
+  userId: z.string().uuid(),
   credits: z.number().int().positive(),
   note: z.string().trim().min(1).max(500),
 });

@@ -440,22 +440,29 @@ export const gatewayEvents = pgTable("gateway_events", {
   error: text("error"),
 });
 
-// Append-only. Balance = SUM(delta). No-rollover is an expire_period row
-// zeroing the remainder at each renewal, so the invariant never bends.
+// Append-only. Balance = SUM(delta) per user_id — credits belong to the
+// ACCOUNT, so one user's businesses share one balance. business_id is context
+// only on spend rows (user-level grants have none). No-rollover is an
+// expire_period row zeroing the remainder at each renewal, so the invariant
+// never bends.
 export const creditLedger = pgTable(
   "credit_ledger",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    businessId: uuid("business_id")
+    userId: uuid("user_id")
       .notNull()
-      .references(() => businesses.id),
+      .references(() => users.id),
+    businessId: uuid("business_id").references(() => businesses.id),
     delta: integer("delta").notNull(),
     reason: ledgerReason("reason").notNull(),
     refId: uuid("ref_id"),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("credit_ledger_business_idx").on(t.businessId)],
+  (t) => [
+    index("credit_ledger_business_idx").on(t.businessId),
+    index("credit_ledger_user_idx").on(t.userId),
+  ],
 );
 
 export const orders = pgTable("orders", {

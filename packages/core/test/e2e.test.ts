@@ -84,6 +84,7 @@ afterAll(async () => {
 
 describe("founder workflow (dry-run, end to end)", () => {
   let businessId: string;
+  let ownerUserId: string;
   let demoId: string;
   let hookClipId: string;
   let hookLineIds: string[];
@@ -97,6 +98,7 @@ describe("founder workflow (dry-run, end to end)", () => {
       ownerRole: "admin",
     });
     businessId = business.id;
+    ownerUserId = business.ownerUserId;
     await setQuestionnaire(db, businessId, {
       category: "local_service",
       product_name: "מסעדת הבית",
@@ -154,7 +156,7 @@ describe("founder workflow (dry-run, end to end)", () => {
     releasedVariantId = released[0]!.id;
 
     // Admin-owned business: no credits were debited, nothing watermarked.
-    expect(await creditBalance(db, businessId)).toBe(0);
+    expect(await creditBalance(db, ownerUserId)).toBe(0);
     expect(released.every((r) => !r.watermarked)).toBe(true);
   });
 

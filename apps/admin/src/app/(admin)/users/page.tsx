@@ -1,14 +1,16 @@
 import { redirect } from "next/navigation";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { getDb, schema } from "@aiugc/core";
 import { adminSession } from "@/lib/api";
 import { CopyId } from "../personas/copy-id";
 import { RowActions } from "./row-actions";
 
 /**
- * Every business with its owner, credit balance (SUM over the ledger), and
- * output counts. Explicitly NOT here: creating users (a users row without
- * auth.users cannot log in), deleting users, email-sending, business editing.
+ * One row per user (credits are account-level): email, role, credit balance
+ * (SUM over the ledger by user_id), and their businesses with per-business
+ * output counts underneath. Explicitly NOT here: creating users (a users row
+ * without auth.users cannot log in), deleting users, email-sending, business
+ * editing.
  */
 export default async function AdminUsersPage() {
   const db = getDb();
@@ -16,28 +18,33 @@ export default async function AdminUsersPage() {
   if (!session) redirect("/login");
 
   const { businesses, users, creditLedger, videoRenders, scripts } = schema;
-  const rows = await db
+  const userRows = await db
+    .select({
+      userId: users.id,
+      email: users.email,
+      role: users.role,
+      createdAt: users.createdAt,
+    })
+    .from(users)
+    .orderBy(users.createdAt);
+  const businessRows = await db
     .select({
       businessId: businesses.id,
       businessName: businesses.name,
-      createdAt: businesses.createdAt,
-      ownerId: users.id,
-      ownerEmail: users.email,
-      ownerRole: users.role,
+      ownerUserId: businesses.ownerUserId,
     })
     .from(businesses)
-    .innerJoin(users, eq(businesses.ownerUserId, users.id))
     .orderBy(businesses.createdAt);
 
-  const sumByBusiness = async () => {
+  const sumByUser = async () => {
     const balances = await db
       .select({
-        businessId: creditLedger.businessId,
+        userId: creditLedger.userId,
         balance: sql<string>`coalesce(sum(${creditLedger.delta}), 0)`,
       })
       .from(creditLedger)
-      .groupBy(creditLedger.businessId);
-    return new Map(balances.map((row) => [row.businessId, Number(row.balance)]));
+      .groupBy(creditLedger.userId);
+    return new Map(balances.map((row) => [row.userId, Number(row.balance)]));
   };
   const countBy = async (table: typeof videoRenders | typeof scripts) => {
     const counts = await db
@@ -47,7 +54,7 @@ export default async function AdminUsersPage() {
     return new Map(counts.map((row) => [row.businessId, Number(row.count)]));
   };
   const [balances, renderCounts, scriptCounts] = await Promise.all([
-    sumByBusiness(),
+    sumByUser(),
     countBy(videoRenders),
     countBy(scripts),
   ]);
@@ -60,58 +67,63 @@ export default async function AdminUsersPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-white/10 text-[13px] text-gray-500">
-              <th className="px-4 py-2.5 text-start font-medium">עסק</th>
-              <th className="px-4 py-2.5 text-start font-medium">בעלים</th>
+              <th className="px-4 py-2.5 text-start font-medium">משתמש</th>
               <th className="px-4 py-2.5 text-start font-medium">תפקיד</th>
               <th className="px-4 py-2.5 text-start font-medium">נוצר</th>
               <th className="px-4 py-2.5 text-start font-medium">קרדיטים</th>
-              <th className="px-4 py-2.5 text-start font-medium">סרטונים</th>
-              <th className="px-4 py-2.5 text-start font-medium">תסריטים</th>
+              <th className="px-4 py-2.5 text-start font-medium">עסקים</th>
               <th className="px-4 py-2.5 text-start font-medium">פעולות</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr
-                key={row.businessId}
-                className="border-b border-white/5 align-top last:border-b-0"
-              >
-                <td className="px-4 py-2.5">
-                  <span className="font-medium text-white">{row.businessName}</span>
-                  <span className="ms-2">
-                    <CopyId id={row.businessId} />
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-gray-300" dir="ltr">
-                  {row.ownerEmail}
-                </td>
-                <td className="px-4 py-2.5 text-gray-300">
-                  {row.ownerRole === "admin" ? "מנהל" : "לקוח"}
-                </td>
-                <td className="px-4 py-2.5 text-gray-400">
-                  {row.createdAt.toLocaleDateString("he-IL")}
-                </td>
-                <td className="px-4 py-2.5 text-gray-300">{balances.get(row.businessId) ?? 0}</td>
-                <td className="px-4 py-2.5 text-gray-300">
-                  {renderCounts.get(row.businessId) ?? 0}
-                </td>
-                <td className="px-4 py-2.5 text-gray-300">
-                  {scriptCounts.get(row.businessId) ?? 0}
-                </td>
-                <td className="px-4 py-2.5">
-                  <RowActions
-                    businessId={row.businessId}
-                    ownerId={row.ownerId}
-                    ownerRole={row.ownerRole}
-                    isSelf={row.ownerId === session.userId}
-                  />
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
+            {userRows.map((row) => {
+              const owned = businessRows.filter((b) => b.ownerUserId === row.userId);
+              return (
+                <tr key={row.userId} className="border-b border-white/5 align-top last:border-b-0">
+                  <td className="px-4 py-2.5">
+                    <span className="font-medium text-white" dir="ltr">
+                      {row.email}
+                    </span>
+                    <span className="ms-2">
+                      <CopyId id={row.userId} />
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-300">
+                    {row.role === "admin" ? "מנהל" : "לקוח"}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-400">
+                    {row.createdAt.toLocaleDateString("he-IL")}
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-300">{balances.get(row.userId) ?? 0}</td>
+                  <td className="px-4 py-2.5 text-gray-300">
+                    {owned.length === 0 && <span className="text-gray-500">—</span>}
+                    {owned.map((biz) => (
+                      <div key={biz.businessId} className="mb-1 last:mb-0">
+                        <span>{biz.businessName}</span>
+                        <span className="ms-2">
+                          <CopyId id={biz.businessId} />
+                        </span>
+                        <span className="ms-2 text-[12px] text-gray-500">
+                          {renderCounts.get(biz.businessId) ?? 0} סרטונים ·{" "}
+                          {scriptCounts.get(biz.businessId) ?? 0} תסריטים
+                        </span>
+                      </div>
+                    ))}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <RowActions
+                      userId={row.userId}
+                      role={row.role}
+                      isSelf={row.userId === session.userId}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+            {userRows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
-                  אין עסקים עדיין.
+                <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                  אין משתמשים עדיין.
                 </td>
               </tr>
             )}

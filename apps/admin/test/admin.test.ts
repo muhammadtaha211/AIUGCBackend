@@ -77,7 +77,7 @@ describe("request body schemas", () => {
   });
 
   it("grant requires a positive integer amount and a non-empty note", () => {
-    const base = { businessId: "11111111-1111-4111-8111-111111111111", note: "פיצוי" };
+    const base = { userId: "11111111-1111-4111-8111-111111111111", note: "פיצוי" };
     expect(grantSchema.safeParse({ ...base, credits: 10 }).success).toBe(true);
     expect(grantSchema.safeParse({ ...base, credits: 0 }).success).toBe(false);
     expect(grantSchema.safeParse({ ...base, credits: -3 }).success).toBe(false);

@@ -240,7 +240,7 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
     });
 
     const renderId = await queueBRender(biz.id);
-    expect(await creditBalance(db, biz.id)).toBeLessThan(100); // debited at enqueue
+    expect(await creditBalance(db, biz.ownerUserId)).toBeLessThan(100); // debited at enqueue
 
     // Submit checkpoints the provider job id AND the submit timestamp.
     await lanePass();
@@ -279,7 +279,7 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
     const render = await renderRow(renderId);
     expect(render.status).toBe("failed");
     expect(render.error).toMatch(/לא הסתיים בזמן/);
-    expect(await creditBalance(db, biz.id)).toBe(100);
+    expect(await creditBalance(db, biz.ownerUserId)).toBe(100);
     const refunds = await db
       .select()
       .from(dbSchema.creditLedger)

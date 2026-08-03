@@ -6,11 +6,13 @@ import { drizzle } from "drizzle-orm/pglite";
 import type { Db } from "../../src/db";
 import * as schema from "../../src/db/schema";
 
-const MIGRATIONS_DIR = fileURLToPath(new URL("../../../../supabase/migrations/", import.meta.url));
+export const MIGRATIONS_DIR = fileURLToPath(
+  new URL("../../../../supabase/migrations/", import.meta.url),
+);
 
 // 0002_supabase_rls.sql is deliberately absent: it references the Supabase
 // auth schema, which only exists on Supabase.
-const PORTABLE_MIGRATIONS = [
+export const PORTABLE_MIGRATIONS = [
   "0000_init.sql",
   "0001_extras_and_seed.sql",
   "0003_composites_and_images.sql",
@@ -20,6 +22,7 @@ const PORTABLE_MIGRATIONS = [
   "0008_persona_gender.sql",
   "0009_persona_image_kind.sql",
   "0010_persona_images_retired.sql",
+  "0011_credit_ledger_user.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

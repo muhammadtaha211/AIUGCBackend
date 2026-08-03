@@ -14,12 +14,12 @@ export async function POST(request: Request) {
     const body = grantSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
 
-    const businessRows = await db
-      .select({ id: schema.businesses.id })
-      .from(schema.businesses)
-      .where(eq(schema.businesses.id, body.data.businessId))
+    const userRows = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.id, body.data.userId))
       .limit(1);
-    if (!businessRows[0]) return jsonError(404, NOT_FOUND);
+    if (!userRows[0]) return jsonError(404, NOT_FOUND);
 
     await grantCredits(db, body.data);
     return NextResponse.json({ ok: true });

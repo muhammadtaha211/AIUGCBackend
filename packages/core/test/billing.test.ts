@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema";
 import type { Db } from "../src/db";
 import { createBusiness } from "../src/pipelines/businesses";
-import { creditBalance, grantCredits, grantPeriod } from "../src/pipelines/credits";
+import { creditBalance, debitRender, grantCredits, grantPeriod } from "../src/pipelines/credits";
 import { processDueRenewals, type BillingGateway } from "../src/pipelines/billing";
 import { createTestDb } from "./helpers/pglite";
 
@@ -57,7 +57,7 @@ describe("billing state machine", { timeout: 60_000 }, () => {
     expect(summary.renewed).toBe(1);
 
     // Starter grants 40; leftover 7 expired first -> balance is exactly 40.
-    expect(await creditBalance(db, business.id)).toBe(40);
+    expect(await creditBalance(db, business.ownerUserId)).toBe(40);
 
     const updated = (
       await db.select().from(schema.subscriptions).where(eq(schema.subscriptions.id, sub.id))
@@ -119,42 +119,68 @@ describe("billing state machine", { timeout: 60_000 }, () => {
 
     const second = await processDueRenewals(db, okGateway);
     expect(second.canceled).toBe(1);
-    expect(await creditBalance(db, b2.id)).toBe(0);
+    expect(await creditBalance(db, b2.ownerUserId)).toBe(0);
     await pg.close();
   });
 });
 
 describe("manual credit grants (admin console)", { timeout: 60_000 }, () => {
-  it("writes exactly one grant_manual row with the note; rejects bad amounts", async () => {
+  it("writes exactly one user-keyed grant_manual row with the note; rejects bad amounts", async () => {
     const { db, pg } = await createTestDb();
     const business = await createBusiness(db, {
       ownerEmail: `owner-${crypto.randomUUID()}@test.local`,
       name: "Biz",
     });
+    const owner = business.ownerUserId;
 
-    await grantCredits(db, { businessId: business.id, credits: 25, note: "פיצוי על רינדור תקוע" });
+    await grantCredits(db, { userId: owner, credits: 25, note: "פיצוי על רינדור תקוע" });
 
     const rows = await db
       .select()
       .from(schema.creditLedger)
-      .where(eq(schema.creditLedger.businessId, business.id));
+      .where(eq(schema.creditLedger.userId, owner));
     expect(rows).toHaveLength(1);
     expect(rows[0]!.reason).toBe("grant_manual");
     expect(rows[0]!.delta).toBe(25);
     expect(rows[0]!.note).toBe("פיצוי על רינדור תקוע");
-    expect(await creditBalance(db, business.id)).toBe(25);
+    // User-level grant: no business context on the row.
+    expect(rows[0]!.businessId).toBeNull();
+    expect(await creditBalance(db, owner)).toBe(25);
 
     // The ledger only ever gains positive integer grants from this path.
-    await expect(grantCredits(db, { businessId: business.id, credits: 0, note: "x" })).rejects.toThrow(
+    await expect(grantCredits(db, { userId: owner, credits: 0, note: "x" })).rejects.toThrow(
       /positive integer/,
     );
-    await expect(
-      grantCredits(db, { businessId: business.id, credits: -5, note: "x" }),
-    ).rejects.toThrow(/positive integer/);
-    await expect(
-      grantCredits(db, { businessId: business.id, credits: 2.5, note: "x" }),
-    ).rejects.toThrow(/positive integer/);
-    expect(await creditBalance(db, business.id)).toBe(25);
+    await expect(grantCredits(db, { userId: owner, credits: -5, note: "x" })).rejects.toThrow(
+      /positive integer/,
+    );
+    await expect(grantCredits(db, { userId: owner, credits: 2.5, note: "x" })).rejects.toThrow(
+      /positive integer/,
+    );
+    expect(await creditBalance(db, owner)).toBe(25);
+    await pg.close();
+  });
+
+  it("account-level credits: two businesses, one owner, one shared balance", async () => {
+    const { db, pg } = await createTestDb();
+    const ownerEmail = `owner-${crypto.randomUUID()}@test.local`;
+    const b1 = await createBusiness(db, { ownerEmail, name: "עסק א" });
+    const b2 = await createBusiness(db, { ownerEmail, name: "עסק ב" });
+    expect(b2.ownerUserId).toBe(b1.ownerUserId);
+    const owner = b1.ownerUserId;
+
+    await grantCredits(db, { userId: owner, credits: 10, note: "מתנת פתיחה" });
+    await debitRender(db, { businessId: b1.id, videoRenderId: crypto.randomUUID(), cost: 3 });
+    await debitRender(db, { businessId: b2.id, videoRenderId: crypto.randomUUID(), cost: 4 });
+    expect(await creditBalance(db, owner)).toBe(3);
+
+    // Debits keep the business as context; both rows share the owner key.
+    const debits = await db
+      .select()
+      .from(schema.creditLedger)
+      .where(eq(schema.creditLedger.reason, "debit_render"));
+    expect(debits.map((row) => row.userId)).toEqual([owner, owner]);
+    expect(debits.map((row) => row.businessId).sort()).toEqual([b1.id, b2.id].sort());
     await pg.close();
   });
 });

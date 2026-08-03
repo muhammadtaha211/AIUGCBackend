@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { PGlite } from "@electric-sql/pglite";
 import { describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { createTestDb } from "./helpers/pglite";
+import { createTestDb, MIGRATIONS_DIR, PORTABLE_MIGRATIONS } from "./helpers/pglite";
 import * as schema from "../src/db/schema";
 
 describe("migrations", () => {
@@ -86,6 +89,49 @@ describe("migrations", () => {
 
     // persona_clips is gone entirely.
     await expect(db.execute(sql`select 1 from persona_clips`)).rejects.toThrow(/does not exist/i);
+
+    await pg.close();
+  });
+
+  it("0011: backfills user_id from each row's business owner", async () => {
+    // Build the PRE-0011 shape, seed business-keyed ledger rows, then migrate.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0011")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const userA = "11111111-1111-4111-8111-111111111111";
+    const userB = "22222222-2222-4222-8222-222222222222";
+    const bizA = "33333333-3333-4333-8333-333333333333";
+    const bizB = "44444444-4444-4444-8444-444444444444";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES
+        ('${userA}', 'a@test.local'), ('${userB}', 'b@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES
+        ('${bizA}', '${userA}', 'A'), ('${bizB}', '${userB}', 'B');
+      INSERT INTO credit_ledger (business_id, delta, reason) VALUES
+        ('${bizA}', 40, 'grant_period'),
+        ('${bizA}', -1, 'debit_render'),
+        ('${bizB}', 5, 'grant_manual');
+    `);
+
+    await pg.exec(readFileSync(join(MIGRATIONS_DIR, "0011_credit_ledger_user.sql"), "utf8"));
+
+    const rows = await pg.query<{ user_id: string; business_id: string; delta: number }>(
+      "SELECT user_id, business_id, delta FROM credit_ledger ORDER BY delta",
+    );
+    expect(rows.rows).toEqual([
+      { user_id: userA, business_id: bizA, delta: -1 },
+      { user_id: userB, business_id: bizB, delta: 5 },
+      { user_id: userA, business_id: bizA, delta: 40 },
+    ]);
+
+    // The new shape: user_id is mandatory, business_id no longer is.
+    await expect(
+      pg.query(`INSERT INTO credit_ledger (business_id, delta, reason) VALUES ('${bizA}', 1, 'grant_manual')`),
+    ).rejects.toThrow(/user_id/);
+    await pg.query(
+      `INSERT INTO credit_ledger (user_id, delta, reason) VALUES ('${userA}', 1, 'grant_manual')`,
+    );
 
     await pg.close();
   });
