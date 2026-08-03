@@ -245,6 +245,8 @@ export async function createBRender(
     if (opts.personaId && image[0].personaId !== opts.personaId) {
       throw new Error(`persona image ${opts.personaImageId} belongs to a different persona`);
     }
+    // New renders only — QC regeneration reuses old params without this check.
+    if (image[0].retired) throw new Error(`persona image ${opts.personaImageId} is retired`);
   }
 
   // Fail a typo'd tier here, not as a HeyGen 400 after the render is queued.

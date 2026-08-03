@@ -9,6 +9,8 @@ import { LogoutButton } from "./logout-button";
 type HomeHeaderProps = {
   businesses: { id: string; name: string }[];
   selectedId: string;
+  /** Renders the ניהול link; false leaves the customer header byte-identical. */
+  isAdmin?: boolean;
 };
 
 /**
@@ -16,7 +18,7 @@ type HomeHeaderProps = {
  * selected business lives in a cookie so server components (homepage cards,
  * wizard shell) read the same choice.
  */
-export function HomeHeader({ businesses, selectedId }: HomeHeaderProps) {
+export function HomeHeader({ businesses, selectedId, isAdmin }: HomeHeaderProps) {
   const router = useRouter();
 
   function selectBusiness(id: string) {
@@ -56,6 +58,15 @@ export function HomeHeader({ businesses, selectedId }: HomeHeaderProps) {
         >
           הוסף עסק
         </Link>
+
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className="flex h-9 shrink-0 items-center rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-medium text-gray-200 transition-colors duration-150 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            ניהול
+          </Link>
+        )}
 
         <LogoutButton />
       </div>

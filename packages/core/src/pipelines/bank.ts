@@ -41,19 +41,30 @@ export async function addHookClip(
 
 export async function addPersona(
   db: Db,
-  opts: { name: string; voiceId: string; identity?: object },
+  opts: { name: string; voiceId: string; gender?: "female" | "male"; identity?: object },
 ) {
   const inserted = await db
     .insert(personas)
-    .values({ name: opts.name, voiceId: opts.voiceId, identity: opts.identity ?? {} })
+    .values({
+      name: opts.name,
+      voiceId: opts.voiceId,
+      gender: opts.gender,
+      identity: opts.identity ?? {},
+    })
     .returning();
   return inserted[0]!;
 }
 
-/** The first image for a persona becomes the default; --default moves the flag. */
+/**
+ * The first image for a persona becomes the default; --default moves the flag.
+ * Source: a local file path (CLI) or raw upload bytes (web admin).
+ */
 export async function addPersonaImage(
   db: Db,
-  opts: { personaId: string; filePath: string; isDefault?: boolean },
+  opts: { personaId: string; isDefault?: boolean } & (
+    | { filePath: string }
+    | { bytes: Buffer; extension: string }
+  ),
 ) {
   const existing = await db
     .select()
@@ -69,33 +80,61 @@ export async function addPersonaImage(
     .values({ personaId: opts.personaId, filePath: "pending", isDefault: false })
     .returning();
   const image = inserted[0]!;
+  const extension =
+    "filePath" in opts ? path.extname(opts.filePath) || ".jpg" : opts.extension;
   let filePath: string;
   try {
     filePath = await getStorage().put(
       "assets",
-      storageKey({
-        entity: "persona_image",
-        id: image.id,
-        filename: `image${path.extname(opts.filePath) || ".jpg"}`,
-      }),
-      opts.filePath,
+      storageKey({ entity: "persona_image", id: image.id, filename: `image${extension}` }),
+      "filePath" in opts ? opts.filePath : opts.bytes,
     );
   } catch (err) {
     // A failed upload must not strand the "pending" placeholder row.
     await db.delete(personaImages).where(eq(personaImages.id, image.id));
     throw err;
   }
-  if (isDefault) {
-    await db
-      .update(personaImages)
-      .set({ isDefault: false })
-      .where(and(eq(personaImages.personaId, opts.personaId), eq(personaImages.isDefault, true)));
+  await db.update(personaImages).set({ filePath }).where(eq(personaImages.id, image.id));
+  if (isDefault) await setDefaultPersonaImage(db, image.id);
+  return { ...image, filePath, isDefault };
+}
+
+/**
+ * Atomically move the persona's default flag to this image (clear-then-set, so
+ * the partial unique index never sees two defaults). One implementation, two
+ * callers: `addPersonaImage --default` and the admin make-default action.
+ */
+export async function setDefaultPersonaImage(db: Db, imageId: string) {
+  const rows = await db.select().from(personaImages).where(eq(personaImages.id, imageId)).limit(1);
+  const image = rows[0];
+  if (!image) throw new Error(`persona image ${imageId} not found`);
+  if (!image.filePath.includes("/")) {
+    throw new Error(`persona image ${imageId} has no stored file`);
   }
+  if (image.retired) throw new Error(`persona image ${imageId} is retired`);
   await db
     .update(personaImages)
-    .set({ filePath, isDefault })
-    .where(eq(personaImages.id, image.id));
-  return { ...image, filePath, isDefault };
+    .set({ isDefault: false })
+    .where(and(eq(personaImages.personaId, image.personaId), eq(personaImages.isDefault, true)));
+  await db.update(personaImages).set({ isDefault: true }).where(eq(personaImages.id, imageId));
+  return { ...image, isDefault: true };
+}
+
+/**
+ * "Delete" is retire: video_renders.params reference image ids and QC
+ * regeneration re-reads them, so rows are never hard-deleted. The current
+ * default cannot be retired — the render fallback must always find a usable
+ * default, so another image has to be promoted first.
+ */
+export async function setPersonaImageRetired(db: Db, imageId: string, retired: boolean) {
+  const rows = await db.select().from(personaImages).where(eq(personaImages.id, imageId)).limit(1);
+  const image = rows[0];
+  if (!image) throw new Error(`persona image ${imageId} not found`);
+  if (retired && image.isDefault) {
+    throw new Error("cannot retire the default image — make another image the default first");
+  }
+  await db.update(personaImages).set({ retired }).where(eq(personaImages.id, imageId));
+  return { ...image, retired };
 }
 
 export async function addStructure(db: Db, opts: { title: string; skeleton: unknown }) {

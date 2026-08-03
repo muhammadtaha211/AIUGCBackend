@@ -156,10 +156,12 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
             .from(personaImages)
             .where(
               // A stranded "pending" placeholder (no "/") must never be signed,
-              // even if it carries the default flag.
+              // even if it carries the default flag. Retired images are out of
+              // the fallback too (belt over the cannot-retire-default guard).
               and(
                 eq(personaImages.personaId, params.personaId),
                 eq(personaImages.isDefault, true),
+                eq(personaImages.retired, false),
                 like(personaImages.filePath, "%/%"),
               ),
             )

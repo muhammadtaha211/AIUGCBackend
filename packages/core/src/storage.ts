@@ -54,7 +54,7 @@ export interface Storage {
   put(
     bucket: Bucket,
     key: string,
-    localFile: string,
+    source: string | Buffer,
     options?: { upsert?: boolean },
   ): Promise<string>;
   download(storagePath: string, localFile: string): Promise<void>;
@@ -94,10 +94,11 @@ function isMissingObject(error: { message: string; status?: number; statusCode?:
 
 /** Filesystem-backed storage for the CLI phase / local dev (no Supabase project needed). */
 class LocalStorage implements Storage {
-  async put(bucket: Bucket, key: string, localFile: string): Promise<string> {
+  async put(bucket: Bucket, key: string, source: string | Buffer): Promise<string> {
     const dest = path.join(LOCAL_STORAGE_DIR, bucket, key);
     mkdirSync(path.dirname(dest), { recursive: true });
-    copyFileSync(localFile, dest);
+    if (typeof source === "string") copyFileSync(source, dest);
+    else writeFileSync(dest, source);
     return `${bucket}/${key}`;
   }
 
@@ -129,10 +130,11 @@ export class SupabaseStorage implements Storage {
   async put(
     bucket: Bucket,
     key: string,
-    localFile: string,
+    source: string | Buffer,
     options?: { upsert?: boolean },
   ): Promise<string> {
-    const { error } = await this.client.storage.from(bucket).upload(key, readFileSync(localFile), {
+    const bytes = typeof source === "string" ? readFileSync(source) : source;
+    const { error } = await this.client.storage.from(bucket).upload(key, bytes, {
       contentType: contentTypeForKey(key),
       // Upsert by default: jobs are retryable, and a retry after a crash
       // between upload and DB write re-runs the same upload — it must

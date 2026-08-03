@@ -9,7 +9,13 @@ import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { PermanentError } from "../src/jobs/errors";
 import { runLane } from "../src/jobs/worker";
-import { addHookClip, addPersona, addPersonaImage } from "../src/pipelines/bank";
+import {
+  addHookClip,
+  addPersona,
+  addPersonaImage,
+  setDefaultPersonaImage,
+  setPersonaImageRetired,
+} from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { createComposite } from "../src/pipelines/composites";
 import { setImagegenProvider } from "../src/providers/imagegen";
@@ -272,6 +278,80 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
 
     const rows = await db.select().from(dbSchema.hookClips);
     expect(rows).toHaveLength(0);
+  });
+
+  it("uploads raw bytes (web admin) through the same storage path as a local file", async () => {
+    const persona = await addPersona(db, { name: "שירה", voiceId: "voice_shira" });
+    const image = await addPersonaImage(db, {
+      personaId: persona.id,
+      bytes: Buffer.from("jpeg bytes from the browser"),
+      extension: ".jpg",
+    });
+    expect(image.filePath).toMatch(/^assets\/bank\/persona_image\/.*\/image\.jpg$/);
+    expect(image.isDefault).toBe(true); // first image still becomes the default
+    const url = await storage.signedUrl(image.filePath, 60);
+    expect(url).toContain("image.jpg");
+  });
+
+  it("setDefaultPersonaImage moves the flag and refuses retired or pending images", async () => {
+    const persona = await addPersona(db, { name: "תמר", voiceId: "voice_tamar" });
+    const first = await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("t1.jpg") });
+    const second = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("t2.jpg"),
+    });
+    expect(first.isDefault).toBe(true);
+    expect(second.isDefault).toBe(false);
+
+    await setDefaultPersonaImage(db, second.id);
+    const rows = await db
+      .select()
+      .from(dbSchema.personaImages)
+      .where(sql`${dbSchema.personaImages.personaId} = ${persona.id}`);
+    expect(rows.find((r) => r.id === first.id)!.isDefault).toBe(false);
+    expect(rows.find((r) => r.id === second.id)!.isDefault).toBe(true);
+
+    await setPersonaImageRetired(db, first.id, true);
+    await expect(setDefaultPersonaImage(db, first.id)).rejects.toThrow(/is retired/);
+
+    const pending = (
+      await db
+        .insert(dbSchema.personaImages)
+        .values({ personaId: persona.id, filePath: "pending" })
+        .returning()
+    )[0]!;
+    await expect(setDefaultPersonaImage(db, pending.id)).rejects.toThrow(/no stored file/);
+  });
+
+  it("retire is refused on the current default; any other image retires and comes back", async () => {
+    const persona = await addPersona(db, { name: "אביגיל", voiceId: "voice_avigail" });
+    const defaultImage = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("a1.jpg"),
+    });
+    const extra = await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("a2.jpg") });
+
+    await expect(setPersonaImageRetired(db, defaultImage.id, true)).rejects.toThrow(
+      /cannot retire the default/,
+    );
+
+    await setPersonaImageRetired(db, extra.id, true);
+    let row = (
+      await db
+        .select()
+        .from(dbSchema.personaImages)
+        .where(sql`${dbSchema.personaImages.id} = ${extra.id}`)
+    )[0]!;
+    expect(row.retired).toBe(true);
+
+    await setPersonaImageRetired(db, extra.id, false);
+    row = (
+      await db
+        .select()
+        .from(dbSchema.personaImages)
+        .where(sql`${dbSchema.personaImages.id} = ${extra.id}`)
+    )[0]!;
+    expect(row.retired).toBe(false);
   });
 
   it("the missing-object message keeps the storage path out of the user text", () => {

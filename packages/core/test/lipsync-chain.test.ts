@@ -10,7 +10,7 @@ import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { DEFAULT_POLL_DEADLINE_SECONDS } from "../src/jobs/poll";
 import { runLane } from "../src/jobs/worker";
-import { addPersona, addPersonaImage } from "../src/pipelines/bank";
+import { addPersona, addPersonaImage, setPersonaImageRetired } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
 import { rejectRender } from "../src/pipelines/qc";
 import { createBRender, type VariantParams } from "../src/pipelines/sets";
@@ -360,6 +360,17 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
         personaImageId: yaelImage.id,
       }),
     ).rejects.toThrow(/different persona/);
+
+    // A retired image is refused for NEW renders (QC regeneration is exempt —
+    // it reuses old params without re-running createBRender).
+    const retiredImage = await addPersonaImage(db, {
+      personaId: yael.id,
+      filePath: tempFile("yael-old.jpg"),
+    });
+    await setPersonaImageRetired(db, retiredImage.id, true);
+    await expect(
+      createBRender(db, { businessId, audioRenderId: audio.id, personaImageId: retiredImage.id }),
+    ).rejects.toThrow(/is retired/);
 
     // The matching pair goes through, carrying the explicit image for lipsync.
     const render = await createBRender(db, {

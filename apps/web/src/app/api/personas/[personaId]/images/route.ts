@@ -39,6 +39,7 @@ export async function GET(
         id: personaImages.id,
         filePath: personaImages.filePath,
         kind: personaImages.kind,
+        retired: personaImages.retired,
         label: personaImages.label,
       })
       .from(personaImages)

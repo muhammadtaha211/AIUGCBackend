@@ -70,6 +70,7 @@ describe("persona image selection (thumbnail + background picker)", () => {
     kind: "background",
     filePath: "personas/p1/img.png",
     isDefault: false,
+    retired: false,
     createdAt: new Date("2026-01-01"),
     ...over,
   });
@@ -101,6 +102,15 @@ describe("persona image selection (thumbnail + background picker)", () => {
     const preview = image({ kind: "preview" });
     const pending = image({ filePath: "pending" });
     expect(backgroundImages([background, preview, pending])).toEqual([background]);
+  });
+
+  it("retired images are out of the thumbnail and the background picker", () => {
+    const retiredPreview = image({ kind: "preview", retired: true });
+    const retiredDefault = image({ isDefault: true, retired: true });
+    const stored = image({});
+    expect(personaThumbnail([retiredPreview, retiredDefault, stored])).toBe(stored);
+    expect(personaThumbnail([retiredPreview])).toBeUndefined();
+    expect(backgroundImages([image({ retired: true }), stored])).toEqual([stored]);
   });
 });
 

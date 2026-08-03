@@ -254,12 +254,17 @@ bank
   .command("add-persona")
   .requiredOption("--name <name>")
   .requiredOption("--voice <voiceId>", "pinned ElevenLabs voice id")
+  .option("--gender <gender>", "female|male (b_script defaults to female and warns when unset)")
   .option("--identity <json>", "identity metadata", "{}")
   .action(
-    run(async (opts: { name: string; voice: string; identity: string }) => {
+    run(async (opts: { name: string; voice: string; gender?: string; identity: string }) => {
+      if (opts.gender && opts.gender !== "female" && opts.gender !== "male") {
+        throw new Error(`--gender must be female or male, got "${opts.gender}"`);
+      }
       const persona = await addPersona(getDb(), {
         name: opts.name,
         voiceId: opts.voice,
+        gender: opts.gender as "female" | "male" | undefined,
         identity: JSON.parse(opts.identity),
       });
       console.log(`persona added: ${persona.id}`);

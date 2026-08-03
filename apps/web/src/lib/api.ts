@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { schema, type Db } from "@aiugc/core";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { adminAccess } from "@/lib/admin";
 import { businessAccess, isUuid } from "@/lib/service-b";
 
 /**
@@ -28,6 +29,31 @@ export async function requireUser(): Promise<{ userId: string } | { response: Ne
   } = await supabase.auth.getUser();
   if (!user) return { response: jsonError(401, "צריך להתחבר קודם.") };
   return { userId: user.id };
+}
+
+/**
+ * The admin gate, sibling of requireBusiness: resolve the session, load the
+ * users row on the same service-role path, and pass only role='admin'.
+ * adminSession is the page-side form (/admin server components redirect on
+ * null); requireAdmin is the route-handler form — EVERY /api/admin/* handler
+ * must call it, because layouts and middleware do not protect route handlers.
+ */
+export async function adminSession(db: Db): Promise<{ userId: string } | null> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const rows = await db.select().from(schema.users).where(eq(schema.users.id, user.id)).limit(1);
+  return adminAccess(rows[0]) === "ok" ? { userId: user.id } : null;
+}
+
+export async function requireAdmin(
+  db: Db,
+): Promise<{ userId: string } | { response: NextResponse }> {
+  const session = await adminSession(db);
+  if (!session) return { response: jsonError(403, "אין הרשאה.") };
+  return session;
 }
 
 /**
@@ -152,6 +178,12 @@ export function coreErrorResponse(err: unknown): NextResponse {
   }
   if (/composite must be approved/.test(message)) {
     return jsonError(409, "צריך לאשר את תמונת הדמות עם המוצר לפני יצירת הסרטון.");
+  }
+  if (/cannot retire the default image/.test(message)) {
+    return jsonError(409, "אי אפשר להסיר את תמונת ברירת המחדל — קבעו קודם תמונה אחרת.");
+  }
+  if (/is retired/.test(message)) {
+    return jsonError(400, "התמונה הזאת הוסרה — בחרו תמונה אחרת.");
   }
   if (/is not ready yet/.test(message)) return jsonError(409, "עוד לא מוכן — נסו שוב בעוד רגע.");
   if (/daily audio preview limit/.test(message)) {

@@ -36,15 +36,15 @@ export function isUuid(value: string): boolean {
 // Persona image selection (avatar-card thumbnail + background picker)
 // ---------------------------------------------------------------------------
 
-type PersonaImageRow = { kind: string; filePath: string };
+type PersonaImageRow = { kind: string; filePath: string; retired: boolean };
 
 /**
  * A stranded "pending" placeholder (no "/" in file_path — a crashed
- * `persona add-image`) must never be signed. Same guard as core's lipsync
- * default-image resolution.
+ * `persona add-image`) must never be signed, and a retired image is out of
+ * every picker. Same guards as core's lipsync default-image resolution.
  */
-function isStored(image: PersonaImageRow): boolean {
-  return image.filePath.includes("/");
+function isUsable(image: PersonaImageRow): boolean {
+  return image.filePath.includes("/") && !image.retired;
 }
 
 /** Avatar-card thumbnail preference: kind='preview' -> is_default -> newest. */
@@ -52,7 +52,7 @@ export function personaThumbnail<
   T extends PersonaImageRow & { isDefault: boolean; createdAt: Date },
 >(images: T[]): T | undefined {
   const newestFirst = [...images]
-    .filter(isStored)
+    .filter(isUsable)
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   return (
     newestFirst.find((image) => image.kind === "preview") ??
@@ -61,9 +61,9 @@ export function personaThumbnail<
   );
 }
 
-/** The background picker shows only stored kind='background' images. */
+/** The background picker shows only stored, non-retired kind='background' images. */
 export function backgroundImages<T extends PersonaImageRow>(images: T[]): T[] {
-  return images.filter((image) => image.kind === "background" && isStored(image));
+  return images.filter((image) => image.kind === "background" && isUsable(image));
 }
 
 // ---------------------------------------------------------------------------

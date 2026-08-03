@@ -22,6 +22,7 @@ export async function GET() {
         name: personas.name,
         filePath: personaImages.filePath,
         kind: personaImages.kind,
+        retired: personaImages.retired,
         isDefault: personaImages.isDefault,
         createdAt: personaImages.createdAt,
       })

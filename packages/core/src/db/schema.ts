@@ -185,6 +185,8 @@ export const personaImages = pgTable("persona_images", {
   /** 'preview' (avatar-card thumbnail only) | 'background' (background picker). */
   kind: text("kind").notNull().default("background"),
   label: text("label"),
+  // Soft delete: render params reference image ids, so rows are never removed.
+  retired: boolean("retired").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -19,6 +19,7 @@ const PORTABLE_MIGRATIONS = [
   "0006_persona_images_default.sql",
   "0008_persona_gender.sql",
   "0009_persona_image_kind.sql",
+  "0010_persona_images_retired.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { missingObjectError, type Storage } from "../../src/storage";
@@ -12,10 +12,11 @@ export function tempStorage(): { storage: Storage; root: string; cleanup: () => 
 
   const resolve = (storagePath: string) => path.join(root, storagePath);
   const storage: Storage = {
-    async put(bucket, key, localFile) {
+    async put(bucket, key, source) {
       const dest = resolve(`${bucket}/${key}`);
       mkdirSync(path.dirname(dest), { recursive: true });
-      copyFileSync(localFile, dest);
+      if (typeof source === "string") copyFileSync(source, dest);
+      else writeFileSync(dest, source);
       return `${bucket}/${key}`;
     },
     async download(storagePath, localFile) {

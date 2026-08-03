@@ -23,6 +23,10 @@ export default async function HomePage() {
     .select("id, name, questionnaire")
     .order("created_at", { ascending: true });
 
+  // RLS-scoped to the session user's own row (users_select_self).
+  const { data: userRows } = await supabase.from("users").select("role").eq("id", user.id);
+  const isAdmin = userRows?.[0]?.role === "admin";
+
   // Signed in with no business (e.g. an interrupted signup): straight into the
   // questionnaire wizard — the homepage has nothing to show yet.
   if (!businesses || businesses.length === 0) redirect("/home/new-business");
@@ -36,6 +40,7 @@ export default async function HomePage() {
       <HomeHeader
         businesses={businesses.map(({ id, name }) => ({ id, name }))}
         selectedId={selected.id}
+        isAdmin={isAdmin}
       />
 
       <main className="flex-1">
