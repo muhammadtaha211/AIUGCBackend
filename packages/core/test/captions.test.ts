@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chunkWords,
   evenlySpacedCaptions,
+  snapToWordGap,
   wordsFromCharAlignment,
   type WordTiming,
 } from "../src/captions";
@@ -56,5 +57,35 @@ describe("captions", () => {
     expect(chunks).toHaveLength(4);
     expect(chunks[0]).toMatchObject({ startMs: 0, endMs: 10_000 });
     expect(chunks[3]).toMatchObject({ startMs: 30_000, endMs: 40_000 });
+  });
+
+  describe("snapToWordGap", () => {
+    // Words at [0,350], [400,750], [800,1150], ... — gap midpoints at 375, 775, ...
+    const chunks = chunkWords(fakeWords(10));
+
+    it("snaps to the nearest inter-word gap midpoint", () => {
+      expect(snapToWordGap(chunks, 380)).toBe(375);
+      expect(snapToWordGap(chunks, 700)).toBe(775);
+      expect(snapToWordGap(chunks, 500)).toBe(375);
+    });
+
+    it("never cuts inside a word", () => {
+      const words = chunks.flatMap((c) => c.words);
+      for (let target = 0; target < 4000; target += 130) {
+        const cut = snapToWordGap(chunks, target);
+        for (const w of words) {
+          expect(cut <= w.startMs || cut >= w.endMs).toBe(true);
+        }
+      }
+    });
+
+    it("snaps a target past the last word to the last word's end", () => {
+      // Last of 10 words ends at 9*400+350 = 3950.
+      expect(snapToWordGap(chunks, 20_000)).toBe(3950);
+    });
+
+    it("falls back to the target itself when there are no words", () => {
+      expect(snapToWordGap([], 12_345)).toBe(12_345);
+    });
   });
 });

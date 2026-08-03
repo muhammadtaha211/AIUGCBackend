@@ -254,56 +254,52 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
           voiceId?: string;
         };
 
-        if (
-          ratio > MAX_STRETCH &&
-          script.kind === "vo_script" &&
-          !script.userEdited &&
-          !regenerated
-        ) {
-          // One regeneration with a tighter word budget, then re-synthesize.
-          const oldBudget = params.wordBudget ?? wordSequence(rendered).length;
-          const newBudget = Math.max(
-            5,
-            Math.floor(oldBudget * (demoDurationMs / durationMs) * 0.95),
-          );
-          const newScript = await generateVoScript(ctx.db, {
-            businessId: script.businessId,
-            demoId: script.demoId!,
-            selectedAdvantages: params.selectedAdvantages ?? [],
-            voiceId: params.voiceId,
-            wordBudgetOverride: newBudget,
-          });
-          scriptId = newScript.id;
-          regenerated = true;
-          await ctx.db
-            .update(audioRenders)
-            .set({ scriptId })
-            .where(eq(audioRenders.id, audioRenderId));
-          await ctx.checkpoint({ regenerated: true });
-          continue;
-        }
-
         if (ratio > MAX_STRETCH) {
-          throw new PermanentError("הקריינות ארוכה מדי ביחס לסרטון — קצרו את התסריט ונסו שוב");
+          if (script.kind === "vo_script" && !script.userEdited && !regenerated) {
+            // One regeneration with a tighter word budget, then re-synthesize.
+            const oldBudget = params.wordBudget ?? wordSequence(rendered).length;
+            const newBudget = Math.max(
+              5,
+              Math.floor(oldBudget * (demoDurationMs / durationMs) * 0.95),
+            );
+            const newScript = await generateVoScript(ctx.db, {
+              businessId: script.businessId,
+              demoId: script.demoId!,
+              selectedAdvantages: params.selectedAdvantages ?? [],
+              voiceId: params.voiceId,
+              wordBudgetOverride: newBudget,
+            });
+            scriptId = newScript.id;
+            regenerated = true;
+            await ctx.db
+              .update(audioRenders)
+              .set({ scriptId })
+              .where(eq(audioRenders.id, audioRenderId));
+            await ctx.checkpoint({ regenerated: true });
+            continue;
+          }
+          // Deliberate overshoot (edited or already-regenerated script): keep
+          // the natural length — createSet resolves the remainder into a
+          // freeze or avatar ending per variant.
+        } else {
+          // Inaudible atempo stretch to fit.
+          stretchRatio = ratio;
+          if (!getEnv().DRY_RUN) {
+            const stretched = path.join(localDir, "audio-fit.mp3");
+            await atempoStretch(localAudio, stretched, ratio);
+            localAudio = stretched;
+          }
+          const scale = 1 / ratio;
+          if (tts.charAlignment) {
+            tts.charAlignment.startTimesMs = tts.charAlignment.startTimesMs.map((t) =>
+              Math.round(t * scale),
+            );
+            tts.charAlignment.endTimesMs = tts.charAlignment.endTimesMs.map((t) =>
+              Math.round(t * scale),
+            );
+          }
+          durationMs = Math.round(durationMs * scale);
         }
-
-        // Inaudible atempo stretch to fit.
-        stretchRatio = ratio;
-        if (!getEnv().DRY_RUN) {
-          const stretched = path.join(localDir, "audio-fit.mp3");
-          await atempoStretch(localAudio, stretched, ratio);
-          localAudio = stretched;
-        }
-        const scale = 1 / ratio;
-        if (tts.charAlignment) {
-          tts.charAlignment.startTimesMs = tts.charAlignment.startTimesMs.map((t) =>
-            Math.round(t * scale),
-          );
-          tts.charAlignment.endTimesMs = tts.charAlignment.endTimesMs.map((t) =>
-            Math.round(t * scale),
-          );
-        }
-        durationMs = Math.round(durationMs * scale);
       }
 
       // Word timestamps: ElevenLabs alignment, else WhisperX forced alignment.

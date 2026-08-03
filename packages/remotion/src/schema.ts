@@ -48,9 +48,53 @@ export const serviceBSchema = z.object({
   talkingHeadDurationInFrames: z.number().optional(),
 });
 
+/** {x, y, w, h} in 1080x1920 space where the burned hook line may be placed. */
+export const textSafeAreaSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+});
+
+export const serviceASchema = z.object({
+  /** The bank reaction clip — always muted: the hook is read, not heard. */
+  hookSrc: z.string(),
+  hookLine: z.string(),
+  hookTextSafeArea: textSafeAreaSchema,
+  demoSrc: z.string(),
+  /**
+   * The approved VO — voiced variant only. Plays from demo start (the hook
+   * carries burned text only) and is the ad's audio track; the demo is muted
+   * when it is present.
+   */
+  voiceoverSrc: z.string().optional(),
+  /** Demo-relative captions: karaoke chunks (voiced) or evenly spaced lines (silent). */
+  captions: z.array(captionChunkSchema),
+  /**
+   * What happens when the VO outlasts the demo (absent = it doesn't):
+   * "freeze" holds the last demo frame with a slow push-in; "avatar" hard-cuts
+   * to the lip-synced outro clip at `voSliceMs` into the VO.
+   */
+  outroMode: z.enum(["freeze", "avatar"]).optional(),
+  voSliceMs: z.number().optional(),
+  /** Lip-synced outro clip — muted; the continuous VO carries all audio. */
+  avatarSrc: z.string().optional(),
+  watermark: z.boolean(),
+  /**
+   * Filled in by `calculateServiceAMetadata` (which probes the actual files),
+   * not by the caller. Absent only in Studio before metadata resolves.
+   */
+  hookDurationInFrames: z.number().optional(),
+  demoDurationInFrames: z.number().optional(),
+  voDurationInFrames: z.number().optional(),
+  avatarDurationInFrames: z.number().optional(),
+});
+
 export type WordTiming = z.infer<typeof wordTimingSchema>;
 export type CaptionChunk = z.infer<typeof captionChunkSchema>;
 export type ServiceBProps = z.infer<typeof serviceBSchema>;
+export type ServiceAProps = z.infer<typeof serviceASchema>;
+export type TextSafeArea = z.infer<typeof textSafeAreaSchema>;
 
 /** Locked output format: vertical 9:16, 1080x1920, 30fps. */
 export const FPS = 30;

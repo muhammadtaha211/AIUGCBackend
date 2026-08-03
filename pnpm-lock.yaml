@@ -223,6 +223,9 @@ importers:
       '@remotion/google-fonts':
         specifier: ^4.0.499
         version: 4.0.499(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@remotion/layout-utils':
+        specifier: ^4.0.499
+        version: 4.0.505
       '@remotion/media-utils':
         specifier: ^4.0.499
         version: 4.0.499(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -1269,6 +1272,9 @@ packages:
 
   '@remotion/google-fonts@4.0.499':
     resolution: {integrity: sha512-CSCbNvNGLUFlZZiwQlz5FljLBxN5jKWbNU5KLekM4H/8lXsRjCUnd+yMdUaTGHZFFTwTzB/TPkmZPIhr++foMg==}
+
+  '@remotion/layout-utils@4.0.505':
+    resolution: {integrity: sha512-ACw82SgiFxcvQo8oFc6CY6XlmHTQTrNWMdUiAqut2Xrm2xmH1ZfX7b4XNxR1J93dujYmCe94Q6EeYqp8JKbmMQ==}
 
   '@remotion/licensing@4.0.499':
     resolution: {integrity: sha512-dKjaYAJsxCUXDvAjJW8bHIUe+dYAXEcq2M0RVrqdS1CEUZPUQXhzIbYILX+slcVb5c8/DD5t+edm7d2VSY81Tg==}
@@ -3756,6 +3762,8 @@ snapshots:
     transitivePeerDependencies:
       - react
       - react-dom
+
+  '@remotion/layout-utils@4.0.505': {}
 
   '@remotion/licensing@4.0.499': {}
 

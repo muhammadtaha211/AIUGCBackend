@@ -43,6 +43,7 @@ async function handleGenerateCopy(job: Job, ctx: JobContext): Promise<JobResult>
         businessId: payload.businessId,
         demoId: payload.demoId!,
         selectedAdvantages: payload.selectedAdvantages ?? [],
+        personaId: payload.personaId,
         voiceId: payload.voiceId,
       });
       break;

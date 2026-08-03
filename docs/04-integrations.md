@@ -169,10 +169,11 @@ keyless (the e2e test relies on this).
 
 - Exists because browser text rendering handles Hebrew RTL/bidi correctly and ffmpeg drawtext
   does not. License: free ≤3-person company (verified).
-- The **props contract is fixed** and `packages/remotion` ships the `ServiceB` composition
+- The **props contract is fixed** and `packages/remotion` ships both compositions
   against it (next subsection): `RenderServiceAProps` (hook clip + burned hook line in the
   clip's `text_safe_area` → hard cut → demo + karaoke/even captions + optional approved VO
-  track) and `RenderServiceBProps` (lip-synced talking head + **required `voiceoverPath`** —
+  track + the conditional ending: `outroMode` freeze/avatar with `voSliceMs`/`avatarPath`
+  when the VO outlasts the demo) and `RenderServiceBProps` (lip-synced talking head + **required `voiceoverPath`** —
   the approved mp3, which IS the final audio track while the talking head is muted — + B-roll
   cutaway paths + micro-motion), both with a props-driven `watermark` layer. All media are
   **local paths** — the render handler downloads from storage first. Output
@@ -183,13 +184,23 @@ keyless (the e2e test relies on this).
 ### `packages/remotion` (`@aiugc/remotion`) — built
 
 - **One package, one public export**: `@aiugc/remotion/render` → `src/render.ts`
-  (`renderServiceB(props, outPath)` + `RenderPropsError`). `providers/remotion.ts` imports it
+  (`renderServiceA(props, outPath)`, `renderServiceB(props, outPath)` + `RenderPropsError`).
+  `providers/remotion.ts` imports it
   through a specifier held in a variable so no bundler follows it — the Next.js server build must
   never carry React, webpack and the renderer's native binaries; only the worker (under `tsx`)
   resolves the workspace source.
-- **Compositions** (`src/Root.tsx`): `ServiceB` is the only one the pipeline renders.
+- **Compositions** (`src/Root.tsx`): `ServiceA` and `ServiceB` are what the pipeline renders.
   `ServiceB-Watermarked` and `PlaceholderTalkingHead` are founder preview scaffolding.
-  **`ServiceA` is not built** — `renderVideo()` still throws for `kind: "service_a"`.
+- **`ServiceA`** (`src/ServiceA.tsx`): muted bank hook clip with the burned hook line
+  (shrink-to-fit inside `text_safe_area` via greedy word-wrap over measured text — Hebrew word
+  lengths vary too much to trust a prompt-side cap) → hard cut → the customer's demo with the
+  shared caption overlay; the approved VO (voiced variant) plays from **demo start** and is the
+  only audio track — the demo is muted under it, and in the silent variant the demo keeps its
+  native audio. When the VO outlasts the demo: `outroMode: "freeze"` holds the last demo frame
+  with a slow 1 → 1.03 push-in while VO and captions continue; `outroMode: "avatar"` hard-cuts
+  at `voSliceMs` (word-gap-snapped) into the muted lip-synced outro clip, captions continuing —
+  the one continuous VO carries all audio. Durations probed from the actual files in
+  `calculateServiceAMetadata`, exactly like B.
 - **`ServiceB`** (`src/ServiceB.tsx`): full-bleed `OffthreadVideo` of the lip-synced talking
   head — **muted**; the approved mp3 (`voiceoverSrc`, required by the schema) is the
   composition's only audio track, from frame 0. The lip-sync clip's embedded audio is the

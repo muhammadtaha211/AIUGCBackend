@@ -46,8 +46,11 @@ async function wordsPerSecond(db: Db, voiceId?: string): Promise<number> {
 // Hook lines (Service A, step 4)
 // ---------------------------------------------------------------------------
 
+// `angle` stays a free string: the set of angles is defined by the prompt file
+// (prompts/hook_lines/v<N>.md), and iterating a prompt must never need a code
+// change.
 const hookLinesOutput = z.object({
-  options: z.array(z.object({ text: z.string(), angle: z.enum(["pain", "feature", "price"]) })),
+  options: z.array(z.object({ text: z.string(), angle: z.string() })),
 });
 
 export async function generateHookLines(
@@ -161,6 +164,9 @@ export async function generateVoScript(
     demoId: string;
     /** Questionnaire advantages the user ticked as visible in the footage. */
     selectedAdvantages: string[];
+    /** Derives the voice (persona.voiceId) and is recorded on the script row. */
+    personaId?: string;
+    /** Explicit voice — the CLI escape hatch; wins over the persona's voice. */
     voiceId?: string;
     /** Override for the length-fit regeneration path. */
     wordBudgetOverride?: number;
@@ -168,8 +174,20 @@ export async function generateVoScript(
 ): Promise<Script> {
   const questionnaire = await requireQuestionnaire(db, opts.businessId);
   const demo = await getReadyDemo(db, opts.demoId);
+
+  let voiceId = opts.voiceId;
+  if (!voiceId && opts.personaId) {
+    const personaRows = await db
+      .select()
+      .from(personas)
+      .where(eq(personas.id, opts.personaId))
+      .limit(1);
+    if (!personaRows[0]) throw new Error(`persona ${opts.personaId} not found`);
+    voiceId = personaRows[0].voiceId;
+  }
+
   const demoSeconds = Math.round((demo.durationMs ?? 0) / 1000);
-  const wps = await wordsPerSecond(db, opts.voiceId);
+  const wps = await wordsPerSecond(db, voiceId);
   const wordBudget = opts.wordBudgetOverride ?? Math.floor(demoSeconds * wps);
 
   let text: string;
@@ -202,9 +220,10 @@ export async function generateVoScript(
     .values({
       businessId: opts.businessId,
       demoId: opts.demoId,
+      personaId: opts.personaId,
       kind: "vo_script",
       text,
-      params: { selectedAdvantages: opts.selectedAdvantages, wordBudget, voiceId: opts.voiceId },
+      params: { selectedAdvantages: opts.selectedAdvantages, wordBudget, voiceId },
       promptVersion,
     })
     .returning();

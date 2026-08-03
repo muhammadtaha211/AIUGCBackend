@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { getConfigValue } from "../appConfig";
+import { getConfigValue, getConfigValueOr } from "../appConfig";
+import { snapToWordGap, type CaptionChunk } from "../captions";
 import { creditCostsSchema } from "../config";
 import type { Db } from "../db";
 import {
@@ -35,6 +36,8 @@ export const setGridSchema = z.object({
   captionScriptId: z.string().uuid().optional(),
   /** Required for voiced mode: an APPROVED audio render. */
   audioRenderId: z.string().uuid().optional(),
+  /** Voiced mode: the persona behind the voice — required for an avatar ending. */
+  personaId: z.string().uuid().optional(),
 });
 
 export type SetGrid = z.infer<typeof setGridSchema>;
@@ -57,6 +60,10 @@ export interface VariantParams {
   expressiveness?: LipsyncExpressiveness;
   /** The clip Remotion composes: the stored HeyGen output (lipsync.mp4). */
   lipsyncPath?: string;
+  /** Service A voiced: what happens when the VO outlasts the demo (see createSet). */
+  outroMode?: "none" | "freeze" | "avatar";
+  /** Avatar ending: VO offset (ms) where the outro begins — snapped to a word gap. */
+  voSliceMs?: number;
 }
 
 export async function createSet(
@@ -66,18 +73,43 @@ export async function createSet(
   const grid = setGridSchema.parse(opts.grid);
 
   const demoRows = await db.select().from(demos).where(eq(demos.id, opts.demoId)).limit(1);
-  if (demoRows[0]?.status !== "ready") throw new Error("demo is not ready");
+  const demo = demoRows[0];
+  if (demo?.status !== "ready") throw new Error("demo is not ready");
 
+  // The conditional ending: the approved VO's exact duration against the demo.
+  // VO plays from demo start, so the remainder is hook-independent.
+  let outro: Pick<VariantParams, "outroMode" | "voSliceMs"> = {};
   if (grid.mode === "voiced") {
     if (!grid.audioRenderId) throw new Error("voiced mode requires audioRenderId");
-    const audio = await db
+    const audioRows = await db
       .select()
       .from(audioRenders)
       .where(eq(audioRenders.id, grid.audioRenderId))
       .limit(1);
+    const audio = audioRows[0];
     // The hard gate: never render video on unapproved audio.
-    if (!audio[0]?.approvedAt)
-      throw new Error("audio must be approved before rendering (hard gate)");
+    if (!audio?.approvedAt) throw new Error("audio must be approved before rendering (hard gate)");
+
+    const remainderMs = (audio.durationMs ?? 0) - (demo.durationMs ?? 0);
+    const minSeconds = await getConfigValueOr(db, "a_outro_min_seconds", z.number(), 2);
+    if (remainderMs <= 0) {
+      outro = { outroMode: "none" };
+    } else if (remainderMs < minSeconds * 1000) {
+      outro = { outroMode: "freeze" };
+    } else {
+      if (!grid.personaId) {
+        throw new Error(
+          "the voiceover outlasts the demo enough for an avatar ending — pass personaId",
+        );
+      }
+      outro = {
+        outroMode: "avatar",
+        voSliceMs: snapToWordGap(
+          (audio.wordTimestamps ?? []) as CaptionChunk[],
+          demo.durationMs ?? 0,
+        ),
+      };
+    }
   } else if (!grid.captionScriptId) {
     throw new Error("silent mode requires captionScriptId");
   }
@@ -89,6 +121,8 @@ export async function createSet(
       mode: grid.mode,
       captionScriptId: grid.captionScriptId,
       audioRenderId: grid.audioRenderId,
+      personaId: grid.personaId,
+      ...outro,
     })),
   );
 
@@ -128,11 +162,20 @@ export async function createSet(
         cost: costs.a_render,
       });
     }
-    await enqueue(db, {
-      type: "render_video",
-      idempotencyKey: `render:${render.id}`,
-      payload: { videoRenderId: render.id },
-    });
+    // Avatar ending: lip-sync the VO tail first; handleLipsync chains render_video.
+    if (params.outroMode === "avatar") {
+      await enqueue(db, {
+        type: "lipsync",
+        idempotencyKey: `lipsync:${render.id}`,
+        payload: { videoRenderId: render.id },
+      });
+    } else {
+      await enqueue(db, {
+        type: "render_video",
+        idempotencyKey: `render:${render.id}`,
+        payload: { videoRenderId: render.id },
+      });
+    }
   }
   return { set, renders };
 }
@@ -189,6 +232,7 @@ export async function moreLikeThis(
       mode: held.mode,
       captionScriptId: held.captionScriptId,
       audioRenderId: held.audioRenderId,
+      personaId: held.personaId,
     },
   });
 }

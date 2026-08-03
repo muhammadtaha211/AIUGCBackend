@@ -36,6 +36,51 @@ export function serviceBDurations(
   };
 }
 
+export interface ServiceATimeline {
+  durationInFrames: number;
+  hookFrames: number;
+  /** Frames of the demo actually shown before the ending takes over. */
+  demoVisibleFrames: number;
+  /** Absolute frame where the avatar outro starts (avatar mode only). */
+  avatarStartFrame?: number;
+}
+
+/**
+ * Service A length. Hook then demo; the VO plays from demo start. When the VO
+ * outlasts the demo the composition runs to the VO's end — "freeze" holds the
+ * last demo frame for the remainder, "avatar" hard-cuts to the lip-synced
+ * outro at `voSliceMs` into the VO (so the outro's lips line up with the VO
+ * that keeps playing). A slice landing past the demo end (snap chose a gap in
+ * trailing silence... impossible today, but cheap to hold) freezes the demo
+ * until the avatar starts.
+ */
+export function serviceATimeline(input: {
+  hookFrames: number;
+  demoFrames: number;
+  voFrames?: number;
+  outroMode?: "freeze" | "avatar";
+  voSliceMs?: number;
+}): ServiceATimeline {
+  const hookFrames = Math.max(1, input.hookFrames);
+  const demoFrames = Math.max(1, input.demoFrames);
+  const voFrames = input.voFrames ?? 0;
+
+  let durationInFrames = hookFrames + demoFrames;
+  let demoVisibleFrames = demoFrames;
+  let avatarStartFrame: number | undefined;
+
+  if (input.outroMode === "freeze") {
+    durationInFrames = hookFrames + Math.max(demoFrames, voFrames);
+  } else if (input.outroMode === "avatar") {
+    const sliceFrames = Math.max(1, msToFrame(input.voSliceMs ?? 0));
+    demoVisibleFrames = Math.min(demoFrames, sliceFrames);
+    avatarStartFrame = hookFrames + sliceFrames;
+    durationInFrames = hookFrames + Math.max(demoFrames, voFrames);
+  }
+
+  return { durationInFrames, hookFrames, demoVisibleFrames, avatarStartFrame };
+}
+
 /**
  * Index of the chunk to show at `ms`, or -1 for none.
  * A chunk holds until the next one starts; the last chunk holds until its own

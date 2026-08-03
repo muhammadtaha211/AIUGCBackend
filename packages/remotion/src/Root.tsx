@@ -1,14 +1,15 @@
 import type React from "react";
 import { Audio, Composition, interpolate, staticFile, useCurrentFrame } from "remotion";
+import { ServiceA, calculateServiceAMetadata } from "./ServiceA";
 import { ServiceB, calculateServiceBMetadata } from "./ServiceB";
 import { sampleCaptions, sampleDurationInFrames } from "./fixtures";
-import { FPS, HEIGHT, WIDTH, serviceBSchema } from "./schema";
+import { FPS, HEIGHT, WIDTH, serviceASchema, serviceBSchema } from "./schema";
 
 /**
- * `ServiceB` is the only composition the pipeline renders. The other two are
- * founder preview scaffolding: a watermarked twin, and the placeholder clip
- * that `pnpm --filter @aiugc/remotion fixtures` renders so previewing costs
- * nothing (no GPU, no lip-sync, no TTS).
+ * `ServiceA` and `ServiceB` are the compositions the pipeline renders. The
+ * rest is founder preview scaffolding: a watermarked twin, and the placeholder
+ * clip that `pnpm --filter @aiugc/remotion fixtures` renders so previewing
+ * costs nothing (no GPU, no lip-sync, no TTS).
  */
 
 const previewProps = {
@@ -19,8 +20,30 @@ const previewProps = {
   watermark: false,
 };
 
+/** The placeholder clip stands in for both the hook clip and the demo. */
+const previewPropsA = {
+  hookSrc: staticFile("fixtures/talking-head.mp4"),
+  hookLine: "זה מה שאף אחד לא מספר לכם",
+  hookTextSafeArea: { x: 90, y: 640, w: 900, h: 520 },
+  demoSrc: staticFile("fixtures/talking-head.mp4"),
+  voiceoverSrc: staticFile("fixtures/voiceover.wav"),
+  captions: sampleCaptions,
+  watermark: false,
+};
+
 export const RemotionRoot: React.FC = () => (
   <>
+    <Composition
+      id="ServiceA"
+      component={ServiceA}
+      schema={serviceASchema}
+      defaultProps={previewPropsA}
+      calculateMetadata={calculateServiceAMetadata}
+      width={WIDTH}
+      height={HEIGHT}
+      fps={FPS}
+      durationInFrames={sampleDurationInFrames}
+    />
     <Composition
       id="ServiceB"
       component={ServiceB}

@@ -154,17 +154,27 @@ copy
     "--advantages <list>",
     "comma-separated questionnaire advantages visible in footage",
   )
-  .option("--voice <voiceId>")
+  .option("--persona <id>", "derive the voice from this persona (also the avatar-outro face)")
+  .option("--voice <voiceId>", "explicit ElevenLabs voice (escape hatch; wins over --persona)")
   .action(
-    run(async (opts: { business: string; demo: string; advantages: string; voice?: string }) => {
-      const row = await generateVoScript(getDb(), {
-        businessId: opts.business,
-        demoId: opts.demo,
-        selectedAdvantages: csv(opts.advantages),
-        voiceId: opts.voice,
-      });
-      console.log(`vo script: ${row.id}\n${row.text}`);
-    }),
+    run(
+      async (opts: {
+        business: string;
+        demo: string;
+        advantages: string;
+        persona?: string;
+        voice?: string;
+      }) => {
+        const row = await generateVoScript(getDb(), {
+          businessId: opts.business,
+          demoId: opts.demo,
+          selectedAdvantages: csv(opts.advantages),
+          personaId: opts.persona,
+          voiceId: opts.voice,
+        });
+        console.log(`vo script: ${row.id}\n${row.text}`);
+      },
+    ),
   );
 
 copy
@@ -315,6 +325,7 @@ set
   .requiredOption("--hook-lines <ids>", "comma-separated hook line script ids")
   .option("--captions <scriptId>", "benefit captions script (silent mode)")
   .option("--audio <audioRenderId>", "approved audio render (voiced mode)")
+  .option("--persona <id>", "voiced mode: the persona (required when the VO earns an avatar ending)")
   .action(
     run(
       async (opts: {
@@ -324,6 +335,7 @@ set
         hookLines: string;
         captions?: string;
         audio?: string;
+        persona?: string;
       }) => {
         const { set: row, renders } = await createSet(getDb(), {
           businessId: opts.business,
@@ -334,10 +346,15 @@ set
             mode: opts.audio ? "voiced" : "silent",
             captionScriptId: opts.captions,
             audioRenderId: opts.audio,
+            personaId: opts.persona,
           },
         });
         console.log(`set ${row.id}: ${renders.length} render jobs queued`);
-        for (const render of renders) console.log(`  variant ${render.id}`);
+        for (const render of renders) {
+          const params = render.params as { outroMode?: string };
+          const outro = params.outroMode ? `  (ending: ${params.outroMode})` : "";
+          console.log(`  variant ${render.id}${outro}`);
+        }
       },
     ),
   );

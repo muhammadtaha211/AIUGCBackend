@@ -12,11 +12,13 @@
     "fixtures": "tsx scripts/make-fixtures.ts",
     "studio": "tsx scripts/make-fixtures.ts && remotion studio src/index.ts",
     "render:sample": "tsx scripts/render-sample.ts",
-    "render:sample:watermark": "tsx scripts/render-sample.ts --watermark"
+    "render:sample:watermark": "tsx scripts/render-sample.ts --watermark",
+    "render:sample:a": "tsx scripts/render-sample.ts --service-a"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.499",
     "@remotion/google-fonts": "^4.0.499",
+    "@remotion/layout-utils": "^4.0.499",
     "@remotion/media-utils": "^4.0.499",
     "@remotion/renderer": "^4.0.499",
     "react": "^19.1.0",

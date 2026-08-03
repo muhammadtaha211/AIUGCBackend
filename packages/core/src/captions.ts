@@ -113,6 +113,27 @@ export function chunkWords(words: WordTiming[]): CaptionChunk[] {
   return chunks;
 }
 
+/**
+ * Slice point for the avatar outro: the word-gap boundary nearest to
+ * `targetMs` (the demo end), so the VO is never cut mid-word. Candidates are
+ * the midpoints of inter-word gaps plus the end of the last word (a slice in
+ * the trailing silence). No words → the target itself.
+ */
+export function snapToWordGap(chunks: CaptionChunk[], targetMs: number): number {
+  const words = chunks.flatMap((c) => c.words);
+  if (words.length === 0) return targetMs;
+  const candidates: number[] = [];
+  for (let i = 1; i < words.length; i++) {
+    candidates.push(Math.round((words[i - 1]!.endMs + words[i]!.startMs) / 2));
+  }
+  candidates.push(words[words.length - 1]!.endMs);
+  let best = candidates[0]!;
+  for (const candidate of candidates) {
+    if (Math.abs(candidate - targetMs) < Math.abs(best - targetMs)) best = candidate;
+  }
+  return best;
+}
+
 /** Silent variant: captions spaced evenly across the demo duration. */
 export function evenlySpacedCaptions(texts: string[], durationMs: number): CaptionChunk[] {
   const slot = durationMs / texts.length;

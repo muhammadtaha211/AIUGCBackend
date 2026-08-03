@@ -22,7 +22,14 @@ import { assertPollDeadline } from "../jobs/poll";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { logger } from "../logger";
-import { probe, probeColorTags, retagBt709Full, thumbnail, type ProbeResult } from "../media/ffmpeg";
+import {
+  probe,
+  probeColorTags,
+  retagBt709Full,
+  sliceAudioFrom,
+  thumbnail,
+  type ProbeResult,
+} from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import {
   getLipsyncProvider,
@@ -104,7 +111,36 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       // HeyGen renders to the audio's length — a missing duration would make
       // the cost and the runaway guard below unknowable, so it fails here.
       if (!audio.durationMs) throw new PermanentError("audio render has no duration");
-      if (audio.durationMs > MAX_LIPSYNC_SECONDS * 1000) {
+
+      // Service A avatar ending: lip-sync only the VO tail past the demo.
+      // Slice at the word-gap boundary createSet chose, store the slice, and
+      // submit that. Service B submits the whole approved VO.
+      let audioPath = audio.filePath;
+      let audioMs = audio.durationMs;
+      if (render.service === "a") {
+        if (params.outroMode !== "avatar" || params.voSliceMs === undefined) {
+          throw new PermanentError("service A lipsync requires an avatar outro decision");
+        }
+        audioMs = audio.durationMs - params.voSliceMs;
+        if (audioMs <= 0) throw new PermanentError("VO slice is empty — nothing to lip-sync");
+        const sliceKey = storageKey({
+          businessId: render.businessId,
+          entity: "audio",
+          id: videoRenderId,
+          filename: "vo-outro.mp3",
+        });
+        if (getEnv().DRY_RUN) {
+          audioPath = await storage.put("renders", sliceKey, Buffer.from("DRY_RUN vo outro"));
+        } else {
+          const sliceDir = path.join(WORK_DIR, "lipsync", videoRenderId);
+          const localVo = path.join(sliceDir, "vo.mp3");
+          const localSlice = path.join(sliceDir, "vo-outro.mp3");
+          await storage.download(audio.filePath, localVo);
+          await sliceAudioFrom(localVo, localSlice, params.voSliceMs);
+          audioPath = await storage.put("renders", sliceKey, localSlice);
+        }
+      }
+      if (audioMs > MAX_LIPSYNC_SECONDS * 1000) {
         // Runaway-cost guard, not a product limit (see MAX_LIPSYNC_SECONDS).
         throw new PermanentError("אורך האודיו חורג מהמגבלה לעיבוד — פנו לתמיכה");
       }
@@ -180,12 +216,12 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
 
       const { providerJobId } = await provider.submit({
         imageUrl: await storage.signedUrl(imagePath, 3600),
-        audioUrl: await storage.signedUrl(audio.filePath, 3600),
+        audioUrl: await storage.signedUrl(audioPath, 3600),
         resolution,
         ...(motionPrompt !== undefined && { motionPrompt }),
         ...(expressiveness !== undefined && { expressiveness }),
       });
-      const gpuSeconds = Math.ceil(audio.durationMs / 1000);
+      const gpuSeconds = Math.ceil(audioMs / 1000);
       await recordUsage(ctx.db, {
         // usage_provider is a Postgres enum without a "heygen" value, and a new
         // value needs a migration — HeyGen GPU spend stays labeled "fal" until
@@ -397,16 +433,35 @@ async function buildServiceAProps(
     captions = evenlySpacedCaptions(lines, demo.durationMs ?? 0);
   }
 
+  // Avatar ending: the stored HeyGen clip becomes the muted outro segment.
+  let avatarPath: string | undefined;
+  if (params.outroMode === "avatar") {
+    if (!params.lipsyncPath) throw new PermanentError("avatar ending has no lipsync clip yet");
+    if (params.voSliceMs === undefined) {
+      throw new PermanentError("avatar ending has no VO slice offset");
+    }
+    avatarPath = path.join(localDir, "avatar.mp4");
+    await storage.download(params.lipsyncPath, avatarPath);
+    avatarPath = await retagIfUntagged(avatarPath, path.join(localDir, "avatar-tagged.mp4"));
+  }
+
   return {
     kind: "service_a",
+    outroMode: params.outroMode === "avatar" || params.outroMode === "freeze"
+      ? params.outroMode
+      : undefined,
+    voSliceMs: params.voSliceMs,
+    avatarPath,
     hookClipPath,
     hookLine: hookLine.text,
     hookTextSafeArea: hookClip.textSafeArea as TextSafeArea,
     demoPath,
     demoDurationMs: demo.durationMs ?? 0,
-    captions,
     voiceoverPath,
     watermark: render.watermarked,
+    // Last on purpose: the DRY_RUN render echoes a prefix of these props, and
+    // captions are the one unbounded field.
+    captions,
   };
 }
 
@@ -441,24 +496,10 @@ async function buildServiceBProps(
 
   let talkingHeadPath = path.join(localDir, "talking-head.mp4");
   await getStorage().download(params.lipsyncPath, talkingHeadPath);
-
-  // The provider clip arrives with every colour field unset (probed on a real
-  // released render), leaving Remotion's decoder to guess how to interpret the
-  // pixels. Pin the truthful interpretation — BT.709 full range — with a
-  // stream-copy retag. Best-effort: a retag failure must never sink a render
-  // the GPU has already been paid for.
-  if (!getEnv().DRY_RUN) {
-    try {
-      const tags = await probeColorTags(talkingHeadPath);
-      if (!tags.colorRange || !tags.colorSpace || !tags.colorPrimaries || !tags.colorTransfer) {
-        const retagged = path.join(localDir, "talking-head-tagged.mp4");
-        await retagBt709Full(talkingHeadPath, retagged);
-        talkingHeadPath = retagged;
-      }
-    } catch (err) {
-      logger.warn({ err }, "render: colour retag failed — using the untagged clip");
-    }
-  }
+  talkingHeadPath = await retagIfUntagged(
+    talkingHeadPath,
+    path.join(localDir, "talking-head-tagged.mp4"),
+  );
 
   return {
     kind: "service_b",
@@ -468,6 +509,27 @@ async function buildServiceBProps(
     captions,
     watermark: render.watermarked,
   };
+}
+
+/**
+ * Provider clips (HeyGen) arrive with every colour field unset (probed on a
+ * real released render), leaving Remotion's decoder to guess how to interpret
+ * the pixels. Pin the truthful interpretation — BT.709 full range — with a
+ * stream-copy retag. Best-effort: a retag failure must never sink a render
+ * the GPU has already been paid for.
+ */
+async function retagIfUntagged(clipPath: string, retaggedPath: string): Promise<string> {
+  if (getEnv().DRY_RUN) return clipPath;
+  try {
+    const tags = await probeColorTags(clipPath);
+    if (!tags.colorRange || !tags.colorSpace || !tags.colorPrimaries || !tags.colorTransfer) {
+      await retagBt709Full(clipPath, retaggedPath);
+      return retaggedPath;
+    }
+  } catch (err) {
+    logger.warn({ err }, "render: colour retag failed — using the untagged clip");
+  }
+  return clipPath;
 }
 
 async function loadRender(db: Db, videoRenderId: string) {

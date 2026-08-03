@@ -6,8 +6,10 @@ import {
   activeWordIndex,
   frameToMs,
   msToFrame,
+  serviceATimeline,
   serviceBDurations,
 } from "../src/timing";
+import { fitFontSize } from "../src/text-fit";
 
 const chunks: CaptionChunk[] = [
   {
@@ -67,6 +69,104 @@ describe("serviceBDurations", () => {
   it("never renders a zero-frame composition", () => {
     expect(serviceBDurations(0, 0).durationInFrames).toBe(1);
     expect(serviceBDurations(0, 0).talkingHeadDurationInFrames).toBe(1);
+  });
+});
+
+describe("serviceATimeline", () => {
+  // 2s hook, 20s demo at 30fps.
+  const base = { hookFrames: 60, demoFrames: 600 };
+
+  it("silent / exact-fit voiced: hook + demo, whole demo visible", () => {
+    const t = serviceATimeline({ ...base, voFrames: 600 });
+    expect(t).toEqual({
+      durationInFrames: 660,
+      hookFrames: 60,
+      demoVisibleFrames: 600,
+      avatarStartFrame: undefined,
+    });
+  });
+
+  it("freeze: runs to the VO's end, demo fully visible then held", () => {
+    // VO 21.5s -> 645 frames; 45 held frames past the demo.
+    const t = serviceATimeline({ ...base, voFrames: 645, outroMode: "freeze" });
+    expect(t.durationInFrames).toBe(705);
+    expect(t.demoVisibleFrames).toBe(600);
+    expect(t.avatarStartFrame).toBeUndefined();
+  });
+
+  it("avatar: demo cut at the slice, outro from the slice to the VO's end", () => {
+    // VO 26s, slice snapped to 19.8s: demo shown 594 frames, avatar at 654.
+    const t = serviceATimeline({
+      ...base,
+      voFrames: 780,
+      outroMode: "avatar",
+      voSliceMs: 19_800,
+    });
+    expect(t.demoVisibleFrames).toBe(594);
+    expect(t.avatarStartFrame).toBe(60 + 594);
+    expect(t.durationInFrames).toBe(60 + 780);
+  });
+
+  it("avatar with a slice past the demo end holds the demo until the outro", () => {
+    const t = serviceATimeline({
+      ...base,
+      voFrames: 780,
+      outroMode: "avatar",
+      voSliceMs: 20_400,
+    });
+    expect(t.demoVisibleFrames).toBe(600); // full demo, then a 12-frame hold
+    expect(t.avatarStartFrame).toBe(60 + 612);
+  });
+
+  it("never renders a zero-frame segment", () => {
+    const t = serviceATimeline({ hookFrames: 0, demoFrames: 0 });
+    expect(t.durationInFrames).toBe(2);
+  });
+});
+
+describe("fitFontSize", () => {
+  // Fake measure: every character is 0.5em wide.
+  const measure = (text: string, fontSize: number) => text.length * fontSize * 0.5;
+  const base = { base: 92, min: 40, lineHeight: 1.2, measure };
+
+  it("keeps the base size when the line fits", () => {
+    const size = fitFontSize({ ...base, text: "קצר וקולע", maxWidth: 900, maxHeight: 520 });
+    expect(size).toBe(92);
+  });
+
+  it("shrinks an overlong line until its wrapped lines fit the height", () => {
+    const text = "משפט ארוך מאוד שאף אחד לא היה צריך לכתוב אבל המודל כתב אותו בכל זאת";
+    const size = fitFontSize({ ...base, text, maxWidth: 900, maxHeight: 200 });
+    expect(size).toBeLessThan(92);
+    // The winning size really fits: greedy-wrap line count times line height.
+    const words = text.split(" ");
+    let lines = 1;
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (measure(candidate, size) <= 900) current = candidate;
+      else {
+        lines++;
+        current = word;
+      }
+    }
+    expect(lines * size * 1.2).toBeLessThanOrEqual(200);
+  });
+
+  it("shrinks for a single unbreakable word wider than the area", () => {
+    const size = fitFontSize({
+      ...base,
+      text: "מילהארוכהבמיוחדשלאנשברת",
+      maxWidth: 600,
+      maxHeight: 520,
+    });
+    expect(size).toBeLessThan(92);
+    expect(measure("מילהארוכהבמיוחדשלאנשברת", size)).toBeLessThanOrEqual(600);
+  });
+
+  it("bottoms out at the minimum instead of looping forever", () => {
+    const size = fitFontSize({ ...base, text: "א".repeat(400), maxWidth: 100, maxHeight: 50 });
+    expect(size).toBe(40);
   });
 });
 

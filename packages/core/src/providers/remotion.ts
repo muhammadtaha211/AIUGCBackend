@@ -32,6 +32,16 @@ export interface RenderServiceAProps {
   captions: CaptionChunk[];
   /** Local mp3 path; present only for the voiced variant (audio must be approved). */
   voiceoverPath?: string;
+  /**
+   * What happens when the approved VO outlasts the demo (absent = it doesn't):
+   * "freeze" holds the last demo frame with a slow push-in; "avatar" hard-cuts
+   * to the lip-synced outro clip. The one continuous VO track carries all audio.
+   */
+  outroMode?: "freeze" | "avatar";
+  /** Avatar ending: VO offset (ms) where the outro begins — snapped to a word gap. */
+  voSliceMs?: number;
+  /** Avatar ending: local path of the lip-synced outro clip (rendered muted). */
+  avatarPath?: string;
   watermark: boolean;
 }
 
@@ -55,6 +65,7 @@ export type RenderVideoProps = RenderServiceAProps | RenderServiceBProps;
 
 /** @aiugc/remotion, loaded lazily — see loadRemotion(). */
 interface RemotionRenderModule {
+  renderServiceA(props: Omit<RenderServiceAProps, "kind">, outPath: string): Promise<void>;
   renderServiceB(props: Omit<RenderServiceBProps, "kind">, outPath: string): Promise<void>;
 }
 
@@ -77,17 +88,15 @@ export async function renderVideo(props: RenderVideoProps, outPath: string): Pro
     return;
   }
 
-  if (props.kind === "service_a") {
-    throw new Error(
-      "Remotion compositions are not built yet — run with DRY_RUN=1, or implement " +
-        "apps/worker rendering per docs/04-integrations.md §Remotion",
-    );
-  }
-
-  const { kind, ...serviceB } = props;
-  const { renderServiceB } = await loadRemotion();
+  const remotion = await loadRemotion();
   try {
-    await renderServiceB(serviceB, outPath);
+    if (props.kind === "service_a") {
+      const { kind, ...serviceA } = props;
+      await remotion.renderServiceA(serviceA, outPath);
+    } else {
+      const { kind, ...serviceB } = props;
+      await remotion.renderServiceB(serviceB, outPath);
+    }
   } catch (err) {
     // Bad inputs (missing local file, props that fail the composition schema)
     // will fail every retry identically; everything else — headless Chrome
