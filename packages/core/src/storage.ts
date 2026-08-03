@@ -60,6 +60,12 @@ export interface Storage {
   download(storagePath: string, localFile: string): Promise<void>;
   remove(storagePath: string): Promise<void>;
   signedUrl(storagePath: string, expiresInSeconds: number): Promise<string>;
+  /**
+   * Target for a direct browser upload (demo videos are far over Vercel's
+   * route body limit, so their bytes never pass through a route handler).
+   * The browser PUTs the file to the returned URL.
+   */
+  createSignedUploadUrl(storagePath: string): Promise<string>;
 }
 
 export function storageKey(parts: {
@@ -121,6 +127,12 @@ class LocalStorage implements Storage {
     if (!existsSync(src)) throw missingObjectError(storagePath);
     return `file://${src.replaceAll("\\", "/")}`;
   }
+
+  async createSignedUploadUrl(): Promise<string> {
+    // A browser cannot PUT into the local filesystem; the upload flow is
+    // Supabase-only. The CLI path uses put() directly.
+    throw new Error("local storage has no signed upload URLs — configure Supabase");
+  }
 }
 
 /** Exported for tests (stub client asserts on upload params); use `getStorage()` everywhere else. */
@@ -170,6 +182,18 @@ export class SupabaseStorage implements Storage {
     if (error) {
       if (isMissingObject(error)) throw missingObjectError(storagePath);
       throw new Error(`signed url failed (${storagePath}): ${error.message}`);
+    }
+    return data.signedUrl;
+  }
+
+  async createSignedUploadUrl(storagePath: string): Promise<string> {
+    const { bucket, key } = splitPath(storagePath);
+    // upsert: a retried upload after a network drop must overwrite, not 409.
+    const { data, error } = await this.client.storage
+      .from(bucket)
+      .createSignedUploadUrl(key, { upsert: true });
+    if (error) {
+      throw new Error(`signed upload url failed (${storagePath}): ${error.message}`);
     }
     return data.signedUrl;
   }

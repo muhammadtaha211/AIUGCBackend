@@ -115,6 +115,19 @@ export async function requireAudio(
   return { audio: rows[0].audio };
 }
 
+export async function requireDemo(
+  db: Db,
+  demoId: string,
+  userId: string,
+): Promise<{ demo: typeof schema.demos.$inferSelect } | { response: NextResponse }> {
+  if (!isUuid(demoId)) return { response: jsonError(404, NOT_FOUND) };
+  const rows = await db.select().from(schema.demos).where(eq(schema.demos.id, demoId)).limit(1);
+  if (!rows[0]) return { response: jsonError(404, NOT_FOUND) };
+  const owned = await requireBusiness(db, rows[0].businessId, userId);
+  if ("response" in owned) return owned;
+  return { demo: rows[0] };
+}
+
 export async function requireRender(
   db: Db,
   renderId: string,
@@ -157,6 +170,9 @@ export function coreErrorResponse(err: unknown): NextResponse {
     return jsonError(400, "התמונה הזאת הוסרה — בחרו תמונה אחרת.");
   }
   if (/is not ready yet/.test(message)) return jsonError(409, "עוד לא מוכן — נסו שוב בעוד רגע.");
+  if (/demo is not ready/.test(message)) {
+    return jsonError(409, "סרטון המוצר עדיין בעיבוד — נסו שוב בעוד רגע.");
+  }
   if (/daily audio preview limit/.test(message)) {
     return jsonError(429, "הגעתם למכסת ההשמעות היומית — נסו שוב מחר.");
   }

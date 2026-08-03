@@ -86,6 +86,7 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
       download: storage.download,
       remove: storage.remove,
       signedUrl: storage.signedUrl,
+      createSignedUploadUrl: storage.createSignedUploadUrl,
     };
   }
 

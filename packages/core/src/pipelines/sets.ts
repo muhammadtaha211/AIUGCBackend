@@ -66,6 +66,52 @@ export interface VariantParams {
   voSliceMs?: number;
 }
 
+export interface AOutroPlan {
+  outroMode: "none" | "freeze" | "avatar";
+  /** Avatar only: VO offset (ms) where the outro begins — snapped to a word gap. */
+  voSliceMs?: number;
+  remainderMs: number;
+  demoDurationMs: number;
+  voDurationMs: number;
+}
+
+/**
+ * The conditional ending: the approved VO's exact duration against the demo.
+ * VO plays from demo start, so the remainder is hook-independent. Shared by
+ * createSet (the decision itself) and the wizard's advisory display (the
+ * projected shape shown before enqueue — a long ending is chosen, never
+ * discovered).
+ */
+export async function planAOutro(
+  db: Db,
+  opts: { demoId: string; audioRenderId: string },
+): Promise<AOutroPlan> {
+  const demoRows = await db.select().from(demos).where(eq(demos.id, opts.demoId)).limit(1);
+  if (demoRows[0]?.status !== "ready") throw new Error("demo is not ready");
+  const demoDurationMs = demoRows[0].durationMs ?? 0;
+
+  const audioRows = await db
+    .select()
+    .from(audioRenders)
+    .where(eq(audioRenders.id, opts.audioRenderId))
+    .limit(1);
+  const audio = audioRows[0];
+  // The hard gate: never render video on unapproved audio.
+  if (!audio?.approvedAt) throw new Error("audio must be approved before rendering (hard gate)");
+  const voDurationMs = audio.durationMs ?? 0;
+
+  const remainderMs = voDurationMs - demoDurationMs;
+  const minSeconds = await getConfigValueOr(db, "a_outro_min_seconds", z.number(), 2);
+  const base = { remainderMs, demoDurationMs, voDurationMs };
+  if (remainderMs <= 0) return { outroMode: "none", ...base };
+  if (remainderMs < minSeconds * 1000) return { outroMode: "freeze", ...base };
+  return {
+    outroMode: "avatar",
+    voSliceMs: snapToWordGap((audio.wordTimestamps ?? []) as CaptionChunk[], demoDurationMs),
+    ...base,
+  };
+}
+
 export async function createSet(
   db: Db,
   opts: { businessId: string; demoId: string; grid: SetGrid; parentVariantId?: string },
@@ -76,40 +122,16 @@ export async function createSet(
   const demo = demoRows[0];
   if (demo?.status !== "ready") throw new Error("demo is not ready");
 
-  // The conditional ending: the approved VO's exact duration against the demo.
-  // VO plays from demo start, so the remainder is hook-independent.
   let outro: Pick<VariantParams, "outroMode" | "voSliceMs"> = {};
   if (grid.mode === "voiced") {
     if (!grid.audioRenderId) throw new Error("voiced mode requires audioRenderId");
-    const audioRows = await db
-      .select()
-      .from(audioRenders)
-      .where(eq(audioRenders.id, grid.audioRenderId))
-      .limit(1);
-    const audio = audioRows[0];
-    // The hard gate: never render video on unapproved audio.
-    if (!audio?.approvedAt) throw new Error("audio must be approved before rendering (hard gate)");
-
-    const remainderMs = (audio.durationMs ?? 0) - (demo.durationMs ?? 0);
-    const minSeconds = await getConfigValueOr(db, "a_outro_min_seconds", z.number(), 2);
-    if (remainderMs <= 0) {
-      outro = { outroMode: "none" };
-    } else if (remainderMs < minSeconds * 1000) {
-      outro = { outroMode: "freeze" };
-    } else {
-      if (!grid.personaId) {
-        throw new Error(
-          "the voiceover outlasts the demo enough for an avatar ending — pass personaId",
-        );
-      }
-      outro = {
-        outroMode: "avatar",
-        voSliceMs: snapToWordGap(
-          (audio.wordTimestamps ?? []) as CaptionChunk[],
-          demo.durationMs ?? 0,
-        ),
-      };
+    const plan = await planAOutro(db, { demoId: opts.demoId, audioRenderId: grid.audioRenderId });
+    if (plan.outroMode === "avatar" && !grid.personaId) {
+      throw new Error(
+        "the voiceover outlasts the demo enough for an avatar ending — pass personaId",
+      );
     }
+    outro = { outroMode: plan.outroMode, voSliceMs: plan.voSliceMs };
   } else if (!grid.captionScriptId) {
     throw new Error("silent mode requires captionScriptId");
   }

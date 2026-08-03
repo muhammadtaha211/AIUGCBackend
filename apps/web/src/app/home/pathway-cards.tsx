@@ -8,7 +8,7 @@ type PathwayCardsProps = {
   hasQuestionnaire: boolean;
 };
 
-/** The two service pathways. A is coming soon; B navigates into the wizard. */
+/** The two service pathways — both navigate into their wizards. */
 export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
   return (
     <div>
@@ -28,19 +28,20 @@ export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
       <div
         className={`grid gap-4 sm:grid-cols-2 ${hasQuestionnaire ? "" : "pointer-events-none opacity-50"}`}
       >
-        {/* Service A — hook+demo. Full visual weight, but not navigable yet. */}
-        <div className={`${CARD} border-white/10 bg-white/5`}>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-lg font-semibold text-white">הוק + דמו</h2>
-            <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-medium text-accent">
-              בקרוב
-            </span>
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-gray-400">
-            פתיח AI קצר עם משפט הוק בעברית, חיתוך לסרטון המוצר שלכם, וכתוביות — מדמו אחד מקבלים כמה
-            גרסאות של מודעה.
+        {/* Service A — hook+demo. */}
+        <Link
+          href="/home/a/new"
+          aria-disabled={!hasQuestionnaire}
+          tabIndex={hasQuestionnaire ? undefined : -1}
+          className={`${CARD} border-white/10 bg-white/5 transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}
+        >
+          <h2 className="text-lg font-semibold text-white">הוק + דמו</h2>
+          <p className="mt-2 flex-1 text-sm leading-relaxed text-gray-400">
+            פתיח AI קצר עם משפט הוק בעברית, חיתוך לסרטון המוצר שלכם, וכתוביות — מעלים סרטון, מאשרים
+            הקלטה, ומקבלים מודעה מוכנה לפרסום.
           </p>
-        </div>
+          <span className="mt-4 text-sm font-semibold text-accent">יצירת מודעה ←</span>
+        </Link>
 
         {/* Service B — talking avatar. The live pathway. */}
         <Link

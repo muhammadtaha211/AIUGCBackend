@@ -21,8 +21,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = scriptTextSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
 
+    // The budget is a hard cap only for avatar scripts (lipsync frame
+    // ceiling). A Service A VO may run long on purpose — the overshoot
+    // becomes a freeze/avatar ending, chosen in the shape display.
     const { wordBudget } = found.script.params as { wordBudget?: number };
-    if (wordBudget) assertWithinWordBudget(body.data.text, wordBudget);
+    if (found.script.kind === "b_script" && wordBudget) {
+      assertWithinWordBudget(body.data.text, wordBudget);
+    }
 
     const edited = await updateScriptText(db, id, body.data.text);
     return NextResponse.json({ scriptId: edited.id, text: edited.text });

@@ -44,6 +44,28 @@ export async function createDemo(
   return { ...demo, rawPath };
 }
 
+/**
+ * Register footage the browser uploaded straight to storage (signed upload
+ * URL — demo bytes never pass through a route handler) and queue ingest.
+ * The caller has already verified that rawPath belongs to this business.
+ */
+export async function registerUploadedDemo(
+  db: Db,
+  opts: { businessId: string; rawPath: string },
+): Promise<typeof demos.$inferSelect> {
+  const inserted = await db
+    .insert(demos)
+    .values({ businessId: opts.businessId, status: "uploaded", rawPath: opts.rawPath })
+    .returning();
+  const demo = inserted[0]!;
+  await enqueue(db, {
+    type: "ingest_demo",
+    idempotencyKey: `ingest:${demo.id}`,
+    payload: { demoId: demo.id },
+  });
+  return demo;
+}
+
 /** Job handler: probe -> sanity checks -> normalize -> thumbnail -> ready. */
 export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobResult> {
   const { demoId } = job.payload as { demoId: string };

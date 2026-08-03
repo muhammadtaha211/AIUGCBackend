@@ -79,6 +79,7 @@ pnpm lint / format  # prettier
 
 pnpm --filter @aiugc/remotion studio          # live composition preview (Remotion Studio)
 pnpm --filter @aiugc/remotion render:sample   # ServiceB sample -> packages/remotion/out/sample.mp4
+pnpm --filter @aiugc/remotion render:sample:a # ServiceA sample (hook line + avatar ending) -> out/sample-a.mp4
 ```
 
 Never run `next build` while `pnpm dev` is serving — the build replaces `.next` and the running dev server starts 404-ing its own chunks (symptom: every page stuck on its loading state, DevTools shows 404 on `/_next/static/chunks/main-app.js`). Recovery: stop dev, delete `apps/web/.next`, start dev again.

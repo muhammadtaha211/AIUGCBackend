@@ -22,12 +22,16 @@ aiugc set create --business <bizId> --demo <demoId> \
 aiugc work --once                                      # renders -> released, files in storage
 aiugc status                                           # paths to final.mp4
 
-# voiced variant
-aiugc copy vo --business <bizId> --demo <demoId> --advantages "משלוח מהיר"
-aiugc tts <scriptId> --voice <voiceId>
+# voiced variant (--persona derives the voice AND is the avatar-outro face;
+# --voice stays as an explicit escape hatch)
+aiugc copy vo --business <bizId> --demo <demoId> --advantages "משלוח מהיר" --persona <personaId>
+aiugc tts <scriptId>
 aiugc work --once && <listen to the mp3>
 aiugc audio approve <audioRenderId>                    # the hard gate
-aiugc set create ... --audio <audioRenderId>
+aiugc set create ... --audio <audioRenderId> --persona <personaId>
+# VO longer than the demo? decided per variant at set create:
+#   remainder < a_outro_min_seconds (app_config, default 2) -> freeze ending
+#   remainder >= min -> avatar ending (lipsync of the VO tail, then render)
 
 # service B
 aiugc bank add-persona --name "נועה" --voice <elevenVoiceId>

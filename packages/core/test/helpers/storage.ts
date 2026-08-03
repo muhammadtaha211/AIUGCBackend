@@ -31,6 +31,9 @@ export function tempStorage(): { storage: Storage; root: string; cleanup: () => 
       if (!existsSync(resolve(storagePath))) throw missingObjectError(storagePath);
       return `file://${resolve(storagePath).replaceAll("\\", "/")}`;
     },
+    async createSignedUploadUrl(storagePath) {
+      return `upload://${resolve(storagePath).replaceAll("\\", "/")}`;
+    },
   };
   return { storage, root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
