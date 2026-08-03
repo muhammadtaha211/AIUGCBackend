@@ -21,7 +21,8 @@ import { PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
-import { probe, thumbnail, type ProbeResult } from "../media/ffmpeg";
+import { logger } from "../logger";
+import { probe, probeColorTags, retagBt709Full, thumbnail, type ProbeResult } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import {
   getLipsyncProvider,
@@ -438,8 +439,26 @@ async function buildServiceBProps(
   const voiceoverPath = path.join(localDir, "vo.mp3");
   await getStorage().download(audio.filePath, voiceoverPath);
 
-  const talkingHeadPath = path.join(localDir, "talking-head.mp4");
+  let talkingHeadPath = path.join(localDir, "talking-head.mp4");
   await getStorage().download(params.lipsyncPath, talkingHeadPath);
+
+  // The provider clip arrives with every colour field unset (probed on a real
+  // released render), leaving Remotion's decoder to guess how to interpret the
+  // pixels. Pin the truthful interpretation — BT.709 full range — with a
+  // stream-copy retag. Best-effort: a retag failure must never sink a render
+  // the GPU has already been paid for.
+  if (!getEnv().DRY_RUN) {
+    try {
+      const tags = await probeColorTags(talkingHeadPath);
+      if (!tags.colorRange || !tags.colorSpace || !tags.colorPrimaries || !tags.colorTransfer) {
+        const retagged = path.join(localDir, "talking-head-tagged.mp4");
+        await retagBt709Full(talkingHeadPath, retagged);
+        talkingHeadPath = retagged;
+      }
+    } catch (err) {
+      logger.warn({ err }, "render: colour retag failed — using the untagged clip");
+    }
+  }
 
   return {
     kind: "service_b",

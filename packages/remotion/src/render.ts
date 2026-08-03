@@ -1,5 +1,5 @@
 import { bundle } from "@remotion/bundler";
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { renderMedia, selectComposition, type FfmpegOverrideFn } from "@remotion/renderer";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,28 @@ export class RenderPropsError extends Error {
     this.name = "RenderPropsError";
   }
 }
+
+/**
+ * Exported for tests. colorSpace:"bt709" makes Remotion's encoder convert the
+ * piped frames to limited range and stamp matrix + range in the H.264 VUI, but
+ * it leaves primaries/transfer "unknown" there. Relabel them on the stitcher —
+ * the process that writes the final mux — with a bitstream filter, not a
+ * re-encode. 1 = BT.709, video_full_range_flag 0 = limited.
+ *
+ * NOTE: the conversion is only correct when the input clips themselves carry
+ * colour tags — an untagged clip's pixels pass through full-swing into the
+ * "tv"-tagged output (verified empirically, 4.0.499). That is why the worker
+ * retags untagged lip-sync clips before rendering (core: retagBt709Full).
+ */
+export const bt709FfmpegOverride: FfmpegOverrideFn = ({ type, args }) => {
+  if (type !== "stitcher") return args;
+  return [
+    ...args.slice(0, -1),
+    "-bsf:v",
+    "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
+    args[args.length - 1]!,
+  ];
+};
 
 const ENTRY_POINT = fileURLToPath(new URL("./index.ts", import.meta.url));
 
@@ -81,23 +103,12 @@ export async function renderServiceB(input: RenderServiceBInput, outPath: string
       audioCodec: "aac",
       // crf 20 matches the normalize step in @aiugc/core media/ffmpeg.
       crf: 20,
-      // Tag AND convert to BT.709 limited range (-color_range tv + zscale);
-      // the default leaves full-range unknown-matrix output that players
-      // display too bright/washed against every other delivery file.
+      // Tag BT.709 limited (-color_range tv + zscale); the default leaves
+      // full-range unknown-matrix output that players display too bright/
+      // washed against every other delivery file. The override above makes
+      // the range conversion real and completes the VUI tags.
       colorSpace: "bt709",
-      // colorSpace alone leaves primaries/transfer "unknown" in the H.264 VUI
-      // (the bundled ffmpeg n7.1 only propagates what zscale stamps on the
-      // frames: matrix + range). Relabel the SPS on the final mux — a
-      // bitstream filter, not a re-encode. 1 = BT.709, full_range 0 = limited.
-      ffmpegOverride: ({ type, args }) => {
-        if (type !== "stitcher") return args;
-        return [
-          ...args.slice(0, -1),
-          "-bsf:v",
-          "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
-          args[args.length - 1]!,
-        ];
-      },
+      ffmpegOverride: bt709FfmpegOverride,
       outputLocation: outPath,
       inputProps: props.data,
       logLevel: "error",

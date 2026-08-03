@@ -104,6 +104,67 @@ export async function thumbnail(input: string, output: string, atMs = 1000): Pro
   ]);
 }
 
+export interface ColorTags {
+  colorRange?: string;
+  colorSpace?: string;
+  colorPrimaries?: string;
+  colorTransfer?: string;
+}
+
+/** Colour metadata of the first video stream. Fields are unset when the file
+ *  carries no tags and every downstream decoder is left to guess. */
+export async function probeColorTags(file: string): Promise<ColorTags> {
+  const out = await run("ffprobe", [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=color_range,color_space,color_primaries,color_transfer",
+    "-print_format",
+    "json",
+    file,
+  ]);
+  const json = JSON.parse(out) as {
+    streams?: {
+      color_range?: string;
+      color_space?: string;
+      color_primaries?: string;
+      color_transfer?: string;
+    }[];
+  };
+  const s = json.streams?.[0] ?? {};
+  return {
+    colorRange: s.color_range,
+    colorSpace: s.color_space,
+    colorPrimaries: s.color_primaries,
+    colorTransfer: s.color_transfer,
+  };
+}
+
+/**
+ * Stream-copy retag of an H.264 file's colour metadata to BT.709 FULL range —
+ * no re-encode, runs in ~1s. Lip-sync clips come back with every colour field
+ * unset while carrying full-swing luma (measured on a released render: YMIN=3
+ * in every frame, YMAX=241 — outside 16–235), so full range is the truthful
+ * label; stamping limited would make decoders expand again and crush exactly
+ * the blacks this exists to protect. Bitstream filter only: 1=BT.709 for
+ * primaries/transfer/matrix, video_full_range_flag=1=full.
+ */
+export async function retagBt709Full(input: string, output: string): Promise<void> {
+  mkdirSync(path.dirname(output), { recursive: true });
+  await run("ffmpeg", [
+    "-y",
+    "-i",
+    input,
+    "-c",
+    "copy",
+    "-bsf:v",
+    "h264_metadata=video_full_range_flag=1:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
+    output,
+  ]);
+}
+
 export async function measureDurationMs(file: string): Promise<number> {
   const out = await run("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", file]);
   const json = JSON.parse(out) as { format: { duration?: string } };
