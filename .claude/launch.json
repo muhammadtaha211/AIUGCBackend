@@ -7,6 +7,13 @@
       "runtimeArgs": ["--filter", "@aiugc/web", "dev"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@aiugc/admin", "dev"],
+      "port": 3001,
+      "autoPort": true
     }
   ]
 }

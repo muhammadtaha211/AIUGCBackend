@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @aiugc/web dev",
+    "dev:admin": "pnpm --filter @aiugc/admin dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "lint": "prettier --check .",

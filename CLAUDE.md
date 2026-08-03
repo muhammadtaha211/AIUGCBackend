@@ -72,6 +72,7 @@ Populate this section as scripts land, and keep it current.
 
 ```
 pnpm dev            # web app (onboarding) — http://localhost:3000
+pnpm dev:admin      # admin app (founder console) — http://localhost:3001
 pnpm typecheck      # all packages
 pnpm test           # core tests (PGlite, no Docker)
 pnpm lint / format  # prettier
