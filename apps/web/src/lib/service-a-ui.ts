@@ -1,21 +1,30 @@
+import type { SafeRect } from "@aiugc/core/hook-geometry";
+
 /**
  * Pure, client-safe helpers for the Service A wizard. No imports from
- * @aiugc/core (client bundle) — server rules live in src/lib/service-a.ts and
- * are re-validated on every request; the duplicates here only save a
- * round-trip. Mirrors src/lib/service-b-ui.ts.
+ * @aiugc/core's main entry (client bundle) — the "hook-geometry" subpath is
+ * the deliberate exception: pure math + zod, safe in the client. Server rules
+ * live in src/lib/service-a.ts and are re-validated on every request; the
+ * duplicates here only save a round-trip. Mirrors src/lib/service-b-ui.ts.
  */
 
 // ---------------------------------------------------------------------------
 // Steps
 // ---------------------------------------------------------------------------
 
-export type AWizardStep = "demo" | "hook" | "persona" | "script" | "audio" | "render";
+export type AWizardStep =
+  "persona" | "hook" | "hookStudio" | "demo" | "script" | "audio" | "render";
 
-/** One fixed path — Service A has no category-driven steps. */
+/**
+ * One fixed path — Service A has no category-driven steps. Persona first: the
+ * hook gallery filters by the chosen persona (swapped clips + generic ones)
+ * and the structure strip shows the face that narrates and closes the video.
+ */
 export const A_WIZARD_STEPS: AWizardStep[] = [
-  "demo",
-  "hook",
   "persona",
+  "hook",
+  "hookStudio",
+  "demo",
   "script",
   "audio",
   "render",
@@ -63,9 +72,54 @@ export function isIngestingDemoStatus(status: string): boolean {
   return status === "uploaded" || status === "probing" || status === "normalizing";
 }
 
-export type HookClip = { id: string; durationMs: number; previewUrl: string };
+export type HookClip = {
+  id: string;
+  durationMs: number;
+  previewUrl: string;
+  /** The clip's default safe area — seeds the hook studio's placement editor. */
+  textSafeArea: SafeRect;
+  /** Set on persona-swapped clips; absent = generic (shown to everyone). */
+  personaId?: string;
+};
 
 export type HookLineOption = { scriptId: string; text: string; angle: string };
+
+// ---------------------------------------------------------------------------
+// Soft VO-length heads-up (script approval) — seconds only, advisory only.
+// ---------------------------------------------------------------------------
+
+/**
+ * Inverts core's word-budget mapping (wordBudget = floor(demoSeconds * wps))
+ * using data the wizard already has: implied wps = wordBudget / demoSeconds,
+ * so estimated seconds = words * demoSeconds / wordBudget. An estimate — real
+ * speech rate varies and TTS may stretch ≤5%; the post-audio advisory stays
+ * the exact word.
+ */
+export function estimateVoSeconds(words: number, demoSeconds: number, wordBudget: number): number {
+  if (wordBudget <= 0 || demoSeconds <= 0) return 0;
+  return (words * demoSeconds) / wordBudget;
+}
+
+/**
+ * The gentle Hebrew note under the script textarea when the VO likely outlasts
+ * the demo, with the approximate ending shape. Mirrors core's 2s freeze/avatar
+ * threshold (a_outro_min_seconds default) — advisory only, nothing blocks.
+ */
+export function voLengthHeadsUp(
+  words: number,
+  demoSeconds: number,
+  wordBudget: number,
+): string | null {
+  const estimate = estimateVoSeconds(words, demoSeconds, wordBudget);
+  const remainder = estimate - demoSeconds;
+  if (remainder <= 0) return null;
+  const rounded = Math.round(estimate);
+  const shape =
+    remainder < 2
+      ? "הפריים האחרון של הסרטון יוקפא לרגע קצר בסוף"
+      : "הדמות שבחרתם תופיע בסוף ותסגור את הסרטון";
+  return `לפי הערכה, הקריינות תימשך כ־${rounded} שניות — יותר מסרטון המוצר (${Math.round(demoSeconds)} שנ׳), ולכן ${shape}. זו הערכה בלבד — המבנה המדויק יוצג אחרי ההקלטה.`;
+}
 
 // ---------------------------------------------------------------------------
 // The advisory composition shape (shown after audio approval, before enqueue)

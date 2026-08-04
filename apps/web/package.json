@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@aiugc/core": "workspace:*",
+    "@aiugc/remotion": "workspace:*",
     "@anthropic-ai/sdk": "^0.111.0",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.47.10",

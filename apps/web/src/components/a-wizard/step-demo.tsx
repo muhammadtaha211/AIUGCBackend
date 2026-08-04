@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
+import { TextAreaField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
 import {
   clientDemoFileError,
@@ -10,12 +11,15 @@ import {
   isIngestingDemoStatus,
   type DemoState,
 } from "@/lib/service-a-ui";
-import { postJson, useJobPoll } from "@/lib/use-api";
+import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
 type StepDemoProps = {
   businessId: string;
   demo: DemoState | null;
   setDemo: (demo: DemoState | null) => void;
+  /** The optional "what the footage shows" note — wizard state, saved on continue. */
+  description: string;
+  setDescription: (value: string) => void;
   onContinue: () => void;
   onFatal: (message: string) => void;
 };
@@ -65,11 +69,38 @@ function putWithProgress(
  * limit); a small route registers the object and queues ingest, and we poll
  * until the demo is ready or rejected with a Hebrew reason.
  */
-export function StepDemo({ businessId, demo, setDemo, onContinue, onFatal }: StepDemoProps) {
+export function StepDemo({
+  businessId,
+  demo,
+  setDemo,
+  description,
+  setDescription,
+  onContinue,
+  onFatal,
+}: StepDemoProps) {
   const [error, setError] = useState<string | null>(null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
   const busy = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  /** Persist the footage note on the demo row, then advance. Blank clears. */
+  async function saveDescriptionAndContinue() {
+    if (!demo) return;
+    setSaving(true);
+    setError(null);
+    const result = await apiFetch<{ ok: true }>(`/api/demos/${demo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ description }),
+    });
+    setSaving(false);
+    if (!result.ok) {
+      if (result.status === 403 || result.status === 404) return onFatal(result.error);
+      return setError(result.error);
+    }
+    onContinue();
+  }
 
   async function upload(file: File) {
     if (busy.current) return;
@@ -125,6 +156,28 @@ export function StepDemo({ businessId, demo, setDemo, onContinue, onFatal }: Ste
       setDemo({ ...demo, ...body });
     },
     onFatal,
+  );
+
+  /**
+   * The optional "what the footage shows" note — mounts while ingest runs (the
+   * customer has dead time anyway) and stays editable while on the step. Once
+   * per demo; saved on continue. Every VO script for this demo inherits it.
+   */
+  const descriptionField = (
+    <div className="mt-5">
+      <TextAreaField
+        label="מה רואים בסרטון? (לא חובה)"
+        rows={3}
+        maxLength={500}
+        value={description}
+        onChange={(event) => setDescription(event.target.value)}
+        placeholder="לדוגמה: מצלמים את האפליקציה — גלילה בתפריט, הוספה לעגלה, מסך תשלום"
+      />
+      <p className="mt-1.5 text-[13px] text-gray-500">
+        כותבים פעם אחת לכל סרטון — זה עוזר לקריינות להתייחס למה שבאמת רואים. אפשר לדלג — נכתוב לפי
+        השאלון.
+      </p>
+    </div>
   );
 
   const picker = (
@@ -196,11 +249,14 @@ export function StepDemo({ businessId, demo, setDemo, onContinue, onFatal }: Ste
       )}
 
       {ingesting && !stalled && (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-6 py-10 text-center">
-          <Spinner className="size-6 text-accent" />
-          <p className="text-sm text-gray-300">בודקים ומכינים את הסרטון…</p>
-          {slow && <p className="text-sm text-gray-500">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
-        </div>
+        <>
+          <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-6 py-10 text-center">
+            <Spinner className="size-6 text-accent" />
+            <p className="text-sm text-gray-300">בודקים ומכינים את הסרטון…</p>
+            {slow && <p className="text-sm text-gray-500">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
+          </div>
+          {descriptionField}
+        </>
       )}
 
       {demo?.status === "rejected" && (
@@ -245,7 +301,15 @@ export function StepDemo({ businessId, demo, setDemo, onContinue, onFatal }: Ste
             </div>
           </div>
 
-          <Button type="button" size="lg" className="mt-6 w-full" onClick={onContinue}>
+          {descriptionField}
+
+          <Button
+            type="button"
+            size="lg"
+            className="mt-6 w-full"
+            loading={saving}
+            onClick={() => void saveDescriptionAndContinue()}
+          >
             המשך
           </Button>
           <button

@@ -321,6 +321,108 @@ describe("service A conditional ending", () => {
     expect(props).toContain(`"voSliceMs":${params.voSliceMs}`);
   }, 60_000);
 
+  it("variant rect threads createSet -> params -> render props; absent = clip default", async () => {
+    const script = await generateVoScript(db, {
+      businessId,
+      demoId,
+      selectedAdvantages: [],
+      personaId,
+    });
+    const audio = await fabricateApprovedAudio(script.id, 20_000);
+    const variantRect = { x: 40, y: 900, w: 1000, h: 300 };
+    const { renders } = await createSet(db, {
+      businessId,
+      demoId,
+      grid: {
+        hookClipIds: [hookClipId],
+        hookLineScriptIds: [hookLineId],
+        mode: "voiced",
+        audioRenderId: audio.id,
+        personaId,
+        textSafeArea: variantRect,
+      },
+    });
+    expect((renders[0]!.params as VariantParams).textSafeArea).toEqual(variantRect);
+
+    await drainAll();
+    const row = await loadRender(renders[0]!.id);
+    const props = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+    // The customer's rect, not the clip's default (jsonb reorders keys).
+    expect(props).toMatch(/"hookTextSafeArea":\{[^}]*"x":40[^}]*\}/);
+    expect(props).toMatch(/"hookTextSafeArea":\{[^}]*"w":1000[^}]*\}/);
+
+    // Without a variant rect the chain resolves to the clip's default.
+    const bare = await createSet(db, {
+      businessId,
+      demoId,
+      grid: {
+        hookClipIds: [hookClipId],
+        hookLineScriptIds: [hookLineId],
+        mode: "voiced",
+        audioRenderId: audio.id,
+        personaId,
+      },
+    });
+    await drainAll();
+    const bareRow = await loadRender(bare.renders[0]!.id);
+    const bareProps = readFileSync(path.join(storageRoot, bareRow.filePath!), "utf8");
+    expect(bareProps).toMatch(/"hookTextSafeArea":\{[^}]*"x":100[^}]*\}/);
+    expect(bareProps).toMatch(/"hookTextSafeArea":\{[^}]*"w":880[^}]*\}/);
+  }, 60_000);
+
+  it("an out-of-frame variant rect is rejected by the grid schema", async () => {
+    const script = await generateVoScript(db, {
+      businessId,
+      demoId,
+      selectedAdvantages: [],
+      personaId,
+    });
+    const audio = await fabricateApprovedAudio(script.id, 20_000);
+    await expect(
+      createSet(db, {
+        businessId,
+        demoId,
+        grid: {
+          hookClipIds: [hookClipId],
+          hookLineScriptIds: [hookLineId],
+          mode: "voiced",
+          audioRenderId: audio.id,
+          personaId,
+          textSafeArea: { x: 400, y: 0, w: 900, h: 500 }, // x+w > 1080
+        },
+      }),
+    ).rejects.toThrow(/safe area/);
+  }, 60_000);
+
+  it("the demo's footage note flows into the VO script's params (soft grounding)", async () => {
+    await db
+      .update(dbSchema.demos)
+      .set({ description: "גלילה בתפריט, הוספה לעגלה" })
+      .where(sql`${dbSchema.demos.id} = ${demoId}`);
+    const script = await generateVoScript(db, {
+      businessId,
+      demoId,
+      selectedAdvantages: [],
+      personaId,
+    });
+    expect((script.params as { demoDescription?: string }).demoDescription).toBe(
+      "גלילה בתפריט, הוספה לעגלה",
+    );
+
+    // Cleared description -> no snapshot (v3 behaves exactly as v2).
+    await db
+      .update(dbSchema.demos)
+      .set({ description: null })
+      .where(sql`${dbSchema.demos.id} = ${demoId}`);
+    const bare = await generateVoScript(db, {
+      businessId,
+      demoId,
+      selectedAdvantages: [],
+      personaId,
+    });
+    expect((bare.params as { demoDescription?: string }).demoDescription).toBeUndefined();
+  }, 60_000);
+
   it("an avatar-sized remainder without a persona is refused at createSet", async () => {
     const script = await generateVoScript(db, {
       businessId,

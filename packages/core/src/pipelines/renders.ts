@@ -17,6 +17,7 @@ import {
   sets,
   videoRenders,
 } from "../db/schema";
+import { resolveHookTextSafeArea } from "../hook-geometry";
 import { PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
 import { enqueue, type Job } from "../jobs/queue";
@@ -456,7 +457,10 @@ async function buildServiceAProps(
     avatarPath,
     hookClipPath,
     hookLine: hookLine.text,
-    hookTextSafeArea: hookClip.textSafeArea as TextSafeArea,
+    hookTextSafeArea: resolveHookTextSafeArea(
+      params.textSafeArea,
+      hookClip.textSafeArea as TextSafeArea,
+    ),
     demoPath,
     demoDurationMs: demo.durationMs ?? 0,
     voiceoverPath,

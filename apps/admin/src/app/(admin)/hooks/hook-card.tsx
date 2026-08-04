@@ -2,28 +2,39 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { apiFetch } from "@/lib/use-api";
-import type { SafeRect } from "@/lib/hooks";
+import type { PersonaOption } from "./hooks-manager";
 import { SafeAreaEditor, SafeAreaOverlay } from "./safe-area-editor";
 
+export type HookClipCard = {
+  id: string;
+  url: string;
+  durationMs: number;
+  tags: Record<string, string>;
+  textSafeArea: SafeRect;
+  active: boolean;
+  /** Persona-swapped clip; absent = generic (shown to everyone). */
+  personaId?: string;
+  personaName?: string;
+  sourceClipId?: string;
+};
+
 type HookCardProps = {
-  clip: {
-    id: string;
-    url: string;
-    durationMs: number;
-    tags: Record<string, string>;
-    textSafeArea: SafeRect;
-    active: boolean;
-  };
+  clip: HookClipCard;
+  personas: PersonaOption[];
+  /** "שכפול לדמות": open the upload flow prefilled from this clip. */
+  onDuplicate: (personaId: string) => void;
 };
 
 /**
  * One bank clip: looping muted preview with the safe-area rectangle drawn on
- * it, inline active toggle (the retire mechanism — there is no delete), and
- * the safe-area editor for fixing coordinates after upload. Every action is a
- * PATCH followed by router.refresh() — the server page owns the grid.
+ * it, inline active toggle (the retire mechanism — there is no delete), the
+ * safe-area editor for fixing coordinates after upload, a persona picker, and
+ * the duplicate-to-persona action. Every action is a PATCH (or a prefill
+ * handoff) followed by router.refresh() — the server page owns the grid.
  */
-export function HookCard({ clip }: HookCardProps) {
+export function HookCard({ clip, personas, onDuplicate }: HookCardProps) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [rect, setRect] = useState<SafeRect>(clip.textSafeArea);
@@ -89,6 +100,11 @@ export function HookCard({ clip }: HookCardProps) {
           ) : (
             <span className="rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-red-300">כבוי</span>
           )}
+          {clip.personaName && (
+            <span className="rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-gray-200">
+              {clip.personaName}
+            </span>
+          )}
         </div>
       </div>
 
@@ -151,6 +167,44 @@ export function HookCard({ clip }: HookCardProps) {
             </>
           )}
         </div>
+
+        {!editing && (
+          <div className="flex flex-col gap-1">
+            {/* The clip's own persona assignment. */}
+            <select
+              value={clip.personaId ?? ""}
+              disabled={busy}
+              onChange={(event) => void patch({ personaId: event.target.value || null })}
+              className="h-7 w-full rounded border border-white/10 bg-white/5 px-1 text-[11px] text-gray-300 focus:border-accent focus:outline-none"
+              aria-label="דמות"
+            >
+              <option value="">ללא דמות (כללי)</option>
+              {personas.map((persona) => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.name}
+                </option>
+              ))}
+            </select>
+            {/* Duplicate: pick the target persona, land in the prefilled upload. */}
+            <select
+              value=""
+              disabled={busy || personas.length === 0}
+              onChange={(event) => {
+                if (event.target.value) onDuplicate(event.target.value);
+                event.target.value = "";
+              }}
+              className="h-7 w-full rounded border border-white/10 bg-white/5 px-1 text-[11px] text-gray-300 focus:border-accent focus:outline-none"
+              aria-label="שכפול לדמות"
+            >
+              <option value="">שכפול לדמות…</option>
+              {personas.map((persona) => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {error && (
           <p role="alert" className="text-[11px] text-red-400">

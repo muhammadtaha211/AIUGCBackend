@@ -33,7 +33,7 @@ export async function POST(
 
     const body = aRenderRequestSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
-    const { demoId, hookClipId, hookLineScriptId, audioId, personaId } = body.data;
+    const { demoId, hookClipId, hookLineScriptId, audioId, personaId, textSafeArea } = body.data;
 
     const demoFound = await requireDemo(db, demoId, auth.userId);
     if ("response" in demoFound) return demoFound.response;
@@ -71,6 +71,7 @@ export async function POST(
         mode: "voiced",
         audioRenderId: audioId,
         personaId,
+        textSafeArea,
       },
     });
     return NextResponse.json({ renderId: renders[0]!.id });

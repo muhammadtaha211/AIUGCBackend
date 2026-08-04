@@ -35,6 +35,8 @@ export async function POST(request: Request) {
         durationMs: body.data.durationMs,
         textSafeArea: body.data.textSafeArea,
         tags: body.data.tags,
+        personaId: body.data.personaId,
+        sourceClipId: body.data.sourceClipId,
       })
       .returning({ id: schema.hookClips.id });
     return NextResponse.json({ hookId: inserted[0]!.id });

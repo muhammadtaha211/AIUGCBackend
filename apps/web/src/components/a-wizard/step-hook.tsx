@@ -8,6 +8,8 @@ import type { HookClip } from "@/lib/service-a-ui";
 import { apiFetch } from "@/lib/use-api";
 
 type StepHookProps = {
+  /** Filters the gallery: this persona's swapped clips + the generic ones. */
+  personaId: string;
   selected: HookClip | null;
   onSelect: (hook: HookClip) => void;
   onBack: () => void;
@@ -16,14 +18,23 @@ type StepHookProps = {
 };
 
 /** Step 2: pick the reaction clip from the founder-curated bank. */
-export function StepHook({ selected, onSelect, onBack, onContinue, onFatal }: StepHookProps) {
+export function StepHook({
+  personaId,
+  selected,
+  onSelect,
+  onBack,
+  onContinue,
+  onFatal,
+}: StepHookProps) {
   const [hooks, setHooks] = useState<HookClip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     setError(null);
     setHooks(null);
-    const result = await apiFetch<{ hooks: HookClip[] }>("/api/hooks");
+    const result = await apiFetch<{ hooks: HookClip[] }>(
+      `/api/hooks?personaId=${encodeURIComponent(personaId)}`,
+    );
     if (result.ok) setHooks(result.body.hooks);
     else if (result.status === 403 || result.status === 404) onFatal(result.error);
     else setError(result.error);
@@ -32,13 +43,13 @@ export function StepHook({ selected, onSelect, onBack, onContinue, onFatal }: St
   useEffect(() => {
     void load();
     // load reads only stable props (onFatal is a useState setter).
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [personaId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
       <StepHeader
-        title="בוחרים פתיח"
-        sub="קליפ תגובה קצר שפותח את המודעה — משפט הפתיחה ייצרב עליו בשלב הבא."
+        title="בחרו קליפ פתיחה"
+        sub="הפתיח עוצר את הגלילה ברגע הראשון — ומיד אחריו הדמות שבחרתם מקריינת את הסרטון וסוגרת אותו."
         onBack={onBack}
       />
 
@@ -69,7 +80,7 @@ export function StepHook({ selected, onSelect, onBack, onContinue, onFatal }: St
         <>
           <div
             role="radiogroup"
-            aria-label="בחירת פתיח"
+            aria-label="בחירת קליפ פתיחה"
             className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3"
           >
             {hooks.map((hook) => (

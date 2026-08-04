@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { DEFAULT_SAFE_AREA, type SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
-import { DEFAULT_SAFE_AREA, hookFileError, hookMetadataError, type SafeRect } from "@/lib/hooks";
+import { hookFileError, hookMetadataError } from "@/lib/hooks";
 import { postJson } from "@/lib/use-api";
+import type { PersonaOption } from "./hooks-manager";
 import { SafeAreaEditor } from "./safe-area-editor";
 
 /**
@@ -13,10 +15,24 @@ import { SafeAreaEditor } from "./safe-area-editor";
  * file, pre-check it from HTMLVideoElement metadata (no ffmpeg on Vercel),
  * draw the safe area on the local preview, then signed-upload straight to
  * storage and register the row. The CLI command keeps working alongside.
+ *
+ * `prefill` is the "שכפול לדמות" flow: the founder generated a persona-swapped
+ * version of an existing clip offline, and the form opens with the source
+ * clip's safe area, tags, and target persona already set, source_clip_id
+ * recorded for lineage. The parent remounts the form per prefill (key), so
+ * state initializers below are enough.
  */
 
 const UPLOAD_FAILED = "ההעלאה נכשלה — בדקו את החיבור ונסו שוב.";
 const UNREADABLE = "לא הצלחנו לקרוא את קובץ הווידאו — נסו קובץ אחר.";
+
+export type UploadPrefill = {
+  sourceClipId: string;
+  personaId: string;
+  textSafeArea: SafeRect;
+  tags: Record<string, string>;
+  durationMs: number;
+};
 
 /** Duration + dimensions off the file's metadata; null when the browser can't decode. */
 function readVideoMetadata(
@@ -40,7 +56,15 @@ function readVideoMetadata(
   });
 }
 
-export function UploadHook() {
+export function UploadHook({
+  personas,
+  prefill,
+  onPrefillDone,
+}: {
+  personas: PersonaOption[];
+  prefill: UploadPrefill | null;
+  onPrefillDone: () => void;
+}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [prepared, setPrepared] = useState<{
@@ -50,17 +74,26 @@ export function UploadHook() {
     width: number;
     height: number;
   } | null>(null);
-  const [rect, setRect] = useState<SafeRect>(DEFAULT_SAFE_AREA);
-  const [tags, setTags] = useState({ energy: "", gender: "", vibe: "" });
+  const [rect, setRect] = useState<SafeRect>(prefill?.textSafeArea ?? DEFAULT_SAFE_AREA);
+  const [tags, setTags] = useState({
+    energy: prefill?.tags.energy ?? "",
+    gender: prefill?.tags.gender ?? "",
+    vibe: prefill?.tags.vibe ?? "",
+  });
+  const [personaId, setPersonaId] = useState(prefill?.personaId ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const prefillPersona = prefill && personas.find((p) => p.id === prefill.personaId);
 
   function reset() {
     if (prepared) URL.revokeObjectURL(prepared.previewUrl);
     setPrepared(null);
     setRect(DEFAULT_SAFE_AREA);
     setTags({ energy: "", gender: "", vibe: "" });
+    setPersonaId("");
     if (inputRef.current) inputRef.current.value = "";
+    if (prefill) onPrefillDone();
   }
 
   async function onPick(event: React.ChangeEvent<HTMLInputElement>) {
@@ -78,7 +111,7 @@ export function UploadHook() {
     }
     if (prepared) URL.revokeObjectURL(prepared.previewUrl);
     setPrepared({ file, previewUrl: url, ...meta });
-    setRect(DEFAULT_SAFE_AREA);
+    setRect(prefill?.textSafeArea ?? DEFAULT_SAFE_AREA);
   }
 
   async function upload() {
@@ -123,6 +156,8 @@ export function UploadHook() {
       height: prepared.height,
       textSafeArea: rect,
       tags: trimmed,
+      ...(personaId ? { personaId } : {}),
+      ...(prefill ? { sourceClipId: prefill.sourceClipId } : {}),
     });
     setBusy(false);
     if (!registered.ok) return setError(registered.error);
@@ -134,11 +169,32 @@ export function UploadHook() {
     <div className="rounded-xl border border-white/10 bg-white/5 p-4">
       <div className="flex flex-col gap-3">
         <span className="text-sm font-medium text-gray-200">
-          פתיח חדש
+          {prefill ? "שכפול לדמות" : "פתיח חדש"}
           <span className="ms-2 text-[13px] font-normal text-gray-500">
             MP4 בדיוק 1080×1920, באורך 0.5–10 שניות
           </span>
         </span>
+
+        {prefill && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-accent/10 px-3 py-2 text-[13px] text-gray-200">
+            <span>
+              מעלים גרסה של קליפ קיים לדמות {prefillPersona?.name ?? "?"} — אזור הטקסט והתגיות
+              הועתקו מהמקור
+              <span dir="ltr" className="ms-1 text-gray-400">
+                ({(prefill.durationMs / 1000).toFixed(1)}s)
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={reset}
+              className="text-gray-400 hover:text-white"
+              disabled={busy}
+            >
+              ביטול
+            </button>
+          </div>
+        )}
+
         <input
           ref={inputRef}
           type="file"
@@ -170,6 +226,21 @@ export function UploadHook() {
               <span dir="ltr" className="text-end text-xs text-gray-400">
                 {(prepared.durationMs / 1000).toFixed(1)}s
               </span>
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
+                דמות
+                <select
+                  value={personaId}
+                  onChange={(event) => setPersonaId(event.target.value)}
+                  className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                >
+                  <option value="">ללא דמות (כללי)</option>
+                  {personas.map((persona) => (
+                    <option key={persona.id} value={persona.id}>
+                      {persona.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <TextField
                 label="אנרגיה"
                 value={tags.energy}

@@ -12,6 +12,7 @@ import {
   shapeSummary,
   type AShape,
 } from "@/lib/service-a-ui";
+import type { SafeRect } from "@aiugc/core/hook-geometry";
 import type { RenderState } from "@/lib/service-b-ui";
 import { postJson, useJobPoll } from "@/lib/use-api";
 
@@ -22,6 +23,8 @@ type StepARenderProps = {
   hookLineScriptId: string;
   audioId: string;
   personaId: string;
+  /** The hook-studio placement; absent = the clip's default safe area. */
+  textSafeArea?: SafeRect;
   render: RenderState | null;
   setRender: (render: RenderState | null) => void;
   onBack: () => void;
@@ -41,6 +44,7 @@ export function StepARender({
   hookLineScriptId,
   audioId,
   personaId,
+  textSafeArea,
   render,
   setRender,
   onBack,
@@ -79,6 +83,7 @@ export function StepARender({
       hookLineScriptId,
       audioId,
       personaId,
+      textSafeArea,
     });
     setStarting(false);
     if (!result.ok) {

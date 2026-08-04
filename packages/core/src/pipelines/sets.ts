@@ -15,6 +15,7 @@ import {
   subscriptions,
   videoRenders,
 } from "../db/schema";
+import { textSafeAreaSchema, type SafeRect } from "../hook-geometry";
 import { enqueue } from "../jobs/queue";
 import { lipsyncExpressivenessSchema, type LipsyncExpressiveness } from "../providers/lipsync";
 import { businessOwnerId, creditBalance, debitRender } from "./credits";
@@ -35,6 +36,8 @@ export const setGridSchema = z.object({
   audioRenderId: z.string().uuid().optional(),
   /** Voiced mode: the persona behind the voice — required for an avatar ending. */
   personaId: z.string().uuid().optional(),
+  /** Customer-placed hook-line rect; absent = each clip's default safe area. */
+  textSafeArea: textSafeAreaSchema.optional(),
 });
 
 export type SetGrid = z.infer<typeof setGridSchema>;
@@ -61,6 +64,8 @@ export interface VariantParams {
   outroMode?: "none" | "freeze" | "avatar";
   /** Avatar ending: VO offset (ms) where the outro begins — snapped to a word gap. */
   voSliceMs?: number;
+  /** Customer-placed hook-line rect; resolveHookTextSafeArea falls back to the clip's. */
+  textSafeArea?: SafeRect;
 }
 
 export interface AOutroPlan {
@@ -141,6 +146,7 @@ export async function createSet(
       captionScriptId: grid.captionScriptId,
       audioRenderId: grid.audioRenderId,
       personaId: grid.personaId,
+      textSafeArea: grid.textSafeArea,
       ...outro,
     })),
   );
@@ -252,6 +258,7 @@ export async function moreLikeThis(
       captionScriptId: held.captionScriptId,
       audioRenderId: held.audioRenderId,
       personaId: held.personaId,
+      textSafeArea: held.textSafeArea,
     },
   });
 }

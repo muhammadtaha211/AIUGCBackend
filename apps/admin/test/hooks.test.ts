@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_SAFE_AREA,
-  MIN_SAFE_AREA,
-  framePoint,
   hookFileError,
   hookMetadataError,
   hookPatchSchema,
   hookUploadPath,
   isHookUploadPath,
-  moveRect,
-  oppositeCorner,
-  rectFromPoints,
   registerHookSchema,
 } from "../src/lib/hooks";
 
@@ -100,6 +94,18 @@ describe("register body schema", () => {
     expect(registerHookSchema.safeParse(withoutArea).success).toBe(false);
     expect(registerHookSchema.safeParse({ ...valid, durationMs: 2000.5 }).success).toBe(false);
   });
+
+  it("accepts the optional persona/source ids (the שכפול לדמות flow) as uuids", () => {
+    const uuid = "22222222-2222-4222-8222-222222222222";
+    const withPersona = registerHookSchema.safeParse({
+      ...valid,
+      personaId: uuid,
+      sourceClipId: uuid,
+    });
+    expect(withPersona.success).toBe(true);
+    expect(withPersona.success && withPersona.data.personaId).toBe(uuid);
+    expect(registerHookSchema.safeParse({ ...valid, personaId: "not-a-uuid" }).success).toBe(false);
+  });
 });
 
 describe("clip patch schema", () => {
@@ -110,55 +116,14 @@ describe("clip patch schema", () => {
     ).toBe(true);
     expect(hookPatchSchema.safeParse({}).success).toBe(false);
   });
-});
 
-describe("safe-area coordinate mapping (display px <-> 1080x1920 frame)", () => {
-  it("scales a preview point up to frame space", () => {
-    expect(framePoint(135, 240, 270, 480)).toEqual({ x: 540, y: 960 });
-    expect(framePoint(0, 0, 270, 480)).toEqual({ x: 0, y: 0 });
-    expect(framePoint(270, 480, 270, 480)).toEqual({ x: 1080, y: 1920 });
-  });
-
-  it("clamps pointer positions outside the preview box", () => {
-    expect(framePoint(-50, -50, 270, 480)).toEqual({ x: 0, y: 0 });
-    expect(framePoint(999, 999, 270, 480)).toEqual({ x: 1080, y: 1920 });
-  });
-
-  it("normalizes a drag in any direction to the same rect", () => {
-    const down = rectFromPoints({ x: 100, y: 200 }, { x: 700, y: 900 });
-    const up = rectFromPoints({ x: 700, y: 900 }, { x: 100, y: 200 });
-    expect(down).toEqual({ x: 100, y: 200, w: 600, h: 700 });
-    expect(up).toEqual(down);
-  });
-
-  it("enforces the minimum size, shifting back inside the frame at the edges", () => {
-    const tiny = rectFromPoints({ x: 500, y: 500 }, { x: 505, y: 505 });
-    expect(tiny.w).toBe(MIN_SAFE_AREA);
-    expect(tiny.h).toBe(MIN_SAFE_AREA);
-    const atCorner = rectFromPoints({ x: 1080, y: 1920 }, { x: 1079, y: 1919 });
-    expect(atCorner.x + atCorner.w).toBeLessThanOrEqual(1080);
-    expect(atCorner.y + atCorner.h).toBeLessThanOrEqual(1920);
-  });
-
-  it("moves a rect only as far as the frame allows", () => {
-    const rect = { x: 90, y: 640, w: 900, h: 520 };
-    expect(moveRect(rect, 20, -40)).toEqual({ x: 110, y: 600, w: 900, h: 520 });
-    expect(moveRect(rect, 9999, 9999)).toEqual({ x: 180, y: 1400, w: 900, h: 520 });
-    expect(moveRect(rect, -9999, -9999)).toEqual({ x: 0, y: 0, w: 900, h: 520 });
-  });
-
-  it("anchors a corner resize on the diagonally opposite corner", () => {
-    const rect = { x: 100, y: 200, w: 300, h: 400 };
-    expect(oppositeCorner(rect, "nw")).toEqual({ x: 400, y: 600 });
-    expect(oppositeCorner(rect, "ne")).toEqual({ x: 100, y: 600 });
-    expect(oppositeCorner(rect, "sw")).toEqual({ x: 400, y: 200 });
-    expect(oppositeCorner(rect, "se")).toEqual({ x: 100, y: 200 });
-  });
-
-  it("keeps the default rect inside the frame and above minimum size", () => {
-    expect(DEFAULT_SAFE_AREA.x + DEFAULT_SAFE_AREA.w).toBeLessThanOrEqual(1080);
-    expect(DEFAULT_SAFE_AREA.y + DEFAULT_SAFE_AREA.h).toBeLessThanOrEqual(1920);
-    expect(DEFAULT_SAFE_AREA.w).toBeGreaterThanOrEqual(MIN_SAFE_AREA);
-    expect(DEFAULT_SAFE_AREA.h).toBeGreaterThanOrEqual(MIN_SAFE_AREA);
+  it("accepts a persona (re)assignment, including null to clear back to generic", () => {
+    const uuid = "22222222-2222-4222-8222-222222222222";
+    expect(hookPatchSchema.safeParse({ personaId: uuid }).success).toBe(true);
+    expect(hookPatchSchema.safeParse({ personaId: null }).success).toBe(true);
+    expect(hookPatchSchema.safeParse({ personaId: "nope" }).success).toBe(false);
   });
 });
+
+// The safe-area geometry itself (framePoint/rectFromPoints/moveRect/…) moved
+// to @aiugc/core/hook-geometry — its tests live in core (hook-geometry.test.ts).

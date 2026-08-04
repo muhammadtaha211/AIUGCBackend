@@ -4,14 +4,58 @@ import {
   aRenderStageIndex,
   clientDemoFileError,
   demoDurationError,
+  estimateVoSeconds,
   isActiveARenderStatus,
   isIngestingDemoStatus,
   shapeSummary,
+  voLengthHeadsUp,
 } from "../src/lib/service-a-ui";
 
 describe("wizard steps", () => {
-  it("is one fixed path: demo -> hook -> persona -> script -> audio -> render", () => {
-    expect(A_WIZARD_STEPS).toEqual(["demo", "hook", "persona", "script", "audio", "render"]);
+  it("is one fixed path, persona first (the gallery filters by persona)", () => {
+    expect(A_WIZARD_STEPS).toEqual([
+      "persona",
+      "hook",
+      "hookStudio",
+      "demo",
+      "script",
+      "audio",
+      "render",
+    ]);
+  });
+});
+
+describe("VO length estimate (inverted word-budget mapping)", () => {
+  // 20s demo at 2.2 w/s -> budget 44: implied wps = 44/20 = 2.2 exactly.
+  it("recovers the seconds from the word count via the stored budget", () => {
+    expect(estimateVoSeconds(44, 20, 44)).toBeCloseTo(20);
+    expect(estimateVoSeconds(55, 20, 44)).toBeCloseTo(25);
+    expect(estimateVoSeconds(22, 20, 44)).toBeCloseTo(10);
+  });
+
+  it("degrades to 0 on impossible inputs instead of dividing by zero", () => {
+    expect(estimateVoSeconds(30, 20, 0)).toBe(0);
+    expect(estimateVoSeconds(30, 0, 44)).toBe(0);
+  });
+
+  it("stays silent while the script fits the demo", () => {
+    expect(voLengthHeadsUp(40, 20, 44)).toBeNull();
+    expect(voLengthHeadsUp(44, 20, 44)).toBeNull();
+  });
+
+  it("small overrun: a freeze-shaped note, clearly labeled an estimate", () => {
+    // 47 words -> ~21.4s on a 20s demo: remainder < 2s.
+    const note = voLengthHeadsUp(47, 20, 44)!;
+    expect(note).toContain("הפריים האחרון");
+    expect(note).toContain("הערכה");
+  });
+
+  it("large overrun: an avatar-shaped note with the estimated seconds", () => {
+    // 55 words -> ~25s on a 20s demo: remainder >= 2s.
+    const note = voLengthHeadsUp(55, 20, 44)!;
+    expect(note).toContain("הדמות");
+    expect(note).toContain("25");
+    expect(note).toContain("הערכה");
   });
 });
 

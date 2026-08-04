@@ -7,7 +7,8 @@ import { hookPatchSchema } from "@/lib/hooks";
 
 /**
  * One clip action per PATCH: active toggle (retire mechanism — variant params
- * reference clip ids, so rows are never deleted) or safe-area update.
+ * reference clip ids, so rows are never deleted), safe-area update, or persona
+ * (re)assignment (null = back to generic).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,6 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .set({
         ...(patch.active !== undefined ? { active: patch.active } : {}),
         ...(patch.textSafeArea !== undefined ? { textSafeArea: patch.textSafeArea } : {}),
+        ...(patch.personaId !== undefined ? { personaId: patch.personaId } : {}),
       })
       .where(eq(schema.hookClips.id, id));
     return NextResponse.json({ ok: true });

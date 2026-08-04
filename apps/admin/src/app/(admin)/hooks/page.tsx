@@ -1,14 +1,14 @@
 import { redirect } from "next/navigation";
 import { getDb, getStorage, schema } from "@aiugc/core";
+import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { adminSession, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
-import type { SafeRect } from "@/lib/hooks";
-import { HookCard } from "./hook-card";
-import { UploadHook } from "./upload-hook";
+import { HooksManager } from "./hooks-manager";
 
 /**
  * Hook-clip bank: every clip (inactive ones grayed, never hidden — active=false
  * is the retire mechanism and rows are never deleted), with the upload flow and
- * per-clip actions. The Service A wizard picker shows only active clips.
+ * per-clip actions. The Service A wizard picker shows only active clips, and
+ * only the chosen persona's swapped clips + the generic (no-persona) ones.
  */
 export default async function AdminHooksPage() {
   const db = getDb();
@@ -16,6 +16,11 @@ export default async function AdminHooksPage() {
   if (!session) redirect("/login");
 
   const rows = await db.select().from(schema.hookClips).orderBy(schema.hookClips.createdAt);
+  const personaRows = await db
+    .select({ id: schema.personas.id, name: schema.personas.name })
+    .from(schema.personas)
+    .orderBy(schema.personas.createdAt);
+  const personaName = new Map(personaRows.map((p) => [p.id, p.name]));
 
   const storage = getStorage();
   const clips = [];
@@ -29,27 +34,16 @@ export default async function AdminHooksPage() {
       tags: clip.tags as Record<string, string>,
       textSafeArea: clip.textSafeArea as SafeRect,
       active: clip.active,
+      personaId: clip.personaId ?? undefined,
+      personaName: clip.personaId ? personaName.get(clip.personaId) : undefined,
+      sourceClipId: clip.sourceClipId ?? undefined,
     });
   }
 
   return (
     <div>
       <h1 className="text-xl font-semibold tracking-tight text-white">פתיחים</h1>
-
-      <div className="mt-6">
-        <UploadHook />
-      </div>
-
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {clips.map((clip) => (
-          <HookCard key={clip.id} clip={clip} />
-        ))}
-        {clips.length === 0 && (
-          <p className="col-span-full text-sm text-gray-500">
-            אין פתיחים עדיין — מעלים קליפ ראשון למעלה.
-          </p>
-        )}
-      </div>
+      <HooksManager clips={clips} personas={personaRows} />
     </div>
   );
 }

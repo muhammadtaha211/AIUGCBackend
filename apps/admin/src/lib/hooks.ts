@@ -1,11 +1,28 @@
+import { HOOK_FRAME, textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 import { z } from "zod";
 
 /**
- * Pure, unit-testable parts of the hook-clip bank admin: upload validation,
- * request body schemas, and the safe-area editor's coordinate mapping between
- * the scaled preview and 1080x1920 frame space. Route handlers and the editor
- * component wire these to auth + DB + pointer events. Mirrors src/lib/admin.ts.
+ * Pure, unit-testable parts of the hook-clip bank admin: upload validation and
+ * request body schemas. Route handlers and the editor component wire these to
+ * auth + DB + pointer events. Mirrors src/lib/admin.ts. The safe-area editor's
+ * coordinate mapping lives in @aiugc/core/hook-geometry (shared with the
+ * customer wizard's placement editor) and is re-exported below so existing
+ * imports keep working.
  */
+
+export {
+  DEFAULT_SAFE_AREA,
+  HOOK_FRAME,
+  MIN_SAFE_AREA,
+  framePoint,
+  moveRect,
+  oppositeCorner,
+  rectFromPoints,
+  textSafeAreaSchema,
+  type Corner,
+  type FramePoint,
+  type SafeRect,
+} from "@aiugc/core/hook-geometry";
 
 // ---------------------------------------------------------------------------
 // Upload validation. The clip file never passes through a route (signed upload
@@ -15,7 +32,6 @@ import { z } from "zod";
 // server bounds-checks them and otherwise takes them at their word.
 // ---------------------------------------------------------------------------
 
-export const HOOK_FRAME = { width: 1080, height: 1920 } as const;
 export const HOOK_DURATION = { minMs: 500, maxMs: 10_000 } as const;
 export const MAX_HOOK_BYTES = 50 * 1024 * 1024;
 
@@ -67,17 +83,6 @@ export function isHookUploadPath(uploadPath: string): boolean {
 // Request bodies
 // ---------------------------------------------------------------------------
 
-export const textSafeAreaSchema = z
-  .object({
-    x: z.number().int().min(0),
-    y: z.number().int().min(0),
-    w: z.number().int().min(1),
-    h: z.number().int().min(1),
-  })
-  .refine((r) => r.x + r.w <= HOOK_FRAME.width && r.y + r.h <= HOOK_FRAME.height, {
-    message: "safe area outside the 1080x1920 frame",
-  });
-
 /** The three known tag facets; blank fields are omitted by the client, never stored. */
 export const hookTagsSchema = z.object({
   energy: z.string().trim().min(1).max(60).optional(),
@@ -92,74 +97,20 @@ export const registerHookSchema = z.object({
   height: z.number().int().positive(),
   textSafeArea: textSafeAreaSchema,
   tags: hookTagsSchema.default({}),
+  /** Persona-swapped clip: shown only in that persona's gallery. Absent = generic. */
+  personaId: z.string().uuid().optional(),
+  /** Lineage: the clip this swap was generated from ("שכפול לדמות"). */
+  sourceClipId: z.string().uuid().optional(),
 });
 
-/** One PATCH per clip action: active toggle or safe-area update. */
+/** One PATCH per clip action: active toggle, safe-area update, or persona (re)assignment. */
 export const hookPatchSchema = z
   .object({
     active: z.boolean().optional(),
     textSafeArea: textSafeAreaSchema.optional(),
+    /** null clears the assignment back to generic (shown to everyone). */
+    personaId: z.string().uuid().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined), {
     message: "empty patch",
   });
-
-// ---------------------------------------------------------------------------
-// Safe-area editor geometry. The editor tracks the rect in frame space
-// (1080x1920) and converts pointer positions from the scaled preview through
-// framePoint; rects stay integer and fully inside the frame at all times.
-// ---------------------------------------------------------------------------
-
-export type SafeRect = { x: number; y: number; w: number; h: number };
-export type FramePoint = { x: number; y: number };
-
-/** Smaller than this is unusable for a hook line (min font 40px at line-height 1.2). */
-export const MIN_SAFE_AREA = 120;
-
-/** Where a fresh clip's rect starts — the sample-render default, mid-frame. */
-export const DEFAULT_SAFE_AREA: SafeRect = { x: 90, y: 640, w: 900, h: 520 };
-
-/** A pointer position inside the preview box (display px) -> frame space, clamped. */
-export function framePoint(
-  displayX: number,
-  displayY: number,
-  displayW: number,
-  displayH: number,
-): FramePoint {
-  return {
-    x: Math.min(Math.max((displayX / displayW) * HOOK_FRAME.width, 0), HOOK_FRAME.width),
-    y: Math.min(Math.max((displayY / displayH) * HOOK_FRAME.height, 0), HOOK_FRAME.height),
-  };
-}
-
-/**
- * Two frame-space corners (any drag direction) -> a normalized, integer,
- * min-sized rect kept fully inside the frame. Used for both drawing a new
- * rect and resizing from a corner handle (anchor = the opposite corner).
- */
-export function rectFromPoints(a: FramePoint, b: FramePoint): SafeRect {
-  const w = Math.min(Math.max(Math.round(Math.abs(a.x - b.x)), MIN_SAFE_AREA), HOOK_FRAME.width);
-  const h = Math.min(Math.max(Math.round(Math.abs(a.y - b.y)), MIN_SAFE_AREA), HOOK_FRAME.height);
-  const x = Math.min(Math.max(Math.round(Math.min(a.x, b.x)), 0), HOOK_FRAME.width - w);
-  const y = Math.min(Math.max(Math.round(Math.min(a.y, b.y)), 0), HOOK_FRAME.height - h);
-  return { x, y, w, h };
-}
-
-/** Slide a rect by a frame-space delta, kept fully inside the frame. */
-export function moveRect(rect: SafeRect, dx: number, dy: number): SafeRect {
-  return {
-    ...rect,
-    x: Math.min(Math.max(Math.round(rect.x + dx), 0), HOOK_FRAME.width - rect.w),
-    y: Math.min(Math.max(Math.round(rect.y + dy), 0), HOOK_FRAME.height - rect.h),
-  };
-}
-
-export type Corner = "nw" | "ne" | "sw" | "se";
-
-/** The fixed anchor when resizing from `corner` — the diagonally opposite one. */
-export function oppositeCorner(rect: SafeRect, corner: Corner): FramePoint {
-  return {
-    x: corner === "nw" || corner === "sw" ? rect.x + rect.w : rect.x,
-    y: corner === "nw" || corner === "ne" ? rect.y + rect.h : rect.y,
-  };
-}

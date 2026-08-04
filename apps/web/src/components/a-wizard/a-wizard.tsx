@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
 import { StepAudio } from "@/components/b-wizard/step-audio";
 import { StepPersona } from "@/components/b-wizard/step-persona";
@@ -15,14 +16,16 @@ import {
 import type { AudioState, Persona, RenderState, ScriptState } from "@/lib/service-b-ui";
 import { StepDemo } from "./step-demo";
 import { StepHook } from "./step-hook";
+import { StepHookStudio } from "./step-hook-studio";
 import { StepARender } from "./step-render";
 import { StepAScript } from "./step-script";
 
 const STEP_TITLES: Record<AWizardStep, string> = {
-  demo: "סרטון המוצר",
-  hook: "בחירת פתיח",
   persona: "בחירת דמות",
-  script: "משפט פתיחה ותסריט",
+  hook: "בחירת קליפ פתיחה",
+  hookStudio: "משפט הפתיחה והמיקום",
+  demo: "סרטון המוצר",
+  script: "תסריט הקריינות",
   audio: "הקלטה",
   render: "יצירת הסרטון",
 };
@@ -35,8 +38,9 @@ type AWizardProps = {
 };
 
 /**
- * The Service A wizard: demo upload -> hook clip -> persona -> hook line +
- * VO script -> audio approval (hard gate) -> advisory shape + render.
+ * The Service A wizard: persona -> hook gallery (persona-filtered) -> hook
+ * studio (line + placement) -> demo upload (+ optional footage note) -> VO
+ * script -> audio approval (hard gate) -> advisory shape + render.
  * Single variant — the grid stays CLI-only. State is client-side only; a
  * refresh restarts the wizard. Persona and audio steps are shared with B.
  */
@@ -46,12 +50,15 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
   /** 403/404 from any call: the business/resource is gone for this session. */
   const [fatal, setFatal] = useState<string | null>(null);
 
-  const [demo, setDemo] = useState<DemoState | null>(null);
-  const [hook, setHook] = useState<HookClip | null>(null);
   const [persona, setPersona] = useState<Persona | null>(null);
-  const [selectedAdvantages, setSelectedAdvantages] = useState<string[]>(advantages);
+  const [hook, setHook] = useState<HookClip | null>(null);
   const [hookLines, setHookLines] = useState<HookLineOption[] | null>(null);
   const [hookLine, setHookLine] = useState<HookLineOption | null>(null);
+  /** Customer-placed hook-line rect; null = the clip's default safe area. */
+  const [rect, setRect] = useState<SafeRect | null>(null);
+  const [demo, setDemo] = useState<DemoState | null>(null);
+  const [demoDescription, setDemoDescription] = useState("");
+  const [selectedAdvantages, setSelectedAdvantages] = useState<string[]>(advantages);
   const [script, setScript] = useState<ScriptState | null>(null);
   const [editedText, setEditedText] = useState("");
   const [audio, setAudio] = useState<AudioState | null>(null);
@@ -61,6 +68,31 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
   const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
 
+  /**
+   * A different persona invalidates the VO script and audio (the voice
+   * changed) and a persona-swapped hook clip that belonged to the old persona
+   * (it is not in the new persona's gallery). Generic clips and the hook-line
+   * options survive — they derive from the questionnaire alone.
+   */
+  function selectPersona(next: Persona) {
+    if (persona && persona.id !== next.id) {
+      setScript(null);
+      setEditedText("");
+      setAudio(null);
+      if (hook?.personaId && hook.personaId !== next.id) {
+        setHook(null);
+        setRect(null);
+      }
+    }
+    setPersona(next);
+  }
+
+  /** A different clip re-seeds the placement editor from ITS default rect. */
+  function selectHook(next: HookClip) {
+    if (hook && hook.id !== next.id) setRect(null);
+    setHook(next);
+  }
+
   /** A different demo invalidates the VO script (word budget) and its audio. */
   function replaceDemo(next: DemoState | null) {
     if (demo && next?.id !== demo.id) {
@@ -69,19 +101,6 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
       setAudio(null);
     }
     setDemo(next);
-  }
-
-  /**
-   * A different persona invalidates the VO script and audio (the voice
-   * changed). Hook-line options derive from the questionnaire and survive.
-   */
-  function selectPersona(next: Persona) {
-    if (persona && persona.id !== next.id) {
-      setScript(null);
-      setEditedText("");
-      setAudio(null);
-    }
-    setPersona(next);
   }
 
   /** Leaving the script step: later steps must use the latest scriptId only. */
@@ -120,29 +139,11 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
         />
       </div>
 
+      <StructureStrip persona={persona} hook={hook} demo={demo} />
+
       <div key={stepIndex} className="step-in mt-5">
         <div className="rounded-xl border border-white/10 bg-white/5 p-6 sm:p-10">
           <h1 className="sr-only">{STEP_TITLES[step]}</h1>
-
-          {step === "demo" && (
-            <StepDemo
-              businessId={businessId}
-              demo={demo}
-              setDemo={replaceDemo}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
-
-          {step === "hook" && (
-            <StepHook
-              selected={hook}
-              onSelect={setHook}
-              onBack={goBack}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
 
           {step === "persona" && (
             <StepPersona
@@ -153,18 +154,54 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
             />
           )}
 
-          {step === "script" && demo && persona && (
-            <StepAScript
-              businessId={businessId}
-              demoId={demo.id}
+          {step === "hook" && persona && (
+            <StepHook
               personaId={persona.id}
-              advantages={advantages}
-              selectedAdvantages={selectedAdvantages}
-              setSelectedAdvantages={setSelectedAdvantages}
+              selected={hook}
+              onSelect={selectHook}
+              onBack={goBack}
+              onContinue={goNext}
+              onFatal={setFatal}
+            />
+          )}
+
+          {step === "hookStudio" && hook && (
+            <StepHookStudio
+              businessId={businessId}
+              hook={hook}
               hookLines={hookLines}
               setHookLines={setHookLines}
               hookLine={hookLine}
               setHookLine={setHookLine}
+              rect={rect}
+              setRect={setRect}
+              onBack={goBack}
+              onContinue={goNext}
+              onFatal={setFatal}
+            />
+          )}
+
+          {step === "demo" && (
+            <StepDemo
+              businessId={businessId}
+              demo={demo}
+              setDemo={replaceDemo}
+              description={demoDescription}
+              setDescription={setDemoDescription}
+              onContinue={goNext}
+              onFatal={setFatal}
+            />
+          )}
+
+          {step === "script" && demo && persona && (
+            <StepAScript
+              businessId={businessId}
+              demoId={demo.id}
+              demoDurationMs={demo.durationMs}
+              personaId={persona.id}
+              advantages={advantages}
+              selectedAdvantages={selectedAdvantages}
+              setSelectedAdvantages={setSelectedAdvantages}
               script={script}
               setScript={setScript}
               editedText={editedText}
@@ -194,6 +231,7 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
               hookLineScriptId={hookLine.scriptId}
               audioId={audio.id}
               personaId={persona.id}
+              textSafeArea={rect ?? undefined}
               render={render}
               setRender={setRender}
               onBack={goBack}
@@ -202,6 +240,78 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The structure strip: the fixed three-part shape of every Service A ad —
+ * פתיח | הדמו שלכם | סיום עם הדמות — populating live as choices land, so the
+ * customer always sees what they are building. The persona face sits in the
+ * ending slot from step 1: the chosen character narrates and closes the video.
+ */
+function StructureStrip({
+  persona,
+  hook,
+  demo,
+}: {
+  persona: Persona | null;
+  hook: HookClip | null;
+  demo: DemoState | null;
+}) {
+  return (
+    <div className="mt-4 grid grid-cols-3 gap-2">
+      <StripSlot label="פתיח">
+        {hook && (
+          <video
+            src={hook.previewUrl}
+            muted
+            loop
+            autoPlay
+            playsInline
+            className="absolute inset-0 size-full object-cover"
+          />
+        )}
+      </StripSlot>
+      <StripSlot label="הדמו שלכם">
+        {demo?.thumbUrl && (
+          // Signed, short-lived URL — next/image optimization would break it.
+          <img src={demo.thumbUrl} alt="" className="absolute inset-0 size-full object-cover" />
+        )}
+      </StripSlot>
+      <StripSlot label="סיום עם הדמות" caption={persona ? "מקריינת לאורך כל הסרטון" : undefined}>
+        {persona && (
+          <img
+            src={persona.imageUrl}
+            alt={persona.name}
+            className="absolute inset-0 size-full object-cover"
+          />
+        )}
+      </StripSlot>
+    </div>
+  );
+}
+
+function StripSlot({
+  label,
+  caption,
+  children,
+}: {
+  label: string;
+  caption?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="text-center">
+      <div
+        className={`relative aspect-[9/5] overflow-hidden rounded-lg border ${
+          children ? "border-white/15" : "border-dashed border-white/15 bg-white/5"
+        }`}
+      >
+        {children}
+      </div>
+      <p className="mt-1 text-[11px] text-gray-400">{label}</p>
+      {caption && <p className="text-[10px] leading-tight text-gray-500">{caption}</p>}
     </div>
   );
 }

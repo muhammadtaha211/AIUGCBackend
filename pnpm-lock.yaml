@@ -103,6 +103,9 @@ importers:
       '@aiugc/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@aiugc/remotion':
+        specifier: workspace:*
+        version: link:../../packages/remotion
       '@anthropic-ai/sdk':
         specifier: ^0.111.0
         version: 0.111.0(zod@4.4.3)

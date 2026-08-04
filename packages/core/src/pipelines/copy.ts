@@ -189,6 +189,9 @@ export async function generateVoScript(
   const demoSeconds = Math.round((demo.durationMs ?? 0) / 1000);
   const wps = await wordsPerSecond(db, voiceId);
   const wordBudget = opts.wordBudgetOverride ?? Math.floor(demoSeconds * wps);
+  // Soft grounding from the demo row (customer-typed, optional). Snapshotted
+  // into params below — the demo row stays editable, scripts must stay traceable.
+  const demoDescription = demo.description?.trim() || undefined;
 
   let text: string;
   let promptVersion = "dry_run";
@@ -205,6 +208,7 @@ export async function generateVoScript(
       {
         questionnaire: JSON.stringify(questionnaire, null, 2),
         selected_advantages: opts.selectedAdvantages.map((a) => `- ${a}`).join("\n"),
+        demo_description: demoDescription ?? "(אין — התבסס על השאלון בלבד)",
         demo_seconds: demoSeconds,
         word_budget: wordBudget,
         words_per_second: wps,
@@ -223,7 +227,7 @@ export async function generateVoScript(
       personaId: opts.personaId,
       kind: "vo_script",
       text,
-      params: { selectedAdvantages: opts.selectedAdvantages, wordBudget, voiceId },
+      params: { selectedAdvantages: opts.selectedAdvantages, wordBudget, voiceId, demoDescription },
       promptVersion,
     })
     .returning();

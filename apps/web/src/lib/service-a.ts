@@ -1,3 +1,4 @@
+import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 import { z } from "zod";
 
 /**
@@ -48,6 +49,11 @@ export function isOwnedDemoUploadPath(businessId: string, uploadPath: string): b
 
 export const registerDemoRequestSchema = z.object({ uploadPath: z.string().min(1).max(300) });
 
+/** The optional footage note; blank clears (server trims and nulls). */
+export const demoDescriptionRequestSchema = z.object({
+  description: z.string().max(500),
+});
+
 // ---------------------------------------------------------------------------
 // Copy + set bodies
 // ---------------------------------------------------------------------------
@@ -71,4 +77,6 @@ export const aRenderRequestSchema = z.object({
   hookLineScriptId: z.string().uuid(),
   audioId: z.string().uuid(),
   personaId: z.string().uuid(),
+  /** The hook-studio placement; absent = the clip's default safe area. */
+  textSafeArea: textSafeAreaSchema.optional(),
 });

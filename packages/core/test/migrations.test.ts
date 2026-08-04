@@ -138,6 +138,71 @@ describe("migrations", () => {
     await pg.close();
   });
 
+  it("0013: demo description column + persona-swapped hook clip FKs", async () => {
+    const { db, pg } = await createTestDb();
+
+    const [user] = await db
+      .insert(schema.users)
+      .values({ email: "founder@test.local" })
+      .returning();
+    const [biz] = await db
+      .insert(schema.businesses)
+      .values({ ownerUserId: user!.id, name: "Test Biz" })
+      .returning();
+    const [demo] = await db
+      .insert(schema.demos)
+      .values({ businessId: biz!.id, description: "גלילה בתפריט" })
+      .returning();
+    expect(demo!.description).toBe("גלילה בתפריט");
+
+    const [persona] = await db
+      .insert(schema.personas)
+      .values({ name: "נועה", voiceId: "voice_noa" })
+      .returning();
+    const [generic] = await db
+      .insert(schema.hookClips)
+      .values({
+        filePath: "assets/h1.mp4",
+        durationMs: 2000,
+        textSafeArea: { x: 0, y: 0, w: 500, h: 500 },
+      })
+      .returning();
+    expect(generic!.personaId).toBeNull();
+
+    const [swapped] = await db
+      .insert(schema.hookClips)
+      .values({
+        filePath: "assets/h2.mp4",
+        durationMs: 2000,
+        textSafeArea: { x: 0, y: 0, w: 500, h: 500 },
+        personaId: persona!.id,
+        sourceClipId: generic!.id,
+      })
+      .returning();
+    expect(swapped!.personaId).toBe(persona!.id);
+    expect(swapped!.sourceClipId).toBe(generic!.id);
+
+    // Both FKs are real: a bogus persona or source clip is refused.
+    await expect(
+      db.insert(schema.hookClips).values({
+        filePath: "assets/h3.mp4",
+        durationMs: 2000,
+        textSafeArea: { x: 0, y: 0, w: 500, h: 500 },
+        personaId: "00000000-0000-0000-0000-000000000001",
+      }),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      db.insert(schema.hookClips).values({
+        filePath: "assets/h4.mp4",
+        durationMs: 2000,
+        textSafeArea: { x: 0, y: 0, w: 500, h: 500 },
+        sourceClipId: "00000000-0000-0000-0000-000000000001",
+      }),
+    ).rejects.toThrow(/foreign key/i);
+
+    await pg.close();
+  });
+
   it("enforce the circular sets -> video_renders FK from 0001", async () => {
     const { db, pg } = await createTestDb();
 

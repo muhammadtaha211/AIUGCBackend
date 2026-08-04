@@ -66,6 +66,23 @@ export async function registerUploadedDemo(
   return demo;
 }
 
+/**
+ * The optional "what the footage shows" note — soft grounding for the VO
+ * script. Once per demo, editable while the customer is on the upload step;
+ * every script generated from this demo afterwards inherits it. Blank clears.
+ */
+export async function setDemoDescription(
+  db: Db,
+  opts: { demoId: string; description: string },
+): Promise<void> {
+  const rows = await db.select().from(demos).where(eq(demos.id, opts.demoId)).limit(1);
+  if (!rows[0]) throw new Error(`demo ${opts.demoId} not found`);
+  await db
+    .update(demos)
+    .set({ description: opts.description.trim() || null, updatedAt: new Date() })
+    .where(eq(demos.id, opts.demoId));
+}
+
 /** Job handler: probe -> sanity checks -> normalize -> thumbnail -> ready. */
 export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobResult> {
   const { demoId } = job.payload as { demoId: string };

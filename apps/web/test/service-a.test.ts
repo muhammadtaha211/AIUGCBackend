@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aRenderRequestSchema,
+  demoDescriptionRequestSchema,
   demoFileError,
   demoUploadPath,
   isOwnedDemoUploadPath,
@@ -84,5 +85,34 @@ describe("request schemas", () => {
     };
     expect(aRenderRequestSchema.safeParse(body).success).toBe(true);
     expect(aRenderRequestSchema.safeParse({ ...body, personaId: undefined }).success).toBe(false);
+  });
+
+  it("a-set render body: the hook-studio rect is optional but frame-bounded", () => {
+    const body = {
+      demoId: UUID,
+      hookClipId: UUID,
+      hookLineScriptId: UUID,
+      audioId: UUID,
+      personaId: UUID,
+    };
+    expect(
+      aRenderRequestSchema.safeParse({ ...body, textSafeArea: { x: 40, y: 900, w: 1000, h: 300 } })
+        .success,
+    ).toBe(true);
+    expect(
+      aRenderRequestSchema.safeParse({ ...body, textSafeArea: { x: 400, y: 0, w: 900, h: 500 } })
+        .success,
+    ).toBe(false);
+  });
+
+  it("demo description caps at 500 chars; blank is fine (it clears)", () => {
+    expect(demoDescriptionRequestSchema.safeParse({ description: "גלילה בתפריט" }).success).toBe(
+      true,
+    );
+    expect(demoDescriptionRequestSchema.safeParse({ description: "" }).success).toBe(true);
+    expect(demoDescriptionRequestSchema.safeParse({ description: "א".repeat(501) }).success).toBe(
+      false,
+    );
+    expect(demoDescriptionRequestSchema.safeParse({}).success).toBe(false);
   });
 });

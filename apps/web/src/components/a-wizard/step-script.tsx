@@ -4,21 +4,19 @@ import { useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
-import type { HookLineOption } from "@/lib/service-a-ui";
+import { voLengthHeadsUp } from "@/lib/service-a-ui";
 import { countWords, needsTextSave, withEditedText, type ScriptState } from "@/lib/service-b-ui";
 import { postJson } from "@/lib/use-api";
 
 type StepAScriptProps = {
   businessId: string;
   demoId: string;
+  /** For the seconds-only length heads-up (inverts the word-budget mapping). */
+  demoDurationMs?: number;
   personaId: string;
   advantages: string[];
   selectedAdvantages: string[];
   setSelectedAdvantages: (value: string[]) => void;
-  hookLines: HookLineOption[] | null;
-  setHookLines: (value: HookLineOption[] | null) => void;
-  hookLine: HookLineOption | null;
-  setHookLine: (value: HookLineOption | null) => void;
   script: ScriptState | null;
   setScript: (script: ScriptState | null) => void;
   editedText: string;
@@ -30,22 +28,19 @@ type StepAScriptProps = {
 };
 
 /**
- * Step 4, two parts: pick the burned hook line (generated options), then the
- * VO script — generated from the ticked advantages, editable. The word budget
- * is ADVISORY here: a longer script means a freeze/avatar ending, shown in
- * the shape display before anything renders. Nothing blocks.
+ * Step 5, two parts: tick the advantages that actually appear in the footage,
+ * then the VO script — generated from them, editable. Length is ADVISORY: a
+ * longer script means a freeze/avatar ending, estimated here in seconds and
+ * shown exactly in the shape display before anything renders. Nothing blocks.
  */
 export function StepAScript({
   businessId,
   demoId,
+  demoDurationMs,
   personaId,
   advantages,
   selectedAdvantages,
   setSelectedAdvantages,
-  hookLines,
-  setHookLines,
-  hookLine,
-  setHookLine,
   script,
   setScript,
   editedText,
@@ -55,27 +50,15 @@ export function StepAScript({
   onFatal,
 }: StepAScriptProps) {
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"hookLines" | "script" | "save" | null>(null);
-  /** Within-step navigation: the script phase's back returns to the pick. */
-  const [phase, setPhase] = useState<"pick" | "script">(hookLine && script ? "script" : "pick");
+  const [busy, setBusy] = useState<"script" | "save" | null>(null);
+  /** Within-step navigation: the script phase's back returns to the tick. */
+  const [phase, setPhase] = useState<"advantages" | "script">(script ? "script" : "advantages");
 
   const words = countWords(editedText);
-  const overBudget = script?.wordBudget !== undefined && words > script.wordBudget;
-
-  async function generateHookLines() {
-    setError(null);
-    setBusy("hookLines");
-    const result = await postJson<{ options: HookLineOption[] }>(
-      `/api/businesses/${businessId}/hook-lines`,
-    );
-    setBusy(null);
-    if (!result.ok) {
-      if (result.status === 403 || result.status === 404) return onFatal(result.error);
-      return setError(result.error);
-    }
-    setHookLines(result.body.options);
-    setHookLine(null);
-  }
+  const headsUp =
+    script?.wordBudget !== undefined && demoDurationMs !== undefined
+      ? voLengthHeadsUp(words, demoDurationMs / 1000, script.wordBudget)
+      : null;
 
   async function generateScript() {
     setError(null);
@@ -126,43 +109,18 @@ export function StepAScript({
     );
   }
 
-  // Part 1: pick the hook line (and tick the advantages for the VO script).
-  if (phase === "pick") {
+  // Part 1: tick the advantages the VO script may narrate.
+  if (phase === "advantages") {
     return (
       <div>
         <StepHeader
-          title="משפט הפתיחה"
-          sub="המשפט שייצרב על הפתיח — זה מה שעוצר את הגלילה."
+          title="תסריט הקריינות"
+          sub="נכתוב תסריט לפי שאלון העסק — סמנו מה מהיתרונות באמת רואים בסרטון."
           onBack={onBack}
         />
 
-        {hookLines === null ? (
-          <p className="mt-6 text-sm text-gray-400">
-            ניצור כמה משפטי פתיחה לפי שאלון העסק — ותבחרו את החזק שבהם.
-          </p>
-        ) : (
-          <div role="radiogroup" aria-label="בחירת משפט פתיחה" className="mt-6 space-y-2">
-            {hookLines.map((option) => (
-              <button
-                key={option.scriptId}
-                type="button"
-                role="radio"
-                aria-checked={hookLine?.scriptId === option.scriptId}
-                onClick={() => setHookLine(option)}
-                className={`w-full rounded-xl border px-4 py-3 text-start text-base transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                  hookLine?.scriptId === option.scriptId
-                    ? "border-accent bg-accent/10 text-white ring-1 ring-accent"
-                    : "border-white/10 bg-white/5 text-gray-200 hover:border-white/25 hover:bg-white/[0.08]"
-                }`}
-              >
-                {option.text}
-              </button>
-            ))}
-          </div>
-        )}
-
         {advantages.length > 0 && (
-          <fieldset className="mt-7">
+          <fieldset className="mt-6">
             <legend className="text-sm font-medium text-gray-300">
               מה מהיתרונות באמת רואים בסרטון? (לתסריט הקריינות)
             </legend>
@@ -194,45 +152,19 @@ export function StepAScript({
           </p>
         )}
 
-        {hookLines === null ? (
-          <Button
-            type="button"
-            size="lg"
-            className="mt-7 w-full"
-            loading={busy === "hookLines"}
-            onClick={() => void generateHookLines()}
-          >
-            {busy === "hookLines" ? "כותבים משפטי פתיחה…" : "צור משפטי פתיחה"}
-          </Button>
-        ) : (
-          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <Button
-              type="button"
-              size="lg"
-              className="flex-1"
-              disabled={!hookLine || busy !== null}
-              loading={busy === "script"}
-              onClick={() => {
-                // An existing script (back navigation) is reused as-is.
-                if (script) setPhase("script");
-                else void generateScript();
-              }}
-            >
-              {busy === "script" ? "כותבים את התסריט…" : "המשך לתסריט הקריינות"}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="lg"
-              className="flex-1"
-              loading={busy === "hookLines"}
-              disabled={busy === "script"}
-              onClick={() => void generateHookLines()}
-            >
-              צור אפשרויות חדשות
-            </Button>
-          </div>
-        )}
+        <Button
+          type="button"
+          size="lg"
+          className="mt-7 w-full"
+          loading={busy === "script"}
+          onClick={() => {
+            // An existing script (back navigation) is reused as-is.
+            if (script) setPhase("script");
+            else void generateScript();
+          }}
+        >
+          {busy === "script" ? "כותבים את התסריט…" : "המשך לתסריט הקריינות"}
+        </Button>
       </div>
     );
   }
@@ -243,7 +175,7 @@ export function StepAScript({
       <StepHeader
         title="תסריט הקריינות"
         sub="זה מה שיישמע מעל סרטון המוצר, מילה במילה."
-        onBack={() => setPhase("pick")}
+        onBack={() => setPhase("advantages")}
       />
 
       <div className="mt-6">
@@ -253,16 +185,8 @@ export function StepAScript({
           value={editedText}
           onChange={(event) => setEditedText(event.target.value)}
         />
-        <p className="mt-1.5 text-[13px] tabular-nums text-gray-500">
-          {script?.wordBudget !== undefined
-            ? `${words} / ${script.wordBudget} מילים`
-            : `${words} מילים`}
-        </p>
-        {overBudget && (
-          <p className="mt-1.5 text-[13px] text-amber-300/90">
-            התסריט ארוך מסרטון המוצר — הסרטון יקבל סיום מתאים (תראו את המבנה המדויק לפני היצירה).
-          </p>
-        )}
+        <p className="mt-1.5 text-[13px] tabular-nums text-gray-500">{words} מילים</p>
+        {headsUp && <p className="mt-1.5 text-[13px] text-amber-300/90">{headsUp}</p>}
       </div>
 
       {error && (

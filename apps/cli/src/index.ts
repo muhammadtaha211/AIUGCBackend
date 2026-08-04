@@ -329,6 +329,7 @@ set
     "--persona <id>",
     "voiced mode: the persona (required when the VO earns an avatar ending)",
   )
+  .option("--safe-area <x,y,w,h>", "variant hook-line rect; absent = each clip's default")
   .action(
     run(
       async (opts: {
@@ -339,7 +340,13 @@ set
         captions?: string;
         audio?: string;
         persona?: string;
+        safeArea?: string;
       }) => {
+        let textSafeArea;
+        if (opts.safeArea) {
+          const [x, y, w, h] = csv(opts.safeArea).map(Number);
+          textSafeArea = { x: x!, y: y!, w: w!, h: h! };
+        }
         const { set: row, renders } = await createSet(getDb(), {
           businessId: opts.business,
           demoId: opts.demo,
@@ -350,6 +357,7 @@ set
             captionScriptId: opts.captions,
             audioRenderId: opts.audio,
             personaId: opts.persona,
+            textSafeArea,
           },
         });
         console.log(`set ${row.id}: ${renders.length} render jobs queued`);

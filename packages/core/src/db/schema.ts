@@ -120,6 +120,9 @@ export const demos = pgTable(
       .references(() => businesses.id),
     status: demoStatus("status").notNull().default("uploaded"),
     rejectReason: text("reject_reason"),
+    // Optional customer note on what the footage shows — soft grounding for the
+    // VO script. Once per demo; scripts generated from this demo inherit it.
+    description: text("description"),
     probe: jsonb("probe"),
     rawPath: text("raw_path"),
     normalizedPath: text("normalized_path"),
@@ -157,6 +160,11 @@ export const hookClips = pgTable("hook_clips", {
   tags: jsonb("tags").notNull().default({}),
   // {x, y, w, h} in 1080x1920 space where the burned hook line may be placed.
   textSafeArea: jsonb("text_safe_area").notNull(),
+  // Persona-swapped clips (founder-generated offline, uploaded via admin).
+  // NULL = generic/original performer, shown to everyone.
+  personaId: uuid("persona_id").references(() => personas.id),
+  // Lineage: the clip this one was swapped from (self-FK in the 0013 migration).
+  sourceClipId: uuid("source_clip_id"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
