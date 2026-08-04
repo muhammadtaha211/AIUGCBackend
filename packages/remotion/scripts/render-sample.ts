@@ -9,11 +9,18 @@ import { ensureFixtures, TALKING_HEAD_FIXTURE, VOICEOVER_FIXTURE } from "./make-
  * fixtures. `--watermark` renders the watermarked variant instead.
  * `--service-a` renders the ServiceA composition (the placeholder clip stands
  * in for hook, demo AND avatar outro; the slice lands mid-clip so the hard cut
- * into the avatar segment is visible).
+ * into the avatar segment is visible). `--hook <file>` and
+ * `--safe-area x,y,w,h` replay a real bank clip with the safe area drawn in
+ * the admin editor, so what fits there can be checked against a real render.
  */
 
 const watermark = process.argv.includes("--watermark");
 const serviceA = process.argv.includes("--service-a");
+
+function argValue(flag: string): string | undefined {
+  const index = process.argv.indexOf(flag);
+  return index === -1 ? undefined : process.argv[index + 1];
+}
 const name = serviceA ? "sample-a" : watermark ? "sample-watermarked" : "sample";
 const outPath = fileURLToPath(new URL(`../out/${name}.mp4`, import.meta.url));
 
@@ -22,11 +29,12 @@ console.log(`rendering ${name}…`);
 const startedAt = Date.now();
 if (serviceA) {
   const voMs = Math.round((sampleDurationInFrames / FPS) * 1000);
+  const [x, y, w, h] = (argValue("--safe-area") ?? "90,640,900,520").split(",").map(Number);
   await renderServiceA(
     {
-      hookClipPath: TALKING_HEAD_FIXTURE,
+      hookClipPath: argValue("--hook") ?? TALKING_HEAD_FIXTURE,
       hookLine: "זה מה שאף אחד לא מספר לכם",
-      hookTextSafeArea: { x: 90, y: 640, w: 900, h: 520 },
+      hookTextSafeArea: { x: x!, y: y!, w: w!, h: h! },
       demoPath: TALKING_HEAD_FIXTURE,
       demoDurationMs: voMs,
       captions: sampleCaptions,

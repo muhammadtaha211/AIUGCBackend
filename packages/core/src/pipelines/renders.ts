@@ -242,7 +242,10 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
     if (result.status === "pending") {
       // submittedAt ?? now backfills state written before the deadline existed.
       const submittedAt = state.submittedAt ?? Date.now();
-      await assertPollDeadline(ctx.db, ctx.log, { providerJobId: state.providerJobId, submittedAt });
+      await assertPollDeadline(ctx.db, ctx.log, {
+        providerJobId: state.providerJobId,
+        submittedAt,
+      });
       return { kind: "reschedule", delayMs: 15_000, state: { ...state, submittedAt } };
     }
     if (result.status === "failed") throw new PermanentError(`lipsync failed: ${result.reason}`);
@@ -447,9 +450,8 @@ async function buildServiceAProps(
 
   return {
     kind: "service_a",
-    outroMode: params.outroMode === "avatar" || params.outroMode === "freeze"
-      ? params.outroMode
-      : undefined,
+    outroMode:
+      params.outroMode === "avatar" || params.outroMode === "freeze" ? params.outroMode : undefined,
     voSliceMs: params.voSliceMs,
     avatarPath,
     hookClipPath,

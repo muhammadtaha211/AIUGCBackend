@@ -1,0 +1,211 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { TextField } from "@/components/ui/field";
+import { DEFAULT_SAFE_AREA, hookFileError, hookMetadataError, type SafeRect } from "@/lib/hooks";
+import { postJson } from "@/lib/use-api";
+import { SafeAreaEditor } from "./safe-area-editor";
+
+/**
+ * Replaces `aiugc bank add-hook` + manually eyeballed coordinates: pick a
+ * file, pre-check it from HTMLVideoElement metadata (no ffmpeg on Vercel),
+ * draw the safe area on the local preview, then signed-upload straight to
+ * storage and register the row. The CLI command keeps working alongside.
+ */
+
+const UPLOAD_FAILED = "ההעלאה נכשלה — בדקו את החיבור ונסו שוב.";
+const UNREADABLE = "לא הצלחנו לקרוא את קובץ הווידאו — נסו קובץ אחר.";
+
+/** Duration + dimensions off the file's metadata; null when the browser can't decode. */
+function readVideoMetadata(
+  url: string,
+): Promise<{ durationMs: number; width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () =>
+      resolve(
+        Number.isFinite(video.duration)
+          ? {
+              durationMs: Math.round(video.duration * 1000),
+              width: video.videoWidth,
+              height: video.videoHeight,
+            }
+          : null,
+      );
+    video.onerror = () => resolve(null);
+    video.src = url;
+  });
+}
+
+export function UploadHook() {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [prepared, setPrepared] = useState<{
+    file: File;
+    previewUrl: string;
+    durationMs: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [rect, setRect] = useState<SafeRect>(DEFAULT_SAFE_AREA);
+  const [tags, setTags] = useState({ energy: "", gender: "", vibe: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function reset() {
+    if (prepared) URL.revokeObjectURL(prepared.previewUrl);
+    setPrepared(null);
+    setRect(DEFAULT_SAFE_AREA);
+    setTags({ energy: "", gender: "", vibe: "" });
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  async function onPick(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    const invalid = hookFileError(file);
+    if (invalid) return setError(invalid);
+    const url = URL.createObjectURL(file);
+    const meta = await readVideoMetadata(url);
+    const bad = meta === null ? UNREADABLE : hookMetadataError(meta);
+    if (meta === null || bad) {
+      URL.revokeObjectURL(url);
+      return setError(bad);
+    }
+    if (prepared) URL.revokeObjectURL(prepared.previewUrl);
+    setPrepared({ file, previewUrl: url, ...meta });
+    setRect(DEFAULT_SAFE_AREA);
+  }
+
+  async function upload() {
+    if (!prepared) return;
+    setBusy(true);
+    setError(null);
+
+    const target = await postJson<{ uploadUrl: string; uploadPath: string }>(
+      "/api/admin/hooks/upload-url",
+      { type: prepared.file.type, size: prepared.file.size },
+    );
+    if (!target.ok) {
+      setBusy(false);
+      return setError(target.error);
+    }
+
+    let uploaded = false;
+    try {
+      const put = await fetch(target.body.uploadUrl, {
+        method: "PUT",
+        headers: { "content-type": prepared.file.type },
+        body: prepared.file,
+      });
+      uploaded = put.ok;
+    } catch {
+      // network failure — handled below
+    }
+    if (!uploaded) {
+      setBusy(false);
+      return setError(UPLOAD_FAILED);
+    }
+
+    const trimmed = Object.fromEntries(
+      Object.entries(tags)
+        .map(([key, value]) => [key, value.trim()])
+        .filter(([, value]) => value !== ""),
+    );
+    const registered = await postJson<{ hookId: string }>("/api/admin/hooks", {
+      uploadPath: target.body.uploadPath,
+      durationMs: prepared.durationMs,
+      width: prepared.width,
+      height: prepared.height,
+      textSafeArea: rect,
+      tags: trimmed,
+    });
+    setBusy(false);
+    if (!registered.ok) return setError(registered.error);
+    reset();
+    router.refresh();
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+      <div className="flex flex-col gap-3">
+        <span className="text-sm font-medium text-gray-200">
+          פתיח חדש
+          <span className="ms-2 text-[13px] font-normal text-gray-500">
+            MP4 בדיוק 1080×1920, באורך 0.5–10 שניות
+          </span>
+        </span>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="video/mp4"
+          onChange={onPick}
+          className="text-sm text-gray-400 file:me-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-200 hover:file:bg-white/15"
+        />
+
+        {prepared && (
+          <div className="flex flex-wrap items-start gap-5">
+            <div className="w-64 shrink-0">
+              <div className="relative aspect-[9/16] overflow-hidden rounded-lg border border-white/10">
+                <video
+                  src={prepared.previewUrl}
+                  muted
+                  loop
+                  autoPlay
+                  playsInline
+                  className="absolute inset-0 size-full object-cover"
+                />
+                <SafeAreaEditor rect={rect} onChange={setRect} />
+              </div>
+              <p className="mt-1.5 text-[12px] text-gray-500">
+                גוררים על הווידאו כדי לצייר את אזור הטקסט, מזיזים מהאמצע ומשנים גודל מהפינות.
+              </p>
+            </div>
+
+            <div className="flex w-56 flex-col gap-3">
+              <span dir="ltr" className="text-end text-xs text-gray-400">
+                {(prepared.durationMs / 1000).toFixed(1)}s
+              </span>
+              <TextField
+                label="אנרגיה"
+                value={tags.energy}
+                onChange={(event) => setTags({ ...tags, energy: event.target.value })}
+                placeholder="למשל: גבוהה"
+              />
+              <TextField
+                label="מגדר"
+                value={tags.gender}
+                onChange={(event) => setTags({ ...tags, gender: event.target.value })}
+                placeholder="למשל: נקבה"
+              />
+              <TextField
+                label="וייב"
+                value={tags.vibe}
+                onChange={(event) => setTags({ ...tags, vibe: event.target.value })}
+                placeholder="למשל: מופתע"
+              />
+              <div className="mt-1 flex gap-2">
+                <Button type="button" onClick={upload} loading={busy}>
+                  העלאה
+                </Button>
+                <Button type="button" variant="ghost" onClick={reset} disabled={busy}>
+                  ביטול
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p role="alert" className="text-[13px] text-red-400">
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}

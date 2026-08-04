@@ -16,10 +16,7 @@ import {
   videoRenders,
 } from "../db/schema";
 import { enqueue } from "../jobs/queue";
-import {
-  lipsyncExpressivenessSchema,
-  type LipsyncExpressiveness,
-} from "../providers/lipsync";
+import { lipsyncExpressivenessSchema, type LipsyncExpressiveness } from "../providers/lipsync";
 import { businessOwnerId, creditBalance, debitRender } from "./credits";
 import { isAdminOwned } from "./businesses";
 

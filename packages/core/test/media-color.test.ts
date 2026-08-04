@@ -20,7 +20,15 @@ const tagged = path.join(dir, "tagged.mp4");
 
 beforeAll(async () => {
   mkdirSync(dir, { recursive: true });
-  const base = ["-y", "-f", "lavfi", "-i", "color=c=gray:s=64x64:r=10:d=0.3", "-pix_fmt", "yuv420p"];
+  const base = [
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=gray:s=64x64:r=10:d=0.3",
+    "-pix_fmt",
+    "yuv420p",
+  ];
   // libx264 with no colour flags writes no VUI colour metadata — same shape as
   // the lip-sync provider's clips. The tagged variant stamps all four fields
   // via the bitstream filter (the -colorspace/-color_trc output flags only

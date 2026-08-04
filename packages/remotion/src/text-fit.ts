@@ -5,6 +5,12 @@
  * (the composition passes @remotion/layout-utils measureText) so it is
  * unit-testable without a browser.
  */
+
+/**
+ * The hook line's sizing envelope. Lives here (not in ServiceA.tsx) so the
+ * admin safe-area editor can preview with the same numbers the render uses.
+ */
+export const HOOK_FONT = { base: 92, min: 40, lineHeight: 1.2 } as const;
 export function fitFontSize(opts: {
   text: string;
   maxWidth: number;

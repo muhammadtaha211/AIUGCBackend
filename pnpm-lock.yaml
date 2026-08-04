@@ -23,6 +23,9 @@ importers:
       '@aiugc/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@aiugc/remotion':
+        specifier: workspace:*
+        version: link:../../packages/remotion
       '@supabase/ssr':
         specifier: ^0.12.3
         version: 0.12.3(@supabase/supabase-js@2.110.6)

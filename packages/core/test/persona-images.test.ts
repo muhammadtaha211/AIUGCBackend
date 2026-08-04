@@ -136,9 +136,7 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
     const persona = await addPersona(db, { name: "דנה", voiceId: "voice_dana" });
     // A placeholder stranded by a failed upload before the cleanup existed
     // (oldest row — an unordered LIMIT would have picked it up).
-    await db
-      .insert(dbSchema.personaImages)
-      .values({ personaId: persona.id, filePath: "pending" });
+    await db.insert(dbSchema.personaImages).values({ personaId: persona.id, filePath: "pending" });
     const defaultImage = await addPersonaImage(db, {
       personaId: persona.id,
       filePath: tempFile("face.jpg"),
@@ -296,7 +294,10 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
 
   it("setDefaultPersonaImage moves the flag and refuses retired or pending images", async () => {
     const persona = await addPersona(db, { name: "תמר", voiceId: "voice_tamar" });
-    const first = await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("t1.jpg") });
+    const first = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("t1.jpg"),
+    });
     const second = await addPersonaImage(db, {
       personaId: persona.id,
       filePath: tempFile("t2.jpg"),
@@ -330,7 +331,10 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
       personaId: persona.id,
       filePath: tempFile("a1.jpg"),
     });
-    const extra = await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("a2.jpg") });
+    const extra = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("a2.jpg"),
+    });
 
     await expect(setPersonaImageRetired(db, defaultImage.id, true)).rejects.toThrow(
       /cannot retire the default/,

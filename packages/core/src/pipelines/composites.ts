@@ -153,7 +153,10 @@ export async function handleGenerateComposite(job: Job, ctx: JobContext): Promis
     if (result.status === "pending") {
       // submittedAt ?? now backfills state written before the deadline existed.
       const submittedAt = state.submittedAt ?? Date.now();
-      await assertPollDeadline(ctx.db, ctx.log, { providerJobId: state.providerJobId, submittedAt });
+      await assertPollDeadline(ctx.db, ctx.log, {
+        providerJobId: state.providerJobId,
+        submittedAt,
+      });
       return { kind: "reschedule", delayMs: 10_000, state: { ...state, submittedAt } };
     }
     if (result.status === "failed") {

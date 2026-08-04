@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./render": "./src/render.ts"
+    "./render": "./src/render.ts",
+    "./text-fit": "./src/text-fit.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

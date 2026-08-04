@@ -325,7 +325,10 @@ set
   .requiredOption("--hook-lines <ids>", "comma-separated hook line script ids")
   .option("--captions <scriptId>", "benefit captions script (silent mode)")
   .option("--audio <audioRenderId>", "approved audio render (voiced mode)")
-  .option("--persona <id>", "voiced mode: the persona (required when the VO earns an avatar ending)")
+  .option(
+    "--persona <id>",
+    "voiced mode: the persona (required when the VO earns an avatar ending)",
+  )
   .action(
     run(
       async (opts: {

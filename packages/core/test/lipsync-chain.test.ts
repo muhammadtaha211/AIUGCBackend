@@ -73,9 +73,10 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
   }
 
   /** A Service B render with approved audio, queued at the lipsync step. */
-  async function queueBRender(
-    extra?: { motionPrompt?: string; expressiveness?: string },
-  ): Promise<{ renderId: string; audioId: string }> {
+  async function queueBRender(extra?: {
+    motionPrompt?: string;
+    expressiveness?: string;
+  }): Promise<{ renderId: string; audioId: string }> {
     const persona = await addPersona(db, { name: "נועה", voiceId: "voice_noa" });
     await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("persona.jpg") });
     const script = (
@@ -153,9 +154,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     // Opt-in knobs: absent is the default state, so restore means delete.
     await db
       .delete(dbSchema.appConfig)
-      .where(
-        sql`${dbSchema.appConfig.key} in ('lipsync_motion_prompt', 'lipsync_expressiveness')`,
-      );
+      .where(sql`${dbSchema.appConfig.key} in ('lipsync_motion_prompt', 'lipsync_expressiveness')`);
   });
 
   afterAll(async () => {

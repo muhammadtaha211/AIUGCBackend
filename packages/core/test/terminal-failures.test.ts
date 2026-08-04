@@ -69,7 +69,10 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
   }
 
   async function queuedJobs() {
-    return db.select().from(dbSchema.jobs).where(sql`${dbSchema.jobs.status} = 'queued'`);
+    return db
+      .select()
+      .from(dbSchema.jobs)
+      .where(sql`${dbSchema.jobs.status} = 'queued'`);
   }
 
   function tempFile(name: string): string {

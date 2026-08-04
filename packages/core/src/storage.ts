@@ -90,7 +90,11 @@ export function missingObjectError(storagePath: string): PermanentError {
 }
 
 /** Supabase reports a missing key as 404 / "Object not found"; anything else stays transient. */
-function isMissingObject(error: { message: string; status?: number; statusCode?: string }): boolean {
+function isMissingObject(error: {
+  message: string;
+  status?: number;
+  statusCode?: string;
+}): boolean {
   return (
     error.status === 404 ||
     String(error.statusCode ?? "") === "404" ||

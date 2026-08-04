@@ -55,7 +55,10 @@ describe("HeyGenLipsync", () => {
     const { providerJobId } = await new HeyGenLipsync().submit(submitInput);
 
     expect(providerJobId).toBe("vid_1");
-    const [url, init] = fetchMock.mock.calls[0]! as [string, { headers: Record<string, string>; body: string }];
+    const [url, init] = fetchMock.mock.calls[0]! as [
+      string,
+      { headers: Record<string, string>; body: string },
+    ];
     expect(url).toBe("https://api.heygen.com/v3/videos");
     expect(init.headers["x-api-key"]).toBe("test_heygen_key");
     expect(JSON.parse(init.body)).toEqual({
@@ -100,7 +103,11 @@ describe("HeyGenLipsync", () => {
   it("maps completed to done with the presigned video url", async () => {
     fetchMock.mockResolvedValueOnce(
       response(200, {
-        data: { id: "vid_1", status: "completed", video_url: "https://cdn.heygen.com/vid_1.mp4?sig=x" },
+        data: {
+          id: "vid_1",
+          status: "completed",
+          video_url: "https://cdn.heygen.com/vid_1.mp4?sig=x",
+        },
       }),
     );
     expect(await new HeyGenLipsync().poll("vid_1")).toEqual({
@@ -115,7 +122,10 @@ describe("HeyGenLipsync", () => {
         data: { id: "vid_1", status: "failed", failure_code: "e1", failure_message: "bad audio" },
       }),
     );
-    expect(await new HeyGenLipsync().poll("vid_1")).toEqual({ status: "failed", reason: "bad audio" });
+    expect(await new HeyGenLipsync().poll("vid_1")).toEqual({
+      status: "failed",
+      reason: "bad audio",
+    });
 
     fetchMock.mockResolvedValueOnce(response(200, { data: { id: "vid_1", status: "completed" } }));
     expect(await new HeyGenLipsync().poll("vid_1")).toEqual({

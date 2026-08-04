@@ -185,7 +185,11 @@ export async function atempoStretch(input: string, output: string, tempo: number
  * (`-ss` after `-i`; stream copy can only cut on frame boundaries). Feeds the
  * avatar-outro lip-sync, so the cut must land exactly on the word gap.
  */
-export async function sliceAudioFrom(input: string, output: string, startMs: number): Promise<void> {
+export async function sliceAudioFrom(
+  input: string,
+  output: string,
+  startMs: number,
+): Promise<void> {
   mkdirSync(path.dirname(output), { recursive: true });
   await run("ffmpeg", ["-y", "-i", input, "-ss", (startMs / 1000).toFixed(3), output]);
 }

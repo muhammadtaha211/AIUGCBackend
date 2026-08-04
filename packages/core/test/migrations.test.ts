@@ -127,7 +127,9 @@ describe("migrations", () => {
 
     // The new shape: user_id is mandatory, business_id no longer is.
     await expect(
-      pg.query(`INSERT INTO credit_ledger (business_id, delta, reason) VALUES ('${bizA}', 1, 'grant_manual')`),
+      pg.query(
+        `INSERT INTO credit_ledger (business_id, delta, reason) VALUES ('${bizA}', 1, 'grant_manual')`,
+      ),
     ).rejects.toThrow(/user_id/);
     await pg.query(
       `INSERT INTO credit_ledger (user_id, delta, reason) VALUES ('${userA}', 1, 'grant_manual')`,

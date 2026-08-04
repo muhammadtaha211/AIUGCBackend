@@ -10,10 +10,10 @@ through `storageKey()`, which is the single place to change when migrating provi
 
 Path convention: `<bucket>/<business_id|bank>/<entity>/<id>/<filename>`
 
-| Bucket    | Contents                                                                                     | Written by                                        |
-| --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `raw`     | user uploads exactly as received                                                             | `createDemo`                                      |
-| `assets`  | normalized demos, thumbnails, hook bank, persona reference images                            | ingest handler, `bank add-*`, `persona add-image` |
+| Bucket    | Contents                                                                                                                                                                                          | Written by                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `raw`     | user uploads exactly as received                                                                                                                                                                  | `createDemo`                                      |
+| `assets`  | normalized demos, thumbnails, hook bank, persona reference images                                                                                                                                 | ingest handler, `bank add-*`, `persona add-image` |
 | `renders` | audio previews (`audio/<id>/audio.mp3`), Service B lip-sync plates + upscaled clips (`video/<id>/lipsync-plate.mp4`, `lipsync-upscaled.mp4`), final videos (`video/<id>/final.mp4`), video thumbs | tts, lipsync/upscale + render handlers            |
 
 Founder bank assets use the `bank/` prefix (no business). Everything is 1080×1920 H.264 MP4

@@ -62,8 +62,7 @@ export async function addPersona(
 export async function addPersonaImage(
   db: Db,
   opts: { personaId: string; isDefault?: boolean } & (
-    | { filePath: string }
-    | { bytes: Buffer; extension: string }
+    { filePath: string } | { bytes: Buffer; extension: string }
   ),
 ) {
   const existing = await db
@@ -80,8 +79,7 @@ export async function addPersonaImage(
     .values({ personaId: opts.personaId, filePath: "pending", isDefault: false })
     .returning();
   const image = inserted[0]!;
-  const extension =
-    "filePath" in opts ? path.extname(opts.filePath) || ".jpg" : opts.extension;
+  const extension = "filePath" in opts ? path.extname(opts.filePath) || ".jpg" : opts.extension;
   let filePath: string;
   try {
     filePath = await getStorage().put(

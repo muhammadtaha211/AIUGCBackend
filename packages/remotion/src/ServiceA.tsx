@@ -15,7 +15,7 @@ import {
 import { Captions, TEXT_OUTLINE, Watermark, fontFamily } from "./overlays";
 import { FPS, type ServiceAProps, type TextSafeArea } from "./schema";
 import { frameToMs, serviceATimeline } from "./timing";
-import { fitFontSize } from "./text-fit";
+import { fitFontSize, HOOK_FONT } from "./text-fit";
 
 /**
  * Service A: bank reaction clip with a burned Hebrew hook line → hard cut →
@@ -25,10 +25,6 @@ import { fitFontSize } from "./text-fit";
  * track carries all audio, including over a freeze or avatar ending.
  * No music, ever (locked).
  */
-
-const HOOK_FONT_BASE = 92;
-const HOOK_FONT_MIN = 40;
-const HOOK_LINE_HEIGHT = 1.2;
 
 const COVER: React.CSSProperties = { width: "100%", height: "100%", objectFit: "cover" };
 
@@ -164,9 +160,9 @@ const HookLine: React.FC<{ text: string; area: TextSafeArea }> = ({ text, area }
         text,
         maxWidth: area.w,
         maxHeight: area.h,
-        base: HOOK_FONT_BASE,
-        min: HOOK_FONT_MIN,
-        lineHeight: HOOK_LINE_HEIGHT,
+        base: HOOK_FONT.base,
+        min: HOOK_FONT.min,
+        lineHeight: HOOK_FONT.lineHeight,
         measure: (t, size) =>
           measureText({
             text: t,
@@ -195,7 +191,7 @@ const HookLine: React.FC<{ text: string; area: TextSafeArea }> = ({ text, area }
         fontFamily,
         fontWeight: 800,
         fontSize,
-        lineHeight: HOOK_LINE_HEIGHT,
+        lineHeight: HOOK_FONT.lineHeight,
         color: "white",
         textShadow: TEXT_OUTLINE,
       }}

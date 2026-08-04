@@ -23,6 +23,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               דמויות
             </Link>
             <Link
+              href="/hooks"
+              className="rounded-lg px-3 py-1.5 font-medium text-gray-300 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+            >
+              פתיחים
+            </Link>
+            <Link
               href="/users"
               className="rounded-lg px-3 py-1.5 font-medium text-gray-300 transition-colors duration-150 hover:bg-white/10 hover:text-white"
             >
