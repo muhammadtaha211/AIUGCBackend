@@ -1,9 +1,11 @@
-import { and, desc, eq } from "drizzle-orm";
-import { readdirSync, readFileSync } from "node:fs";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Db } from "../db";
 import { hookClips, jobs, personaImages, personas, structures, videoRenders } from "../db/schema";
-import { SEED_STRUCTURES_DIR } from "../paths";
+import { blurPlaceholder } from "../media/ffmpeg";
+import { SEED_STRUCTURES_DIR, WORK_DIR } from "../paths";
 import type { TextSafeArea } from "../providers/remotion";
 import { getStorage, storageKey } from "../storage";
 
@@ -55,9 +57,40 @@ export async function addPersona(
   return inserted[0]!;
 }
 
+/** Catalog copies serve for a year — keys are content-addressed, so changed
+ *  bytes are a new URL and stale caches can never show the wrong image. */
+const CATALOG_CACHE_SECONDS = "31536000";
+
+/** Content-addressed catalog filename: same bytes, same URL; new bytes, new URL. */
+function catalogFilename(bytes: Buffer, extension: string): string {
+  return `${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}${extension}`;
+}
+
+/**
+ * Best-effort blur placeholder for the pickers (~8px WebP data URL). null when
+ * ffmpeg is missing or the bytes don't decode — a cosmetic placeholder must
+ * never fail an upload, and the pickers render fine without one.
+ */
+async function tryBlurPlaceholder(bytes: Buffer, id: string, extension: string) {
+  const dir = path.join(WORK_DIR, "persona-blur");
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${id}${extension}`);
+  writeFileSync(file, bytes);
+  try {
+    return await blurPlaceholder(file);
+  } catch {
+    return null;
+  } finally {
+    rmSync(file, { force: true });
+  }
+}
+
 /**
  * The first image for a persona becomes the default; --default moves the flag.
- * Source: a local file path (CLI) or raw upload bytes (web admin).
+ * Source: a local file path (CLI) or raw upload bytes (web admin). Every image
+ * is stored twice: the private assets original (render pipeline) and a public
+ * catalog copy (stable cacheable URL for the pickers — persona images are
+ * catalog data any signed-in user may see, per 0007's RLS).
  */
 export async function addPersonaImage(
   db: Db,
@@ -80,21 +113,84 @@ export async function addPersonaImage(
     .returning();
   const image = inserted[0]!;
   const extension = "filePath" in opts ? path.extname(opts.filePath) || ".jpg" : opts.extension;
+  const bytes = "filePath" in opts ? readFileSync(opts.filePath) : opts.bytes;
   let filePath: string;
+  let catalogPath: string;
   try {
     filePath = await getStorage().put(
       "assets",
       storageKey({ entity: "persona_image", id: image.id, filename: `image${extension}` }),
-      "filePath" in opts ? opts.filePath : opts.bytes,
+      bytes,
+    );
+    catalogPath = await getStorage().put(
+      "catalog",
+      storageKey({
+        entity: "persona_image",
+        id: image.id,
+        filename: catalogFilename(bytes, extension),
+      }),
+      bytes,
+      { cacheControl: CATALOG_CACHE_SECONDS },
     );
   } catch (err) {
     // A failed upload must not strand the "pending" placeholder row.
     await db.delete(personaImages).where(eq(personaImages.id, image.id));
     throw err;
   }
-  await db.update(personaImages).set({ filePath }).where(eq(personaImages.id, image.id));
+  const blurDataUrl = await tryBlurPlaceholder(bytes, image.id, extension);
+  await db
+    .update(personaImages)
+    .set({ filePath, catalogPath, blurDataUrl })
+    .where(eq(personaImages.id, image.id));
   if (isDefault) await setDefaultPersonaImage(db, image.id);
-  return { ...image, filePath, isDefault };
+  return { ...image, filePath, catalogPath, blurDataUrl, isDefault };
+}
+
+/**
+ * Backfill: images uploaded before the catalog bucket (or the blur column)
+ * existed get their public copy and/or blur placeholder stamped. Counts rows
+ * actually updated, so a re-run reports 0; retired and placeholder rows are
+ * skipped (no picker lists them), and rows whose bytes never decode simply
+ * keep a null blur.
+ */
+export async function syncPersonaImageCatalog(db: Db): Promise<number> {
+  const rows = await db
+    .select()
+    .from(personaImages)
+    .where(or(isNull(personaImages.catalogPath), isNull(personaImages.blurDataUrl)));
+  const storage = getStorage();
+  const workDir = path.join(WORK_DIR, "catalog-sync");
+  let synced = 0;
+  for (const image of rows) {
+    if (!image.filePath.includes("/") || image.retired) continue;
+    const extension = path.extname(image.filePath) || ".jpg";
+    const local = path.join(workDir, `${image.id}${extension}`);
+    mkdirSync(workDir, { recursive: true });
+    await storage.download(image.filePath, local);
+    const bytes = readFileSync(local);
+    rmSync(local, { force: true });
+    const updates: { catalogPath?: string; blurDataUrl?: string } = {};
+    if (!image.catalogPath) {
+      updates.catalogPath = await storage.put(
+        "catalog",
+        storageKey({
+          entity: "persona_image",
+          id: image.id,
+          filename: catalogFilename(bytes, extension),
+        }),
+        bytes,
+        { cacheControl: CATALOG_CACHE_SECONDS },
+      );
+    }
+    if (!image.blurDataUrl) {
+      const blur = await tryBlurPlaceholder(bytes, image.id, extension);
+      if (blur) updates.blurDataUrl = blur;
+    }
+    if (Object.keys(updates).length === 0) continue;
+    await db.update(personaImages).set(updates).where(eq(personaImages.id, image.id));
+    synced++;
+  }
+  return synced;
 }
 
 /**

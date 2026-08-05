@@ -38,6 +38,7 @@ export async function GET(
       .select({
         id: personaImages.id,
         filePath: personaImages.filePath,
+        catalogPath: personaImages.catalogPath,
         kind: personaImages.kind,
         retired: personaImages.retired,
         label: personaImages.label,
@@ -46,15 +47,18 @@ export async function GET(
       .where(eq(personaImages.personaId, personaId))
       .orderBy(personaImages.createdAt);
 
+    // Catalog copies serve from a stable PUBLIC URL (cacheable, no storage
+    // round-trip). Pre-backfill rows fall back to signing, in parallel.
     const storage = getStorage();
-    const images = [];
-    for (const row of backgroundImages(rows)) {
-      images.push({
+    const images = await Promise.all(
+      backgroundImages(rows).map(async (row) => ({
         id: row.id,
         label: row.label ?? undefined,
-        imageUrl: await storage.signedUrl(row.filePath, SIGNED_URL_TTL_SECONDS),
-      });
-    }
+        imageUrl: row.catalogPath
+          ? storage.publicUrl(row.catalogPath)
+          : await storage.signedUrl(row.filePath, SIGNED_URL_TTL_SECONDS),
+      })),
+    );
     return NextResponse.json({ images });
   } catch (err) {
     return coreErrorResponse(err);

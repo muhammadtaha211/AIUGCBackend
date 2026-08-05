@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
@@ -98,12 +99,17 @@ export function StepImage({
                     : "border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/[0.08]"
                 }`}
               >
-                {/* Signed, short-lived URL — next/image optimization would break it. */}
-                <img
-                  src={image.imageUrl}
-                  alt={image.label ?? "רקע"}
-                  className="aspect-[3/4] w-full object-cover"
-                />
+                {/* Public catalog URL — stable, so next/image resizes it and
+                    the browser caches it across sessions. */}
+                <span className="relative block aspect-[3/4] w-full">
+                  <Image
+                    src={image.imageUrl}
+                    alt={image.label ?? "רקע"}
+                    fill
+                    sizes="(max-width: 640px) 45vw, 200px"
+                    className="object-cover"
+                  />
+                </span>
                 {image.label && (
                   <span className="block px-3 py-2 text-sm font-medium text-white">
                     {image.label}

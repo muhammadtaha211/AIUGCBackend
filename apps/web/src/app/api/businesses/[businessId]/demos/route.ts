@@ -10,6 +10,7 @@ import {
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
 import { isOwnedDemoUploadPath, registerDemoRequestSchema } from "@/lib/service-a";
+import { DEMO_PAGE_SIZE } from "@/lib/service-a-ui";
 
 /**
  * Step 2 of the demo upload: the browser finished its direct upload — register
@@ -43,12 +44,15 @@ export async function POST(
 }
 
 /**
- * This business's demos, newest first — the wizard's reuse picker (ready only,
- * filtered client-side) and the /home/demos library (all statuses). Thumbs are
- * signed short-lived, same shape the /api/demos/[id] poll returns.
+ * This business's demos, newest first. Two callers, two shapes:
+ * - `?page=N` (1-based): the wizard's reuse picker — ready demos only,
+ *   DEMO_PAGE_SIZE per page plus the ready total, and only the page's
+ *   thumbnails get signed (signing is the expensive part).
+ * - no query: the /home/demos library — every row, every thumb signed.
+ * Thumbs are signed short-lived, same shape the /api/demos/[id] poll returns.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ businessId: string }> },
 ) {
   const { businessId } = await params;
@@ -75,10 +79,16 @@ export async function GET(
       .where(eq(demosTable.businessId, businessId))
       .orderBy(desc(demosTable.createdAt));
 
+    const page = Number(new URL(request.url).searchParams.get("page"));
+    const paged = Number.isInteger(page) && page >= 1;
+    const ready = paged ? rows.filter((row) => row.status === "ready") : rows;
+    const pageRows = paged
+      ? ready.slice((page - 1) * DEMO_PAGE_SIZE, page * DEMO_PAGE_SIZE)
+      : ready;
+
     const storage = getStorage();
-    const demos = [];
-    for (const row of rows) {
-      demos.push({
+    const demos = await Promise.all(
+      pageRows.map(async (row) => ({
         id: row.id,
         status: row.status,
         rejectReason: row.rejectReason ?? undefined,
@@ -88,9 +98,9 @@ export async function GET(
         thumbUrl: row.thumbPath
           ? await storage.signedUrl(row.thumbPath, SIGNED_URL_TTL_SECONDS)
           : undefined,
-      });
-    }
-    return NextResponse.json({ demos });
+      })),
+    );
+    return NextResponse.json(paged ? { demos, total: ready.length } : { demos });
   } catch (err) {
     return coreErrorResponse(err);
   }

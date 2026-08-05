@@ -83,7 +83,24 @@ export function wizardSteps(category: string | undefined): WizardStep[] {
 // Wizard state carried across steps (owned by BWizard, edited by the steps)
 // ---------------------------------------------------------------------------
 
-export type Persona = { id: string; name: string; imageUrl: string };
+export type Persona = {
+  id: string;
+  name: string;
+  imageUrl: string;
+  /** Tiny base64 WebP for next/image placeholder="blur"; null on old rows. */
+  blurDataUrl?: string | null;
+};
+
+/**
+ * Persona card <Image> geometry, shared by the picker and the /home preload
+ * hints — the preload only hits the browser cache if both compute the same
+ * optimizer URL, so these must never be duplicated. Grid: 2 cols on mobile
+ * (~45vw incl. padding slack), 3 cols in the max-w-2xl card (~190px, so a
+ * fixed 200px cap).
+ */
+export const PERSONA_CARD_SIZES = "(max-width: 640px) 45vw, 200px";
+/** At card size 60 is indistinguishable from the default 75 and meaningfully smaller. */
+export const PERSONA_CARD_QUALITY = 60;
 
 /** A kind='background' reference image of the selected persona. */
 export type PersonaImage = { id: string; label?: string; imageUrl: string };
@@ -102,6 +119,8 @@ export type AudioState = {
   scriptId: string;
   status: string; // queued | generating | ready | failed
   audioUrl?: string;
+  /** Measured TTS duration (set when ready) — Service A's exact ending advisory. */
+  durationMs?: number;
   approved: boolean;
 };
 

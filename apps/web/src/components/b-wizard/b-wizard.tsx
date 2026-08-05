@@ -33,6 +33,9 @@ type BWizardProps = {
   businessId: string;
   businessName: string;
   category: string;
+  /** Catalog server-rendered by the page shell — undefined falls back to the
+   *  mount fetch (and its retry UI) via /api/personas. */
+  initialCatalog?: Persona[];
 };
 
 /**
@@ -40,12 +43,14 @@ type BWizardProps = {
  * render. State is client-side only — a refresh restarts the wizard. Back
  * navigation is allowed until the render is enqueued.
  */
-export function BWizard({ businessId, businessName, category }: BWizardProps) {
+export function BWizard({ businessId, businessName, category, initialCatalog }: BWizardProps) {
   const steps = wizardSteps(category);
   const [stepIndex, setStepIndex] = useState(0);
   /** 403/404 from any call: the business/resource is gone for this session. */
   const [fatal, setFatal] = useState<string | null>(null);
 
+  /** The persona catalog, cached here so re-entering the step skips the fetch. */
+  const [personaCatalog, setPersonaCatalog] = useState<Persona[] | null>(initialCatalog ?? null);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [personaImage, setPersonaImage] = useState<PersonaImage | null>(null);
   const [composite, setComposite] = useState<CompositeState | null>(null);
@@ -124,6 +129,8 @@ export function BWizard({ businessId, businessName, category }: BWizardProps) {
 
           {step === "persona" && (
             <StepPersona
+              catalog={personaCatalog}
+              setCatalog={setPersonaCatalog}
               selected={persona}
               onSelect={selectPersona}
               onContinue={goNext}

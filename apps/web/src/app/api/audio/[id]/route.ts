@@ -14,9 +14,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if ("response" in found) return found.response;
     const { audio } = found;
 
-    const body: { status: string; audioUrl?: string } = { status: audio.status };
+    const body: { status: string; audioUrl?: string; durationMs?: number } = {
+      status: audio.status,
+    };
     if (audio.status === "ready" && audio.filePath) {
       body.audioUrl = await getStorage().signedUrl(audio.filePath, SIGNED_URL_TTL_SECONDS);
+      // The measured TTS duration — Service A's exact ending advisory.
+      body.durationMs = audio.durationMs ?? undefined;
     }
     return NextResponse.json(body);
   } catch (err) {

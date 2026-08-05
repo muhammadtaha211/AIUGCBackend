@@ -189,6 +189,12 @@ export const personaImages = pgTable("persona_images", {
     .notNull()
     .references(() => personas.id),
   filePath: text("file_path").notNull(),
+  /** Public copy in the catalog bucket (stable, cacheable URL for the pickers);
+   *  null until `aiugc persona sync-catalog` backfills pre-catalog rows. */
+  catalogPath: text("catalog_path"),
+  /** Tiny base64 WebP for next/image placeholder="blur"; null when the bytes
+   *  didn't decode at upload — backfilled by `aiugc persona sync-catalog`. */
+  blurDataUrl: text("blur_data_url"),
   isDefault: boolean("is_default").notNull().default(false),
   /** 'preview' (avatar-card thumbnail only) | 'background' (background picker). */
   kind: text("kind").notNull().default("background"),

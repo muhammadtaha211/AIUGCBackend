@@ -7,6 +7,7 @@ import { TextAreaField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
 import {
   clientDemoFileError,
+  DEMO_PAGE_SIZE,
   demoDurationError,
   isIngestingDemoStatus,
   type DemoState,
@@ -43,6 +44,30 @@ function readVideoSeconds(file: File): Promise<number | undefined> {
     };
     video.src = url;
   });
+}
+
+/**
+ * Same geometry as a real reuse row (thumb-dominated height), so the list
+ * area is identical before and after data lands. `ghost` renders it invisible
+ * — the last page's padding cells, keeping the section height fixed across
+ * pages.
+ */
+function DemoRowSkeleton({ ghost = false }: { ghost?: boolean }) {
+  const pulse = ghost ? "" : "animate-pulse";
+  return (
+    <li
+      aria-hidden
+      className={`flex items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-3 ${
+        ghost ? "invisible" : ""
+      }`}
+    >
+      <span className={`aspect-[9/16] w-12 shrink-0 rounded-lg bg-white/10 ${pulse}`} />
+      <span className="min-w-0 flex-1">
+        <span className={`block h-3.5 w-36 max-w-full rounded bg-white/10 ${pulse}`} />
+        <span className={`mt-2 block h-3 w-52 max-w-full rounded bg-white/10 ${pulse}`} />
+      </span>
+    </li>
+  );
 }
 
 /** XHR instead of fetch for the one thing fetch can't do: upload progress. */
@@ -82,28 +107,42 @@ export function StepDemo({
   const [error, setError] = useState<string | null>(null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
-  /** Ready demos this business already has — null until the list arrives. */
-  const [previousDemos, setPreviousDemos] = useState<DemoSummary[] | null>(null);
+  /** The current page of ready demos — null while a page is in flight (skeletons). */
+  const [pageDemos, setPageDemos] = useState<DemoSummary[] | null>(null);
+  /** Ready-demo count across all pages — null until the first response lands. */
+  const [readyTotal, setReadyTotal] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
   const busy = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // Refetch whenever the picker is showing (mount, "החלפת הסרטון") so a demo
-  // uploaded moments ago appears too. A failed fetch just hides the list —
-  // the upload path is untouched and surfaces its own errors.
+  // Refetch whenever the picker is showing (mount, "החלפת הסרטון", page change)
+  // so a demo uploaded moments ago appears too. The route pages ready demos
+  // server-side and signs only this page's thumbnails. A failed fetch just
+  // hides the list — the upload path is untouched and surfaces its own errors.
   const pickerShowing = demo === null;
   useEffect(() => {
     if (!pickerShowing) return;
     let cancelled = false;
+    setPageDemos(null);
     void (async () => {
-      const result = await apiFetch<{ demos: DemoSummary[] }>(`/api/businesses/${businessId}/demos`);
-      if (cancelled || !result.ok) return;
-      // Ready only — a rejected or still-ingesting demo must never be reusable.
-      setPreviousDemos(result.body.demos.filter((row) => row.status === "ready"));
+      const result = await apiFetch<{ demos: DemoSummary[]; total: number }>(
+        `/api/businesses/${businessId}/demos?page=${page}`,
+      );
+      if (cancelled) return;
+      if (!result.ok) {
+        setPageDemos([]);
+        setReadyTotal(0);
+        return;
+      }
+      // A page past the end (the list shrank since the pager rendered).
+      if (result.body.demos.length === 0 && page > 1) return setPage(1);
+      setPageDemos(result.body.demos);
+      setReadyTotal(result.body.total);
     })();
     return () => {
       cancelled = true;
     };
-  }, [pickerShowing, businessId]);
+  }, [pickerShowing, businessId, page]);
 
   /** Reuse: the saved description prefills the field and stays editable. */
   function selectPrevious(row: DemoSummary) {
@@ -221,46 +260,85 @@ export function StepDemo({
     </div>
   );
 
-  /** Reuse a previous demo — hidden entirely when there is nothing to reuse. */
-  const reuseList = previousDemos !== null && previousDemos.length > 0 && (
+  const totalPages = readyTotal === null ? 1 : Math.ceil(readyTotal / DEMO_PAGE_SIZE);
+
+  /**
+   * Reuse a previous demo — below the upload button (the primary action never
+   * moves as this loads or pages). While a page is in flight the same slots
+   * hold skeleton rows, so the section height never jumps; a short last page
+   * pads with invisible rows for the same reason. Zero ready demos (or a
+   * failed fetch) removes the whole section — a first-time user sees only
+   * the upload button.
+   */
+  const previousSection = (readyTotal === null || readyTotal > 0) && (
     <div className="mt-6">
-      <p className="text-sm font-medium text-white">סרטונים שכבר העליתם</p>
-      <p className="mt-1 text-[13px] text-gray-500">
-        אפשר להשתמש שוב בסרטון קיים — או להעלות סרטון חדש למטה.
-      </p>
+      <div className="flex items-center gap-3 text-xs text-gray-500">
+        <span className="h-px flex-1 bg-white/10" />
+        או
+        <span className="h-px flex-1 bg-white/10" />
+      </div>
+      <p className="mt-5 text-sm font-medium text-white">סרטונים שכבר העליתם</p>
+      <p className="mt-1 text-[13px] text-gray-500">אפשר לבחור סרטון קיים במקום להעלות חדש.</p>
       <ul className="mt-3 flex flex-col gap-2">
-        {previousDemos.map((row) => (
-          <li key={row.id}>
-            <button
-              type="button"
-              onClick={() => selectPrevious(row)}
-              className="flex w-full items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-3 text-start transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            >
-              {row.thumbUrl ? (
-                // Signed, short-lived URL — next/image optimization would break it.
-                <img
-                  src={row.thumbUrl}
-                  alt=""
-                  className="aspect-[9/16] w-12 shrink-0 rounded-lg object-cover"
-                />
-              ) : (
-                <span className="aspect-[9/16] w-12 shrink-0 rounded-lg bg-white/10" />
-              )}
-              <span className="min-w-0">
-                <span className="block text-sm text-gray-300">
-                  {row.durationMs !== undefined && `${Math.round(row.durationMs / 1000)} שניות · `}
-                  הועלה ב־{new Date(row.createdAt).toLocaleDateString("he-IL")}
-                </span>
-                {row.description && (
-                  <span className="mt-1 line-clamp-2 block text-[13px] text-gray-500">
-                    {row.description}
+        {pageDemos === null
+          ? Array.from({ length: DEMO_PAGE_SIZE }, (_, i) => <DemoRowSkeleton key={i} />)
+          : pageDemos.map((row) => (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  onClick={() => selectPrevious(row)}
+                  className="flex w-full items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-3 text-start transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  {row.thumbUrl ? (
+                    // Signed, short-lived URL — next/image optimization would break it.
+                    <img
+                      src={row.thumbUrl}
+                      alt=""
+                      className="aspect-[9/16] w-12 shrink-0 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <span className="aspect-[9/16] w-12 shrink-0 rounded-lg bg-white/10" />
+                  )}
+                  <span className="min-w-0">
+                    <span className="block text-sm text-gray-300">
+                      {row.durationMs !== undefined &&
+                        `${Math.round(row.durationMs / 1000)} שניות · `}
+                      הועלה ב־{new Date(row.createdAt).toLocaleDateString("he-IL")}
+                    </span>
+                    {row.description && (
+                      <span className="mt-1 line-clamp-2 block text-[13px] text-gray-500">
+                        {row.description}
+                      </span>
+                    )}
                   </span>
-                )}
-              </span>
-            </button>
-          </li>
-        ))}
+                </button>
+              </li>
+            ))}
+        {pageDemos !== null &&
+          totalPages > 1 &&
+          Array.from({ length: DEMO_PAGE_SIZE - pageDemos.length }, (_, i) => (
+            <DemoRowSkeleton key={`pad-${i}`} ghost />
+          ))}
       </ul>
+      {totalPages > 1 && (
+        <div className="mt-3 flex justify-center gap-2">
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setPage(n)}
+              aria-current={n === page ? "page" : undefined}
+              className={`size-8 rounded-lg border text-sm tabular-nums transition-colors duration-150 ${
+                n === page
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-white/10 bg-white/5 text-gray-300 hover:border-white/25 hover:bg-white/[0.08]"
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -325,8 +403,8 @@ export function StepDemo({
 
       {demo === null && uploadPercent === null && (
         <>
-          {reuseList}
           {picker}
+          {previousSection}
         </>
       )}
 

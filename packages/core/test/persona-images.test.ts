@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
+import { execFile } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
@@ -15,6 +17,7 @@ import {
   addPersonaImage,
   setDefaultPersonaImage,
   setPersonaImageRetired,
+  syncPersonaImageCatalog,
 } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { createComposite } from "../src/pipelines/composites";
@@ -86,6 +89,7 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
       download: storage.download,
       remove: storage.remove,
       signedUrl: storage.signedUrl,
+      publicUrl: storage.publicUrl,
       createSignedUploadUrl: storage.createSignedUploadUrl,
     };
   }
@@ -287,9 +291,59 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
       extension: ".jpg",
     });
     expect(image.filePath).toMatch(/^assets\/bank\/persona_image\/.*\/image\.jpg$/);
+    // The public copy: content-addressed filename in the catalog bucket.
+    expect(image.catalogPath).toMatch(/^catalog\/bank\/persona_image\/.*\/[0-9a-f]{16}\.jpg$/);
     expect(image.isDefault).toBe(true); // first image still becomes the default
+    // Undecodable bytes: the cosmetic blur stays null, the upload still lands.
+    expect(image.blurDataUrl).toBeNull();
     const url = await storage.signedUrl(image.filePath, 60);
     expect(url).toContain("image.jpg");
+  });
+
+  it("computes a blur placeholder from a real image (real ffmpeg, like media-color)", async () => {
+    const persona = await addPersona(db, { name: "הילה", voiceId: "voice_hila" });
+    const dir = path.join(tmpdir(), "aiugc-persona-image-inputs");
+    mkdirSync(dir, { recursive: true });
+    const real = path.join(dir, "real.jpg");
+    await promisify(execFile)("ffmpeg", [
+      ...["-y", "-f", "lavfi", "-i", "color=c=gray:s=64x64", "-frames:v", "1"],
+      real,
+    ]);
+    const image = await addPersonaImage(db, { personaId: persona.id, filePath: real });
+    expect(image.blurDataUrl).toMatch(/^data:image\/webp;base64,/);
+  });
+
+  it("sync-catalog backfills pre-catalog rows and skips retired/placeholder ones", async () => {
+    const persona = await addPersona(db, { name: "נועה", voiceId: "voice_noa" });
+    const image = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("n1.jpg"),
+    });
+    const skipped = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("n2.jpg"),
+    });
+    await setPersonaImageRetired(db, skipped.id, true);
+    // Simulate rows that predate the catalog bucket (this persona's only —
+    // the suite shares one DB).
+    await db.execute(
+      sql`update persona_images set catalog_path = null where persona_id = ${persona.id}`,
+    );
+    await db.insert(dbSchema.personaImages).values({ personaId: persona.id, filePath: "pending" });
+
+    const synced = await syncPersonaImageCatalog(db);
+    expect(synced).toBe(1);
+
+    const rows = await db
+      .select()
+      .from(dbSchema.personaImages)
+      .where(sql`${dbSchema.personaImages.personaId} = ${persona.id}`);
+    // Content-addressed: the backfilled path equals the original upload's.
+    expect(rows.find((r) => r.id === image.id)!.catalogPath).toBe(image.catalogPath);
+    expect(rows.find((r) => r.id === skipped.id)!.catalogPath).toBeNull();
+
+    // Idempotent: nothing left to sync on a re-run.
+    expect(await syncPersonaImageCatalog(db)).toBe(0);
   });
 
   it("setDefaultPersonaImage moves the flag and refuses retired or pending images", async () => {

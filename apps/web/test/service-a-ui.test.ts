@@ -4,11 +4,13 @@ import {
   aRenderStageIndex,
   clientDemoFileError,
   demoDurationError,
+  endingForRemainder,
+  endingSentence,
+  estimatedEnding,
   estimateVoSeconds,
   isActiveARenderStatus,
   isIngestingDemoStatus,
   shapeSummary,
-  voLengthHeadsUp,
 } from "../src/lib/service-a-ui";
 
 describe("wizard steps", () => {
@@ -38,30 +40,60 @@ describe("VO length estimate (inverted word-budget mapping)", () => {
     expect(estimateVoSeconds(30, 0, 44)).toBe(0);
   });
 
-  it("stays silent while the script fits the demo", () => {
-    expect(voLengthHeadsUp(40, 20, 44)).toBeNull();
-    expect(voLengthHeadsUp(44, 20, 44)).toBeNull();
+  it("script fits the demo -> the ending is none", () => {
+    expect(estimatedEnding(40, 20, 44)).toBe("none");
+    expect(estimatedEnding(44, 20, 44)).toBe("none");
   });
 
-  it("stays silent when the rounded estimate equals the rounded demo length", () => {
+  it("rounded estimate equals the rounded demo length -> still none", () => {
     // 45 words -> ~20.45s on a 20s demo: over by raw remainder, but both
-    // display as 20 — the note must never say "21 שניות — יותר מ-20" here.
-    expect(voLengthHeadsUp(45, 20, 44)).toBeNull();
+    // display as 20 — the prose must never contradict the numbers beside it.
+    expect(estimatedEnding(45, 20, 44)).toBe("none");
   });
 
-  it("small overrun: a freeze-shaped note, clearly labeled an estimate", () => {
+  it("small overrun points at a freeze, large at an avatar ending", () => {
     // 47 words -> ~21.4s on a 20s demo: remainder < 2s.
-    const note = voLengthHeadsUp(47, 20, 44)!;
-    expect(note).toContain("הפריים האחרון");
-    expect(note).toContain("הערכה");
+    expect(estimatedEnding(47, 20, 44)).toBe("freeze");
+    // 55 words -> ~25s on a 20s demo: remainder >= 2s.
+    expect(estimatedEnding(55, 20, 44)).toBe("avatar");
   });
 
-  it("large overrun: an avatar-shaped note with the estimated seconds", () => {
-    // 55 words -> ~25s on a 20s demo: remainder >= 2s.
-    const note = voLengthHeadsUp(55, 20, 44)!;
-    expect(note).toContain("הדמות");
-    expect(note).toContain("25");
-    expect(note).toContain("הערכה");
+  it("degrades to null on impossible inputs (no budget yet)", () => {
+    expect(estimatedEnding(30, 20, 0)).toBeNull();
+    expect(estimatedEnding(0, 20, 44)).toBeNull();
+  });
+});
+
+describe("ending threshold (mirrors planAOutro's a_outro_min_seconds default)", () => {
+  it("maps the remainder onto the three endings", () => {
+    expect(endingForRemainder(0)).toBe("none");
+    expect(endingForRemainder(-3)).toBe("none");
+    expect(endingForRemainder(1.9)).toBe("freeze");
+    expect(endingForRemainder(2)).toBe("avatar");
+    expect(endingForRemainder(8)).toBe("avatar");
+  });
+});
+
+describe("ending sentence (script step: estimate; audio step: exact)", () => {
+  it("estimates are framed as such (בערך)", () => {
+    for (const mode of ["none", "freeze", "avatar"] as const) {
+      expect(endingSentence(mode, false)).toContain("בערך");
+    }
+  });
+
+  it("names the right ending in both framings", () => {
+    for (const exact of [false, true]) {
+      expect(endingSentence("freeze", exact)).toContain("הפריים האחרון");
+      expect(endingSentence("avatar", exact)).toContain("הדמות");
+      expect(endingSentence("none", exact)).toContain("יחד עם סרטון המוצר");
+    }
+  });
+
+  it("exact sentences speak about the recording, not an estimate", () => {
+    for (const mode of ["none", "freeze", "avatar"] as const) {
+      expect(endingSentence(mode, true)).toContain("ההקלטה");
+      expect(endingSentence(mode, true)).not.toContain("בערך");
+    }
   });
 });
 

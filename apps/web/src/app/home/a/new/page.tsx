@@ -3,13 +3,16 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AWizard } from "@/components/a-wizard/a-wizard";
 import { Wordmark } from "@/components/wordmark";
+import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 /**
  * Server shell for the Service A wizard: resolves the selected business (same
  * cookie the homepage header writes) and hands name + questionnaire
- * advantages to the client wizard — no extra API round-trips.
+ * advantages to the client wizard — no extra API round-trips. The persona
+ * catalog ships in the HTML too, so the picker's image URLs are known to the
+ * preload scanner before React hydrates.
  */
 export default async function NewARenderPage() {
   const supabase = await createServerSupabase();
@@ -28,6 +31,9 @@ export default async function NewARenderPage() {
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;
   const questionnaire = selected.questionnaire as { advantages?: string[] } | null;
   if (!questionnaire) redirect("/home");
+
+  // Undefined on failure: the wizard falls back to the client fetch + retry UI.
+  const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -48,6 +54,7 @@ export default async function NewARenderPage() {
           businessId={selected.id}
           businessName={selected.name}
           advantages={questionnaire.advantages ?? []}
+          initialCatalog={personaCatalog}
         />
       </main>
     </div>

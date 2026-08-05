@@ -4,7 +4,7 @@ import { useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
-import { voLengthHeadsUp } from "@/lib/service-a-ui";
+import { endingSentence, estimatedEnding } from "@/lib/service-a-ui";
 import { countWords, needsTextSave, withEditedText, type ScriptState } from "@/lib/service-b-ui";
 import { postJson } from "@/lib/use-api";
 
@@ -58,9 +58,11 @@ export function StepAScript({
   const [phase, setPhase] = useState<"advantages" | "script">(script ? "script" : "advantages");
 
   const words = countWords(editedText);
-  const headsUp =
+  // The only place the user can still shorten the script and change the
+  // ending — name which of the three endings the current length points at.
+  const ending =
     script?.wordBudget !== undefined && demoDurationMs !== undefined
-      ? voLengthHeadsUp(words, demoDurationMs / 1000, script.wordBudget)
+      ? estimatedEnding(words, demoDurationMs / 1000, script.wordBudget)
       : null;
 
   async function generateScript() {
@@ -189,7 +191,15 @@ export function StepAScript({
           onChange={(event) => setEditedText(event.target.value)}
         />
         <p className="mt-1.5 text-[13px] tabular-nums text-gray-500">{words} מילים</p>
-        {headsUp && <p className="mt-1.5 text-[13px] text-amber-300/90">{headsUp}</p>}
+        {ending && (
+          <p
+            className={`mt-1.5 text-[13px] ${
+              ending === "none" ? "text-gray-500" : "text-amber-300/90"
+            }`}
+          >
+            {endingSentence(ending, false)}
+          </p>
+        )}
       </div>
 
       {error && (

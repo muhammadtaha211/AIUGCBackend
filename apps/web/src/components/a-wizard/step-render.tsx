@@ -275,7 +275,11 @@ export function StepARender({
 
       {slow && (
         <p className="mt-6 text-center text-sm text-gray-500">
-          עדיין עובד… סרטון עם סיום דמות יכול לקחת כמה דקות.
+          {/* Only an avatar ending passes through lipsync — don't blame a
+              persona that isn't in the video. */}
+          {shape?.outroMode === "avatar"
+            ? "עדיין עובד… סרטון עם סיום דמות יכול לקחת כמה דקות."
+            : "עדיין עובד… זה יכול לקחת עוד רגע."}
         </p>
       )}
 

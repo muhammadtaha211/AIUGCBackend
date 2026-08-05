@@ -72,6 +72,9 @@ export function isIngestingDemoStatus(status: string): boolean {
   return status === "uploaded" || status === "probing" || status === "normalizing";
 }
 
+/** The reuse picker pages ready demos four at a time (route + step agree). */
+export const DEMO_PAGE_SIZE = 4;
+
 /** One row of GET /api/businesses/[id]/demos — reuse picker + demo library. */
 export type DemoSummary = {
   id: string;
@@ -96,7 +99,7 @@ export type HookClip = {
 export type HookLineOption = { scriptId: string; text: string; angle: string };
 
 // ---------------------------------------------------------------------------
-// Soft VO-length heads-up (script approval) — seconds only, advisory only.
+// The projected ending (script step: estimated; audio step: exact) — advisory.
 // ---------------------------------------------------------------------------
 
 /**
@@ -111,28 +114,57 @@ export function estimateVoSeconds(words: number, demoSeconds: number, wordBudget
   return (words * demoSeconds) / wordBudget;
 }
 
+export type AEndingMode = AShape["outroMode"];
+
 /**
- * The gentle Hebrew note under the script textarea when the VO likely outlasts
- * the demo, with the approximate ending shape. Mirrors core's 2s freeze/avatar
- * threshold (a_outro_min_seconds default) — advisory only, nothing blocks.
- * Gates on the DISPLAYED rounded values so the prose never contradicts the
- * numbers beside it; sub-second remainders that round away stay silent (the
- * post-audio advisory is exact).
+ * Which ending a VO remainder (vo minus demo, in seconds) points at. Mirrors
+ * core's planAOutro thresholds (a_outro_min_seconds default 2) — advisory
+ * only; createSet re-decides server-side.
  */
-export function voLengthHeadsUp(
+export function endingForRemainder(remainderSeconds: number): AEndingMode {
+  if (remainderSeconds <= 0) return "none";
+  if (remainderSeconds < 2) return "freeze";
+  return "avatar";
+}
+
+/**
+ * The ending the CURRENT script length points at. Gates on the DISPLAYED
+ * rounded values so the prose never contradicts the numbers beside it —
+ * sub-second overruns that round away read as "none" (the post-audio advisory
+ * is exact). null = inputs unusable (no budget yet).
+ */
+export function estimatedEnding(
   words: number,
   demoSeconds: number,
   wordBudget: number,
-): string | null {
+): AEndingMode | null {
   const estimate = estimateVoSeconds(words, demoSeconds, wordBudget);
-  const remainder = estimate - demoSeconds;
-  const rounded = Math.round(estimate);
-  if (rounded <= Math.round(demoSeconds)) return null;
-  const shape =
-    remainder < 2
-      ? "הפריים האחרון של הסרטון יוקפא לרגע קצר בסוף"
-      : "הדמות שבחרתם תופיע בסוף ותסגור את הסרטון";
-  return `לפי הערכה, הקריינות תימשך כ־${rounded} שניות — יותר מסרטון המוצר (${Math.round(demoSeconds)} שנ׳), ולכן ${shape}. זו הערכה בלבד — המבנה המדויק יוצג אחרי ההקלטה.`;
+  if (estimate <= 0) return null;
+  if (Math.round(estimate) <= Math.round(demoSeconds)) return "none";
+  return endingForRemainder(estimate - demoSeconds);
+}
+
+/**
+ * THE sentence naming the projected ending — the script step (exact=false, an
+ * estimate from the word budget, בערך framing) and the audio step (exact=true,
+ * from the measured recording) both speak through this, so the wording never
+ * forks. The render step's shapeSummary stays the full numeric display; do
+ * not add a third phrasing.
+ */
+export function endingSentence(mode: AEndingMode, exact: boolean): string {
+  if (mode === "freeze") {
+    return exact
+      ? "ההקלטה ארוכה מעט מסרטון המוצר — הפריים האחרון יוקפא לרגע קצר בסוף."
+      : "לפי האורך הנוכחי, הקריינות תסתיים בערך רגע אחרי סרטון המוצר — הפריים האחרון יוקפא לרגע קצר בסוף.";
+  }
+  if (mode === "avatar") {
+    return exact
+      ? "ההקלטה ארוכה מסרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון."
+      : "לפי האורך הנוכחי, הקריינות תימשך בערך גם אחרי סרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון.";
+  }
+  return exact
+    ? "ההקלטה מסתיימת יחד עם סרטון המוצר — בלי סיום נוסף."
+    : "לפי האורך הנוכחי, הקריינות תסתיים בערך יחד עם סרטון המוצר.";
 }
 
 // ---------------------------------------------------------------------------

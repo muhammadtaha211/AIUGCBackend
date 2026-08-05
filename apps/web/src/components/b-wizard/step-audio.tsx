@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
+import { endingForRemainder, endingSentence } from "@/lib/service-a-ui";
 import type { AudioState, ScriptState } from "@/lib/service-b-ui";
 import { postJson, useJobPoll } from "@/lib/use-api";
 
@@ -20,6 +21,12 @@ type StepAudioProps = {
    * is unchanged. Absent = the two-button flow (Service B).
    */
   approveContinueLabel?: string;
+  /**
+   * Service A only: the demo's length. When set, the ready card names the
+   * exact ending (none/freeze/avatar) from the measured recording — before
+   * approval, while regenerating is still one click away.
+   */
+  demoDurationMs?: number;
 };
 
 /**
@@ -35,6 +42,7 @@ export function StepAudio({
   onContinue,
   onFatal,
   approveContinueLabel,
+  demoDurationMs,
 }: StepAudioProps) {
   const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -73,13 +81,18 @@ export function StepAudio({
     slow,
     stalled,
     retry: retryPolling,
-  } = useJobPoll<{ status: string; audioUrl?: string }>(
+  } = useJobPoll<{ status: string; audioUrl?: string; durationMs?: number }>(
     generating,
     `/api/audio/${audio?.id}`,
     2_000,
     (body) => {
       if (!audio) return;
-      setAudio({ ...audio, status: body.status, audioUrl: body.audioUrl });
+      setAudio({
+        ...audio,
+        status: body.status,
+        audioUrl: body.audioUrl,
+        durationMs: body.durationMs,
+      });
     },
     onFatal,
   );
@@ -184,6 +197,14 @@ export function StepAudio({
               </p>
             )}
           </div>
+
+          {/* Service A: the exact ending from the measured recording — the
+              last moment a regenerate is one click away. */}
+          {demoDurationMs !== undefined && audio.durationMs !== undefined && (
+            <p className="mt-3 text-[13px] text-gray-400">
+              {endingSentence(endingForRemainder((audio.durationMs - demoDurationMs) / 1000), true)}
+            </p>
+          )}
 
           {approveContinueLabel ? (
             <Button

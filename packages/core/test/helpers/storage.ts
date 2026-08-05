@@ -31,6 +31,10 @@ export function tempStorage(): { storage: Storage; root: string; cleanup: () => 
       if (!existsSync(resolve(storagePath))) throw missingObjectError(storagePath);
       return `file://${resolve(storagePath).replaceAll("\\", "/")}`;
     },
+    publicUrl(storagePath) {
+      // Distinct scheme so tests can assert public vs signed serving.
+      return `public://${resolve(storagePath).replaceAll("\\", "/")}`;
+    },
     async createSignedUploadUrl(storagePath) {
       return `upload://${resolve(storagePath).replaceAll("\\", "/")}`;
     },

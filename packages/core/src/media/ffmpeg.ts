@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { PermanentError } from "../jobs/errors";
 
@@ -102,6 +102,20 @@ export async function thumbnail(input: string, output: string, atMs = 1000): Pro
     "scale=540:960",
     output,
   ]);
+}
+
+/**
+ * A blur placeholder for the persona pickers: the image scaled to 8px wide,
+ * encoded as WebP and returned as a base64 data URL (~100–300 bytes) for
+ * next/image `placeholder="blur"`. Throws on undecodable bytes — callers that
+ * treat the placeholder as cosmetic catch and store null.
+ */
+export async function blurPlaceholder(input: string): Promise<string> {
+  const output = `${input}.blur.webp`;
+  await run("ffmpeg", ["-y", "-i", input, "-vf", "scale=8:-1", "-frames:v", "1", output]);
+  const bytes = readFileSync(output);
+  rmSync(output, { force: true });
+  return `data:image/webp;base64,${bytes.toString("base64")}`;
 }
 
 export interface ColorTags {

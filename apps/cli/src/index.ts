@@ -37,6 +37,7 @@ import {
   servedContentType,
   setQuestionnaire,
   starVariant,
+  syncPersonaImageCatalog,
   updateScriptText,
   type Bucket,
 } from "@aiugc/core";
@@ -340,6 +341,19 @@ persona
         isDefault: opts.default,
       });
       console.log(`persona image added: ${image.id}${image.isDefault ? " (default)" : ""}`);
+      if (!image.blurDataUrl) {
+        console.log("  (no blur placeholder — ffmpeg missing or bytes did not decode)");
+      }
+    }),
+  );
+
+persona
+  .command("sync-catalog")
+  .description("backfill public catalog copies + blur placeholders for pre-existing images")
+  .action(
+    run(async () => {
+      const synced = await syncPersonaImageCatalog(getDb());
+      console.log(`${synced} persona image(s) backfilled (catalog copy and/or blur placeholder)`);
     }),
   );
 

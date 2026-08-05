@@ -11,8 +11,12 @@ import { LOCAL_STORAGE_DIR } from "./paths";
  * - raw:     user uploads as-is (deleted 30 days after normalization)
  * - assets:  normalized demos, hook bank, persona clips, thumbnails
  * - renders: audio previews and video outputs (retention per app_config)
+ * Plus ONE public bucket:
+ * - catalog: copies of persona catalog images (founder-curated, readable by
+ *   any signed-in user per 0007's RLS) — stable cacheable URLs. Nothing
+ *   business-scoped ever goes here.
  */
-export type Bucket = "raw" | "assets" | "renders";
+export type Bucket = "raw" | "assets" | "renders" | "catalog";
 
 /**
  * supabase-js defaults Buffer uploads to text/plain;charset=UTF-8, which
@@ -55,11 +59,17 @@ export interface Storage {
     bucket: Bucket,
     key: string,
     source: string | Buffer,
-    options?: { upsert?: boolean },
+    options?: { upsert?: boolean; cacheControl?: string },
   ): Promise<string>;
   download(storagePath: string, localFile: string): Promise<void>;
   remove(storagePath: string): Promise<void>;
   signedUrl(storagePath: string, expiresInSeconds: number): Promise<string>;
+  /**
+   * URL for an object in the PUBLIC catalog bucket — stable (no expiry, no
+   * token), so browsers/CDNs/next-image can cache it. Pure URL construction,
+   * no round trip, hence sync. Objects in the private buckets 404 on it.
+   */
+  publicUrl(storagePath: string): string;
   /**
    * Target for a direct browser upload (demo videos are far over Vercel's
    * route body limit, so their bytes never pass through a route handler).
@@ -132,6 +142,12 @@ class LocalStorage implements Storage {
     return `file://${src.replaceAll("\\", "/")}`;
   }
 
+  publicUrl(storagePath: string): string {
+    // Sync by contract, so no existence check — same file:// shape as signedUrl.
+    const { bucket, key } = splitPath(storagePath);
+    return `file://${path.join(LOCAL_STORAGE_DIR, bucket, key).replaceAll("\\", "/")}`;
+  }
+
   async createSignedUploadUrl(): Promise<string> {
     // A browser cannot PUT into the local filesystem; the upload flow is
     // Supabase-only. The CLI path uses put() directly.
@@ -147,7 +163,7 @@ export class SupabaseStorage implements Storage {
     bucket: Bucket,
     key: string,
     source: string | Buffer,
-    options?: { upsert?: boolean },
+    options?: { upsert?: boolean; cacheControl?: string },
   ): Promise<string> {
     const bytes = typeof source === "string" ? readFileSync(source) : source;
     const { error } = await this.client.storage.from(bucket).upload(key, bytes, {
@@ -156,6 +172,9 @@ export class SupabaseStorage implements Storage {
       // between upload and DB write re-runs the same upload — it must
       // overwrite, not fail with "resource already exists".
       upsert: options?.upsert ?? true,
+      // Served as `cache-control: public, max-age=<n>` on the public endpoint;
+      // supabase-js defaults to 3600 when absent.
+      ...(options?.cacheControl ? { cacheControl: options.cacheControl } : {}),
     });
     if (error) throw new Error(`storage upload failed (${bucket}/${key}): ${error.message}`);
     return `${bucket}/${key}`;
@@ -188,6 +207,11 @@ export class SupabaseStorage implements Storage {
       throw new Error(`signed url failed (${storagePath}): ${error.message}`);
     }
     return data.signedUrl;
+  }
+
+  publicUrl(storagePath: string): string {
+    const { bucket, key } = splitPath(storagePath);
+    return this.client.storage.from(bucket).getPublicUrl(key).data.publicUrl;
   }
 
   async createSignedUploadUrl(storagePath: string): Promise<string> {

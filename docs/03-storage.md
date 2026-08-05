@@ -1,6 +1,8 @@
 # 03 — Storage Plan
 
-Supabase Storage, three **private** buckets, signed URLs only (no public objects, ever).
+Supabase Storage, three **private** buckets (signed URLs only) plus one **public** bucket
+(`catalog`) for persona catalog images — founder-curated, non-business data that benefits from
+stable cacheable URLs. Everything business-scoped stays private and signed.
 Implementation: `packages/core/src/storage.ts` — a `Storage` interface with two backends:
 `SupabaseStorage` (production) and `LocalStorage` (`.storage/` — CLI phase before a Supabase
 project exists, and offline dev). Tests inject a temp-dir backend. All path construction goes
@@ -15,6 +17,7 @@ Path convention: `<bucket>/<business_id|bank>/<entity>/<id>/<filename>`
 | `raw`     | user uploads exactly as received                                                                                                                                                                  | `createDemo`                                      |
 | `assets`  | normalized demos, thumbnails, hook bank, persona reference images                                                                                                                                 | ingest handler, `bank add-*`, `persona add-image` |
 | `renders` | audio previews (`audio/<id>/audio.mp3`), Service B lip-sync plates + upscaled clips (`video/<id>/lipsync-plate.mp4`, `lipsync-upscaled.mp4`), final videos (`video/<id>/final.mp4`), video thumbs | tts, lipsync/upscale + render handlers            |
+| `catalog` | **public** — content-addressed copies of persona reference images (`bank/persona_image/<id>/<hash>.<ext>`, year-long cache-control), served to the pickers via `publicUrl()`                      | `addPersonaImage`, `persona sync-catalog`         |
 
 Founder bank assets use the `bank/` prefix (no business). Everything is 1080×1920 H.264 MP4
 after normalization; audio is mp3 44.1kHz.
@@ -50,7 +53,10 @@ Decision deferred until Supabase egress actually shows up on a bill (at V0 scale
 
 ## Access
 
-- Browser/customer access is **signed URLs only** (`storage.signedUrl(path, expiresIn)`), minted
-  by server code after an RLS-scoped ownership check on the referencing row.
+- Browser/customer access to business-scoped objects is **signed URLs only**
+  (`storage.signedUrl(path, expiresIn)`), minted by server code after an RLS-scoped ownership
+  check on the referencing row. Persona catalog images are the one exception: public copies in
+  `catalog` (0007's RLS already declares them readable by any signed-in user), served via
+  `storage.publicUrl(path)` so browsers/CDNs/next-image can cache them.
 - The worker and CLI use the service role key.
 - fal.ai receives 1-hour signed URLs for the source image + audio inputs (see 04).

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,9 @@ type AWizardProps = {
   businessName: string;
   /** Questionnaire advantages — the VO script derives from the ticked ones. */
   advantages: string[];
+  /** Catalog server-rendered by the page shell — undefined falls back to the
+   *  mount fetch (and its retry UI) via /api/personas. */
+  initialCatalog?: Persona[];
 };
 
 /**
@@ -44,12 +48,14 @@ type AWizardProps = {
  * Single variant — the grid stays CLI-only. State is client-side only; a
  * refresh restarts the wizard. Persona and audio steps are shared with B.
  */
-export function AWizard({ businessId, businessName, advantages }: AWizardProps) {
+export function AWizard({ businessId, businessName, advantages, initialCatalog }: AWizardProps) {
   const steps = A_WIZARD_STEPS;
   const [stepIndex, setStepIndex] = useState(0);
   /** 403/404 from any call: the business/resource is gone for this session. */
   const [fatal, setFatal] = useState<string | null>(null);
 
+  /** The persona catalog, cached here so re-entering the step skips the fetch. */
+  const [personaCatalog, setPersonaCatalog] = useState<Persona[] | null>(initialCatalog ?? null);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [hook, setHook] = useState<HookClip | null>(null);
   const [hookLines, setHookLines] = useState<HookLineOption[] | null>(null);
@@ -147,10 +153,18 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
 
           {step === "persona" && (
             <StepPersona
+              catalog={personaCatalog}
+              setCatalog={setPersonaCatalog}
               selected={persona}
               onSelect={selectPersona}
               onContinue={goNext}
               onFatal={setFatal}
+              // In A the choice sets the narration voice; the face shows up
+              // only when the VO outlasts the demo. Say exactly that.
+              copy={{
+                title: "מי תקריין את המודעה שלכם?",
+                sub: "בוחרים דמות אחת — הקריינות תוקלט בקול שלה, והיא תופיע בסוף הסרטון רק אם הקריינות ממשיכה אחרי שסרטון המוצר נגמר.",
+              }}
             />
           )}
 
@@ -222,6 +236,7 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
               onContinue={goNext}
               onFatal={setFatal}
               approveContinueLabel="מאשרים וממשיכים ליצירת הסרטון"
+              demoDurationMs={demo?.durationMs}
             />
           )}
 
@@ -250,7 +265,9 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
  * The structure strip: the fixed three-part shape of every Service A ad —
  * פתיח | הדמו שלכם | סיום עם הדמות — populating live as choices land, so the
  * customer always sees what they are building. The persona face sits in the
- * ending slot from step 1: the chosen character narrates and closes the video.
+ * ending slot from step 1, but the ending itself is conditional (it renders
+ * only when the VO outlasts the demo), so the caption states the same
+ * condition as the persona step's copy — never "she closes the video".
  * The strip is a temporal axis, not text — timelines run left→right even in
  * RTL locales, so the container is forced LTR (hook far left); the Hebrew
  * labels inside stay RTL.
@@ -284,12 +301,20 @@ function StructureStrip({
           <img src={demo.thumbUrl} alt="" className="absolute inset-0 size-full object-cover" />
         )}
       </StripSlot>
-      <StripSlot label="סיום עם הדמות" caption={persona ? "מקריינת לאורך כל הסרטון" : undefined}>
+      <StripSlot
+        label="סיום עם הדמות"
+        caption={
+          persona ? "מקריינת את הסרטון; תופיע בסוף רק אם הקריינות ממשיכה אחרי הדמו" : undefined
+        }
+      >
         {persona && (
-          <img
+          // Public catalog URL — next/image shrinks the 9:16 source to tile size.
+          <Image
             src={persona.imageUrl}
             alt={persona.name}
-            className="absolute inset-0 size-full object-cover"
+            fill
+            sizes="80px"
+            className="object-cover"
           />
         )}
       </StripSlot>
