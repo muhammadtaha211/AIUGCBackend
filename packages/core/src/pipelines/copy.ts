@@ -176,7 +176,7 @@ export async function generateVoScript(
   const demo = await getReadyDemo(db, opts.demoId);
 
   let voiceId = opts.voiceId;
-  // v4 speaks first-person as the persona, so the prompt needs the speaker's
+  // v5 speaks first-person as the persona, so the prompt needs the speaker's
   // gender even when the voice was passed explicitly (the regeneration path).
   let personaGender = "female";
   if (opts.personaId) {
