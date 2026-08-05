@@ -64,9 +64,10 @@ export async function generateHookLines(
   let promptVersion = "dry_run";
   if (getEnv().DRY_RUN) {
     const canned = [
-      { text: "הדבר הזה חסך לי שעה ביום", angle: "pain" },
-      { text: "לא האמנתי שזה באמת עובד", angle: "feature" },
-      { text: "עולה פחות מקפה בחודש", angle: "price" },
+      { text: "זה חתך לי את העבודה לשתי דקות", angle: "claim" },
+      { text: "מי שעדיין עושה את זה ידנית, מפסיד", angle: "threat_opportunity" },
+      { text: "בזבזתי שעתיים על באנר אחד, עד שזה", angle: "curiosity_gap" },
+      { text: "POV: סיימת את העבודה בשתי דקות", angle: "pov" },
     ];
     options = Array.from({ length: n }, (_, i) => canned[i % canned.length]!);
   } else {
@@ -170,6 +171,8 @@ export async function generateVoScript(
     voiceId?: string;
     /** Override for the length-fit regeneration path. */
     wordBudgetOverride?: number;
+    /** The chosen hook line, so the opener escalates past it instead of repeating it. */
+    hookLineText?: string;
   },
 ): Promise<Script> {
   const questionnaire = await requireQuestionnaire(db, opts.businessId);
@@ -211,8 +214,8 @@ export async function generateVoScript(
   let promptVersion = "dry_run";
   if (getEnv().DRY_RUN) {
     const filler =
-      "פותחים את האפליקציה ומיד רואים כמה זה פשוט הכל במקום אחד בלי הגדרות מסובכות " +
-      "מנסים פעם אחת ומבינים כמה זמן זה חוסך כל יום שווה לנסות עכשיו";
+      "אני כבר לא חוזרת לעשות את זה ידנית בזבזתי שעתיים על באנר אחד ובסוף עשיתי אותו מחדש " +
+      "ואז מצאתי משהו שסגר לי את זה כאילו הכל במסך אחד תוך שתי דקות תבדקו לבד";
     text = filler.split(" ").slice(0, wordBudget).join(" ");
   } else {
     const result = await callClaude(
@@ -223,6 +226,7 @@ export async function generateVoScript(
         questionnaire: JSON.stringify(questionnaire, null, 2),
         selected_advantages: opts.selectedAdvantages.map((a) => `- ${a}`).join("\n"),
         demo_description: demoDescription ?? "(אין — התבסס על השאלון בלבד)",
+        hook_line: opts.hookLineText ?? "(אין — משפט הפתיחה לא ידוע)",
         demo_seconds: demoSeconds,
         word_budget: wordBudget,
         words_per_second: wps,
@@ -242,7 +246,13 @@ export async function generateVoScript(
       personaId: opts.personaId,
       kind: "vo_script",
       text,
-      params: { selectedAdvantages: opts.selectedAdvantages, wordBudget, voiceId, demoDescription },
+      params: {
+        selectedAdvantages: opts.selectedAdvantages,
+        wordBudget,
+        voiceId,
+        demoDescription,
+        hookLineText: opts.hookLineText,
+      },
       promptVersion,
     })
     .returning();

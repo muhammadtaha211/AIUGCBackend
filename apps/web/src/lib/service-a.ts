@@ -63,6 +63,8 @@ export const voScriptRequestSchema = z.object({
   personaId: z.string().uuid(),
   /** Questionnaire advantages ticked as visible in the footage. */
   selectedAdvantages: z.array(z.string().min(1).max(200)).max(12),
+  /** The chosen hook line, so the VO opener escalates past it instead of repeating it. */
+  hookLineText: z.string().min(1).max(200).optional(),
 });
 
 export const aPreviewRequestSchema = z.object({

@@ -8,6 +8,7 @@ import {
   addPersona,
   addPersonaImage,
   addStructure,
+  applyWordsPerSecond,
   approveAudio,
   buildHandlers,
   closeDb,
@@ -26,6 +27,7 @@ import {
   HEAVY_JOB_TYPES,
   listQcQueue,
   moreLikeThis,
+  observedWordsPerSecond,
   recentJobs,
   recentRenders,
   rejectRender,
@@ -237,6 +239,34 @@ audio.command("approve <audioRenderId>").action(
     console.log("audio approved — video can now be rendered on it");
   }),
 );
+
+program
+  .command("calibrate-wps")
+  .description(
+    "observed words/second per voice from ready audio renders; " +
+      "voices with 3+ samples are written into app_config.words_per_second",
+  )
+  .action(
+    run(async () => {
+      const db = getDb();
+      const observed = await observedWordsPerSecond(db);
+      if (observed.length === 0) {
+        console.log("no ready audio renders yet — nothing to calibrate from");
+        return;
+      }
+      for (const voice of observed) {
+        console.log(
+          `${voice.voiceId}  ${String(voice.samples).padStart(3)} samples  ${voice.wordsPerSecond} w/s`,
+        );
+      }
+      const applied = await applyWordsPerSecond(db, observed);
+      console.log(
+        applied.length > 0
+          ? `written to app_config.words_per_second: ${applied.join(", ")}`
+          : "nothing written (every voice has fewer than 3 samples)",
+      );
+    }),
+  );
 
 // --- founder bank curation ----------------------------------------------------
 

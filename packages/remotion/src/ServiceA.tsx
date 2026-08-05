@@ -196,7 +196,11 @@ const HookLine: React.FC<{ text: string; area: TextSafeArea }> = ({ text, area }
         textShadow: TEXT_OUTLINE,
       }}
     >
-      <span style={{ unicodeBidi: "plaintext" }}>{text}</span>
+      {/* isolate, not plaintext: plaintext takes base direction from the first
+          strong character, so a line opening with a Latin run (`POV:`) flips
+          the whole line LTR and the prefix drifts to the wrong edge. isolate
+          keeps the container's RTL base; the Latin run stays an LTR island. */}
+      <span style={{ unicodeBidi: "isolate" }}>{text}</span>
     </div>
   );
 };

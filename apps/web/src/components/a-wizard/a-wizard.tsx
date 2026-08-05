@@ -199,6 +199,7 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
               demoId={demo.id}
               demoDurationMs={demo.durationMs}
               personaId={persona.id}
+              hookLineText={hookLine?.text}
               advantages={advantages}
               selectedAdvantages={selectedAdvantages}
               setSelectedAdvantages={setSelectedAdvantages}

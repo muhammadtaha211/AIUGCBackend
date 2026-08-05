@@ -70,7 +70,11 @@ export async function registerUploadedDemo(
  * The optional "what the footage shows" note — soft grounding for the VO
  * script. Once per demo, editable while the customer is on the upload step;
  * every script generated from this demo afterwards inherits it. Blank clears.
+ * The cap matches the request schema — user-authored text interpolated into
+ * the vo_script prompt, so it is bounded on every write path, CLI included.
  */
+export const MAX_DEMO_DESCRIPTION_CHARS = 500;
+
 export async function setDemoDescription(
   db: Db,
   opts: { demoId: string; description: string },
@@ -79,7 +83,10 @@ export async function setDemoDescription(
   if (!rows[0]) throw new Error(`demo ${opts.demoId} not found`);
   await db
     .update(demos)
-    .set({ description: opts.description.trim() || null, updatedAt: new Date() })
+    .set({
+      description: opts.description.trim().slice(0, MAX_DEMO_DESCRIPTION_CHARS) || null,
+      updatedAt: new Date(),
+    })
     .where(eq(demos.id, opts.demoId));
 }
 

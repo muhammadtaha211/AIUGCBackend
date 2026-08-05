@@ -51,6 +51,13 @@ export function HomeHeader({ businesses, selectedId }: HomeHeaderProps) {
         )}
 
         <Link
+          href="/home/demos"
+          className="flex h-9 shrink-0 items-center rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-medium text-gray-200 transition-colors duration-150 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          סרטוני המוצר
+        </Link>
+
+        <Link
           href="/home/new-business"
           className="flex h-9 shrink-0 items-center rounded-lg border border-white/15 bg-white/5 px-3 text-sm font-medium text-gray-200 transition-colors duration-150 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >

@@ -161,7 +161,9 @@ export function PlacementEditor({ rect, onChange, text }: PlacementEditorProps) 
             textShadow: `${outline}px ${outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${outline}px 0 rgba(0,0,0,0.92), ${outline}px ${-outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${-outline}px 0 rgba(0,0,0,0.92)`,
           }}
         >
-          <span style={{ unicodeBidi: "plaintext" }}>{text}</span>
+          {/* isolate, not plaintext — must match HookLine in the composition:
+              plaintext flips a `POV:`-opening line to LTR base direction. */}
+          <span style={{ unicodeBidi: "isolate" }}>{text}</span>
         </div>
         {(Object.keys(HANDLE_STYLE) as Corner[]).map((corner) => (
           <span

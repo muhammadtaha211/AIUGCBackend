@@ -156,7 +156,9 @@ export function SafeAreaEditor({ rect, onChange }: SafeAreaEditorProps) {
             textShadow: `${outline}px ${outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${outline}px 0 rgba(0,0,0,0.92), ${outline}px ${-outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${-outline}px 0 rgba(0,0,0,0.92)`,
           }}
         >
-          <span style={{ unicodeBidi: "plaintext" }}>{SAMPLE_HOOK_LINE}</span>
+          {/* isolate, not plaintext — must match HookLine in the composition:
+              plaintext flips a `POV:`-opening line to LTR base direction. */}
+          <span style={{ unicodeBidi: "isolate" }}>{SAMPLE_HOOK_LINE}</span>
         </div>
         {(Object.keys(HANDLE_STYLE) as Corner[]).map((corner) => (
           <span

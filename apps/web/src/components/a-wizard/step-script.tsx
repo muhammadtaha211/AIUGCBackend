@@ -14,6 +14,8 @@ type StepAScriptProps = {
   /** For the seconds-only length heads-up (inverts the word-budget mapping). */
   demoDurationMs?: number;
   personaId: string;
+  /** The chosen hook line — the VO opener escalates past it instead of repeating it. */
+  hookLineText?: string;
   advantages: string[];
   selectedAdvantages: string[];
   setSelectedAdvantages: (value: string[]) => void;
@@ -38,6 +40,7 @@ export function StepAScript({
   demoId,
   demoDurationMs,
   personaId,
+  hookLineText,
   advantages,
   selectedAdvantages,
   setSelectedAdvantages,
@@ -65,7 +68,7 @@ export function StepAScript({
     setBusy("script");
     const result = await postJson<{ scriptId: string; text: string; wordBudget?: number }>(
       `/api/businesses/${businessId}/vo-script`,
-      { demoId, personaId, selectedAdvantages },
+      { demoId, personaId, selectedAdvantages, hookLineText },
     );
     setBusy(null);
     if (!result.ok) {

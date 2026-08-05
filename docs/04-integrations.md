@@ -15,12 +15,17 @@ keyless (the e2e test relies on this).
 - **Prompt versioning**: prompts are files — `prompts/<name>/v<N>.md` with `{{var}}`
   interpolation (`src/prompts.ts`). A revision is a new file, never an edit; every generated
   script row records `prompt_version = "<name>@v<N>"`, so any output is traceable to the exact
-  template. Current prompts: `hook_lines`, `benefit_captions`, `vo_script`, `b_script`
-  (v3 adds customer pointers + duration preset), `content_policy`, `tts_enhance`
-  (ElevenLabs v3 audio tags — see §ElevenLabs).
+  template. Current prompts: `hook_lines` (v5: adds a `pov` form — Latin `POV:` prefix,
+  second-person aspiration + third-person world-state sub-shapes — to the
+  exclusion/claim/curiosity forms; prefix exempt from the word cap, counted in the ~40-char
+  budget), `benefit_captions`, `vo_script` (v6: five-beat FOMO arc, `{{hook_line}}`
+  escalation, 90–100% word-budget band), `b_script` (v3 adds customer pointers + duration
+  preset), `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;
+  v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses).
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
-  app_config; default 2.2 w/s until each voice is calibrated with test renders) and passed into
-  the prompt as hard constraints.
+  app_config; default 2.2 w/s until each voice is calibrated — `aiugc calibrate-wps` reads
+  ready audio renders and writes observed per-voice rates for voices with 3+ samples) and
+  passed into the prompt as hard constraints.
 - Usage: one `usage_events` row per call (`llm_tokens`, in+out; cost estimated at $3/$15 per
   MTok). LLM spend is also under the daily cap (`llm_tokens`).
 - **Content policy (Service A)**: `contentPolicyCheck()` runs the `content_policy` classifier
@@ -50,11 +55,11 @@ keyless (the e2e test relies on this).
 
 ### Optional v3 audio-tag enhancement (`app_config.tts_enhance`, absent = off)
 
-- **What it is**: one Anthropic call (`prompts/tts_enhance/v1.md`) that inserts bracketed English
-  v3 audio tags (`[sighs]`, `[excited]`, `[short pause]`…) and light punctuation into a finished
+- **What it is**: one Anthropic call (`prompts/tts_enhance/v<N>.md`, latest wins) that inserts
+  bracketed English v3 audio tags (`[excited]`, `[confident]`, `[laughs]`…) into a finished
   Hebrew script, so the voice reads it with emotion. The prompt caps density at ~2–4 tags per
-  15-second script — this is one person talking to a phone camera, not theatre — and forbids
-  touching the Hebrew words.
+  15-second script — this is one person talking to a phone camera, not theatre — forbids
+  touching the Hebrew words, and (v4) bans every silence-producing tag plus `[sighs]`.
 - **Where it sits**: inside `handleSynthTts`'s regenerate loop, **before** the pronunciation map:
   `script.text → enhance (if on) → pronunciation map → synthesize`. Because it is inside the
   loop, a tighter regenerated script gets its own enhancement pass rather than reusing stale tags.

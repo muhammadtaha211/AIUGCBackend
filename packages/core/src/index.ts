@@ -11,6 +11,7 @@ export * from "./paths";
 export * from "./pipelines/bank";
 export * from "./pipelines/billing";
 export * from "./pipelines/businesses";
+export * from "./pipelines/calibrate";
 export * from "./pipelines/composites";
 export * from "./pipelines/copy";
 export * from "./pipelines/credits";

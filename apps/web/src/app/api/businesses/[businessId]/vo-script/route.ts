@@ -46,6 +46,7 @@ export async function POST(
       demoId: body.data.demoId,
       selectedAdvantages: body.data.selectedAdvantages,
       personaId: body.data.personaId,
+      hookLineText: body.data.hookLineText,
     });
     const { wordBudget } = script.params as { wordBudget?: number };
     return NextResponse.json({ scriptId: script.id, text: script.text, wordBudget });

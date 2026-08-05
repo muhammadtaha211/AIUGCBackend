@@ -72,6 +72,17 @@ export function isIngestingDemoStatus(status: string): boolean {
   return status === "uploaded" || status === "probing" || status === "normalizing";
 }
 
+/** One row of GET /api/businesses/[id]/demos — reuse picker + demo library. */
+export type DemoSummary = {
+  id: string;
+  status: string;
+  rejectReason?: string;
+  description?: string;
+  durationMs?: number;
+  thumbUrl?: string;
+  createdAt: string;
+};
+
 export type HookClip = {
   id: string;
   durationMs: number;

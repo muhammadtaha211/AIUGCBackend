@@ -12,6 +12,8 @@ import { ensureFixtures, TALKING_HEAD_FIXTURE, VOICEOVER_FIXTURE } from "./make-
  * into the avatar segment is visible). `--hook <file>` and
  * `--safe-area x,y,w,h` replay a real bank clip with the safe area drawn in
  * the admin editor, so what fits there can be checked against a real render.
+ * `--hook-line "<text>"` overrides the burned line — e.g. a `POV:` line to
+ * check the mixed-direction (Latin prefix in RTL) rendering.
  */
 
 const watermark = process.argv.includes("--watermark");
@@ -33,7 +35,7 @@ if (serviceA) {
   await renderServiceA(
     {
       hookClipPath: argValue("--hook") ?? TALKING_HEAD_FIXTURE,
-      hookLine: "זה מה שאף אחד לא מספר לכם",
+      hookLine: argValue("--hook-line") ?? "זה מה שאף אחד לא מספר לכם",
       hookTextSafeArea: { x: x!, y: y!, w: w!, h: h! },
       demoPath: TALKING_HEAD_FIXTURE,
       demoDurationMs: voMs,

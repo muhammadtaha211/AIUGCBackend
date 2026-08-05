@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
@@ -10,6 +10,7 @@ import {
   demoDurationError,
   isIngestingDemoStatus,
   type DemoState,
+  type DemoSummary,
 } from "@/lib/service-a-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
@@ -81,8 +82,35 @@ export function StepDemo({
   const [error, setError] = useState<string | null>(null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  /** Ready demos this business already has — null until the list arrives. */
+  const [previousDemos, setPreviousDemos] = useState<DemoSummary[] | null>(null);
   const busy = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // Refetch whenever the picker is showing (mount, "החלפת הסרטון") so a demo
+  // uploaded moments ago appears too. A failed fetch just hides the list —
+  // the upload path is untouched and surfaces its own errors.
+  const pickerShowing = demo === null;
+  useEffect(() => {
+    if (!pickerShowing) return;
+    let cancelled = false;
+    void (async () => {
+      const result = await apiFetch<{ demos: DemoSummary[] }>(`/api/businesses/${businessId}/demos`);
+      if (cancelled || !result.ok) return;
+      // Ready only — a rejected or still-ingesting demo must never be reusable.
+      setPreviousDemos(result.body.demos.filter((row) => row.status === "ready"));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pickerShowing, businessId]);
+
+  /** Reuse: the saved description prefills the field and stays editable. */
+  function selectPrevious(row: DemoSummary) {
+    setError(null);
+    setDemo({ id: row.id, status: "ready", durationMs: row.durationMs, thumbUrl: row.thumbUrl });
+    setDescription(row.description ?? "");
+  }
 
   /** Persist the footage note on the demo row, then advance. Blank clears. */
   async function saveDescriptionAndContinue() {
@@ -116,6 +144,9 @@ export function StepDemo({
     // signed-URL mint run behind it, never in front of it.
     setError(null);
     setUploadPercent(0);
+    // A new file is a new demo row — a description prefilled from a reused
+    // demo must not silently attach to it.
+    setDescription("");
     try {
       const invalid = clientDemoFileError(file);
       if (invalid) return fail(invalid);
@@ -190,6 +221,49 @@ export function StepDemo({
     </div>
   );
 
+  /** Reuse a previous demo — hidden entirely when there is nothing to reuse. */
+  const reuseList = previousDemos !== null && previousDemos.length > 0 && (
+    <div className="mt-6">
+      <p className="text-sm font-medium text-white">סרטונים שכבר העליתם</p>
+      <p className="mt-1 text-[13px] text-gray-500">
+        אפשר להשתמש שוב בסרטון קיים — או להעלות סרטון חדש למטה.
+      </p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {previousDemos.map((row) => (
+          <li key={row.id}>
+            <button
+              type="button"
+              onClick={() => selectPrevious(row)}
+              className="flex w-full items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-3 text-start transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              {row.thumbUrl ? (
+                // Signed, short-lived URL — next/image optimization would break it.
+                <img
+                  src={row.thumbUrl}
+                  alt=""
+                  className="aspect-[9/16] w-12 shrink-0 rounded-lg object-cover"
+                />
+              ) : (
+                <span className="aspect-[9/16] w-12 shrink-0 rounded-lg bg-white/10" />
+              )}
+              <span className="min-w-0">
+                <span className="block text-sm text-gray-300">
+                  {row.durationMs !== undefined && `${Math.round(row.durationMs / 1000)} שניות · `}
+                  הועלה ב־{new Date(row.createdAt).toLocaleDateString("he-IL")}
+                </span>
+                {row.description && (
+                  <span className="mt-1 line-clamp-2 block text-[13px] text-gray-500">
+                    {row.description}
+                  </span>
+                )}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
   const picker = (
     <>
       <input
@@ -249,7 +323,12 @@ export function StepDemo({
         </>
       )}
 
-      {demo === null && uploadPercent === null && picker}
+      {demo === null && uploadPercent === null && (
+        <>
+          {reuseList}
+          {picker}
+        </>
+      )}
 
       {ingesting && stalled && (
         <div className="mt-6">
