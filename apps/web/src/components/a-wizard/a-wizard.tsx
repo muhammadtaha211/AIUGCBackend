@@ -220,6 +220,7 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
               onBack={goBack}
               onContinue={goNext}
               onFatal={setFatal}
+              approveContinueLabel="מאשרים וממשיכים ליצירת הסרטון"
             />
           )}
 
@@ -249,6 +250,9 @@ export function AWizard({ businessId, businessName, advantages }: AWizardProps) 
  * פתיח | הדמו שלכם | סיום עם הדמות — populating live as choices land, so the
  * customer always sees what they are building. The persona face sits in the
  * ending slot from step 1: the chosen character narrates and closes the video.
+ * The strip is a temporal axis, not text — timelines run left→right even in
+ * RTL locales, so the container is forced LTR (hook far left); the Hebrew
+ * labels inside stay RTL.
  */
 function StructureStrip({
   persona,
@@ -260,7 +264,7 @@ function StructureStrip({
   demo: DemoState | null;
 }) {
   return (
-    <div className="mt-4 grid grid-cols-3 gap-2">
+    <div dir="ltr" className="mt-4 grid grid-cols-3 gap-2">
       <StripSlot label="פתיח">
         {hook && (
           <video
@@ -303,15 +307,23 @@ function StripSlot({
 }) {
   return (
     <div className="text-center">
+      {/* 9:16 tile — every strip asset is exactly 1080×1920, so an
+          aspect-matched tile makes cropping structurally impossible. */}
       <div
-        className={`relative aspect-[9/5] overflow-hidden rounded-lg border ${
+        className={`relative mx-auto aspect-[9/16] w-20 overflow-hidden rounded-lg border ${
           children ? "border-white/15" : "border-dashed border-white/15 bg-white/5"
         }`}
       >
         {children}
       </div>
-      <p className="mt-1 text-[11px] text-gray-400">{label}</p>
-      {caption && <p className="text-[10px] leading-tight text-gray-500">{caption}</p>}
+      <p dir="rtl" className="mt-1 text-[11px] text-gray-400">
+        {label}
+      </p>
+      {caption && (
+        <p dir="rtl" className="text-[10px] leading-tight text-gray-500">
+          {caption}
+        </p>
+      )}
     </div>
   );
 }

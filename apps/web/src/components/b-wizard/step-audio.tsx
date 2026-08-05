@@ -14,6 +14,12 @@ type StepAudioProps = {
   onBack: () => void;
   onContinue: () => void;
   onFatal: (message: string) => void;
+  /**
+   * Collapse approve + continue into one button with this label (Service A).
+   * Approve still runs first and a failure stays on the step — the hard gate
+   * is unchanged. Absent = the two-button flow (Service B).
+   */
+  approveContinueLabel?: string;
 };
 
 /**
@@ -28,6 +34,7 @@ export function StepAudio({
   onBack,
   onContinue,
   onFatal,
+  approveContinueLabel,
 }: StepAudioProps) {
   const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -77,16 +84,25 @@ export function StepAudio({
     onFatal,
   );
 
-  async function approve() {
-    if (!audio) return;
+  /** Returns whether the approve call landed (state already updated). */
+  async function approve(): Promise<boolean> {
+    if (!audio) return false;
     setApproving(true);
     const result = await postJson<{ ok: boolean }>(`/api/audio/${audio.id}/approve`);
     setApproving(false);
     if (!result.ok) {
-      if (result.status === 403 || result.status === 404) return onFatal(result.error);
-      return setError(result.error);
+      if (result.status === 403 || result.status === 404) onFatal(result.error);
+      else setError(result.error);
+      return false;
     }
     setAudio({ ...audio, approved: true });
+    return true;
+  }
+
+  /** Collapsed mode: approve, then advance in the same click. */
+  async function approveAndContinue() {
+    if (audio?.approved) return onContinue();
+    if (await approve()) onContinue();
   }
 
   return (
@@ -169,7 +185,17 @@ export function StepAudio({
             )}
           </div>
 
-          {audio.approved ? (
+          {approveContinueLabel ? (
+            <Button
+              type="button"
+              size="lg"
+              className="mt-6 w-full"
+              loading={approving}
+              onClick={() => void approveAndContinue()}
+            >
+              {approveContinueLabel}
+            </Button>
+          ) : audio.approved ? (
             <Button type="button" size="lg" className="mt-6 w-full" onClick={onContinue}>
               המשך ליצירת הסרטון
             </Button>

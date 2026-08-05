@@ -102,16 +102,26 @@ export function StepDemo({
     onContinue();
   }
 
+  /** Any failure returns to the picker with its Hebrew error. */
+  function fail(message: string) {
+    setUploadPercent(null);
+    setError(message);
+  }
+
   async function upload(file: File) {
     if (busy.current) return;
     busy.current = true;
+    // The picker dies synchronously on selection: the uploading state (and the
+    // description field) render this same frame; the metadata pre-check and
+    // signed-URL mint run behind it, never in front of it.
     setError(null);
+    setUploadPercent(0);
     try {
       const invalid = clientDemoFileError(file);
-      if (invalid) return setError(invalid);
+      if (invalid) return fail(invalid);
       const seconds = await readVideoSeconds(file);
       const badDuration = seconds !== undefined ? demoDurationError(seconds) : null;
-      if (badDuration) return setError(badDuration);
+      if (badDuration) return fail(badDuration);
 
       const target = await postJson<{ uploadUrl: string; uploadPath: string }>(
         `/api/businesses/${businessId}/demos/upload-url`,
@@ -119,13 +129,11 @@ export function StepDemo({
       );
       if (!target.ok) {
         if (target.status === 403 || target.status === 404) return onFatal(target.error);
-        return setError(target.error);
+        return fail(target.error);
       }
 
-      setUploadPercent(0);
       const uploaded = await putWithProgress(target.body.uploadUrl, file, setUploadPercent);
-      setUploadPercent(null);
-      if (!uploaded) return setError(UPLOAD_FAILED);
+      if (!uploaded) return fail(UPLOAD_FAILED);
 
       const registered = await postJson<{ demoId: string }>(`/api/businesses/${businessId}/demos`, {
         uploadPath: target.body.uploadPath,
@@ -134,9 +142,10 @@ export function StepDemo({
         if (registered.status === 403 || registered.status === 404) {
           return onFatal(registered.error);
         }
-        return setError(registered.error);
+        return fail(registered.error);
       }
       setDemo({ id: registered.body.demoId, status: "uploaded" });
+      setUploadPercent(null);
     } finally {
       busy.current = false;
     }
@@ -159,9 +168,10 @@ export function StepDemo({
   );
 
   /**
-   * The optional "what the footage shows" note — mounts while ingest runs (the
-   * customer has dead time anyway) and stays editable while on the step. Once
-   * per demo; saved on continue. Every VO script for this demo inherits it.
+   * The optional "what the footage shows" note — mounts the moment a file is
+   * chosen (upload + ingest are dead time anyway) and stays editable while on
+   * the step. Once per demo; saved on continue. Every VO script for this demo
+   * inherits it.
    */
   const descriptionField = (
     <div className="mt-5">
@@ -219,20 +229,24 @@ export function StepDemo({
         </p>
       )}
 
-      {/* Uploading: browser -> storage, with real progress. */}
+      {/* Uploading: browser -> storage, with real progress (mounted from the
+          selection frame — pre-checks run behind this state). */}
       {uploadPercent !== null && (
-        <div className="mt-6 rounded-xl border border-white/10 bg-white/5 px-6 py-8">
-          <p className="text-sm text-gray-300">מעלים את הסרטון…</p>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-300"
-              style={{ width: `${uploadPercent}%` }}
-            />
+        <>
+          <div className="mt-6 rounded-xl border border-white/10 bg-white/5 px-6 py-8">
+            <p className="text-sm text-gray-300">מעלים את הסרטון…</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-300"
+                style={{ width: `${uploadPercent}%` }}
+              />
+            </div>
+            <p dir="ltr" className="mt-2 text-end text-xs tabular-nums text-gray-500">
+              {uploadPercent}%
+            </p>
           </div>
-          <p dir="ltr" className="mt-2 text-end text-xs tabular-nums text-gray-500">
-            {uploadPercent}%
-          </p>
-        </div>
+          {descriptionField}
+        </>
       )}
 
       {demo === null && uploadPercent === null && picker}

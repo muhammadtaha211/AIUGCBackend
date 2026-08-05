@@ -266,6 +266,7 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
               businessId: script.businessId,
               demoId: script.demoId!,
               selectedAdvantages: params.selectedAdvantages ?? [],
+              personaId: script.personaId ?? undefined,
               voiceId: params.voiceId,
               wordBudgetOverride: newBudget,
             });

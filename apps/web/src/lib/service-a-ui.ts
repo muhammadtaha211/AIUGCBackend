@@ -104,6 +104,9 @@ export function estimateVoSeconds(words: number, demoSeconds: number, wordBudget
  * The gentle Hebrew note under the script textarea when the VO likely outlasts
  * the demo, with the approximate ending shape. Mirrors core's 2s freeze/avatar
  * threshold (a_outro_min_seconds default) — advisory only, nothing blocks.
+ * Gates on the DISPLAYED rounded values so the prose never contradicts the
+ * numbers beside it; sub-second remainders that round away stay silent (the
+ * post-audio advisory is exact).
  */
 export function voLengthHeadsUp(
   words: number,
@@ -112,8 +115,8 @@ export function voLengthHeadsUp(
 ): string | null {
   const estimate = estimateVoSeconds(words, demoSeconds, wordBudget);
   const remainder = estimate - demoSeconds;
-  if (remainder <= 0) return null;
   const rounded = Math.round(estimate);
+  if (rounded <= Math.round(demoSeconds)) return null;
   const shape =
     remainder < 2
       ? "הפריים האחרון של הסרטון יוקפא לרגע קצר בסוף"

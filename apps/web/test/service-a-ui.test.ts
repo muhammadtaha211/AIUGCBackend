@@ -43,6 +43,12 @@ describe("VO length estimate (inverted word-budget mapping)", () => {
     expect(voLengthHeadsUp(44, 20, 44)).toBeNull();
   });
 
+  it("stays silent when the rounded estimate equals the rounded demo length", () => {
+    // 45 words -> ~20.45s on a 20s demo: over by raw remainder, but both
+    // display as 20 — the note must never say "21 שניות — יותר מ-20" here.
+    expect(voLengthHeadsUp(45, 20, 44)).toBeNull();
+  });
+
   it("small overrun: a freeze-shaped note, clearly labeled an estimate", () => {
     // 47 words -> ~21.4s on a 20s demo: remainder < 2s.
     const note = voLengthHeadsUp(47, 20, 44)!;

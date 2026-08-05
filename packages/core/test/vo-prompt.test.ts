@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { latestPromptVersion, renderPrompt } from "../src/prompts";
 
 /**
- * vo_script v3 = v2 + the {{demo_description}} soft-grounding section.
+ * vo_script v4 = the first-person customer-testimonial rewrite, adding the
+ * {{persona_gender}} axis on top of v3's {{demo_description}} soft grounding.
  * renderPrompt auto-selects the highest version, so generateVoScript must
- * always supply demo_description (with the explicit "none" fallback) — a
- * missing variable throws at render time.
+ * always supply both — a missing variable throws at render time.
  */
-describe("vo_script prompt v3", () => {
+describe("vo_script prompt v4", () => {
   const vars = {
     questionnaire: "{}",
     selected_advantages: "- משלוח מהיר",
@@ -16,18 +16,29 @@ describe("vo_script prompt v3", () => {
     words_per_second: 2.2,
   };
 
-  it("is the latest version and receives the footage description", () => {
-    expect(latestPromptVersion("vo_script")).toBe(3);
+  it("is the latest version and receives the description and speaker gender", () => {
+    expect(latestPromptVersion("vo_script")).toBe(4);
     const { text, promptVersion } = renderPrompt("vo_script", {
       ...vars,
       demo_description: "גלילה בתפריט, הוספה לעגלה",
+      persona_gender: "female",
     });
-    expect(promptVersion).toBe("vo_script@v3");
+    expect(promptVersion).toBe("vo_script@v4");
     expect(text).toContain("גלילה בתפריט, הוספה לעגלה");
     expect(text).toContain("SOFT grounding");
+    expect(text).toContain("The speaker is female");
+    expect(text).toContain("testimonial");
   });
 
   it("throws when demo_description is missing (callers must pass the fallback)", () => {
-    expect(() => renderPrompt("vo_script", vars)).toThrow(/demo_description/);
+    expect(() => renderPrompt("vo_script", { ...vars, persona_gender: "female" })).toThrow(
+      /demo_description/,
+    );
+  });
+
+  it("throws when persona_gender is missing (callers must pass the default)", () => {
+    expect(() =>
+      renderPrompt("vo_script", { ...vars, demo_description: "(אין)" }),
+    ).toThrow(/persona_gender/);
   });
 });

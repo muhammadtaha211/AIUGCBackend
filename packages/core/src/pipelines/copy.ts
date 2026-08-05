@@ -176,14 +176,28 @@ export async function generateVoScript(
   const demo = await getReadyDemo(db, opts.demoId);
 
   let voiceId = opts.voiceId;
-  if (!voiceId && opts.personaId) {
+  // v4 speaks first-person as the persona, so the prompt needs the speaker's
+  // gender even when the voice was passed explicitly (the regeneration path).
+  let personaGender = "female";
+  if (opts.personaId) {
     const personaRows = await db
       .select()
       .from(personas)
       .where(eq(personas.id, opts.personaId))
       .limit(1);
-    if (!personaRows[0]) throw new Error(`persona ${opts.personaId} not found`);
-    voiceId = personaRows[0].voiceId;
+    const persona = personaRows[0];
+    if (!persona) throw new Error(`persona ${opts.personaId} not found`);
+    voiceId = voiceId ?? persona.voiceId;
+    if (persona.gender) {
+      personaGender = persona.gender;
+    } else {
+      logger.warn({ personaId: persona.id }, "persona has no gender; defaulting speaker to female");
+    }
+  } else {
+    logger.warn(
+      { businessId: opts.businessId },
+      "vo script without a persona; defaulting speaker to female",
+    );
   }
 
   const demoSeconds = Math.round((demo.durationMs ?? 0) / 1000);
@@ -212,6 +226,7 @@ export async function generateVoScript(
         demo_seconds: demoSeconds,
         word_budget: wordBudget,
         words_per_second: wps,
+        persona_gender: personaGender,
       },
       scriptOutput,
     );
