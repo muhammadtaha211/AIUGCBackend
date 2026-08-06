@@ -2,10 +2,12 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { BWizard } from "@/components/b-wizard/b-wizard";
+import { NoCreditsCard } from "@/components/no-credits-card";
 import { Wordmark } from "@/components/wordmark";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { canStartWizard } from "@/lib/wizard-gate";
 
 /**
  * Server shell for the Service B wizard: resolves the selected business (same
@@ -32,6 +34,9 @@ export default async function NewBRenderPage() {
   const questionnaire = selected.questionnaire as { category?: string } | null;
   if (!questionnaire) redirect("/home");
 
+  // Spam control only — the 402 at confirm is the real boundary. Admin bypasses.
+  const allowed = await canStartWizard(selected.id);
+
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
   const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
 
@@ -50,12 +55,16 @@ export default async function NewBRenderPage() {
       </header>
 
       <main className="flex flex-1 flex-col items-center px-6 pb-20">
-        <BWizard
-          businessId={selected.id}
-          businessName={selected.name}
-          category={questionnaire.category ?? ""}
-          initialCatalog={personaCatalog}
-        />
+        {allowed ? (
+          <BWizard
+            businessId={selected.id}
+            businessName={selected.name}
+            category={questionnaire.category ?? ""}
+            initialCatalog={personaCatalog}
+          />
+        ) : (
+          <NoCreditsCard />
+        )}
       </main>
     </div>
   );

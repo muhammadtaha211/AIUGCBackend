@@ -60,35 +60,135 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
 
 ## Credits
 
-Unit: 1 credit ≈ one Service A render. Config (`credit_costs`): A=1, **B=15** (GPU at fal's
-verified per-output-second rates: a 30s run ≈ ₪45 at native 720p, ≈ ₪25 on the 480p + Topaz
-upscale path — see [04-integrations.md](04-integrations.md)). Placeholder plans (founder tunes before launch):
-starter ₪299/40cr (A only), pro ₪599/100cr, studio ₪999/200cr.
+**Unit: 1 credit = 1 second.** Marketed in seconds, never in "videos per month" — a 35s ad and a
+10s ad are not the same product and must not cost the same.
 
-Semantics (all in `credits.ts` + `sets.ts:enforceQuota`):
+### The one pricing source of truth
 
-- **Debit per render at enqueue** (reserve) — a Set of 6 cells debits 6 rows, each `ref`ing its
-  render. Per-render (not per-set) keeps refunds exact.
-- **Refund on terminal failure** (`refund_failed`) — from the render handler on permanent
-  failure and from the janitor for dead jobs; idempotent (one refund per debit, ever).
+Every credit figure — the estimate in the wizard, the quote on the advisory screen, and the
+integer written to the ledger — comes from **one call** into `@aiugc/core/pricing`
+(`packages/core/src/pricing.ts`). It is a client-safe subpath (pure math + zod, no db, no env,
+same wiring as `@aiugc/core/hook-geometry`), so the browser and the server literally run the same
+function. A second place that computes a price is a bug, not an optimisation.
+
+```
+quoteServiceA({ demoSeconds, outroMode, outroSeconds, costs })
+quoteServiceB({ durationMs, costs })
+quoteEndingReroll({ sliceSeconds, costs })
+quoteAssemblyRemix({ costs })
+```
+
+Order of operations, exactly: **sum the components → clamp to the minimum → `Math.ceil` once.**
+Never ceil per component — a 34s demo with a 6.5s ending quotes 15 that way and 16 the wrong way,
+and any drift between the displayed quote and the debit is the failure this module exists to
+prevent.
+
+### `credit_costs` (app_config, migration 0017)
+
+```json
+{
+  "a_assembly_flat": 3,
+  "a_demo_per_second": 0.15,
+  "a_outro_per_second": 1,
+  "a_minimum_credits": 5,
+  "b_per_second": 1,
+  "b_minimum_credits": 0,
+  "a_ending_reroll_per_second": 1,
+  "a_remix_assembly_credits": 2
+}
+```
+
+Rates are `z.number()`, **not** `.int()` — whole-credit-per-second steps make tuning impossible.
+The charge is always an integer because of the single ceil. Tuning any of this is an `UPDATE` on
+this row, never a deploy; the code does not know which pricing model won.
+
+- A 35s demo + 6s avatar ending = `3 + 5.25 + 6` = **15 credits**, the same as a 15s Service B ad.
+- The same demo with a freeze or clean ending = **9** — a frozen frame spends no GPU, so
+  `outroMode: "freeze" | "none"` bills zero outro seconds. The quote can never contradict the
+  shape summary printed beside it.
+- `a_minimum_credits` and `b_minimum_credits` express "no video costs less than X" as config.
+- `a_remix_assembly_credits` is **floor-exempt by design**: a remix that changes only the hook
+  clip, the hook line, or the text rect re-runs assembly and nothing else, at near-zero marginal
+  cost. It still goes through `createSet`, so a naive floor would silently price it like a fresh
+  video and kill the volume play.
+
+### Semantics (`credits.ts` + `sets.ts`)
+
+- **Two debit sites, ever** — `createSet` and `createBRender`. Never at TTS, never at audio
+  approval, never at enqueue of a downstream job. A tab closed after audio approval loses exactly
+  zero credits, and that property is structural.
+- **One charge, at confirm** — the moment of full information. Soft estimate at script approval →
+  exact quote at the advisory (audio is approved first, so `planAOutro` runs pre-confirm and the
+  ending is known) → single debit at confirm.
+- **Debit per render, inside a transaction** — a Set of 6 cells writes 6 rows, each `ref`ing its
+  render (per-render keeps refunds exact). The set row, the render rows, the debits and the jobs
+  commit together or not at all.
+- **Atomic** — the balance is re-read inside the transaction behind a row lock on the owner
+  account, so two tabs confirming at once serialize instead of overdrawing.
+- **Structurally idempotent** — partial unique indexes on `credit_ledger (ref_id)` for
+  `debit_render` and `refund_failed` (migration 0016). Double-debit and double-refund are
+  impossible rather than merely unlikely.
+- **Typed refusal** — `InsufficientCreditsError` carries `{needed, balance, shortfall}`, so the
+  wizard renders the shortfall in Hebrew instead of a generic string.
+- **Refund on terminal failure** (`refund_failed`) — from the render handler on permanent failure
+  and from the janitor for dead jobs, including Service A's freeze/none shapes, which never
+  enqueue a lipsync job. A conflict on the unique index means the other caller won: success, not
+  an error.
 - **QC rejection never double-charges** — regeneration reuses the original debit.
-- **No rollover** — `expire_period` zeroes the remainder at renewal; balance stays `SUM(delta)`.
-- **Audio previews are free but capped** — `audio_preview_daily_limit` per business per 24h
-  (they cost real TTS money but are the UX heart; a cap beats a debit).
-- **Admin bypass** — founder-owned (role=admin) businesses skip credits and watermarks: that's
-  how outreach samples use the production pipeline.
+- **No rollover, but `grant_manual` survives** — `expire_period` expires only
+  `balance − manualOutstanding`. That encodes "spend consumes period credits first, manual credits
+  last" without a per-lot ledger, so a founder goodwill grant is never deleted by the customer's
+  next renewal.
+- **Admin bypass** — founder-owned (`role=admin`) businesses skip credits, watermarks and the
+  per-account caps: that is how cold-outreach samples run on the production pipeline, and they
+  come out un-watermarked deliberately.
 
-## Quotas, caps, sample policy
+### No subscription, no free tier
 
-- **Plan quota** = monthly credits (+ `allows_service_b` flag on the plan).
-- **Hard platform-wide daily spend caps** (self-serve = strangers): rolling-24h sums of
-  `usage_events` vs `app_config.daily_caps` (`tts_chars` 100k, `gpu_seconds` 300, `llm_tokens`
-  2M — all tunable). Checked in handlers immediately before the paid call; breach parks the job
-  (`BudgetError`, no attempt burned) — work resumes when the window frees. Rolling window
-  avoids timezone math and midnight burst-throughs.
-- **Watermark policy**: no live subscription → exactly **one** watermarked Service A sample
-  render per business, ever (`businesses.sample_used_at`); the watermark is a props-driven
-  Remotion layer. The real trial is the founder's cold-outreach sample.
+**A positive credit balance is the only door.** There is no subscription lookup in the render path
+and no in-product free video of any kind, watermarked or not. Credits are granted today (admin
+console) and purchased once payments exist.
+
+Kept dormant, not deleted, because payments will want them: the Remotion watermark layer and
+`video_renders.watermarked`, `businesses.sample_used_at`, the `subscriptions` table, and
+`grantPeriod` / `expirePeriodRemainder`.
+
+> **Deferred to payments — the subscription-keying question.** Subscriptions are business-keyed
+> (`subscriptions.business_id`) while credits are account-keyed (`credit_ledger.user_id`). One
+> owner with three businesses has one balance but would have three subscriptions. Do not resolve
+> this here; decide it when checkout is built.
+
+## Quotas and caps
+
+- **Wizard entry gate** — `/home/a/new` and `/home/b/new` refuse a zero balance server-side, so
+  nobody walks the whole flow (upload, scripts, previews — all of which cost us money) only to be
+  refused at the last screen. Spam control, not enforcement: the 402 at confirm is the real
+  boundary.
+- **Per-ACCOUNT caps** (`daily_caps.per_account`, migration 0018) — checked **first**, keyed on
+  `users.id`. `tts_chars: 25000` ≈ 2000 seconds of Hebrew speech a day (~50 full previews,
+  ~₪7.50/account/day). Keyed on the account and not the business because business creation is
+  self-serve and unlimited — a per-business cap is farmable at N businesses. A breach throws
+  `AccountBudgetError` and is rejected **immediately**, never parked: a parked job leaves the
+  wizard spinning forever, because `useJobPoll` only gives up after consecutive _failures_ and a
+  parked job never fails.
+- **Platform-wide daily caps** — unchanged backstop: rolling-24h sums of `usage_events` vs
+  `app_config.daily_caps`. Checked in handlers immediately before the paid call; a breach parks
+  the job (`BudgetError`, no attempt burned) and resumes when the window frees. Park-and-resume is
+  right for a capacity ceiling and wrong for an abuse ceiling — hence the split.
+- **Audio previews are free but capped** — `audio_preview_daily_limit` (20/24h), also keyed on the
+  owner account. TTS is absorbed cost of sale (~₪0.10/1k chars) and a cap beats a debit; absorbed
+  does not mean unbounded.
+- **Paid overage is the escalation path, not built** — letting an account keep generating past the
+  free allowance by debiting credits is the better long-term answer, but it breaks the
+  two-debit-sites invariant and no real user has hit the ceiling. Revisit only when telemetry says
+  legitimate accounts are hitting it.
+
+### Knowing what it really costs
+
+`aiugc costs --from YYYY-MM-DD [--to …] [--business …]` reports actual agorot per delivered video,
+split by provider (`packages/core/src/pipelines/costs.ts`). Rates above were set from estimates;
+two weeks of real traffic through this query replaces the guesswork. Every paid call records
+`business_id`, so a suspicious bill can be narrowed to one account.
 
 ## DFY tier
 

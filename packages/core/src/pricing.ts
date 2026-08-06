@@ -1,0 +1,148 @@
+import { z } from "zod";
+
+/**
+ * THE price. Every credit figure a customer is shown and every credit figure
+ * the server debits comes from one of these functions — there is no second
+ * place a price is computed. Pure math + zod only: this module is bundled into
+ * client components via the "@aiugc/core/pricing" subpath (same deal as
+ * hook-geometry), so it must never import server code, read env, or touch the
+ * db. The caller loads `credit_costs` from app_config and passes it in.
+ *
+ * 1 credit = 1 second. Rates are fractional so pricing can be tuned without a
+ * deploy; the CHARGE is always an integer because of the single ceil.
+ */
+
+/** Which ending planAOutro chose — only "avatar" spends GPU, so only it bills outro. */
+export type AOutroMode = "none" | "freeze" | "avatar";
+
+/**
+ * The app_config `credit_costs` row. Rates are z.number() (NOT .int()) — an
+ * integer-only demo rate would force whole-credit jumps per second and make
+ * fine tuning impossible. The two *_minimum_credits keys express "no video
+ * ever costs less than X" as config; 0 = inactive.
+ */
+export const creditCostsSchema = z.object({
+  a_assembly_flat: z.number(),
+  a_demo_per_second: z.number(),
+  a_outro_per_second: z.number(),
+  a_minimum_credits: z.number(),
+  b_per_second: z.number(),
+  b_minimum_credits: z.number(),
+  a_ending_reroll_per_second: z.number(),
+  /** Assembly-only remix (hook / hook line / rect). Flat, and floor-exempt. */
+  a_remix_assembly_credits: z.number(),
+});
+
+export type CreditCosts = z.infer<typeof creditCostsSchema>;
+
+/**
+ * One priced part of a quote. `kind` is a key, not a label — Hebrew lives in
+ * the UI layer (same convention as questionnaire `tone`). Credits here are
+ * UNROUNDED: they explain the number, they don't reproduce it.
+ */
+export interface QuoteComponent {
+  kind: "assembly" | "demo" | "outro" | "lipsync" | "reroll" | "remix";
+  credits: number;
+  /** Seconds billed, for per-second components. Absent on flats. */
+  seconds?: number;
+}
+
+export interface Quote {
+  /** The integer charged. The ONLY number shown to a customer or debited. */
+  credits: number;
+  components: QuoteComponent[];
+  /** Sum of the components, before the minimum clamp and before the ceil. */
+  subtotal: number;
+  /** True when the minimum — not the components — decided the price. */
+  minimumApplied: boolean;
+}
+
+/**
+ * Sum -> clamp to the minimum -> ceil ONCE. Never ceil per component: rounding
+ * each part up separately drifts above the sum (a 34s demo + 6.5s outro quotes
+ * 16 component-wise but 15 correctly), and any drift between the displayed
+ * quote and the debit is the exact bug this module exists to prevent.
+ */
+function settle(components: QuoteComponent[], minimum: number): Quote {
+  const subtotal = components.reduce((sum, c) => sum + c.credits, 0);
+  const minimumApplied = minimum > subtotal;
+  return {
+    credits: Math.ceil(Math.max(minimum, subtotal)),
+    components,
+    subtotal,
+    minimumApplied,
+  };
+}
+
+/**
+ * Service A. Soft estimate at script approval and the exact quote at the
+ * advisory call this with the same arithmetic — only the inputs sharpen
+ * (estimated VO length -> the approved audio's measured length).
+ *
+ * `outroSeconds` is billed only for an avatar ending. A freeze or a clean
+ * ending spends no GPU, so it must cost nothing extra: the quote and the shape
+ * summary beside it can never disagree.
+ */
+export function quoteServiceA(opts: {
+  demoSeconds: number;
+  outroMode: AOutroMode;
+  outroSeconds: number;
+  costs: CreditCosts;
+}): Quote {
+  const { demoSeconds, outroMode, outroSeconds, costs } = opts;
+  const billedOutroSeconds = outroMode === "avatar" ? outroSeconds : 0;
+  return settle(
+    [
+      { kind: "assembly", credits: costs.a_assembly_flat },
+      {
+        kind: "demo",
+        credits: demoSeconds * costs.a_demo_per_second,
+        seconds: demoSeconds,
+      },
+      {
+        kind: "outro",
+        credits: billedOutroSeconds * costs.a_outro_per_second,
+        seconds: billedOutroSeconds,
+      },
+    ],
+    costs.a_minimum_credits,
+  );
+}
+
+/** Service B: the approved VO's measured length is the whole price. */
+export function quoteServiceB(opts: { durationMs: number; costs: CreditCosts }): Quote {
+  const seconds = opts.durationMs / 1000;
+  return settle(
+    [{ kind: "lipsync", credits: seconds * opts.costs.b_per_second, seconds }],
+    opts.costs.b_minimum_credits,
+  );
+}
+
+/**
+ * Re-roll an avatar ending: the GPU runs again on the same VO tail, nothing
+ * else does. No minimum — the floors say "no VIDEO costs less than X", and a
+ * re-roll is not a new video.
+ */
+export function quoteEndingReroll(opts: { sliceSeconds: number; costs: CreditCosts }): Quote {
+  return settle(
+    [
+      {
+        kind: "reroll",
+        credits: opts.sliceSeconds * opts.costs.a_ending_reroll_per_second,
+        seconds: opts.sliceSeconds,
+      },
+    ],
+    0,
+  );
+}
+
+/**
+ * Changing only the hook clip, the hook line, or the text rect re-runs
+ * assembly and NOTHING else — no TTS, no GPU, near-zero marginal cost. It
+ * still goes through createSet, so it would inherit a_minimum_credits and get
+ * silently priced like a fresh video, which would kill the whole point of
+ * remixing. Hence: its own flat key, and the floor is deliberately not applied.
+ */
+export function quoteAssemblyRemix(opts: { costs: CreditCosts }): Quote {
+  return settle([{ kind: "remix", credits: opts.costs.a_remix_assembly_credits }], 0);
+}

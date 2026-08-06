@@ -3,11 +3,11 @@ import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
-import { assertBudget, recordUsage } from "../budget";
+import { assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { chunkWords, stripTagWords, wordsFromCharAlignment, type CaptionChunk } from "../captions";
 import { getEnv } from "../config";
 import type { Db } from "../db";
-import { audioRenders, demos, personas, scripts } from "../db/schema";
+import { audioRenders, businesses, demos, personas, scripts } from "../db/schema";
 import { PermanentError } from "../jobs/errors";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -25,8 +25,12 @@ import { applyPronunciationMap } from "./pronunciation";
 /** Length fit is deterministic: one tighter regeneration, then stretch up to ~5%. */
 const MAX_STRETCH = 1.05;
 
-/** ~agorot per 1000 TTS characters — rough ElevenLabs cost bookkeeping. */
-const TTS_COST_AGOROT_PER_1K_CHARS = 20;
+/**
+ * ~agorot per 1000 TTS characters: ElevenLabs bills $0.10/1k chars, at
+ * USD/ILS 3.00 (founder-confirmed 2026-08) = 30 agorot. Was 20 — that
+ * understated every `usage_events.cost_estimate_agorot` row by 1.5x.
+ */
+const TTS_COST_AGOROT_PER_1K_CHARS = 30;
 
 /**
  * Create the audio-only preview (cheap, seconds). This is the hard gate:
@@ -54,21 +58,41 @@ export async function requestAudio(
   }
   if (!voiceId) throw new Error("voiceId is required (no persona voice to derive it from)");
 
-  // Previews are free but rate-capped per business per day.
+  // TTS is absorbed cost of sale — never debited — so the abuse ceilings live
+  // here, at the entry point, where a breach is an immediate rejection rather
+  // than a job that parks and spins the wizard forever.
+  //
+  // Both are keyed on the OWNER ACCOUNT. Business creation is self-serve and
+  // unlimited, so the old per-business preview limit was farmable at 20 x N.
+  const owner = (
+    await db
+      .select({ userId: businesses.ownerUserId })
+      .from(businesses)
+      .where(eq(businesses.id, script.businessId))
+      .limit(1)
+  )[0];
+  if (!owner) throw new Error(`business ${script.businessId} not found`);
+
+  // 1. Previews are free but rate-capped: a count of attempts.
   const limit = await getConfigValue(db, "audio_preview_daily_limit", z.number().int());
   const countRows = await db
     .select({ count: sql<string>`count(*)` })
     .from(audioRenders)
     .innerJoin(scripts, eq(audioRenders.scriptId, scripts.id))
+    .innerJoin(businesses, eq(scripts.businessId, businesses.id))
     .where(
       and(
-        eq(scripts.businessId, script.businessId),
+        eq(businesses.ownerUserId, owner.userId),
         gt(audioRenders.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
       ),
     );
   if (Number(countRows[0]?.count ?? 0) >= limit) {
-    throw new Error(`daily audio preview limit reached (${limit}/24h for this business)`);
+    throw new Error(`daily audio preview limit reached (${limit}/24h for this account)`);
   }
+
+  // 2. ...and shekel-capped: characters actually synthesized, which a long
+  //     script can run up far faster than the attempt count would suggest.
+  await assertAccountBudget(db, "tts_chars", script.businessId);
 
   const inserted = await db
     .insert(audioRenders)

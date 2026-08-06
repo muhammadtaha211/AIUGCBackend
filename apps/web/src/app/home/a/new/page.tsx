@@ -4,8 +4,10 @@ import { redirect } from "next/navigation";
 import { AWizard } from "@/components/a-wizard/a-wizard";
 import { Wordmark } from "@/components/wordmark";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
+import { NoCreditsCard } from "@/components/no-credits-card";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { canStartWizard } from "@/lib/wizard-gate";
 
 /**
  * Server shell for the Service A wizard: resolves the selected business (same
@@ -32,6 +34,9 @@ export default async function NewARenderPage() {
   const questionnaire = selected.questionnaire as { advantages?: string[] } | null;
   if (!questionnaire) redirect("/home");
 
+  // Spam control only — the 402 at confirm is the real boundary. Admin bypasses.
+  const allowed = await canStartWizard(selected.id);
+
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
   const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
 
@@ -50,12 +55,16 @@ export default async function NewARenderPage() {
       </header>
 
       <main className="flex flex-1 flex-col items-center px-6 pb-20">
-        <AWizard
-          businessId={selected.id}
-          businessName={selected.name}
-          advantages={questionnaire.advantages ?? []}
-          initialCatalog={personaCatalog}
-        />
+        {allowed ? (
+          <AWizard
+            businessId={selected.id}
+            businessName={selected.name}
+            advantages={questionnaire.advantages ?? []}
+            initialCatalog={personaCatalog}
+          />
+        ) : (
+          <NoCreditsCard />
+        )}
       </main>
     </div>
   );

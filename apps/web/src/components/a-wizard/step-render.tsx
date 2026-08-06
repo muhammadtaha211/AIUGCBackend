@@ -13,6 +13,7 @@ import {
   type AShape,
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { hasShortfall, quoteLine, shortfallLine, type QuoteView } from "@/lib/quote-ui";
 import type { RenderState } from "@/lib/service-b-ui";
 import { postJson, useJobPoll } from "@/lib/use-api";
 
@@ -51,21 +52,22 @@ export function StepARender({
   onFatal,
 }: StepARenderProps) {
   const [shape, setShape] = useState<AShape | null>(null);
+  const [quote, setQuote] = useState<QuoteView>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
   async function loadShape() {
     setError(null);
-    const result = await postJson<AShape>(`/api/businesses/${businessId}/a-sets/preview`, {
-      demoId,
-      audioId,
-      hookClipId,
-    });
+    const result = await postJson<AShape & { quote: QuoteView }>(
+      `/api/businesses/${businessId}/a-sets/preview`,
+      { demoId, audioId, hookClipId },
+    );
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       return setError(result.error);
     }
     setShape(result.body);
+    setQuote(result.body.quote);
   }
 
   // The shape is informative, not a gate — load it once on entering the step.
@@ -146,11 +148,27 @@ export function StepARender({
             <p className="mt-6 rounded-xl border border-white/10 bg-white/5 px-5 py-4 text-sm leading-relaxed text-gray-200">
               {shapeSummary(shape)}
             </p>
+
+            {/* The exact price, from the same function the confirm debits with.
+                Absent entirely on the admin bypass. */}
+            {quote && !hasShortfall(quote) && (
+              <p className="mt-3 text-[13px] text-gray-400">{quoteLine(quote)}</p>
+            )}
+            {hasShortfall(quote) && (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
+              >
+                {shortfallLine(quote!)}
+              </p>
+            )}
+
             <Button
               type="button"
               size="lg"
               className="mt-7 w-full"
               loading={starting}
+              disabled={hasShortfall(quote)}
               onClick={() => void start()}
             >
               צור סרטון

@@ -26,6 +26,11 @@ export const PORTABLE_MIGRATIONS = [
   "0013_demo_description_hook_personas.sql",
   "0014_persona_images_catalog.sql",
   "0015_persona_images_blur.sql",
+  "0016_credit_ledger_unique_refs.sql",
+  "0017_credit_costs_per_second.sql",
+  "0018_per_account_caps.sql",
+  "0019_usage_provider_heygen.sql",
+  "0020_backfill_heygen_usage.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

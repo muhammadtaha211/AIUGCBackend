@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getDb, planAOutro, schema } from "@aiugc/core";
+import { getDb, planAOutro, quoteASet, schema } from "@aiugc/core";
 import {
   coreErrorResponse,
   INVALID_BODY,
@@ -49,12 +49,27 @@ export async function POST(
       demoId: body.data.demoId,
       audioRenderId: body.data.audioId,
     });
+    // The SAME function createSet debits from — the displayed integer and the
+    // charged integer are one call, so they cannot drift.
+    const quote = await quoteASet(db, {
+      businessId,
+      demoId: body.data.demoId,
+      audioRenderId: body.data.audioId,
+    });
     return NextResponse.json({
       hookSeconds: hookRows[0].durationMs / 1000,
       demoSeconds: plan.demoDurationMs / 1000,
       voSeconds: plan.voDurationMs / 1000,
       outroMode: plan.outroMode,
       outroSeconds: Math.max(0, plan.remainderMs) / 1000,
+      // null = admin bypass: nothing is charged, so nothing is shown.
+      quote: quote.chargeable
+        ? {
+            credits: quote.creditsPerRender,
+            balance: quote.balance,
+            shortfall: Math.max(0, quote.creditsPerRender - quote.balance),
+          }
+        : null,
     });
   } catch (err) {
     return coreErrorResponse(err);

@@ -6,6 +6,13 @@ import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
 import {
+  bShapeSummary,
+  hasShortfall,
+  quoteLine,
+  shortfallLine,
+  type QuoteView,
+} from "@/lib/quote-ui";
+import {
   RENDER_STAGES,
   renderRequestBody,
   renderStageIndex,
@@ -28,9 +35,14 @@ type StepRenderProps = {
 };
 
 /**
- * Step 5: enqueue the InfiniteTalk render and follow it through the Hebrew
- * status timeline. Once the render row exists there is no going back — only
- * retry on failure or home on release.
+ * Step 5: the advisory shape and price first — length from the approved audio,
+ * credits from the same function createBRender debits with — then an explicit
+ * confirm enqueues the render. This step used to fire the render from a mount
+ * effect, which meant NAVIGATING here spent credits; a confirm is the only
+ * honest shape once credits are real. Mirrors Service A's advisory step.
+ *
+ * Once the render row exists there is no going back — only retry on failure or
+ * home on release.
  */
 export function StepRender({
   businessId,
@@ -44,18 +56,35 @@ export function StepRender({
   onBack,
   onFatal,
 }: StepRenderProps) {
+  const [shape, setShape] = useState<{ voSeconds: number; quote: QuoteView } | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
-  const starting = useRef(false);
+  const [starting, setStarting] = useState(false);
+  const loading = useRef(false);
+
+  async function loadShape() {
+    if (loading.current) return;
+    loading.current = true;
+    setStartError(null);
+    const result = await postJson<{ voSeconds: number; quote: QuoteView }>(
+      `/api/businesses/${businessId}/renders/preview`,
+      { audioId },
+    );
+    loading.current = false;
+    if (!result.ok) {
+      if (result.status === 403 || result.status === 404) return onFatal(result.error);
+      return setStartError(result.error);
+    }
+    setShape(result.body);
+  }
 
   async function start() {
-    if (starting.current) return;
-    starting.current = true;
+    setStarting(true);
     setStartError(null);
     const result = await postJson<{ renderId: string }>(
       `/api/businesses/${businessId}/renders`,
       renderRequestBody({ scriptId, audioId, personaId, personaImageId, compositeId }),
     );
-    starting.current = false;
+    setStarting(false);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       return setStartError(result.error);
@@ -63,12 +92,11 @@ export function StepRender({
     setRender({ id: result.body.renderId, status: "queued" });
   }
 
-  // Entering the step starts the render — back navigation ends here.
-  // The starting ref keeps a StrictMode double-mount from enqueueing twice.
+  // Entering the step only PRICES the render. Nothing is spent until confirm.
   useEffect(() => {
-    if (render === null) void start();
-    // render === null is the real trigger; start reads only props/refs.
-  }, [render]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (render === null && shape === null) void loadShape();
+    // loadShape reads only props/refs; render/shape gate the one-time fetch.
+  }, [render, shape]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const inFlight =
     render !== null &&
@@ -91,17 +119,70 @@ export function StepRender({
 
   const stage = render ? renderStageIndex(render.status) : -1;
 
-  // The POST failed — the render never started, so going back is still allowed.
-  if (startError) {
+  // Before enqueue: the advisory shape + price, then an explicit confirm.
+  // Back is still allowed — nothing has been spent.
+  if (render === null) {
+    const quote = shape?.quote ?? null;
     return (
       <div>
-        <StepHeader title="יצירת הסרטון" onBack={onBack} />
-        <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
-          {startError}
-        </p>
-        <Button type="button" variant="secondary" className="mt-4" onClick={() => void start()}>
-          נסה שוב
-        </Button>
+        <StepHeader
+          title="ככה הסרטון ייבנה"
+          sub="מבנה הסרטון לפי ההקלטה שאישרתם — אפשר לחזור אחורה ולשנות."
+          onBack={onBack}
+        />
+
+        {startError && (
+          <div className="mt-6">
+            <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+              {startError}
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-4"
+              onClick={() => (shape === null ? void loadShape() : void start())}
+            >
+              נסה שוב
+            </Button>
+          </div>
+        )}
+
+        {shape === null && !startError && (
+          <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
+            <Spinner /> מחשבים את מבנה הסרטון…
+          </div>
+        )}
+
+        {shape !== null && (
+          <>
+            <p className="mt-6 rounded-xl border border-white/10 bg-white/5 px-5 py-4 text-sm leading-relaxed text-gray-200">
+              {bShapeSummary(shape.voSeconds)}
+            </p>
+
+            {quote && !hasShortfall(quote) && (
+              <p className="mt-3 text-[13px] text-gray-400">{quoteLine(quote)}</p>
+            )}
+            {hasShortfall(quote) && (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
+              >
+                {shortfallLine(quote!)}
+              </p>
+            )}
+
+            <Button
+              type="button"
+              size="lg"
+              className="mt-7 w-full"
+              loading={starting}
+              disabled={hasShortfall(quote)}
+              onClick={() => void start()}
+            >
+              צור סרטון
+            </Button>
+          </>
+        )}
       </div>
     );
   }

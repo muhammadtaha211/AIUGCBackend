@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { schema, type Db } from "@aiugc/core";
+import { AccountBudgetError, InsufficientCreditsError, schema, type Db } from "@aiugc/core";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { businessAccess, isUuid } from "@/lib/service-b";
 
@@ -176,11 +176,15 @@ export function coreErrorResponse(err: unknown): NextResponse {
   if (/daily audio preview limit/.test(message)) {
     return jsonError(429, "הגעתם למכסת ההשמעות היומית — נסו שוב מחר.");
   }
-  if (/insufficient credits/.test(message)) {
-    return jsonError(402, "אין מספיק קרדיטים ליצירת הסרטון.");
+  // The per-account abuse ceiling. A fast rejection on purpose: the
+  // platform-wide cap parks the job instead, and a parked job spins forever.
+  if (err instanceof AccountBudgetError) {
+    return jsonError(429, "הגעתם למכסת ההקלטות היומית של החשבון — נסו שוב מחר.");
   }
-  if (/watermarked sample was already used|only a single Service A sample/.test(message)) {
-    return jsonError(402, "סרטוני אווטאר דורשים מנוי פעיל.");
+  // Typed, so the shortfall is a number the UI can render — not text scraped
+  // back out of an English message.
+  if (err instanceof InsufficientCreditsError) {
+    return jsonError(402, `אין מספיק קרדיטים ליצירת הסרטון — חסרים ${err.shortfall}.`);
   }
   console.error("service B route failed", err);
   return jsonError(500, GENERIC_ERROR);

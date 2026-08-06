@@ -224,10 +224,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       });
       const gpuSeconds = Math.ceil(audioMs / 1000);
       await recordUsage(ctx.db, {
-        // usage_provider is a Postgres enum without a "heygen" value, and a new
-        // value needs a migration — HeyGen GPU spend stays labeled "fal" until
-        // then. The kind (gpu_seconds) and the cost estimate are correct.
-        provider: "fal",
+        provider: "heygen",
         kind: "gpu_seconds",
         quantity: gpuSeconds,
         costEstimateAgorot: gpuSeconds * GPU_COST_AGOROT_PER_SECOND[resolution],

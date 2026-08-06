@@ -41,6 +41,12 @@ export const dailyCapsSchema = z.object({
   gpu_seconds: z.number().int(),
   llm_tokens: z.number().int(),
   images: z.number().int(),
+  /**
+   * Per-ACCOUNT ceilings, checked before the platform-wide ones. Abuse control,
+   * not capacity: a breach here is a fast rejection, never a parked job.
+   * Closed object — see 0018, which adds the row in the same change.
+   */
+  per_account: z.object({ tts_chars: z.number().int() }),
 });
 
 export const retentionDaysSchema = z.object({
@@ -50,10 +56,8 @@ export const retentionDaysSchema = z.object({
   audio_previews: z.number().int(),
 });
 
-export const creditCostsSchema = z.object({
-  a_render: z.number().int(),
-  b_render: z.number().int(),
-});
+// creditCostsSchema lives in ./pricing — it is parsed by client bundles too,
+// and this module reads process.env.
 
 export const dunningSchema = z.object({
   retry_days: z.array(z.number().int()),

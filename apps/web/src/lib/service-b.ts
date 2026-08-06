@@ -28,6 +28,9 @@ export const renderRequestSchema = z.object({
   compositeId: z.string().uuid().optional(),
 });
 
+/** Pre-confirm quote lookup — the render's price comes from the approved audio. */
+export const renderPreviewRequestSchema = z.object({ audioId: z.string().uuid() });
+
 export function isUuid(value: string): boolean {
   return z.string().uuid().safeParse(value).success;
 }

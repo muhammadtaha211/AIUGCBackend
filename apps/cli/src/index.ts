@@ -13,6 +13,7 @@ import {
   buildHandlers,
   closeDb,
   contentTypeForKey,
+  costReport,
   createBRender,
   createBusiness,
   createDemo,
@@ -599,6 +600,42 @@ program
           `${render.status.padEnd(10)} ${render.service}  ${render.id}  ${render.filePath ?? ""}`,
         );
       }
+    }),
+  );
+
+// --- costs -------------------------------------------------------------------------
+
+program
+  .command("costs")
+  .description("actual agorot spent per delivered video, by provider, over a date range")
+  .requiredOption("--from <date>", "inclusive start, YYYY-MM-DD")
+  .option("--to <date>", "exclusive end, YYYY-MM-DD (default: now)")
+  .option("--business <id>", "narrow to one business")
+  .action(
+    run(async (opts: { from: string; to?: string; business?: string }) => {
+      const report = await costReport(getDb(), {
+        from: new Date(opts.from),
+        to: opts.to ? new Date(opts.to) : new Date(),
+        businessId: opts.business,
+      });
+      const shekels = (agorot: number | null) =>
+        agorot === null ? "  —  " : (agorot / 100).toFixed(2).padStart(8);
+
+      console.log(
+        `${report.from.toISOString().slice(0, 10)} .. ${report.to.toISOString().slice(0, 10)}` +
+          `  |  ${report.releasedVideos} videos delivered`,
+      );
+      console.log("provider     kind          events   quantity     total ILS   per video");
+      for (const row of report.byProvider) {
+        console.log(
+          `${row.provider.padEnd(12)} ${row.kind.padEnd(13)} ${String(row.events).padStart(6)} ` +
+            `${String(row.quantity).padStart(10)}  ${shekels(row.agorot)}   ${shekels(row.agorotPerVideo)}`,
+        );
+      }
+      console.log(
+        `${"TOTAL".padEnd(12)} ${"".padEnd(13)} ${"".padStart(6)} ${"".padStart(10)}  ` +
+          `${shekels(report.totalAgorot)}   ${shekels(report.totalAgorotPerVideo)}`,
+      );
     }),
   );
 

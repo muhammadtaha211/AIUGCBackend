@@ -1,24 +1,28 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
 import { snapToWordGap, type CaptionChunk } from "../captions";
-import { creditCostsSchema } from "../config";
 import type { Db } from "../db";
 import {
   audioRenders,
-  businesses,
   composites,
   demos,
   events,
   personaImages,
   sets,
-  subscriptions,
   videoRenders,
 } from "../db/schema";
 import { textSafeAreaSchema, type SafeRect } from "../hook-geometry";
 import { enqueue } from "../jobs/queue";
+import {
+  creditCostsSchema,
+  quoteEndingReroll,
+  quoteServiceA,
+  quoteServiceB,
+  type QuoteComponent,
+} from "../pricing";
 import { lipsyncExpressivenessSchema, type LipsyncExpressiveness } from "../providers/lipsync";
-import { businessOwnerId, creditBalance, debitRender } from "./credits";
+import { businessOwnerId, creditBalance, debitRender, InsufficientCreditsError } from "./credits";
 import { isAdminOwned } from "./businesses";
 
 /**
@@ -151,58 +155,81 @@ export async function createSet(
     })),
   );
 
-  const { watermarked, chargeCredits } = await enforceQuota(db, opts.businessId, cells.length, "a");
-
-  const setRows = await db
-    .insert(sets)
-    .values({
-      businessId: opts.businessId,
-      demoId: opts.demoId,
-      service: "a",
-      grid,
-      parentVariantId: opts.parentVariantId,
-    })
-    .returning();
-  const set = setRows[0]!;
-
-  const costs = await getConfigValue(db, "credit_costs", creditCostsSchema);
-  const renders = [];
-  for (const params of cells) {
-    const inserted = await db
-      .insert(videoRenders)
-      .values({
-        setId: set.id,
+  // Voiced sets are priced from the ending; silent sets have no VO to price
+  // from, so they fall back to the assembly flat + demo seconds.
+  const quote = grid.audioRenderId
+    ? await quoteASet(db, {
         businessId: opts.businessId,
+        demoId: opts.demoId,
+        audioRenderId: grid.audioRenderId,
+      })
+    : await quoteSilentASet(db, { businessId: opts.businessId, demo });
+  assertAffordable(quote, cells.length);
+
+  // One transaction: the set, its renders, their debits and their jobs commit
+  // together or not at all. A job can never see a render row that isn't there,
+  // and a debit can never outlive the render it paid for.
+  return db.transaction(async (tx) => {
+    const setRows = await tx
+      .insert(sets)
+      .values({
+        businessId: opts.businessId,
+        demoId: opts.demoId,
         service: "a",
-        params,
-        watermarked,
+        grid,
+        parentVariantId: opts.parentVariantId,
       })
       .returning();
-    const render = inserted[0]!;
-    renders.push(render);
-    if (chargeCredits) {
-      await debitRender(db, {
-        businessId: opts.businessId,
-        videoRenderId: render.id,
-        cost: costs.a_render,
-      });
+    const set = setRows[0]!;
+
+    const renders = [];
+    for (const params of cells) {
+      const inserted = await tx
+        .insert(videoRenders)
+        .values({ setId: set.id, businessId: opts.businessId, service: "a", params })
+        .returning();
+      const render = inserted[0]!;
+      renders.push(render);
+      // Per render, never per set — refunds key on the render id.
+      if (quote.chargeable) {
+        await debitRender(tx as Db, {
+          businessId: opts.businessId,
+          videoRenderId: render.id,
+          cost: quote.creditsPerRender,
+        });
+      }
+      // Avatar ending: lip-sync the VO tail first; handleLipsync chains render_video.
+      if (params.outroMode === "avatar") {
+        await enqueue(tx as Db, {
+          type: "lipsync",
+          idempotencyKey: `lipsync:${render.id}`,
+          payload: { videoRenderId: render.id },
+        });
+      } else {
+        await enqueue(tx as Db, {
+          type: "render_video",
+          idempotencyKey: `render:${render.id}`,
+          payload: { videoRenderId: render.id },
+        });
+      }
     }
-    // Avatar ending: lip-sync the VO tail first; handleLipsync chains render_video.
-    if (params.outroMode === "avatar") {
-      await enqueue(db, {
-        type: "lipsync",
-        idempotencyKey: `lipsync:${render.id}`,
-        payload: { videoRenderId: render.id },
-      });
-    } else {
-      await enqueue(db, {
-        type: "render_video",
-        idempotencyKey: `render:${render.id}`,
-        payload: { videoRenderId: render.id },
-      });
-    }
-  }
-  return { set, renders };
+    return { set, renders };
+  });
+}
+
+/** Silent Service A: no VO, so no ending — assembly flat + demo seconds only. */
+async function quoteSilentASet(
+  db: Db,
+  opts: { businessId: string; demo: typeof demos.$inferSelect },
+): Promise<RenderQuote> {
+  const { chargeable, costs, balance } = await quoteContext(db, opts.businessId);
+  const quote = quoteServiceA({
+    demoSeconds: (opts.demo.durationMs ?? 0) / 1000,
+    outroMode: "none",
+    outroSeconds: 0,
+    costs,
+  });
+  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
 }
 
 /** Winner loop: star a variant — also the platform's format-performance data. */
@@ -325,87 +352,157 @@ export async function createBRender(
       ? undefined
       : lipsyncExpressivenessSchema.parse(opts.expressiveness);
 
-  const { watermarked, chargeCredits } = await enforceQuota(db, opts.businessId, 1, "b");
-  const costs = await getConfigValue(db, "credit_costs", creditCostsSchema);
-
-  const inserted = await db
-    .insert(videoRenders)
-    .values({
-      businessId: opts.businessId,
-      service: "b",
-      params: {
-        audioRenderId: opts.audioRenderId,
-        personaId: opts.personaId,
-        personaImageId: opts.personaImageId,
-        compositeId: opts.compositeId,
-        motionPrompt: opts.motionPrompt,
-        expressiveness,
-      },
-      watermarked,
-    })
-    .returning();
-  const render = inserted[0]!;
-  if (chargeCredits) {
-    await debitRender(db, {
-      businessId: opts.businessId,
-      videoRenderId: render.id,
-      cost: costs.b_render,
-    });
-  }
-  await enqueue(db, {
-    type: "lipsync",
-    idempotencyKey: `lipsync:${render.id}`,
-    payload: { videoRenderId: render.id },
+  const quote = await quoteBRender(db, {
+    businessId: opts.businessId,
+    audioRenderId: opts.audioRenderId,
   });
-  return render;
+  assertAffordable(quote, 1);
+
+  // Same all-or-nothing envelope as createSet: render, debit and job together.
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(videoRenders)
+      .values({
+        businessId: opts.businessId,
+        service: "b",
+        params: {
+          audioRenderId: opts.audioRenderId,
+          personaId: opts.personaId,
+          personaImageId: opts.personaImageId,
+          compositeId: opts.compositeId,
+          motionPrompt: opts.motionPrompt,
+          expressiveness,
+        },
+      })
+      .returning();
+    const render = inserted[0]!;
+    if (quote.chargeable) {
+      await debitRender(tx as Db, {
+        businessId: opts.businessId,
+        videoRenderId: render.id,
+        cost: quote.creditsPerRender,
+      });
+    }
+    await enqueue(tx as Db, {
+      type: "lipsync",
+      idempotencyKey: `lipsync:${render.id}`,
+      payload: { videoRenderId: render.id },
+    });
+    return render;
+  });
 }
 
 /**
- * Quota policy: admin-owned businesses (the founder's CLI use) bypass credits
- * and watermarks. Subscribed businesses spend credits. Businesses with no live
- * subscription get exactly ONE watermarked sample render, ever.
+ * What a render will cost and whether this account can pay for it — computed
+ * WITHOUT touching the ledger, so the advisory step and the confirm that
+ * follows it quote the same integer from the same function call.
+ *
+ * `chargeable: false` is the admin bypass: the founder's own businesses run
+ * outreach samples on the production pipeline for free and un-watermarked.
  */
-async function enforceQuota(
-  db: Db,
-  businessId: string,
-  cellCount: number,
-  service: "a" | "b",
-): Promise<{ watermarked: boolean; chargeCredits: boolean }> {
-  if (await isAdminOwned(db, businessId)) return { watermarked: false, chargeCredits: false };
+export interface RenderQuote {
+  /** Per render. A Set of N cells costs N x this. */
+  creditsPerRender: number;
+  /** Named parts behind the integer, so the UI can explain it without recomputing. */
+  components: QuoteComponent[];
+  /** false = admin-owned; nothing is debited and nothing is watermarked. */
+  chargeable: boolean;
+  balance: number;
+}
 
-  const liveSub = await db
-    .select()
-    .from(subscriptions)
-    .where(
-      and(
-        eq(subscriptions.businessId, businessId),
-        inArray(subscriptions.status, ["active", "past_due"]),
-      ),
-    )
-    .limit(1);
+/** Total for a Set; 0 when the account is on the admin bypass. */
+function quoteTotal(quote: RenderQuote, cellCount: number): number {
+  return quote.chargeable ? quote.creditsPerRender * cellCount : 0;
+}
 
-  if (!liveSub[0]) {
-    const business = (
-      await db.select().from(businesses).where(eq(businesses.id, businessId)).limit(1)
-    )[0]!;
-    if (business.sampleUsedAt) {
-      throw new Error("the free watermarked sample was already used — a subscription is required");
-    }
-    if (cellCount !== 1 || service !== "a") {
-      throw new Error("without a subscription only a single Service A sample render is allowed");
-    }
-    await db
-      .update(businesses)
-      .set({ sampleUsedAt: new Date() })
-      .where(eq(businesses.id, businessId));
-    return { watermarked: true, chargeCredits: false };
-  }
+function shortfallOf(quote: RenderQuote, cellCount: number): number {
+  return Math.max(0, quoteTotal(quote, cellCount) - quote.balance);
+}
 
+async function quoteContext(db: Db, businessId: string) {
+  const chargeable = !(await isAdminOwned(db, businessId));
   const costs = await getConfigValue(db, "credit_costs", creditCostsSchema);
-  const total = cellCount * (service === "a" ? costs.a_render : costs.b_render);
-  const balance = await creditBalance(db, await businessOwnerId(db, businessId));
-  if (balance < total) {
-    throw new Error(`insufficient credits: need ${total}, balance is ${balance}`);
+  const balance = chargeable ? await creditBalance(db, await businessOwnerId(db, businessId)) : 0;
+  return { chargeable, costs, balance };
+}
+
+/**
+ * Price a Service A render. The ending drives most of the number, so this runs
+ * planAOutro — the same call createSet makes — rather than guessing: if the
+ * advisory says "freeze", the quote shows zero outro credits, always.
+ */
+export async function quoteASet(
+  db: Db,
+  opts: { businessId: string; demoId: string; audioRenderId: string },
+): Promise<RenderQuote> {
+  const { chargeable, costs, balance } = await quoteContext(db, opts.businessId);
+  const plan = await planAOutro(db, { demoId: opts.demoId, audioRenderId: opts.audioRenderId });
+  const quote = quoteServiceA({
+    demoSeconds: plan.demoDurationMs / 1000,
+    outroMode: plan.outroMode,
+    outroSeconds: Math.max(0, plan.remainderMs) / 1000,
+    costs,
+  });
+  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+}
+
+/**
+ * Price a re-roll of an existing avatar ending: the GPU runs again on the same
+ * VO tail and nothing else does, so only those seconds are billed.
+ *
+ * Pricing primitive only — there is deliberately NO debit helper here. A
+ * re-roll produces a new video_renders row, so when the remix UI lands it goes
+ * through createSet like everything else. createSet and createBRender are the
+ * only two debit sites and adding a third is how ledgers start lying.
+ */
+export async function quoteRerollForRender(
+  db: Db,
+  opts: { videoRenderId: string },
+): Promise<RenderQuote> {
+  const render = (
+    await db.select().from(videoRenders).where(eq(videoRenders.id, opts.videoRenderId)).limit(1)
+  )[0];
+  if (!render) throw new Error(`video render ${opts.videoRenderId} not found`);
+
+  const params = render.params as VariantParams;
+  if (params.outroMode !== "avatar" || params.voSliceMs === undefined) {
+    throw new Error("only an avatar ending can be re-rolled");
   }
-  return { watermarked: false, chargeCredits: true };
+  const audio = (
+    await db.select().from(audioRenders).where(eq(audioRenders.id, params.audioRenderId!)).limit(1)
+  )[0];
+  if (!audio?.durationMs) throw new Error("the render's audio has no duration");
+
+  const { chargeable, costs, balance } = await quoteContext(db, render.businessId);
+  const quote = quoteEndingReroll({
+    sliceSeconds: (audio.durationMs - params.voSliceMs) / 1000,
+    costs,
+  });
+  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+}
+
+/** Price a Service B render from the approved VO's measured length. */
+export async function quoteBRender(
+  db: Db,
+  opts: { businessId: string; audioRenderId: string },
+): Promise<RenderQuote> {
+  const { chargeable, costs, balance } = await quoteContext(db, opts.businessId);
+  const audio = (
+    await db.select().from(audioRenders).where(eq(audioRenders.id, opts.audioRenderId)).limit(1)
+  )[0];
+  if (!audio) throw new Error(`audio render ${opts.audioRenderId} not found`);
+  const quote = quoteServiceB({ durationMs: audio.durationMs ?? 0, costs });
+  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+}
+
+/**
+ * The pre-flight refusal: fail before a single row is written, so an
+ * unaffordable confirm leaves no orphan set, render, or job behind. The
+ * authoritative check is still the one inside debitRender's transaction —
+ * this one only makes the common case clean.
+ */
+function assertAffordable(quote: RenderQuote, cellCount: number): void {
+  if (shortfallOf(quote, cellCount) > 0) {
+    throw new InsufficientCreditsError(quoteTotal(quote, cellCount), quote.balance);
+  }
 }

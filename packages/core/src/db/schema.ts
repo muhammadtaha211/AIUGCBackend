@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -60,7 +61,12 @@ export const jobStatus = pgEnum("job_status", ["queued", "running", "succeeded",
 
 export const errorClass = pgEnum("error_class", ["transient", "permanent", "budget"]);
 
-export const usageProvider = pgEnum("usage_provider", ["anthropic", "elevenlabs", "fal"]);
+export const usageProvider = pgEnum("usage_provider", [
+  "anthropic",
+  "elevenlabs",
+  "fal",
+  "heygen", // 0019
+]);
 
 export const usageKind = pgEnum("usage_kind", ["llm_tokens", "tts_chars", "gpu_seconds", "images"]);
 
@@ -476,6 +482,13 @@ export const creditLedger = pgTable(
   (t) => [
     index("credit_ledger_business_idx").on(t.businessId),
     index("credit_ledger_user_idx").on(t.userId),
+    // 0016: one debit and one refund per render, enforced by the database.
+    uniqueIndex("credit_ledger_debit_render_uniq")
+      .on(t.refId)
+      .where(sql`${t.reason} = 'debit_render'`),
+    uniqueIndex("credit_ledger_refund_failed_uniq")
+      .on(t.refId)
+      .where(sql`${t.reason} = 'refund_failed'`),
   ],
 );
 
