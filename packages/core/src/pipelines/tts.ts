@@ -228,114 +228,108 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
     const enhance = await getConfigValueOr(ctx.db, "tts_enhance", z.boolean(), false);
     const stability = await getConfigValueOr(ctx.db, "tts_stability", z.number(), undefined);
 
-    for (;;) {
-      const scriptRows = await ctx.db
-        .select()
-        .from(scripts)
-        .where(eq(scripts.id, scriptId))
-        .limit(1);
-      const script = scriptRows[0]!;
+    const scriptRows = await ctx.db.select().from(scripts).where(eq(scripts.id, scriptId)).limit(1);
+    const script = scriptRows[0]!;
 
-      await assertBudget(ctx.db, "tts_chars");
-      const tagged = enhance
-        ? await enhanceWithAudioTags(ctx.db, {
-            businessId: script.businessId,
-            text: script.text,
-            log: ctx.log,
-          })
-        : script.text;
-      const { rendered } = await applyPronunciationMap(ctx.db, script.businessId, tagged);
-      const tts = await synthesize({ text: rendered, voiceId: audioRender.voiceId, stability });
-      await recordUsage(ctx.db, {
-        provider: "elevenlabs",
-        kind: "tts_chars",
-        quantity: rendered.length,
-        costEstimateAgorot: Math.ceil((rendered.length / 1000) * TTS_COST_AGOROT_PER_1K_CHARS),
-        jobId: job.id,
-        businessId: script.businessId,
-      });
-
-      // Measure the generated audio.
-      const localDir = path.join(WORK_DIR, "tts", audioRenderId);
-      mkdirSync(localDir, { recursive: true });
-      let localAudio = path.join(localDir, "audio.mp3");
-      writeFileSync(localAudio, tts.audio);
-      let durationMs = tts.charAlignment
-        ? tts.charAlignment.endTimesMs[tts.charAlignment.endTimesMs.length - 1]!
-        : await measureDurationMs(localAudio);
-
-      // Length fit against the linked demo (voiced Service A only).
-      let stretchRatio = 1.0;
-      const demoDurationMs = script.demoId
-        ? (await ctx.db.select().from(demos).where(eq(demos.id, script.demoId)).limit(1))[0]
-            ?.durationMs
-        : undefined;
-
-      if (demoDurationMs && durationMs > demoDurationMs) {
-        const ratio = durationMs / demoDurationMs;
-        // Past MAX_STRETCH the overrun stands at its natural length: it is an
-        // ENDING, not a defect. planAOutro resolves it into a freeze or an
-        // avatar per variant and the advisory prices it before the customer
-        // confirms — so nothing is corrected upstream of that decision.
-        if (ratio <= MAX_STRETCH) {
-          // Inaudible atempo stretch to fit.
-          stretchRatio = ratio;
-          if (!getEnv().DRY_RUN) {
-            const stretched = path.join(localDir, "audio-fit.mp3");
-            await atempoStretch(localAudio, stretched, ratio);
-            localAudio = stretched;
-          }
-          const scale = 1 / ratio;
-          if (tts.charAlignment) {
-            tts.charAlignment.startTimesMs = tts.charAlignment.startTimesMs.map((t) =>
-              Math.round(t * scale),
-            );
-            tts.charAlignment.endTimesMs = tts.charAlignment.endTimesMs.map((t) =>
-              Math.round(t * scale),
-            );
-          }
-          durationMs = Math.round(durationMs * scale);
-        }
-      }
-
-      // Word timestamps: ElevenLabs alignment, else WhisperX forced alignment.
-      let chunks: CaptionChunk[];
-      let alignmentSource: "elevenlabs" | "whisperx";
-      // Alignment covers the SENT text, so tag tokens are dropped before
-      // chunking; forced alignment is given the spoken text for the same reason.
-      if (tts.charAlignment) {
-        chunks = chunkWords(stripTagWords(wordsFromCharAlignment(tts.charAlignment)));
-        alignmentSource = "elevenlabs";
-      } else {
-        chunks = chunkWords(await forcedAlign(localAudio, stripAudioTags(rendered)));
-        alignmentSource = "whisperx";
-      }
-
-      const filePath = await getStorage().put(
-        "renders",
-        storageKey({
+    await assertBudget(ctx.db, "tts_chars");
+    const tagged = enhance
+      ? await enhanceWithAudioTags(ctx.db, {
           businessId: script.businessId,
-          entity: "audio",
-          id: audioRenderId,
-          filename: "audio.mp3",
-        }),
-        localAudio,
-      );
-
-      await ctx.db
-        .update(audioRenders)
-        .set({
-          status: "ready",
-          filePath,
-          durationMs,
-          renderedText: rendered,
-          wordTimestamps: chunks,
-          alignmentSource,
-          stretchRatio,
+          text: script.text,
+          log: ctx.log,
         })
-        .where(eq(audioRenders.id, audioRenderId));
-      return { kind: "done" };
+      : script.text;
+    const { rendered } = await applyPronunciationMap(ctx.db, script.businessId, tagged);
+    const tts = await synthesize({ text: rendered, voiceId: audioRender.voiceId, stability });
+    await recordUsage(ctx.db, {
+      provider: "elevenlabs",
+      kind: "tts_chars",
+      quantity: rendered.length,
+      costEstimateAgorot: Math.ceil((rendered.length / 1000) * TTS_COST_AGOROT_PER_1K_CHARS),
+      jobId: job.id,
+      businessId: script.businessId,
+    });
+
+    // Measure the generated audio.
+    const localDir = path.join(WORK_DIR, "tts", audioRenderId);
+    mkdirSync(localDir, { recursive: true });
+    let localAudio = path.join(localDir, "audio.mp3");
+    writeFileSync(localAudio, tts.audio);
+    let durationMs = tts.charAlignment
+      ? tts.charAlignment.endTimesMs[tts.charAlignment.endTimesMs.length - 1]!
+      : await measureDurationMs(localAudio);
+
+    // Length fit against the linked demo (voiced Service A only).
+    let stretchRatio = 1.0;
+    const demoDurationMs = script.demoId
+      ? (await ctx.db.select().from(demos).where(eq(demos.id, script.demoId)).limit(1))[0]
+          ?.durationMs
+      : undefined;
+
+    if (demoDurationMs && durationMs > demoDurationMs) {
+      const ratio = durationMs / demoDurationMs;
+      // Past MAX_STRETCH the overrun stands at its natural length: it is an
+      // ENDING, not a defect. planAOutro resolves it into a freeze or an
+      // avatar per variant and the advisory prices it before the customer
+      // confirms — so nothing is corrected upstream of that decision.
+      if (ratio <= MAX_STRETCH) {
+        // Inaudible atempo stretch to fit.
+        stretchRatio = ratio;
+        if (!getEnv().DRY_RUN) {
+          const stretched = path.join(localDir, "audio-fit.mp3");
+          await atempoStretch(localAudio, stretched, ratio);
+          localAudio = stretched;
+        }
+        const scale = 1 / ratio;
+        if (tts.charAlignment) {
+          tts.charAlignment.startTimesMs = tts.charAlignment.startTimesMs.map((t) =>
+            Math.round(t * scale),
+          );
+          tts.charAlignment.endTimesMs = tts.charAlignment.endTimesMs.map((t) =>
+            Math.round(t * scale),
+          );
+        }
+        durationMs = Math.round(durationMs * scale);
+      }
     }
+
+    // Word timestamps: ElevenLabs alignment, else WhisperX forced alignment.
+    let chunks: CaptionChunk[];
+    let alignmentSource: "elevenlabs" | "whisperx";
+    // Alignment covers the SENT text, so tag tokens are dropped before
+    // chunking; forced alignment is given the spoken text for the same reason.
+    if (tts.charAlignment) {
+      chunks = chunkWords(stripTagWords(wordsFromCharAlignment(tts.charAlignment)));
+      alignmentSource = "elevenlabs";
+    } else {
+      chunks = chunkWords(await forcedAlign(localAudio, stripAudioTags(rendered)));
+      alignmentSource = "whisperx";
+    }
+
+    const filePath = await getStorage().put(
+      "renders",
+      storageKey({
+        businessId: script.businessId,
+        entity: "audio",
+        id: audioRenderId,
+        filename: "audio.mp3",
+      }),
+      localAudio,
+    );
+
+    await ctx.db
+      .update(audioRenders)
+      .set({
+        status: "ready",
+        filePath,
+        durationMs,
+        renderedText: rendered,
+        wordTimestamps: chunks,
+        alignmentSource,
+        stretchRatio,
+      })
+      .where(eq(audioRenders.id, audioRenderId));
+    return { kind: "done" };
   } catch (err) {
     if (err instanceof PermanentError) {
       await ctx.db
