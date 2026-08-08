@@ -15,10 +15,16 @@ keyless (the e2e test relies on this).
 - **Prompt versioning**: prompts are files — `prompts/<name>/v<N>.md` with `{{var}}`
   interpolation (`src/prompts.ts`). A revision is a new file, never an edit; every generated
   script row records `prompt_version = "<name>@v<N>"`, so any output is traceable to the exact
-  template. Current prompts: `hook_lines` (v6: ten sentence FRAMES, one line each, in a fixed
+  template. Current prompts: `hook_lines` (v7: ten sentence FRAMES, one line each, in a fixed
   order the wizard interleaves on; first-person speaker with a two-axis gender rule
   (`{{persona_gender}}` vs `target_audience`), a three-tier fabrication policy, and
-  `{{avoid}}` for reroll batches; ~60-char budget, `POV:` prefix exempt from the word cap),
+  `{{avoid}}` for reroll batches; ~60-char budget, `POV:` prefix exempt from the word cap.
+  v7 is exemplar surgery on the three frames that failed on both live businesses —
+  `forbidden_secret` → `disbelief_at_ease` (secrecy contradicted the demo that follows),
+  `quoted_objection` reduced to a bare quote, `absurd_affection` given a role test — plus four
+  rules: no closing beat, name the noun, verb precision, and an allowed character set that
+  `generateHookLines` re-checks after the call, rejecting and re-requesting once rather than
+  sanitising, since the line is burned unfixably),
   `benefit_captions`, `vo_script` (v6: five-beat FOMO arc, `{{hook_line}}`
   escalation, 90–100% word-budget band), `b_script` (v3 adds customer pointers + duration
   preset), `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;

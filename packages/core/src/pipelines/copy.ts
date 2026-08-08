@@ -60,11 +60,11 @@ const hookLinesOutput = z.object({
  */
 export const HOOK_LINE_FRAMES = 10;
 
-/** Frame order matches prompts/hook_lines/v6.md — the wizard interleaves on index. */
+/** Frame order matches prompts/hook_lines/v7.md — the wizard interleaves on index. */
 const CANNED_HOOK_LINES = [
   { text: "POV: מישהו שאל אותי איך עשיתי את זה", angle: "pov_scene" },
   { text: "סליחה, ככה עושים את זה עכשיו???", angle: "disbelief" },
-  { text: "מצאתי משהו ואני לא אמורה לספר על זה", angle: "forbidden_secret" },
+  { text: "מצאתי דירה לפני כולם ולא מאמינה שהיה קל", angle: "disbelief_at_ease" },
   { text: "חושבת על כל הזמן שבזבזתי על זה", angle: "regret_waste" },
   { text: "עשיתי את זה ב-0 שקל... זה נורמלי?", angle: "humblebrag_uncertainty" },
   { text: "אני יכולה להתחתן עם מי ששלח לי את זה", angle: "absurd_affection" },
@@ -73,6 +73,38 @@ const CANNED_HOOK_LINES = [
   { text: "זהו. נגמר. השתנה לי כל הסמסטר", angle: "era_declaration" },
   { text: "בגלל זה כולם מוחקים את ChatGPT", angle: "hidden_method" },
 ];
+
+/**
+ * Characters that survive the burn: Hebrew, Latin, digits, ASCII punctuation,
+ * plus the typographic marks that render correctly inside an RTL line. Anything
+ * else — Arabic script, zero-width joiners, formatting marks — either burns as
+ * a stray glyph or corrupts the line invisibly. A v6 run emitted U+0640 ARABIC
+ * TATWEEL inside `לـAI`.
+ */
+// Written as escapes, not literals: a Hebrew range inside a character class
+// reorders in every editor that renders bidi.
+const ILLEGAL_HOOK_LINE_CHAR = new RegExp(
+  "[^" +
+    "\\u0020-\\u007E" + // space, digits, Latin, ASCII punctuation
+    "\\u0590-\\u05FF" + // the Hebrew block
+    "\\u2013\\u2014\\u2018\\u2019\\u201C\\u201D\\u2026\\u20AA" + // – — ‘ ’ “ ” … ₪
+    "]",
+  "u",
+);
+
+/** The first unrenderable character in a batch, described for an error message. */
+export function findIllegalHookLineChar(
+  options: { text: string }[],
+): { char: string; codepoint: string; text: string } | undefined {
+  for (const option of options) {
+    const char = ILLEGAL_HOOK_LINE_CHAR.exec(option.text)?.[0];
+    if (char !== undefined) {
+      const hex = char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+      return { char, codepoint: `U+${hex}`, text: option.text };
+    }
+  }
+  return undefined;
+}
 
 export async function generateHookLines(
   db: Db,
@@ -126,9 +158,33 @@ export async function generateHookLines(
     ({ promptVersion } = renderPrompt("hook_lines", vars));
     options = Array.from({ length: n }, (_, i) => CANNED_HOOK_LINES[i % CANNED_HOOK_LINES.length]!);
   } else {
-    const result = await callClaude(db, opts.businessId, "hook_lines", vars, hookLinesOutput);
-    options = result.object.options.slice(0, n);
-    promptVersion = result.promptVersion;
+    const generate = async () => {
+      const result = await callClaude(db, opts.businessId, "hook_lines", vars, hookLinesOutput);
+      return { options: result.object.options.slice(0, n), promptVersion: result.promptVersion };
+    };
+
+    // Reject-and-retry, never sanitise. A hook line is the artifact the
+    // customer approves and we burn into the frame, so dropping a character
+    // silently would ship text nobody signed off on — and a stray glyph is
+    // unfixable once rendered. (tts_enhance fails open because it guards an
+    // enhancement; this guards the artifact itself.)
+    let batch = await generate();
+    let bad = findIllegalHookLineChar(batch.options);
+    if (bad) {
+      logger.warn(
+        { businessId: opts.businessId, codepoint: bad.codepoint },
+        "hook lines contain an unrenderable character — regenerating once",
+      );
+      batch = await generate();
+      bad = findIllegalHookLineChar(batch.options);
+      if (bad) {
+        throw new Error(
+          `hook lines contain an unrenderable character ${bad.codepoint} ` +
+            `in "${bad.text}" — regenerated once and it recurred`,
+        );
+      }
+    }
+    ({ options, promptVersion } = batch);
   }
 
   const rows = await db
