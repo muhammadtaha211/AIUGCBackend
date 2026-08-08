@@ -46,6 +46,20 @@ export function hasShortfall(quote: QuoteView): boolean {
 export const HOOK_LINE_CHOSEN_LABEL = "המשפט שבחרתם";
 export const HOOK_LINE_OTHERS_LABEL = "אפשרויות אחרות";
 
+/**
+ * The audio gate shows what is being approved: the exact text in the recording,
+ * read-only. Editing it means new audio, which is the script step's job.
+ */
+export const AUDIO_SCRIPT_LABEL = "הטקסט שבהקלטה";
+
+/**
+ * Shown above that text only when the server's script differs from the one the
+ * wizard carried in — the customer read one thing on the script step and is
+ * about to approve another. Names the swap instead of quietly displaying it.
+ */
+export const AUDIO_SCRIPT_CHANGED_NOTICE =
+  "שימו לב: התסריט התעדכן מאז שכתבתם אותו. זה הטקסט שנמצא בהקלטה — קראו אותו לפני שמאשרים.";
+
 /** The wizard-entry gate: an empty balance, before any work is done. */
 export const NO_CREDITS_TITLE = "אין קרדיטים בחשבון";
 export const NO_CREDITS_BODY =

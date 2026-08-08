@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { AccountBudgetError, InsufficientCreditsError, schema, type Db } from "@aiugc/core";
+import {
+  AccountBudgetError,
+  getAudioWithScript,
+  InsufficientCreditsError,
+  schema,
+  type Db,
+} from "@aiugc/core";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { businessAccess, isUuid } from "@/lib/service-b";
 
@@ -97,22 +103,32 @@ export async function requireScript(
   return { script: rows[0] };
 }
 
+/**
+ * The audio render and the script it will actually speak. Core resolves the
+ * script through audio_renders.script_id — never a client-supplied id — and
+ * that same row carries the business the ownership gate runs on. Callers
+ * showing the customer what they are approving must read `script`, not wizard
+ * state. `pointerMoved` says the pointer was rewritten after the audio was
+ * enqueued; see getAudioWithScript for how it is derived and what it misses.
+ */
 export async function requireAudio(
   db: Db,
   audioId: string,
   userId: string,
-): Promise<{ audio: typeof schema.audioRenders.$inferSelect } | { response: NextResponse }> {
+): Promise<
+  | {
+      audio: typeof schema.audioRenders.$inferSelect;
+      script: typeof schema.scripts.$inferSelect;
+      pointerMoved: boolean;
+    }
+  | { response: NextResponse }
+> {
   if (!isUuid(audioId)) return { response: jsonError(404, NOT_FOUND) };
-  const rows = await db
-    .select({ audio: schema.audioRenders, businessId: schema.scripts.businessId })
-    .from(schema.audioRenders)
-    .innerJoin(schema.scripts, eq(schema.audioRenders.scriptId, schema.scripts.id))
-    .where(eq(schema.audioRenders.id, audioId))
-    .limit(1);
-  if (!rows[0]) return { response: jsonError(404, NOT_FOUND) };
-  const owned = await requireBusiness(db, rows[0].businessId, userId);
+  const found = await getAudioWithScript(db, audioId);
+  if (!found) return { response: jsonError(404, NOT_FOUND) };
+  const owned = await requireBusiness(db, found.script.businessId, userId);
   if ("response" in owned) return owned;
-  return { audio: rows[0].audio };
+  return found;
 }
 
 export async function requireDemo(

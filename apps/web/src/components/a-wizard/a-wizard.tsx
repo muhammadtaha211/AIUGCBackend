@@ -133,6 +133,17 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
     goNext();
   }
 
+  /**
+   * The audio step resolved the spoken script through audio_renders.script_id
+   * and it isn't the one we were carrying. Take it whole — the textarea behind
+   * us must show what was actually recorded, and its ending estimate must read
+   * the matching word budget.
+   */
+  function adoptResolvedScript(resolved: ScriptState) {
+    setScript(resolved);
+    setEditedText(resolved.text);
+  }
+
   if (fatal) {
     return (
       <div className="w-full max-w-2xl pt-6 sm:pt-10">
@@ -255,6 +266,7 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
               script={script}
               audio={audio}
               setAudio={setAudio}
+              onScriptResolved={adoptResolvedScript}
               onBack={goBack}
               onContinue={goNext}
               onFatal={setFatal}

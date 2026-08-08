@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAudioPoll,
   clientPhotoError,
   countWords,
   isActiveRenderStatus,
   MAX_PHOTO_BYTES,
+  needsScriptAdoption,
   needsTextSave,
   pickSelectedBusiness,
   RENDER_STATUS_LABELS,
@@ -12,6 +14,8 @@ import {
   renderStatusLabel,
   wizardSteps,
   withEditedText,
+  type AudioPollResult,
+  type AudioState,
 } from "../src/lib/service-b-ui";
 
 describe("countWords (mirrors core's budget counting)", () => {
@@ -137,5 +141,93 @@ describe("clientPhotoError (mirror of the server rules)", () => {
     expect(clientPhotoError({ type: "application/pdf", size: 1000 })).toMatch(/JPG/);
     expect(clientPhotoError({ type: "image/jpeg", size: 0 })).toMatch(/ריק/);
     expect(clientPhotoError({ type: "image/png", size: MAX_PHOTO_BYTES + 1 })).toMatch(/גדולה מדי/);
+  });
+});
+
+describe("applyAudioPoll (the audio gate's script pointer)", () => {
+  const SCRIPT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const SCRIPT_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  const approved: AudioState = {
+    id: "11111111-1111-4111-8111-111111111111",
+    scriptId: SCRIPT_A,
+    status: "ready",
+    approved: true,
+  };
+
+  const poll = (over: Partial<AudioPollResult> = {}): AudioPollResult => ({
+    status: "ready",
+    scriptId: SCRIPT_A,
+    text: "טקסט התסריט",
+    scriptChanged: false,
+    ...over,
+  });
+
+  it("takes the server's scriptId — the pointer decides, not wizard state", () => {
+    const next = applyAudioPoll(approved, poll({ scriptId: SCRIPT_B, scriptChanged: true }));
+    expect(next.scriptId).toBe(SCRIPT_B);
+  });
+
+  it("clears approval on a change — consent to one script is not consent to another", () => {
+    const next = applyAudioPoll(approved, poll({ scriptId: SCRIPT_B, scriptChanged: true }));
+    expect(next.approved).toBe(false);
+    expect(next.scriptChanged).toBe(true);
+  });
+
+  it("leaves approval untouched when the pointer is where it was left", () => {
+    const next = applyAudioPoll(approved, poll());
+    expect(next.approved).toBe(true);
+    expect(next.scriptChanged).toBeFalsy();
+  });
+
+  it("keeps the notice up on every later poll", () => {
+    // The server derives the flag from the rows, so it reports the same true
+    // forever. The customer must keep being told the text is not theirs.
+    const first = applyAudioPoll(approved, poll({ scriptId: SCRIPT_B, scriptChanged: true }));
+    const second = applyAudioPoll(first, poll({ scriptId: SCRIPT_B, scriptChanged: true }));
+    expect(second.scriptChanged).toBe(true);
+  });
+
+  it("does not re-clear the fresh approval the notice asked for", () => {
+    // The flag stays true, so clearing on the flag rather than on the
+    // transition would revoke consent every 2s and trap the customer here.
+    const changed = applyAudioPoll(approved, poll({ scriptId: SCRIPT_B, scriptChanged: true }));
+    expect(changed.approved).toBe(false);
+
+    const reapproved = { ...changed, approved: true };
+    const later = applyAudioPoll(reapproved, poll({ scriptId: SCRIPT_B, scriptChanged: true }));
+    expect(later.approved).toBe(true);
+    expect(later.scriptChanged).toBe(true);
+  });
+
+  it("carries the player fields through", () => {
+    const next = applyAudioPoll(
+      { ...approved, status: "generating" },
+      poll({ audioUrl: "https://signed.example/audio.mp3", durationMs: 21_500 }),
+    );
+    expect(next.status).toBe("ready");
+    expect(next.audioUrl).toBe("https://signed.example/audio.mp3");
+    expect(next.durationMs).toBe(21_500);
+  });
+});
+
+describe("needsScriptAdoption", () => {
+  const script = { scriptId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", text: "טקסט", wordBudget: 21 };
+
+  it("adopts when the server resolved a different script row", () => {
+    expect(
+      needsScriptAdoption(script, {
+        scriptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        text: "טקסט",
+      }),
+    ).toBe(true);
+  });
+
+  it("adopts when the id matches but the text does not", () => {
+    expect(needsScriptAdoption(script, { scriptId: script.scriptId, text: "טקסט אחר" })).toBe(true);
+  });
+
+  it("stays put when the server agrees — no re-render churn per poll", () => {
+    expect(needsScriptAdoption(script, { scriptId: script.scriptId, text: "טקסט" })).toBe(false);
   });
 });

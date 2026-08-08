@@ -46,7 +46,10 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become an ordered
   list of segments" requirement — V2 step-captions are inserts, not a migration.
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
-  `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`.
+  `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips are **4 seconds** — the
+  generator's floor, not a curation choice ([04-integrations.md](04-integrations.md) §Hook-clip
+  bank source). `text_safe_area` is required at register; `DEFAULT_HOOK_TEXT_RECT` only seeds
+  the editor.
 - **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id`; reference
   images as separate rows (a persona accumulates looks/angles). `is_default` marks the image a
   render uses when a variant names only the persona — at most one per persona (partial unique
@@ -59,8 +62,11 @@ tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become 
   reference image as the InfiniteTalk source.
 - **structures** — the weekly "clonable winners" menu: `skeleton jsonb` (beat outline + script
   skeleton), persona-fit tags, source ref, week.
-- **sounds** — weekly curated trending list (metadata only; sounds are attached natively at post
-  time, never baked in).
+- **sounds** — a **trending-sound research tracker**, not an asset bank: which sound trended on
+  which platform in which week (`title, platform, url, week, tags`). There is no storage path
+  and no file reference, so nothing here can be bundled into a render — bundled audio would need
+  new columns or a new table. Sounds are attached natively at post time, never baked in
+  ([04-integrations.md](04-integrations.md) §Service A audio).
 
 ### Copy & audio
 
@@ -125,7 +131,9 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 - **events** — append-only analytics: `star` (with the variant's params — the platform's
   format-performance data), `qc_release`, `qc_reject`, `content_policy_flag`.
 - **app_config** — key/value jsonb knobs (seeded in 0001/0004): `auto_release_b`, `daily_caps`
-  (now including `images`), `words_per_second` (per voice, calibrated once with test renders),
+  (now including `images`), `words_per_second` (live value `{"default": 2.1}`; per-voice keys
+  deliberately left empty and the read path unclamped — [04-integrations.md](04-integrations.md)
+  §Anthropic),
   `retention_days`, `audio_preview_daily_limit`, `credit_costs`, `dunning`,
   `imagegen_cost_agorot` (per-image cost estimate; a fal price change is an UPDATE here).
   Several knobs are **opt-in and unseeded** — read with `getConfigValueOr`, so a missing row is

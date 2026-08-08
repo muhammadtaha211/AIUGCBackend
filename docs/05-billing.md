@@ -63,6 +63,9 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
 **Unit: 1 credit = 1 second.** Marketed in seconds, never in "videos per month" — a 35s ad and a
 10s ad are not the same product and must not cost the same.
 
+The whole credits bundle — `pricing.ts`, the ledger rework, the wizard gate, migrations
+0016–0020 and their tests — landed in one commit: **`d8df728`** (2026-08-06).
+
 ### The one pricing source of truth
 
 Every credit figure — the estimate in the wizard, the quote on the advisory screen, and the

@@ -8,6 +8,7 @@ export * from "./hook-geometry";
 export * from "./jobs";
 export { logger, type Logger } from "./logger";
 export * from "./paths";
+export * from "./pipelines/audio-script";
 export * from "./pipelines/bank";
 export * from "./pipelines/billing";
 export * from "./pipelines/businesses";

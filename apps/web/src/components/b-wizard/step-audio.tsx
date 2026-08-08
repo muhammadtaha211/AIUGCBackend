@@ -4,14 +4,28 @@ import { useEffect, useRef, useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
+import { AUDIO_SCRIPT_CHANGED_NOTICE, AUDIO_SCRIPT_LABEL } from "@/lib/quote-ui";
 import { endingForRemainder, endingSentence } from "@/lib/service-a-ui";
-import type { AudioState, ScriptState } from "@/lib/service-b-ui";
+import {
+  applyAudioPoll,
+  needsScriptAdoption,
+  type AudioPollResult,
+  type AudioState,
+  type ScriptState,
+} from "@/lib/service-b-ui";
 import { postJson, useJobPoll } from "@/lib/use-api";
 
 type StepAudioProps = {
   script: ScriptState;
   audio: AudioState | null;
   setAudio: (audio: AudioState | null) => void;
+  /**
+   * Adopt the script the server resolved through audio_renders.script_id. The
+   * shell must take it whole — id, text and word budget — or back-navigation
+   * shows the old text with needsTextSave blind to it, and the script step's
+   * ending estimate reads a budget that belongs to a different script.
+   */
+  onScriptResolved: (script: ScriptState) => void;
   onBack: () => void;
   onContinue: () => void;
   onFatal: (message: string) => void;
@@ -31,13 +45,18 @@ type StepAudioProps = {
 
 /**
  * Step 4: the mandatory audio-only preview gate. TTS runs on the worker; we
- * poll until the mp3 is ready, let the customer listen, and require an
- * explicit approve before any video render.
+ * poll until the mp3 is ready, let the customer listen and READ what was
+ * spoken, and require an explicit approve before any video render.
+ *
+ * The text on screen comes from the poll, which resolves it through
+ * audio_renders.script_id — the same pointer the render reads. An approval gate
+ * that doesn't show what is being approved isn't one.
  */
 export function StepAudio({
   script,
   audio,
   setAudio,
+  onScriptResolved,
   onBack,
   onContinue,
   onFatal,
@@ -81,18 +100,23 @@ export function StepAudio({
     slow,
     stalled,
     retry: retryPolling,
-  } = useJobPoll<{ status: string; audioUrl?: string; durationMs?: number }>(
+  } = useJobPoll<AudioPollResult>(
     generating,
+    // No client state in the request: the server decides both what this audio
+    // speaks and whether the pointer was rewritten, so the notice is right even
+    // for a wizard that never saw the original script.
     `/api/audio/${audio?.id}`,
     2_000,
     (body) => {
       if (!audio) return;
-      setAudio({
-        ...audio,
-        status: body.status,
-        audioUrl: body.audioUrl,
-        durationMs: body.durationMs,
-      });
+      setAudio(applyAudioPoll(audio, body));
+      if (needsScriptAdoption(script, body)) {
+        onScriptResolved({
+          scriptId: body.scriptId,
+          text: body.text,
+          wordBudget: body.wordBudget,
+        });
+      }
     },
     onFatal,
   );
@@ -196,6 +220,29 @@ export function StepAudio({
                 ההשמעה לא זמינה כרגע — אפשר בכל זאת לאשר ולהמשיך.
               </p>
             )}
+          </div>
+
+          {/* What is actually being approved, resolved through the audio's
+              script pointer. Read-only and visually under the player: changing
+              it means new audio, which is the script step's job. */}
+          <div className="mt-4">
+            {/* Once the length-fit regeneration is deleted from pipelines/tts.ts
+                nothing rewrites audio_renders.script_id and this notice should
+                never appear again. Keep it: it is what turns a silent
+                substitution into a visible one if anything ever starts moving
+                the pointer, and it costs nothing while it never fires. */}
+            {audio.scriptChanged && (
+              <p
+                role="alert"
+                className="mb-3 rounded-lg bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200"
+              >
+                {AUDIO_SCRIPT_CHANGED_NOTICE}
+              </p>
+            )}
+            <p className="text-[13px] text-gray-500">{AUDIO_SCRIPT_LABEL}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-gray-300">
+              {script.text}
+            </p>
           </div>
 
           {/* Service A: the exact ending from the measured recording — the

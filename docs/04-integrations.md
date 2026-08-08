@@ -18,7 +18,10 @@ keyless (the e2e test relies on this).
   template. Current prompts: `hook_lines` (v7: ten sentence FRAMES, one line each, in a fixed
   order the wizard interleaves on; first-person speaker with a two-axis gender rule
   (`{{persona_gender}}` vs `target_audience`), a three-tier fabrication policy, and
-  `{{avoid}}` for reroll batches; ~60-char budget, `POV:` prefix exempt from the word cap.
+  `{{avoid}}` for reroll batches. The variables are exactly `{{questionnaire}}`, `{{avoid}}`
+  and `{{persona_gender}}` — **`{{n}}` was removed**, because the frame library fixes the count
+  at ten (`HOOK_LINE_FRAMES`) and core slices to `n` before insert. ~60-char budget, `POV:`
+  prefix exempt from the word cap; see §Hook lines below for how a batch is generated and shown.
   v7 is exemplar surgery on the three frames that failed on both live businesses —
   `forbidden_secret` → `disbelief_at_ease` (secrecy contradicted the demo that follows),
   `quoted_objection` reduced to a bare quote, `absurd_affection` given a role test — plus four
@@ -30,16 +33,98 @@ keyless (the e2e test relies on this).
   preset), `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;
   v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses).
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
-  app_config; default 2.2 w/s until each voice is calibrated — `aiugc calibrate-wps` reads
-  ready audio renders and writes observed per-voice rates for voices with 3+ samples) and
-  passed into the prompt as hard constraints.
+  app_config) and passed into the prompt as hard constraints. The live value is
+  **`{"default": 2.1}`**, set from 36 ready audio renders. Both voices pooled to 2.17–2.18 and
+  the subset written by the current `vo_script@v6` ran 2.07–2.13; **2.1 is deliberately low**,
+  because an undershoot is absorbed by the `atempo` length fit while an overshoot past
+  `a_outro_min_seconds` turns into a billable avatar ending. **Per-voice keys were deliberately
+  not written**: the two voices differ by 0.01, which is inside the noise, and a per-voice entry
+  would freeze that noise into pricing.
+- **`aiugc calibrate-wps` was deliberately bypassed and is not the recalibration path.**
+  `observedWordsPerSecond` has no sample filters — every ready render, any script kind, any
+  prompt version, all time — and `applyWordsPerSecond` writes only `words_per_second[voiceId]`,
+  so it structurally cannot write the `default` key, which is the one that prices every future
+  persona before that persona has three samples of its own. Recalibrating is a SQL query plus a
+  manual UPDATE, not a CLI run.
+- **Known gap — the read path has no clamp.** `wordsPerSecond()` (`pipelines/copy.ts`) takes
+  whatever the row says (`voice → default → 2.2`). The value is correct today; nothing stops a
+  future bad write from silently repricing every customer.
+- **Known gap — gender resolution is duplicated three times.** `generateVoScript`,
+  `generateBScript` and `generateHookLines` each do persona → `gender` → warn → default female.
+  That is the rule-of-three threshold: extract a `speakerGenderOf` helper the next time one of
+  them is touched.
 - Usage: one `usage_events` row per call (`llm_tokens`, in+out; cost estimated at $3/$15 per
-  MTok). LLM spend is also under the daily cap (`llm_tokens`).
+  MTok). **Known gap — the copy pipelines record spend but do not check it.** Only
+  `enhanceWithAudioTags` calls `assertBudget(db, "llm_tokens")`; nothing in `pipelines/copy.ts`
+  does, so `generateHookLines` in particular is an uncapped paid loop — ~5 agorot per press of
+  the wizard's reroll, with no ceiling. When it is capped it must **reject with a 429, never
+  park the job**: a parked job never fails, `useJobPoll` only gives up after consecutive
+  _failures_, and the wizard would spin forever (same split as the per-account caps in
+  [05-billing.md](05-billing.md) §Quotas and caps).
 - **Content policy (Service A)**: `contentPolicyCheck()` runs the `content_policy` classifier
   over the questionnaire + final script **before render** in the self-serve flow; a flag blocks
   the render and writes a `content_policy_flag` event for founder review. Service B is covered
   by the QC gate itself.
 - DRY_RUN: pipelines return canned Hebrew copy (the provider itself always calls the API).
+
+### Hook lines (Service A) — how a v7 batch is generated and shown
+
+- **Ten generated, five shown.** The prompt writes one line per frame, all ten, at equal effort.
+  `hookHalfOptions` interleaves **by frame index** with a per-batch parity offset
+  (`HookBatch.parity`, `apps/web/src/lib/service-a-ui.ts`) — never a split down the middle,
+  which would serve the weaker five on reroll. The parity lives on the batch, not the component:
+  a fixed parity would pin frame 1 (`pov_scene`) to the first screen for every customer forever,
+  and the angle-pick data would then record display position rather than which frames win.
+- **The first reroll is free**: it flips `hookHalf` and shows the other five from the batch
+  already paid for. Only the second reroll mints a new batch, with the lines so far as
+  `{{avoid}}`.
+- **Hook lines are no longer persona-independent.** Since `hook_lines` v6 they speak in the
+  persona's own first person, and Hebrew first person is gendered. `selectPersona` therefore
+  clears the batch on a **gender change** (`sameSpeakerGender`, null normalised to female), not
+  on any persona change — a same-gender swap leaves all ten valid, including the unseen half.
+  This partly spends the "structurally free" property the persona-first step reorder bought;
+  the older claim that hook lines derive from the questionnaire alone is no longer true.
+- **Character validation, reject-and-retry.** The prompt's allowed set — Hebrew, Latin, digits,
+  standard punctuation, plus the few typographic marks that sit correctly in an RTL line — is
+  re-checked in `generateHookLines` by `findIllegalHookLineChar`. A violation re-requests the
+  batch **once**, then fails. Never silent sanitisation: the hook line is the primary artifact,
+  the customer approves that exact string, and a stray glyph is unfixable once burned. (A v6 run
+  emitted U+0640 ARABIC TATWEEL inside `לـAI`.) `tts_enhance` fails open because it guards an
+  enhancement; this guards the artifact.
+- **`DEFAULT_SAFE_AREA` is now `DEFAULT_HOOK_TEXT_RECT`** (`@aiugc/core/hook-geometry`), value
+  `{x: 25, y: 1062, w: 1009, h: 179}` — moved off the bottom band where TikTok and Instagram draw
+  their own caption text and action rail, and sized as the measured two-line envelope. It is a
+  **seed for new clip registration only**: the rect stays required at register, and "שכפול לדמות"
+  inherits the source clip's rect instead.
+- **Banked for v8, not fixed**: `שרף` should move out of the general intensity list into the
+  frustration frames only; POV lines need a one-clause word-order rule (if the speaker performs
+  an action, subject first, with `את` where required — one live line came back
+  `POV: ה-AI שאלתי על…`, which reads like a bidi bug but is a grammar error, bidi being confirmed
+  correct at codepoint level); and the 8-word cap is advisory, routinely exceeded (14 of 20 lines
+  in one run) and enforced nowhere in code — the ~60-character budget, which is what actually
+  drives the render, is respected.
+
+### Prompt-file lessons (empirical)
+
+- **Dropping a new version file into `prompts/` makes it live immediately.**
+  `latestPromptVersion` takes `max(N)` over an anchored `/^v(\d+)\.md$/`, so `v8.draft.md` is a
+  safe holding pattern while `v8.md` is production the moment it is saved. A live version that
+  introduces a variable no caller passes breaks **every** caller, because `renderPrompt` throws
+  on a missing var. This actually happened during the v6 build.
+- **Frames beat intentions.** Giving the model an intention ("write a curiosity hook") produces
+  marketing-speak; giving it a sentence shape with slots produces the intended register. That was
+  the whole diagnosis behind the v5 → v6 rewrite.
+- **An exemplar teaches harder than a rule.** Three separate v6 defects traced to exemplars that
+  contradicted the rules around them — a withholding example inside the gender section, a roleless
+  "whoever showed me this", a dismissal that read as resignation. When output is wrong, check the
+  examples before rewriting the instructions.
+- **Verbs are domain-specific, not scale-specific.** `שרף` fits wasting time (`שרפתי שנתיים`) and
+  not achievement; `להפציץ` / `לדפוק את הסמסטר` are the achievement forms. Listing a verb on a
+  general intensity scale invites it into the wrong frame.
+- **The identity test for `absurd_affection` generalises** — confirmed on a third business whose
+  audience the exemplars did not pre-answer. Where the target audience has a name people call
+  themselves, the peer role works; where the audience is a temporary situation (`מחפש דירות`),
+  the domain professional (`מתווך`) is the credible source.
 
 ## ElevenLabs V3 (Hebrew TTS) — `providers/elevenlabs.ts`
 
@@ -176,6 +261,52 @@ keyless (the e2e test relies on this).
   `app_config.imagegen_cost_agorot` (not a constant). No credit charge in V0 — the `images`
   daily cap is the abuse guard; cost is absorbed into Service B render pricing.
 - DRY_RUN: placeholder stills (no ffmpeg), instant `dryrun://` result, placeholder output file.
+
+## Hook-clip bank source — Seedance (offline, not a wired integration)
+
+The Service A hook bank is generated on **Seedance** and registered by hand through the admin
+console. No code calls it and no key exists in `.env`; it is recorded here because the
+generator's floor sets the format.
+
+- **Hook clips are 4 seconds.** That is Seedance's minimum generation length, not a curation
+  choice — the registered bank clip is **4086ms**. The old "2–3s curation doctrine" is stale;
+  4s is the floor. Two statements elsewhere still carry the old number and are wrong:
+  `CLAUDE.md`'s "2s pre-rendered AI reaction clip" and the CLI's
+  `bank add-hook --duration <ms>` help text ("~2000").
+- **4 seconds is the read budget.** At roughly 17 characters/second of Hebrew reading, a 4s
+  clip buys ~60 characters — which is exactly where `hook_lines` v7's ~60-char cap comes from.
+  The 8-word cap is a style hint; this one is the rendering limit.
+- **Swap-matrix cost, corrected.** The earlier $0.25–0.40/swap and $8–10/matrix figures assumed
+  2–3s clips. At 4s × $0.126/s a swap is **~$0.50**, and a 5 hooks × 5 personas matrix is
+  **~$12.60** before any upscale pass. The founder has accepted the cost; only the numbers were
+  wrong.
+- **The swap matrix moves up in priority.** Service A targets persona pages that post
+  repeatedly, and a different stock face on every video reads as a content farm. Same face
+  across the set is the product, not polish.
+
+## Service A audio — silent by design
+
+**Service A ships silent, deliberately.** The bank hook clip is muted, the demo is muted under
+the voiceover, and no music is bundled — the customer adds their own audio in the platform's
+editor at post time. This is a product decision, not a gap.
+
+The reasoning, recorded because it will otherwise be re-litigated:
+
+- Service A targets **non-business persona accounts posting organically**, where the platform's
+  full in-app music library is available. Business accounts are restricted to the commercial
+  catalogues instead (TikTok's Commercial Music Library, Meta's Sound Collection).
+- Those licences **do not travel across platforms**. A baked-in track would follow the file from
+  TikTok to Reels and create a cross-platform licensing problem for the customer rather than
+  solve one.
+- The four-second silent hook is **headroom handed to the customer**, not dead air: they pick
+  the trending sound, and it starts where the ad starts.
+- **Known gap**: a personal account that later _boosts_ a post crosses into commercial use
+  regardless of account type, and the full in-app library stops being clear. That is an
+  onboarding-copy item, not a build.
+
+The **"No music, ever (locked)"** comments in `packages/remotion/src/ServiceA.tsx` and
+`ServiceB.tsx`, and the absence of any music track in the props contract below, stand — now with
+this reasoning behind them.
 
 ## Remotion (assembly) — `providers/remotion.ts`
 

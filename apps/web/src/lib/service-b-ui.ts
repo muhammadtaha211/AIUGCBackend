@@ -122,16 +122,78 @@ export type CompositeState = {
 
 export type AudioState = {
   id: string;
-  /** The script this audio was generated for — a newer scriptId invalidates it. */
+  /**
+   * The script this audio speaks — a newer scriptId invalidates it. Seeded from
+   * wizard state at request time, then corrected from audio_renders.script_id
+   * on the first poll that disagrees.
+   */
   scriptId: string;
   status: string; // queued | generating | ready | failed
   audioUrl?: string;
   /** Measured TTS duration (set when ready) — Service A's exact ending advisory. */
   durationMs?: number;
   approved: boolean;
+  /**
+   * The pointer moved after this audio was requested. Sticky: once the wizard
+   * adopts the resolved script the server stops reporting it, but the customer
+   * still needs to be told the text is not the one they wrote.
+   */
+  scriptChanged?: boolean;
 };
 
 export type RenderState = { id: string; status: string; videoUrl?: string };
+
+/** GET /api/audio/[id]: status, the signed mp3, and the script being spoken. */
+export type AudioPollResult = {
+  status: string;
+  /** Resolved through audio_renders.script_id, server-side. */
+  scriptId: string;
+  text: string;
+  wordBudget?: number;
+  /**
+   * The pointer was rewritten after the audio was enqueued. A property of the
+   * rows, not of anything the client sent, so it stays true for every later
+   * poll of the same audio render.
+   */
+  scriptChanged: boolean;
+  audioUrl?: string;
+  durationMs?: number;
+};
+
+/**
+ * Fold one poll into the audio state.
+ *
+ * Approval is dropped on the TRANSITION into `scriptChanged`, not while it is
+ * set: the server reports the same true on every poll, so clearing on the flag
+ * itself would revoke the customer's fresh approval every two seconds and make
+ * the step impossible to leave. First sighting revokes; after that the flag
+ * only keeps the notice on screen.
+ */
+export function applyAudioPoll(audio: AudioState, body: AudioPollResult): AudioState {
+  const newlyChanged = body.scriptChanged && !audio.scriptChanged;
+  return {
+    ...audio,
+    status: body.status,
+    audioUrl: body.audioUrl,
+    durationMs: body.durationMs,
+    scriptId: body.scriptId,
+    scriptChanged: audio.scriptChanged || body.scriptChanged,
+    // Consent to one script is not consent to another.
+    approved: newlyChanged ? false : audio.approved,
+  };
+}
+
+/**
+ * Whether the wizard shell must take the server's script. Text is compared as
+ * well as id: an id match with different text would mean the row was mutated
+ * under us, and the screen must still show what is on the server.
+ */
+export function needsScriptAdoption(
+  script: ScriptState,
+  body: { scriptId: string; text: string },
+): boolean {
+  return body.scriptId !== script.scriptId || body.text !== script.text;
+}
 
 // ---------------------------------------------------------------------------
 // Script word budget + immutable-row threading
