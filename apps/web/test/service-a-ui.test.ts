@@ -66,15 +66,45 @@ describe("VO length estimate (inverted word-budget mapping)", () => {
     expect(estimatedEnding(30, 20, 0)).toBeNull();
     expect(estimatedEnding(0, 20, 44)).toBeNull();
   });
+
+  /**
+   * The budget is the length that FILLS the demo, so falling under it is the
+   * failure — the demo is muted beneath the voiceover and nothing downstream
+   * can fill the gap. It must never share a state with "ends together".
+   */
+  it("a narration ending well before the demo is its own state, not none", () => {
+    // 30 words -> ~13.6s on a 20s demo: 6.4s of the ad would play in silence.
+    expect(estimatedEnding(30, 20, 44)).toBe("short");
+    // 54 words against a budget of 90 on a 29.5s demo — the shape that shipped
+    // a 4.38s silent tail, and read as "ends together with the video".
+    expect(estimatedEnding(54, 29.5, 90)).toBe("short");
+  });
+
+  it("tolerates a shortfall too small to hear before saying so", () => {
+    // 40 words -> ~18.2s on a 20s demo: 1.8s under, inside the tolerance.
+    expect(estimatedEnding(40, 20, 44)).toBe("none");
+    // 39 words -> ~17.7s: 2.3s under, past it.
+    expect(estimatedEnding(39, 20, 44)).toBe("short");
+  });
 });
 
 describe("ending threshold (mirrors planAOutro's a_outro_min_seconds default)", () => {
-  it("maps the remainder onto the three endings", () => {
+  it("maps a positive remainder onto the three endings", () => {
     expect(endingForRemainder(0)).toBe("none");
-    expect(endingForRemainder(-3)).toBe("none");
     expect(endingForRemainder(1.9)).toBe("freeze");
     expect(endingForRemainder(2)).toBe("avatar");
     expect(endingForRemainder(8)).toBe("avatar");
+  });
+
+  /**
+   * The audio step reads the MEASURED recording through this. A recording that
+   * ends early reported "none" — the same value as a perfect fit — which is how
+   * a render with a 4.38s silent tail was approved without anyone being told.
+   */
+  it("a recording that ends well before the demo is short, not none", () => {
+    expect(endingForRemainder(-4.38)).toBe("short");
+    expect(endingForRemainder(-2.1)).toBe("short");
+    expect(endingForRemainder(-1.9)).toBe("none"); // inside the tolerance
   });
 });
 
@@ -98,6 +128,38 @@ describe("ending sentence (script step: estimate; audio step: exact)", () => {
       expect(endingSentence(mode, true)).toContain("ההקלטה");
       expect(endingSentence(mode, true)).not.toContain("בערך");
     }
+  });
+
+  it("the short state names the silence, and never calls the script wrong", () => {
+    for (const exact of [false, true]) {
+      const text = endingSentence("short", exact);
+      expect(text).toContain("בלי קול");
+      expect(text).toContain("לפני סרטון המוצר");
+      expect(text).not.toContain("קצר מדי"); // no verdict on the script itself
+      // Inform, never restrict: name the gap AND the one thing that closes it.
+      expect(text).toContain("תסריט ארוך יותר");
+    }
+  });
+
+  it("the short state forks estimate/measured like every other mode", () => {
+    expect(endingSentence("short", false)).toContain("לפי האורך הנוכחי");
+    expect(endingSentence("short", true)).toContain("ההקלטה");
+    expect(endingSentence("short", true)).not.toContain("לפי האורך הנוכחי");
+  });
+
+  /**
+   * The customer meets the ending three steps before its price. The estimate
+   * says an avatar ending costs extra; the figure appears once, in
+   * shapeSummary, after the recording makes it exact.
+   */
+  it("the estimated avatar ending says it costs extra, with no figure", () => {
+    const text = endingSentence("avatar", false);
+    expect(text).toContain("תוספת");
+    expect(text).not.toMatch(/\d/);
+  });
+
+  it("the exact avatar sentence carries no cost clause — shapeSummary owns it", () => {
+    expect(endingSentence("avatar", true)).not.toContain("תוספת");
   });
 });
 

@@ -164,6 +164,14 @@ describe("founder workflow (dry-run, end to end)", () => {
     "voiced flow: vo script -> tts -> approve gate -> voiced set",
     { timeout: 60_000 },
     async () => {
+      // A script written to fill the demo runs past it, so this flow now lands
+      // on an avatar ending — which needs a persona with an image to speak it.
+      const persona = await addPersona(db, { name: "מאיה", voiceId: "voice_test" });
+      await addPersonaImage(db, {
+        personaId: persona.id,
+        filePath: tempFile("persona-a.jpg", "fake persona photo"),
+      });
+
       const script = await generateVoScript(db, {
         businessId,
         demoId,
@@ -201,8 +209,13 @@ describe("founder workflow (dry-run, end to end)", () => {
           hookLineScriptIds: [hookLineIds[0]!],
           mode: "voiced",
           audioRenderId: audio.id,
+          personaId: persona.id,
         },
       });
+      // The dry-run script is written to 115% of the budget on purpose: without
+      // an overrun no keyless run ever reaches planAOutro's freeze/avatar
+      // branches, and the ending path would only ever be exercised by hand.
+      expect((renders[0]!.params as { outroMode?: string }).outroMode).toBe("avatar");
       await drainAll();
       const row = (
         await db

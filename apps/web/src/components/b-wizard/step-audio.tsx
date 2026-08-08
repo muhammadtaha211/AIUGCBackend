@@ -142,6 +142,17 @@ export function StepAudio({
     if (await approve()) onContinue();
   }
 
+  /**
+   * Service A only: the ending the MEASURED recording points at. This is the
+   * gate a 4.38s silent tail once passed through, because a recording shorter
+   * than the demo used to report the same "ends together with the video" as a
+   * perfect fit — in the same neutral grey.
+   */
+  const measuredEnding =
+    demoDurationMs !== undefined && audio?.durationMs !== undefined
+      ? endingForRemainder((audio.durationMs - demoDurationMs) / 1000)
+      : null;
+
   return (
     <div>
       <StepHeader
@@ -246,10 +257,15 @@ export function StepAudio({
           </div>
 
           {/* Service A: the exact ending from the measured recording — the
-              last moment a regenerate is one click away. */}
-          {demoDurationMs !== undefined && audio.durationMs !== undefined && (
-            <p className="mt-3 text-[13px] text-gray-400">
-              {endingSentence(endingForRemainder((audio.durationMs - demoDurationMs) / 1000), true)}
+              last moment a regenerate is one click away, which is exactly why
+              a recording that ends early is flagged here and not left grey. */}
+          {measuredEnding && (
+            <p
+              className={`mt-3 text-[13px] ${
+                measuredEnding === "short" ? "text-amber-300/90" : "text-gray-400"
+              }`}
+            >
+              {endingSentence(measuredEnding, true)}
             </p>
           )}
 

@@ -308,7 +308,11 @@ export async function generateVoScript(
 
   const demoSeconds = Math.round((demo.durationMs ?? 0) / 1000);
   const wps = await wordsPerSecond(db, voiceId);
-  // A target, not a cap: an overrun becomes an ending, priced in the advisory.
+  // A FLOOR, not a cap — the length that fills the demo. Coming in under it is
+  // the only unrecoverable outcome (the demo is muted under the VO, so a short
+  // script ends the ad in silence); running over becomes an ending, which
+  // planAOutro shapes and the advisory prices. v7 states it to the model that
+  // way round. Kept as `wordBudget` because scripts.params persists the name.
   const wordBudget = Math.floor(demoSeconds * wps);
   // Soft grounding from the demo row (customer-typed, optional). Snapshotted
   // into params below — the demo row stays editable, scripts must stay traceable.
@@ -320,7 +324,13 @@ export async function generateVoScript(
     const filler =
       "אני כבר לא חוזרת לעשות את זה ידנית בזבזתי שעתיים על באנר אחד ובסוף עשיתי אותו מחדש " +
       "ואז מצאתי משהו שסגר לי את זה כאילו הכל במסך אחד תוך שתי דקות תבדקו לבד";
-    text = filler.split(" ").slice(0, wordBudget).join(" ");
+    // 115% of the budget, repeating the filler when it runs out. Slicing to
+    // exactly wordBudget made a dry run incapable of overrunning, so freeze and
+    // avatar endings were unreachable without an API key; at 115% the dry-run
+    // synthesizer's words/2.2 lands past MAX_STRETCH and the ending path runs.
+    const fillerWords = filler.split(" ");
+    const target = Math.ceil(wordBudget * 1.15);
+    text = Array.from({ length: target }, (_, i) => fillerWords[i % fillerWords.length]!).join(" ");
   } else {
     const result = await callClaude(
       db,

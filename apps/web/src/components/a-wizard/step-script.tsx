@@ -58,8 +58,9 @@ export function StepAScript({
   const [phase, setPhase] = useState<"advantages" | "script">(script ? "script" : "advantages");
 
   const words = countWords(editedText);
-  // The only place the user can still shorten the script and change the
-  // ending — name which of the three endings the current length points at.
+  // The only place the user can still change the script's length — name what
+  // the current one points at: one of the three endings, or a narration that
+  // stops before the footage does.
   const ending =
     script?.wordBudget !== undefined && demoDurationMs !== undefined
       ? estimatedEnding(words, demoDurationMs / 1000, script.wordBudget)
@@ -192,9 +193,13 @@ export function StepAScript({
         />
         <p className="mt-1.5 text-[13px] tabular-nums text-gray-500">{words} מילים</p>
         {ending && (
+          // Amber marks "short" alone. A freeze or avatar ending is the normal
+          // result of a script written to fill the demo — it is shaped, priced
+          // and shown before anything renders — so flagging it would warn about
+          // the working case and stay silent on the broken one.
           <p
             className={`mt-1.5 text-[13px] ${
-              ending === "none" ? "text-gray-500" : "text-amber-300/90"
+              ending === "short" ? "text-amber-300/90" : "text-gray-500"
             }`}
           >
             {endingSentence(ending, false)}

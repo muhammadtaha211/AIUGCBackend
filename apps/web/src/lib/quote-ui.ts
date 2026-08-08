@@ -34,6 +34,23 @@ export function endingCostClause(outroCredits: number | null): string {
 }
 
 /**
+ * A narration that ends before the footage does. Names the consequence — the
+ * tail of the video plays with no audio at all, because the demo is muted under
+ * the voiceover — rather than judging the script, then names the one thing that
+ * closes the gap. This is the only Service A outcome with nothing downstream to
+ * fix it, which is why it, and not an overrun, is the state that gets attention.
+ *
+ * Two phrasings because the two steps know different things: the script step is
+ * projecting from a word count, the audio step has measured the recording. Both
+ * end on the same remedy.
+ */
+export const VO_SHORT_ESTIMATE_NOTICE =
+  "לפי האורך הנוכחי, הקריינות תסתיים לפני סרטון המוצר, והחלק האחרון שלו יתנגן בלי קול. תסריט ארוך יותר ימלא אותו.";
+
+export const VO_SHORT_MEASURED_NOTICE =
+  "ההקלטה מסתיימת לפני סרטון המוצר, והחלק האחרון שלו יתנגן בלי קול. תסריט ארוך יותר ימלא אותו.";
+
+/**
  * Shown INSTEAD of the price sentence when the balance doesn't cover it, with
  * confirm disabled. Quote-local — the balance page belongs to payments.
  */

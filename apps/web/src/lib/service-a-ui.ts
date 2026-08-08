@@ -1,5 +1,5 @@
 import type { SafeRect } from "@aiugc/core/hook-geometry";
-import { endingCostClause } from "./quote-ui";
+import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
 
 /**
  * Pure, client-safe helpers for the Service A wizard. No imports from
@@ -142,6 +142,10 @@ export function sameSpeakerGender(a: string | null, b: string | null): boolean {
  * so estimated seconds = words * demoSeconds / wordBudget. An estimate — real
  * speech rate varies and TTS may stretch ≤5%; the post-audio advisory stays
  * the exact word.
+ *
+ * The maths is unchanged by v7; what the budget MEANS is. It is the length
+ * that fills the demo — a floor to reach, not a cap — so an estimate above
+ * demoSeconds is the ordinary case and one below it is the problem.
  */
 export function estimateVoSeconds(words: number, demoSeconds: number, wordBudget: number): number {
   if (wordBudget <= 0 || demoSeconds <= 0) return 0;
@@ -151,11 +155,33 @@ export function estimateVoSeconds(words: number, demoSeconds: number, wordBudget
 export type AEndingMode = AShape["outroMode"];
 
 /**
- * Which ending a VO remainder (vo minus demo, in seconds) points at. Mirrors
- * core's planAOutro thresholds (a_outro_min_seconds default 2) — advisory
- * only; createSet re-decides server-side.
+ * What the script step can project: the three real endings, plus "short" —
+ * not an ending at all, but a narration that stops before the footage does.
+ * planAOutro has no such mode; nothing server-side ever returns it.
  */
-export function endingForRemainder(remainderSeconds: number): AEndingMode {
+export type AEstimatedEnding = AEndingMode | "short";
+
+/**
+ * How far the projected narration may fall below the demo before the script
+ * step names it. Deliberately NOT a_outro_min_seconds: that one means "the
+ * smallest remainder worth an avatar ending", this one means "the smallest
+ * silence worth telling the customer about". They share the value 2 today by
+ * coincidence, and a change to either must not move the other.
+ */
+const SHORT_VO_TOLERANCE_SECONDS = 2;
+
+/**
+ * Which ending a VO remainder (vo minus demo, in seconds) points at. The three
+ * positive outcomes mirror core's planAOutro thresholds (a_outro_min_seconds
+ * default 2) — advisory only; createSet re-decides server-side.
+ *
+ * "short" has no server-side counterpart: planAOutro sees any negative
+ * remainder as "no ending needed", which is true of the composition and false
+ * of the ad — those seconds play in silence. Display names it; nothing acts on
+ * it.
+ */
+export function endingForRemainder(remainderSeconds: number): AEstimatedEnding {
+  if (remainderSeconds < -SHORT_VO_TOLERANCE_SECONDS) return "short";
   if (remainderSeconds <= 0) return "none";
   if (remainderSeconds < 2) return "freeze";
   return "avatar";
@@ -166,16 +192,24 @@ export function endingForRemainder(remainderSeconds: number): AEndingMode {
  * rounded values so the prose never contradicts the numbers beside it —
  * sub-second overruns that round away read as "none" (the post-audio advisory
  * is exact). null = inputs unusable (no budget yet).
+ *
+ * A narration falling well short of the demo returns "short" rather than
+ * collapsing into "none": the two are opposite outcomes, and "none" claims the
+ * narration ends WITH the footage, which is a false thing to tell someone whose
+ * ad is about to end in silence.
  */
 export function estimatedEnding(
   words: number,
   demoSeconds: number,
   wordBudget: number,
-): AEndingMode | null {
+): AEstimatedEnding | null {
   const estimate = estimateVoSeconds(words, demoSeconds, wordBudget);
   if (estimate <= 0) return null;
-  if (Math.round(estimate) <= Math.round(demoSeconds)) return "none";
-  return endingForRemainder(estimate - demoSeconds);
+  // The rounding gate applies to OVERRUNS only. Rounding a shortfall away would
+  // hand it back to "none", which is the collapse this state exists to undo.
+  const remainder = estimate - demoSeconds;
+  if (remainder > 0 && Math.round(estimate) <= Math.round(demoSeconds)) return "none";
+  return endingForRemainder(remainder);
 }
 
 /**
@@ -184,8 +218,13 @@ export function estimatedEnding(
  * from the measured recording) both speak through this, so the wording never
  * forks. The render step's shapeSummary stays the full numeric display; do
  * not add a third phrasing.
+ *
+ * The estimated avatar ending says it costs extra WITHOUT a figure: there is no
+ * audio yet, so any number here would be an estimate of an estimate. The one
+ * exact number appears once, in shapeSummary, after the recording exists.
  */
-export function endingSentence(mode: AEndingMode, exact: boolean): string {
+export function endingSentence(mode: AEstimatedEnding, exact: boolean): string {
+  if (mode === "short") return exact ? VO_SHORT_MEASURED_NOTICE : VO_SHORT_ESTIMATE_NOTICE;
   if (mode === "freeze") {
     return exact
       ? "ההקלטה ארוכה מעט מסרטון המוצר — הפריים האחרון יוקפא לרגע קצר בסוף."
@@ -194,7 +233,7 @@ export function endingSentence(mode: AEndingMode, exact: boolean): string {
   if (mode === "avatar") {
     return exact
       ? "ההקלטה ארוכה מסרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון."
-      : "לפי האורך הנוכחי, הקריינות תימשך בערך גם אחרי סרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון.";
+      : "לפי האורך הנוכחי, הקריינות תימשך בערך גם אחרי סרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון, בתוספת קרדיטים שתוצג לפני האישור.";
   }
   return exact
     ? "ההקלטה מסתיימת יחד עם סרטון המוצר — בלי סיום נוסף."
