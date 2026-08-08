@@ -152,11 +152,9 @@ keyless (the e2e test relies on this).
   Hebrew script, so the voice reads it with emotion. The prompt caps density at ~2–4 tags per
   15-second script — this is one person talking to a phone camera, not theatre — forbids
   touching the Hebrew words, and (v4) bans every silence-producing tag plus `[sighs]`.
-- **Where it sits**: inside `handleSynthTts`'s regenerate loop, **before** the pronunciation map:
-  `script.text → enhance (if on) → pronunciation map → synthesize`. Because it is inside the
-  loop, a tighter regenerated script gets its own enhancement pass rather than reusing stale tags.
-  Structurally it is the same kind of transform as the pronunciation map: a TTS-time rewrite of
-  the sent text only.
+- **Where it sits**: inside `handleSynthTts`, **before** the pronunciation map:
+  `script.text → enhance (if on) → pronunciation map → synthesize`. Structurally it is the same
+  kind of transform as the pronunciation map: a TTS-time rewrite of the sent text only.
 - **Fails open to the original text, always.** `enhanceWithAudioTags` never throws: an API error,
   a tripped `llm_tokens` budget cap, or a model that touched the Hebrew all return `script.text`
   unchanged, with a warn line. The guard is `sameWordSequence()` — strip bracket spans and

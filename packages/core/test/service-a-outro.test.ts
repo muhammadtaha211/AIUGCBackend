@@ -190,6 +190,72 @@ describe("service A conditional ending", () => {
     expect(row.stretchRatio).toBe(1);
   }, 60_000);
 
+  /**
+   * The length-fit regeneration used to rewrite the script and repoint
+   * audio_renders.script_id mid-job whenever the VO overran, so a customer
+   * could approve audio for text they had never read. It is gone. This pins
+   * the property it violated across the whole ratio range at once — and the
+   * one band the fit still touches, which is now the only branch left.
+   *
+   * The scripts are inserted directly rather than generated: DRY_RUN's filler
+   * slices to exactly `wordBudget` and can never overrun, and updateScriptText
+   * would set user_edited, which the deleted branch checked. Neither would
+   * have reached it.
+   */
+  it("never repoints audio_renders.script_id, at any ratio", async () => {
+    const demo = (
+      await db
+        .select()
+        .from(dbSchema.demos)
+        .where(sql`${dbSchema.demos.id} = ${demoId}`)
+    )[0]!;
+
+    // A 20s demo at DRY_RUN's 2.2 w/s. Only the middle case is inside the
+    // stretch band; the last is the one the regeneration used to rewrite.
+    const cases = [
+      { words: 20, label: "undershoots the demo (~9s)", fitted: false },
+      { words: 45, label: "lands inside the 5% band (~20.5s)", fitted: true },
+      { words: 60, label: "overruns far past it (~27s)", fitted: false },
+    ];
+
+    for (const { words, label, fitted } of cases) {
+      const script = (
+        await db
+          .insert(dbSchema.scripts)
+          .values({
+            businessId,
+            demoId,
+            kind: "vo_script",
+            text: "מילה ".repeat(words).trim(),
+            params: { wordBudget: 44, voiceId: "voice_test" },
+          })
+          .returning()
+      )[0]!;
+      expect(script.userEdited).toBe(false);
+
+      const audio = await requestAudio(db, { scriptId: script.id, voiceId: "voice_test" });
+      await drainAll();
+
+      const row = (
+        await db
+          .select()
+          .from(dbSchema.audioRenders)
+          .where(sql`${dbSchema.audioRenders.id} = ${audio.id}`)
+      )[0]!;
+      expect(row.status, label).toBe("ready");
+      expect(row.scriptId, label).toBe(script.id);
+
+      if (fitted) {
+        // The atempo branch survived the deletion: it still closes a sub-5%
+        // gap exactly, which is the whole of the length fit now.
+        expect(row.stretchRatio, label).toBeGreaterThan(1);
+        expect(row.durationMs, label).toBe(demo.durationMs);
+      } else {
+        expect(row.stretchRatio, label).toBe(1);
+      }
+    }
+  }, 90_000);
+
   it("VO within the demo: today's behavior, ending none, no lipsync", async () => {
     const script = await generateVoScript(db, {
       businessId,

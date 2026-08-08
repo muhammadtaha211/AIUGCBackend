@@ -1,4 +1,5 @@
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { endingCostClause } from "./quote-ui";
 
 /**
  * Pure, client-safe helpers for the Service A wizard. No imports from
@@ -210,21 +211,29 @@ export type AShape = {
   voSeconds: number;
   outroMode: "none" | "freeze" | "avatar";
   outroSeconds: number;
+  /**
+   * What the ending adds to the price, differenced server-side. null = admin
+   * bypass (nothing is charged, so no credits are named).
+   */
+  outroCredits: number | null;
 };
 
 const formatSeconds = (seconds: number): string => `${Math.round(seconds * 10) / 10}`;
 
 /**
  * Hebrew summary of the projected ad, so a long ending is chosen, never
- * discovered. Advisory only — nothing blocks.
+ * discovered. The ending and what it costs are ONE sentence: an overrun is not
+ * a defect to be told about separately, it is a choice with a price. Advisory
+ * only — nothing blocks. quoteLine still carries the total and the balance.
  */
 export function shapeSummary(shape: AShape): string {
   const base = `פתיח ${formatSeconds(shape.hookSeconds)} שנ׳ ← סרטון המוצר ${formatSeconds(shape.demoSeconds)} שנ׳`;
+  const cost = endingCostClause(shape.outroCredits);
   if (shape.outroMode === "freeze") {
-    return `${base} — הקריינות ממשיכה עוד ${formatSeconds(shape.outroSeconds)} שנ׳ על הפריים האחרון.`;
+    return `${base} — הקריינות ממשיכה עוד ${formatSeconds(shape.outroSeconds)} שנ׳ על הפריים האחרון${cost}.`;
   }
   if (shape.outroMode === "avatar") {
-    return `${base} ← סיום עם הדמות ${formatSeconds(shape.outroSeconds)} שנ׳ (הדמות מופיעה ומסיימת את הקריינות).`;
+    return `${base} ← סיום עם הדמות ${formatSeconds(shape.outroSeconds)} שנ׳ (הדמות מופיעה ומסיימת את הקריינות)${cost}.`;
   }
   return `${base} — הקריינות מסתיימת יחד עם הסרטון.`;
 }

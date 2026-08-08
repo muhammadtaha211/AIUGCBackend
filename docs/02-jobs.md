@@ -70,9 +70,10 @@ The two human gates (audio approval, founder QC) are represented as _the absence
 job_ — approval/`releaseRender` performs the state change and (for QC-reject-regenerate)
 enqueues the next job. No job ever waits on a human inside a handler.
 
-`synth_tts` contains the deterministic **length-fit loop** internally (measure → at most one
-tighter-budget script regeneration → atempo ≤5% → else fail with a human-readable message);
-`state.regenerated` guarantees the regeneration happens at most once even across retries.
+`synth_tts` contains the whole **length fit** internally: measure → atempo ≤5% if that closes the
+gap → otherwise store the natural length. An overrun past the stretch is never corrected — it is
+an ending, decided by `planAOutro` and priced in the advisory before confirm. `synth_tts` never
+repoints `audio_renders.script_id`.
 
 ## Worker: two lanes, one process
 

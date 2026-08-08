@@ -166,6 +166,7 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
     expect(quote.creditsPerRender).toBe(A_BASE_CREDITS);
     expect(quote.chargeable).toBe(true);
+    expect(quote.outroCredits).toBe(0); // no ending, nothing added
 
     const { renders } = await createSet(db, {
       businessId,
@@ -189,6 +190,8 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
     expect(quote.creditsPerRender).toBe(A_BASE_CREDITS);
     expect(quote.components.find((c) => c.kind === "outro")!.credits).toBe(0);
+    // The advisory says "a freeze ending is included" and means it.
+    expect(quote.outroCredits).toBe(0);
 
     const { renders } = await createSet(db, {
       businessId,
@@ -209,6 +212,7 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
     expect(quote.creditsPerRender).toBe(A_BASE_CREDITS + 6);
     expect(quote.components.find((c) => c.kind === "outro")!.seconds).toBe(6);
+    expect(quote.outroCredits).toBe(6);
 
     const { renders } = await createSet(db, {
       businessId,
@@ -222,6 +226,20 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
       },
     });
     expect((await debitsFor(renders[0]!.id))[0]!.delta).toBe(-quote.creditsPerRender);
+  });
+
+  it("outroCredits is a delta between two ceiled quotes, not the outro component", async () => {
+    // 6.5s ending: 3 flat + 3 demo + 6.5 outro = 12.5, ceiled ONCE to 13.
+    // Without the ending the same render is 6. The customer pays 7 more —
+    // showing the 6.5 component instead would understate it by half a credit
+    // and disagree with the total sitting on the next line.
+    const audio = await voicedAudio(26_500);
+    const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
+
+    expect(quote.components.find((c) => c.kind === "outro")!.credits).toBe(6.5);
+    expect(quote.creditsPerRender).toBe(13);
+    expect(quote.outroCredits).toBe(7);
+    expect(quote.creditsPerRender - quote.outroCredits).toBe(A_BASE_CREDITS);
   });
 
   it("every cell of a Set gets its own debit row — refunds key on the render id", async () => {

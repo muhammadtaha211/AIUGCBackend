@@ -21,6 +21,19 @@ export function quoteLine(quote: NonNullable<QuoteView>): string {
 }
 
 /**
+ * What the ending adds, as a clause Service A's shapeSummary appends so the
+ * ending and its price read as one consequence instead of two facts on two
+ * lines. Takes the DELTA the server already differenced (quoteASet), never an
+ * outro component — components are ceiled as a sum, so a component is not a
+ * price. `null` = admin bypass: no credits appear anywhere.
+ */
+export function endingCostClause(outroCredits: number | null): string {
+  if (outroCredits === null) return "";
+  if (outroCredits === 0) return " — כלול במחיר, בלי תוספת";
+  return ` — תוספת של ${outroCredits} קרדיטים`;
+}
+
+/**
  * Shown INSTEAD of the price sentence when the balance doesn't cover it, with
  * confirm disabled. Quote-local — the balance page belongs to payments.
  */

@@ -126,7 +126,7 @@ describe("ingest polling", () => {
 });
 
 describe("shape summary (the advisory display)", () => {
-  const base = { hookSeconds: 2, demoSeconds: 20, voSeconds: 20 };
+  const base = { hookSeconds: 2, demoSeconds: 20, voSeconds: 20, outroCredits: 0 };
 
   it("exact fit: the VO ends with the demo", () => {
     const text = shapeSummary({ ...base, outroMode: "none", outroSeconds: 0 });
@@ -142,9 +142,66 @@ describe("shape summary (the advisory display)", () => {
   });
 
   it("avatar: names the avatar ending and its length", () => {
-    const text = shapeSummary({ ...base, voSeconds: 28, outroMode: "avatar", outroSeconds: 8 });
+    const text = shapeSummary({
+      ...base,
+      voSeconds: 28,
+      outroMode: "avatar",
+      outroSeconds: 8,
+      outroCredits: 8,
+    });
     expect(text).toContain("סיום עם הדמות");
     expect(text).toContain("8 שנ׳");
+  });
+});
+
+/**
+ * The ending and its price are one sentence: an overrun is a choice with a
+ * cost, not a fact announced beside an unrelated number.
+ */
+describe("shape summary names what the ending costs", () => {
+  const base = { hookSeconds: 2, demoSeconds: 20, voSeconds: 28 };
+  const avatar = { ...base, outroMode: "avatar" as const, outroSeconds: 8 };
+
+  it("an avatar ending that adds credits says so, in the same sentence", () => {
+    const text = shapeSummary({ ...avatar, outroCredits: 8 });
+    expect(text).toContain("סיום עם הדמות");
+    expect(text).toContain("תוספת של 8 קרדיטים");
+  });
+
+  it("a zero delta reads as included, never as +0 credits", () => {
+    // The minimum can absorb the ending entirely — quoteASet differences two
+    // ceiled quotes, so "the outro component is 2.1" and "it costs 0" coexist.
+    const text = shapeSummary({ ...avatar, outroCredits: 0 });
+    expect(text).toContain("כלול במחיר");
+    expect(text).not.toContain("תוספת של"); // the "+N credits" phrasing
+    expect(text).not.toContain("קרדיטים");
+  });
+
+  it("a freeze ending is free, and says that rather than staying silent", () => {
+    const text = shapeSummary({
+      ...base,
+      voSeconds: 21.5,
+      outroMode: "freeze",
+      outroSeconds: 1.5,
+      outroCredits: 0,
+    });
+    expect(text).toContain("הפריים האחרון");
+    expect(text).toContain("כלול במחיר");
+  });
+
+  it("the admin bypass names no credits at all", () => {
+    const text = shapeSummary({ ...avatar, outroCredits: null });
+    expect(text).toContain("סיום עם הדמות");
+    expect(text).not.toContain("קרדיט");
+    expect(text).not.toContain("כלול");
+  });
+
+  it("ending none never carries a cost clause either way", () => {
+    for (const outroCredits of [0, 5, null]) {
+      const text = shapeSummary({ ...base, outroMode: "none", outroSeconds: 0, outroCredits });
+      expect(text).not.toContain("קרדיט");
+      expect(text).not.toContain("כלול");
+    }
   });
 });
 

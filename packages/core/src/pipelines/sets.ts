@@ -430,20 +430,35 @@ async function quoteContext(db: Db, businessId: string) {
  * Price a Service A render. The ending drives most of the number, so this runs
  * planAOutro — the same call createSet makes — rather than guessing: if the
  * advisory says "freeze", the quote shows zero outro credits, always.
+ *
+ * `outroCredits` is what the ending ADDS, as the difference between two settled
+ * quotes. It is deliberately not the outro component: components are summed,
+ * clamped to the minimum and ceiled ONCE, so a 2.1-credit component can be a
+ * 2-credit delta, or 0 when `a_minimum_credits` is what decided the price.
+ * Both quotes come from this one call, off one `costs` snapshot and one plan,
+ * so no caller can difference two numbers that disagree about either.
  */
 export async function quoteASet(
   db: Db,
   opts: { businessId: string; demoId: string; audioRenderId: string },
-): Promise<RenderQuote> {
+): Promise<RenderQuote & { outroCredits: number }> {
   const { chargeable, costs, balance } = await quoteContext(db, opts.businessId);
   const plan = await planAOutro(db, { demoId: opts.demoId, audioRenderId: opts.audioRenderId });
+  const demoSeconds = plan.demoDurationMs / 1000;
   const quote = quoteServiceA({
-    demoSeconds: plan.demoDurationMs / 1000,
+    demoSeconds,
     outroMode: plan.outroMode,
     outroSeconds: Math.max(0, plan.remainderMs) / 1000,
     costs,
   });
-  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+  const withoutEnding = quoteServiceA({ demoSeconds, outroMode: "none", outroSeconds: 0, costs });
+  return {
+    creditsPerRender: quote.credits,
+    components: quote.components,
+    outroCredits: quote.credits - withoutEnding.credits,
+    chargeable,
+    balance,
+  };
 }
 
 /**

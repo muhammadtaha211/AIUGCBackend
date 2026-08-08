@@ -19,10 +19,9 @@ import { synthesize } from "../providers/elevenlabs";
 import { forcedAlign } from "../providers/whisperx";
 import { renderPrompt } from "../prompts";
 import { getStorage, storageKey } from "../storage";
-import { generateVoScript } from "./copy";
 import { applyPronunciationMap } from "./pronunciation";
 
-/** Length fit is deterministic: one tighter regeneration, then stretch up to ~5%. */
+/** The whole length fit: an inaudible stretch. Past it, the overrun is an ending. */
 const MAX_STRETCH = 1.05;
 
 /**
@@ -203,8 +202,11 @@ async function enhanceWithAudioTags(
 }
 
 /**
- * Job handler: audio tags -> pronunciation map -> TTS -> deterministic length
- * fit (one tighter regen, then atempo <=5%) -> word alignment -> karaoke chunks.
+ * Job handler: audio tags -> pronunciation map -> TTS -> length fit
+ * (atempo <=5%) -> word alignment -> karaoke chunks.
+ *
+ * The script this synthesizes is the script the customer approved: nothing here
+ * ever repoints audio_renders.script_id.
  */
 export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResult> {
   const { audioRenderId } = job.payload as { audioRenderId: string };
@@ -222,8 +224,7 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
       .set({ status: "generating" })
       .where(eq(audioRenders.id, audioRenderId));
 
-    let scriptId = audioRender.scriptId;
-    let regenerated = (job.state as { regenerated?: boolean }).regenerated ?? false;
+    const scriptId = audioRender.scriptId;
     const enhance = await getConfigValueOr(ctx.db, "tts_enhance", z.boolean(), false);
     const stability = await getConfigValueOr(ctx.db, "tts_stability", z.number(), undefined);
 
@@ -272,41 +273,11 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
 
       if (demoDurationMs && durationMs > demoDurationMs) {
         const ratio = durationMs / demoDurationMs;
-        const params = script.params as {
-          wordBudget?: number;
-          selectedAdvantages?: string[];
-          voiceId?: string;
-        };
-
-        if (ratio > MAX_STRETCH) {
-          if (script.kind === "vo_script" && !script.userEdited && !regenerated) {
-            // One regeneration with a tighter word budget, then re-synthesize.
-            const oldBudget = params.wordBudget ?? wordSequence(rendered).length;
-            const newBudget = Math.max(
-              5,
-              Math.floor(oldBudget * (demoDurationMs / durationMs) * 0.95),
-            );
-            const newScript = await generateVoScript(ctx.db, {
-              businessId: script.businessId,
-              demoId: script.demoId!,
-              selectedAdvantages: params.selectedAdvantages ?? [],
-              personaId: script.personaId ?? undefined,
-              voiceId: params.voiceId,
-              wordBudgetOverride: newBudget,
-            });
-            scriptId = newScript.id;
-            regenerated = true;
-            await ctx.db
-              .update(audioRenders)
-              .set({ scriptId })
-              .where(eq(audioRenders.id, audioRenderId));
-            await ctx.checkpoint({ regenerated: true });
-            continue;
-          }
-          // Deliberate overshoot (edited or already-regenerated script): keep
-          // the natural length — createSet resolves the remainder into a
-          // freeze or avatar ending per variant.
-        } else {
+        // Past MAX_STRETCH the overrun stands at its natural length: it is an
+        // ENDING, not a defect. planAOutro resolves it into a freeze or an
+        // avatar per variant and the advisory prices it before the customer
+        // confirms — so nothing is corrected upstream of that decision.
+        if (ratio <= MAX_STRETCH) {
           // Inaudible atempo stretch to fit.
           stretchRatio = ratio;
           if (!getEnv().DRY_RUN) {

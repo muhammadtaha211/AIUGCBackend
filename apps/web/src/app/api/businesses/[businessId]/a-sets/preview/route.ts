@@ -62,6 +62,9 @@ export async function POST(
       voSeconds: plan.voDurationMs / 1000,
       outroMode: plan.outroMode,
       outroSeconds: Math.max(0, plan.remainderMs) / 1000,
+      // What the ending adds, already differenced server-side against the same
+      // render without it. null = admin bypass, same rule as `quote` below.
+      outroCredits: quote.chargeable ? quote.outroCredits : null,
       // null = admin bypass: nothing is charged, so nothing is shown.
       quote: quote.chargeable
         ? {

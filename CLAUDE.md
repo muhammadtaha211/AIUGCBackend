@@ -24,7 +24,7 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 1. One format for Service A. No timeline editor. No automatic scene detection.
 2. Hook clips come only from the pre-rendered bank. No runtime face/video generation for hooks.
 3. Hebrew captions are rendered in Remotion (browser bidi handles RTL correctly). Never ffmpeg `drawtext` for Hebrew text.
-4. VO sync is loose by design: word budget from demo length → regenerate tighter once → time-stretch ≤ ~5% (`atempo`). No per-moment sync logic.
+4. VO sync is loose by design: the word budget from demo length is a target, not a cap; time-stretch ≤ ~5% (`atempo`) absorbs the rest. Anything past that is an ending, decided by `planAOutro` and priced in the advisory before confirm — never a regeneration. No per-moment sync logic. (Amended 2026-08-08: the length-fit regeneration in `handleSynthTts` was removed. It silently repointed `audio_renders.scriptId`, so customers approved audio for text they never saw, and it converted an overrun that has machinery into an undershoot that has none. Measured before removal: it fired 3 times in 14 renders and landed inside its target band 0 of 3 — once converting a 1.15x overrun into a 0.69x undershoot, twice spending an extra Claude call and an extra synthesis to reach the ending `planAOutro` would have chosen for free.)
 5. Mandatory audio-only preview gate before any voiced video render.
 6. Pronunciation = phonetic Hebrew respelling + a server-side find-replace map applied before TTS.
 7. No music is ever baked into organic exports.

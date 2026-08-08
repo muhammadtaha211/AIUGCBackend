@@ -274,8 +274,6 @@ export async function generateVoScript(
     personaId?: string;
     /** Explicit voice — the CLI escape hatch; wins over the persona's voice. */
     voiceId?: string;
-    /** Override for the length-fit regeneration path. */
-    wordBudgetOverride?: number;
     /** The chosen hook line, so the opener escalates past it instead of repeating it. */
     hookLineText?: string;
   },
@@ -285,7 +283,7 @@ export async function generateVoScript(
 
   let voiceId = opts.voiceId;
   // v5 speaks first-person as the persona, so the prompt needs the speaker's
-  // gender even when the voice was passed explicitly (the regeneration path).
+  // gender even when the voice was passed explicitly (the CLI's --voice).
   let personaGender = "female";
   if (opts.personaId) {
     const personaRows = await db
@@ -310,7 +308,8 @@ export async function generateVoScript(
 
   const demoSeconds = Math.round((demo.durationMs ?? 0) / 1000);
   const wps = await wordsPerSecond(db, voiceId);
-  const wordBudget = opts.wordBudgetOverride ?? Math.floor(demoSeconds * wps);
+  // A target, not a cap: an overrun becomes an ending, priced in the advisory.
+  const wordBudget = Math.floor(demoSeconds * wps);
   // Soft grounding from the demo row (customer-typed, optional). Snapshotted
   // into params below — the demo row stays editable, scripts must stay traceable.
   const demoDescription = demo.description?.trim() || undefined;
