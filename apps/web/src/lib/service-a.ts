@@ -58,6 +58,17 @@ export const demoDescriptionRequestSchema = z.object({
 // Copy + set bodies
 // ---------------------------------------------------------------------------
 
+/**
+ * Hook-line generation. Both fields optional: the first request of a session
+ * has nothing to avoid, and the CLI path has no persona. The `avoid` cap is 20
+ * (two batches) — past that the prompt bloats and the model gets so
+ * over-constrained the output degrades.
+ */
+export const hookLinesRequestSchema = z.object({
+  personaId: z.string().uuid().optional(),
+  avoid: z.array(z.string().min(1).max(200)).max(20).optional(),
+});
+
 export const voScriptRequestSchema = z.object({
   demoId: z.string().uuid(),
   personaId: z.string().uuid(),

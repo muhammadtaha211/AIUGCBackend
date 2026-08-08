@@ -10,15 +10,27 @@ import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
-import type { HookClip, HookLineOption } from "@/lib/service-a-ui";
+import { HOOK_LINE_CHOSEN_LABEL, HOOK_LINE_OTHERS_LABEL } from "@/lib/quote-ui";
+import {
+  hookHalfOptions,
+  type HookBatch,
+  type HookClip,
+  type HookLineOption,
+} from "@/lib/service-a-ui";
 import { postJson } from "@/lib/use-api";
 import { PlacementEditor, fittedFontSize, useHookLineMeasure } from "./placement-editor";
 
 type StepHookStudioProps = {
   businessId: string;
+  /** The speaker — hook lines are written in this persona's first person. */
+  personaId: string;
   hook: HookClip;
-  hookLines: HookLineOption[] | null;
-  setHookLines: (value: HookLineOption[] | null) => void;
+  hookBatch: HookBatch | null;
+  setHookBatch: (value: HookBatch | null) => void;
+  hookHalf: 0 | 1;
+  setHookHalf: (value: 0 | 1) => void;
+  hookAvoid: string[];
+  setHookAvoid: (value: string[]) => void;
   hookLine: HookLineOption | null;
   setHookLine: (value: HookLineOption | null) => void;
   /** The customer-placed rect; null = untouched (the clip's default). */
@@ -36,12 +48,21 @@ type StepHookStudioProps = {
  * shrink-to-fit live, a gentle note below the legibility floor, nothing blocks.
  * A saved edit creates a NEW hook-line script row (immutability, like the VO
  * script); the variant stores the final line id.
+ *
+ * One generation writes ten frames; five show at a time. The first reroll flips
+ * to the complementary five for free, the next mints a new batch with `avoid`.
+ * The customer is never told which is which — one button, one label.
  */
 export function StepHookStudio({
   businessId,
+  personaId,
   hook,
-  hookLines,
-  setHookLines,
+  hookBatch,
+  setHookBatch,
+  hookHalf,
+  setHookHalf,
+  hookAvoid,
+  setHookAvoid,
   hookLine,
   setHookLine,
   rect,
@@ -63,27 +84,46 @@ export function StepHookStudio({
     previewText !== "" &&
     fittedFontSize(previewText, shownRect, measure) < HOOK_LINE_LEGIBLE_MIN_PX;
 
+  /** The five on screen, and the pick when a reroll has moved it out of them. */
+  const shown = hookBatch ? hookHalfOptions(hookBatch, hookHalf) : null;
+  const pinned =
+    hookLine && shown && !shown.some((option) => option.scriptId === hookLine.scriptId)
+      ? hookLine
+      : null;
+
   async function generateOptions() {
     setError(null);
     setBusy("options");
     const result = await postJson<{ options: HookLineOption[] }>(
       `/api/businesses/${businessId}/hook-lines`,
+      { personaId, avoid: hookAvoid },
     );
     setBusy(null);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       return setError(result.error);
     }
-    setHookLines(result.body.options);
-    setHookLine(null);
-    setEditedText("");
+    // Selection survives a new batch: the pick is a persisted script row and
+    // still renders. Clearing it would silently discard a deliberate choice.
+    setHookBatch({ options: result.body.options, parity: Math.random() < 0.5 ? 1 : 0 });
+    setHookHalf(0);
+    setHookAvoid([...result.body.options.map((option) => option.text), ...hookAvoid].slice(0, 20));
+  }
+
+  /**
+   * One button, one label. The first press flips to the five we already paid
+   * for; the next one buys a fresh batch that avoids everything shown so far.
+   */
+  function reroll() {
+    if (hookBatch && hookHalf === 0) return setHookHalf(1);
+    void generateOptions();
   }
 
   // Options generate on entering the studio (they derive from the
-  // questionnaire alone, so they never depend on the demo or the clip).
+  // questionnaire and the speaker's gender, never from the demo or the clip).
   useEffect(() => {
-    if (hookLines === null) void generateOptions();
-    // generateOptions reads only stable props; hookLines gates the one-shot.
+    if (hookBatch === null) void generateOptions();
+    // generateOptions reads only stable props; hookBatch gates the one-shot.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectOption(option: HookLineOption) {
@@ -147,29 +187,31 @@ export function StepHookStudio({
         </div>
 
         <div className="min-w-0 flex-1">
-          {hookLines === null && !error && (
+          {shown === null && !error && (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
               <Spinner /> כותבים משפטי פתיחה לפי שאלון העסק…
             </div>
           )}
 
-          {hookLines !== null && (
+          {shown !== null && (
             <div role="radiogroup" aria-label="בחירת משפט פתיחה" className="space-y-2">
-              {hookLines.map((option) => (
-                <button
+              {/* A reroll can move the chosen line off screen. Pin it at the
+                  top rather than showing nothing selected — it is still what
+                  the render burns, and it stays clickable and checked. */}
+              {pinned && (
+                <>
+                  <p className="text-[12px] text-gray-400">{HOOK_LINE_CHOSEN_LABEL}</p>
+                  <OptionButton option={pinned} selected onSelect={selectOption} />
+                  <p className="pt-2 text-[12px] text-gray-400">{HOOK_LINE_OTHERS_LABEL}</p>
+                </>
+              )}
+              {shown.map((option) => (
+                <OptionButton
                   key={option.scriptId}
-                  type="button"
-                  role="radio"
-                  aria-checked={hookLine?.scriptId === option.scriptId}
-                  onClick={() => selectOption(option)}
-                  className={`w-full rounded-xl border px-4 py-3 text-start text-base transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-                    hookLine?.scriptId === option.scriptId
-                      ? "border-accent bg-accent/10 text-white ring-1 ring-accent"
-                      : "border-white/10 bg-white/5 text-gray-200 hover:border-white/25 hover:bg-white/[0.08]"
-                  }`}
-                >
-                  {option.text}
-                </button>
+                  option={option}
+                  selected={hookLine?.scriptId === option.scriptId}
+                  onSelect={selectOption}
+                />
               ))}
             </div>
           )}
@@ -194,7 +236,7 @@ export function StepHookStudio({
             </p>
           )}
 
-          {hookLines !== null && (
+          {shown !== null && (
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <Button
                 type="button"
@@ -213,14 +255,14 @@ export function StepHookStudio({
                 className="flex-1"
                 loading={busy === "options"}
                 disabled={busy === "save"}
-                onClick={() => void generateOptions()}
+                onClick={reroll}
               >
                 צור אפשרויות חדשות
               </Button>
             </div>
           )}
 
-          {hookLines === null && error && (
+          {shown === null && error && (
             <Button
               type="button"
               variant="secondary"
@@ -234,5 +276,32 @@ export function StepHookStudio({
         </div>
       </div>
     </div>
+  );
+}
+
+/** One selectable line. Two call sites (the pinned pick and the five). */
+function OptionButton({
+  option,
+  selected,
+  onSelect,
+}: {
+  option: HookLineOption;
+  selected: boolean;
+  onSelect: (option: HookLineOption) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={() => onSelect(option)}
+      className={`w-full rounded-xl border px-4 py-3 text-start text-base transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+        selected
+          ? "border-accent bg-accent/10 text-white ring-1 ring-accent"
+          : "border-white/10 bg-white/5 text-gray-200 hover:border-white/25 hover:bg-white/[0.08]"
+      }`}
+    >
+      {option.text}
+    </button>
   );
 }

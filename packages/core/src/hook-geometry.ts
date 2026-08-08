@@ -17,8 +17,18 @@ export type FramePoint = { x: number; y: number };
 /** Smaller than this is unusable for a hook line (min font 40px at line-height 1.2). */
 export const MIN_SAFE_AREA = 120;
 
-/** Where a fresh clip's rect starts — the sample-render default, mid-frame. */
-export const DEFAULT_SAFE_AREA: SafeRect = { x: 90, y: 640, w: 900, h: 520 };
+/**
+ * Where a fresh clip's rect starts in the admin register editor. A SEED, not a
+ * fallback: the rect stays required at register, and "שכפול לדמות" inherits the
+ * source clip's rect instead of this.
+ *
+ * The vertical centre sits at 40% of frame height measured from the bottom
+ * (y 1152), which keeps the burned line clear of the bottom band where TikTok
+ * and Instagram lay their own caption text and UI chrome. Height 179 is the
+ * measured two-line envelope: 2 lines fit at ≤74px, 3 only at the 48px
+ * legibility floor.
+ */
+export const DEFAULT_HOOK_TEXT_RECT: SafeRect = { x: 25, y: 1062, w: 1009, h: 179 };
 
 /**
  * The legibility floor: below this fitted font size (px at 1080x1920) a burned

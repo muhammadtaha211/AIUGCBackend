@@ -122,12 +122,14 @@ const copy = program.command("copy").description("Claude copywriting (sync from 
 copy
   .command("hooks")
   .requiredOption("--business <id>")
-  .option("--n <n>", "number of options", "6")
+  .option("--n <n>", "number of options (the prompt always writes 10; this head-slices)", "10")
+  .option("--persona <id>", "the speaker — hook lines are first-person; absent defaults female")
   .action(
-    run(async (opts: { business: string; n: string }) => {
+    run(async (opts: { business: string; n: string; persona?: string }) => {
       const rows = await generateHookLines(getDb(), {
         businessId: opts.business,
         n: Number(opts.n),
+        personaId: opts.persona,
       });
       for (const row of rows) {
         const angle = (row.params as { angle?: string }).angle;

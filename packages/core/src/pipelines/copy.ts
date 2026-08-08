@@ -53,32 +53,81 @@ const hookLinesOutput = z.object({
   options: z.array(z.object({ text: z.string(), angle: z.string() })),
 });
 
+/**
+ * One line per frame in the prompt's frame library. The prompt always writes
+ * all ten at equal effort — `n` only decides how many rows we keep, so a
+ * smaller `n` head-slices the frame order (fine for `copy hooks --n 3`).
+ */
+export const HOOK_LINE_FRAMES = 10;
+
+/** Frame order matches prompts/hook_lines/v6.md — the wizard interleaves on index. */
+const CANNED_HOOK_LINES = [
+  { text: "POV: מישהו שאל אותי איך עשיתי את זה", angle: "pov_scene" },
+  { text: "סליחה, ככה עושים את זה עכשיו???", angle: "disbelief" },
+  { text: "מצאתי משהו ואני לא אמורה לספר על זה", angle: "forbidden_secret" },
+  { text: "חושבת על כל הזמן שבזבזתי על זה", angle: "regret_waste" },
+  { text: "עשיתי את זה ב-0 שקל... זה נורמלי?", angle: "humblebrag_uncertainty" },
+  { text: "אני יכולה להתחתן עם מי ששלח לי את זה", angle: "absurd_affection" },
+  { text: "מזתומרת מצאו דרך לעשות את זה בדקה", angle: "generational" },
+  { text: '"אין לי זמן ללמוד" — יאללה, בסדר', angle: "quoted_objection" },
+  { text: "זהו. נגמר. השתנה לי כל הסמסטר", angle: "era_declaration" },
+  { text: "בגלל זה כולם מוחקים את ChatGPT", angle: "hidden_method" },
+];
+
 export async function generateHookLines(
   db: Db,
-  opts: { businessId: string; n?: number },
+  opts: {
+    businessId: string;
+    n?: number;
+    /** Lines already written for this business this session — not to be repeated. */
+    avoid?: string[];
+    /** The speaker: hook lines are first-person, and Hebrew first person is gendered. */
+    personaId?: string;
+  },
 ): Promise<Script[]> {
-  const n = opts.n ?? 6;
+  const n = opts.n ?? HOOK_LINE_FRAMES;
   const questionnaire = await requireQuestionnaire(db, opts.businessId);
 
-  let options: { text: string; angle: string }[];
-  let promptVersion = "dry_run";
-  if (getEnv().DRY_RUN) {
-    const canned = [
-      { text: "זה חתך לי את העבודה לשתי דקות", angle: "claim" },
-      { text: "מי שעדיין עושה את זה ידנית, מפסיד", angle: "threat_opportunity" },
-      { text: "בזבזתי שעתיים על באנר אחד, עד שזה", angle: "curiosity_gap" },
-      { text: "POV: סיימת את העבודה בשתי דקות", angle: "pov" },
-    ];
-    options = Array.from({ length: n }, (_, i) => canned[i % canned.length]!);
+  // Same resolution as generateVoScript: nullable column -> female + warn.
+  let personaGender = "female";
+  if (opts.personaId) {
+    const personaRows = await db
+      .select()
+      .from(personas)
+      .where(eq(personas.id, opts.personaId))
+      .limit(1);
+    const persona = personaRows[0];
+    if (!persona) throw new Error(`persona ${opts.personaId} not found`);
+    if (persona.gender) {
+      personaGender = persona.gender;
+    } else {
+      logger.warn({ personaId: persona.id }, "persona has no gender; defaulting speaker to female");
+    }
   } else {
-    const result = await callClaude(
-      db,
-      opts.businessId,
-      "hook_lines",
-      { questionnaire: JSON.stringify(questionnaire, null, 2), n },
-      hookLinesOutput,
+    logger.warn(
+      { businessId: opts.businessId },
+      "hook lines without a persona; defaulting speaker to female",
     );
-    options = result.object.options;
+  }
+
+  const vars = {
+    questionnaire: JSON.stringify(questionnaire, null, 2),
+    avoid: opts.avoid?.length
+      ? opts.avoid.map((line) => `- ${line}`).join("\n")
+      : "(אין — זו הקבוצה הראשונה)",
+    persona_gender: personaGender,
+  };
+
+  let options: { text: string; angle: string }[];
+  let promptVersion: string;
+  if (getEnv().DRY_RUN) {
+    // Dry-run still renders the template so prompt_version stays traceable and
+    // a template/vars mismatch surfaces in tests, not in production.
+    ({ promptVersion } = renderPrompt("hook_lines", vars));
+    options = Array.from({ length: n }, (_, i) => CANNED_HOOK_LINES[i % CANNED_HOOK_LINES.length]!);
+  } else {
+    const result = await callClaude(db, opts.businessId, "hook_lines", vars, hookLinesOutput);
+    options = result.object.options.slice(0, n);
     promptVersion = result.promptVersion;
   }
 

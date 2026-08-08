@@ -98,6 +98,39 @@ export type HookClip = {
 
 export type HookLineOption = { scriptId: string; text: string; angle: string };
 
+/**
+ * One generation: all ten frames in prompt order, plus the coin-flip that
+ * decides which five go on screen first.
+ *
+ * The parity lives on the batch, not on the component, because it belongs to
+ * this generation. A fixed parity would pin frame 1 (POV) to the first screen
+ * for every customer forever — the second screen would be structurally
+ * POV-less, and the angle-pick data would record display position rather than
+ * which frames actually win.
+ */
+export type HookBatch = { options: HookLineOption[]; parity: 0 | 1 };
+
+/**
+ * The five on screen. Interleaved by FRAME INDEX, never split down the middle:
+ * the model wrote all ten in one pass at equal effort, so a rank-ordered split
+ * would serve the weaker five on reroll and the second screen would feel flat.
+ * Interleaving makes the two halves simply different shapes.
+ */
+export function hookHalfOptions(batch: HookBatch, half: 0 | 1): HookLineOption[] {
+  return batch.options.filter((_, index) => index % 2 === (half ^ batch.parity));
+}
+
+/**
+ * Whether two personas speak with the same voice as far as the COPY is
+ * concerned. Hook lines are written in the persona's first person and Hebrew
+ * first person is gendered, so a cross-gender swap invalidates them — but a
+ * female→female swap leaves all ten valid. A null gender generates feminine
+ * copy (core's documented default), so null and "female" are the same speaker.
+ */
+export function sameSpeakerGender(a: string | null, b: string | null): boolean {
+  return (a ?? "female") === (b ?? "female");
+}
+
 // ---------------------------------------------------------------------------
 // The projected ending (script step: estimated; audio step: exact) — advisory.
 // ---------------------------------------------------------------------------

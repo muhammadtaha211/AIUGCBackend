@@ -23,6 +23,7 @@ export async function loadPersonaCatalog(): Promise<Persona[]> {
     .select({
       id: personas.id,
       name: personas.name,
+      gender: personas.gender,
       filePath: personaImages.filePath,
       catalogPath: personaImages.catalogPath,
       blurDataUrl: personaImages.blurDataUrl,
@@ -36,9 +37,12 @@ export async function loadPersonaCatalog(): Promise<Persona[]> {
     .where(eq(personas.active, true))
     .orderBy(personas.createdAt);
 
-  const byPersona = new Map<string, { name: string; images: (typeof rows)[number][] }>();
+  const byPersona = new Map<
+    string,
+    { name: string; gender: string | null; images: (typeof rows)[number][] }
+  >();
   for (const row of rows) {
-    const entry = byPersona.get(row.id) ?? { name: row.name, images: [] };
+    const entry = byPersona.get(row.id) ?? { name: row.name, gender: row.gender, images: [] };
     entry.images.push(row);
     byPersona.set(row.id, entry);
   }
@@ -47,13 +51,19 @@ export async function loadPersonaCatalog(): Promise<Persona[]> {
   // round-trip). Pre-backfill rows fall back to signing, in parallel.
   const storage = getStorage();
   return Promise.all(
-    [...byPersona].flatMap(([id, { name, images }]) => {
+    [...byPersona].flatMap(([id, { name, gender, images }]) => {
       const thumbnail = personaThumbnail(images);
       if (!thumbnail) return [];
       const url = thumbnail.catalogPath
         ? Promise.resolve(storage.publicUrl(thumbnail.catalogPath))
         : storage.signedUrl(thumbnail.filePath, SIGNED_URL_TTL_SECONDS);
-      return url.then((imageUrl) => ({ id, name, imageUrl, blurDataUrl: thumbnail.blurDataUrl }));
+      return url.then((imageUrl) => ({
+        id,
+        name,
+        gender,
+        imageUrl,
+        blurDataUrl: thumbnail.blurDataUrl,
+      }));
     }),
   );
 }

@@ -9,8 +9,10 @@ import { StepAudio } from "@/components/b-wizard/step-audio";
 import { StepPersona } from "@/components/b-wizard/step-persona";
 import {
   A_WIZARD_STEPS,
+  sameSpeakerGender,
   type AWizardStep,
   type DemoState,
+  type HookBatch,
   type HookClip,
   type HookLineOption,
 } from "@/lib/service-a-ui";
@@ -58,7 +60,12 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   const [personaCatalog, setPersonaCatalog] = useState<Persona[] | null>(initialCatalog ?? null);
   const [persona, setPersona] = useState<Persona | null>(null);
   const [hook, setHook] = useState<HookClip | null>(null);
-  const [hookLines, setHookLines] = useState<HookLineOption[] | null>(null);
+  /** All ten frames from one generation; null = not generated yet. */
+  const [hookBatch, setHookBatch] = useState<HookBatch | null>(null);
+  /** Which interleaved five are on screen. The first reroll flips this for free. */
+  const [hookHalf, setHookHalf] = useState<0 | 1>(0);
+  /** Every line written this session, most recent first — sent as `avoid`. */
+  const [hookAvoid, setHookAvoid] = useState<string[]>([]);
   const [hookLine, setHookLine] = useState<HookLineOption | null>(null);
   /** Customer-placed hook-line rect; null = the clip's default safe area. */
   const [rect, setRect] = useState<SafeRect | null>(null);
@@ -77,8 +84,13 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   /**
    * A different persona invalidates the VO script and audio (the voice
    * changed) and a persona-swapped hook clip that belonged to the old persona
-   * (it is not in the new persona's gallery). Generic clips and the hook-line
-   * options survive — they derive from the questionnaire alone.
+   * (it is not in the new persona's gallery). Generic clips survive.
+   *
+   * Hook lines survive a persona swap but NOT a gender swap: since hook_lines
+   * v6 they speak in the persona's own first person, and Hebrew first person is
+   * gendered — a feminine line under a male persona is burned into the frame
+   * and unfixable without a re-render. A same-gender swap leaves all ten valid,
+   * so it keeps them (and the paid-for unseen half).
    */
   function selectPersona(next: Persona) {
     if (persona && persona.id !== next.id) {
@@ -88,6 +100,12 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
       if (hook?.personaId && hook.personaId !== next.id) {
         setHook(null);
         setRect(null);
+      }
+      if (!sameSpeakerGender(persona.gender, next.gender)) {
+        setHookBatch(null);
+        setHookHalf(0);
+        setHookAvoid([]);
+        setHookLine(null);
       }
     }
     setPersona(next);
@@ -179,12 +197,17 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
             />
           )}
 
-          {step === "hookStudio" && hook && (
+          {step === "hookStudio" && hook && persona && (
             <StepHookStudio
               businessId={businessId}
+              personaId={persona.id}
               hook={hook}
-              hookLines={hookLines}
-              setHookLines={setHookLines}
+              hookBatch={hookBatch}
+              setHookBatch={setHookBatch}
+              hookHalf={hookHalf}
+              setHookHalf={setHookHalf}
+              hookAvoid={hookAvoid}
+              setHookAvoid={setHookAvoid}
               hookLine={hookLine}
               setHookLine={setHookLine}
               rect={rect}

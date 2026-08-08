@@ -24,7 +24,9 @@ const previewProps = {
 const previewPropsA = {
   hookSrc: staticFile("fixtures/talking-head.mp4"),
   hookLine: "זה מה שאף אחד לא מספר לכם",
-  hookTextSafeArea: { x: 90, y: 640, w: 900, h: 520 },
+  // Mirrors DEFAULT_HOOK_TEXT_RECT in @aiugc/core/hook-geometry — kept as a
+  // literal because core depends on this package, never the other way round.
+  hookTextSafeArea: { x: 25, y: 1062, w: 1009, h: 179 },
   demoSrc: staticFile("fixtures/talking-head.mp4"),
   voiceoverSrc: staticFile("fixtures/voiceover.wav"),
   captions: sampleCaptions,

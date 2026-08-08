@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { DEFAULT_SAFE_AREA, type SafeRect } from "@aiugc/core/hook-geometry";
+import { DEFAULT_HOOK_TEXT_RECT, type SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { hookFileError, hookMetadataError } from "@/lib/hooks";
@@ -74,7 +74,7 @@ export function UploadHook({
     width: number;
     height: number;
   } | null>(null);
-  const [rect, setRect] = useState<SafeRect>(prefill?.textSafeArea ?? DEFAULT_SAFE_AREA);
+  const [rect, setRect] = useState<SafeRect>(prefill?.textSafeArea ?? DEFAULT_HOOK_TEXT_RECT);
   const [tags, setTags] = useState({
     energy: prefill?.tags.energy ?? "",
     gender: prefill?.tags.gender ?? "",
@@ -89,7 +89,7 @@ export function UploadHook({
   function reset() {
     if (prepared) URL.revokeObjectURL(prepared.previewUrl);
     setPrepared(null);
-    setRect(DEFAULT_SAFE_AREA);
+    setRect(DEFAULT_HOOK_TEXT_RECT);
     setTags({ energy: "", gender: "", vibe: "" });
     setPersonaId("");
     if (inputRef.current) inputRef.current.value = "";
@@ -111,7 +111,7 @@ export function UploadHook({
     }
     if (prepared) URL.revokeObjectURL(prepared.previewUrl);
     setPrepared({ file, previewUrl: url, ...meta });
-    setRect(prefill?.textSafeArea ?? DEFAULT_SAFE_AREA);
+    setRect(prefill?.textSafeArea ?? DEFAULT_HOOK_TEXT_RECT);
   }
 
   async function upload() {

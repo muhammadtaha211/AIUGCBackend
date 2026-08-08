@@ -15,10 +15,11 @@ keyless (the e2e test relies on this).
 - **Prompt versioning**: prompts are files — `prompts/<name>/v<N>.md` with `{{var}}`
   interpolation (`src/prompts.ts`). A revision is a new file, never an edit; every generated
   script row records `prompt_version = "<name>@v<N>"`, so any output is traceable to the exact
-  template. Current prompts: `hook_lines` (v5: adds a `pov` form — Latin `POV:` prefix,
-  second-person aspiration + third-person world-state sub-shapes — to the
-  exclusion/claim/curiosity forms; prefix exempt from the word cap, counted in the ~40-char
-  budget), `benefit_captions`, `vo_script` (v6: five-beat FOMO arc, `{{hook_line}}`
+  template. Current prompts: `hook_lines` (v6: ten sentence FRAMES, one line each, in a fixed
+  order the wizard interleaves on; first-person speaker with a two-axis gender rule
+  (`{{persona_gender}}` vs `target_audience`), a three-tier fabrication policy, and
+  `{{avoid}}` for reroll batches; ~60-char budget, `POV:` prefix exempt from the word cap),
+  `benefit_captions`, `vo_script` (v6: five-beat FOMO arc, `{{hook_line}}`
   escalation, 90–100% word-budget band), `b_script` (v3 adds customer pointers + duration
   preset), `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;
   v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses).

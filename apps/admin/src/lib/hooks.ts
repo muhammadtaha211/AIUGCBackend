@@ -11,7 +11,7 @@ import { z } from "zod";
  */
 
 export {
-  DEFAULT_SAFE_AREA,
+  DEFAULT_HOOK_TEXT_RECT,
   HOOK_FRAME,
   MIN_SAFE_AREA,
   framePoint,

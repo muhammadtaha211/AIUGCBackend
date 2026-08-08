@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_SAFE_AREA,
+  DEFAULT_HOOK_TEXT_RECT,
   HOOK_LINE_LEGIBLE_MIN_PX,
   MIN_SAFE_AREA,
   framePoint,
@@ -83,10 +83,22 @@ describe("safe-area coordinate mapping (display px <-> 1080x1920 frame)", () => 
   });
 
   it("keeps the default rect inside the frame and above minimum size", () => {
-    expect(DEFAULT_SAFE_AREA.x + DEFAULT_SAFE_AREA.w).toBeLessThanOrEqual(1080);
-    expect(DEFAULT_SAFE_AREA.y + DEFAULT_SAFE_AREA.h).toBeLessThanOrEqual(1920);
-    expect(DEFAULT_SAFE_AREA.w).toBeGreaterThanOrEqual(MIN_SAFE_AREA);
-    expect(DEFAULT_SAFE_AREA.h).toBeGreaterThanOrEqual(MIN_SAFE_AREA);
+    expect(DEFAULT_HOOK_TEXT_RECT.x + DEFAULT_HOOK_TEXT_RECT.w).toBeLessThanOrEqual(1080);
+    expect(DEFAULT_HOOK_TEXT_RECT.y + DEFAULT_HOOK_TEXT_RECT.h).toBeLessThanOrEqual(1920);
+    expect(DEFAULT_HOOK_TEXT_RECT.w).toBeGreaterThanOrEqual(MIN_SAFE_AREA);
+    expect(DEFAULT_HOOK_TEXT_RECT.h).toBeGreaterThanOrEqual(MIN_SAFE_AREA);
+  });
+
+  it("keeps the seed rect clear of the platform bottom band (TikTok/Reels chrome)", () => {
+    // The whole point of the seed's placement: the burned line must not land
+    // where the platforms draw their own caption text and action rail.
+    expect(DEFAULT_HOOK_TEXT_RECT.y + DEFAULT_HOOK_TEXT_RECT.h).toBeLessThanOrEqual(1920 - 440);
+  });
+
+  it("the seed rect holds two lines above the legibility floor", () => {
+    // 2 lines at line-height 1.2 must fit the height at >= the floor, or the
+    // fitter drops a ~60-character line straight to 3 lines at the floor.
+    expect(DEFAULT_HOOK_TEXT_RECT.h).toBeGreaterThanOrEqual(2 * 1.2 * HOOK_LINE_LEGIBLE_MIN_PX);
   });
 
   it("the legibility floor sits between the fitter's min (40) and base (92)", () => {

@@ -8,9 +8,13 @@ import {
   endingSentence,
   estimatedEnding,
   estimateVoSeconds,
+  hookHalfOptions,
   isActiveARenderStatus,
   isIngestingDemoStatus,
+  sameSpeakerGender,
   shapeSummary,
+  type HookBatch,
+  type HookLineOption,
 } from "../src/lib/service-a-ui";
 
 describe("wizard steps", () => {
@@ -157,5 +161,63 @@ describe("A render timeline", () => {
     expect(isActiveARenderStatus("rendering")).toBe(true);
     expect(isActiveARenderStatus("released")).toBe(false);
     expect(isActiveARenderStatus("failed")).toBe(false);
+  });
+});
+
+describe("hook-line batch halves", () => {
+  const options: HookLineOption[] = Array.from({ length: 10 }, (_, i) => ({
+    scriptId: `id-${i}`,
+    text: `line ${i}`,
+    angle: `frame_${i}`,
+  }));
+
+  for (const parity of [0, 1] as const) {
+    it(`splits ten frames into two disjoint fives (parity ${parity})`, () => {
+      const batch: HookBatch = { options, parity };
+      const a = hookHalfOptions(batch, 0);
+      const b = hookHalfOptions(batch, 1);
+
+      expect(a).toHaveLength(5);
+      expect(b).toHaveLength(5);
+      const angles = (half: HookLineOption[]) => half.map((option) => option.angle);
+      expect(angles(a).filter((angle) => angles(b).includes(angle))).toEqual([]);
+      expect([...angles(a), ...angles(b)].sort()).toEqual(
+        options.map((option) => option.angle).sort(),
+      );
+    });
+
+    it(`interleaves rather than cutting down the middle (parity ${parity})`, () => {
+      // A rank-ordered split would serve the weaker five on reroll. Each half
+      // must take every OTHER frame, so both halves span the frame library.
+      const half = hookHalfOptions({ options, parity }, 0);
+      const indices = half.map((option) => options.indexOf(option));
+      expect(indices).toEqual([parity, parity + 2, parity + 4, parity + 6, parity + 8]);
+    });
+  }
+
+  it("puts a different frame first depending on the batch's parity", () => {
+    // Fixed parity would pin frame 1 (POV) to the first screen forever.
+    const first = (parity: 0 | 1) => hookHalfOptions({ options, parity }, 0)[0]!.angle;
+    expect(first(0)).not.toBe(first(1));
+  });
+});
+
+describe("speaker gender (hook-line invalidation)", () => {
+  // The wizard clears hookBatch/hookLine exactly when this returns false.
+  it("keeps the batch across a same-gender persona swap", () => {
+    expect(sameSpeakerGender("female", "female")).toBe(true);
+    expect(sameSpeakerGender("male", "male")).toBe(true);
+  });
+
+  it("clears it across a cross-gender swap", () => {
+    expect(sameSpeakerGender("female", "male")).toBe(false);
+    expect(sameSpeakerGender("male", "female")).toBe(false);
+  });
+
+  it("treats a null gender as female, because that is what core generates", () => {
+    expect(sameSpeakerGender(null, "female")).toBe(true);
+    expect(sameSpeakerGender("female", null)).toBe(true);
+    expect(sameSpeakerGender(null, null)).toBe(true);
+    expect(sameSpeakerGender(null, "male")).toBe(false);
   });
 });

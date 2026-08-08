@@ -37,6 +37,15 @@ export function hasShortfall(quote: QuoteView): boolean {
   return quote !== null && quote.shortfall > 0;
 }
 
+/**
+ * Hook studio: shown only when the chosen line is not among the five currently
+ * on screen (after a reroll), so the pick stays visible and stays selected.
+ * `אפשרויות אחרות` = "the other ones", not `אפשרויות נוספות` ("additional") —
+ * the five below are alternatives to the pick, not extras on top of it.
+ */
+export const HOOK_LINE_CHOSEN_LABEL = "המשפט שבחרתם";
+export const HOOK_LINE_OTHERS_LABEL = "אפשרויות אחרות";
+
 /** The wizard-entry gate: an empty balance, before any work is done. */
 export const NO_CREDITS_TITLE = "אין קרדיטים בחשבון";
 export const NO_CREDITS_BODY =

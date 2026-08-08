@@ -86,6 +86,13 @@ export function wizardSteps(category: string | undefined): WizardStep[] {
 export type Persona = {
   id: string;
   name: string;
+  /**
+   * The speaker's gender. Required (not optional) on purpose: Service A's hook
+   * lines are written in this persona's first person, so a catalog query that
+   * quietly stopped selecting the column would stop invalidating stale lines
+   * without any type error. null = unset on the row; core treats that as female.
+   */
+  gender: string | null;
   imageUrl: string;
   /** Tiny base64 WebP for next/image placeholder="blur"; null on old rows. */
   blurDataUrl?: string | null;
