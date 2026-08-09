@@ -16,6 +16,7 @@ import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { createComposite } from "../src/pipelines/composites";
 import { creditBalance, grantPeriod } from "../src/pipelines/credits";
 import { createBRender } from "../src/pipelines/sets";
+import { findDeadStuckRenders } from "../src/pipelines/janitor";
 import { RENDER_RETRIES_EXHAUSTED_MESSAGE } from "../src/pipelines/renders";
 import { approveAudio, requestAudio } from "../src/pipelines/tts";
 import { setLipsyncProvider } from "../src/providers/lipsync";
@@ -334,6 +335,10 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
     expect(render.status).toBe("failed");
     expect(render.error).toBe(RENDER_RETRIES_EXHAUSTED_MESSAGE);
     expect(await creditBalance(db, biz.ownerUserId)).toBe(100);
+
+    // The reaper finds zero rows in normal operation — the immediate terminal
+    // path already did the work. This assertion IS the proof of that.
+    expect(await findDeadStuckRenders(db)).toHaveLength(0);
   });
 
   it("a resurrected job cannot overwrite a failed render or respend on it", async () => {

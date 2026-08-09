@@ -14,7 +14,8 @@ import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { generateHookLines, generateVoScript } from "../src/pipelines/copy";
 import { creditBalance, grantCredits, InsufficientCreditsError } from "../src/pipelines/credits";
 import { createDemo } from "../src/pipelines/demos";
-import { handleJanitor } from "../src/pipelines/janitor";
+import { handleReapDeadRenders } from "../src/pipelines/janitor";
+import { RENDER_RETRIES_EXHAUSTED_MESSAGE } from "../src/pipelines/renders";
 import { rejectRender } from "../src/pipelines/qc";
 import { createBRender, createSet, quoteASet, quoteBRender } from "../src/pipelines/sets";
 import { getStorage, setStorage } from "../src/storage";
@@ -393,14 +394,14 @@ describe("refunds", { timeout: 120_000 }, () => {
     const render = renders[0]!;
     const balanceAfterDebit = await creditBalance(db, ownerUserId);
 
-    // The job dies after its retries; the janitor's dead sweep is the only
-    // path that will ever refund this render.
+    // The job dies WITHOUT running its terminal path (worker OOM/kill leaves
+    // exactly this shape); the reaper sweep is the net that refunds it.
     await db
       .update(dbSchema.jobs)
       .set({ status: "dead", lastError: "boom" })
       .where(sql`${dbSchema.jobs.payload}->>'videoRenderId' = ${render.id}`);
 
-    await handleJanitor(
+    await handleReapDeadRenders(
       {} as never,
       {
         db,
@@ -419,8 +420,18 @@ describe("refunds", { timeout: 120_000 }, () => {
       balanceAfterDebit + Math.abs((await debitsFor(render.id))[0]!.delta),
     );
 
+    // The reaper writes the fixed Hebrew string — never the job's raw lastError.
+    const reaped = (
+      await db
+        .select()
+        .from(dbSchema.videoRenders)
+        .where(sql`${dbSchema.videoRenders.id} = ${render.id}`)
+    )[0]!;
+    expect(reaped.status).toBe("failed");
+    expect(reaped.error).toBe(RENDER_RETRIES_EXHAUSTED_MESSAGE);
+
     // A second sweep must not refund twice.
-    await handleJanitor(
+    await handleReapDeadRenders(
       {} as never,
       {
         db,

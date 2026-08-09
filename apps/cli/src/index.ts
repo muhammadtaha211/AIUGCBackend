@@ -18,6 +18,7 @@ import {
   createBusiness,
   createDemo,
   createSet,
+  ensureReaperJob,
   generateBenefitCaptions,
   generateBScript,
   generateHookLines,
@@ -560,6 +561,9 @@ program
   .action(
     run(async (opts: { once?: boolean }) => {
       const db = getDb();
+      // Stuck-render repair is wanted on every machine that runs jobs (unlike
+      // the daily janitor, which stays server-only — retention deletes).
+      await ensureReaperJob(db);
       const handlers = buildHandlers();
       const lightTypes = Object.keys(handlers).filter(
         (t) => !(HEAVY_JOB_TYPES as readonly string[]).includes(t),
