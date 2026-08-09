@@ -8,6 +8,7 @@ import {
   failPermanent,
   failTransient,
   parkForBudget,
+  recoverExpiredLeases,
   reschedule,
   type Job,
 } from "./queue";
@@ -83,8 +84,23 @@ export interface WorkerLaneOptions {
  */
 export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
   const pollIntervalMs = opts.pollIntervalMs ?? 2000;
+  let lastLeaseSweep = 0;
   for (;;) {
     if (opts.signal?.aborted) return;
+    // Lane-level on purpose: a stuck job can only be healed from OUTSIDE the
+    // job system's running state — the reaper is itself a job and was the
+    // first victim. Swallowed errors: a sweep blip must not add a crash path.
+    if (Date.now() - lastLeaseSweep > LEASE_SWEEP_INTERVAL_MS) {
+      lastLeaseSweep = Date.now();
+      try {
+        const reclaimed = await recoverExpiredLeases(db);
+        if (reclaimed > 0) {
+          logger.warn({ reclaimed, workerId: opts.workerId }, "lease sweep: reclaimed stuck jobs");
+        }
+      } catch (err) {
+        logger.warn({ err }, "lease sweep failed — retrying next interval");
+      }
+    }
     const job = await claim(db, { workerId: opts.workerId, types: opts.types });
     if (!job) {
       if (opts.drainAndExit) return;
@@ -94,6 +110,8 @@ export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
     await runJob(db, job, opts.handlers);
   }
 }
+
+const LEASE_SWEEP_INTERVAL_MS = 60_000;
 
 export const HEAVY_JOB_TYPES = ["render_video", "lipsync"] as const;
 

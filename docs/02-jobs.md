@@ -29,11 +29,11 @@ founder's `aiugc work` and the server worker can run against the same database s
 
 ## Failure taxonomy
 
-| Class                            | Trigger                                 | Behavior                                                                                                                          |
-| -------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately; message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`) |
+| Class                            | Trigger                                 | Behavior                                                                                                                                                                           |
+| -------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately; message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`)                                                  |
 | `TransientError` / unknown throw | 5xx, 429, timeouts, network             | exponential backoff `min(30s·2^(n-1), 15m) + jitter`; after `max_attempts` (default 5) → `dead` + Sentry; a dying render/lipsync job fails + refunds its render in the same breath |
-| `BudgetError`                    | rolling-24h spend cap hit (`budget.ts`) | park: back to `queued` with `run_at` pushed (default +1h), **no attempt consumed**                                                |
+| `BudgetError`                    | rolling-24h spend cap hit (`budget.ts`) | park: back to `queued` with `run_at` pushed (default +1h), **no attempt consumed**                                                                                                 |
 
 Handlers that own a domain row mirror terminal failures onto it (demo → `rejected`,
 audio_render → `failed`, video_render → `failed` + **credit refund**). For renders this
@@ -45,6 +45,17 @@ message, or a fixed Hebrew string on retry exhaustion — the raw diagnostic sta
 `jobs.last_error`. The dead-render reaper (`reap_dead_renders`, a singleton job that
 reschedules itself every ~60s) is the net under a worker crash/OOM, where no handler code
 ran; in normal operation it finds zero rows. The janitor is daily and does retention only.
+
+**Lease recovery** (`recoverExpiredLeases`, swept by every lane every ~60s): a job whose
+worker died between claim and completion would otherwise sit at `running` forever —
+never dead, never requeued, invisible to the reaper (the reaper singleton itself was the
+first victim: `ensure` no-ops against a stuck row). A `running` job whose `locked_at` is
+older than the 30-minute lease (`JOB_LEASE_MS`; worst legitimate hold measured 2026-08-09
+was a 313s `render_video`) is requeued **with an attempt consumed**, mirroring
+`failTransient`'s arithmetic — a job that reliably kills its worker exhausts its attempts
+and goes `dead`, into the reaper's fail-and-refund path, instead of looping. The sweep is
+lane-level on purpose: a stuck job can only be healed from outside the job system's
+`running` state.
 
 ## Idempotency per external call
 
