@@ -46,10 +46,10 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become an ordered
   list of segments" requirement — V2 step-captions are inserts, not a migration.
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
-  `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips are **4 seconds** — the
-  generator's floor, not a curation choice ([04-integrations.md](04-integrations.md) §Hook-clip
-  bank source). `text_safe_area` is required at register; `DEFAULT_HOOK_TEXT_RECT` only seeds
-  the editor.
+  `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips run **3–4 seconds**; the
+  one clip in the live bank is 4086ms ([04-integrations.md](04-integrations.md) §Hook-clip bank
+  source, which also records why the ~60-char hook-line cap is calibrated to the long end).
+  `text_safe_area` is required at register; `DEFAULT_HOOK_TEXT_RECT` only seeds the editor.
 - **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id`; reference
   images as separate rows (a persona accumulates looks/angles). `is_default` marks the image a
   render uses when a variant names only the persona — at most one per persona (partial unique
