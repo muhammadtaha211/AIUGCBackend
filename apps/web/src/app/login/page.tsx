@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Wordmark } from "@/components/wordmark";
 import { LoginForm } from "./login-form";
 
-export const metadata: Metadata = { title: "כניסה — AIUGC" };
+export const metadata: Metadata = { title: "כניסה — Tavnit" };
 
 export default function LoginPage() {
   return (

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
-import { endingSentence, estimatedEnding } from "@/lib/service-a-ui";
+import { endingSentence, estimatedEnding, estimateVoSeconds } from "@/lib/service-a-ui";
 import { countWords, needsTextSave, withEditedText, type ScriptState } from "@/lib/service-b-ui";
 import { postJson } from "@/lib/use-api";
 
@@ -65,6 +65,15 @@ export function StepAScript({
     script?.wordBudget !== undefined && demoDurationMs !== undefined
       ? estimatedEnding(words, demoDurationMs / 1000, script.wordBudget)
       : null;
+  // An avatar ending's projected length, whole seconds — the note names it so
+  // the ending's duration is known here, where the script can still change.
+  const estimatedOutroSeconds =
+    ending === "avatar" && script?.wordBudget !== undefined && demoDurationMs !== undefined
+      ? Math.round(
+          estimateVoSeconds(words, demoDurationMs / 1000, script.wordBudget) -
+            demoDurationMs / 1000,
+        )
+      : undefined;
 
   async function generateScript() {
     setError(null);
@@ -202,7 +211,7 @@ export function StepAScript({
               ending === "short" ? "text-amber-300/90" : "text-gray-500"
             }`}
           >
-            {endingSentence(ending, false)}
+            {endingSentence(ending, false, estimatedOutroSeconds)}
           </p>
         )}
       </div>

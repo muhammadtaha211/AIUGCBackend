@@ -5,7 +5,7 @@ import "./globals.css";
 const heebo = Heebo({ subsets: ["hebrew", "latin"], variable: "--font-heebo" });
 
 export const metadata: Metadata = {
-  title: "AIUGC — מודעות וידאו מסרטון אחד",
+  title: "Tavnit — מודעות וידאו מסרטון אחד",
   description: "מעלים סרטון קצר של המוצר ומקבלים כמה גרסאות של מודעת וידאו בעברית, מוכנות לפרסום.",
 };
 

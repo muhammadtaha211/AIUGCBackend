@@ -158,6 +158,14 @@ describe("ending sentence (script step: estimate; audio step: exact)", () => {
     expect(text).not.toMatch(/\d/);
   });
 
+  it("the estimated avatar ending names its projected length when given one", () => {
+    const text = endingSentence("avatar", false, 6);
+    expect(text).toContain("בערך 6 שניות");
+    expect(text).toContain("תוספת");
+    // The seconds are the ONLY number — the credit figure still waits for shapeSummary.
+    expect(text.match(/\d+/g)).toEqual(["6"]);
+  });
+
   it("the exact avatar sentence carries no cost clause — shapeSummary owns it", () => {
     expect(endingSentence("avatar", true)).not.toContain("תוספת");
   });

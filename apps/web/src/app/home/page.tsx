@@ -9,6 +9,7 @@ import {
   PERSONA_CARD_SIZES,
   pickSelectedBusiness,
 } from "@/lib/service-b-ui";
+import { wizardGate } from "@/lib/wizard-gate";
 import { HomeHeader } from "./home-header";
 import { PathwayCards } from "./pathway-cards";
 import { RendersStrip } from "./renders-strip";
@@ -48,6 +49,10 @@ export default async function HomePage() {
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;
   const hasQuestionnaire = selected.questionnaire != null;
 
+  // Same balance the wizard entry gate reads — the header names the number
+  // the gate will decide on. Best-effort: a failure only hides the chip.
+  const { balance } = await wizardGate(selected.id).catch(() => ({ balance: null }));
+
   // Best-effort: a failed catalog read only costs the warm cache.
   const catalog = await loadPersonaCatalog().catch(() => []);
   const preloads = catalog
@@ -81,6 +86,7 @@ export default async function HomePage() {
       <HomeHeader
         businesses={businesses.map(({ id, name }) => ({ id, name }))}
         selectedId={selected.id}
+        balance={balance}
       />
 
       <main className="flex-1">

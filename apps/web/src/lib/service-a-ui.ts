@@ -219,11 +219,17 @@ export function estimatedEnding(
  * forks. The render step's shapeSummary stays the full numeric display; do
  * not add a third phrasing.
  *
- * The estimated avatar ending says it costs extra WITHOUT a figure: there is no
- * audio yet, so any number here would be an estimate of an estimate. The one
- * exact number appears once, in shapeSummary, after the recording exists.
+ * The estimated avatar ending names its projected length (whole seconds,
+ * `estimatedOutroSeconds`, בערך framing) but says it costs extra WITHOUT a
+ * figure: there is no audio yet, so a credit number here would be an estimate
+ * of an estimate. The one exact number appears once, in shapeSummary, after
+ * the recording exists.
  */
-export function endingSentence(mode: AEstimatedEnding, exact: boolean): string {
+export function endingSentence(
+  mode: AEstimatedEnding,
+  exact: boolean,
+  estimatedOutroSeconds?: number,
+): string {
   if (mode === "short") return exact ? VO_SHORT_MEASURED_NOTICE : VO_SHORT_ESTIMATE_NOTICE;
   if (mode === "freeze") {
     return exact
@@ -231,9 +237,14 @@ export function endingSentence(mode: AEstimatedEnding, exact: boolean): string {
       : "לפי האורך הנוכחי, הקריינות תסתיים בערך רגע אחרי סרטון המוצר — הפריים האחרון יוקפא לרגע קצר בסוף.";
   }
   if (mode === "avatar") {
-    return exact
-      ? "ההקלטה ארוכה מסרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון."
-      : "לפי האורך הנוכחי, הקריינות תימשך בערך גם אחרי סרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון, בתוספת קרדיטים שתוצג לפני האישור.";
+    if (exact) {
+      return "ההקלטה ארוכה מסרטון המוצר — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון.";
+    }
+    const overrun =
+      estimatedOutroSeconds === undefined
+        ? "בערך גם אחרי סרטון המוצר"
+        : `בערך ${estimatedOutroSeconds} שניות אחרי סרטון המוצר`;
+    return `לפי האורך הנוכחי, הקריינות תימשך ${overrun} — הדמות שבחרתם תופיע בסוף ותסגור את הסרטון, בתוספת קרדיטים שתוצג לפני האישור.`;
   }
   return exact
     ? "ההקלטה מסתיימת יחד עם סרטון המוצר — בלי סיום נוסף."

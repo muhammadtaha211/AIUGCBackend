@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { CreditsChip } from "@/components/credits-chip";
 import { Wordmark } from "@/components/wordmark";
 import { BUSINESS_COOKIE } from "@/lib/service-b-ui";
 import { LogoutButton } from "./logout-button";
@@ -9,14 +10,16 @@ import { LogoutButton } from "./logout-button";
 type HomeHeaderProps = {
   businesses: { id: string; name: string }[];
   selectedId: string;
+  /** The account's credit balance; null = admin bypass (no chip). */
+  balance: number | null;
 };
 
 /**
- * Homepage header: wordmark, business switcher, "הוסף עסק", logout. The
- * selected business lives in a cookie so server components (homepage cards,
- * wizard shell) read the same choice.
+ * Homepage header: wordmark, credit balance, business switcher, "הוסף עסק",
+ * logout. The selected business lives in a cookie so server components
+ * (homepage cards, wizard shell) read the same choice.
  */
-export function HomeHeader({ businesses, selectedId }: HomeHeaderProps) {
+export function HomeHeader({ businesses, selectedId, balance }: HomeHeaderProps) {
   const router = useRouter();
 
   function selectBusiness(id: string) {
@@ -31,6 +34,14 @@ export function HomeHeader({ businesses, selectedId }: HomeHeaderProps) {
       </Link>
 
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+        {/* Mobile hides it — the header is full and the wizard shows it anyway.
+            Conditional wrapper: an empty span would still cost a flex gap. */}
+        {balance !== null && (
+          <span className="hidden sm:block">
+            <CreditsChip balance={balance} />
+          </span>
+        )}
+
         {businesses.length > 1 ? (
           <select
             aria-label="בחירת עסק"
