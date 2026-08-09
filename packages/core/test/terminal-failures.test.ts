@@ -9,12 +9,15 @@ import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { PermanentError } from "../src/jobs/errors";
 import { DEFAULT_POLL_DEADLINE_SECONDS } from "../src/jobs/poll";
+import { enqueue } from "../src/jobs/queue";
 import { runLane } from "../src/jobs/worker";
 import { addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { createComposite } from "../src/pipelines/composites";
 import { creditBalance, grantPeriod } from "../src/pipelines/credits";
 import { createBRender } from "../src/pipelines/sets";
+import { findDeadStuckRenders } from "../src/pipelines/janitor";
+import { RENDER_RETRIES_EXHAUSTED_MESSAGE } from "../src/pipelines/renders";
 import { approveAudio, requestAudio } from "../src/pipelines/tts";
 import { setLipsyncProvider } from "../src/providers/lipsync";
 import { getStorage, setStorage, type Storage } from "../src/storage";
@@ -288,6 +291,92 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
       .from(dbSchema.creditLedger)
       .where(sql`${dbSchema.creditLedger.refId} = ${renderId}`);
     expect(refunds.map((r) => r.reason).sort()).toEqual(["debit_render", "refund_failed"]);
+  });
+
+  it("a dead render is failed with a non-null error before any janitor or reaper has run", async () => {
+    const biz = await createBusiness(db, { ownerEmail: "customer2@example.com", name: "לקוח ב" });
+    const sub = (
+      await db
+        .insert(dbSchema.subscriptions)
+        .values({
+          businessId: biz.id,
+          planCode: "starter",
+          status: "active",
+          gatewayRecurringRef: "tok_test2",
+          currentPeriodStart: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+          currentPeriodEnd: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        })
+        .returning()
+    )[0]!;
+    await grantPeriod(db, { businessId: biz.id, credits: 100, subscriptionId: sub.id });
+
+    // A provider that is down: every submit throws a plain (transient) error.
+    setLipsyncProvider({
+      async submit() {
+        throw new Error("ECONNRESET (provider down)");
+      },
+      async poll() {
+        throw new Error("poll must not be reached");
+      },
+    });
+
+    const renderId = await queueBRender(biz.id);
+    expect(await creditBalance(db, biz.ownerUserId)).toBeLessThan(100); // debited at enqueue
+    await drainAll(); // five transient attempts, then dead
+
+    const job = (await jobByKey(`lipsync:${renderId}`))!;
+    expect(job.status).toBe("dead");
+    expect(job.attempts).toBe(5);
+    expect(job.lastError).toMatch(/ECONNRESET/); // the raw diagnostic stays on the job
+
+    // The last attempt itself failed the render — no janitor, no reaper — with
+    // the fixed Hebrew string, never the raw error, and the credits are back.
+    const render = await renderRow(renderId);
+    expect(render.status).toBe("failed");
+    expect(render.error).toBe(RENDER_RETRIES_EXHAUSTED_MESSAGE);
+    expect(await creditBalance(db, biz.ownerUserId)).toBe(100);
+
+    // The reaper finds zero rows in normal operation — the immediate terminal
+    // path already did the work. This assertion IS the proof of that.
+    expect(await findDeadStuckRenders(db)).toHaveLength(0);
+  });
+
+  it("a resurrected job cannot overwrite a failed render or respend on it", async () => {
+    const biz = await createBusiness(db, {
+      ownerEmail: "founder@example.com",
+      name: "חנות הנרות",
+      ownerRole: "admin",
+    });
+    setLipsyncProvider({
+      async submit() {
+        throw new Error("submit must not be called for a finished render");
+      },
+      async poll() {
+        throw new Error("poll must not be called for a finished render");
+      },
+    });
+    const renderId = await queueBRender(biz.id);
+
+    // The render already ended (as the terminal path leaves it)…
+    await db
+      .update(dbSchema.videoRenders)
+      .set({ status: "failed", error: RENDER_RETRIES_EXHAUSTED_MESSAGE })
+      .where(sql`${dbSchema.videoRenders.id} = ${renderId}`);
+    // …and someone requeues its jobs anyway (manual resurrection of a dead row).
+    await enqueue(db, {
+      type: "render_video",
+      idempotencyKey: `render:${renderId}`,
+      payload: { videoRenderId: renderId },
+    });
+    await drainAll();
+
+    // Both handlers no-op: no provider spend (the throwing mock proves it),
+    // and the release path did not overwrite the terminal state.
+    expect((await jobByKey(`lipsync:${renderId}`))!.status).toBe("succeeded");
+    expect((await jobByKey(`render:${renderId}`))!.status).toBe("succeeded");
+    const render = await renderRow(renderId);
+    expect(render.status).toBe("failed");
+    expect(render.error).toBe(RENDER_RETRIES_EXHAUSTED_MESSAGE);
   });
 
   it("lipsync refuses a stranded default persona image instead of signing it", async () => {

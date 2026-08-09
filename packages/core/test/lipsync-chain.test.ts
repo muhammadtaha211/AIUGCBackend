@@ -9,6 +9,7 @@ import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { DEFAULT_POLL_DEADLINE_SECONDS } from "../src/jobs/poll";
+import { recoverExpiredLeases } from "../src/jobs/queue";
 import { runLane } from "../src/jobs/worker";
 import { addPersona, addPersonaImage, setPersonaImageRetired } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
@@ -292,7 +293,9 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     const job = (await lipsyncJob(renderId))!;
     expect(job.status).toBe("failed");
     expect(job.errorClass).toBe("permanent");
-    expect(job.lastError).toMatch(/חורג מהמגבלה/);
+    // The diagnostic (real seconds vs the guard) stays on the job; the
+    // customer-facing column gets the Hebrew customerMessage.
+    expect(job.lastError).toMatch(/runaway-cost guard/);
 
     const render = await renderRow(renderId);
     expect(render.status).toBe("failed");
@@ -397,5 +400,41 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(retry.lipsyncPath).toBeUndefined();
     expect(retry.audioRenderId).toBe(params.audioRenderId);
     expect(retry.personaId).toBe(params.personaId);
+  });
+
+  it("a reclaimed lipsync job polls its providerJobId instead of resubmitting", async () => {
+    // The regeneration test above leaves its re-roll's lipsync job queued —
+    // consume it on the default dry-run provider before counting submits.
+    await drainAll();
+
+    let submits = 0;
+    setLipsyncProvider({
+      async submit() {
+        submits++;
+        return { providerJobId: `resume_${submits}` };
+      },
+      async poll() {
+        return { status: "done" as const, videoUrl: "dryrun://clip" };
+      },
+    });
+
+    const { renderId } = await queueBRender();
+    await lanePass(); // submit hop: checkpoint persisted providerJobId, job rescheduled
+    expect(submits).toBe(1);
+
+    // The worker dies mid-poll hop: the job sits at `running` past the lease.
+    const job = (await lipsyncJob(renderId))!;
+    await db.execute(
+      sql`update jobs set status = 'running', locked_by = 'died-mid-poll',
+        locked_at = now() - interval '31 minutes' where id = ${job.id}`,
+    );
+
+    expect(await recoverExpiredLeases(db)).toBe(1);
+    await makeRunnable();
+    await drainAll();
+
+    // The checkpoint made the reclaim safe: it resumed polling — one GPU spend.
+    expect(submits).toBe(1);
+    expect((await renderRow(renderId)).status).toBe("qc_pending");
   });
 });

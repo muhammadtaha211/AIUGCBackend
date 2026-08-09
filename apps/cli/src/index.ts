@@ -18,6 +18,7 @@ import {
   createBusiness,
   createDemo,
   createSet,
+  ensureReaperJob,
   generateBenefitCaptions,
   generateBScript,
   generateHookLines,
@@ -278,7 +279,7 @@ const bank = program.command("bank").description("founder-curated asset banks");
 
 bank
   .command("add-hook <file>")
-  .requiredOption("--duration <ms>", "clip duration in ms (~2000)")
+  .requiredOption("--duration <ms>", "clip duration in ms (bank clips run ~3000-4000)")
   .requiredOption("--safe-area <x,y,w,h>", "burned-text safe region in 1080x1920 space")
   .option("--tags <json>", "metadata tags", "{}")
   .action(
@@ -560,6 +561,9 @@ program
   .action(
     run(async (opts: { once?: boolean }) => {
       const db = getDb();
+      // Stuck-render repair is wanted on every machine that runs jobs (unlike
+      // the daily janitor, which stays server-only — retention deletes).
+      await ensureReaperJob(db);
       const handlers = buildHandlers();
       const lightTypes = Object.keys(handlers).filter(
         (t) => !(HEAVY_JOB_TYPES as readonly string[]).includes(t),

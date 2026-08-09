@@ -96,7 +96,8 @@ function splitPath(storagePath: string): { bucket: Bucket; key: string } {
 export function missingObjectError(storagePath: string): PermanentError {
   // The key holds business UUIDs — keep it off the user-facing message; the
   // worker's `log.warn({ err })` serializes the property for debugging.
-  return Object.assign(new PermanentError("קובץ המקור לא נמצא באחסון"), { storagePath });
+  const message = "קובץ המקור לא נמצא באחסון";
+  return Object.assign(new PermanentError(message, { customerMessage: message }), { storagePath });
 }
 
 /** Supabase reports a missing key as 404 / "Object not found"; anything else stays transient. */

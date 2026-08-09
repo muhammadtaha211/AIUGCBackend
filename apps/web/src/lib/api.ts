@@ -195,7 +195,14 @@ export function coreErrorResponse(err: unknown): NextResponse {
   // The per-account abuse ceiling. A fast rejection on purpose: the
   // platform-wide cap parks the job instead, and a parked job spins forever.
   if (err instanceof AccountBudgetError) {
-    return jsonError(429, "הגעתם למכסת ההקלטות היומית של החשבון — נסו שוב מחר.");
+    // The core message names the capped kind — GPU caps refuse renders,
+    // TTS caps refuse recordings; the Hebrew should say which.
+    return jsonError(
+      429,
+      /gpu_seconds/.test(err.message)
+        ? "הגעתם למכסת יצירת הסרטונים היומית של החשבון — נסו שוב מחר."
+        : "הגעתם למכסת ההקלטות היומית של החשבון — נסו שוב מחר.",
+    );
   }
   // Typed, so the shortfall is a number the UI can render — not text scraped
   // back out of an English message.

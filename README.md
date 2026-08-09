@@ -2,7 +2,7 @@
 
 Hebrew-first ad-generation platform for Israeli advertisers. Two services on one pipeline:
 
-- **Service A** — 2s pre-rendered hook clip (curated bank) with a burned Hebrew hook line, hard cut
+- **Service A** — 3–4s pre-rendered hook clip (curated bank) with a burned Hebrew hook line, hard cut
   into the customer's phone-filmed demo, with burned Hebrew captions and optional Hebrew voiceover.
 - **Service B** — UGC-style ads with consistent AI personas (ElevenLabs V3 + InfiniteTalk lip-sync),
   released through a founder QC gate.

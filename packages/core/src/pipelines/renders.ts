@@ -3,14 +3,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
-import { assertBudget, recordUsage } from "../budget";
+import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { evenlySpacedCaptions, type CaptionChunk } from "../captions";
 import { getEnv } from "../config";
 import type { Db } from "../db";
 import {
   audioRenders,
   composites,
+  creditLedger,
   demos,
+  events,
   hookClips,
   personaImages,
   scripts,
@@ -18,9 +20,9 @@ import {
   videoRenders,
 } from "../db/schema";
 import { resolveHookTextSafeArea } from "../hook-geometry";
-import { PermanentError, TransientError } from "../jobs/errors";
+import { BudgetError, PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
-import { enqueue, type Job } from "../jobs/queue";
+import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { logger } from "../logger";
 import {
@@ -91,12 +93,30 @@ const DRY_RUN_PROBE: ProbeResult = {
 export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResult> {
   const { videoRenderId } = job.payload as { videoRenderId: string };
   const render = await loadRender(ctx.db, videoRenderId);
+  // A resurrected job (a dead row manually requeued) must not act on a render
+  // that already ended — lip-syncing a failed+refunded render spends GPU money
+  // on a video nobody is waiting for.
+  if (TERMINAL_RENDER_STATUSES.includes(render.status)) return { kind: "done" };
   const params = render.params as VariantParams;
   const provider = getLipsyncProvider();
   const state = job.state as { providerJobId?: string; submittedAt?: number };
 
   try {
     if (!state.providerJobId) {
+      // Backstop for the confirm-to-execution window — the real gate ran at
+      // confirm (createSet / createBRender). Account-first, and it FAILS
+      // (refund included) rather than parks: an abuse ceiling must never
+      // leave the wizard spinning on a parked job.
+      try {
+        await assertAccountBudget(ctx.db, "gpu_seconds", render.businessId);
+      } catch (err) {
+        if (err instanceof AccountBudgetError) {
+          throw new PermanentError(err.message, {
+            customerMessage: "הגעתם למכסת יצירת הסרטונים היומית של החשבון — נסו שוב מחר",
+          });
+        }
+        throw err;
+      }
       await assertBudget(ctx.db, "gpu_seconds");
       const storage = getStorage();
 
@@ -143,7 +163,10 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       }
       if (audioMs > MAX_LIPSYNC_SECONDS * 1000) {
         // Runaway-cost guard, not a product limit (see MAX_LIPSYNC_SECONDS).
-        throw new PermanentError("אורך האודיו חורג מהמגבלה לעיבוד — פנו לתמיכה");
+        throw new PermanentError(
+          `audio is ${Math.ceil(audioMs / 1000)}s — over the ${MAX_LIPSYNC_SECONDS}s runaway-cost guard`,
+          { customerMessage: "אורך האודיו חורג מהמגבלה לעיבוד — פנו לתמיכה" },
+        );
       }
 
       const resolution = await lipsyncResolution(ctx.db);
@@ -208,6 +231,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
         if (!image) {
           throw new PermanentError(
             "persona has no reference images — add one with `aiugc persona add-image`",
+            { customerMessage: "לדמות שנבחרה אין עדיין תמונות מוכנות — פנו לתמיכה" },
           );
         }
         imagePath = image.filePath;
@@ -246,7 +270,11 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
       });
       return { kind: "reschedule", delayMs: 15_000, state: { ...state, submittedAt } };
     }
-    if (result.status === "failed") throw new PermanentError(`lipsync failed: ${result.reason}`);
+    if (result.status === "failed") {
+      throw new PermanentError(`lipsync failed: ${result.reason}`, {
+        customerMessage: "יצירת הדמות המדברת נכשלה — נסו שוב",
+      });
+    }
 
     const localDir = path.join(WORK_DIR, "lipsync", videoRenderId);
     mkdirSync(localDir, { recursive: true });
@@ -283,7 +311,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
     await enqueueRenderVideo(ctx.db, videoRenderId);
     return { kind: "done" };
   } catch (err) {
-    await failRenderOnPermanent(ctx.db, videoRenderId, err);
+    await failRenderOnTerminal(ctx.db, videoRenderId, err, job);
     throw err;
   }
 }
@@ -316,6 +344,10 @@ async function mergeParams(
 export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobResult> {
   const { videoRenderId } = job.payload as { videoRenderId: string };
   const render = await loadRender(ctx.db, videoRenderId);
+  // Same resurrection guard as handleLipsync — and here it is also what keeps
+  // the release path from overwriting a failed render: a requeued job that
+  // "succeeds" on a refunded render would ship a free video.
+  if (TERMINAL_RENDER_STATUSES.includes(render.status)) return { kind: "done" };
 
   try {
     await ctx.db
@@ -375,7 +407,7 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
       .where(eq(videoRenders.id, videoRenderId));
     return { kind: "done" };
   } catch (err) {
-    await failRenderOnPermanent(ctx.db, videoRenderId, err);
+    await failRenderOnTerminal(ctx.db, videoRenderId, err, job);
     throw err;
   }
 }
@@ -545,12 +577,134 @@ async function loadRender(db: Db, videoRenderId: string) {
   return rows[0];
 }
 
-async function failRenderOnPermanent(db: Db, videoRenderId: string, err: unknown): Promise<void> {
-  if (err instanceof PermanentError) {
-    await db
+/**
+ * What the customer reads when a render's job exhausts its retries. The raw
+ * transient error (stack traces, provider payloads) stays on jobs.last_error —
+ * video_renders.error is displayable by construction.
+ */
+export const RENDER_RETRIES_EXHAUSTED_MESSAGE =
+  "יצירת הסרטון נכשלה בגלל תקלה חוזרת בעיבוד — נסו שוב מאוחר יותר.";
+
+/**
+ * What the customer reads when a PermanentError carries no customerMessage.
+ * Together with the two named strings above, these are the ONLY values that
+ * ever reach video_renders.error — Hebrew by construction; diagnostics stay
+ * on jobs.last_error.
+ */
+export const RENDER_FAILED_MESSAGE = "יצירת הסרטון נכשלה — נסו שוב.";
+
+/** What the customer reads when the max-park-age valve kills a parked render. */
+export const RENDER_PARK_EXPIRED_MESSAGE =
+  "יצירת הסרטון התעכבה מעבר לסביר בגלל תקלה אצלנו — נסו שוב מאוחר יותר.";
+
+/** events.kind: a dying render's refund landed on an ancestor's debit. */
+export const REFUND_RESOLVED_TO_ANCESTOR = "refund_resolved_to_ancestor";
+
+const TERMINAL_RENDER_STATUSES = ["released", "failed", "rejected"];
+
+/** Chains are unbounded in principle, empty in practice — 10 is generous. */
+const REFUND_WALK_MAX_DEPTH = 10;
+
+/**
+ * The debit sits on the chain's root: QC regenerations are never debited
+ * (rejectRender), so a dying regeneration must refund through regenerated_from.
+ * Walks until a debit turns up; past the depth cap (or on a cycle) it falls
+ * back to the render itself — the refund no-ops — and logs, so a silent
+ * non-refund is never mistaken for a clean one.
+ */
+async function resolveDebitBearingRender(
+  db: Db,
+  render: Pick<typeof videoRenders.$inferSelect, "id" | "regeneratedFrom">,
+): Promise<string> {
+  let current = render;
+  const visited = new Set([render.id]);
+  for (let depth = 0; depth < REFUND_WALK_MAX_DEPTH; depth++) {
+    const debit = await db
+      .select({ id: creditLedger.id })
+      .from(creditLedger)
+      .where(and(eq(creditLedger.refId, current.id), eq(creditLedger.reason, "debit_render")))
+      .limit(1);
+    if (debit[0]) return current.id;
+    if (!current.regeneratedFrom) return render.id;
+
+    const parent = (
+      await db
+        .select({ id: videoRenders.id, regeneratedFrom: videoRenders.regeneratedFrom })
+        .from(videoRenders)
+        .where(eq(videoRenders.id, current.regeneratedFrom))
+        .limit(1)
+    )[0];
+    if (!parent || visited.has(parent.id)) break;
+    visited.add(parent.id);
+    current = parent;
+  }
+  logger.warn(
+    { videoRenderId: render.id, depth: visited.size },
+    "refund walk gave up (depth cap or cycle) — refunding against the render itself",
+  );
+  return render.id;
+}
+
+/**
+ * Terminal mark shared by every path that kills a render: the permanent path,
+ * the last transient attempt, and the dead-job reaper. One transaction, so the
+ * customer can never read `failed` while the balance hasn't moved, and
+ * refunded_at can never disagree with the ledger. When the refund lands on an
+ * ancestor (QC regeneration chain), an events row records both ids — the money
+ * trail is never implicit. Skips renders already terminal. Returns true when
+ * it marked the render.
+ */
+export async function failRenderAndRefund(
+  db: Db,
+  videoRenderId: string,
+  message: string,
+): Promise<boolean> {
+  const render = (
+    await db.select().from(videoRenders).where(eq(videoRenders.id, videoRenderId)).limit(1)
+  )[0];
+  if (!render || TERMINAL_RENDER_STATUSES.includes(render.status)) return false;
+  return db.transaction(async (tx) => {
+    const debitBearerId = await resolveDebitBearingRender(tx as Db, render);
+    const refunded = await refundRenderIfNeeded(tx as Db, debitBearerId);
+    if (refunded && debitBearerId !== videoRenderId) {
+      await tx.insert(events).values({
+        kind: REFUND_RESOLVED_TO_ANCESTOR,
+        businessId: render.businessId,
+        subjectType: "video_render",
+        subjectId: videoRenderId,
+        payload: { refundedRenderId: debitBearerId },
+      });
+    }
+    await tx
       .update(videoRenders)
-      .set({ status: "failed", error: err.message, updatedAt: new Date() })
+      .set({
+        status: "failed",
+        error: message,
+        ...(refunded ? { refundedAt: new Date() } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(videoRenders.id, videoRenderId));
-    await refundRenderIfNeeded(db, videoRenderId);
+    return true;
+  });
+}
+
+/**
+ * Handler-side terminal mapping, called from the render handlers' catch before
+ * rethrowing: a PermanentError fails the render now with its Hebrew customer
+ * message (generic when it carries none — the diagnostic stays on
+ * jobs.last_error); the LAST transient attempt fails it with the fixed Hebrew
+ * string. A budget park or a transient attempt with retries left leaves the
+ * render alone — the job isn't dead.
+ */
+async function failRenderOnTerminal(
+  db: Db,
+  videoRenderId: string,
+  err: unknown,
+  job: Job,
+): Promise<void> {
+  if (err instanceof PermanentError) {
+    await failRenderAndRefund(db, videoRenderId, err.customerMessage ?? RENDER_FAILED_MESSAGE);
+  } else if (!(err instanceof BudgetError) && isLastAttempt(job)) {
+    await failRenderAndRefund(db, videoRenderId, RENDER_RETRIES_EXHAUSTED_MESSAGE);
   }
 }

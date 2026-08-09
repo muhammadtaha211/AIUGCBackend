@@ -357,6 +357,13 @@ export const videoRenders = pgTable(
     starredAt: timestamp("starred_at", { withTimezone: true }),
     releasedAt: timestamp("released_at", { withTimezone: true }),
     rejectedReason: text("rejected_reason"),
+    // QC regeneration provenance (0021): the render this one re-rolls. The
+    // debit stays on the chain's root — failRenderAndRefund walks this link.
+    // Self-FK added in the hand-written migration (circular ref).
+    regeneratedFrom: uuid("regenerated_from"),
+    // Derived display state (0021): written only by failRenderAndRefund, in
+    // the same transaction as the refund row. The ledger is the source of truth.
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

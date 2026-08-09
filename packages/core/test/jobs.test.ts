@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createTestDb } from "./helpers/pglite";
 import { jobs } from "../src/db/schema";
 import { PermanentError } from "../src/jobs/errors";
-import { claim, complete, enqueue } from "../src/jobs/queue";
+import { claim, complete, enqueue, recoverExpiredLeases } from "../src/jobs/queue";
+import { ensureReaperJob } from "../src/jobs/schedule";
 import { runJob, runLane } from "../src/jobs/worker";
 
 describe("job queue", () => {
@@ -140,6 +141,81 @@ describe("job queue", () => {
     });
 
     expect(seen.sort()).toEqual(["drain:1", "drain:2"]);
+    await pg.close();
+  });
+});
+
+describe("lease recovery (worker killed between claim and completion)", () => {
+  /** Simulate the worker dying mid-run: the row stays `running` forever. */
+  async function abandonPastLease(db: Awaited<ReturnType<typeof createTestDb>>["db"], id: string) {
+    await db.execute(
+      sql`update jobs set locked_at = now() - interval '31 minutes' where id = ${id}`,
+    );
+  }
+
+  it("reclaims an abandoned job, consuming an attempt; a live lock is untouched", async () => {
+    const { db, pg } = await createTestDb();
+    await enqueue(db, { type: "noop", idempotencyKey: "stuck:1" });
+    await enqueue(db, { type: "noop", idempotencyKey: "alive:1" });
+    const stuck = await claim(db, { workerId: "died" });
+    const alive = await claim(db, { workerId: "working" });
+    await abandonPastLease(db, stuck!.id);
+
+    expect(await recoverExpiredLeases(db)).toBe(1);
+
+    const rows = Object.fromEntries((await db.select().from(jobs)).map((j) => [j.id, j]));
+    expect(rows[stuck!.id]!.status).toBe("queued");
+    expect(rows[stuck!.id]!.attempts).toBe(1);
+    expect(rows[stuck!.id]!.lastError).toMatch(/lease expired/);
+    expect(rows[alive!.id]!.status).toBe("running");
+    expect(rows[alive!.id]!.attempts).toBe(0);
+
+    // The reclaimed job is genuinely runnable again.
+    const reclaimed = await claim(db, { workerId: "second-worker" });
+    expect(reclaimed?.id).toBe(stuck!.id);
+    await pg.close();
+  });
+
+  it("a job that reliably kills its worker exhausts attempts and goes dead", async () => {
+    const { db, pg } = await createTestDb();
+    await enqueue(db, { type: "worker_killer", idempotencyKey: "killer:1", maxAttempts: 2 });
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const job = await claim(db, { workerId: `victim-${attempt}` });
+      expect(job).toBeDefined();
+      await abandonPastLease(db, job!.id);
+      await recoverExpiredLeases(db);
+    }
+
+    // Second reclaim reached max_attempts: dead, not requeued — it enters the
+    // dead-job machinery (reaper -> failed render + refund) instead of looping.
+    const row = (await db.select().from(jobs).where(eq(jobs.status, "dead")))[0]!;
+    expect(row.idempotencyKey).toBe("killer:1");
+    expect(row.attempts).toBe(2);
+    expect(await claim(db, { workerId: "nobody" })).toBeUndefined();
+    await pg.close();
+  });
+
+  it("a stuck reaper singleton recovers with no manual SQL", async () => {
+    const { db, pg } = await createTestDb();
+    await ensureReaperJob(db);
+    const job = await claim(db, { workerId: "died-mid-sweep" });
+    expect(job?.type).toBe("reap_dead_renders");
+    await abandonPastLease(db, job!.id);
+
+    // The bug this heals: ensure is a no-op against a running row, so before
+    // the lease sweep no replacement could ever be created.
+    await ensureReaperJob(db);
+    const stillStuck = (await db.select().from(jobs).where(eq(jobs.id, job!.id)))[0]!;
+    expect(stillStuck.status).toBe("running");
+
+    expect(await recoverExpiredLeases(db)).toBe(1);
+    const healed = await claim(db, { workerId: "next-worker" });
+    expect(healed?.id).toBe(job!.id);
+    expect(healed?.type).toBe("reap_dead_renders");
+    // maxAttempts is effectively infinite — a reclaim can never kill the singleton.
+    expect(healed!.attempts).toBe(1);
+    expect(healed!.maxAttempts).toBe(1_000_000);
     await pg.close();
   });
 });

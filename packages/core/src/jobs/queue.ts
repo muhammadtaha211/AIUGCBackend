@@ -83,6 +83,44 @@ export async function claim(
   return row ? rowToJob(row) : undefined;
 }
 
+/**
+ * How long a claimed job may hold its lock before the lease sweep decides its
+ * worker died mid-run. Ceiling measured on prod 2026-08-09: render_video holds
+ * the lock for the whole Remotion render — 313s worst observed (avg 137s);
+ * every other type is under a minute (lipsync/composites release the lock on
+ * each poll hop). 30min errs long on purpose: reclaiming a job that is merely
+ * slow double-runs it, while waiting on a dead one costs only latency — the
+ * reaper still repairs the render within a minute of the job going dead.
+ */
+export const JOB_LEASE_MS = 30 * 60_000;
+
+/**
+ * The net under a worker killed between claim and completion: without this,
+ * a `running` job stays `running` forever — never dead, never requeued,
+ * invisible to the reaper (the stuck reaper singleton was one instance).
+ * Reclaiming CONSUMES AN ATTEMPT, mirroring failTransient's arithmetic: a job
+ * that reliably kills its worker exhausts its attempts and goes dead — into
+ * the machinery that already fails-and-refunds — instead of looping forever.
+ * Handlers are resumable by design (checkpoint before external spend), so a
+ * reclaimed job polls its provider instead of paying twice.
+ */
+export async function recoverExpiredLeases(
+  db: Db,
+  leaseMs: number = JOB_LEASE_MS,
+): Promise<number> {
+  const result = await db.execute(sql`
+    update jobs set
+      status = (case when attempts + 1 >= max_attempts then 'dead' else 'queued' end)::job_status,
+      attempts = attempts + 1,
+      error_class = 'transient'::error_class,
+      last_error = 'lease expired: worker died mid-run (was locked by ' || coalesce(locked_by, '?') || ')',
+      updated_at = now()
+    where status = 'running' and locked_at < now() - (${leaseMs} * interval '1 millisecond')
+    returning id
+  `);
+  return rowsOf(result).length;
+}
+
 export async function complete(db: Db, jobId: string): Promise<void> {
   await db
     .update(jobs)
@@ -135,9 +173,18 @@ export async function failPermanent(db: Db, jobId: string, message: string): Pro
     .where(eq(jobs.id, jobId));
 }
 
+/**
+ * True when one more failure kills the job. The single definition of "last
+ * attempt" — failTransient and the render handlers' terminal path both call
+ * this, so the two can never disagree about when a job dies.
+ */
+export function isLastAttempt(job: Pick<Job, "attempts" | "maxAttempts">): boolean {
+  return job.attempts + 1 >= job.maxAttempts;
+}
+
 export async function failTransient(db: Db, job: Job, message: string): Promise<void> {
   const failures = job.attempts + 1;
-  const dead = failures >= job.maxAttempts;
+  const dead = isLastAttempt(job);
   await db
     .update(jobs)
     .set({

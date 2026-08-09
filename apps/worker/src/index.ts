@@ -2,6 +2,7 @@ import "dotenv/config";
 import {
   buildHandlers,
   ensureDailyJobs,
+  ensureReaperJob,
   getDb,
   getEnv,
   HEAVY_JOB_TYPES,
@@ -27,8 +28,10 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => abort.abort());
   process.on("SIGTERM", () => abort.abort());
 
-  // Enqueue today's janitor/billing jobs (idempotent), repeat hourly.
+  // Enqueue today's janitor/billing jobs (idempotent), repeat hourly. The
+  // dead-render reaper is a singleton that reschedules itself — ensure once.
   await ensureDailyJobs(db);
+  await ensureReaperJob(db);
   const daily = setInterval(() => void ensureDailyJobs(db).catch(() => {}), 60 * 60 * 1000);
 
   logger.info({ workerId, dryRun: getEnv().DRY_RUN }, "worker started");

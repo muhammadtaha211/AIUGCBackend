@@ -67,6 +67,9 @@ export async function rejectRender(
       service: render.service,
       params: retryParams,
       watermarked: render.watermarked,
+      // The walkable link to the debit-bearing ancestor: the regeneration has
+      // no debit of its own, so a refund must resolve through this chain.
+      regeneratedFrom: videoRenderId,
     })
     .returning();
   const regenerated = inserted[0]!;

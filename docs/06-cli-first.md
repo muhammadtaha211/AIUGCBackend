@@ -10,7 +10,7 @@ production pipeline**, not a shortcut. `DRY_RUN=1` runs the whole thing keyless.
 # one-time
 aiugc business create --name "מסעדת הבית" --email founder@me.com --admin   # admin = no credits/watermark
 aiugc business questionnaire <bizId> --file questionnaire.json
-aiugc bank add-hook clip.mp4 --duration 2000 --safe-area 100,200,880,400   # curate once
+aiugc bank add-hook clip.mp4 --duration 4086 --safe-area 100,200,880,400   # curate once
 
 # per prospect
 aiugc demo ingest footage.mp4 --business <bizId>       # phone-filmed website/IG scroll

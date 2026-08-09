@@ -18,6 +18,12 @@ describe("migrations", () => {
       .from(schema.appConfig)
       .where(eq(schema.appConfig.key, "daily_caps"));
     expect(caps[0]?.value).toMatchObject({ tts_chars: expect.any(Number) });
+    // 0022: account-first GPU caps — the platform value is a runaway backstop
+    // recorded in a migration, never a hand UPDATE.
+    expect(caps[0]?.value).toMatchObject({
+      gpu_seconds: 7_200,
+      per_account: { tts_chars: 25_000, gpu_seconds: 2_000 },
+    });
 
     await pg.close();
   });

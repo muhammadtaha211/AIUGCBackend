@@ -9,7 +9,7 @@ import {
 } from "./pipelines/copy";
 import { handleGenerateComposite } from "./pipelines/composites";
 import { handleIngestDemo } from "./pipelines/demos";
-import { handleJanitor } from "./pipelines/janitor";
+import { handleJanitor, handleReapDeadRenders } from "./pipelines/janitor";
 import { handleLipsync, handleRenderVideo } from "./pipelines/renders";
 import { handleSynthTts } from "./pipelines/tts";
 
@@ -70,6 +70,7 @@ export function buildHandlers(): HandlerRegistry {
     lipsync: handleLipsync,
     render_video: handleRenderVideo,
     janitor: handleJanitor,
+    reap_dead_renders: handleReapDeadRenders,
     billing_renewals: handleBillingRenewals,
   };
 }

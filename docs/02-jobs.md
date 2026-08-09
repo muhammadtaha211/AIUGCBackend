@@ -29,16 +29,33 @@ founder's `aiugc work` and the server worker can run against the same database s
 
 ## Failure taxonomy
 
-| Class                            | Trigger                                 | Behavior                                                                                                                          |
-| -------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately; message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`) |
-| `TransientError` / unknown throw | 5xx, 429, timeouts, network             | exponential backoff `min(30s·2^(n-1), 15m) + jitter`; after `max_attempts` (default 5) → `dead` + Sentry                          |
-| `BudgetError`                    | rolling-24h spend cap hit (`budget.ts`) | park: back to `queued` with `run_at` pushed (default +1h), **no attempt consumed**                                                |
+| Class                            | Trigger                                 | Behavior                                                                                                                                                                           |
+| -------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately; message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`)                                                  |
+| `TransientError` / unknown throw | 5xx, 429, timeouts, network             | exponential backoff `min(30s·2^(n-1), 15m) + jitter`; after `max_attempts` (default 5) → `dead` + Sentry; a dying render/lipsync job fails + refunds its render in the same breath |
+| `BudgetError`                    | rolling-24h spend cap hit (`budget.ts`) | park: back to `queued` with `run_at` pushed (default +1h), **no attempt consumed**                                                                                                 |
 
 Handlers that own a domain row mirror terminal failures onto it (demo → `rejected`,
-audio_render → `failed`, video_render → `failed` + **credit refund**). The daily janitor sweeps
-dead render/lipsync jobs as a second net: marks their renders failed and refunds
-(`refundRenderIfNeeded` is idempotent — one refund per debit, ever).
+audio_render → `failed`, video_render → `failed` + **credit refund**). For renders this
+includes the LAST transient attempt, not just permanent errors — the moment a job dies, the
+render dies with it, refund-first (`refundRenderIfNeeded` is idempotent — one refund per
+debit, ever; the customer never reads `failed` while the balance hasn't moved).
+`video_renders.error` is displayable by construction: a `PermanentError`'s user-facing
+message, or a fixed Hebrew string on retry exhaustion — the raw diagnostic stays on
+`jobs.last_error`. The dead-render reaper (`reap_dead_renders`, a singleton job that
+reschedules itself every ~60s) is the net under a worker crash/OOM, where no handler code
+ran; in normal operation it finds zero rows. The janitor is daily and does retention only.
+
+**Lease recovery** (`recoverExpiredLeases`, swept by every lane every ~60s): a job whose
+worker died between claim and completion would otherwise sit at `running` forever —
+never dead, never requeued, invisible to the reaper (the reaper singleton itself was the
+first victim: `ensure` no-ops against a stuck row). A `running` job whose `locked_at` is
+older than the 30-minute lease (`JOB_LEASE_MS`; worst legitimate hold measured 2026-08-09
+was a 313s `render_video`) is requeued **with an attempt consumed**, mirroring
+`failTransient`'s arithmetic — a job that reliably kills its worker exhausts its attempts
+and goes `dead`, into the reaper's fail-and-refund path, instead of looping. The sweep is
+lane-level on purpose: a stuck job can only be healed from outside the job system's
+`running` state.
 
 ## Idempotency per external call
 
@@ -63,7 +80,8 @@ Service A silent : ingest_demo ─▶ ready ─┐ (user picks copy + set)      
                                           └ createSet ─▶ render_video ──┘
 Service A voiced : synth_tts ─▶ audio ready ─▶ ⏸ HUMAN: approveAudio ⏸ ─▶ createSet ─▶ render_video
 Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (submit ▶ poll…) ─▶ render_video ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
-Daily            : janitor · billing_renewals (idempotency key = date; enqueued by any running worker, hourly)
+Daily            : janitor (retention only) · billing_renewals — idempotency key = date, so each runs ONCE a day (the server worker re-attempts the enqueue hourly; `aiugc work` doesn't)
+Continuous       : reap_dead_renders — singleton (constant key), reschedules itself every ~60s; ensured at both server-worker and `aiugc work` startup
 ```
 
 The two human gates (audio approval, founder QC) are represented as _the absence of the next

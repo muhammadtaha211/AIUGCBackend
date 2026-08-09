@@ -3,6 +3,7 @@ import {
   applyAudioPoll,
   clientPhotoError,
   countWords,
+  failedRenderNotice,
   isActiveRenderStatus,
   MAX_PHOTO_BYTES,
   needsScriptAdoption,
@@ -229,5 +230,21 @@ describe("needsScriptAdoption", () => {
 
   it("stays put when the server agrees — no re-render churn per poll", () => {
     expect(needsScriptAdoption(script, { scriptId: script.scriptId, text: "טקסט" })).toBe(false);
+  });
+});
+
+describe("failedRenderNotice", () => {
+  it("shows the render's own reason and falls back to the generic Hebrew line", () => {
+    expect(failedRenderNotice({ failureReason: "העיבוד לא הסתיים בזמן — נסו שוב" }).reason).toBe(
+      "העיבוד לא הסתיים בזמן — נסו שוב",
+    );
+    expect(failedRenderNotice({}).reason).toBe("יצירת הסרטון נכשלה — נסו שוב.");
+  });
+
+  it("claims a refund only when the server says one actually happened", () => {
+    expect(failedRenderNotice({ refunded: true }).showRefund).toBe(true);
+    // Admin renders, pre-ledger rows, and old rows without the flag: no claim.
+    expect(failedRenderNotice({ refunded: false }).showRefund).toBe(false);
+    expect(failedRenderNotice({}).showRefund).toBe(false);
   });
 });
