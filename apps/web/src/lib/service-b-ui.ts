@@ -141,7 +141,13 @@ export type AudioState = {
   scriptChanged?: boolean;
 };
 
-export type RenderState = { id: string; status: string; videoUrl?: string };
+export type RenderState = {
+  id: string;
+  status: string;
+  videoUrl?: string;
+  /** Set when status is "failed" — the render's own displayable Hebrew reason. */
+  failureReason?: string;
+};
 
 /** GET /api/audio/[id]: status, the signed mp3, and the script being spoken. */
 export type AudioPollResult = {

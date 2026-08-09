@@ -30,7 +30,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       }
     }
     if (render.status === "failed") {
-      body.failureReason = "יצירת הסרטון נכשלה — נסו שוב.";
+      // Displayable by construction: a PermanentError's user-facing message or
+      // the fixed retry-exhaustion string. The fallback covers rows failed
+      // before that invariant existed.
+      body.failureReason = render.error ?? "יצירת הסרטון נכשלה — נסו שוב.";
     }
     return NextResponse.json(body);
   } catch (err) {
