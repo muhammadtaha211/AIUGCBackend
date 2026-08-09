@@ -1,6 +1,12 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../src/budget";
+import {
+  AccountBudgetError,
+  assertAccountBudget,
+  assertBudget,
+  PLATFORM_BUDGET_TRIPPED,
+  recordUsage,
+} from "../src/budget";
 import type { Db } from "../src/db";
 import * as schema from "../src/db/schema";
 import { createBusiness } from "../src/pipelines/businesses";
@@ -104,7 +110,7 @@ describe("per-account TTS cap", { timeout: 60_000 }, () => {
     await pg.close();
   });
 
-  it("the platform-wide backstop still fires on its own, independently", async () => {
+  it("the platform-wide backstop still fires on its own, independently — and loudly", async () => {
     const { db, pg } = await createTestDb();
     const business = await businessFor(db, "platform@test.local");
 
@@ -116,6 +122,46 @@ describe("per-account TTS cap", { timeout: 60_000 }, () => {
 
     await expect(assertAccountBudget(db, "tts_chars", business.id)).resolves.toBeUndefined();
     await expect(assertBudget(db, "tts_chars")).rejects.toBeInstanceOf(BudgetError);
+
+    // A platform trip now means something is broken, not that we are busy —
+    // it must leave a visible trail, not just a parked job.
+    const trail = await db
+      .select()
+      .from(schema.events)
+      .where(eq(schema.events.kind, PLATFORM_BUDGET_TRIPPED));
+    expect(trail).toHaveLength(1);
+    expect(trail[0]!.payload).toMatchObject({ kind: "tts_chars", cap: 100_000 });
+    await pg.close();
+  });
+});
+
+describe("per-account GPU cap (0022 — account-first)", { timeout: 60_000 }, () => {
+  /** The shipped per-account cap (0022): mirrors the TTS ceiling in seconds. */
+  const PER_ACCOUNT_GPU_SECONDS = 2_000;
+
+  async function burnGpu(db: Db, businessId: string, seconds: number) {
+    await recordUsage(db, {
+      provider: "heygen",
+      kind: "gpu_seconds",
+      quantity: seconds,
+      businessId,
+    });
+  }
+
+  it("caps one account's GPU without touching its neighbor; admin bypasses", async () => {
+    const { db, pg } = await createTestDb();
+    const loud = await businessFor(db, "gpu-loud@test.local");
+    const quiet = await businessFor(db, "gpu-quiet@test.local");
+    const founder = await businessFor(db, "gpu-founder@test.local", "admin");
+
+    await burnGpu(db, loud.id, PER_ACCOUNT_GPU_SECONDS);
+    await burnGpu(db, founder.id, PER_ACCOUNT_GPU_SECONDS * 10);
+
+    await expect(assertAccountBudget(db, "gpu_seconds", loud.id)).rejects.toBeInstanceOf(
+      AccountBudgetError,
+    );
+    await expect(assertAccountBudget(db, "gpu_seconds", quiet.id)).resolves.toBeUndefined();
+    await expect(assertAccountBudget(db, "gpu_seconds", founder.id)).resolves.toBeUndefined();
     await pg.close();
   });
 });

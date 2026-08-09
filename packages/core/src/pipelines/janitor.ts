@@ -6,9 +6,23 @@ import { audioRenders, demos, jobs, videoRenders } from "../db/schema";
 import type { Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { getStorage } from "../storage";
-import { failRenderAndRefund, RENDER_RETRIES_EXHAUSTED_MESSAGE } from "./renders";
+import {
+  failRenderAndRefund,
+  RENDER_PARK_EXPIRED_MESSAGE,
+  RENDER_RETRIES_EXHAUSTED_MESSAGE,
+} from "./renders";
 
 export const REAPER_INTERVAL_MS = 60_000;
+
+/**
+ * Max park age: how long a render's job may sit parked on BudgetError before
+ * we stop holding the customer's money — fail + refund instead. A safety
+ * valve, not a policy: it works under any cap design; without it a parked
+ * render spins forever with the money already taken. 6h is long enough for a
+ * genuine capacity blip to clear (parks recheck hourly) and short enough that
+ * a customer's credits are never held hostage overnight.
+ */
+export const MAX_BUDGET_PARK_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Dead render/lipsync jobs whose render is still non-terminal — i.e. a job
@@ -25,6 +39,29 @@ export async function findDeadStuckRenders(db: Db): Promise<{ videoRenderId: str
       and(
         inArray(jobs.type, ["render_video", "lipsync"]),
         eq(jobs.status, "dead"),
+        notInArray(videoRenders.status, ["released", "failed", "rejected"]),
+      ),
+    );
+}
+
+/**
+ * Renders whose job has sat parked on a budget cap past MAX_BUDGET_PARK_MS.
+ * jobs.created_at is the park-age anchor: render jobs are enqueued at confirm
+ * and normally live minutes, so a budget-parked job hours old has spent
+ * nearly all of that time parked. The job itself is left alone — when its
+ * window frees it runs, sees the terminal render, and completes as a no-op.
+ */
+export async function findOverparkedRenders(db: Db): Promise<{ videoRenderId: string }[]> {
+  return db
+    .select({ videoRenderId: videoRenders.id })
+    .from(jobs)
+    .innerJoin(videoRenders, sql`${videoRenders.id} = (${jobs.payload}->>'videoRenderId')::uuid`)
+    .where(
+      and(
+        inArray(jobs.type, ["render_video", "lipsync"]),
+        eq(jobs.status, "queued"),
+        eq(jobs.errorClass, "budget"),
+        lt(jobs.createdAt, new Date(Date.now() - MAX_BUDGET_PARK_MS)),
         notInArray(videoRenders.status, ["released", "failed", "rejected"]),
       ),
     );
@@ -49,6 +86,16 @@ export async function handleReapDeadRenders(_job: Job, ctx: JobContext): Promise
     }
     // Zero in normal operation — anything else means a job died with no code running.
     if (repaired > 0) log.warn({ repaired }, "reaper: repaired renders stuck behind dead jobs");
+
+    let unparked = 0;
+    for (const { videoRenderId } of await findOverparkedRenders(db)) {
+      if (await failRenderAndRefund(db, videoRenderId, RENDER_PARK_EXPIRED_MESSAGE)) {
+        unparked++;
+      }
+    }
+    if (unparked > 0) {
+      log.warn({ unparked }, "reaper: refunded renders parked past the max park age");
+    }
   } catch (err) {
     log.warn({ err }, "reaper: sweep failed — retrying next tick");
   }

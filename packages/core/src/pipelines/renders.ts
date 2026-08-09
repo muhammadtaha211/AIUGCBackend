@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
-import { assertBudget, recordUsage } from "../budget";
+import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { evenlySpacedCaptions, type CaptionChunk } from "../captions";
 import { getEnv } from "../config";
 import type { Db } from "../db";
@@ -103,6 +103,20 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
 
   try {
     if (!state.providerJobId) {
+      // Backstop for the confirm-to-execution window — the real gate ran at
+      // confirm (createSet / createBRender). Account-first, and it FAILS
+      // (refund included) rather than parks: an abuse ceiling must never
+      // leave the wizard spinning on a parked job.
+      try {
+        await assertAccountBudget(ctx.db, "gpu_seconds", render.businessId);
+      } catch (err) {
+        if (err instanceof AccountBudgetError) {
+          throw new PermanentError(err.message, {
+            customerMessage: "הגעתם למכסת יצירת הסרטונים היומית של החשבון — נסו שוב מחר",
+          });
+        }
+        throw err;
+      }
       await assertBudget(ctx.db, "gpu_seconds");
       const storage = getStorage();
 
@@ -578,6 +592,10 @@ export const RENDER_RETRIES_EXHAUSTED_MESSAGE =
  * on jobs.last_error.
  */
 export const RENDER_FAILED_MESSAGE = "יצירת הסרטון נכשלה — נסו שוב.";
+
+/** What the customer reads when the max-park-age valve kills a parked render. */
+export const RENDER_PARK_EXPIRED_MESSAGE =
+  "יצירת הסרטון התעכבה מעבר לסביר בגלל תקלה אצלנו — נסו שוב מאוחר יותר.";
 
 /** events.kind: a dying render's refund landed on an ancestor's debit. */
 export const REFUND_RESOLVED_TO_ANCESTOR = "refund_resolved_to_ancestor";

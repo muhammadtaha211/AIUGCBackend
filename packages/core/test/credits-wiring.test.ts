@@ -23,6 +23,7 @@ import { handleReapDeadRenders } from "../src/pipelines/janitor";
 import {
   failRenderAndRefund,
   REFUND_RESOLVED_TO_ANCESTOR,
+  RENDER_PARK_EXPIRED_MESSAGE,
   RENDER_RETRIES_EXHAUSTED_MESSAGE,
 } from "../src/pipelines/renders";
 import { rejectRender } from "../src/pipelines/qc";
@@ -557,6 +558,107 @@ describe("QC rejection never double-charges", { timeout: 120_000 }, () => {
     expect(row.status).toBe("failed");
     expect(row.refundedAt).toBeNull();
     expect(await refundsFor(render.id)).toHaveLength(0);
+  });
+
+  it("refuses at confirm when the account GPU cap is spent — pre-debit, nothing written", async () => {
+    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    const audio = await voicedAudio(15_000);
+    await db.insert(dbSchema.usageEvents).values({
+      provider: "heygen",
+      kind: "gpu_seconds",
+      quantity: 2_000, // the 0022 per-account cap
+      businessId,
+    });
+    const rendersBefore = (await db.select().from(dbSchema.videoRenders)).length;
+    const balanceBefore = await creditBalance(db, ownerUserId);
+
+    await expect(
+      createBRender(db, { businessId, audioRenderId: audio.id, personaId }),
+    ).rejects.toThrow(/account daily cap reached for gpu_seconds/);
+
+    // The refusal happened before a single row was written — no orphan render,
+    // no debit to refund, no parked job.
+    expect((await db.select().from(dbSchema.videoRenders)).length).toBe(rendersBefore);
+    expect(await creditBalance(db, ownerUserId)).toBe(balanceBefore);
+
+    await db.delete(dbSchema.usageEvents).where(sql`${dbSchema.usageEvents.quantity} = 2000`);
+  });
+
+  it("the in-handler backstop fails and refunds instead of parking (confirm-to-execution window)", async () => {
+    // Flush lipsync jobs left queued by the regeneration tests above — their
+    // refunds would otherwise land mid-test and skew the balance assertions.
+    await drainAll();
+
+    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    const audio = await voicedAudio(15_000);
+    // Confirm passes under the cap; the account hits it before the job runs.
+    const render = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
+    const balanceAfterDebit = await creditBalance(db, ownerUserId);
+    await db.insert(dbSchema.usageEvents).values({
+      provider: "heygen",
+      kind: "gpu_seconds",
+      quantity: 2_000,
+      businessId,
+    });
+
+    await drainAll();
+
+    const row = (
+      await db.select().from(dbSchema.videoRenders).where(eq(dbSchema.videoRenders.id, render.id))
+    )[0]!;
+    expect(row.status).toBe("failed");
+    expect(row.error).toBe("הגעתם למכסת יצירת הסרטונים היומית של החשבון — נסו שוב מחר");
+    expect(row.refundedAt).not.toBeNull();
+    expect(await creditBalance(db, ownerUserId)).toBe(
+      balanceAfterDebit + Math.abs((await debitsFor(render.id))[0]!.delta),
+    );
+
+    // Failed, not parked: an abuse ceiling must never spin the wizard.
+    const job = (
+      await db
+        .select()
+        .from(dbSchema.jobs)
+        .where(sql`${dbSchema.jobs.idempotencyKey} = ${`lipsync:${render.id}`}`)
+    )[0]!;
+    expect(job.status).toBe("failed");
+    expect(job.errorClass).toBe("permanent");
+
+    await db.delete(dbSchema.usageEvents).where(sql`${dbSchema.usageEvents.quantity} = 2000`);
+  });
+
+  it("the max-park-age valve fails and refunds a render parked on budget for too long", async () => {
+    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    const audio = await voicedAudio(15_000);
+    const render = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
+    const balanceAfterDebit = await creditBalance(db, ownerUserId);
+
+    // The parked shape parkForBudget leaves, aged past the valve.
+    await db
+      .update(dbSchema.jobs)
+      .set({
+        status: "queued",
+        errorClass: "budget",
+        runAt: new Date(Date.now() + 60 * 60 * 1000),
+        createdAt: new Date(Date.now() - 7 * 60 * 60 * 1000),
+      })
+      .where(sql`${dbSchema.jobs.idempotencyKey} = ${`lipsync:${render.id}`}`);
+
+    const silentLog = { info() {}, warn() {}, error() {} };
+    await handleReapDeadRenders({} as never, { db, log: silentLog } as never);
+
+    const row = (
+      await db.select().from(dbSchema.videoRenders).where(eq(dbSchema.videoRenders.id, render.id))
+    )[0]!;
+    expect(row.status).toBe("failed");
+    expect(row.error).toBe(RENDER_PARK_EXPIRED_MESSAGE);
+    expect(row.refundedAt).not.toBeNull();
+    expect(await creditBalance(db, ownerUserId)).toBe(
+      balanceAfterDebit + Math.abs((await debitsFor(render.id))[0]!.delta),
+    );
+
+    // A second sweep refunds nothing — the render is terminal now.
+    await handleReapDeadRenders({} as never, { db, log: silentLog } as never);
+    expect(await refundsFor(render.id)).toHaveLength(1);
   });
 
   it("gives up past the walk depth cap instead of hanging or refunding blind", async () => {

@@ -32,6 +32,7 @@ export const PORTABLE_MIGRATIONS = [
   "0019_usage_provider_heygen.sql",
   "0020_backfill_heygen_usage.sql",
   "0021_render_refund_provenance.sql",
+  "0022_gpu_caps_account_first.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

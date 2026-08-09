@@ -167,17 +167,33 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   nobody walks the whole flow (upload, scripts, previews — all of which cost us money) only to be
   refused at the last screen. Spam control, not enforcement: the 402 at confirm is the real
   boundary.
-- **Per-ACCOUNT caps** (`daily_caps.per_account`, migration 0018) — checked **first**, keyed on
-  `users.id`. `tts_chars: 25000` ≈ 2000 seconds of Hebrew speech a day (~50 full previews,
-  ~₪7.50/account/day). Keyed on the account and not the business because business creation is
-  self-serve and unlimited — a per-business cap is farmable at N businesses. A breach throws
-  `AccountBudgetError` and is rejected **immediately**, never parked: a parked job leaves the
-  wizard spinning forever, because `useJobPoll` only gives up after consecutive _failures_ and a
-  parked job never fails.
-- **Platform-wide daily caps** — unchanged backstop: rolling-24h sums of `usage_events` vs
-  `app_config.daily_caps`. Checked in handlers immediately before the paid call; a breach parks
-  the job (`BudgetError`, no attempt burned) and resumes when the window frees. Park-and-resume is
-  right for a capacity ceiling and wrong for an abuse ceiling — hence the split.
+- **Per-ACCOUNT caps** (`daily_caps.per_account`, migrations 0018 + 0022) — **the real
+  mechanism, checked first**, keyed on `users.id`. `tts_chars: 25000` ≈ 2000 seconds of Hebrew
+  speech a day (~50 full previews, ~₪7.50/account/day). `gpu_seconds: 2000` mirrors that ceiling
+  on purpose — every lip-synced second is a second of approved TTS audio, so an account cannot
+  legitimately lip-sync more than it can synthesize in the same window (~65 thirty-second
+  renders/day, ~₪500/account/day worst case; the busiest day ever recorded across ALL accounts
+  is 127 gpu-seconds). GPU is checked **pre-debit at confirm** (`createBRender`, and `createSet`
+  when the outro decision is avatar) with an in-handler backstop in `handleLipsync` for the
+  confirm-to-execution window — the backstop fails-and-refunds, never parks. Keyed on the
+  account and not the business because business creation is self-serve and unlimited — a
+  per-business cap is farmable at N businesses. A breach throws `AccountBudgetError` and is
+  rejected **immediately**, never parked: a parked job leaves the wizard spinning forever,
+  because `useJobPoll` only gives up after consecutive _failures_ and a parked job never fails.
+- **Platform-wide daily caps** — a **runaway backstop only**, for what no account cap can stop
+  (a loop across accounts, a leaked key): rolling-24h sums of `usage_events` vs
+  `app_config.daily_caps`. `gpu_seconds: 7200` (2h of video/day, ~₪1,800 worst case), set in
+  **migration 0022, never a hand `UPDATE`** — the live value had drifted to a hand-set,
+  recorded-nowhere 36,000 and that drift is the reason for the rule. Checked in handlers
+  immediately before the paid call; a breach parks the job (`BudgetError`, no attempt burned),
+  resumes when the window frees, **and writes a `platform_budget_tripped` events row** — with
+  account caps absorbing legitimate load, a platform trip means something is broken, not that we
+  are busy. Watch it in the admin events feed (or `select * from events where kind =
+'platform_budget_tripped'`).
+- **Max-park-age valve** (`MAX_BUDGET_PARK_MS`, 6h, reaper sweep) — a render whose job has sat
+  budget-parked past the threshold is failed and refunded through `failRenderAndRefund` instead
+  of holding the customer's money indefinitely. A safety valve, not a policy: it works under any
+  cap design.
 - **Audio previews are free but capped** — `audio_preview_daily_limit` (20/24h), also keyed on the
   owner account. TTS is absorbed cost of sale (~₪0.10/1k chars) and a cap beats a debit; absorbed
   does not mean unbounded.

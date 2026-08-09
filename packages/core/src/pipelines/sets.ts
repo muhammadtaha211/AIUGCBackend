@@ -12,6 +12,7 @@ import {
   sets,
   videoRenders,
 } from "../db/schema";
+import { assertAccountBudget } from "../budget";
 import { textSafeAreaSchema, type SafeRect } from "../hook-geometry";
 import { enqueue } from "../jobs/queue";
 import {
@@ -136,6 +137,11 @@ export async function createSet(
       throw new Error(
         "the voiceover outlasts the demo enough for an avatar ending — pass personaId",
       );
+    }
+    // Pre-debit, like the credits check below: an in-handler rejection would
+    // mean the customer paid, waited, and got a refund instead of a video.
+    if (plan.outroMode === "avatar") {
+      await assertAccountBudget(db, "gpu_seconds", opts.businessId);
     }
     outro = { outroMode: plan.outroMode, voSliceMs: plan.voSliceMs };
   } else if (!grid.captionScriptId) {
@@ -352,6 +358,9 @@ export async function createBRender(
       ? undefined
       : lipsyncExpressivenessSchema.parse(opts.expressiveness);
 
+  // Pre-debit, like the credits check below: an in-handler rejection would
+  // mean the customer paid, waited, and got a refund instead of a video.
+  await assertAccountBudget(db, "gpu_seconds", opts.businessId);
   const quote = await quoteBRender(db, {
     businessId: opts.businessId,
     audioRenderId: opts.audioRenderId,

@@ -44,9 +44,9 @@ export const dailyCapsSchema = z.object({
   /**
    * Per-ACCOUNT ceilings, checked before the platform-wide ones. Abuse control,
    * not capacity: a breach here is a fast rejection, never a parked job.
-   * Closed object — see 0018, which adds the row in the same change.
+   * Closed object — see 0018/0022, which add the keys in the same change.
    */
-  per_account: z.object({ tts_chars: z.number().int() }),
+  per_account: z.object({ tts_chars: z.number().int(), gpu_seconds: z.number().int() }),
 });
 
 export const retentionDaysSchema = z.object({

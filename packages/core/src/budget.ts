@@ -1,11 +1,20 @@
 import { and, eq, gt, sql } from "drizzle-orm";
 import { dailyCapsSchema } from "./config";
 import type { Db } from "./db";
-import { appConfig, businesses, usageEvents, users } from "./db/schema";
+import { appConfig, businesses, events, usageEvents, users } from "./db/schema";
 import { BudgetError } from "./jobs/errors";
 
 export type UsageKind = "llm_tokens" | "tts_chars" | "gpu_seconds" | "images";
 export type UsageProvider = "anthropic" | "elevenlabs" | "fal" | "heygen";
+
+/**
+ * events.kind: the platform-wide cap refused a paid call. With per-account
+ * caps absorbing legitimate load, a trip here means something is BROKEN — a
+ * runaway loop or a leaked key — not that we are busy. One row per refused
+ * attempt (parked jobs recheck hourly; the reaper's park-age valve bounds how
+ * long that can accrue).
+ */
+export const PLATFORM_BUDGET_TRIPPED = "platform_budget_tripped";
 
 /**
  * Hard platform-wide spend caps, per provider unit, over a rolling 24h window
@@ -29,6 +38,11 @@ export async function assertBudget(db: Db, kind: UsageKind): Promise<void> {
   const used = Number(rows[0]?.used ?? 0);
 
   if (used >= cap) {
+    await db.insert(events).values({
+      kind: PLATFORM_BUDGET_TRIPPED,
+      subjectType: "usage_kind",
+      payload: { kind, used, cap },
+    });
     throw new BudgetError(`daily cap reached for ${kind}: used ${used} of ${cap} in the last 24h`);
   }
 }
