@@ -18,9 +18,9 @@ import {
   videoRenders,
 } from "../db/schema";
 import { resolveHookTextSafeArea } from "../hook-geometry";
-import { PermanentError, TransientError } from "../jobs/errors";
+import { BudgetError, PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
-import { enqueue, type Job } from "../jobs/queue";
+import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { logger } from "../logger";
 import {
@@ -91,6 +91,10 @@ const DRY_RUN_PROBE: ProbeResult = {
 export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResult> {
   const { videoRenderId } = job.payload as { videoRenderId: string };
   const render = await loadRender(ctx.db, videoRenderId);
+  // A resurrected job (a dead row manually requeued) must not act on a render
+  // that already ended — lip-syncing a failed+refunded render spends GPU money
+  // on a video nobody is waiting for.
+  if (TERMINAL_RENDER_STATUSES.includes(render.status)) return { kind: "done" };
   const params = render.params as VariantParams;
   const provider = getLipsyncProvider();
   const state = job.state as { providerJobId?: string; submittedAt?: number };
@@ -283,7 +287,7 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
     await enqueueRenderVideo(ctx.db, videoRenderId);
     return { kind: "done" };
   } catch (err) {
-    await failRenderOnPermanent(ctx.db, videoRenderId, err);
+    await failRenderOnTerminal(ctx.db, videoRenderId, err, job);
     throw err;
   }
 }
@@ -316,6 +320,10 @@ async function mergeParams(
 export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobResult> {
   const { videoRenderId } = job.payload as { videoRenderId: string };
   const render = await loadRender(ctx.db, videoRenderId);
+  // Same resurrection guard as handleLipsync — and here it is also what keeps
+  // the release path from overwriting a failed render: a requeued job that
+  // "succeeds" on a refunded render would ship a free video.
+  if (TERMINAL_RENDER_STATUSES.includes(render.status)) return { kind: "done" };
 
   try {
     await ctx.db
@@ -375,7 +383,7 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
       .where(eq(videoRenders.id, videoRenderId));
     return { kind: "done" };
   } catch (err) {
-    await failRenderOnPermanent(ctx.db, videoRenderId, err);
+    await failRenderOnTerminal(ctx.db, videoRenderId, err, job);
     throw err;
   }
 }
@@ -545,12 +553,57 @@ async function loadRender(db: Db, videoRenderId: string) {
   return rows[0];
 }
 
-async function failRenderOnPermanent(db: Db, videoRenderId: string, err: unknown): Promise<void> {
+/**
+ * What the customer reads when a render's job exhausts its retries. The raw
+ * transient error (stack traces, provider payloads) stays on jobs.last_error —
+ * video_renders.error is displayable by construction.
+ */
+export const RENDER_RETRIES_EXHAUSTED_MESSAGE =
+  "יצירת הסרטון נכשלה בגלל תקלה חוזרת בעיבוד — נסו שוב מאוחר יותר.";
+
+const TERMINAL_RENDER_STATUSES = ["released", "failed", "rejected"];
+
+/**
+ * Refund-first terminal mark, shared by every path that kills a render: the
+ * permanent path, the last transient attempt, and the dead-job reaper. Refund
+ * BEFORE marking failed — the customer must never read `failed` while the
+ * balance hasn't moved (a crash in between leaves refund-without-failed, which
+ * the next sweep repairs; the reverse would show a failure with money missing).
+ * Skips renders already terminal. Returns true when it marked the render.
+ */
+export async function failRenderAndRefund(
+  db: Db,
+  videoRenderId: string,
+  message: string,
+): Promise<boolean> {
+  const render = (
+    await db.select().from(videoRenders).where(eq(videoRenders.id, videoRenderId)).limit(1)
+  )[0];
+  if (!render || TERMINAL_RENDER_STATUSES.includes(render.status)) return false;
+  await refundRenderIfNeeded(db, videoRenderId);
+  await db
+    .update(videoRenders)
+    .set({ status: "failed", error: message, updatedAt: new Date() })
+    .where(eq(videoRenders.id, videoRenderId));
+  return true;
+}
+
+/**
+ * Handler-side terminal mapping, called from the render handlers' catch before
+ * rethrowing: a PermanentError fails the render now with its user-facing
+ * message; the LAST transient attempt fails it with the fixed Hebrew string.
+ * A budget park or a transient attempt with retries left leaves the render
+ * alone — the job isn't dead.
+ */
+async function failRenderOnTerminal(
+  db: Db,
+  videoRenderId: string,
+  err: unknown,
+  job: Job,
+): Promise<void> {
   if (err instanceof PermanentError) {
-    await db
-      .update(videoRenders)
-      .set({ status: "failed", error: err.message, updatedAt: new Date() })
-      .where(eq(videoRenders.id, videoRenderId));
-    await refundRenderIfNeeded(db, videoRenderId);
+    await failRenderAndRefund(db, videoRenderId, err.message);
+  } else if (!(err instanceof BudgetError) && isLastAttempt(job)) {
+    await failRenderAndRefund(db, videoRenderId, RENDER_RETRIES_EXHAUSTED_MESSAGE);
   }
 }

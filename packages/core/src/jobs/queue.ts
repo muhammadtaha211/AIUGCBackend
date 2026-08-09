@@ -135,9 +135,18 @@ export async function failPermanent(db: Db, jobId: string, message: string): Pro
     .where(eq(jobs.id, jobId));
 }
 
+/**
+ * True when one more failure kills the job. The single definition of "last
+ * attempt" — failTransient and the render handlers' terminal path both call
+ * this, so the two can never disagree about when a job dies.
+ */
+export function isLastAttempt(job: Pick<Job, "attempts" | "maxAttempts">): boolean {
+  return job.attempts + 1 >= job.maxAttempts;
+}
+
 export async function failTransient(db: Db, job: Job, message: string): Promise<void> {
   const failures = job.attempts + 1;
-  const dead = failures >= job.maxAttempts;
+  const dead = isLastAttempt(job);
   await db
     .update(jobs)
     .set({
