@@ -17,7 +17,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if ("response" in found) return found.response;
     const { render } = found;
 
-    const body: { status: string; videoUrl?: string; thumbUrl?: string; failureReason?: string } = {
+    const body: {
+      status: string;
+      videoUrl?: string;
+      thumbUrl?: string;
+      failureReason?: string;
+      refunded?: boolean;
+    } = {
       status: render.status,
     };
     if (render.status === "released") {
@@ -30,10 +36,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       }
     }
     if (render.status === "failed") {
-      // Displayable by construction: a PermanentError's user-facing message or
-      // the fixed retry-exhaustion string. The fallback covers rows failed
-      // before that invariant existed.
+      // Displayable by construction: a PermanentError's Hebrew customer
+      // message or one of the fixed Hebrew strings. The fallback covers rows
+      // failed before that invariant existed.
       body.failureReason = render.error ?? "יצירת הסרטון נכשלה — נסו שוב.";
+      // refunded_at is written only in the same transaction as the refund row
+      // (failRenderAndRefund) — the wizard's refund sentence hangs off this.
+      body.refunded = render.refundedAt !== null;
     }
     return NextResponse.json(body);
   } catch (err) {

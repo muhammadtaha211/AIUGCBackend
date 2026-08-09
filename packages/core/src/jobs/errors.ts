@@ -9,6 +9,18 @@
 
 export class PermanentError extends Error {
   readonly jobErrorClass = "permanent" as const;
+  /**
+   * Hebrew string a customer may read (video_renders.error) when this error
+   * kills a render. The message itself is the diagnostic and lands on
+   * jobs.last_error. Absent means the render shows the generic Hebrew failure
+   * (RENDER_FAILED_MESSAGE) — video_renders.error is Hebrew by construction.
+   */
+  readonly customerMessage?: string;
+
+  constructor(message: string, opts?: { customerMessage?: string }) {
+    super(message);
+    this.customerMessage = opts?.customerMessage;
+  }
 }
 
 export class TransientError extends Error {

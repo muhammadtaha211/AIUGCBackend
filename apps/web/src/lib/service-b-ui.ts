@@ -147,7 +147,25 @@ export type RenderState = {
   videoUrl?: string;
   /** Set when status is "failed" — the render's own displayable Hebrew reason. */
   failureReason?: string;
+  /** True only when the refund actually happened (refunded_at set server-side). */
+  refunded?: boolean;
 };
+
+/**
+ * The failed-state copy for both wizards: the reason always renders; the
+ * refund sentence renders only when the server says the refund really
+ * happened — admin renders, pre-ledger rows, and unrefunded edge cases must
+ * not claim money moved when it didn't.
+ */
+export function failedRenderNotice(render: Pick<RenderState, "failureReason" | "refunded">): {
+  reason: string;
+  showRefund: boolean;
+} {
+  return {
+    reason: render.failureReason ?? "יצירת הסרטון נכשלה — נסו שוב.",
+    showRefund: render.refunded === true,
+  };
+}
 
 /** GET /api/audio/[id]: status, the signed mp3, and the script being spoken. */
 export type AudioPollResult = {

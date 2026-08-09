@@ -14,7 +14,7 @@ import {
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { hasShortfall, quoteLine, shortfallLine, type QuoteView } from "@/lib/quote-ui";
-import type { RenderState } from "@/lib/service-b-ui";
+import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
 import { postJson, useJobPoll } from "@/lib/use-api";
 
 type StepARenderProps = {
@@ -100,7 +100,7 @@ export function StepARender({
     slow,
     stalled,
     retry: retryPolling,
-  } = useJobPoll<{ status: string; videoUrl?: string; failureReason?: string }>(
+  } = useJobPoll<{ status: string; videoUrl?: string; failureReason?: string; refunded?: boolean }>(
     inFlight,
     `/api/renders/${render?.id}`,
     2_500,
@@ -111,6 +111,7 @@ export function StepARender({
         status: body.status,
         videoUrl: body.videoUrl,
         failureReason: body.failureReason,
+        refunded: body.refunded,
       });
     },
     onFatal,
@@ -208,15 +209,16 @@ export function StepARender({
   }
 
   if (render.status === "failed") {
+    const notice = failedRenderNotice(render);
     return (
       <div>
         <StepHeader title="יצירת הסרטון" />
         <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
-          {render.failureReason ?? "יצירת הסרטון נכשלה — נסו שוב."}
+          {notice.reason}
         </p>
-        <p className="mt-3 text-sm text-gray-400">
-          הקרדיטים על הסרטון הזה הוחזרו לחשבונכם.
-        </p>
+        {notice.showRefund && (
+          <p className="mt-3 text-sm text-gray-400">הקרדיטים על הסרטון הזה הוחזרו לחשבונכם.</p>
+        )}
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Button
             type="button"

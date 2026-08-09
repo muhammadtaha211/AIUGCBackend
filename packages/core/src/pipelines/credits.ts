@@ -43,11 +43,6 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
-/** Postgres unique_violation — the 0016 partial indexes firing. */
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
-}
-
 /**
  * Debit at render enqueue time (reserve); refunded on terminal failure.
  *
@@ -82,8 +77,10 @@ export async function debitRender(
 /**
  * Idempotent: refunds once per render, only if a debit exists. The read is an
  * optimisation and a source of the debit's amount; the 0016 unique index is
- * what actually makes it safe. A conflict means the render handler and the
- * janitor raced and the other one won — that is success, not an error.
+ * what actually makes it safe. ON CONFLICT DO NOTHING instead of catching the
+ * violation, so this composes inside a caller's transaction — a raised 23505
+ * would abort the whole thing. A conflict means the render handler and the
+ * reaper raced and the other one won — that is success, not an error.
  */
 export async function refundRenderIfNeeded(db: Db, videoRenderId: string): Promise<boolean> {
   const debit = await db
@@ -93,19 +90,18 @@ export async function refundRenderIfNeeded(db: Db, videoRenderId: string): Promi
     .limit(1);
   if (!debit[0]) return false;
 
-  try {
-    await db.insert(creditLedger).values({
+  const inserted = await db
+    .insert(creditLedger)
+    .values({
       userId: debit[0].userId,
       businessId: debit[0].businessId,
       delta: -debit[0].delta,
       reason: "refund_failed",
       refId: videoRenderId,
-    });
-    return true;
-  } catch (err) {
-    if (isUniqueViolation(err)) return false;
-    throw err;
-  }
+    })
+    .onConflictDoNothing()
+    .returning({ id: creditLedger.id });
+  return inserted.length > 0;
 }
 
 /** Founder manual grant (admin console): one append-only row; the note is the why. */

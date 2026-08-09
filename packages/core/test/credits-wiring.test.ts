@@ -12,10 +12,19 @@ import { runLane } from "../src/jobs/worker";
 import { addHookClip, addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { generateHookLines, generateVoScript } from "../src/pipelines/copy";
-import { creditBalance, grantCredits, InsufficientCreditsError } from "../src/pipelines/credits";
+import {
+  creditBalance,
+  grantCredits,
+  InsufficientCreditsError,
+  refundRenderIfNeeded,
+} from "../src/pipelines/credits";
 import { createDemo } from "../src/pipelines/demos";
 import { handleReapDeadRenders } from "../src/pipelines/janitor";
-import { RENDER_RETRIES_EXHAUSTED_MESSAGE } from "../src/pipelines/renders";
+import {
+  failRenderAndRefund,
+  REFUND_RESOLVED_TO_ANCESTOR,
+  RENDER_RETRIES_EXHAUSTED_MESSAGE,
+} from "../src/pipelines/renders";
 import { rejectRender } from "../src/pipelines/qc";
 import { createBRender, createSet, quoteASet, quoteBRender } from "../src/pipelines/sets";
 import { getStorage, setStorage } from "../src/storage";
@@ -467,5 +476,119 @@ describe("QC rejection never double-charges", { timeout: 120_000 }, () => {
     expect(regeneratedRenderId).toBeDefined();
     expect(await debitsFor(regeneratedRenderId!)).toHaveLength(0);
     expect(await creditBalance(db, ownerUserId)).toBe(balanceBefore);
+  });
+
+  async function rejectAsQcPending(videoRenderId: string): Promise<string> {
+    await db
+      .update(dbSchema.videoRenders)
+      .set({ status: "qc_pending" })
+      .where(eq(dbSchema.videoRenders.id, videoRenderId));
+    const { regeneratedRenderId } = await rejectRender(db, videoRenderId, "עיניים מוזרות");
+    return regeneratedRenderId!;
+  }
+
+  async function refundsFor(videoRenderId: string) {
+    return db
+      .select()
+      .from(dbSchema.creditLedger)
+      .where(
+        sql`${dbSchema.creditLedger.refId} = ${videoRenderId} and ${dbSchema.creditLedger.reason} = 'refund_failed'`,
+      );
+  }
+
+  it("a dying regeneration refunds the ROOT debit exactly once, and records the reroute", async () => {
+    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    const audio = await voicedAudio(15_000);
+    const root = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
+    const balanceAfterDebit = await creditBalance(db, ownerUserId);
+
+    // A two-hop chain: root -> regen1 -> regen2 (a regeneration can itself be
+    // rejected). The debit exists only on the root.
+    const regen1 = await rejectAsQcPending(root.id);
+    const regen2 = await rejectAsQcPending(regen1);
+
+    expect(await failRenderAndRefund(db, regen2, RENDER_RETRIES_EXHAUSTED_MESSAGE)).toBe(true);
+
+    // The money came back through the root's debit — not the regeneration's.
+    expect(await refundsFor(root.id)).toHaveLength(1);
+    expect(await refundsFor(regen2)).toHaveLength(0);
+    expect(await creditBalance(db, ownerUserId)).toBe(
+      balanceAfterDebit + Math.abs((await debitsFor(root.id))[0]!.delta),
+    );
+
+    // refunded_at marks the render the customer is looking at, nothing else.
+    const rows = Object.fromEntries(
+      (await db.select().from(dbSchema.videoRenders)).map((r) => [r.id, r]),
+    );
+    expect(rows[regen2]!.refundedAt).not.toBeNull();
+    expect(rows[root.id]!.refundedAt).toBeNull();
+    expect(rows[regen1]!.refundedAt).toBeNull();
+
+    // The money trail is explicit: one events row naming both renders.
+    const trail = await db
+      .select()
+      .from(dbSchema.events)
+      .where(sql`${dbSchema.events.kind} = ${REFUND_RESOLVED_TO_ANCESTOR}`);
+    expect(trail).toHaveLength(1);
+    expect(trail[0]!.subjectId).toBe(regen2);
+    expect((trail[0]!.payload as { refundedRenderId: string }).refundedRenderId).toBe(root.id);
+
+    // A second attempt refunds nothing: the render is terminal and the 0016
+    // unique index holds even if the guard were bypassed.
+    expect(await failRenderAndRefund(db, regen2, RENDER_RETRIES_EXHAUSTED_MESSAGE)).toBe(false);
+    expect(await refundRenderIfNeeded(db, root.id)).toBe(false);
+    expect(await refundsFor(root.id)).toHaveLength(1);
+  });
+
+  it("a failed render with no debit anywhere marks failed without claiming a refund", async () => {
+    // Admin renders and pre-ledger rows fail with no ledger movement — the
+    // wizard's refund sentence must stay off (refunded_at null).
+    const inserted = await db
+      .insert(dbSchema.videoRenders)
+      .values({ businessId, service: "b", params: {} })
+      .returning();
+    const render = inserted[0]!;
+
+    expect(await failRenderAndRefund(db, render.id, RENDER_RETRIES_EXHAUSTED_MESSAGE)).toBe(true);
+
+    const row = (
+      await db.select().from(dbSchema.videoRenders).where(eq(dbSchema.videoRenders.id, render.id))
+    )[0]!;
+    expect(row.status).toBe("failed");
+    expect(row.refundedAt).toBeNull();
+    expect(await refundsFor(render.id)).toHaveLength(0);
+  });
+
+  it("gives up past the walk depth cap instead of hanging or refunding blind", async () => {
+    // A 12-hop synthetic chain with the debit on the far root — past the cap
+    // of 10 the walk stops, the render still fails, no refund is claimed.
+    let parentId: string | null = null;
+    let rootId = "";
+    let tipId = "";
+    for (let i = 0; i < 12; i++) {
+      const inserted: (typeof dbSchema.videoRenders.$inferSelect)[] = await db
+        .insert(dbSchema.videoRenders)
+        .values({ businessId, service: "b", params: {}, regeneratedFrom: parentId ?? undefined })
+        .returning();
+      parentId = inserted[0]!.id;
+      if (i === 0) rootId = parentId;
+      tipId = parentId;
+    }
+    await db.insert(dbSchema.creditLedger).values({
+      userId: ownerUserId,
+      businessId,
+      delta: -5,
+      reason: "debit_render",
+      refId: rootId,
+    });
+
+    expect(await failRenderAndRefund(db, tipId, RENDER_RETRIES_EXHAUSTED_MESSAGE)).toBe(true);
+
+    const tip = (
+      await db.select().from(dbSchema.videoRenders).where(eq(dbSchema.videoRenders.id, tipId))
+    )[0]!;
+    expect(tip.status).toBe("failed");
+    expect(tip.refundedAt).toBeNull();
+    expect(await refundsFor(rootId)).toHaveLength(0);
   });
 });

@@ -33,5 +33,7 @@ export async function assertPollDeadline(
     { providerJobId: opts.providerJobId, submittedAt: new Date(opts.submittedAt).toISOString() },
     "poll deadline exceeded — failing the job",
   );
-  throw new PermanentError("העיבוד לא הסתיים בזמן — נסו שוב");
+  // The message doubles as the customer text — it is already the whole story.
+  const message = "העיבוד לא הסתיים בזמן — נסו שוב";
+  throw new PermanentError(message, { customerMessage: message });
 }

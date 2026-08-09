@@ -292,7 +292,9 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     const job = (await lipsyncJob(renderId))!;
     expect(job.status).toBe("failed");
     expect(job.errorClass).toBe("permanent");
-    expect(job.lastError).toMatch(/חורג מהמגבלה/);
+    // The diagnostic (real seconds vs the guard) stays on the job; the
+    // customer-facing column gets the Hebrew customerMessage.
+    expect(job.lastError).toMatch(/runaway-cost guard/);
 
     const render = await renderRow(renderId);
     expect(render.status).toBe("failed");

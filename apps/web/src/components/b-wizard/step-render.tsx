@@ -13,6 +13,7 @@ import {
   type QuoteView,
 } from "@/lib/quote-ui";
 import {
+  failedRenderNotice,
   RENDER_STAGES,
   renderRequestBody,
   renderStageIndex,
@@ -106,7 +107,7 @@ export function StepRender({
     slow,
     stalled,
     retry: retryPolling,
-  } = useJobPoll<{ status: string; videoUrl?: string; failureReason?: string }>(
+  } = useJobPoll<{ status: string; videoUrl?: string; failureReason?: string; refunded?: boolean }>(
     inFlight,
     `/api/renders/${render?.id}`,
     2_500,
@@ -117,6 +118,7 @@ export function StepRender({
         status: body.status,
         videoUrl: body.videoUrl,
         failureReason: body.failureReason,
+        refunded: body.refunded,
       });
     },
     onFatal,
@@ -216,15 +218,16 @@ export function StepRender({
   }
 
   if (render?.status === "failed") {
+    const notice = failedRenderNotice(render);
     return (
       <div>
         <StepHeader title="יצירת הסרטון" />
         <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
-          {render.failureReason ?? "יצירת הסרטון נכשלה — נסו שוב."}
+          {notice.reason}
         </p>
-        <p className="mt-3 text-sm text-gray-400">
-          הקרדיטים על הסרטון הזה הוחזרו לחשבונכם.
-        </p>
+        {notice.showRefund && (
+          <p className="mt-3 text-sm text-gray-400">הקרדיטים על הסרטון הזה הוחזרו לחשבונכם.</p>
+        )}
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Button
             type="button"
