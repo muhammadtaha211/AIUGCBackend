@@ -35,11 +35,23 @@ keyless (the e2e test relies on this).
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
   app_config) and passed into the prompt as hard constraints. The live value is
   **`{"default": 2.1}`**, set from 36 ready audio renders. Both voices pooled to 2.17–2.18 and
-  the subset written by the current `vo_script@v6` ran 2.07–2.13; **2.1 is deliberately low**,
-  because an undershoot is absorbed by the `atempo` length fit while an overshoot past
-  `a_outro_min_seconds` turns into a billable avatar ending. **Per-voice keys were deliberately
-  not written**: the two voices differ by 0.01, which is inside the noise, and a per-voice entry
-  would freeze that noise into pricing.
+  the subset written by the current `vo_script@v6` ran 2.07–2.13; **2.1 is deliberately low** so
+  the model aims short, because an overshoot past `a_outro_min_seconds` turns into a billable
+  avatar ending. **Per-voice keys were deliberately not written**: the two voices differ by 0.01,
+  which is inside the noise, and a per-voice entry would freeze that noise into pricing.
+- **An undershoot is NOT absorbed by the length fit — OPEN DECISION.** The fit is
+  overshoot-gated: `pipelines/tts.ts:269` enters only when `durationMs > demoDurationMs`, and
+  `atempoStretch` (`media/ffmpeg.ts:192`) has no floor, no ceiling and no branch — it is only ever
+  called with `tempo > 1`. A VO shorter than its demo is therefore left at its natural length:
+  `planAOutro` returns `outroMode: "none"` for `remainderMs <= 0` (`pipelines/sets.ts:113`),
+  `serviceATimeline` sets `durationInFrames = hookFrames + demoFrames` (`timing.ts:68`), and the
+  demo is muted under any VO (`ServiceA.tsx:71`) — so the ad plays the demo to its end over
+  **silence**. Measured 2026-08-09 across the 16 ready voiced Service A renders: 3 undershot
+  (tails of 2972 / 3580 / 4380 ms — about a hook clip's worth of silence each), 13 overshot into
+  the ending path, and only 1 was actually atempo-stretched. So this is the minority case with an
+  outsized symptom, not an edge case and not the norm. **What should happen instead is undecided**
+  — stretching down, trimming the demo, and leaving it are all live options with different
+  billing and quality consequences. Do not pick one here.
 - **`aiugc calibrate-wps` was deliberately bypassed and is not the recalibration path.**
   `observedWordsPerSecond` has no sample filters — every ready render, any script kind, any
   prompt version, all time — and `applyWordsPerSecond` writes only `words_per_second[voiceId]`,
@@ -264,20 +276,23 @@ keyless (the e2e test relies on this).
 
 The Service A hook bank is generated on **Seedance** and registered by hand through the admin
 console. No code calls it and no key exists in `.env`; it is recorded here because the
-generator's floor sets the format.
+generator's output length sets the format.
 
-- **Hook clips are 4 seconds.** That is Seedance's minimum generation length, not a curation
-  choice — the registered bank clip is **4086ms**. The old "2–3s curation doctrine" is stale;
-  4s is the floor. Two statements elsewhere still carry the old number and are wrong:
-  `CLAUDE.md`'s "2s pre-rendered AI reaction clip" and the CLI's
-  `bank add-hook --duration <ms>` help text ("~2000").
-- **4 seconds is the read budget.** At roughly 17 characters/second of Hebrew reading, a 4s
-  clip buys ~60 characters — which is exactly where `hook_lines` v7's ~60-char cap comes from.
-  The 8-word cap is a style hint; this one is the rendering limit.
-- **Swap-matrix cost, corrected.** The earlier $0.25–0.40/swap and $8–10/matrix figures assumed
-  2–3s clips. At 4s × $0.126/s a swap is **~$0.50**, and a 5 hooks × 5 personas matrix is
-  **~$12.60** before any upscale pass. The founder has accepted the cost; only the numbers were
-  wrong.
+- **Hook clips run 3–4 seconds** (founder, 2026-08-09). The one clip registered in the live bank
+  is **4086ms**. The old "2–3s curation doctrine" is stale, and so is the "2s" that survived in
+  `CLAUDE.md`, `README.md` and the CLI help — all three corrected in this pass. An earlier
+  version of this section called 4s a hard floor set by Seedance's minimum generation length;
+  that is not accurate and nothing in the repo can verify a generator-side floor, so the range
+  above is what we record.
+- **The read budget is set by the SHORTEST clip, not the longest.** At roughly 17
+  characters/second of Hebrew reading, 4s buys ~60 characters — which is where `hook_lines` v7's
+  ~60-char cap comes from — but a 3s clip buys only ~51. **The cap is therefore calibrated to
+  the long end of the range and is generous on a short clip**; a 60-char line on a 3s clip is
+  the case to watch when a shorter clip is registered. Recorded, not fixed: no short clip is in
+  the bank today. The 8-word cap is a style hint; this one is the rendering limit.
+- **Swap-matrix cost.** The oldest $0.25–0.40/swap and $8–10/matrix figures assumed 2–3s clips.
+  At $0.126/s a 3–4s swap is **~$0.38–0.50**, and a 5 hooks × 5 personas matrix is **~$9.45–12.60**
+  before any upscale pass. The founder has accepted the cost; only the numbers were wrong.
 - **The swap matrix moves up in priority.** Service A targets persona pages that post
   repeatedly, and a different stock face on every video reads as a content farm. Same face
   across the set is the product, not polish.
