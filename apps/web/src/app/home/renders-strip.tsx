@@ -8,14 +8,14 @@ import { apiFetch, usePolling } from "@/lib/use-api";
 type StripRender = { id: string; status: string; createdAt: string; thumbUrl?: string };
 
 const CHIP_COLORS: Record<string, string> = {
-  released: "bg-accent/15 text-accent",
-  failed: "bg-red-500/10 text-red-300",
+  released: "bg-accent/30 text-ink",
+  failed: "bg-red-100 text-red-700",
 };
 
 function StatusChip({ status }: { status: string }) {
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${CHIP_COLORS[status] ?? "bg-white/10 text-gray-300"}`}
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${CHIP_COLORS[status] ?? "bg-ink/[0.06] text-ink/70"}`}
     >
       {renderStatusLabel(status)}
     </span>
@@ -75,18 +75,18 @@ export function RendersStrip({ businessId }: { businessId: string }) {
   }
 
   return (
-    <section className="mt-10">
-      <h2 className="text-base font-semibold text-white">סרטונים אחרונים</h2>
+    <section className="mt-8">
+      <h2 className="text-sm font-semibold text-ink">סרטונים אחרונים</h2>
 
       {error && (
         <div className="mt-3">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {error}
           </p>
           <button
             type="button"
             onClick={() => void refetch()}
-            className="mt-2 text-sm font-medium text-gray-400 transition-colors duration-150 hover:text-white"
+            className="mt-2 text-sm font-medium text-ink/60 transition-colors duration-150 hover:text-ink"
           >
             נסה שוב
           </button>
@@ -94,35 +94,35 @@ export function RendersStrip({ businessId }: { businessId: string }) {
       )}
 
       {renders === null && !error && (
-        <div className="mt-4 flex items-center gap-2 text-sm text-gray-500">
+        <div className="mt-4 flex items-center gap-2 text-sm text-ink/55">
           <Spinner /> טוענים…
         </div>
       )}
 
       {renders !== null && renders.length === 0 && (
-        <p className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/5 px-6 py-8 text-center text-sm text-gray-400">
-          עוד אין סרטונים — הסרטון הראשון שתיצרו יופיע כאן.
+        <p className="mt-3 rounded-xl border border-dashed border-ink/15 bg-white px-6 py-6 text-center text-sm text-ink/60">
+          עוד אין סרטונים. הסרטון הראשון שתיצרו יופיע כאן.
         </p>
       )}
 
       {renders !== null && renders.length > 0 && (
-        <ul className="mt-4 flex gap-3 overflow-x-auto pb-2">
+        <ul className="mt-3 flex gap-3 overflow-x-auto pb-2">
           {renders.map((render) => {
             const released = render.status === "released";
             const thumb = (
-              <span className="relative block aspect-[9/16] w-full overflow-hidden rounded-lg border border-white/10 bg-white/5">
+              <span className="relative block aspect-[9/16] w-full overflow-hidden rounded-lg border border-ink/10 bg-ink/[0.04]">
                 {render.thumbUrl ? (
                   // Signed, short-lived URL — next/image optimization would break it.
                   <img src={render.thumbUrl} alt="" className="size-full object-cover" />
                 ) : (
-                  <span className="flex size-full items-center justify-center px-2 text-center text-xs text-gray-500">
+                  <span className="flex size-full items-center justify-center px-2 text-center text-xs text-ink/55">
                     {renderStatusLabel(render.status)}
                   </span>
                 )}
               </span>
             );
             return (
-              <li key={render.id} className="w-28 shrink-0 sm:w-32">
+              <li key={render.id} className="w-20 shrink-0 sm:w-24">
                 {released ? (
                   <button
                     type="button"

@@ -9,7 +9,6 @@ import {
   PERSONA_CARD_SIZES,
   pickSelectedBusiness,
 } from "@/lib/service-b-ui";
-import { HomeHeader } from "./home-header";
 import { PathwayCards } from "./pathway-cards";
 import { RendersStrip } from "./renders-strip";
 
@@ -18,13 +17,13 @@ import { RendersStrip } from "./renders-strip";
 const PRELOAD_COUNT = 3;
 
 /**
- * The signed-in homepage: business switcher, the two service pathways, and
- * the recent renders strip. Businesses are read with the user's own session,
- * so RLS scopes the list to what they own.
+ * The dashboard home pane: greeting, the two service cards, recent renders.
+ * Sized to fit a laptop viewport with no scrolling — the sidebar layout owns
+ * the chrome (switcher, credits, profile).
  *
  * It also preloads the persona picker's first row: next/link prefetch on the
- * pathway cards warms the wizard's RSC payload, but never its images — these
- * hints put the bytes in the HTTP cache before the user picks a pathway. The
+ * service cards warms the wizard's RSC payload, but never its images — these
+ * hints put the bytes in the HTTP cache before the user picks a service. The
  * srcset comes from getImageProps with the picker's exact geometry, so the
  * browser preloads the same optimizer URL the picker will request.
  */
@@ -41,7 +40,7 @@ export default async function HomePage() {
     .order("created_at", { ascending: true });
 
   // Signed in with no business (e.g. an interrupted signup): straight into the
-  // questionnaire wizard — the homepage has nothing to show yet.
+  // questionnaire wizard — the dashboard has nothing to show yet.
   if (!businesses || businesses.length === 0) redirect("/home/new-business");
 
   const cookieStore = await cookies();
@@ -65,7 +64,7 @@ export default async function HomePage() {
     });
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="relative isolate overflow-hidden px-6 pb-6 pt-10 sm:px-10">
       {/* React 19 hoists these to <head>; imageSrcSet mirrors the picker's
           <Image>, so the browser picks the exact candidate it will render. */}
       {preloads.map((preload) => (
@@ -78,27 +77,27 @@ export default async function HomePage() {
           fetchPriority="high"
         />
       ))}
-      <HomeHeader
-        businesses={businesses.map(({ id, name }) => ({ id, name }))}
-        selectedId={selected.id}
-      />
 
-      <main className="flex-1">
-        <div className="mx-auto w-full max-w-3xl px-6 pb-16 pt-8 sm:pt-12">
-          <h1 className="text-2xl font-semibold tracking-tight text-white">
-            מה יוצרים היום ל־{selected.name}?
-          </h1>
-          <p className="mt-2 text-[15px] text-gray-400">
-            בוחרים מסלול — ומקבלים סרטון מוכן לפרסום.
-          </p>
+      {/* The landing's aurora, behind the greeting only. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-56">
+        <div className="absolute left-1/2 -top-10 h-48 w-[46rem] max-w-full -translate-x-1/2 rounded-[100%] bg-accent/30 blur-3xl" />
+        <div className="absolute right-[10%] top-4 h-32 w-72 rounded-full bg-emerald-300/25 blur-3xl" />
+      </div>
 
-          <div className="mt-8">
-            <PathwayCards hasQuestionnaire={hasQuestionnaire} />
-          </div>
+      <div className="mx-auto w-full max-w-4xl">
+        <h1 className="text-center font-display text-3xl leading-tight text-ink sm:text-4xl">
+          מה יוצרים היום ל־{selected.name}?
+        </h1>
+        <p className="mt-2 text-center text-[15px] text-ink/65">
+          בוחרים שירות, ומקבלים סרטון מוכן לפרסום.
+        </p>
 
-          <RendersStrip businessId={selected.id} />
+        <div className="mt-8">
+          <PathwayCards hasQuestionnaire={hasQuestionnaire} />
         </div>
-      </main>
+
+        <RendersStrip businessId={selected.id} />
+      </div>
     </div>
   );
 }

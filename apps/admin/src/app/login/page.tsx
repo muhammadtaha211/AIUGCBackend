@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Wordmark } from "@/components/wordmark";
 import { LoginForm } from "./login-form";
 
-export const metadata: Metadata = { title: "כניסה — ניהול AIUGC" };
+export const metadata: Metadata = { title: "כניסה — ניהול Tavnit" };
 
 export default function LoginPage() {
   return (

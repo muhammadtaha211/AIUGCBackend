@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { WizardNav } from "@/components/wizard-nav";
 import {
   wizardSteps,
   type AudioState,
@@ -74,6 +75,12 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
     lastNav.current = "next";
     setStepIndex((index) => Math.min(steps.length - 1, index + 1));
   };
+  /** Rail jump — backwards only. lastNav "back" so a self-skipping step exits backwards too. */
+  const jumpTo = (index: number) => {
+    if (index >= stepIndex) return;
+    lastNav.current = "back";
+    setStepIndex(index);
+  };
 
   /** A different persona invalidates everything generated for the previous one. */
   function selectPersona(next: Persona) {
@@ -107,8 +114,8 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
   if (fatal) {
     return (
       <div className="w-full max-w-2xl pt-6 sm:pt-10">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center sm:p-10">
-          <p className="text-base font-medium text-white">{fatal}</p>
+        <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] text-center sm:p-10">
+          <p className="text-base font-medium text-ink">{fatal}</p>
           <Link href="/home" className="mt-6 inline-block">
             <Button type="button" variant="secondary">
               חזרה לדף הבית
@@ -120,102 +127,101 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
   }
 
   return (
-    <div className="w-full max-w-2xl pt-6 sm:pt-10">
-      <div className="flex items-baseline justify-between text-sm">
-        <span className="font-medium text-gray-300">סרטון עם דמות AI — {businessName}</span>
-        <span dir="ltr" className="tabular-nums text-gray-500">
-          {stepIndex + 1}/{steps.length}
-        </span>
+    <div className="w-full max-w-2xl pt-6 sm:pt-10 lg:max-w-4xl">
+      <div className="flex items-baseline justify-between gap-3">
+        <h1 className="text-lg font-semibold tracking-tight text-ink">סרטון עם דמות AI</h1>
+        <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
-          style={{ width: `${Math.round(((stepIndex + 1) / steps.length) * 100)}%` }}
+
+      <div className="mt-4 lg:grid lg:grid-cols-[10.5rem_1fr] lg:items-start lg:gap-8">
+        <WizardNav
+          labels={steps.map((each) => STEP_TITLES[each])}
+          current={stepIndex}
+          onJump={jumpTo}
+          locked={render !== null}
         />
-      </div>
 
-      <div key={stepIndex} className="step-in mt-5">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-6 sm:p-10">
-          <h1 className="sr-only">{STEP_TITLES[step]}</h1>
+        <div key={stepIndex} className="step-in mt-5 lg:mt-0">
+          <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-10">
+            {step === "persona" && (
+              <StepPersona
+                catalog={personaCatalog}
+                setCatalog={setPersonaCatalog}
+                selected={persona}
+                onSelect={selectPersona}
+                onContinue={goNext}
+                onFatal={setFatal}
+              />
+            )}
 
-          {step === "persona" && (
-            <StepPersona
-              catalog={personaCatalog}
-              setCatalog={setPersonaCatalog}
-              selected={persona}
-              onSelect={selectPersona}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
+            {step === "image" && persona && (
+              <StepImage
+                personaId={persona.id}
+                selected={personaImage}
+                onSelect={setPersonaImage}
+                onSkip={() => (lastNav.current === "back" ? goBack() : goNext())}
+                onBack={goBack}
+                onContinue={goNext}
+                onFatal={setFatal}
+              />
+            )}
 
-          {step === "image" && persona && (
-            <StepImage
-              personaId={persona.id}
-              selected={personaImage}
-              onSelect={setPersonaImage}
-              onSkip={() => (lastNav.current === "back" ? goBack() : goNext())}
-              onBack={goBack}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
+            {step === "composite" && persona && (
+              <StepComposite
+                businessId={businessId}
+                personaId={persona.id}
+                composite={composite}
+                setComposite={setComposite}
+                onBack={goBack}
+                onContinue={goNext}
+                onFatal={setFatal}
+              />
+            )}
 
-          {step === "composite" && persona && (
-            <StepComposite
-              businessId={businessId}
-              personaId={persona.id}
-              composite={composite}
-              setComposite={setComposite}
-              onBack={goBack}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
+            {step === "script" && persona && (
+              <StepScript
+                businessId={businessId}
+                personaId={persona.id}
+                pointers={pointers}
+                setPointers={setPointers}
+                duration={duration}
+                script={script}
+                setScript={setScript}
+                editedText={editedText}
+                setEditedText={setEditedText}
+                onBack={goBack}
+                onContinue={continueFromScript}
+                onFatal={setFatal}
+              />
+            )}
 
-          {step === "script" && persona && (
-            <StepScript
-              businessId={businessId}
-              personaId={persona.id}
-              pointers={pointers}
-              setPointers={setPointers}
-              duration={duration}
-              script={script}
-              setScript={setScript}
-              editedText={editedText}
-              setEditedText={setEditedText}
-              onBack={goBack}
-              onContinue={continueFromScript}
-              onFatal={setFatal}
-            />
-          )}
+            {step === "audio" && script && (
+              <StepAudio
+                script={script}
+                audio={audio}
+                setAudio={setAudio}
+                onScriptResolved={adoptResolvedScript}
+                onBack={goBack}
+                onContinue={goNext}
+                onFatal={setFatal}
+              />
+            )}
 
-          {step === "audio" && script && (
-            <StepAudio
-              script={script}
-              audio={audio}
-              setAudio={setAudio}
-              onScriptResolved={adoptResolvedScript}
-              onBack={goBack}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
-
-          {step === "render" && persona && script && audio && (
-            <StepRender
-              businessId={businessId}
-              personaId={persona.id}
-              personaImageId={personaImage?.id}
-              scriptId={script.scriptId}
-              audioId={audio.id}
-              compositeId={composite?.approved ? composite.id : undefined}
-              render={render}
-              setRender={setRender}
-              onBack={goBack}
-              onFatal={setFatal}
-            />
-          )}
+            {step === "render" && persona && script && audio && (
+              <StepRender
+                businessId={businessId}
+                personaId={persona.id}
+                personaImageId={personaImage?.id}
+                scriptId={script.scriptId}
+                audioId={audio.id}
+                compositeId={composite?.approved ? composite.id : undefined}
+                render={render}
+                setRender={setRender}
+                onBack={goBack}
+                onFatal={setFatal}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

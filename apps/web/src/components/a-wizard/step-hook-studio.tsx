@@ -157,14 +157,14 @@ export function StepHookStudio({
     <div>
       <StepHeader
         title="משפט הפתיחה והמיקום שלו"
-        sub="בוחרים את המשפט שייצרב על הפתיח, מנסחים אותו חופשי — וקובעים איפה בדיוק הוא יושב."
+        sub="בוחרים את המשפט שייצרב על הפתיח, מנסחים אותו חופשי, וקובעים איפה בדיוק הוא יושב."
         onBack={onBack}
       />
 
       <div className="mt-6 flex flex-col gap-5 sm:flex-row">
         {/* The clip loops with the live burned-text preview on top. */}
         <div className="mx-auto w-56 shrink-0 sm:mx-0">
-          <div className="relative aspect-[9/16] overflow-hidden rounded-xl border border-white/10">
+          <div className="relative aspect-[9/16] overflow-hidden rounded-xl border border-ink/10">
             <video
               src={hook.previewUrl}
               muted
@@ -175,12 +175,12 @@ export function StepHookStudio({
             />
             <PlacementEditor rect={shownRect} onChange={setRect} text={previewText} />
           </div>
-          <p className="mt-1.5 text-[12px] text-gray-500">
+          <p className="mt-1.5 text-[12px] text-ink/55">
             גוררים את המסגרת כדי להזיז את הטקסט, ומהפינות כדי לשנות גודל.
           </p>
           {belowFloor && (
             <p className="mt-1.5 text-[12px] text-amber-300/90">
-              רק לתשומת לב — בגודל הזה הטקסט עלול להיות קשה לקריאה בטלפון. אפשר להגדיל את האזור או
+              רק לתשומת לב, בגודל הזה הטקסט עלול להיות קשה לקריאה בטלפון. אפשר להגדיל את האזור או
               לקצר את המשפט.
             </p>
           )}
@@ -188,7 +188,7 @@ export function StepHookStudio({
 
         <div className="min-w-0 flex-1">
           {shown === null && !error && (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-ink/55">
               <Spinner /> כותבים משפטי פתיחה לפי שאלון העסק…
             </div>
           )}
@@ -200,9 +200,9 @@ export function StepHookStudio({
                   the render burns, and it stays clickable and checked. */}
               {pinned && (
                 <>
-                  <p className="text-[12px] text-gray-400">{HOOK_LINE_CHOSEN_LABEL}</p>
+                  <p className="text-[12px] text-ink/60">{HOOK_LINE_CHOSEN_LABEL}</p>
                   <OptionButton option={pinned} selected onSelect={selectOption} />
-                  <p className="pt-2 text-[12px] text-gray-400">{HOOK_LINE_OTHERS_LABEL}</p>
+                  <p className="pt-2 text-[12px] text-ink/60">{HOOK_LINE_OTHERS_LABEL}</p>
                 </>
               )}
               {shown.map((option) => (
@@ -228,10 +228,7 @@ export function StepHookStudio({
           )}
 
           {error && (
-            <p
-              role="alert"
-              className="mt-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
-            >
+            <p role="alert" className="mt-4 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
               {error}
             </p>
           )}
@@ -295,10 +292,10 @@ function OptionButton({
       role="radio"
       aria-checked={selected}
       onClick={() => onSelect(option)}
-      className={`w-full rounded-xl border px-4 py-3 text-start text-base transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+      className={`w-full rounded-xl border px-4 py-3 text-start text-base transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
         selected
-          ? "border-accent bg-accent/10 text-white ring-1 ring-accent"
-          : "border-white/10 bg-white/5 text-gray-200 hover:border-white/25 hover:bg-white/[0.08]"
+          ? "border-accent bg-accent/10 text-ink ring-1 ring-accent"
+          : "border-ink/[0.08] bg-white text-ink/80 hover:border-ink/25 hover:bg-ink/[0.06]"
       }`}
     >
       {option.text}

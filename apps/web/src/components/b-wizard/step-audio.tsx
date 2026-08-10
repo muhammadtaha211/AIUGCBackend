@@ -157,13 +157,13 @@ export function StepAudio({
     <div>
       <StepHeader
         title="ככה זה יישמע"
-        sub="מאזינים להקלטה ומאשרים — הסרטון נוצר רק אחרי אישור שלכם."
+        sub="מאזינים להקלטה ומאשרים, הסרטון נוצר רק אחרי אישור שלכם."
         onBack={onBack}
       />
 
       {error && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {error}
           </p>
           <Button
@@ -180,7 +180,7 @@ export function StepAudio({
       {/* Polling gave up (persistent network/server errors) — never spin silently. */}
       {generating && stalled && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {stalled}
           </p>
           <Button type="button" variant="secondary" className="mt-4" onClick={retryPolling}>
@@ -190,17 +190,17 @@ export function StepAudio({
       )}
 
       {generating && !stalled && (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-6 py-10 text-center">
-          <Spinner className="size-6 text-accent" />
-          <p className="text-sm text-gray-300">מקליטים את התסריט בקול של הדמות…</p>
-          {slow && <p className="text-sm text-gray-500">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
+          <Spinner className="size-6 text-ink/60" />
+          <p className="text-sm text-ink/75">מקליטים את התסריט בקול של הדמות…</p>
+          {slow && <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
         </div>
       )}
 
       {audio?.status === "failed" && !error && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
-            ההקלטה נכשלה — נסו שוב.
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+            ההקלטה נכשלה, נסו שוב.
           </p>
           <Button
             type="button"
@@ -217,7 +217,7 @@ export function StepAudio({
 
       {audio?.status === "ready" && (
         <div className="mt-6">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="rounded-xl border border-ink/[0.08] bg-white p-4">
             {audio.audioUrl && (
               <audio
                 controls
@@ -227,8 +227,8 @@ export function StepAudio({
               />
             )}
             {(playbackBroken || !audio.audioUrl) && (
-              <p className="mt-2 text-sm text-gray-500">
-                ההשמעה לא זמינה כרגע — אפשר בכל זאת לאשר ולהמשיך.
+              <p className="mt-2 text-sm text-ink/55">
+                ההשמעה לא זמינה כרגע, אפשר בכל זאת לאשר ולהמשיך.
               </p>
             )}
           </div>
@@ -250,8 +250,8 @@ export function StepAudio({
                 {AUDIO_SCRIPT_CHANGED_NOTICE}
               </p>
             )}
-            <p className="text-[13px] text-gray-500">{AUDIO_SCRIPT_LABEL}</p>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-gray-300">
+            <p className="text-[13px] text-ink/55">{AUDIO_SCRIPT_LABEL}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-ink/75">
               {script.text}
             </p>
           </div>
@@ -262,7 +262,7 @@ export function StepAudio({
           {measuredEnding && (
             <p
               className={`mt-3 text-[13px] ${
-                measuredEnding === "short" ? "text-amber-300/90" : "text-gray-400"
+                measuredEnding === "short" ? "text-amber-300/90" : "text-ink/60"
               }`}
             >
               {endingSentence(measuredEnding, true)}
@@ -298,7 +298,7 @@ export function StepAudio({
           <button
             type="button"
             onClick={onBack}
-            className="mt-4 w-full text-center text-sm text-gray-400 transition-colors duration-150 hover:text-white"
+            className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
           >
             חזרה לתסריט
           </button>

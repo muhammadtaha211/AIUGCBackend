@@ -8,8 +8,10 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const VARIANT = {
   primary: "bg-accent font-semibold text-ink hover:bg-accent-deep",
-  secondary: "border border-white/15 bg-white/5 font-medium text-gray-200 hover:bg-white/10",
-  ghost: "font-medium text-gray-400 hover:bg-white/10 hover:text-white",
+  secondary:
+    "border border-white/15 bg-white/5 font-medium text-gray-200 hover:bg-white/10 light:border-ink/15 light:bg-white light:text-ink light:hover:bg-ink/[0.04]",
+  ghost:
+    "font-medium text-gray-400 hover:bg-white/10 hover:text-white light:text-ink/60 light:hover:bg-ink/5 light:hover:text-ink",
 };
 
 const SIZE = {

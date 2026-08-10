@@ -43,6 +43,112 @@ export function Spinner({ className = "size-4" }: IconProps) {
   );
 }
 
+export function ChevronDown({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path
+        d="M3.5 6 8 10.5 12.5 6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function Plus({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function House({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path
+        d="M2.5 6.8 8 2.5l5.5 4.3v6a.7.7 0 0 1-.7.7H3.2a.7.7 0 0 1-.7-.7v-6Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function Grid({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <rect
+        x="2.5"
+        y="2.5"
+        width="4.5"
+        height="4.5"
+        rx="1"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="9" y="9" width="4.5" height="4.5" rx="1" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+export function Folder({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path
+        d="M2.5 4.2a.7.7 0 0 1 .7-.7h3l1.4 1.6h5.2a.7.7 0 0 1 .7.7v6a.7.7 0 0 1-.7.7H3.2a.7.7 0 0 1-.7-.7v-7.6Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function Clip({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <rect x="4" y="2.5" width="8" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="m7 6.5 3 1.75L7 10V6.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function Person({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M3.5 13.5c.6-2.3 2.4-3.5 4.5-3.5s3.9 1.2 4.5 3.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function Mail({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <rect x="2.5" y="3.5" width="11" height="9" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="m3 4.5 5 4 5-4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function GoogleG({ className = "size-4" }: IconProps) {
   return (
     <svg viewBox="0 0 18 18" aria-hidden className={className}>

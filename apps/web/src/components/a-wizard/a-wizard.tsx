@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
+import { WizardNav } from "@/components/wizard-nav";
 import { StepAudio } from "@/components/b-wizard/step-audio";
 import { StepPersona } from "@/components/b-wizard/step-persona";
 import {
@@ -80,6 +81,10 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   const step = steps[stepIndex]!;
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
   const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
+  /** Rail jump — backwards only; state survives exactly like repeated goBack. */
+  const jumpTo = (index: number) => {
+    if (index < stepIndex) setStepIndex(index);
+  };
 
   /**
    * A different persona invalidates the VO script and audio (the voice
@@ -147,8 +152,8 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   if (fatal) {
     return (
       <div className="w-full max-w-2xl pt-6 sm:pt-10">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center sm:p-10">
-          <p className="text-base font-medium text-white">{fatal}</p>
+        <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] text-center sm:p-10">
+          <p className="text-base font-medium text-ink">{fatal}</p>
           <Link href="/home" className="mt-6 inline-block">
             <Button type="button" variant="secondary">
               חזרה לדף הבית
@@ -160,136 +165,137 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   }
 
   return (
-    <div className="w-full max-w-2xl pt-6 sm:pt-10">
-      <div className="flex items-baseline justify-between text-sm">
-        <span className="font-medium text-gray-300">הוק + דמו — {businessName}</span>
-        <span dir="ltr" className="tabular-nums text-gray-500">
-          {stepIndex + 1}/{steps.length}
-        </span>
+    <div className="w-full max-w-2xl pt-6 sm:pt-10 lg:max-w-4xl">
+      <div className="flex items-baseline justify-between gap-3">
+        <h1 className="text-lg font-semibold tracking-tight text-ink">הוק + דמו</h1>
+        <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
-          style={{ width: `${Math.round(((stepIndex + 1) / steps.length) * 100)}%` }}
+
+      <div className="mt-4 lg:grid lg:grid-cols-[10.5rem_1fr] lg:items-start lg:gap-8">
+        <WizardNav
+          labels={steps.map((each) => STEP_TITLES[each])}
+          current={stepIndex}
+          onJump={jumpTo}
+          locked={render !== null}
         />
-      </div>
 
-      <StructureStrip persona={persona} hook={hook} demo={demo} />
+        <div>
+          <StructureStrip persona={persona} hook={hook} demo={demo} />
 
-      <div key={stepIndex} className="step-in mt-5">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-6 sm:p-10">
-          <h1 className="sr-only">{STEP_TITLES[step]}</h1>
+          <div key={stepIndex} className="step-in mt-5">
+            <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-10">
+              {step === "persona" && (
+                <StepPersona
+                  catalog={personaCatalog}
+                  setCatalog={setPersonaCatalog}
+                  selected={persona}
+                  onSelect={selectPersona}
+                  onContinue={goNext}
+                  onFatal={setFatal}
+                  // In A the choice sets the narration voice; the face shows up
+                  // only when the VO outlasts the demo. Say exactly that.
+                  copy={{
+                    title: "מי תקריין את המודעה שלכם?",
+                    sub: "בוחרים דמות אחת, הקריינות תוקלט בקול שלה, והיא תופיע בסוף הסרטון רק אם הקריינות ממשיכה אחרי שסרטון המוצר נגמר.",
+                  }}
+                />
+              )}
 
-          {step === "persona" && (
-            <StepPersona
-              catalog={personaCatalog}
-              setCatalog={setPersonaCatalog}
-              selected={persona}
-              onSelect={selectPersona}
-              onContinue={goNext}
-              onFatal={setFatal}
-              // In A the choice sets the narration voice; the face shows up
-              // only when the VO outlasts the demo. Say exactly that.
-              copy={{
-                title: "מי תקריין את המודעה שלכם?",
-                sub: "בוחרים דמות אחת — הקריינות תוקלט בקול שלה, והיא תופיע בסוף הסרטון רק אם הקריינות ממשיכה אחרי שסרטון המוצר נגמר.",
-              }}
-            />
-          )}
+              {step === "hook" && persona && (
+                <StepHook
+                  personaId={persona.id}
+                  selected={hook}
+                  onSelect={selectHook}
+                  onBack={goBack}
+                  onContinue={goNext}
+                  onFatal={setFatal}
+                />
+              )}
 
-          {step === "hook" && persona && (
-            <StepHook
-              personaId={persona.id}
-              selected={hook}
-              onSelect={selectHook}
-              onBack={goBack}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
+              {step === "hookStudio" && hook && persona && (
+                <StepHookStudio
+                  businessId={businessId}
+                  personaId={persona.id}
+                  hook={hook}
+                  hookBatch={hookBatch}
+                  setHookBatch={setHookBatch}
+                  hookHalf={hookHalf}
+                  setHookHalf={setHookHalf}
+                  hookAvoid={hookAvoid}
+                  setHookAvoid={setHookAvoid}
+                  hookLine={hookLine}
+                  setHookLine={setHookLine}
+                  rect={rect}
+                  setRect={setRect}
+                  onBack={goBack}
+                  onContinue={goNext}
+                  onFatal={setFatal}
+                />
+              )}
 
-          {step === "hookStudio" && hook && persona && (
-            <StepHookStudio
-              businessId={businessId}
-              personaId={persona.id}
-              hook={hook}
-              hookBatch={hookBatch}
-              setHookBatch={setHookBatch}
-              hookHalf={hookHalf}
-              setHookHalf={setHookHalf}
-              hookAvoid={hookAvoid}
-              setHookAvoid={setHookAvoid}
-              hookLine={hookLine}
-              setHookLine={setHookLine}
-              rect={rect}
-              setRect={setRect}
-              onBack={goBack}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
+              {step === "demo" && (
+                <StepDemo
+                  businessId={businessId}
+                  demo={demo}
+                  setDemo={replaceDemo}
+                  description={demoDescription}
+                  setDescription={setDemoDescription}
+                  onContinue={goNext}
+                  onFatal={setFatal}
+                />
+              )}
 
-          {step === "demo" && (
-            <StepDemo
-              businessId={businessId}
-              demo={demo}
-              setDemo={replaceDemo}
-              description={demoDescription}
-              setDescription={setDemoDescription}
-              onContinue={goNext}
-              onFatal={setFatal}
-            />
-          )}
+              {step === "script" && demo && persona && (
+                <StepAScript
+                  businessId={businessId}
+                  demoId={demo.id}
+                  demoDurationMs={demo.durationMs}
+                  personaId={persona.id}
+                  hookLineText={hookLine?.text}
+                  advantages={advantages}
+                  selectedAdvantages={selectedAdvantages}
+                  setSelectedAdvantages={setSelectedAdvantages}
+                  script={script}
+                  setScript={setScript}
+                  editedText={editedText}
+                  setEditedText={setEditedText}
+                  onBack={goBack}
+                  onContinue={continueFromScript}
+                  onFatal={setFatal}
+                />
+              )}
 
-          {step === "script" && demo && persona && (
-            <StepAScript
-              businessId={businessId}
-              demoId={demo.id}
-              demoDurationMs={demo.durationMs}
-              personaId={persona.id}
-              hookLineText={hookLine?.text}
-              advantages={advantages}
-              selectedAdvantages={selectedAdvantages}
-              setSelectedAdvantages={setSelectedAdvantages}
-              script={script}
-              setScript={setScript}
-              editedText={editedText}
-              setEditedText={setEditedText}
-              onBack={goBack}
-              onContinue={continueFromScript}
-              onFatal={setFatal}
-            />
-          )}
+              {step === "audio" && script && (
+                <StepAudio
+                  script={script}
+                  audio={audio}
+                  setAudio={setAudio}
+                  onScriptResolved={adoptResolvedScript}
+                  onBack={goBack}
+                  onContinue={goNext}
+                  onFatal={setFatal}
+                  approveContinueLabel="מאשרים וממשיכים ליצירת הסרטון"
+                  demoDurationMs={demo?.durationMs}
+                />
+              )}
 
-          {step === "audio" && script && (
-            <StepAudio
-              script={script}
-              audio={audio}
-              setAudio={setAudio}
-              onScriptResolved={adoptResolvedScript}
-              onBack={goBack}
-              onContinue={goNext}
-              onFatal={setFatal}
-              approveContinueLabel="מאשרים וממשיכים ליצירת הסרטון"
-              demoDurationMs={demo?.durationMs}
-            />
-          )}
-
-          {step === "render" && demo && hook && persona && hookLine && script && audio && (
-            <StepARender
-              businessId={businessId}
-              demoId={demo.id}
-              hookClipId={hook.id}
-              hookLineScriptId={hookLine.scriptId}
-              audioId={audio.id}
-              personaId={persona.id}
-              textSafeArea={rect ?? undefined}
-              render={render}
-              setRender={setRender}
-              onBack={goBack}
-              onFatal={setFatal}
-            />
-          )}
+              {step === "render" && demo && hook && persona && hookLine && script && audio && (
+                <StepARender
+                  businessId={businessId}
+                  demoId={demo.id}
+                  hookClipId={hook.id}
+                  hookLineScriptId={hookLine.scriptId}
+                  audioId={audio.id}
+                  personaId={persona.id}
+                  textSafeArea={rect ?? undefined}
+                  render={render}
+                  setRender={setRender}
+                  onBack={goBack}
+                  onFatal={setFatal}
+                />
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -298,7 +304,7 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
 
 /**
  * The structure strip: the fixed three-part shape of every Service A ad —
- * פתיח | הדמו שלכם | סיום עם הדמות — populating live as choices land, so the
+ * פתיח | הדמו שלכם | סיום עם הדמות, populating live as choices land, so the
  * customer always sees what they are building. The persona face sits in the
  * ending slot from step 1, but the ending itself is conditional (it renders
  * only when the VO outlasts the demo), so the caption states the same
@@ -317,7 +323,7 @@ function StructureStrip({
   demo: DemoState | null;
 }) {
   return (
-    <div dir="ltr" className="mt-4 grid grid-cols-3 gap-2">
+    <div dir="ltr" className="mt-4 grid grid-cols-3 gap-2 lg:mt-0">
       <StripSlot label="פתיח">
         {hook && (
           <video
@@ -372,16 +378,16 @@ function StripSlot({
           aspect-matched tile makes cropping structurally impossible. */}
       <div
         className={`relative mx-auto aspect-[9/16] w-20 overflow-hidden rounded-lg border ${
-          children ? "border-white/15" : "border-dashed border-white/15 bg-white/5"
+          children ? "border-ink/15" : "border-dashed border-ink/15 bg-ink/[0.04]"
         }`}
       >
         {children}
       </div>
-      <p dir="rtl" className="mt-1 text-[11px] text-gray-400">
+      <p dir="rtl" className="mt-1 text-[11px] text-ink/60">
         {label}
       </p>
       {caption && (
-        <p dir="rtl" className="text-[10px] leading-tight text-gray-500">
+        <p dir="rtl" className="text-[10px] leading-tight text-ink/55">
           {caption}
         </p>
       )}

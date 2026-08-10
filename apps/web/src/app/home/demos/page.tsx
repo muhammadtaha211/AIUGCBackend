@@ -1,10 +1,7 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { Wordmark } from "@/components/wordmark";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
-import { LogoutButton } from "../logout-button";
 import { DemoLibrary } from "./demo-library";
 
 /**
@@ -30,35 +27,16 @@ export default async function DemosPage() {
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex h-16 shrink-0 items-center justify-between px-6 sm:px-10">
-        <Link href="/home">
-          <Wordmark />
-        </Link>
-        <div className="flex items-center gap-4">
-          <Link
-            href="/home"
-            className="text-sm text-gray-400 transition-colors duration-150 hover:text-white"
-          >
-            חזרה לדף הבית
-          </Link>
-          <LogoutButton />
-        </div>
-      </header>
+    <div className="mx-auto w-full max-w-3xl px-6 pb-16 pt-8 sm:pt-10">
+      <h1 className="text-2xl font-semibold tracking-tight text-ink">
+        סרטוני המוצר של {selected.name}
+      </h1>
+      <p className="mt-2 text-[15px] text-ink/65">
+        כל סרטון שהעליתם נשמר כאן. אפשר להשתמש בו שוב בכל מודעה חדשה, והתיאור שלו עוזר לקריינות
+        להתייחס למה שבאמת רואים.
+      </p>
 
-      <main className="flex-1">
-        <div className="mx-auto w-full max-w-3xl px-6 pb-16 pt-8 sm:pt-12">
-          <h1 className="text-2xl font-semibold tracking-tight text-white">
-            סרטוני המוצר של {selected.name}
-          </h1>
-          <p className="mt-2 text-[15px] text-gray-400">
-            כל סרטון שהעליתם נשמר כאן — אפשר להשתמש בו שוב בכל מודעה חדשה, והתיאור שלו עוזר לקריינות
-            להתייחס למה שבאמת רואים.
-          </p>
-
-          <DemoLibrary businessId={selected.id} />
-        </div>
-      </main>
+      <DemoLibrary businessId={selected.id} />
     </div>
   );
 }

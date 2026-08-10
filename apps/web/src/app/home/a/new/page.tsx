@@ -1,13 +1,11 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AWizard } from "@/components/a-wizard/a-wizard";
-import { Wordmark } from "@/components/wordmark";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { NoCreditsCard } from "@/components/no-credits-card";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { canStartWizard } from "@/lib/wizard-gate";
+import { wizardGate } from "@/lib/wizard-gate";
 
 /**
  * Server shell for the Service A wizard: resolves the selected business (same
@@ -35,37 +33,23 @@ export default async function NewARenderPage() {
   if (!questionnaire) redirect("/home");
 
   // Spam control only — the 402 at confirm is the real boundary. Admin bypasses.
-  const allowed = await canStartWizard(selected.id);
+  const gate = await wizardGate(selected.id);
 
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
   const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex h-16 shrink-0 items-center justify-between px-6 sm:px-10">
-        <Link href="/home">
-          <Wordmark />
-        </Link>
-        <Link
-          href="/home"
-          className="text-sm text-gray-400 transition-colors duration-150 hover:text-white"
-        >
-          חזרה לדף הבית
-        </Link>
-      </header>
-
-      <main className="flex flex-1 flex-col items-center px-6 pb-20">
-        {allowed ? (
-          <AWizard
-            businessId={selected.id}
-            businessName={selected.name}
-            advantages={questionnaire.advantages ?? []}
-            initialCatalog={personaCatalog}
-          />
-        ) : (
-          <NoCreditsCard />
-        )}
-      </main>
+    <div className="flex flex-col items-center px-6 pb-16">
+      {gate.allowed ? (
+        <AWizard
+          businessId={selected.id}
+          businessName={selected.name}
+          advantages={questionnaire.advantages ?? []}
+          initialCatalog={personaCatalog}
+        />
+      ) : (
+        <NoCreditsCard />
+      )}
     </div>
   );
 }

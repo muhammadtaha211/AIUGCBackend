@@ -49,13 +49,13 @@ export function StepHook({
     <div>
       <StepHeader
         title="בחרו קליפ פתיחה"
-        sub="הפתיח עוצר את הגלילה ברגע הראשון — ומיד אחריו הדמות שבחרתם מקריינת את הסרטון וסוגרת אותו."
+        sub="הפתיח עוצר את הגלילה ברגע הראשון, ומיד אחריו הדמות שבחרתם מקריינת את הסרטון וסוגרת אותו."
         onBack={onBack}
       />
 
       {error && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {error}
           </p>
           <Button type="button" variant="secondary" className="mt-4" onClick={() => void load()}>
@@ -65,14 +65,14 @@ export function StepHook({
       )}
 
       {hooks === null && !error && (
-        <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
+        <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-ink/55">
           <Spinner /> טוענים את הפתיחים…
         </div>
       )}
 
       {hooks !== null && hooks.length === 0 && (
-        <p className="mt-6 rounded-xl border border-dashed border-white/15 bg-white/5 px-6 py-10 text-center text-sm text-gray-400">
-          אין כרגע פתיחים זמינים — אנחנו מוסיפים חדשים ממש בקרוב. נסו שוב מאוחר יותר.
+        <p className="mt-6 rounded-xl border border-dashed border-ink/15 bg-ink/[0.04] px-6 py-10 text-center text-sm text-ink/60">
+          אין כרגע פתיחים זמינים, אנחנו מוסיפים חדשים ממש בקרוב. נסו שוב מאוחר יותר.
         </p>
       )}
 
@@ -90,10 +90,10 @@ export function StepHook({
                 role="radio"
                 aria-checked={selected?.id === hook.id}
                 onClick={() => onSelect(hook)}
-                className={`overflow-hidden rounded-xl border text-start transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                className={`overflow-hidden rounded-xl border text-start transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
                   selected?.id === hook.id
                     ? "border-accent bg-accent/10 ring-1 ring-accent"
-                    : "border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/[0.08]"
+                    : "border-ink/[0.08] bg-white hover:border-ink/25 hover:bg-ink/[0.06]"
                 }`}
               >
                 {/* Signed, short-lived URL; ~2s clips loop as their own preview. */}
@@ -105,7 +105,7 @@ export function StepHook({
                   playsInline
                   className="aspect-[9/16] w-full object-cover"
                 />
-                <span dir="ltr" className="block px-3 py-2 text-end text-xs text-gray-400">
+                <span dir="ltr" className="block px-3 py-2 text-end text-xs text-ink/60">
                   {Math.round(hook.durationMs / 100) / 10}s
                 </span>
               </button>

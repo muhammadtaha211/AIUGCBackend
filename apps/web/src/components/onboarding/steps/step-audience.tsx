@@ -73,7 +73,7 @@ export function StepAudience({
                 onAudienceChange(suggestion);
                 setError(null);
               }}
-              className="rounded-full border border-white/15 px-3 py-1 text-[13px] text-gray-300 transition-colors duration-150 hover:border-white/30 hover:text-white"
+              className="rounded-full border border-white/15 px-3 py-1 text-[13px] text-gray-300 transition-colors duration-150 hover:border-white/30 hover:text-white light:border-ink/15 light:text-ink/70 light:hover:border-ink/35 light:hover:text-ink"
             >
               {suggestion}
             </button>
@@ -82,7 +82,9 @@ export function StepAudience({
       </div>
 
       <div className="mt-8">
-        <p className="mb-3 text-sm font-medium text-gray-200">באיזה סגנון המודעה תדבר?</p>
+        <p className="mb-3 text-sm font-medium text-gray-200 light:text-ink">
+          באיזה סגנון המודעה תדבר?
+        </p>
         <div role="radiogroup" aria-label="סגנון המודעה" className="grid gap-3 sm:grid-cols-3">
           {TONES.map((value) => (
             <OptionCard

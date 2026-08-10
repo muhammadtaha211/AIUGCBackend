@@ -147,7 +147,7 @@ export function StepComposite({
       />
 
       {error && (
-        <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p role="alert" className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {error}
         </p>
       )}
@@ -158,16 +158,16 @@ export function StepComposite({
           type="button"
           onClick={() => fileInput.current?.click()}
           disabled={uploading}
-          className="mt-6 flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/5 px-6 py-10 text-center transition-colors duration-150 hover:border-white/35 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-50"
+          className="mt-6 flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-white/20 bg-ink/[0.04] px-6 py-10 text-center transition-colors duration-150 hover:border-white/35 hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:pointer-events-none disabled:opacity-50"
         >
           {uploading ? (
-            <span className="flex items-center gap-2 text-sm text-gray-300">
+            <span className="flex items-center gap-2 text-sm text-ink/75">
               <Spinner /> מעלים את התמונה…
             </span>
           ) : (
             <>
-              <span className="text-base font-medium text-white">העלאת תמונת מוצר</span>
-              <span className="text-sm text-gray-400">JPG, PNG או WebP — עד 10MB</span>
+              <span className="text-base font-medium text-ink">העלאת תמונת מוצר</span>
+              <span className="text-sm text-ink/60">JPG, PNG או WebP, עד 10MB</span>
             </>
           )}
         </button>
@@ -176,7 +176,7 @@ export function StepComposite({
       {/* Polling gave up (persistent network/server errors) — never spin silently. */}
       {generating && stalled && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {stalled}
           </p>
           <Button type="button" variant="secondary" className="mt-4" onClick={retryPolling}>
@@ -187,10 +187,10 @@ export function StepComposite({
 
       {/* Composite in flight: polling with reassurance. */}
       {generating && !stalled && (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-6 py-10 text-center">
-          <Spinner className="size-6 text-accent" />
-          <p className="text-sm text-gray-300">יוצרים את התמונה של הדמות עם המוצר…</p>
-          {slow && <p className="text-sm text-gray-500">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
+          <Spinner className="size-6 text-ink/60" />
+          <p className="text-sm text-ink/75">יוצרים את התמונה של הדמות עם המוצר…</p>
+          {slow && <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
         </div>
       )}
 
@@ -202,7 +202,7 @@ export function StepComposite({
             <img
               src={composite.previewUrl}
               alt="הדמות עם המוצר"
-              className="mx-auto w-full max-w-60 rounded-xl border border-white/10"
+              className="mx-auto w-full max-w-60 rounded-xl border border-ink/10"
             />
           )}
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -234,7 +234,7 @@ export function StepComposite({
               setComposite(null);
               setError(null);
             }}
-            className="mt-4 w-full text-center text-sm text-gray-400 transition-colors duration-150 hover:text-white"
+            className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
           >
             העלאת תמונה אחרת
           </button>
@@ -244,8 +244,8 @@ export function StepComposite({
       {/* Failed: Hebrew message + retry from the same photo or a new upload. */}
       {composite?.status === "failed" && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
-            {composite.error ?? "יצירת התמונה נכשלה — נסו שוב או בחרו דמות אחרת."}
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+            {composite.error ?? "יצירת התמונה נכשלה, נסו שוב או בחרו דמות אחרת."}
           </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row">
             <Button
@@ -281,7 +281,7 @@ export function StepComposite({
           if (composite?.approved) setComposite({ ...composite, approved: false });
           onContinue();
         }}
-        className="mt-6 w-full text-center text-sm font-medium text-gray-400 transition-colors duration-150 hover:text-white"
+        className="mt-6 w-full text-center text-sm font-medium text-ink/60 transition-colors duration-150 hover:text-ink"
       >
         המשך בלי תמונת מוצר
       </button>

@@ -64,7 +64,7 @@ export function StepImage({
 
       {error && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {error}
           </p>
           <Button type="button" variant="secondary" className="mt-4" onClick={() => void load()}>
@@ -74,7 +74,7 @@ export function StepImage({
       )}
 
       {images === null && !error && (
-        <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
+        <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-ink/55">
           <Spinner /> טוענים את התמונות…
         </div>
       )}
@@ -93,10 +93,10 @@ export function StepImage({
                 role="radio"
                 aria-checked={selected?.id === image.id}
                 onClick={() => onSelect(image)}
-                className={`overflow-hidden rounded-xl border text-start transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                className={`overflow-hidden rounded-xl border text-start transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
                   selected?.id === image.id
                     ? "border-accent bg-accent/10 ring-1 ring-accent"
-                    : "border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/[0.08]"
+                    : "border-ink/[0.08] bg-white hover:border-ink/25 hover:bg-ink/[0.06]"
                 }`}
               >
                 {/* Public catalog URL — stable, so next/image resizes it and
@@ -111,7 +111,7 @@ export function StepImage({
                   />
                 </span>
                 {image.label && (
-                  <span className="block px-3 py-2 text-sm font-medium text-white">
+                  <span className="block px-3 py-2 text-sm font-medium text-ink">
                     {image.label}
                   </span>
                 )}
