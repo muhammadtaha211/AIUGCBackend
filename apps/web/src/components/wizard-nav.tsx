@@ -26,12 +26,12 @@ export function WizardNav({ labels, current, onJump, locked = false }: WizardNav
       {/* Mobile */}
       <div className="lg:hidden">
         <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="truncate font-medium text-gray-300">{labels[current]}</span>
-          <span dir="ltr" className="tabular-nums text-gray-500">
+          <span className="truncate font-medium text-ink/75">{labels[current]}</span>
+          <span dir="ltr" className="tabular-nums text-ink/55">
             {current + 1}/{labels.length}
           </span>
         </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink/10">
           <div
             className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
             style={{ width: `${Math.round(((current + 1) / labels.length) * 100)}%` }}
@@ -49,17 +49,17 @@ export function WizardNav({ labels, current, onJump, locked = false }: WizardNav
               <span
                 className={`flex size-7 shrink-0 items-center justify-center rounded-full border text-xs ${
                   done
-                    ? "border-accent bg-accent/15 text-accent"
+                    ? "border-accent bg-accent/20 text-ink"
                     : isCurrent
-                      ? "border-accent text-accent"
-                      : "border-white/15 text-gray-600"
+                      ? "border-accent text-ink"
+                      : "border-ink/15 text-ink/40"
                 }`}
               >
                 {done ? <Check /> : index + 1}
               </span>
               <span
-                className={`pt-1.5 text-[13px] leading-snug transition-colors duration-150 group-hover:text-white ${
-                  isCurrent ? "font-medium text-white" : done ? "text-gray-300" : "text-gray-500"
+                className={`pt-1.5 text-[13px] leading-snug transition-colors duration-150 group-hover:text-ink ${
+                  isCurrent ? "font-medium text-ink" : done ? "text-ink/75" : "text-ink/55"
                 }`}
               >
                 {label}
@@ -74,13 +74,13 @@ export function WizardNav({ labels, current, onJump, locked = false }: WizardNav
             >
               {/* Connector down to the next disc. */}
               {index < labels.length - 1 && (
-                <span aria-hidden className="absolute bottom-0 start-3.5 top-8 w-px bg-white/10" />
+                <span aria-hidden className="absolute bottom-0 start-3.5 top-8 w-px bg-ink/10" />
               )}
               {done && !locked ? (
                 <button
                   type="button"
                   onClick={() => onJump(index)}
-                  className="group flex w-full items-start gap-3 rounded-lg text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="group flex w-full items-start gap-3 rounded-lg text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                 >
                   {row}
                 </button>

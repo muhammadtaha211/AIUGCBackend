@@ -1,17 +1,22 @@
 import type { Metadata } from "next";
-import { Heebo } from "next/font/google";
+import { Heebo, Secular_One } from "next/font/google";
 import "./globals.css";
 
 const heebo = Heebo({ subsets: ["hebrew", "latin"], variable: "--font-heebo" });
+const secularOne = Secular_One({
+  weight: "400",
+  subsets: ["hebrew", "latin"],
+  variable: "--font-secular",
+});
 
 export const metadata: Metadata = {
-  title: "Tavnit — מודעות וידאו מסרטון אחד",
+  title: "תבנית | מודעות וידאו בעברית, מסרטון אחד",
   description: "מעלים סרטון קצר של המוצר ומקבלים כמה גרסאות של מודעת וידאו בעברית, מוכנות לפרסום.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="he" dir="rtl" className={heebo.variable}>
+    <html lang="he" dir="rtl" className={`${heebo.variable} ${secularOne.variable}`}>
       <body className="font-sans text-gray-100 antialiased">{children}</body>
     </html>
   );

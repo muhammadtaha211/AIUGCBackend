@@ -1,61 +1,57 @@
 "use client";
 
 import Link from "next/link";
-import { Wordmark } from "@/components/wordmark";
+import { Brand } from "@/components/brand";
 
-const NAV_LINK = "text-sm text-gray-400 transition-colors duration-150 hover:text-white";
+const NAV_LINK =
+  "text-sm font-medium text-ink/60 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink";
 
 /**
- * The onboarding environment: nav, lighting, and page structure. Every step renders
- * inside it, so moving between questions changes the content — never the scene.
- * Steps mark their interactive area with id="onboarding-content" (one per screen).
+ * The onboarding environment, matching the landing page: paper base, soft
+ * green glow, sticky header. Every step renders inside it, so moving between
+ * questions changes the content — never the scene. Steps mark their
+ * interactive area with id="onboarding-content" (one per screen).
  */
 export function OnboardingShell({ children }: { children: React.ReactNode }) {
-  function startNow() {
-    const content = document.getElementById("onboarding-content");
-    content?.scrollIntoView({ behavior: "smooth", block: "center" });
-    content
-      ?.querySelector<HTMLElement>('input, textarea, [role="radio"]')
-      ?.focus({ preventScroll: true });
-  }
-
   return (
-    <div className="relative isolate flex min-h-dvh flex-col overflow-hidden">
-      {/* Background only — a blurred lime shape for depth; the UI stays clean. */}
+    <div className="theme-light relative isolate flex min-h-dvh flex-col overflow-hidden bg-paper text-ink">
+      {/* Background only — the landing's aurora, dialed down so the forms stay calm. */}
       <div
         aria-hidden
-        className="absolute left-1/2 top-16 -z-10 h-64 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-accent/10 blur-3xl"
+        className="absolute left-1/2 top-8 -z-10 h-64 w-[38rem] max-w-full -translate-x-1/2 rounded-full bg-accent/30 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="absolute right-[10%] top-28 -z-10 h-40 w-72 rounded-full bg-emerald-300/20 blur-3xl"
       />
 
-      <header className="relative flex h-16 shrink-0 items-center justify-between px-6 sm:px-10">
-        <Wordmark />
+      <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-paper/85 backdrop-blur-md">
+        <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+          <Link
+            href="/"
+            className="focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink"
+          >
+            <Brand />
+          </Link>
 
-        <nav
-          aria-label="ניווט ראשי"
-          className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-8 sm:flex"
-        >
-          <button type="button" className={NAV_LINK}>
-            מחירים
-          </button>
-          <button type="button" className={NAV_LINK}>
-            צור קשר
-          </button>
-        </nav>
+          <nav
+            aria-label="ניווט ראשי"
+            className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-8 md:flex"
+          >
+            <Link href="/#features" className={NAV_LINK}>
+              יכולות
+            </Link>
+            <Link href="/#how" className={NAV_LINK}>
+              איך זה עובד
+            </Link>
+          </nav>
 
-        <div className="flex items-center gap-2">
           <Link
             href="/login"
-            className="flex h-9 items-center rounded-lg px-3 text-sm font-medium text-gray-300 transition-colors duration-150 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="flex h-11 items-center rounded-lg bg-ink px-4 text-sm font-semibold text-paper transition-colors duration-150 hover:bg-ink/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:h-9"
           >
             התחברות
           </Link>
-          <button
-            type="button"
-            onClick={startNow}
-            className="flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-semibold text-ink transition-colors duration-150 hover:bg-accent-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            התחל עכשיו
-          </button>
         </div>
       </header>
 

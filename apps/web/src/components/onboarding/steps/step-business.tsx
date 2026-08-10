@@ -21,15 +21,15 @@ type StepBusinessProps = {
 export function StepBusiness({ selected, onSelect }: StepBusinessProps) {
   return (
     <div className="flex w-full flex-col items-center pt-14 text-center sm:pt-24">
-      <h1 className="max-w-3xl text-[40px] font-extrabold leading-[1.08] tracking-tight text-white sm:text-[64px]">
+      <h1 className="max-w-3xl font-display text-[40px] leading-[1.08] text-white light:text-ink sm:text-[64px]">
         איזו מודעה אתם יוצרים היום?
       </h1>
-      <p className="mt-5 text-lg text-gray-400 sm:text-xl">
-        צרו מודעות שמוכרות יותר — בלי ניסיון ובלי מאמץ.
+      <p className="mt-5 text-lg text-gray-400 light:text-ink/65 sm:text-xl">
+        צרו מודעות שמוכרות יותר, בלי ניסיון ובלי מאמץ.
       </p>
 
       <div id="onboarding-content" className="mt-12 w-full max-w-2xl sm:mt-14">
-        <p className="mb-4 text-base font-medium text-gray-300">מה מפרסמים?</p>
+        <p className="mb-4 text-base font-medium text-gray-300 light:text-ink/70">מה מפרסמים?</p>
         <div
           role="radiogroup"
           aria-label="מה מפרסמים?"
@@ -45,7 +45,9 @@ export function StepBusiness({ selected, onSelect }: StepBusinessProps) {
             />
           ))}
         </div>
-        <p className="mt-6 text-sm text-gray-500">כל התהליך לוקח בערך שתי דקות.</p>
+        <p className="mt-6 text-sm text-gray-500 light:text-ink/60">
+          כל התהליך לוקח בערך שתי דקות.
+        </p>
       </div>
     </div>
   );

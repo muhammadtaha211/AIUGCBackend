@@ -34,14 +34,14 @@ function ProgressHeader({ value, label }: { value: number; label: string }) {
   return (
     <div>
       <div className="flex items-baseline justify-between text-sm">
-        <span className="font-medium text-gray-300">
+        <span className="font-medium text-gray-300 light:text-ink/70">
           {value >= STEP_PROGRESS.signup ? "שלב אחרון" : label}
         </span>
-        <span dir="ltr" className="tabular-nums text-gray-500">
+        <span dir="ltr" className="tabular-nums text-gray-500 light:text-ink/60">
           {value}%
         </span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10 light:bg-ink/10">
         <div
           className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
           style={{ width: `${width}%` }}
@@ -236,7 +236,9 @@ export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
           label={mode === "additional" ? "עסק חדש" : "המודעה הראשונה שלכם"}
         />
         <div key={draft.step} className="step-in mt-5">
-          <div className="rounded-xl border border-white/10 bg-white/5 p-6 sm:p-10">{step}</div>
+          <div className="rounded-xl border border-white/10 bg-white/5 p-6 light:border-ink/[0.08] light:bg-white light:shadow-xl light:shadow-ink/[0.05] sm:p-10">
+            {step}
+          </div>
         </div>
       </div>
     );

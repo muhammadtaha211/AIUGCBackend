@@ -130,20 +130,20 @@ export function StepAScript({
       <div>
         <StepHeader
           title="תסריט הקריינות"
-          sub="נכתוב תסריט לפי שאלון העסק — סמנו מה מהיתרונות באמת רואים בסרטון."
+          sub="נכתוב תסריט לפי שאלון העסק, סמנו מה מהיתרונות באמת רואים בסרטון."
           onBack={onBack}
         />
 
         {advantages.length > 0 && (
           <fieldset className="mt-6">
-            <legend className="text-sm font-medium text-gray-300">
+            <legend className="text-sm font-medium text-ink/75">
               מה מהיתרונות באמת רואים בסרטון? (לתסריט הקריינות)
             </legend>
             <div className="mt-3 space-y-2">
               {advantages.map((advantage) => (
                 <label
                   key={advantage}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-gray-200"
+                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-ink/[0.08] bg-white px-3 py-2.5 text-sm text-ink/80"
                 >
                   <input
                     type="checkbox"
@@ -159,10 +159,7 @@ export function StepAScript({
         )}
 
         {error && (
-          <p
-            role="alert"
-            className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
-          >
+          <p role="alert" className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {error}
           </p>
         )}
@@ -200,7 +197,7 @@ export function StepAScript({
           value={editedText}
           onChange={(event) => setEditedText(event.target.value)}
         />
-        <p className="mt-1.5 text-[13px] tabular-nums text-gray-500">{words} מילים</p>
+        <p className="mt-1.5 text-[13px] tabular-nums text-ink/55">{words} מילים</p>
         {ending && (
           // Amber marks "short" alone. A freeze or avatar ending is the normal
           // result of a script written to fill the demo — it is shaped, priced
@@ -208,7 +205,7 @@ export function StepAScript({
           // the working case and stay silent on the broken one.
           <p
             className={`mt-1.5 text-[13px] ${
-              ending === "short" ? "text-amber-300/90" : "text-gray-500"
+              ending === "short" ? "text-amber-300/90" : "text-ink/55"
             }`}
           >
             {endingSentence(ending, false, estimatedOutroSeconds)}
@@ -217,7 +214,7 @@ export function StepAScript({
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p role="alert" className="mt-4 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {error}
         </p>
       )}

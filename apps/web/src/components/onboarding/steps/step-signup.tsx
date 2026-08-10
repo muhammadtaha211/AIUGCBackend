@@ -74,7 +74,7 @@ export function StepSignup({
   }
 
   const recap = [
-    `${productName} — ${whatItDoes}`,
+    `${productName} · ${whatItDoes}`,
     benefitCount === 1 ? "יתרון אחד להדגשה" : `${benefitCount} יתרונות להדגשה`,
     `קהל היעד: ${audience}`,
   ];
@@ -83,13 +83,16 @@ export function StepSignup({
     <form onSubmit={handleSubmit} noValidate>
       <StepHeader
         title="שומרים ויוצרים את המודעות"
-        sub="הכל מוכן. נשאר רק לחבר את זה לחשבון — כל מה שמילאתם נשמר."
+        sub="הכל מוכן. נשאר רק לחבר את זה לחשבון, וכל מה שמילאתם נשמר."
         onBack={onBack}
       />
 
-      <ul className="mt-6 space-y-2 rounded-xl bg-white/5 p-4">
+      <ul className="mt-6 space-y-2 rounded-xl bg-white/5 p-4 light:bg-paper">
         {recap.map((line, index) => (
-          <li key={index} className="flex items-start gap-2 text-sm text-gray-300">
+          <li
+            key={index}
+            className="flex items-start gap-2 text-sm text-gray-300 light:text-ink/75"
+          >
             <Check className="mt-0.5 size-4 shrink-0 text-accent" />
             <span dir="auto" className="min-w-0 truncate">
               {line}
@@ -102,7 +105,7 @@ export function StepSignup({
         {formError && (
           <p
             role="alert"
-            className="mb-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
+            className="mb-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300 light:bg-red-100 light:text-red-700"
           >
             {formError}
           </p>
@@ -121,10 +124,10 @@ export function StepSignup({
           המשך עם Google
         </Button>
 
-        <div className="my-5 flex items-center gap-3 text-xs text-gray-500">
-          <span className="h-px flex-1 bg-white/10" />
+        <div className="my-5 flex items-center gap-3 text-xs text-gray-500 light:text-ink/60">
+          <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
           או
-          <span className="h-px flex-1 bg-white/10" />
+          <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
         </div>
 
         <div className="space-y-5">
@@ -169,11 +172,11 @@ export function StepSignup({
           {submitting === "email" ? "שומרים…" : "המשך"}
         </Button>
 
-        <p className="mt-5 text-center text-sm text-gray-400">
+        <p className="mt-5 text-center text-sm text-gray-400 light:text-ink/60">
           כבר יש לכם חשבון?{" "}
           <Link
             href="/login"
-            className="font-medium text-white underline decoration-white/30 underline-offset-4"
+            className="font-medium text-white underline decoration-white/30 underline-offset-4 light:text-ink light:decoration-ink/30"
           >
             כניסה
           </Link>

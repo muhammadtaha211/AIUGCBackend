@@ -59,7 +59,7 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="mt-8">
+    <form onSubmit={handleSubmit} noValidate className="mt-6">
       <Button
         type="button"
         variant="secondary"
@@ -73,19 +73,22 @@ export function LoginForm() {
         כניסה עם Google
       </Button>
 
-      <div className="my-5 flex items-center gap-3 text-xs text-gray-400">
-        <span className="h-px flex-1 bg-white/10" />
+      <div className="my-4 flex items-center gap-3 text-xs text-gray-400 light:text-ink/60">
+        <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
         או
-        <span className="h-px flex-1 bg-white/10" />
+        <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
       </div>
 
       {error && (
-        <p role="alert" className="mb-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p
+          role="alert"
+          className="mb-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300 light:bg-red-100 light:text-red-700"
+        >
           {error}
         </p>
       )}
 
-      <div className="space-y-5">
+      <div className="space-y-4">
         <TextField
           label="אימייל"
           type="email"
@@ -108,7 +111,7 @@ export function LoginForm() {
       <Button
         type="submit"
         size="lg"
-        className="mt-7 w-full"
+        className="mt-5 w-full"
         loading={submitting === "email"}
         disabled={submitting === "google"}
       >

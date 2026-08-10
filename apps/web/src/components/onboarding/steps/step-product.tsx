@@ -86,7 +86,7 @@ export function StepProduct({
           <button
             type="button"
             onClick={() => setShowLink(true)}
-            className="text-[13px] text-gray-400 underline decoration-white/25 underline-offset-4 transition-colors duration-150 hover:text-gray-200"
+            className="text-[13px] text-gray-400 underline decoration-white/25 underline-offset-4 transition-colors duration-150 hover:text-gray-200 light:text-ink/60 light:decoration-ink/25 light:hover:text-ink"
           >
             הוספת קישור לאתר (רשות)
           </button>

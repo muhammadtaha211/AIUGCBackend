@@ -26,7 +26,7 @@ type StepDemoProps = {
   onFatal: (message: string) => void;
 };
 
-const UPLOAD_FAILED = "ההעלאה נכשלה — בדקו את החיבור ונסו שוב.";
+const UPLOAD_FAILED = "ההעלאה נכשלה, בדקו את החיבור ונסו שוב.";
 
 /** Duration off the file's metadata; undefined when the browser can't decode. */
 function readVideoSeconds(file: File): Promise<number | undefined> {
@@ -57,14 +57,14 @@ function DemoRowSkeleton({ ghost = false }: { ghost?: boolean }) {
   return (
     <li
       aria-hidden
-      className={`flex items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-3 ${
+      className={`flex items-center gap-4 rounded-xl border border-ink/[0.08] bg-white p-3 ${
         ghost ? "invisible" : ""
       }`}
     >
-      <span className={`aspect-[9/16] w-12 shrink-0 rounded-lg bg-white/10 ${pulse}`} />
+      <span className={`aspect-[9/16] w-12 shrink-0 rounded-lg bg-ink/10 ${pulse}`} />
       <span className="min-w-0 flex-1">
-        <span className={`block h-3.5 w-36 max-w-full rounded bg-white/10 ${pulse}`} />
-        <span className={`mt-2 block h-3 w-52 max-w-full rounded bg-white/10 ${pulse}`} />
+        <span className={`block h-3.5 w-36 max-w-full rounded bg-ink/10 ${pulse}`} />
+        <span className={`mt-2 block h-3 w-52 max-w-full rounded bg-ink/10 ${pulse}`} />
       </span>
     </li>
   );
@@ -251,10 +251,10 @@ export function StepDemo({
         maxLength={500}
         value={description}
         onChange={(event) => setDescription(event.target.value)}
-        placeholder="לדוגמה: מצלמים את האפליקציה — גלילה בתפריט, הוספה לעגלה, מסך תשלום"
+        placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
       />
-      <p className="mt-1.5 text-[13px] text-gray-500">
-        כותבים פעם אחת לכל סרטון — זה עוזר לקריינות להתייחס למה שבאמת רואים. אפשר לדלג — נכתוב לפי
+      <p className="mt-1.5 text-[13px] text-ink/55">
+        כותבים פעם אחת לכל סרטון, זה עוזר לקריינות להתייחס למה שבאמת רואים. אפשר לדלג, נכתוב לפי
         השאלון.
       </p>
     </div>
@@ -272,13 +272,13 @@ export function StepDemo({
    */
   const previousSection = (readyTotal === null || readyTotal > 0) && (
     <div className="mt-6">
-      <div className="flex items-center gap-3 text-xs text-gray-500">
-        <span className="h-px flex-1 bg-white/10" />
+      <div className="flex items-center gap-3 text-xs text-ink/55">
+        <span className="h-px flex-1 bg-ink/10" />
         או
-        <span className="h-px flex-1 bg-white/10" />
+        <span className="h-px flex-1 bg-ink/10" />
       </div>
-      <p className="mt-5 text-sm font-medium text-white">סרטונים שכבר העליתם</p>
-      <p className="mt-1 text-[13px] text-gray-500">אפשר לבחור סרטון קיים במקום להעלות חדש.</p>
+      <p className="mt-5 text-sm font-medium text-ink">סרטונים שכבר העליתם</p>
+      <p className="mt-1 text-[13px] text-ink/55">אפשר לבחור סרטון קיים במקום להעלות חדש.</p>
       <ul className="mt-3 flex flex-col gap-2">
         {pageDemos === null
           ? Array.from({ length: DEMO_PAGE_SIZE }, (_, i) => <DemoRowSkeleton key={i} />)
@@ -287,7 +287,7 @@ export function StepDemo({
                 <button
                   type="button"
                   onClick={() => selectPrevious(row)}
-                  className="flex w-full items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-3 text-start transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="flex w-full items-center gap-4 rounded-xl border border-ink/[0.08] bg-white p-3 text-start transition-colors duration-150 hover:border-accent/60 hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                 >
                   {row.thumbUrl ? (
                     // Signed, short-lived URL — next/image optimization would break it.
@@ -297,16 +297,16 @@ export function StepDemo({
                       className="aspect-[9/16] w-12 shrink-0 rounded-lg object-cover"
                     />
                   ) : (
-                    <span className="aspect-[9/16] w-12 shrink-0 rounded-lg bg-white/10" />
+                    <span className="aspect-[9/16] w-12 shrink-0 rounded-lg bg-ink/10" />
                   )}
                   <span className="min-w-0">
-                    <span className="block text-sm text-gray-300">
+                    <span className="block text-sm text-ink/75">
                       {row.durationMs !== undefined &&
                         `${Math.round(row.durationMs / 1000)} שניות · `}
                       הועלה ב־{new Date(row.createdAt).toLocaleDateString("he-IL")}
                     </span>
                     {row.description && (
-                      <span className="mt-1 line-clamp-2 block text-[13px] text-gray-500">
+                      <span className="mt-1 line-clamp-2 block text-[13px] text-ink/55">
                         {row.description}
                       </span>
                     )}
@@ -330,8 +330,8 @@ export function StepDemo({
               aria-current={n === page ? "page" : undefined}
               className={`size-8 rounded-lg border text-sm tabular-nums transition-colors duration-150 ${
                 n === page
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-white/10 bg-white/5 text-gray-300 hover:border-white/25 hover:bg-white/[0.08]"
+                  ? "border-accent bg-accent/15 text-ink"
+                  : "border-ink/[0.08] bg-white text-ink/75 hover:border-ink/25 hover:bg-ink/[0.06]"
               }`}
             >
               {n}
@@ -358,10 +358,10 @@ export function StepDemo({
       <button
         type="button"
         onClick={() => fileInput.current?.click()}
-        className="mt-6 w-full rounded-xl border border-dashed border-white/20 bg-white/5 px-6 py-12 text-center transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="mt-6 w-full rounded-xl border border-dashed border-white/20 bg-ink/[0.04] px-6 py-12 text-center transition-colors duration-150 hover:border-accent/60 hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
       >
-        <span className="block text-base font-medium text-white">בחירת סרטון מהמכשיר</span>
-        <span className="mt-2 block text-sm text-gray-400">
+        <span className="block text-base font-medium text-ink">בחירת סרטון מהמכשיר</span>
+        <span className="mt-2 block text-sm text-ink/60">
           וידאו אנכי (9:16), באורך 8–60 שניות, MP4 או MOV עד 200MB
         </span>
       </button>
@@ -372,11 +372,11 @@ export function StepDemo({
     <div>
       <StepHeader
         title="מעלים את סרטון המוצר"
-        sub="סרטון שצילמתם בטלפון של המוצר או השירות — עליו נרכיב את המודעה."
+        sub="סרטון שצילמתם בטלפון של המוצר או השירות, עליו נרכיב את המודעה."
       />
 
       {error && (
-        <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p role="alert" className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {error}
         </p>
       )}
@@ -385,15 +385,15 @@ export function StepDemo({
           selection frame — pre-checks run behind this state). */}
       {uploadPercent !== null && (
         <>
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/5 px-6 py-8">
-            <p className="text-sm text-gray-300">מעלים את הסרטון…</p>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+          <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white px-6 py-8">
+            <p className="text-sm text-ink/75">מעלים את הסרטון…</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink/10">
               <div
                 className="h-full rounded-full bg-accent transition-[width] duration-300"
                 style={{ width: `${uploadPercent}%` }}
               />
             </div>
-            <p dir="ltr" className="mt-2 text-end text-xs tabular-nums text-gray-500">
+            <p dir="ltr" className="mt-2 text-end text-xs tabular-nums text-ink/55">
               {uploadPercent}%
             </p>
           </div>
@@ -410,7 +410,7 @@ export function StepDemo({
 
       {ingesting && stalled && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {stalled}
           </p>
           <Button type="button" variant="secondary" className="mt-4" onClick={retryPolling}>
@@ -421,10 +421,10 @@ export function StepDemo({
 
       {ingesting && !stalled && (
         <>
-          <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-6 py-10 text-center">
-            <Spinner className="size-6 text-accent" />
-            <p className="text-sm text-gray-300">בודקים ומכינים את הסרטון…</p>
-            {slow && <p className="text-sm text-gray-500">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
+          <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
+            <Spinner className="size-6 text-ink/60" />
+            <p className="text-sm text-ink/75">בודקים ומכינים את הסרטון…</p>
+            {slow && <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
           </div>
           {descriptionField}
         </>
@@ -432,8 +432,8 @@ export function StepDemo({
 
       {demo?.status === "rejected" && (
         <div className="mt-6">
-          <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
-            {demo.rejectReason ?? "הסרטון לא עבר את הבדיקה — נסו סרטון אחר."}
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+            {demo.rejectReason ?? "הסרטון לא עבר את הבדיקה, נסו סרטון אחר."}
           </p>
           <Button
             type="button"
@@ -451,7 +451,7 @@ export function StepDemo({
 
       {demo?.status === "ready" && (
         <div className="mt-6">
-          <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center gap-4 rounded-xl border border-ink/[0.08] bg-white p-4">
             {demo.thumbUrl ? (
               // Signed, short-lived URL — next/image optimization would break it.
               <img
@@ -460,12 +460,12 @@ export function StepDemo({
                 className="aspect-[9/16] w-16 rounded-lg object-cover"
               />
             ) : (
-              <div className="aspect-[9/16] w-16 rounded-lg bg-white/10" />
+              <div className="aspect-[9/16] w-16 rounded-lg bg-ink/10" />
             )}
             <div>
-              <p className="text-sm font-medium text-white">הסרטון מוכן</p>
+              <p className="text-sm font-medium text-ink">הסרטון מוכן</p>
               {demo.durationMs !== undefined && (
-                <p className="mt-1 text-sm text-gray-400">
+                <p className="mt-1 text-sm text-ink/60">
                   {Math.round(demo.durationMs / 1000)} שניות
                 </p>
               )}
@@ -489,7 +489,7 @@ export function StepDemo({
               setDemo(null);
               setError(null);
             }}
-            className="mt-4 w-full text-center text-sm text-gray-400 transition-colors duration-150 hover:text-white"
+            className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
           >
             החלפת הסרטון
           </button>

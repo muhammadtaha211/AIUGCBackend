@@ -1,20 +1,19 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-
-const CARD = "flex h-full flex-col rounded-xl border px-6 py-7 text-start sm:px-8 sm:py-9";
+import { Clip, Person } from "@/components/ui/icons";
 
 type PathwayCardsProps = {
   /** Without a questionnaire nothing can be generated — both cards disable. */
   hasQuestionnaire: boolean;
 };
 
-/** The two service pathways — both navigate into their wizards. */
+/** The two service cards — the dashboard's replacement for Lovable's prompt box. */
 export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
   return (
     <div>
       {!hasQuestionnaire && (
-        <div className="mb-4 flex flex-col items-start gap-3 rounded-xl border border-accent/30 bg-accent/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-gray-200">
+        <div className="mb-4 flex flex-col items-start gap-3 rounded-xl border border-accent bg-accent/15 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-ink/80">
             כדי ליצור מודעות לעסק הזה צריך קודם למלא את שאלון העסק.
           </p>
           <Link href="/home/new-business" className="shrink-0">
@@ -26,38 +25,73 @@ export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
       )}
 
       <div
-        className={`grid gap-4 sm:grid-cols-2 ${hasQuestionnaire ? "" : "pointer-events-none opacity-50"}`}
+        className={`grid gap-5 sm:grid-cols-2 ${hasQuestionnaire ? "" : "pointer-events-none opacity-50"}`}
       >
-        {/* Service A — hook+demo. */}
-        <Link
+        <ServiceCard
           href="/home/a/new"
-          aria-disabled={!hasQuestionnaire}
-          tabIndex={hasQuestionnaire ? undefined : -1}
-          className={`${CARD} border-white/10 bg-white/5 transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}
-        >
-          <h2 className="text-lg font-semibold text-white">הוק + דמו</h2>
-          <p className="mt-2 flex-1 text-sm leading-relaxed text-gray-400">
-            פתיח AI קצר עם משפט הוק בעברית, חיתוך לסרטון המוצר שלכם, וכתוביות — מעלים סרטון, מאשרים
-            הקלטה, ומקבלים מודעה מוכנה לפרסום.
-          </p>
-          <span className="mt-4 text-sm font-semibold text-accent">יצירת מודעה ←</span>
-        </Link>
-
-        {/* Service B — talking avatar. The live pathway. */}
-        <Link
+          disabled={!hasQuestionnaire}
+          icon={<Clip className="size-6" />}
+          gradient="bg-gradient-to-br from-accent/35 via-lime-100/70 to-white"
+          title="הוק + דמו"
+          body="פתיח AI קצר עם משפט הוק בעברית, חיתוך לסרטון המוצר שלכם, כתוביות וקריינות. מעלים סרטון ומקבלים מודעה מוכנה לפרסום."
+          cta="יצירת מודעה"
+        />
+        <ServiceCard
           href="/home/b/new"
-          aria-disabled={!hasQuestionnaire}
-          tabIndex={hasQuestionnaire ? undefined : -1}
-          className={`${CARD} border-white/10 bg-white/5 transition-colors duration-150 hover:border-accent/60 hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}
-        >
-          <h2 className="text-lg font-semibold text-white">סרטון עם דמות AI</h2>
-          <p className="mt-2 flex-1 text-sm leading-relaxed text-gray-400">
-            דמות AI מציגה את העסק שלכם בעברית — בוחרים דמות, מאשרים תסריט והקלטה, ומקבלים סרטון מוכן
-            לפרסום.
-          </p>
-          <span className="mt-4 text-sm font-semibold text-accent">יצירת סרטון ←</span>
-        </Link>
+          disabled={!hasQuestionnaire}
+          icon={<Person className="size-6" />}
+          gradient="bg-gradient-to-bl from-emerald-200/60 via-lime-100/50 to-white"
+          title="סרטון עם דמות AI"
+          body="דמות AI קבועה מציגה את העסק שלכם בעברית: בוחרים דמות, מאשרים תסריט והקלטה, ומקבלים סרטון מוכן לפרסום."
+          cta="יצירת סרטון"
+        />
       </div>
     </div>
+  );
+}
+
+function ServiceCard({
+  href,
+  disabled,
+  icon,
+  gradient,
+  title,
+  body,
+  cta,
+}: {
+  href: string;
+  disabled: boolean;
+  icon: React.ReactNode;
+  gradient: string;
+  title: string;
+  body: string;
+  cta: string;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : undefined}
+      className="group flex h-full flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-ink/[0.07] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-ink/[0.07] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+    >
+      <div className={`flex h-20 items-center ps-6 ${gradient}`}>
+        <span className="grid size-11 place-items-center rounded-xl bg-ink text-accent shadow-lg shadow-ink/20">
+          {icon}
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col p-6 pt-5">
+        <h2 className="text-lg font-bold text-ink">{title}</h2>
+        <p className="mt-1.5 flex-1 text-sm leading-relaxed text-ink/60">{body}</p>
+        <span className="mt-4 flex items-center gap-1.5 text-sm font-semibold text-ink">
+          {cta}
+          <span
+            aria-hidden
+            className="transition-transform duration-150 group-hover:-translate-x-0.5"
+          >
+            ←
+          </span>
+        </span>
+      </div>
+    </Link>
   );
 }

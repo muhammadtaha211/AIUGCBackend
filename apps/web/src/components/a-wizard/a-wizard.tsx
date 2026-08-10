@@ -152,8 +152,8 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   if (fatal) {
     return (
       <div className="w-full max-w-2xl pt-6 sm:pt-10">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center sm:p-10">
-          <p className="text-base font-medium text-white">{fatal}</p>
+        <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] text-center sm:p-10">
+          <p className="text-base font-medium text-ink">{fatal}</p>
           <Link href="/home" className="mt-6 inline-block">
             <Button type="button" variant="secondary">
               חזרה לדף הבית
@@ -167,8 +167,8 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   return (
     <div className="w-full max-w-2xl pt-6 sm:pt-10 lg:max-w-4xl">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-lg font-semibold tracking-tight text-white">הוק + דמו</h1>
-        <span className="truncate text-sm text-gray-400">{businessName}</span>
+        <h1 className="text-lg font-semibold tracking-tight text-ink">הוק + דמו</h1>
+        <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
 
       <div className="mt-4 lg:grid lg:grid-cols-[10.5rem_1fr] lg:items-start lg:gap-8">
@@ -183,7 +183,7 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
           <StructureStrip persona={persona} hook={hook} demo={demo} />
 
           <div key={stepIndex} className="step-in mt-5">
-            <div className="rounded-xl border border-white/10 bg-white/5 p-6 sm:p-10">
+            <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-10">
               {step === "persona" && (
                 <StepPersona
                   catalog={personaCatalog}
@@ -196,7 +196,7 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
                   // only when the VO outlasts the demo. Say exactly that.
                   copy={{
                     title: "מי תקריין את המודעה שלכם?",
-                    sub: "בוחרים דמות אחת — הקריינות תוקלט בקול שלה, והיא תופיע בסוף הסרטון רק אם הקריינות ממשיכה אחרי שסרטון המוצר נגמר.",
+                    sub: "בוחרים דמות אחת, הקריינות תוקלט בקול שלה, והיא תופיע בסוף הסרטון רק אם הקריינות ממשיכה אחרי שסרטון המוצר נגמר.",
                   }}
                 />
               )}
@@ -304,7 +304,7 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
 
 /**
  * The structure strip: the fixed three-part shape of every Service A ad —
- * פתיח | הדמו שלכם | סיום עם הדמות — populating live as choices land, so the
+ * פתיח | הדמו שלכם | סיום עם הדמות, populating live as choices land, so the
  * customer always sees what they are building. The persona face sits in the
  * ending slot from step 1, but the ending itself is conditional (it renders
  * only when the VO outlasts the demo), so the caption states the same
@@ -378,16 +378,16 @@ function StripSlot({
           aspect-matched tile makes cropping structurally impossible. */}
       <div
         className={`relative mx-auto aspect-[9/16] w-20 overflow-hidden rounded-lg border ${
-          children ? "border-white/15" : "border-dashed border-white/15 bg-white/5"
+          children ? "border-ink/15" : "border-dashed border-ink/15 bg-ink/[0.04]"
         }`}
       >
         {children}
       </div>
-      <p dir="rtl" className="mt-1 text-[11px] text-gray-400">
+      <p dir="rtl" className="mt-1 text-[11px] text-ink/60">
         {label}
       </p>
       {caption && (
-        <p dir="rtl" className="text-[10px] leading-tight text-gray-500">
+        <p dir="rtl" className="text-[10px] leading-tight text-ink/55">
           {caption}
         </p>
       )}

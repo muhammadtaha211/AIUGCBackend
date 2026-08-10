@@ -134,13 +134,13 @@ export function StepRender({
       <div>
         <StepHeader
           title="ככה הסרטון ייבנה"
-          sub="מבנה הסרטון לפי ההקלטה שאישרתם — אפשר לחזור אחורה ולשנות."
+          sub="מבנה הסרטון לפי ההקלטה שאישרתם, אפשר לחזור אחורה ולשנות."
           onBack={onBack}
         />
 
         {startError && (
           <div className="mt-6">
-            <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+            <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
               {startError}
             </p>
             <Button
@@ -155,24 +155,24 @@ export function StepRender({
         )}
 
         {shape === null && !startError && (
-          <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-gray-500">
+          <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-ink/55">
             <Spinner /> מחשבים את מבנה הסרטון…
           </div>
         )}
 
         {shape !== null && (
           <>
-            <p className="mt-6 rounded-xl border border-white/10 bg-white/5 px-5 py-4 text-sm leading-relaxed text-gray-200">
+            <p className="mt-6 rounded-xl border border-ink/[0.08] bg-white px-5 py-4 text-sm leading-relaxed text-ink/80">
               {bShapeSummary(shape.voSeconds)}
             </p>
 
             {quote && !hasShortfall(quote) && (
-              <p className="mt-3 text-[13px] text-gray-400">{quoteLine(quote)}</p>
+              <p className="mt-3 text-[13px] text-ink/60">{quoteLine(quote)}</p>
             )}
             {hasShortfall(quote) && (
               <p
                 role="alert"
-                className="mt-3 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
+                className="mt-3 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700"
               >
                 {shortfallLine(quote!)}
               </p>
@@ -200,7 +200,7 @@ export function StepRender({
     return (
       <div>
         <StepHeader title="יצירת הסרטון" />
-        <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p role="alert" className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {stalled}
         </p>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -222,11 +222,11 @@ export function StepRender({
     return (
       <div>
         <StepHeader title="יצירת הסרטון" />
-        <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p role="alert" className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {notice.reason}
         </p>
         {notice.showRefund && (
-          <p className="mt-3 text-sm text-gray-400">הקרדיטים על הסרטון הזה הוחזרו לחשבונכם.</p>
+          <p className="mt-3 text-sm text-ink/60">הקרדיטים על הסרטון הזה הוחזרו לחשבונכם.</p>
         )}
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Button
@@ -253,8 +253,8 @@ export function StepRender({
     return (
       <div>
         <StepHeader title="יצירת הסרטון" />
-        <p className="mt-6 rounded-lg bg-white/5 px-3 py-2.5 text-sm text-gray-300">
-          הסרטון לא עבר את בדיקת האיכות שלנו — אנחנו כבר מכינים גרסה חדשה. הוא יופיע בדף הבית כשיהיה
+        <p className="mt-6 rounded-lg bg-ink/[0.04] px-3 py-2.5 text-sm text-ink/75">
+          הסרטון לא עבר את בדיקת האיכות שלנו, אנחנו כבר מכינים גרסה חדשה. הוא יופיע בדף הבית כשיהיה
           מוכן.
         </p>
         <Link href="/home" className="mt-6 inline-block">
@@ -275,7 +275,7 @@ export function StepRender({
             src={render.videoUrl}
             controls
             playsInline
-            className="mx-auto mt-6 aspect-[9/16] w-full max-w-60 rounded-xl border border-white/10 bg-black"
+            className="mx-auto mt-6 aspect-[9/16] w-full max-w-60 rounded-xl border border-ink/10 bg-black"
           />
         )}
         <Link href="/home" className="mt-7 block">
@@ -292,7 +292,7 @@ export function StepRender({
     <div>
       <StepHeader
         title="יוצרים את הסרטון"
-        sub="אפשר להישאר כאן או לחזור לדף הבית — הסרטון יופיע שם כשיהיה מוכן."
+        sub="אפשר להישאר כאן או לחזור לדף הבית, הסרטון יופיע שם כשיהיה מוכן."
       />
 
       <ol className="mt-8 space-y-4">
@@ -304,10 +304,10 @@ export function StepRender({
               <span
                 className={`flex size-7 shrink-0 items-center justify-center rounded-full border ${
                   done
-                    ? "border-accent bg-accent/15 text-accent"
+                    ? "border-accent bg-accent/20 text-ink"
                     : current
-                      ? "border-accent text-accent"
-                      : "border-white/15 text-gray-600"
+                      ? "border-accent text-ink"
+                      : "border-ink/15 text-ink/40"
                 }`}
               >
                 {done ? (
@@ -318,7 +318,7 @@ export function StepRender({
                   <span className="text-xs">{index + 1}</span>
                 )}
               </span>
-              <span className={`text-sm ${done || current ? "text-white" : "text-gray-500"}`}>
+              <span className={`text-sm ${done || current ? "text-ink" : "text-ink/55"}`}>
                 {label}
               </span>
             </li>
@@ -327,13 +327,13 @@ export function StepRender({
       </ol>
 
       {slow && (
-        <p className="mt-6 text-center text-sm text-gray-500">
+        <p className="mt-6 text-center text-sm text-ink/55">
           עדיין עובד… סרטון לוקח בדרך כלל כמה דקות.
         </p>
       )}
 
       <Link href="/home" className="mt-8 block text-center">
-        <span className="text-sm text-gray-400 transition-colors duration-150 hover:text-white">
+        <span className="text-sm text-ink/60 transition-colors duration-150 hover:text-ink">
           חזרה לדף הבית
         </span>
       </Link>

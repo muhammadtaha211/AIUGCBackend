@@ -39,20 +39,20 @@ export function DemoLibrary({ businessId }: { businessId: string }) {
   return (
     <section className="mt-8">
       {error && (
-        <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {error}
         </p>
       )}
 
       {demos === null && !error && (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+        <div className="flex items-center gap-2 text-sm text-ink/55">
           <Spinner /> טוענים…
         </div>
       )}
 
       {demos !== null && demos.length === 0 && (
-        <p className="rounded-xl border border-dashed border-white/15 bg-white/5 px-6 py-8 text-center text-sm text-gray-400">
-          עוד אין סרטונים — הסרטון הראשון שתעלו במסלול ״הוק + דמו״ יופיע כאן.
+        <p className="rounded-xl border border-dashed border-ink/15 bg-ink/[0.04] px-6 py-8 text-center text-sm text-ink/60">
+          עוד אין סרטונים, הסרטון הראשון שתעלו במסלול ״הוק + דמו״ יופיע כאן.
         </p>
       )}
 
@@ -76,7 +76,7 @@ function statusLabel(status: string): string {
 
 const STATUS_COLORS: Record<string, string> = {
   ready: "bg-accent/15 text-accent",
-  rejected: "bg-red-500/10 text-red-300",
+  rejected: "bg-red-100 text-red-700",
 };
 
 function DemoRow({ demo }: { demo: DemoSummary }) {
@@ -100,7 +100,7 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
   }
 
   return (
-    <li className="rounded-xl border border-white/10 bg-white/5 p-4">
+    <li className="rounded-xl border border-ink/[0.08] bg-white p-4">
       <div className="flex items-start gap-4">
         {demo.thumbUrl ? (
           // Signed, short-lived URL — next/image optimization would break it.
@@ -110,24 +110,24 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
             className="aspect-[9/16] w-16 shrink-0 rounded-lg object-cover"
           />
         ) : (
-          <div className="aspect-[9/16] w-16 shrink-0 rounded-lg bg-white/10" />
+          <div className="aspect-[9/16] w-16 shrink-0 rounded-lg bg-ink/10" />
         )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[demo.status] ?? "bg-white/10 text-gray-300"}`}
+              className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[demo.status] ?? "bg-ink/10 text-ink/75"}`}
             >
               {statusLabel(demo.status)}
             </span>
-            <span className="text-sm text-gray-400">
+            <span className="text-sm text-ink/60">
               {demo.durationMs !== undefined && `${Math.round(demo.durationMs / 1000)} שניות · `}
               הועלה ב־{new Date(demo.createdAt).toLocaleDateString("he-IL")}
             </span>
           </div>
 
           {demo.status === "rejected" && (
-            <p className="mt-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-300">
+            <p className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700">
               {demo.rejectReason ?? "הסרטון לא עבר את הבדיקה."}
             </p>
           )}
@@ -140,10 +140,10 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
                 maxLength={500}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="לדוגמה: מצלמים את האפליקציה — גלילה בתפריט, הוספה לעגלה, מסך תשלום"
+                placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
               />
               {error && (
-                <p role="alert" className="mt-2 text-sm text-red-300">
+                <p role="alert" className="mt-2 text-sm text-red-700">
                   {error}
                 </p>
               )}

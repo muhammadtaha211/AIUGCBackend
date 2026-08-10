@@ -1,10 +1,7 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { BWizard } from "@/components/b-wizard/b-wizard";
-import { CreditsChip } from "@/components/credits-chip";
 import { NoCreditsCard } from "@/components/no-credits-card";
-import { Wordmark } from "@/components/wordmark";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -42,34 +39,17 @@ export default async function NewBRenderPage() {
   const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="flex h-16 shrink-0 items-center justify-between gap-3 px-6 sm:px-10">
-        <Link href="/home">
-          <Wordmark />
-        </Link>
-        <div className="flex items-center gap-3">
-          <CreditsChip balance={gate.balance} />
-          <Link
-            href="/home"
-            className="text-sm text-gray-400 transition-colors duration-150 hover:text-white"
-          >
-            חזרה לדף הבית
-          </Link>
-        </div>
-      </header>
-
-      <main className="flex flex-1 flex-col items-center px-6 pb-20">
-        {gate.allowed ? (
-          <BWizard
-            businessId={selected.id}
-            businessName={selected.name}
-            category={questionnaire.category ?? ""}
-            initialCatalog={personaCatalog}
-          />
-        ) : (
-          <NoCreditsCard />
-        )}
-      </main>
+    <div className="flex flex-col items-center px-6 pb-16">
+      {gate.allowed ? (
+        <BWizard
+          businessId={selected.id}
+          businessName={selected.name}
+          category={questionnaire.category ?? ""}
+          initialCatalog={personaCatalog}
+        />
+      ) : (
+        <NoCreditsCard />
+      )}
     </div>
   );
 }

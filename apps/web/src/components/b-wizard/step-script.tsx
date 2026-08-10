@@ -95,7 +95,7 @@ export function StepScript({
       <div>
         <StepHeader
           title="מה הדמות צריכה להגיד?"
-          sub="כמה מילים על מה חשוב להדגיש — ואנחנו נכתוב תסריט בעברית לפי שאלון העסק."
+          sub="כמה מילים על מה חשוב להדגיש, ואנחנו נכתוב תסריט בעברית לפי שאלון העסק."
           onBack={onBack}
         />
 
@@ -114,16 +114,13 @@ export function StepScript({
               app_config.words_per_second), and words_per_second is uncalibrated —
               measured narration runs ~2.1–3.8 words/sec, so real output spans
               roughly 9–16s. Name a number only once it's calibrated per voice. */}
-          <p className="text-sm text-gray-400">
-            הסרטון יהיה קצר וקולע — באורך שמתאים לפרסום ברשתות החברתיות.
+          <p className="text-sm text-ink/60">
+            הסרטון יהיה קצר וקולע, באורך שמתאים לפרסום ברשתות החברתיות.
           </p>
         </div>
 
         {error && (
-          <p
-            role="alert"
-            className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300"
-          >
+          <p role="alert" className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {error}
           </p>
         )}
@@ -145,7 +142,7 @@ export function StepScript({
   return (
     <div>
       <StepHeader
-        title="התסריט מוכן — אפשר לערוך"
+        title="התסריט מוכן, אפשר לערוך"
         sub="זה מה שהדמות תגיד, מילה במילה. שינוי גדול? אפשר גם ליצור תסריט חדש."
         onBack={onBack}
       />
@@ -157,11 +154,11 @@ export function StepScript({
           value={editedText}
           onChange={(event) => setEditedText(event.target.value)}
           error={
-            overBudget ? `התסריט ארוך מדי — המקסימום הוא ${script.wordBudget} מילים.` : undefined
+            overBudget ? `התסריט ארוך מדי, המקסימום הוא ${script.wordBudget} מילים.` : undefined
           }
         />
         <p
-          className={`mt-1.5 text-[13px] tabular-nums ${overBudget ? "text-red-400" : "text-gray-500"}`}
+          className={`mt-1.5 text-[13px] tabular-nums ${overBudget ? "text-red-600" : "text-ink/55"}`}
         >
           {script.wordBudget !== undefined
             ? `${words} / ${script.wordBudget} מילים`
@@ -170,7 +167,7 @@ export function StepScript({
       </div>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p role="alert" className="mt-4 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {error}
         </p>
       )}
@@ -205,7 +202,7 @@ export function StepScript({
           setScript(null);
           setError(null);
         }}
-        className="mt-4 w-full text-center text-sm text-gray-400 transition-colors duration-150 hover:text-white"
+        className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
       >
         שינוי ההנחיות ויצירת תסריט חדש
       </button>
