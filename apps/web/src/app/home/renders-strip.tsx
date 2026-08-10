@@ -5,7 +5,14 @@ import { Spinner } from "@/components/ui/icons";
 import { isActiveRenderStatus, renderStatusLabel } from "@/lib/service-b-ui";
 import { apiFetch, usePolling } from "@/lib/use-api";
 
-type StripRender = { id: string; status: string; createdAt: string; thumbUrl?: string };
+type StripRender = {
+  id: string;
+  status: string;
+  createdAt: string;
+  thumbUrl?: string;
+  /** Failed renders only; true when the credits were actually returned. */
+  refunded?: boolean;
+};
 
 const CHIP_COLORS: Record<string, string> = {
   released: "bg-accent/30 text-ink",
@@ -137,6 +144,13 @@ export function RendersStrip({ businessId }: { businessId: string }) {
                 <div className="mt-1.5 flex justify-center">
                   <StatusChip status={render.status} />
                 </div>
+                {/* Only when the refund really happened — never claim money
+                    moved when it didn't (same rule as failedRenderNotice). */}
+                {render.status === "failed" && render.refunded && (
+                  <p className="mt-1 text-center text-[10px] leading-tight text-ink/55">
+                    הקרדיטים הוחזרו
+                  </p>
+                )}
               </li>
             );
           })}
