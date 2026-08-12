@@ -8,6 +8,7 @@ import {
   generateVoScript,
 } from "./pipelines/copy";
 import { handleGenerateComposite } from "./pipelines/composites";
+import { handleAnalyzeDemo } from "./pipelines/demo-analysis";
 import { handleIngestDemo } from "./pipelines/demos";
 import { handleJanitor, handleReapDeadRenders } from "./pipelines/janitor";
 import { handleLipsync, handleRenderVideo } from "./pipelines/renders";
@@ -64,6 +65,7 @@ async function handleGenerateCopy(job: Job, ctx: JobContext): Promise<JobResult>
 export function buildHandlers(): HandlerRegistry {
   return {
     ingest_demo: handleIngestDemo,
+    analyze_demo: handleAnalyzeDemo,
     generate_copy: handleGenerateCopy,
     synth_tts: handleSynthTts,
     generate_composite: handleGenerateComposite,

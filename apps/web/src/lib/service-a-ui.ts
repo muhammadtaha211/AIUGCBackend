@@ -35,23 +35,23 @@ export const A_WIZARD_STEPS: AWizardStep[] = [
 // Demo pre-checks (client-side copy of src/lib/service-a.ts rules)
 // ---------------------------------------------------------------------------
 
-export const MAX_DEMO_BYTES = 200 * 1024 * 1024;
+export const MAX_DEMO_BYTES = 1024 * 1024 * 1024;
 const DEMO_TYPES = ["video/mp4", "video/quicktime"];
 
 export const MIN_DEMO_SECONDS = 8;
-export const MAX_DEMO_SECONDS = 60;
+export const MAX_DEMO_SECONDS = 180;
 
 export function clientDemoFileError(file: { type: string; size: number }): string | null {
   if (!DEMO_TYPES.includes(file.type)) return "אפשר להעלות רק וידאו בפורמט MP4 או MOV.";
   if (file.size === 0) return "הקובץ שהועלה ריק.";
-  if (file.size > MAX_DEMO_BYTES) return "הסרטון גדול מדי — המקסימום הוא 200MB.";
+  if (file.size > MAX_DEMO_BYTES) return "הסרטון גדול מדי — המקסימום הוא 1GB.";
   return null;
 }
 
 /** Pre-upload duration gate (same limits the ingest job enforces server-side). */
 export function demoDurationError(seconds: number): string | null {
   if (seconds < MIN_DEMO_SECONDS || seconds > MAX_DEMO_SECONDS) {
-    return "אורך הסרטון חייב להיות בין 8 ל-60 שניות";
+    return "אורך הסרטון חייב להיות בין 8 שניות ל-3 דקות";
   }
   return null;
 }

@@ -182,7 +182,9 @@ export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
           <StepBenefits
             businessType={draft.businessType}
             benefits={draft.benefits}
+            wow={draft.wow}
             onChange={(benefits) => patch({ benefits })}
+            onWowChange={(wow) => patch({ wow })}
             onSubmit={() => goTo(3)}
             onBack={() => goTo(1)}
           />

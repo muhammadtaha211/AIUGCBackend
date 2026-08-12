@@ -362,7 +362,7 @@ export function StepDemo({
       >
         <span className="block text-base font-medium text-ink">בחירת סרטון מהמכשיר</span>
         <span className="mt-2 block text-sm text-ink/60">
-          וידאו אנכי (9:16), באורך 8–60 שניות, MP4 או MOV עד 200MB
+          וידאו אנכי (9:16), באורך 8 שניות עד 3 דקות, MP4 או MOV עד 1GB
         </span>
       </button>
     </>

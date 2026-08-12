@@ -17,6 +17,7 @@ export * from "./pipelines/composites";
 export * from "./pipelines/copy";
 export * from "./pipelines/costs";
 export * from "./pipelines/credits";
+export * from "./pipelines/demo-analysis";
 export * from "./pipelines/demos";
 export * from "./pipelines/janitor";
 export * from "./pipelines/pronunciation";

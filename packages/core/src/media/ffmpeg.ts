@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { PermanentError } from "../jobs/errors";
 
 /**
  * ffmpeg/ffprobe wrappers: probing, normalization to the single output format
- * (1080x1920 / 30fps / H.264 / AAC), thumbnails, and the atempo length-fit
- * stretch. V2 segment cut/concat will live here too.
+ * (1080x1920 / 30fps / H.264 / AAC), thumbnails, the atempo length-fit
+ * stretch, and the step-plan analysis samplers (frame extraction, dHash,
+ * state clustering). Step trims happen in Remotion, never here.
  */
 
 export interface ProbeResult {
@@ -16,12 +17,13 @@ export interface ProbeResult {
   hasAudio: boolean;
 }
 
-function run(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<string> {
+/** Raw-bytes runner — rawvideo output would be corrupted by string decoding. */
+function runRaw(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, args, { windowsHide: true });
-    let stdout = "";
+    const stdout: Buffer[] = [];
     let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+    proc.stdout.on("data", (d: Buffer) => stdout.push(d));
     proc.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
     proc.on("error", (err: NodeJS.ErrnoException) => {
       if (err.code === "ENOENT") {
@@ -31,10 +33,14 @@ function run(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<string> {
       }
     });
     proc.on("close", (code) => {
-      if (code === 0) resolve(stdout);
+      if (code === 0) resolve(Buffer.concat(stdout));
       else reject(new Error(`${bin} exited ${code}: ${stderr.slice(-800)}`));
     });
   });
+}
+
+async function run(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<string> {
+  return (await runRaw(bin, args)).toString("utf8");
 }
 
 export async function probe(file: string): Promise<ProbeResult> {
@@ -206,4 +212,155 @@ export async function sliceAudioFrom(
 ): Promise<void> {
   mkdirSync(path.dirname(output), { recursive: true });
   await run("ffmpeg", ["-y", "-i", input, "-ss", (startMs / 1000).toFixed(3), output]);
+}
+
+// --- step-plan analysis samplers ---------------------------------------------
+
+export interface ExtractedFrame {
+  path: string;
+  timestampMs: number;
+}
+
+/**
+ * Sample the video to numbered JPEGs in one decode pass (no per-frame seeks).
+ * Timestamps derive from index and fps — frame N (0-based) shows the video at
+ * N/fps seconds — so extracting at the fps the hashes were computed at makes
+ * cluster-representative timestamps match files exactly.
+ */
+export async function extractFrames(
+  input: string,
+  outDir: string,
+  opts: { fps: number; width: number },
+): Promise<ExtractedFrame[]> {
+  mkdirSync(outDir, { recursive: true });
+  // Retries reuse per-entity work dirs; ffmpeg -y overwrites frames 1..N but
+  // never deletes N+1.., so leftovers from a longer previous run would come
+  // back as phantom frames with fabricated timestamps.
+  for (const f of readdirSync(outDir)) {
+    if (/^\d{5,}\.jpg$/.test(f)) rmSync(path.join(outDir, f), { force: true });
+  }
+  await run("ffmpeg", [
+    "-y",
+    "-i",
+    input,
+    "-vf",
+    `fps=${opts.fps},scale=${opts.width}:-2`,
+    "-an",
+    "-q:v",
+    "3",
+    path.join(outDir, "%05d.jpg"),
+  ]);
+  return readdirSync(outDir)
+    .filter((f) => /^\d{5,}\.jpg$/.test(f))
+    .map((f) => ({ file: f, index: Number.parseInt(f, 10) }))
+    .sort((a, b) => a.index - b.index)
+    .map(({ file, index }) => ({
+      path: path.join(outDir, file),
+      timestampMs: Math.round(((index - 1) * 1000) / opts.fps),
+    }));
+}
+
+/**
+ * One perceptual hash per sampled frame from a 9x8 grayscale downscale.
+ * Three bands: 64 horizontal dHash bits (is this pixel darker than its right
+ * neighbour), 63 vertical dHash bits (than the pixel below it — phone UI
+ * change lives mostly on the vertical axis: lists, keyboards, sheets), and
+ * 16 thermometer-coded bits of mean frame luma. Structure bits compare
+ * layout, not pixel deltas, so handheld jitter does not read as a new state;
+ * the luma band exists because structure alone is blind to a flat-to-flat
+ * cut (white loading screen → black splash — both hash to zero structure
+ * bits), and thermometer coding keeps auto-exposure drift to ~1 bit.
+ */
+export async function frameHashes(input: string, opts: { fps: number }): Promise<bigint[]> {
+  const raw = await runRaw("ffmpeg", [
+    "-i",
+    input,
+    "-vf",
+    `fps=${opts.fps},scale=9:8,format=gray`,
+    "-an",
+    "-f",
+    "rawvideo",
+    "-",
+  ]);
+  const frameBytes = 9 * 8;
+  if (raw.length === 0 || raw.length % frameBytes !== 0) {
+    throw new Error(`rawvideo stream is ${raw.length} bytes — not a multiple of ${frameBytes}`);
+  }
+  const hashes: bigint[] = [];
+  for (let offset = 0; offset < raw.length; offset += frameBytes) {
+    let hash = 0n;
+    let sum = 0;
+    for (let i = 0; i < frameBytes; i++) sum += raw[offset + i]!;
+    for (let y = 0; y < 8; y++) {
+      const row = offset + y * 9;
+      for (let x = 0; x < 8; x++) {
+        hash = (hash << 1n) | (raw[row + x]! < raw[row + x + 1]! ? 1n : 0n);
+      }
+    }
+    for (let y = 0; y < 7; y++) {
+      const row = offset + y * 9;
+      for (let x = 0; x < 9; x++) {
+        hash = (hash << 1n) | (raw[row + x]! < raw[row + x + 9]! ? 1n : 0n);
+      }
+    }
+    const lumaLevel = Math.min(15, Math.floor(sum / frameBytes / 16));
+    hash = (hash << 16n) | ((1n << BigInt(lumaLevel)) - 1n);
+    hashes.push(hash);
+  }
+  return hashes;
+}
+
+export interface StateCluster {
+  startMs: number;
+  endMs: number;
+  representativeMs: number;
+}
+
+export function hamming(a: bigint, b: bigint): number {
+  let x = a ^ b;
+  let bits = 0;
+  while (x > 0n) {
+    bits += Number(x & 1n);
+    x >>= 1n;
+  }
+  return bits;
+}
+
+/**
+ * Collapse runs of consecutive frames into one cluster per UI state. Each
+ * frame is compared to the cluster's FIRST frame, not its neighbour —
+ * adjacent comparison lets a slow scroll drift a full screen without any
+ * single 200ms step crossing the threshold, chain-merging distinct states;
+ * anchoring bounds cumulative drift while jitter still oscillates safely
+ * around the anchor. Clusters shorter than `minFrames` are dropped: a single
+ * glare/shake frame otherwise becomes its own cluster and puts a noise frame
+ * in front of the vision model. The representative is the median-timestamp
+ * frame, not the sharpest — variance-of-Laplacian needs OpenCV, and the model
+ * reports per-frame legibility anyway, which is the gate that actually
+ * matters.
+ * TODO: sharpness-based representative selection within a cluster.
+ */
+export function clusterStates(
+  hashes: bigint[],
+  timestamps: number[],
+  opts: { maxHamming: number; minFrames?: number },
+): StateCluster[] {
+  if (hashes.length !== timestamps.length) {
+    throw new Error(`${hashes.length} hashes but ${timestamps.length} timestamps`);
+  }
+  const minFrames = opts.minFrames ?? 1;
+  const clusters: StateCluster[] = [];
+  let start = 0;
+  for (let i = 1; i <= hashes.length; i++) {
+    if (i < hashes.length && hamming(hashes[start]!, hashes[i]!) <= opts.maxHamming) continue;
+    if (i - start >= minFrames) {
+      clusters.push({
+        startMs: timestamps[start]!,
+        endMs: timestamps[i - 1]!,
+        representativeMs: timestamps[start + Math.floor((i - 1 - start) / 2)]!,
+      });
+    }
+    start = i;
+  }
+  return clusters;
 }

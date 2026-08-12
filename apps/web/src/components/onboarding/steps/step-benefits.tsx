@@ -20,7 +20,9 @@ const EXAMPLES: Record<BusinessType | "default", string[]> = {
 type StepBenefitsProps = {
   businessType: BusinessType | null;
   benefits: string[];
+  wow: string;
   onChange: (benefits: string[]) => void;
+  onWowChange: (wow: string) => void;
   onSubmit: () => void;
   onBack: () => void;
 };
@@ -28,7 +30,9 @@ type StepBenefitsProps = {
 export function StepBenefits({
   businessType,
   benefits,
+  wow,
   onChange,
+  onWowChange,
   onSubmit,
   onBack,
 }: StepBenefitsProps) {
@@ -82,6 +86,14 @@ export function StepBenefits({
             עוד יתרון
           </button>
         )}
+
+        <TextField
+          label="מה גורם לאנשים להגיד ״וואו״?"
+          hint="רשות"
+          placeholder="למשל: התוצאה מוכנה תוך 30 שניות"
+          value={wow}
+          onChange={(e) => onWowChange(e.target.value)}
+        />
       </div>
 
       <Button type="submit" size="lg" className="mt-9 w-full sm:w-auto sm:min-w-36">

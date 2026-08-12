@@ -177,11 +177,11 @@ describe("client demo pre-checks", () => {
     expect(clientDemoFileError({ type: "image/png", size: 1000 })).toMatch(/MP4 או MOV/);
   });
 
-  it("gates duration to the ingest limits (8-60s)", () => {
-    expect(demoDurationError(7.9)).toMatch(/8 ל-60/);
+  it("gates duration to the ingest limits (8s-3min)", () => {
+    expect(demoDurationError(7.9)).toMatch(/8 שניות ל-3 דקות/);
     expect(demoDurationError(8)).toBeNull();
-    expect(demoDurationError(60)).toBeNull();
-    expect(demoDurationError(61)).toMatch(/8 ל-60/);
+    expect(demoDurationError(180)).toBeNull();
+    expect(demoDurationError(181)).toMatch(/8 שניות ל-3 דקות/);
   });
 });
 

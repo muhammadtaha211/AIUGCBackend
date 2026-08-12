@@ -13,6 +13,9 @@ export const questionnaireSchema = z.object({
   // Ad style key only — Hebrew labels live in the UI layer.
   tone: z.enum(["friendly", "direct", "professional"]),
   link: z.string().optional(),
+  // Optional: what makes people say "wow" about the product. Step-plan quality
+  // is bounded by how well the model knows what matters in the footage.
+  wow: z.string().optional(),
 });
 
 export type Questionnaire = z.infer<typeof questionnaireSchema>;

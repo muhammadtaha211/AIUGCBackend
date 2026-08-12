@@ -8,6 +8,7 @@ import {
   addPersona,
   addPersonaImage,
   addStructure,
+  analysisTimelineSchema,
   applyWordsPerSecond,
   approveAudio,
   buildHandlers,
@@ -25,6 +26,7 @@ import {
   generateVoScript,
   getDb,
   getEnv,
+  getLatestDemoAnalysis,
   getStorage,
   HEAVY_JOB_TYPES,
   listQcQueue,
@@ -35,6 +37,7 @@ import {
   rejectRender,
   releaseRender,
   requestAudio,
+  requestDemoAnalysis,
   runLane,
   servedContentType,
   setQuestionnaire,
@@ -105,14 +108,61 @@ business
 
 // --- demo -------------------------------------------------------------------
 
-program
+const demo = program
   .command("demo")
+  .description("demo footage: ingest + the step-plan state inventory");
+
+demo
   .command("ingest <file>")
   .requiredOption("--business <id>")
   .action(
     run(async (file: string, opts: { business: string }) => {
-      const demo = await createDemo(getDb(), { businessId: opts.business, filePath: file });
-      console.log(`demo created: ${demo.id} (ingest job queued — run \`aiugc work --once\`)`);
+      const row = await createDemo(getDb(), { businessId: opts.business, filePath: file });
+      console.log(`demo created: ${row.id} (ingest job queued — run \`aiugc work --once\`)`);
+    }),
+  );
+
+demo
+  .command("analyze <demoId>")
+  .description("(re-)queue the state-inventory analysis (ingest queues it automatically)")
+  .action(
+    run(async (demoId: string) => {
+      const result = await requestDemoAnalysis(getDb(), demoId);
+      if (result.kind === "already_ready") {
+        console.log("analysis already ready — `aiugc demo timeline` to see it");
+      } else if (result.kind === "in_flight") {
+        console.log(`analysis already queued/running (job ${result.jobId}) — \`aiugc work\` runs it`);
+      } else {
+        console.log(`analysis queued (job ${result.jobId}) — run \`aiugc work --once\``);
+      }
+    }),
+  );
+
+demo
+  .command("timeline <demoId>")
+  .description("print the analyzed state inventory")
+  .action(
+    run(async (demoId: string) => {
+      const analysis = await getLatestDemoAnalysis(getDb(), demoId);
+      if (!analysis) {
+        console.log("no analysis yet — `aiugc demo analyze` queues one");
+        return;
+      }
+      const reason = analysis.failReason ? ` — ${analysis.failReason}` : "";
+      console.log(
+        `analysis ${analysis.id}: ${analysis.status}${reason} (${analysis.promptVersion ?? "-"})`,
+      );
+      if (!analysis.timeline) return;
+      const states = analysisTimelineSchema.parse(analysis.timeline);
+      for (const [i, s] of states.entries()) {
+        const t = `${(s.timestampMs / 1000).toFixed(1)}s`.padStart(7);
+        const text = s.visibleText.join(" · ").slice(0, 60);
+        const dup = s.sameStateAsPrevious ? " (dup)" : "";
+        console.log(
+          `${String(i).padStart(3)} ${t}  ${s.actionType.padEnd(8)} ${s.legibility.padEnd(10)} ${s.screenName} — ${s.action}${dup}${text ? `  "${text}"` : ""}`,
+        );
+        if (s.salienceNote) console.log(`           ! ${s.salienceNote}`);
+      }
     }),
   );
 

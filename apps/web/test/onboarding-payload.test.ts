@@ -14,6 +14,7 @@ const completeDraft: OnboardingDraft = {
   whatItDoes: "קרם טבעי שמרגיע עור יבש",
   link: "https://example.co.il",
   benefits: ["טבעי לגמרי", "נספג מהר", "ריח עדין"],
+  wow: "העור מפסיק לגרד תוך דקה",
   audience: "נשים 25–45 שמחפשות טיפוח טבעי",
   tone: "friendly",
 };
@@ -48,6 +49,14 @@ describe("draftToQuestionnairePayload", () => {
     expect(draftToQuestionnairePayload(completeDraft).link).toBe("https://example.co.il");
   });
 
+  it("omits an empty wow answer", () => {
+    expect(draftToQuestionnairePayload({ ...completeDraft, wow: "" })).not.toHaveProperty("wow");
+    expect(draftToQuestionnairePayload({ ...completeDraft, wow: "   " })).not.toHaveProperty(
+      "wow",
+    );
+    expect(draftToQuestionnairePayload(completeDraft).wow).toBe("העור מפסיק לגרד תוך דקה");
+  });
+
   it("produces a payload that parses with the core questionnaireSchema", () => {
     const parsed = questionnaireSchema.parse(draftToQuestionnairePayload(completeDraft));
     expect(parsed).toEqual({
@@ -58,6 +67,7 @@ describe("draftToQuestionnairePayload", () => {
       target_audience: "נשים 25–45 שמחפשות טיפוח טבעי",
       tone: "friendly",
       link: "https://example.co.il",
+      wow: "העור מפסיק לגרד תוך דקה",
     });
   });
 

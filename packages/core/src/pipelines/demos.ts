@@ -10,8 +10,10 @@ import { normalizeDemo, probe, thumbnail } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import { getStorage, storageKey } from "../storage";
 
+// Up to 3 minutes: step-plan demos are one continuous screen recording that
+// the analysis pass mines for states — the render uses ~15-20s of it.
 const MIN_DURATION_MS = 8_000;
-const MAX_DURATION_MS = 60_000;
+const MAX_DURATION_MS = 180_000;
 
 /** Register uploaded footage and queue probing/normalization. */
 export async function createDemo(
@@ -90,6 +92,20 @@ export async function setDemoDescription(
     .where(eq(demos.id, opts.demoId));
 }
 
+/**
+ * Every ready demo gets analyzed once — the wizard's plan step needs the state
+ * inventory, and starting at ingest hides the minutes of analysis latency. The
+ * analyze_demo handler lands with the step-plan pipeline; until a worker knows
+ * the type, the job just waits in the queue (lanes claim registered types only).
+ */
+async function enqueueAnalysis(db: Db, demoId: string): Promise<void> {
+  await enqueue(db, {
+    type: "analyze_demo",
+    idempotencyKey: `analyze:${demoId}`,
+    payload: { demoId },
+  });
+}
+
 /** Job handler: probe -> sanity checks -> normalize -> thumbnail -> ready. */
 export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobResult> {
   const { demoId } = job.payload as { demoId: string };
@@ -110,6 +126,7 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
           updatedAt: new Date(),
         })
         .where(eq(demos.id, demoId));
+      await enqueueAnalysis(ctx.db, demoId);
       return { kind: "done" };
     }
 
@@ -128,7 +145,7 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
       throw new PermanentError("הסרטון אופקי — צריך וידאו אנכי (9:16)");
     }
     if (info.durationMs < MIN_DURATION_MS || info.durationMs > MAX_DURATION_MS) {
-      throw new PermanentError("אורך הסרטון חייב להיות בין 8 ל-60 שניות");
+      throw new PermanentError("אורך הסרטון חייב להיות בין 8 שניות ל-3 דקות");
     }
 
     await ctx.db
@@ -163,6 +180,7 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
         updatedAt: new Date(),
       })
       .where(eq(demos.id, demoId));
+    await enqueueAnalysis(ctx.db, demoId);
     return { kind: "done" };
   } catch (err) {
     if (err instanceof PermanentError) {
