@@ -27,6 +27,10 @@ export const PROMPTS_DIR = path.join(REPO_ROOT, "prompts");
 /** Checked-in structure skeletons, inserted into the bank by seedStructures. */
 export const SEED_STRUCTURES_DIR = path.join(REPO_ROOT, "seed", "structures");
 
+/** Saved timeline+questionnaire fixtures for `aiugc plan regress` — the plan
+ *  pass is text-only, so the regression corpus is just JSON. */
+export const FIXTURES_DIR = path.join(REPO_ROOT, "fixtures", "timelines");
+
 /** Local storage backend root (used when no Supabase credentials are configured). */
 export const LOCAL_STORAGE_DIR = path.join(REPO_ROOT, ".storage");
 
