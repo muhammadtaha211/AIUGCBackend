@@ -81,7 +81,7 @@ export function StepHook({
           <div
             role="radiogroup"
             aria-label="בחירת קליפ פתיחה"
-            className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3"
+            className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
           >
             {hooks.map((hook) => (
               <button

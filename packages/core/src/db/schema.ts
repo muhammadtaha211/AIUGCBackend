@@ -28,6 +28,21 @@ export const demoStatus = pgEnum("demo_status", [
   "rejected",
 ]);
 
+export const demoAnalysisStatus = pgEnum("demo_analysis_status", [
+  "pending",
+  "analysing",
+  "ready",
+  "failed",
+  "rejected",
+]);
+
+export const stepPlanStatus = pgEnum("step_plan_status", [
+  "pending",
+  "planning",
+  "ready",
+  "failed",
+]);
+
 export const scriptKind = pgEnum("script_kind", [
   "hook_line",
   "benefit_captions",
@@ -140,23 +155,65 @@ export const demos = pgTable(
   (t) => [index("demos_business_idx").on(t.businessId)],
 );
 
-// V2 step-captions: a demo becomes an ordered list of user-tapped segments.
-// Ships empty in V0; exists so V2 is an insert, not a migration.
-export const demoSegments = pgTable(
-  "demo_segments",
+// The inventory: distinct UI states extracted from one screen recording
+// (pHash clustering -> representative frames -> batched vision transcription).
+// Expensive, computed once per demo, never edited. At most one ready analysis
+// per demo (partial unique index, 0023); failed/rejected attempts may repeat.
+export const demoAnalyses = pgTable(
+  "demo_analyses",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     demoId: uuid("demo_id")
       .notNull()
       .references(() => demos.id),
-    idx: integer("idx").notNull(),
-    startMs: integer("start_ms").notNull(),
-    endMs: integer("end_ms").notNull(),
-    caption: text("caption"),
-    ttsLine: text("tts_line"),
+    status: demoAnalysisStatus("status").notNull().default("pending"),
+    // AnalysisState[]: { timestampMs, screenName, visibleText[], action,
+    // actionType, sameStateAsPrevious, legibility, salienceNote, thumbPath }
+    timeline: jsonb("timeline"),
+    stateCount: integer("state_count"),
+    promptVersion: text("prompt_version"),
+    // Customer-facing Hebrew when rejected (e.g. refilm with less glare).
+    failReason: text("fail_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("demo_segments_demo_idx_unique").on(t.demoId, t.idx)],
+  (t) => [
+    index("demo_analyses_demo_idx").on(t.demoId),
+    // 0023: at most one READY analysis per demo, enforced by the database.
+    uniqueIndex("demo_analyses_one_ready_per_demo")
+      .on(t.demoId)
+      .where(sql`${t.status} = 'ready'`),
+  ],
+);
+
+// The selection: 6-8 states chosen from the analysis, ordered by timestamp,
+// each with a Hebrew label. Cheap, regenerable, user-editable — until
+// approved_at is set. Edits to an approved plan fork a new row; renders
+// reference the plan by id exactly like audio_renders.script_id, so an old ad
+// keeps composing what the customer signed off on. Any edit clears approved_at.
+export const demoStepPlans = pgTable(
+  "demo_step_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    demoId: uuid("demo_id")
+      .notNull()
+      .references(() => demos.id),
+    analysisId: uuid("analysis_id")
+      .notNull()
+      .references(() => demoAnalyses.id),
+    status: stepPlanStatus("status").notNull().default("pending"),
+    // PlanStep[]: { timestampMs, actionType, label, sourceIndex, durationMs }
+    steps: jsonb("steps"),
+    // { timestampMs, whatISaw, whyItMightMatter }[]
+    unexplainedMoments: jsonb("unexplained_moments"),
+    promptVersion: text("prompt_version"),
+    // The hard gate: createSet refuses steps-format renders without it.
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    failReason: text("fail_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("demo_step_plans_demo_idx").on(t.demoId)],
 );
 
 export const hookClips = pgTable("hook_clips", {

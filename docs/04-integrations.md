@@ -41,7 +41,7 @@ keyless (the e2e test relies on this).
   which is inside the noise, and a per-voice entry would freeze that noise into pricing.
 - **An undershoot is NOT absorbed by the length fit — OPEN DECISION.** The fit is
   overshoot-gated: `pipelines/tts.ts:269` enters only when `durationMs > demoDurationMs`, and
-  `atempoStretch` (`media/ffmpeg.ts:192`) has no floor, no ceiling and no branch — it is only ever
+  `atempoStretch` (`media/ffmpeg.ts:198`) has no floor, no ceiling and no branch — it is only ever
   called with `tempo > 1`. A VO shorter than its demo is therefore left at its natural length:
   `planAOutro` returns `outroMode: "none"` for `remainderMs <= 0` (`pipelines/sets.ts:113`),
   `serviceATimeline` sets `durationInFrames = hookFrames + demoFrames` (`timing.ts:68`), and the

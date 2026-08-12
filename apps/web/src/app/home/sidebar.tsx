@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/brand";
 import {
   Check,
@@ -14,6 +14,7 @@ import {
   Mail,
   Person,
   Plus,
+  Spinner,
 } from "@/components/ui/icons";
 import { signOut } from "@/lib/auth";
 import { BUSINESS_COOKIE } from "@/lib/service-b-ui";
@@ -35,7 +36,9 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
       <button type="button" role="menuitem" className={MENU_ITEM}>
         הגדרות
       </button>
-      <Link href="/" role="menuitem" onClick={onClose} className={MENU_ITEM}>
+      {/* /home directly — "/" would just bounce back here via the middleware,
+          after an auth check + DB query the user experiences as a dead click. */}
+      <Link href="/home" role="menuitem" onClick={onClose} className={MENU_ITEM}>
         עמוד הבית
       </Link>
       <div className="mx-2 my-1.5 h-px bg-ink/[0.08]" />
@@ -57,10 +60,10 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
 
 /**
  * Dashboard sidebar (Lovable-style, RTL so it sits on the right): business
- * switcher on top, nav placeholders (pages land in later sessions), credits +
- * profile menu at the bottom. Only the switcher and התנתקות actually act.
+ * switcher on top, nav (home + the two service flows are live; the rest are
+ * placeholders), credits + profile menu at the bottom.
  * Below md it collapses into a compact top bar (brand, switcher, credits,
- * account menu) — the nav placeholders are desktop-only for now.
+ * account menu) — the nav is desktop-only for now.
  */
 export function Sidebar({
   businesses,
@@ -75,14 +78,18 @@ export function Sidebar({
   email: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [openMenu, setOpenMenu] = useState<"business" | "profile" | "mobileProfile" | null>(null);
+  /** router.refresh() re-renders the whole server tree — seconds, not instant.
+   *  isPending drives a spinner on the switcher so the click visibly took. */
+  const [switching, startSwitching] = useTransition();
 
   const selected = businesses.find((business) => business.id === selectedId) ?? businesses[0];
 
   function selectBusiness(id: string) {
     document.cookie = `${BUSINESS_COOKIE}=${id}; path=/; max-age=31536000`;
     setOpenMenu(null);
-    router.refresh();
+    startSwitching(() => router.refresh());
   }
 
   return (
@@ -106,10 +113,12 @@ export function Sidebar({
           <Brand />
         </Link>
         <div className="flex items-center gap-2">
+          {switching && <Spinner className="size-4 text-ink/50" />}
           {businesses.length > 1 && (
             <select
               aria-label="בחירת עסק"
               value={selected?.id}
+              disabled={switching}
               onChange={(event) => selectBusiness(event.target.value)}
               className="h-9 max-w-32 truncate rounded-lg border border-ink/15 bg-white px-2 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
             >
@@ -177,7 +186,11 @@ export function Sidebar({
             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">
               {selected?.name ?? "עסק חדש"}
             </span>
-            <ChevronDown className="size-4 shrink-0 text-ink/40" />
+            {switching ? (
+              <Spinner className="size-4 shrink-0 text-ink/40" />
+            ) : (
+              <ChevronDown className="size-4 shrink-0 text-ink/40" />
+            )}
           </button>
 
           {openMenu === "business" && (
@@ -211,13 +224,29 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Nav — placeholders; the pages themselves land in later sessions. */}
+        {/* Nav — the service entries are live; the rest are placeholders until
+            their pages land. */}
         <nav aria-label="ניווט הדשבורד" className="mt-5 flex-1 space-y-0.5 px-3">
-          <SidebarItem icon={<House className="size-4" />} label="בית" active />
+          <SidebarItem
+            icon={<House className="size-4" />}
+            label="בית"
+            href="/home"
+            active={pathname === "/home"}
+          />
           <SidebarItem icon={<Grid className="size-4" />} label="כל היצירות" />
           <SidebarItem icon={<Folder className="size-4" />} label="קבצים שהעליתי" />
-          <SidebarItem icon={<Clip className="size-4" />} label="הוק + דמו" />
-          <SidebarItem icon={<Person className="size-4" />} label="דמות AI" />
+          <SidebarItem
+            icon={<Clip className="size-4" />}
+            label="הוק + דמו"
+            href="/home/a/new"
+            active={pathname.startsWith("/home/a")}
+          />
+          <SidebarItem
+            icon={<Person className="size-4" />}
+            label="דמות AI"
+            href="/home/b/new"
+            active={pathname.startsWith("/home/b")}
+          />
           <SidebarItem icon={<Mail className="size-4" />} label="צור קשר" />
         </nav>
 
@@ -269,27 +298,37 @@ export function Sidebar({
   );
 }
 
+/** With href it's a real nav link; without, an inert placeholder button. */
 function SidebarItem({
   icon,
   label,
+  href,
   active = false,
 }: {
   icon: React.ReactNode;
   label: string;
+  href?: string;
   active?: boolean;
 }) {
-  return (
-    <button
-      type="button"
-      aria-current={active ? "page" : undefined}
-      className={`flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
-        active
-          ? "bg-ink/[0.06] font-semibold text-ink"
-          : "text-ink/65 hover:bg-ink/5 hover:text-ink"
-      }`}
-    >
+  const className = `flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
+    active ? "bg-ink/[0.06] font-semibold text-ink" : "text-ink/65 hover:bg-ink/5 hover:text-ink"
+  }`;
+  const content = (
+    <>
       <span className={active ? "text-ink" : "text-ink/45"}>{icon}</span>
       {label}
+    </>
+  );
+  if (href) {
+    return (
+      <Link href={href} aria-current={active ? "page" : undefined} className={className}>
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" className={className}>
+      {content}
     </button>
   );
 }

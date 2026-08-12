@@ -17,6 +17,7 @@ export type OnboardingDraft = {
   whatItDoes: string;
   link: string;
   benefits: string[];
+  wow: string;
   audience: string;
   tone: Tone | null;
 };
@@ -43,6 +44,7 @@ export const emptyDraft: OnboardingDraft = {
   whatItDoes: "",
   link: "",
   benefits: ["", "", ""],
+  wow: "",
   audience: "",
   tone: null,
 };
@@ -78,6 +80,7 @@ const CATEGORY_BY_BUSINESS_TYPE: Record<BusinessType, string> = {
 
 export function draftToQuestionnairePayload(draft: OnboardingDraft): Record<string, unknown> {
   const link = draft.link.trim();
+  const wow = draft.wow.trim();
   return {
     category: draft.businessType ? CATEGORY_BY_BUSINESS_TYPE[draft.businessType] : "",
     product_name: draft.productName.trim(),
@@ -86,6 +89,7 @@ export function draftToQuestionnairePayload(draft: OnboardingDraft): Record<stri
     target_audience: draft.audience.trim(),
     tone: draft.tone ?? "",
     ...(link ? { link } : {}),
+    ...(wow ? { wow } : {}),
   };
 }
 

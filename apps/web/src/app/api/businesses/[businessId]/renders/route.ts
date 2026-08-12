@@ -104,6 +104,7 @@ export async function GET(
         status: videoRenders.status,
         createdAt: videoRenders.createdAt,
         thumbPath: videoRenders.thumbPath,
+        refundedAt: videoRenders.refundedAt,
       })
       .from(videoRenders)
       .where(and(eq(videoRenders.businessId, businessId), ne(videoRenders.status, "rejected")))
@@ -121,6 +122,9 @@ export async function GET(
           row.status === "released" && row.thumbPath
             ? await storage.signedUrl(row.thumbPath, SIGNED_URL_TTL_SECONDS)
             : undefined,
+        // Same contract as GET /api/renders/[id]: true only when the refund
+        // really landed (refunded_at set in the refund transaction).
+        refunded: row.status === "failed" ? row.refundedAt !== null : undefined,
       });
     }
     return NextResponse.json({ renders });

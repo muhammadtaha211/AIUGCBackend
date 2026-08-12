@@ -11,7 +11,10 @@ import { z } from "zod";
 // Demo direct upload (signed upload URL — bytes never pass through a route)
 // ---------------------------------------------------------------------------
 
-export const MAX_DEMO_BYTES = 200 * 1024 * 1024;
+// 1GB: up to 3 minutes of phone screen recording. Uploads go straight to
+// storage via signed URL, so no route body limit applies — but the Supabase
+// bucket's own file_size_limit must be raised to match (dashboard setting).
+export const MAX_DEMO_BYTES = 1024 * 1024 * 1024;
 
 /** MIME -> stored extension; also the allowlist. Phone footage is mp4 or mov. */
 export const DEMO_EXTENSIONS: Record<string, string> = {
@@ -23,7 +26,7 @@ export const DEMO_EXTENSIONS: Record<string, string> = {
 export function demoFileError(file: { type: string; size: number }): string | null {
   if (!DEMO_EXTENSIONS[file.type]) return "אפשר להעלות רק וידאו בפורמט MP4 או MOV.";
   if (file.size === 0) return "הקובץ שהועלה ריק.";
-  if (file.size > MAX_DEMO_BYTES) return "הסרטון גדול מדי — המקסימום הוא 200MB.";
+  if (file.size > MAX_DEMO_BYTES) return "הסרטון גדול מדי — המקסימום הוא 1GB.";
   return null;
 }
 

@@ -113,7 +113,10 @@ export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
 
 const LEASE_SWEEP_INTERVAL_MS = 60_000;
 
-export const HEAVY_JOB_TYPES = ["render_video", "lipsync"] as const;
+// analyze_demo is heavy on purpose: minutes of ffmpeg + batched vision calls
+// serialise behind Remotion renders rather than blocking Service B's audio
+// previews on the strictly-sequential light lane.
+export const HEAVY_JOB_TYPES = ["render_video", "lipsync", "analyze_demo"] as const;
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {

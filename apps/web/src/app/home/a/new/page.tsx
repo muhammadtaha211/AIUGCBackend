@@ -39,7 +39,7 @@ export default async function NewARenderPage() {
   const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
 
   return (
-    <div className="flex flex-col items-center px-6 pb-16">
+    <div className="flex flex-col items-center px-6 pb-8">
       {gate.allowed ? (
         <AWizard
           businessId={selected.id}

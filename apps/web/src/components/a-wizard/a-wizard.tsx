@@ -151,7 +151,7 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
 
   if (fatal) {
     return (
-      <div className="w-full max-w-2xl pt-6 sm:pt-10">
+      <div className="w-full max-w-2xl pt-4 sm:pt-6">
         <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] text-center sm:p-10">
           <p className="text-base font-medium text-ink">{fatal}</p>
           <Link href="/home" className="mt-6 inline-block">
@@ -165,25 +165,35 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
   }
 
   return (
-    <div className="w-full max-w-2xl pt-6 sm:pt-10 lg:max-w-4xl">
+    <div className="w-full max-w-2xl pt-4 sm:pt-6 lg:max-w-4xl">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-lg font-semibold tracking-tight text-ink">הוק + דמו</h1>
         <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
 
       <div className="mt-4 lg:grid lg:grid-cols-[10.5rem_1fr] lg:items-start lg:gap-8">
-        <WizardNav
-          labels={steps.map((each) => STEP_TITLES[each])}
-          current={stepIndex}
-          onJump={jumpTo}
-          locked={render !== null}
-        />
+        {/* On desktop the structure strip lives in the rail, under the step
+            list — the step card gets the full viewport height, so the flow
+            fits without scrolling. Below lg it stays above the card. */}
+        <div>
+          <WizardNav
+            labels={steps.map((each) => STEP_TITLES[each])}
+            current={stepIndex}
+            onJump={jumpTo}
+            locked={render !== null}
+          />
+          <div className="hidden lg:mt-8 lg:block">
+            <StructureStrip persona={persona} hook={hook} demo={demo} />
+          </div>
+        </div>
 
         <div>
-          <StructureStrip persona={persona} hook={hook} demo={demo} />
+          <div className="lg:hidden">
+            <StructureStrip persona={persona} hook={hook} demo={demo} />
+          </div>
 
-          <div key={stepIndex} className="step-in mt-5">
-            <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-10">
+          <div key={stepIndex} className="step-in mt-5 lg:mt-0">
+            <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-8">
               {step === "persona" && (
                 <StepPersona
                   catalog={personaCatalog}
@@ -312,6 +322,9 @@ export function AWizard({ businessId, businessName, advantages, initialCatalog }
  * The strip is a temporal axis, not text — timelines run left→right even in
  * RTL locales, so the container is forced LTR (hook far left); the Hebrew
  * labels inside stay RTL.
+ * Rendered twice by the wizard: above the card below lg (w-20 tiles), inside
+ * the 10.5rem rail at lg (w-full tiles, the long caption hidden — the persona
+ * step's copy states the same condition).
  */
 function StructureStrip({
   persona,
@@ -377,7 +390,7 @@ function StripSlot({
       {/* 9:16 tile — every strip asset is exactly 1080×1920, so an
           aspect-matched tile makes cropping structurally impossible. */}
       <div
-        className={`relative mx-auto aspect-[9/16] w-20 overflow-hidden rounded-lg border ${
+        className={`relative mx-auto aspect-[9/16] w-20 overflow-hidden rounded-lg border lg:w-full ${
           children ? "border-ink/15" : "border-dashed border-ink/15 bg-ink/[0.04]"
         }`}
       >
@@ -387,7 +400,7 @@ function StripSlot({
         {label}
       </p>
       {caption && (
-        <p dir="rtl" className="text-[10px] leading-tight text-ink/55">
+        <p dir="rtl" className="text-[10px] leading-tight text-ink/55 lg:hidden">
           {caption}
         </p>
       )}

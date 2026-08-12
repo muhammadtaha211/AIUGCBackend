@@ -42,9 +42,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 
 - **demos** — status `uploaded→probing→normalizing→ready|rejected`, `reject_reason` is always a
   human-readable Hebrew string, `probe jsonb`, raw/normalized/thumb storage paths, duration.
-- **demo_segments** — **V2-ready, ships empty**: `(demo_id, idx, start_ms, end_ms, caption,
-tts_line)` with `UNIQUE(demo_id, idx)`. Its existence is the "a demo may become an ordered
-  list of segments" requirement — V2 step-captions are inserts, not a migration.
+- **demo_segments** — **dropped in 0023** (never held a row). The "a demo becomes an ordered
+  list of segments" idea now lives in `demo_analyses` + `demo_step_plans` (the step-plan
+  format), which add the plan-level status, approval gate and versioning this table lacked.
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
   `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips run **3–4 seconds**; the
   one clip in the live bank is 4086ms ([04-integrations.md](04-integrations.md) §Hook-clip bank
@@ -150,7 +150,8 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 Write model: **all writes go through the server** (service role bypasses RLS); browser clients
 get read-only access. Policies:
 
-- Owner-scoped SELECT: businesses, demos, demo_segments, scripts, audio_renders, sets,
+- Owner-scoped SELECT: businesses, demos, demo_analyses + demo_step_plans (0024, joined
+  through demos), scripts, audio_renders, sets,
   video_renders, subscriptions, orders — via `owns_business()` (SECURITY DEFINER).
   credit_ledger is scoped directly by `user_id = auth.uid()` since 0012 (account-level credits).
 - **video_renders additionally hides `qc_pending`/`rejected` rows** — customers never see
