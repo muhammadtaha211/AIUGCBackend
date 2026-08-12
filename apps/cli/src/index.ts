@@ -11,6 +11,7 @@ import {
   analysisTimelineSchema,
   applyWordsPerSecond,
   approveAudio,
+  approvePlan,
   buildHandlers,
   closeDb,
   contentTypeForKey,
@@ -27,8 +28,10 @@ import {
   getDb,
   getEnv,
   getLatestDemoAnalysis,
+  getStepPlan,
   getStorage,
   HEAVY_JOB_TYPES,
+  planStepsSchema,
   listQcQueue,
   moreLikeThis,
   observedWordsPerSecond,
@@ -38,11 +41,14 @@ import {
   releaseRender,
   requestAudio,
   requestDemoAnalysis,
+  requestDemoPlan,
   runLane,
+  runPlanRegression,
   servedContentType,
   setQuestionnaire,
   starVariant,
   syncPersonaImageCatalog,
+  unexplainedMomentsSchema,
   updateScriptText,
   type Bucket,
 } from "@aiugc/core";
@@ -139,6 +145,16 @@ demo
   );
 
 demo
+  .command("plan <demoId>")
+  .description("generate (or regenerate) a step plan from the demo's analysis")
+  .action(
+    run(async (demoId: string) => {
+      const { planId, jobId } = await requestDemoPlan(getDb(), demoId);
+      console.log(`plan ${planId} queued (job ${jobId}) — run \`aiugc work --once\``);
+    }),
+  );
+
+demo
   .command("timeline <demoId>")
   .description("print the analyzed state inventory")
   .action(
@@ -163,6 +179,83 @@ demo
         );
         if (s.salienceNote) console.log(`           ! ${s.salienceNote}`);
       }
+    }),
+  );
+
+// --- step plans -------------------------------------------------------------
+
+const plan = program.command("plan").description("step plans (Service A steps format)");
+
+plan
+  .command("show <planId>")
+  .description("print a plan's steps, open questions and approval state")
+  .action(
+    run(async (planId: string) => {
+      const row = await getStepPlan(getDb(), planId);
+      if (!row) {
+        console.log("plan not found");
+        return;
+      }
+      const approved = row.approvedAt ? ` approved ${row.approvedAt.toISOString()}` : "";
+      const reason = row.failReason ? ` — ${row.failReason}` : "";
+      console.log(`plan ${row.id}: ${row.status}${approved}${reason} (${row.promptVersion ?? "-"})`);
+      if (row.steps) {
+        const steps = planStepsSchema.parse(row.steps);
+        const total = steps.reduce((ms, s) => ms + s.durationMs, 0);
+        for (const [i, s] of steps.entries()) {
+          const t = `${(s.timestampMs / 1000).toFixed(1)}s`.padStart(7);
+          const d = `${(s.durationMs / 1000).toFixed(1)}s`;
+          console.log(
+            `${String(i + 1).padStart(3)} ${t}  ${d.padStart(5)}  ${s.actionType.padEnd(8)} ${s.label}`,
+          );
+        }
+        console.log(`    total steps runtime: ${(total / 1000).toFixed(1)}s`);
+      }
+      if (row.unexplainedMoments) {
+        for (const m of unexplainedMomentsSchema.parse(row.unexplainedMoments)) {
+          console.log(`  ? ${(m.timestampMs / 1000).toFixed(1)}s ${m.whatISaw} — ${m.whyItMightMatter}`);
+        }
+      }
+      if (row.notes) console.log(`  note: ${row.notes}`);
+    }),
+  );
+
+plan
+  .command("approve <planId>")
+  .description("the gate — steps-format renders require an approved plan")
+  .action(
+    run(async (planId: string) => {
+      const row = await approvePlan(getDb(), planId);
+      console.log(`plan ${row.id} approved at ${row.approvedAt!.toISOString()}`);
+    }),
+  );
+
+plan
+  .command("regress")
+  .description("re-run pass 2 over fixtures/timelines/ and diff the selections")
+  .action(
+    run(async () => {
+      const results = await runPlanRegression(getDb());
+      if (results.length === 0) {
+        console.log("no fixtures in fixtures/timelines/ — nothing to run");
+        return;
+      }
+      for (const r of results) {
+        console.log(`${r.pass ? "PASS" : "FAIL"} ${r.fixture}`);
+        if (r.error) {
+          console.log(`     error: ${r.error}`);
+          continue;
+        }
+        if (!r.pass) {
+          console.log(`     expected [${r.expected.join(", ")}]`);
+          console.log(`     actual   [${r.actual.join(", ")}]`);
+        }
+        for (const s of r.steps) console.log(`     ${s.sourceIndex}: ${s.label}`);
+        if (r.notes) console.log(`     note: ${r.notes}`);
+      }
+      const failed = results.filter((r) => !r.pass).length;
+      console.log(`${results.length - failed}/${results.length} fixtures pass`);
+      if (failed > 0) process.exitCode = 1;
     }),
   );
 

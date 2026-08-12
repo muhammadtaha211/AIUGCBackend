@@ -206,6 +206,9 @@ export const demoStepPlans = pgTable(
     steps: jsonb("steps"),
     // { timestampMs, whatISaw, whyItMightMatter }[]
     unexplainedMoments: jsonb("unexplained_moments"),
+    // The model's own explanation when it returns fewer than a_steps_min steps
+    // (never padded) — customer-visible in the wizard. Added in 0025.
+    notes: text("notes"),
     promptVersion: text("prompt_version"),
     // The hard gate: createSet refuses steps-format renders without it.
     approvedAt: timestamp("approved_at", { withTimezone: true }),
