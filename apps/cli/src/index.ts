@@ -514,8 +514,9 @@ set
   .requiredOption("--demo <id>")
   .requiredOption("--hooks <ids>", "comma-separated hook clip ids")
   .requiredOption("--hook-lines <ids>", "comma-separated hook line script ids")
-  .option("--captions <scriptId>", "benefit captions script (silent mode)")
-  .option("--audio <audioRenderId>", "approved audio render (voiced mode)")
+  .option("--step-plan <planId>", "steps format: the APPROVED step plan (silent — no captions/audio)")
+  .option("--captions <scriptId>", "benefit captions script (full format, silent mode)")
+  .option("--audio <audioRenderId>", "approved audio render (full format, voiced mode)")
   .option(
     "--persona <id>",
     "voiced mode: the persona (required when the VO earns an avatar ending)",
@@ -528,6 +529,7 @@ set
         demo: string;
         hooks: string;
         hookLines: string;
+        stepPlan?: string;
         captions?: string;
         audio?: string;
         persona?: string;
@@ -545,6 +547,8 @@ set
             hookClipIds: csv(opts.hooks),
             hookLineScriptIds: csv(opts.hookLines),
             mode: opts.audio ? "voiced" : "silent",
+            format: opts.stepPlan ? "steps" : "full",
+            stepPlanId: opts.stepPlan,
             captionScriptId: opts.captions,
             audioRenderId: opts.audio,
             personaId: opts.persona,

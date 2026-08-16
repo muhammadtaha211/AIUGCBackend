@@ -31,6 +31,8 @@ export const creditCostsSchema = z.object({
   a_ending_reroll_per_second: z.number(),
   /** Assembly-only remix (hook / hook line / rect). Flat, and floor-exempt. */
   a_remix_assembly_credits: z.number(),
+  /** Steps-format Service A render. Flat, and floor-exempt (see quoteServiceASteps). */
+  a_steps_credits: z.number(),
 });
 
 export type CreditCosts = z.infer<typeof creditCostsSchema>;
@@ -41,7 +43,7 @@ export type CreditCosts = z.infer<typeof creditCostsSchema>;
  * UNROUNDED: they explain the number, they don't reproduce it.
  */
 export interface QuoteComponent {
-  kind: "assembly" | "demo" | "outro" | "lipsync" | "reroll" | "remix";
+  kind: "assembly" | "demo" | "outro" | "lipsync" | "reroll" | "remix" | "steps";
   credits: number;
   /** Seconds billed, for per-second components. Absent on flats. */
   seconds?: number;
@@ -134,6 +136,19 @@ export function quoteEndingReroll(opts: { sliceSeconds: number; costs: CreditCos
     ],
     0,
   );
+}
+
+/**
+ * Steps-format Service A: one analysis amortised over unlimited variants plus
+ * one Remotion render — near-constant marginal cost, so the price is a flat.
+ * The full-format quote (assembly + demo-per-second) would bill the UPLOADED
+ * duration: a 3-minute recording would price ~31 credits for a ~20s output, at
+ * a rate calibrated to subsidise a TTS funnel this format doesn't use. The
+ * floor is deliberately not applied: the flat IS the whole price, and a floor
+ * would silently override tuning it below a_minimum_credits.
+ */
+export function quoteServiceASteps(opts: { costs: CreditCosts }): Quote {
+  return settle([{ kind: "steps", credits: opts.costs.a_steps_credits }], 0);
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   InsufficientCreditsError,
   refundRenderIfNeeded,
 } from "../src/pipelines/credits";
+import { approvePlan, requestDemoPlan } from "../src/pipelines/demo-step-plans";
 import { createDemo } from "../src/pipelines/demos";
 import { handleReapDeadRenders } from "../src/pipelines/janitor";
 import {
@@ -272,6 +273,41 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     for (const render of renders) {
       expect(await debitsFor(render.id)).toHaveLength(1);
     }
+  });
+
+  it("steps format: the flat is debited per render, never the uploaded duration", async () => {
+    // The analysis is ready (ingest chained analyze_demo in beforeAll).
+    const { planId } = await requestDemoPlan(db, demoId);
+    await drainAll();
+    await approvePlan(db, planId);
+
+    const second = await generateHookLines(db, { businessId, n: 1 });
+    const before = await creditBalance(db, ownerUserId);
+    const { renders } = await createSet(db, {
+      businessId,
+      demoId,
+      grid: {
+        hookClipIds: [hookClipId],
+        hookLineScriptIds: [hookLineId, second[0]!.id],
+        mode: "silent",
+        format: "steps",
+        stepPlanId: planId,
+      },
+    });
+    expect(renders).toHaveLength(2);
+    // a_steps_credits (5), per render — NOT the full-format duration quote,
+    // which would price this 20s demo at 6 (and a 3-minute one at ~31).
+    for (const render of renders) {
+      const debits = await debitsFor(render.id);
+      expect(debits).toHaveLength(1);
+      expect(debits[0]!.delta).toBe(-5);
+    }
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 10);
+
+    // A dying steps render refunds exactly the flat, keyed on the render id.
+    expect(await failRenderAndRefund(db, renders[0]!.id, "בדיקה")).toBe(true);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
+    await drainAll();
   });
 
   it("Service B: the quote is ceil(duration_ms / 1000) at 1 credit per second", async () => {
