@@ -1,9 +1,10 @@
 import type React from "react";
 import { Audio, Composition, interpolate, staticFile, useCurrentFrame } from "remotion";
 import { ServiceA, calculateServiceAMetadata } from "./ServiceA";
+import { ServiceASteps, calculateServiceAStepsMetadata } from "./ServiceASteps";
 import { ServiceB, calculateServiceBMetadata } from "./ServiceB";
-import { sampleCaptions, sampleDurationInFrames } from "./fixtures";
-import { FPS, HEIGHT, WIDTH, serviceASchema, serviceBSchema } from "./schema";
+import { sampleCaptions, sampleDurationInFrames, sampleSteps } from "./fixtures";
+import { FPS, HEIGHT, WIDTH, serviceASchema, serviceAStepsSchema, serviceBSchema } from "./schema";
 
 /**
  * `ServiceA` and `ServiceB` are the compositions the pipeline renders. The
@@ -33,6 +34,16 @@ const previewPropsA = {
   watermark: false,
 };
 
+/** The lavfi fixtures (steps-hook/steps-demo) come from `pnpm fixtures`. */
+const previewPropsSteps = {
+  hookSrc: staticFile("fixtures/steps-hook.mp4"),
+  hookLine: "ככה מזמינים בלי לחכות",
+  hookTextSafeArea: { x: 25, y: 1062, w: 1009, h: 179 },
+  demoSrc: staticFile("fixtures/steps-demo.mp4"),
+  steps: sampleSteps,
+  watermark: false,
+};
+
 export const RemotionRoot: React.FC = () => (
   <>
     <Composition
@@ -41,6 +52,17 @@ export const RemotionRoot: React.FC = () => (
       schema={serviceASchema}
       defaultProps={previewPropsA}
       calculateMetadata={calculateServiceAMetadata}
+      width={WIDTH}
+      height={HEIGHT}
+      fps={FPS}
+      durationInFrames={sampleDurationInFrames}
+    />
+    <Composition
+      id="ServiceASteps"
+      component={ServiceASteps}
+      schema={serviceAStepsSchema}
+      defaultProps={previewPropsSteps}
+      calculateMetadata={calculateServiceAStepsMetadata}
       width={WIDTH}
       height={HEIGHT}
       fps={FPS}

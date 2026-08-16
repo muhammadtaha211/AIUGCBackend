@@ -153,7 +153,7 @@ const AvatarSegment: React.FC<{
   );
 };
 
-const HookLine: React.FC<{ text: string; area: TextSafeArea }> = ({ text, area }) => {
+export const HookLine: React.FC<{ text: string; area: TextSafeArea }> = ({ text, area }) => {
   const fontSize = useMemo(
     () =>
       fitFontSize({

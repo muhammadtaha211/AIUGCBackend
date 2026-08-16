@@ -1,8 +1,14 @@
 import { fileURLToPath } from "node:url";
-import { sampleCaptions, sampleDurationInFrames } from "../src/fixtures";
-import { renderServiceA, renderServiceB } from "../src/render";
+import { sampleCaptions, sampleDurationInFrames, sampleSteps } from "../src/fixtures";
+import { renderServiceA, renderServiceASteps, renderServiceB } from "../src/render";
 import { FPS } from "../src/schema";
-import { ensureFixtures, TALKING_HEAD_FIXTURE, VOICEOVER_FIXTURE } from "./make-fixtures";
+import {
+  ensureFixtures,
+  STEPS_DEMO_FIXTURE,
+  STEPS_HOOK_FIXTURE,
+  TALKING_HEAD_FIXTURE,
+  VOICEOVER_FIXTURE,
+} from "./make-fixtures";
 
 /**
  * Founder preview render — the same code path the worker runs, on local
@@ -13,23 +19,47 @@ import { ensureFixtures, TALKING_HEAD_FIXTURE, VOICEOVER_FIXTURE } from "./make-
  * `--safe-area x,y,w,h` replay a real bank clip with the safe area drawn in
  * the admin editor, so what fits there can be checked against a real render.
  * `--hook-line "<text>"` overrides the burned line — e.g. a `POV:` line to
- * check the mixed-direction (Latin prefix in RTL) rendering.
+ * check the mixed-direction (Latin prefix in RTL) rendering. `--steps` renders
+ * the ServiceASteps composition from the lavfi fixtures — a silent mp4 with
+ * visible hard cuts (the demo fixture's clock jumps at each one).
  */
 
 const watermark = process.argv.includes("--watermark");
 const serviceA = process.argv.includes("--service-a");
+const steps = process.argv.includes("--steps");
 
 function argValue(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
   return index === -1 ? undefined : process.argv[index + 1];
 }
-const name = serviceA ? "sample-a" : watermark ? "sample-watermarked" : "sample";
+const name = steps
+  ? "sample-steps"
+  : serviceA
+    ? "sample-a"
+    : watermark
+      ? "sample-watermarked"
+      : "sample";
 const outPath = fileURLToPath(new URL(`../out/${name}.mp4`, import.meta.url));
 
 await ensureFixtures();
 console.log(`rendering ${name}…`);
 const startedAt = Date.now();
-if (serviceA) {
+if (steps) {
+  // Silent by design — the output mp4 has NO audio stream; the lavfi demo's
+  // clock jumps at every cut, so the trims are verifiable by eye.
+  const [x, y, w, h] = (argValue("--safe-area") ?? "25,1062,1009,179").split(",").map(Number);
+  await renderServiceASteps(
+    {
+      hookClipPath: argValue("--hook") ?? STEPS_HOOK_FIXTURE,
+      hookLine: argValue("--hook-line") ?? "ככה מזמינים בלי לחכות",
+      hookTextSafeArea: { x: x!, y: y!, w: w!, h: h! },
+      demoPath: STEPS_DEMO_FIXTURE,
+      steps: sampleSteps,
+      watermark,
+    },
+    outPath,
+  );
+} else if (serviceA) {
   const voMs = Math.round((sampleDurationInFrames / FPS) * 1000);
   const [x, y, w, h] = (argValue("--safe-area") ?? "90,640,900,520").split(",").map(Number);
   await renderServiceA(

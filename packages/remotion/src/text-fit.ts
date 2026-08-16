@@ -11,6 +11,16 @@
  * admin safe-area editor can preview with the same numbers the render uses.
  */
 export const HOOK_FONT = { base: 92, min: 40, lineHeight: 1.2 } as const;
+
+/**
+ * Fixed lower-third rect (1080x1920 space) where step labels burn. Bottom edge
+ * at 1480 — the same clearance the caption overlay keeps above platform chrome
+ * (TikTok caption + CTA, Reels action rail) — and low enough that a label
+ * never covers the mid-screen element it describes. Two lines at HOOK_FONT
+ * base size fit. Exported so the wizard's CSS still-preview places text with
+ * the exact numbers the render uses.
+ */
+export const STEP_LABEL_RECT = { x: 60, y: 1250, w: 960, h: 230 } as const;
 export function fitFontSize(opts: {
   text: string;
   maxWidth: number;

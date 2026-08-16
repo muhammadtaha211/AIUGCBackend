@@ -4,11 +4,14 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveLocalFiles } from "./serve-files";
+import { STEP_OUT_OF_RANGE } from "./timing";
 import {
   serviceASchema,
+  serviceAStepsSchema,
   serviceBSchema,
   type CaptionChunk,
   type ServiceAProps,
+  type ServiceAStepsProps,
   type ServiceBProps,
   type TextSafeArea,
 } from "./schema";
@@ -32,6 +35,17 @@ export interface RenderServiceAInput {
   outroMode?: "freeze" | "avatar";
   voSliceMs?: number;
   avatarPath?: string;
+  watermark: boolean;
+}
+
+export interface RenderServiceAStepsInput {
+  hookClipPath: string;
+  hookLine: string;
+  hookTextSafeArea: TextSafeArea;
+  /** ONE demo file; every step trims it. */
+  demoPath: string;
+  /** Chronological — the server sorts by timestamp before rendering. */
+  steps: { startMs: number; durationMs: number; label: string }[];
   watermark: boolean;
 }
 
@@ -117,6 +131,51 @@ export async function renderServiceA(input: RenderServiceAInput, outPath: string
   }
 }
 
+export async function renderServiceASteps(
+  input: RenderServiceAStepsInput,
+  outPath: string,
+): Promise<void> {
+  const files = [input.hookClipPath, input.demoPath];
+  assertFilesExist(files);
+
+  const served = await serveLocalFiles(files);
+  try {
+    const props = serviceAStepsSchema.safeParse({
+      hookSrc: served.urls[0]!,
+      hookLine: input.hookLine,
+      hookTextSafeArea: input.hookTextSafeArea,
+      demoSrc: served.urls[1]!,
+      steps: input.steps,
+      watermark: input.watermark,
+    } satisfies ServiceAStepsProps);
+    if (!props.success) {
+      throw new RenderPropsError(`invalid ServiceASteps props: ${props.error.message}`);
+    }
+    // The steps format is silent (locked) and the output mp4 has NO audio
+    // stream. enforceAudioTrack:false alone is not enough — with audioCodec
+    // "aac" set, renderMedia muxes a silent track anyway (verified on
+    // 4.0.499); muted:true is what actually drops the stream. If an upload
+    // path ever chokes on a stream-less MP4, the fix is to mux a silent AAC
+    // track — never to add sound.
+    try {
+      await runRender("ServiceASteps", props.data, outPath, {
+        enforceAudioTrack: false,
+        muted: true,
+      });
+    } catch (err) {
+      // The out-of-range-trim throw fires in the browser during
+      // selectComposition and reaches Node as a plain Error — remap it so the
+      // worker's taxonomy sees a bad plan as permanent, never retryable.
+      if (err instanceof Error && err.message.includes(STEP_OUT_OF_RANGE)) {
+        throw new RenderPropsError(err.message);
+      }
+      throw err;
+    }
+  } finally {
+    await served.close();
+  }
+}
+
 export async function renderServiceB(input: RenderServiceBInput, outPath: string): Promise<void> {
   const files = [input.talkingHeadPath, input.voiceoverPath, ...input.brollPaths];
   assertFilesExist(files);
@@ -150,9 +209,10 @@ function assertFilesExist(files: (string | undefined)[]): void {
 }
 
 async function runRender(
-  id: "ServiceA" | "ServiceB",
-  inputProps: ServiceAProps | ServiceBProps,
+  id: "ServiceA" | "ServiceASteps" | "ServiceB",
+  inputProps: ServiceAProps | ServiceAStepsProps | ServiceBProps,
   outPath: string,
+  opts?: { enforceAudioTrack?: boolean; muted?: boolean },
 ): Promise<void> {
   const serveUrl = await getBundle();
   const composition = await selectComposition({ serveUrl, id, inputProps });
@@ -174,5 +234,6 @@ async function runRender(
     outputLocation: outPath,
     inputProps,
     logLevel: "error",
+    ...opts,
   });
 }

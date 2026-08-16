@@ -6,6 +6,7 @@ import {
   activeWordIndex,
   frameToMs,
   msToFrame,
+  serviceAStepsTimeline,
   serviceATimeline,
   serviceBDurations,
 } from "../src/timing";
@@ -121,6 +122,70 @@ describe("serviceATimeline", () => {
   it("never renders a zero-frame segment", () => {
     const t = serviceATimeline({ hookFrames: 0, demoFrames: 0 });
     expect(t.durationInFrames).toBe(2);
+  });
+});
+
+describe("serviceAStepsTimeline", () => {
+  // 3.5s hook (105), 24s demo (720) at 30fps.
+  const base = { hookFrames: 105, demoFrames: 720 };
+
+  it("lays the steps back to back after the hook, hard cuts, no gaps", () => {
+    const t = serviceAStepsTimeline({
+      ...base,
+      steps: [
+        { startMs: 1000, durationMs: 2000 },
+        { startMs: 9000, durationMs: 1500 },
+        { startMs: 21_000, durationMs: 2800 },
+      ],
+    });
+    expect(t.hookFrames).toBe(105);
+    expect(t.steps[0]).toEqual({ fromFrame: 105, durationInFrames: 60, trimBeforeFrames: 30 });
+    expect(t.steps[1]).toEqual({ fromFrame: 165, durationInFrames: 45, trimBeforeFrames: 270 });
+    expect(t.steps[2]).toEqual({ fromFrame: 210, durationInFrames: 84, trimBeforeFrames: 630 });
+    expect(t.durationInFrames).toBe(105 + 60 + 45 + 84);
+  });
+
+  it("clamps a step window that runs past the demo's end", () => {
+    const t = serviceAStepsTimeline({ ...base, steps: [{ startMs: 23_000, durationMs: 5000 }] });
+    expect(t.steps[0]!.durationInFrames).toBe(30); // 24s end - 23s start
+    expect(t.durationInFrames).toBe(105 + 30);
+  });
+
+  it("throws on a trim at or past the demo's end — the render must fail, not freeze", () => {
+    expect(() =>
+      serviceAStepsTimeline({ ...base, steps: [{ startMs: 24_000, durationMs: 2000 }] }),
+    ).toThrow(/outside the demo/);
+    expect(() =>
+      serviceAStepsTimeline({ ...base, steps: [{ startMs: 30_000, durationMs: 2000 }] }),
+    ).toThrow(/outside the demo/);
+  });
+
+  it("throws on a negative start", () => {
+    expect(() =>
+      serviceAStepsTimeline({ ...base, steps: [{ startMs: -100, durationMs: 2000 }] }),
+    ).toThrow(/outside the demo/);
+  });
+
+  it("keeps the order it is given — chronology is the server's job", () => {
+    const t = serviceAStepsTimeline({
+      ...base,
+      steps: [
+        { startMs: 9000, durationMs: 1000 },
+        { startMs: 1000, durationMs: 1000 },
+      ],
+    });
+    expect(t.steps[0]!.trimBeforeFrames).toBe(270);
+    expect(t.steps[1]!.trimBeforeFrames).toBe(30);
+  });
+
+  it("never emits a zero-frame step or a zero-frame composition", () => {
+    // A sub-frame window (schema rejects durationMs <= 0; this is rounding
+    // safety for legitimately tiny positive values) still emits one frame.
+    const t = serviceAStepsTimeline({ ...base, steps: [{ startMs: 1000, durationMs: 10 }] });
+    expect(t.steps[0]!.durationInFrames).toBe(1);
+    const empty = serviceAStepsTimeline({ hookFrames: 0, demoFrames: 0, steps: [] });
+    expect(empty.durationInFrames).toBe(1);
+    expect(empty.hookFrames).toBe(1);
   });
 });
 
