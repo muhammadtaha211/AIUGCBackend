@@ -131,8 +131,9 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(plan?.notes).toBeNull();
 
     const steps = planStepsSchema.parse(plan!.steps);
-    // The canned analysis: idle/dup/low/unreadable states are skipped.
-    expect(steps.map((s) => s.sourceIndex)).toEqual([1, 2, 3, 5, 6, 7, 10, 11]);
+    // The canned analysis: idle/dup/low/unreadable states and the two login
+    // states (screenKind skip rule) are skipped.
+    expect(steps.map((s) => s.sourceIndex)).toEqual([3, 5, 6, 7, 10, 11]);
     for (let i = 1; i < steps.length; i++) {
       expect(steps[i]!.timestampMs).toBeGreaterThan(steps[i - 1]!.timestampMs);
     }
@@ -141,10 +142,11 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(last.actionType).toBe("result");
     expect(last.label).toBe("הקמפיין נוצר");
     expect(last.durationMs).toBe(2800);
-    // Total runtime lands in the 12-17s target band.
+    // Total runtime: six product steps at the per-action duration defaults.
+    // (The 12-17s band is a target for real recordings; the canned journey
+    // sits just under it now that its login states are filtered.)
     const total = steps.reduce((ms, s) => ms + s.durationMs, 0);
-    expect(total).toBeGreaterThanOrEqual(12_000);
-    expect(total).toBeLessThanOrEqual(17_000);
+    expect(total).toBe(11_800);
 
     const moments = unexplainedMomentsSchema.parse(plan!.unexplainedMoments);
     expect(moments).toHaveLength(1);
@@ -166,7 +168,8 @@ describe("plan_demo_steps (dry-run chain)", () => {
 
 describe("plan lifecycle: edit, approve, fork", () => {
   it("edits before approval mutate in place, re-sorted chronologically server-side", async () => {
-    // Client sends the steps out of order with free-text labels.
+    // Client sends the steps out of order with free-text labels. sourceIndex 1
+    // is a login state — human edits deliberately bypass the model's skip rule.
     const updated = await updatePlanSteps(db, {
       planId,
       steps: [
@@ -420,6 +423,36 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     );
     expect(violations.some((v) => v.includes("חוויה"))).toBe(true);
     expect(violations.some((v) => v.includes("מדהימה"))).toBe(true);
+  });
+
+  it("flags skip-kind screens for the model, treats absent screenKind as no information", () => {
+    const kinds: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחברות"], screenKind: "login" }),
+      state({ timestampMs: 1000, visibleText: ["דף הבית"], screenKind: "product" }),
+      state({ timestampMs: 2000, visibleText: ["שגיאה"], actionType: "result", screenKind: "error" }),
+      state({ timestampMs: 3000, visibleText: ["נשמר"] }), // v2-era: no screenKind
+    ];
+    // Login screens are never steps for the model.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "התחברות" }], kinds, QUESTIONNAIRE, 8).some(
+        (v) => v.includes('"login"'),
+      ),
+    ).toBe(true);
+    // product and absent screenKind both pass.
+    expect(
+      findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, QUESTIONNAIRE, 8),
+    ).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 3, label: "נשמר" }], kinds, QUESTIONNAIRE, 8),
+    ).toEqual([]);
+    // The only "result" is an error screen the analysis mistyped — the shape
+    // rule must not force the plan to end on a state it may never select.
+    expect(
+      findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, QUESTIONNAIRE, 8, {
+        minSteps: 1,
+        notes: null,
+      }),
+    ).toEqual([]);
   });
 
   it("flags structural violations: unreadable states, dups, range, word count, step count", () => {

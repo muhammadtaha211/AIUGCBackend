@@ -41,6 +41,17 @@ export const ANALYSIS_ACTION_TYPES = [
   "idle",
 ] as const;
 
+export const ANALYSIS_SCREEN_KINDS = [
+  "product",
+  "login",
+  "loading",
+  "onboarding",
+  "error",
+  "tour",
+  "system",
+  "other",
+] as const;
+
 export const analysisStateSchema = z.object({
   timestampMs: z.number(),
   screenName: z.string(),
@@ -48,6 +59,9 @@ export const analysisStateSchema = z.object({
   visibleText: z.array(z.string()),
   action: z.string(),
   actionType: z.enum(ANALYSIS_ACTION_TYPES),
+  // Absent on v2-era analyses (added with analyze_demo@v3) — consumers treat
+  // missing as "no information", never as "product".
+  screenKind: z.enum(ANALYSIS_SCREEN_KINDS).optional(),
   sameStateAsPrevious: z.boolean(),
   legibility: z.enum(["high", "low", "unreadable"]),
   salienceNote: z.string().nullable(),
@@ -66,6 +80,7 @@ const batchOutputSchema = z.object({
       visibleText: z.array(z.string()),
       action: z.string(),
       actionType: z.enum(ANALYSIS_ACTION_TYPES),
+      screenKind: z.enum(ANALYSIS_SCREEN_KINDS),
       sameStateAsPrevious: z.boolean(),
       legibility: z.enum(["high", "low", "unreadable"]),
       salienceNote: z.string().nullable(),
@@ -122,29 +137,50 @@ export function illegibleFraction(states: { legibility: string }[]): number {
   return states.filter((s) => s.legibility !== "high").length / states.length;
 }
 
+/**
+ * Positional salvage of a model batch response: the entry claiming index i
+ * lands at position i; out-of-range and duplicate claims are dropped; a
+ * position no entry claims stays null. Complete iff no nulls — the caller
+ * retries once on an incomplete result, then drops the null positions from
+ * the timeline rather than failing the whole analysis.
+ */
+export function salvageBatchFrames<T extends { index: number }>(
+  frames: T[],
+  batchLength: number,
+): (T | null)[] {
+  const out: (T | null)[] = Array.from({ length: batchLength }, () => null);
+  for (const f of frames) {
+    if (Number.isInteger(f.index) && f.index >= 0 && f.index < batchLength && !out[f.index]) {
+      out[f.index] = f;
+    }
+  }
+  return out;
+}
+
 const REFILM_MESSAGE =
   "חלק גדול מדי מהצילום לא קריא — צלמו שוב בתאורה בלי ברק על המסך וביד יציבה יותר";
 
 /**
  * The fixed DRY_RUN timeline: a coherent 12-state journey (login -> create ->
  * result) inside the stubbed 20s demo, with one low-legibility state, one
- * unreadable state and one duplicate so downstream rules (picker dimming, the
- * plan pass's never-select-unreadable rule) run for real.
+ * unreadable state, one duplicate and two login states so downstream rules
+ * (picker dimming, the plan pass's never-select-unreadable and
+ * never-select-skip-kind rules) run for real.
  */
 function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
   const states: Omit<AnalysisState, "thumbPath">[] = [
-    { timestampMs: 0, screenName: "מסך פתיחה", visibleText: ["ברוכים הבאים"], action: "האפליקציה נפתחת", actionType: "idle", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 1500, screenName: "התחברות", visibleText: ["התחברות", "אימייל", "סיסמה"], action: "מסך ההתחברות מוצג", actionType: "navigate", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 3000, screenName: "התחברות", visibleText: ["התחברות", "אימייל"], action: "הקלדת אימייל", actionType: "type", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 4500, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי", "פרויקט חדש"], action: "מעבר למסך הבית", actionType: "navigate", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 6000, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי"], action: "אותו מסך, כמעט ללא שינוי", actionType: "idle", sameStateAsPrevious: true, legibility: "high", salienceNote: null },
-    { timestampMs: 8000, screenName: "פרויקט חדש", visibleText: ["פרויקט חדש", "שם הפרויקט"], action: "לחיצה על פרויקט חדש", actionType: "tap", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 9500, screenName: "פרויקט חדש", visibleText: ["שם הפרויקט", "קמפיין קיץ"], action: "הקלדת שם הפרויקט", actionType: "type", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 11000, screenName: "בחירת תבנית", visibleText: ["בחרו תבנית", "מודעה", "פוסט"], action: "בחירת תבנית מהרשימה", actionType: "select", sameStateAsPrevious: false, legibility: "high", salienceNote: "בחירת תבניות מוכנות — לא מוזכר בשאלון" },
-    { timestampMs: 12500, screenName: "עורך", visibleText: [], action: "גלילה בעורך — ברק על המסך", actionType: "scroll", sameStateAsPrevious: false, legibility: "low", salienceNote: null },
-    { timestampMs: 14000, screenName: "לא ברור", visibleText: [], action: "המסך לא קריא בפריים הזה", actionType: "idle", sameStateAsPrevious: false, legibility: "unreadable", salienceNote: null },
-    { timestampMs: 16000, screenName: "עורך", visibleText: ["שמירה", "תצוגה מקדימה"], action: "לחיצה על שמירה", actionType: "tap", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 18500, screenName: "הצלחה", visibleText: ["הקמפיין נוצר!", "שיתוף"], action: "מסך ההצלחה — הפרויקט מוכן", actionType: "result", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 0, screenName: "מסך פתיחה", visibleText: ["ברוכים הבאים"], action: "האפליקציה נפתחת", actionType: "idle", screenKind: "loading", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 1500, screenName: "התחברות", visibleText: ["התחברות", "אימייל", "סיסמה"], action: "מסך ההתחברות מוצג", actionType: "navigate", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 3000, screenName: "התחברות", visibleText: ["התחברות", "אימייל"], action: "הקלדת אימייל", actionType: "type", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 4500, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי", "פרויקט חדש"], action: "מעבר למסך הבית", actionType: "navigate", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 6000, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי"], action: "אותו מסך, כמעט ללא שינוי", actionType: "idle", screenKind: "product", sameStateAsPrevious: true, legibility: "high", salienceNote: null },
+    { timestampMs: 8000, screenName: "פרויקט חדש", visibleText: ["פרויקט חדש", "שם הפרויקט"], action: "לחיצה על פרויקט חדש", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 9500, screenName: "פרויקט חדש", visibleText: ["שם הפרויקט", "קמפיין קיץ"], action: "הקלדת שם הפרויקט", actionType: "type", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 11000, screenName: "בחירת תבנית", visibleText: ["בחרו תבנית", "מודעה", "פוסט"], action: "בחירת תבנית מהרשימה", actionType: "select", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: "בחירת תבניות מוכנות — לא מוזכר בשאלון" },
+    { timestampMs: 12500, screenName: "עורך", visibleText: [], action: "גלילה בעורך — ברק על המסך", actionType: "scroll", screenKind: "product", sameStateAsPrevious: false, legibility: "low", salienceNote: null },
+    { timestampMs: 14000, screenName: "לא ברור", visibleText: [], action: "המסך לא קריא בפריים הזה", actionType: "idle", screenKind: "other", sameStateAsPrevious: false, legibility: "unreadable", salienceNote: null },
+    { timestampMs: 16000, screenName: "עורך", visibleText: ["שמירה", "תצוגה מקדימה"], action: "לחיצה על שמירה", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 18500, screenName: "הצלחה", visibleText: ["הקמפיין נוצר!", "שיתוף"], action: "מסך ההצלחה — הפרויקט מוכן", actionType: "result", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
   ];
   return states.map((s) => ({ ...s, thumbPath: thumbPathAt(s.timestampMs) }));
 }
@@ -378,12 +414,15 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
     const resumeKey = `${promptVersion}/${fps}/${batchSize}/${kept
       .map((c) => c.representativeMs)
       .join(",")}`;
+    // null = a cluster the model never returned an entry for, even after the
+    // corrective retry — dropped from the timeline at assembly. (v2-era
+    // checkpoints hold plain arrays, a compatible subset.)
     const priorState = job.state as {
       analysisId?: string;
       resumeKey?: string;
-      batchResults?: Record<string, BatchFrame[]>;
+      batchResults?: Record<string, (BatchFrame | null)[]>;
     } | null;
-    const batchResults: Record<string, BatchFrame[]> =
+    const batchResults: Record<string, (BatchFrame | null)[]> =
       priorState?.resumeKey === resumeKey ? { ...(priorState.batchResults ?? {}) } : {};
 
     // batchResults only grows, so every later snapshot is a superset of every
@@ -397,41 +436,70 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       return checkpointChain;
     };
 
+    const basePrompt = (n: number) =>
+      `Analyse the ${n} frames above, in order. Return exactly one entry per frame, with the index from its label.`;
+    const callBatch = async (batch: StateCluster[], prompt: string): Promise<BatchFrame[]> => {
+      // Parallel batches each pass this check before any usage lands, so one
+      // analysis can overshoot the cap by at most the batch cap — acceptable
+      // for a backstop; the real per-analysis bound is max_states.
+      await assertBudget(ctx.db, "llm_tokens");
+      const { object, usage } = await generateObjectWithImages({
+        system,
+        prompt,
+        frames: batch.map((cluster, i) => ({
+          label: `Frame ${i} — t=${(cluster.representativeMs / 1000).toFixed(1)}s`,
+          jpeg: readFileSync(localFrameOf(cluster)),
+        })),
+        schema: batchOutputSchema,
+      });
+      await recordUsage(ctx.db, {
+        provider: "anthropic",
+        kind: "llm_tokens",
+        quantity: usage.inputTokens + usage.outputTokens,
+        costEstimateAgorot: llmCostAgorot(usage.inputTokens, usage.outputTokens),
+        jobId: job.id,
+        businessId: demo.businessId,
+      });
+      return object.frames;
+    };
+
     const settled = await Promise.allSettled(
       batches.map(async (batch, bi) => {
         if (batchResults[bi]) return;
-        // Parallel batches each pass this check before any usage lands, so one
-        // analysis can overshoot the cap by at most the batch cap — acceptable
-        // for a backstop; the real per-analysis bound is max_states.
-        await assertBudget(ctx.db, "llm_tokens");
-        const { object, usage } = await generateObjectWithImages({
-          system,
-          prompt: `Analyse the ${batch.length} frames above, in order. Return exactly one entry per frame, with the index from its label.`,
-          frames: batch.map((cluster, i) => ({
-            label: `Frame ${i} — t=${(cluster.representativeMs / 1000).toFixed(1)}s`,
-            jpeg: readFileSync(localFrameOf(cluster)),
-          })),
-          schema: batchOutputSchema,
-        });
-        await recordUsage(ctx.db, {
-          provider: "anthropic",
-          kind: "llm_tokens",
-          quantity: usage.inputTokens + usage.outputTokens,
-          costEstimateAgorot: llmCostAgorot(usage.inputTokens, usage.outputTokens),
-          jobId: job.id,
-          businessId: demo.businessId,
-        });
-        const byIndex = new Map(object.frames.map((f) => [f.index, f]));
-        if (object.frames.length !== batch.length || byIndex.size !== batch.length) {
-          throw new Error(
-            `batch ${bi}: model returned ${object.frames.length} frames for ${batch.length}`,
+        const first = await callBatch(batch, basePrompt(batch.length));
+        let salvaged = salvageBatchFrames(first, batch.length);
+        if (salvaged.some((f) => !f)) {
+          // Corrective retry, once (same pattern as demo-step-plans): seen live
+          // when near-identical frames get merged into one entry instead of
+          // repeated with sameStateAsPrevious. Name the failure and re-request
+          // this batch only.
+          const covered = salvaged.filter(Boolean).length;
+          ctx.log.warn(
+            { demoId, batch: bi, sent: batch.length, returned: first.length, covered },
+            "analysis: batch response did not cover every frame — corrective retry",
+          );
+          const retry = await callBatch(
+            batch,
+            `${basePrompt(batch.length)}\n\nYour previous response covered only ${covered} of these ${batch.length} frames (${first.length} entries returned). That is wrong: every frame gets exactly one entry, even when consecutive frames look identical or near-identical — report each repeat as its own entry with sameStateAsPrevious: true. Never merge frames into one entry. Return exactly ${batch.length} entries, with index 0 through ${batch.length - 1} matching the frame labels.`,
+          );
+          // Fill what the retry still misses from the first response — both
+          // transcribe the same images, so coverage only ever improves.
+          const retrySalvaged = salvageBatchFrames(retry, batch.length);
+          salvaged = retrySalvaged.map((f, i) => f ?? salvaged[i]!);
+        }
+        const droppedMs = batch
+          .filter((_, i) => !salvaged[i])
+          .map((c) => c.representativeMs);
+        if (droppedMs.length > 0) {
+          // Degrade, don't die: losing a few states out of eighty is nothing;
+          // losing the whole analysis is expensive. The fraction gate below
+          // fails the analysis when too many batches end up here.
+          ctx.log.warn(
+            { demoId, batch: bi, sent: batch.length, droppedMs },
+            "analysis: batch still short after corrective retry — dropping unreturned states",
           );
         }
-        batchResults[bi] = batch.map((_, i) => {
-          const frame = byIndex.get(i);
-          if (!frame) throw new Error(`batch ${bi}: model response missing frame index ${i}`);
-          return frame;
-        });
+        batchResults[bi] = salvaged;
         await saveCheckpoint();
       }),
     );
@@ -444,34 +512,74 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       throw (budget ?? rejections[0]!).reason;
     }
 
+    // A batch still short after its own corrective retry is model behaviour on
+    // this footage, not a transient fault — re-running the job will not help.
+    // A few degraded batches are absorbed; past the fraction gate the timeline
+    // is too holey to trust, and the failure is permanent.
+    const degraded = batches.filter((_, bi) => batchResults[bi]!.some((f) => !f)).length;
+    const maxDegradedFraction = await getConfigValueOr(
+      ctx.db,
+      "a_analysis_max_degraded_fraction",
+      z.number(),
+      0.5,
+    );
+    if (degraded / batches.length > maxDegradedFraction) {
+      throw new PermanentError(
+        `analysis degraded: ${degraded} of ${batches.length} batches returned short after corrective retry`,
+        { customerMessage: "חלק גדול מדי מהצילום לא נותח — צלמו את ההדגמה שוב ונסו מחדש" },
+      );
+    }
+
     // representativeMs = round(i*1000/fps), so the frame index inverts exactly.
     const keptHashes = kept.map((c) => hashes[Math.round((c.representativeMs * fps) / 1000)]!);
 
     const assembled: AnalysisState[] = [];
+    const droppedMs: number[] = [];
+    let prevG = -1; // kept-index of the last assembled state
     batches.forEach((batch, bi) => {
       batch.forEach((cluster, i) => {
-        const frame = batchResults[bi]![i]!;
-        const g = assembled.length;
+        const frame = batchResults[bi]![i];
+        const g = bi * batchSize + i;
+        if (!frame) {
+          droppedMs.push(cluster.representativeMs);
+          return;
+        }
         // The model judges duplicates within its batch only — at a batch
         // boundary it cannot see the prior frame and reports false by
         // instruction. Bridge the seam with the same dHash the clustering
-        // used, so a duplicate straddling batches still reads as one.
+        // used, so a duplicate straddling batches still reads as one. When a
+        // dropped cluster broke adjacency, the model's flag refers to a state
+        // that no longer exists — recompute against the last assembled one.
         const sameStateAsPrevious =
-          frame.sameStateAsPrevious ||
-          (i === 0 && g > 0 && hamming(keptHashes[g]!, keptHashes[g - 1]!) <= MAX_HAMMING);
+          prevG < 0
+            ? false
+            : prevG === g - 1
+              ? frame.sameStateAsPrevious ||
+                (i === 0 && hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING)
+              : hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING;
         assembled.push({
           timestampMs: cluster.representativeMs,
           screenName: frame.screenName,
           visibleText: frame.visibleText,
           action: frame.action,
           actionType: frame.actionType,
+          screenKind: frame.screenKind,
           sameStateAsPrevious,
           legibility: frame.legibility,
           salienceNote: frame.salienceNote,
           thumbPath: `assets/${thumbKey(cluster.representativeMs)}`,
         });
+        prevG = g;
       });
     });
+    if (droppedMs.length > 0) {
+      // Fires on resumed runs too (the per-batch warn does not) — the durable
+      // record of exactly which timestamps this timeline is missing.
+      ctx.log.warn(
+        { demoId, dropped: droppedMs.length, droppedMs, stateCount: assembled.length },
+        "analysis: timeline assembled without the states the model never returned",
+      );
+    }
 
     const threshold = await getConfigValueOr(
       ctx.db,

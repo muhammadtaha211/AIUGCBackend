@@ -15,6 +15,7 @@ import {
   getLatestDemoAnalysis,
   illegibleFraction,
   requestDemoAnalysis,
+  salvageBatchFrames,
   subsampleClusters,
 } from "../src/pipelines/demo-analysis";
 import { createDemo } from "../src/pipelines/demos";
@@ -116,6 +117,11 @@ describe("analyze_demo (dry-run chain)", () => {
     expect(states.filter((s) => s.legibility === "unreadable")).toHaveLength(1);
     expect(states.filter((s) => s.legibility === "low")).toHaveLength(1);
     expect(states.filter((s) => s.sameStateAsPrevious)).toHaveLength(1);
+    // screenKinds exercise the plan pass's skip rule: a loading splash and two
+    // login states, everything classified.
+    expect(states[0]!.screenKind).toBe("loading");
+    expect(states.filter((s) => s.screenKind === "login")).toHaveLength(2);
+    expect(states.every((s) => s.screenKind !== undefined)).toBe(true);
     // The canned mix stays under the 40% legibility gate.
     expect(illegibleFraction(states)).toBeLessThan(0.4);
 
@@ -229,6 +235,28 @@ describe("subsampleClusters", () => {
     // The recording ends on the success state — the tail must survive thinning.
     expect(kept[kept.length - 1]).toBe(99);
     expect(new Set(kept).size).toBe(80);
+  });
+});
+
+describe("salvageBatchFrames", () => {
+  it("is positionally complete when every index is claimed once, whatever the order", () => {
+    expect(salvageBatchFrames([{ index: 1 }, { index: 0 }, { index: 2 }], 3)).toEqual([
+      { index: 0 },
+      { index: 1 },
+      { index: 2 },
+    ]);
+  });
+
+  it("drops out-of-range, non-integer and duplicate claims; unclaimed positions stay null", () => {
+    expect(
+      salvageBatchFrames([{ index: 0 }, { index: 5 }, { index: -1 }, { index: 1.5 }, { index: 2 }], 4),
+    ).toEqual([{ index: 0 }, null, { index: 2 }, null]);
+  });
+
+  it("keeps the first claim when an index is claimed twice", () => {
+    const a = { index: 1, tag: "a" };
+    const b = { index: 1, tag: "b" };
+    expect(salvageBatchFrames([a, b], 2)).toEqual([null, a]);
   });
 });
 

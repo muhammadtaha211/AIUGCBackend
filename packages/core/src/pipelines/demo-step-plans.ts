@@ -22,6 +22,22 @@ import {
 } from "./demo-analysis";
 
 /**
+ * screenKinds the plan may never select — the deterministic form of the
+ * prompt's prose skip list (login screens, tours, onboarding...), added after
+ * a real run picked the login screen and two tour steps despite the prompt.
+ * "product", "other" and absent (v2-era analyses without screenKind) pass;
+ * missing means "no information", so those states stay prompt-governed.
+ * The Phase 8 picker groups/hides by the same set.
+ */
+export const PLAN_SKIP_SCREEN_KINDS: ReadonlySet<
+  NonNullable<AnalysisState["screenKind"]>
+> = new Set(["login", "loading", "onboarding", "error", "tour", "system"] as const);
+
+function isSkippedKind(state: AnalysisState): boolean {
+  return state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind);
+}
+
+/**
  * Pass 2 of the step-plan format: the SELECTION. Text-only on purpose — the
  * input is the analysed timeline + questionnaire, never images — which is what
  * makes replanning cost about a cent and makes the fixtures/timelines/
@@ -235,6 +251,11 @@ export function findPlanViolations(
     if (state.legibility === "unreadable") {
       violations.push(`step ${i}: state ${step.sourceIndex} is legibility "unreadable"`);
     }
+    if (isSkippedKind(state)) {
+      violations.push(
+        `step ${i}: state ${step.sourceIndex} is a "${state.screenKind}" screen — login, loading, onboarding, error, tour and system screens are never steps; select the customer using the product itself`,
+      );
+    }
     if (step.label.length > MAX_LABEL_CHARS) {
       violations.push(`step ${i}: label is over ${MAX_LABEL_CHARS} characters`);
     }
@@ -276,9 +297,10 @@ export function findPlanViolations(
     // The format invariant: the video ends on the success state. Enforceable
     // only when the timeline offers a selectable result state — the analysis
     // may have mistyped the success screen, and a plan cannot end on a state
-    // that does not exist.
+    // that does not exist. A skip-kind "result" (a validation error the
+    // analysis mistyped) is not selectable either, so it cannot force the rule.
     const hasSelectableResult = timeline.some(
-      (s) => s.actionType === "result" && s.legibility !== "unreadable",
+      (s) => s.actionType === "result" && s.legibility !== "unreadable" && !isSkippedKind(s),
     );
     const valid = steps.filter(
       (s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex],
@@ -364,12 +386,15 @@ function dryRunPlan(
     .map((state, index) => ({ state, index }))
     .filter(
       ({ state }) =>
-        state.legibility === "high" && !state.sameStateAsPrevious && state.actionType !== "idle",
+        state.legibility === "high" &&
+        !state.sameStateAsPrevious &&
+        state.actionType !== "idle" &&
+        !isSkippedKind(state),
     );
   if (candidates.length === 0) {
     candidates = timeline
       .map((state, index) => ({ state, index }))
-      .filter(({ state }) => state.legibility !== "unreadable");
+      .filter(({ state }) => state.legibility !== "unreadable" && !isSkippedKind(state));
   }
   if (candidates.length === 0) throw new Error("dry-run plan: timeline has no usable states");
 
@@ -379,7 +404,10 @@ function dryRunPlan(
   // quality filter above dropped it).
   const results = timeline
     .map((state, index) => ({ state, index }))
-    .filter(({ state }) => state.actionType === "result" && state.legibility !== "unreadable");
+    .filter(
+      ({ state }) =>
+        state.actionType === "result" && state.legibility !== "unreadable" && !isSkippedKind(state),
+    );
   const lastResult = results[results.length - 1];
   let kept = subsampleClusters(candidates, maxSteps);
   if (lastResult) {
@@ -463,6 +491,8 @@ export async function generateStepPlan(
     visibleText: s.visibleText,
     action: s.action,
     actionType: s.actionType,
+    // undefined (v2-era analyses) drops out of the JSON entirely.
+    screenKind: s.screenKind,
     sameStateAsPrevious: s.sameStateAsPrevious,
     legibility: s.legibility,
     salienceNote: s.salienceNote,
