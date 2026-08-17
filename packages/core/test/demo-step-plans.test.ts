@@ -3,12 +3,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { recordUsage } from "../src/budget";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { HEAVY_JOB_TYPES, runLane } from "../src/jobs/worker";
-import { createBusiness, setQuestionnaire, type Questionnaire } from "../src/pipelines/businesses";
+import {
+  addDemoNote,
+  createBusiness,
+  MAX_DEMO_NOTES,
+  requireQuestionnaire,
+  setQuestionnaire,
+  type Questionnaire,
+} from "../src/pipelines/businesses";
 import type { AnalysisState } from "../src/pipelines/demo-analysis";
 import {
   approvePlan,
@@ -163,6 +171,40 @@ describe("plan_demo_steps (dry-run chain)", () => {
     await drainAll();
     expect((await getStepPlan(db, second))?.status).toBe("ready");
     expect((await getStepPlan(db, planId))?.status).toBe("ready");
+  });
+
+  it("a regenerate while one is still generating collapses onto the live job", { timeout: 60_000 }, async () => {
+    // Every press must not be a fresh paid enqueue: the route's budget gate
+    // reads usage that lags the queue, so uncollapsed presses outrun it.
+    const first = await requestDemoPlan(db, demoId);
+    const second = await requestDemoPlan(db, demoId);
+    expect(second.planId).toBe(first.planId);
+    expect(second.jobId).toBe(first.jobId);
+    await drainAll();
+    expect((await getStepPlan(db, first.planId))?.status).toBe("ready");
+  });
+
+  it("the job-level account-cap backstop fails a queued plan fast, in Hebrew", { timeout: 60_000 }, async () => {
+    // A customer (not admin-bypassed) account at its 0027 llm_tokens ceiling:
+    // the queued job must die as a fast PermanentError — never park, never
+    // spend — even though it was enqueued before the cap was hit.
+    const customer = await createBusiness(db, { ownerEmail: "capped@example.com", name: "עסק שמור" });
+    await setQuestionnaire(db, customer.id, QUESTIONNAIRE);
+    const demo = await createDemo(db, { businessId: customer.id, filePath: tempFile("capped.mp4") });
+    await drainAll(); // ingest -> analysis ready
+
+    await recordUsage(db, {
+      provider: "anthropic",
+      kind: "llm_tokens",
+      quantity: 500_000,
+      businessId: customer.id,
+    });
+
+    const { planId: cappedPlanId } = await requestDemoPlan(db, demo.id);
+    await drainAll();
+    const plan = await getStepPlan(db, cappedPlanId);
+    expect(plan?.status).toBe("failed");
+    expect(plan?.failReason).toMatch(/מכסת/);
   });
 });
 
@@ -411,6 +453,19 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     expect(findPlanViolations([{ sourceIndex: 0, label: "שלום" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
   });
 
+  it("words from demo_notes are allowed label words — an explained moment becomes copy", () => {
+    // Not on state 0's screen and not elsewhere in the questionnaire...
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "תבניות מוכנות" }], timeline, QUESTIONNAIRE, 8)
+        .length,
+    ).toBeGreaterThan(0);
+    // ...but once the customer's answer carries them, the label passes.
+    const explained = { ...QUESTIONNAIRE, demo_notes: ["מסך בחירת תבניות מוכנות"] };
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "תבניות מוכנות" }], timeline, explained, 8),
+    ).toEqual([]);
+  });
+
   it("allows function words but flags fabricated content words", () => {
     expect(
       findPlanViolations([{ sourceIndex: 0, label: "רק פרויקט חדש" }], timeline, QUESTIONNAIRE, 8),
@@ -497,6 +552,37 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       ).some((v) => v.includes("maximum is 1")),
     ).toBe(true);
     expect(findPlanViolations([], timeline, QUESTIONNAIRE, 8)).toEqual(["the plan has zero steps"]);
+  });
+});
+
+describe("demo notes (the questionnaire answer channel)", () => {
+  it("appends trimmed notes to the persisted questionnaire; empty and questionnaire-less rejected", async () => {
+    await expect(addDemoNote(db, businessId, "   ")).rejects.toThrow(/empty/);
+    const bare = await createBusiness(db, { ownerEmail: "bare@example.com", name: "בלי שאלון" });
+    await expect(addDemoNote(db, bare.id, "הערה")).rejects.toThrow(/no questionnaire/);
+
+    const notes = await addDemoNote(db, businessId, "  ההסבר של הלקוח  ");
+    expect(notes).toEqual(["ההסבר של הלקוח"]);
+    // Lands on the questionnaire itself, where both passes read it.
+    expect((await requireQuestionnaire(db, businessId)).demo_notes).toEqual(["ההסבר של הלקוח"]);
+  });
+
+  it("a questionnaire resubmit without demo_notes keeps them; explicit demo_notes replaces", async () => {
+    // Questionnaire forms never carry demo_notes — a resubmit must not
+    // silently discard answered moments.
+    await setQuestionnaire(db, businessId, QUESTIONNAIRE);
+    expect((await requireQuestionnaire(db, businessId)).demo_notes).toEqual(["ההסבר של הלקוח"]);
+
+    await setQuestionnaire(db, businessId, { ...QUESTIONNAIRE, demo_notes: ["אחרת"] });
+    expect((await requireQuestionnaire(db, businessId)).demo_notes).toEqual(["אחרת"]);
+  });
+
+  it("caps at MAX_DEMO_NOTES", async () => {
+    await setQuestionnaire(db, businessId, {
+      ...QUESTIONNAIRE,
+      demo_notes: Array.from({ length: MAX_DEMO_NOTES }, (_, i) => `הערה ${i}`),
+    });
+    await expect(addDemoNote(db, businessId, "אחת יותר מדי")).rejects.toThrow(/limit/);
   });
 });
 

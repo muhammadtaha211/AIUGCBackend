@@ -36,6 +36,7 @@ export const PORTABLE_MIGRATIONS = [
   "0023_step_plans.sql",
   "0025_step_plan_notes.sql",
   "0026_a_steps_credits.sql",
+  "0027_llm_caps_account_first.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

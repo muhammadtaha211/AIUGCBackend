@@ -81,6 +81,72 @@ export const voScriptRequestSchema = z.object({
   hookLineText: z.string().min(1).max(200).optional(),
 });
 
+// ---------------------------------------------------------------------------
+// Step-plan bodies (Phase 7)
+// ---------------------------------------------------------------------------
+
+/**
+ * The full ordered step array the picker sends on every edit. Labels cap at
+ * core's MAX_LABEL_CHARS (60); the array caps at the analysis max_states
+ * default (80) — the server re-derives everything else from sourceIndex and
+ * re-sorts by timestamp, so order and duplicates are its problem, not ours.
+ */
+export const planStepsRequestSchema = z.object({
+  steps: z
+    .array(
+      z.object({
+        sourceIndex: z.number().int().min(0),
+        label: z.string().min(1).max(60),
+      }),
+    )
+    .min(1)
+    .max(80),
+});
+
+/** One answered unexplained-moment; the server trims and appends. */
+export const demoNoteRequestSchema = z.object({
+  text: z.string().min(1).max(500),
+});
+
+/**
+ * The one plan shape every plan-touching route returns (GET/POST edit/approve
+ * all serialize through here), so the wizard never learns two shapes. steps/
+ * unexplainedMoments pass through as stored — core owns their schema.
+ */
+export function stepPlanResponse(plan: {
+  id: string;
+  demoId: string;
+  analysisId: string;
+  status: string;
+  steps: unknown;
+  unexplainedMoments: unknown;
+  notes: string | null;
+  failReason: string | null;
+  approvedAt: Date | null;
+}): {
+  planId: string;
+  demoId: string;
+  analysisId: string;
+  status: string;
+  steps: unknown;
+  unexplainedMoments: unknown;
+  notes?: string;
+  failReason?: string;
+  approvedAt?: Date;
+} {
+  return {
+    planId: plan.id,
+    demoId: plan.demoId,
+    analysisId: plan.analysisId,
+    status: plan.status,
+    steps: plan.steps ?? [],
+    unexplainedMoments: plan.unexplainedMoments ?? [],
+    notes: plan.notes ?? undefined,
+    failReason: plan.failReason ?? undefined,
+    approvedAt: plan.approvedAt ?? undefined,
+  };
+}
+
 export const aPreviewRequestSchema = z.object({
   demoId: z.string().uuid(),
   audioId: z.string().uuid(),

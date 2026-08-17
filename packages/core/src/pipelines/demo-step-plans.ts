@@ -3,10 +3,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getConfigValueOr } from "../appConfig";
-import { assertBudget, recordUsage } from "../budget";
+import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { getEnv } from "../config";
 import type { Db } from "../db";
-import { demoAnalyses, demoStepPlans, demos } from "../db/schema";
+import { demoAnalyses, demoStepPlans, demos, jobs } from "../db/schema";
 import { BudgetError, PermanentError } from "../jobs/errors";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -602,6 +602,24 @@ export async function requestDemoPlan(
     );
   }
 
+  // A regenerate while one is still generating collapses onto the in-flight
+  // job (mirrors requestDemoAnalysis's live-JOB check — a row stuck after a
+  // worker death must not lock requests out). Without this, every press is a
+  // cheap enqueue that outruns the route's usage-based budget gate, and the
+  // queued backlog spends past the cap after the route starts refusing.
+  const latest = await getLatestStepPlan(db, demoId);
+  if (latest && (latest.status === "pending" || latest.status === "planning")) {
+    const jobRows = await db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.idempotencyKey, `plan:${latest.id}`))
+      .limit(1);
+    const live = jobRows[0];
+    if (live && (live.status === "queued" || live.status === "running")) {
+      return { planId: latest.id, jobId: live.id };
+    }
+  }
+
   const inserted = await db
     .insert(demoStepPlans)
     .values({ demoId, analysisId: ready.id, status: "pending" })
@@ -648,6 +666,18 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
       throw new PermanentError(err instanceof Error ? err.message : String(err), {
         customerMessage: "מלאו את שאלון העסק לפני יצירת התוכנית",
       });
+    });
+
+    // The confirm-to-execution window (renders.ts precedent): the route's
+    // budget gate reads usage that lags the queue, so a queued backlog would
+    // outrun it. Re-check here and fail fast — never park on an account cap.
+    await assertAccountBudget(ctx.db, "llm_tokens", demo.businessId).catch((err) => {
+      if (err instanceof AccountBudgetError) {
+        throw new PermanentError(err.message, {
+          customerMessage: "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר.",
+        });
+      }
+      throw err;
     });
 
     await setPlan({ status: "planning" });

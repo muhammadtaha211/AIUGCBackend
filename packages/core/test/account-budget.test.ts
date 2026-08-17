@@ -135,6 +135,37 @@ describe("per-account TTS cap", { timeout: 60_000 }, () => {
   });
 });
 
+describe("per-account LLM cap (0027 — account-first)", { timeout: 60_000 }, () => {
+  /** The shipped per-account cap (0027): 25% of the platform cap, like TTS. */
+  const PER_ACCOUNT_LLM_TOKENS = 500_000;
+
+  async function burnLlm(db: Db, businessId: string, tokens: number) {
+    await recordUsage(db, {
+      provider: "anthropic",
+      kind: "llm_tokens",
+      quantity: tokens,
+      businessId,
+    });
+  }
+
+  it("caps one account's LLM spend without touching its neighbor; admin bypasses", async () => {
+    const { db, pg } = await createTestDb();
+    const loud = await businessFor(db, "llm-loud@test.local");
+    const quiet = await businessFor(db, "llm-quiet@test.local");
+    const founder = await businessFor(db, "llm-founder@test.local", "admin");
+
+    await burnLlm(db, loud.id, PER_ACCOUNT_LLM_TOKENS);
+    await burnLlm(db, founder.id, PER_ACCOUNT_LLM_TOKENS * 10);
+
+    await expect(assertAccountBudget(db, "llm_tokens", loud.id)).rejects.toBeInstanceOf(
+      AccountBudgetError,
+    );
+    await expect(assertAccountBudget(db, "llm_tokens", quiet.id)).resolves.toBeUndefined();
+    await expect(assertAccountBudget(db, "llm_tokens", founder.id)).resolves.toBeUndefined();
+    await pg.close();
+  });
+});
+
 describe("per-account GPU cap (0022 — account-first)", { timeout: 60_000 }, () => {
   /** The shipped per-account cap (0022): mirrors the TTS ceiling in seconds. */
   const PER_ACCOUNT_GPU_SECONDS = 2_000;

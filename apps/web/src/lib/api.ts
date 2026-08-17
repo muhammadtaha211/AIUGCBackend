@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import {
   AccountBudgetError,
   getAudioWithScript,
+  getLatestDemoAnalysis,
+  getStepPlan,
   InsufficientCreditsError,
   schema,
   type Db,
@@ -144,6 +146,46 @@ export async function requireDemo(
   return { demo: rows[0] };
 }
 
+/**
+ * The demo's NEWEST analysis attempt (any status — the wizard polls through
+ * pending/analysing and must see rejected/failed with their Hebrew failReason).
+ * 404 until the analyze job has inserted its row; the demo poll covers before.
+ */
+export async function requireAnalysis(
+  db: Db,
+  demoId: string,
+  userId: string,
+): Promise<
+  | { demo: typeof schema.demos.$inferSelect; analysis: typeof schema.demoAnalyses.$inferSelect }
+  | { response: NextResponse }
+> {
+  const found = await requireDemo(db, demoId, userId);
+  if ("response" in found) return found;
+  const analysis = await getLatestDemoAnalysis(db, demoId);
+  if (!analysis) return { response: jsonError(404, NOT_FOUND) };
+  return { demo: found.demo, analysis };
+}
+
+/** Step plan by id, ownership resolved through its demo's business. */
+export async function requirePlan(
+  db: Db,
+  planId: string,
+  userId: string,
+): Promise<{ plan: typeof schema.demoStepPlans.$inferSelect } | { response: NextResponse }> {
+  if (!isUuid(planId)) return { response: jsonError(404, NOT_FOUND) };
+  const plan = await getStepPlan(db, planId);
+  if (!plan) return { response: jsonError(404, NOT_FOUND) };
+  const demoRows = await db
+    .select()
+    .from(schema.demos)
+    .where(eq(schema.demos.id, plan.demoId))
+    .limit(1);
+  if (!demoRows[0]) return { response: jsonError(404, NOT_FOUND) };
+  const owned = await requireBusiness(db, demoRows[0].businessId, userId);
+  if ("response" in owned) return owned;
+  return { plan };
+}
+
 export async function requireRender(
   db: Db,
   renderId: string,
@@ -189,19 +231,47 @@ export function coreErrorResponse(err: unknown): NextResponse {
   if (/demo is not ready/.test(message)) {
     return jsonError(409, "סרטון המוצר עדיין בעיבוד — נסו שוב בעוד רגע.");
   }
+  if (/has no ready analysis/.test(message)) {
+    return jsonError(409, "ניתוח הסרטון עדיין לא מוכן — נסו שוב עוד רגע.");
+  }
+  if (/only ready plans are editable/.test(message)) {
+    return jsonError(409, "אפשר לערוך רק תוכנית מוכנה.");
+  }
+  if (/only ready plans can be approved/.test(message)) {
+    return jsonError(409, "אפשר לאשר רק תוכנית מוכנה.");
+  }
+  if (/needs at least one step/.test(message)) {
+    return jsonError(400, "התוכנית צריכה לפחות צעד אחד.");
+  }
+  // Step-shape rejections from updatePlanSteps: a well-behaved picker never
+  // sends these (it mirrors the same filters), so the generic Hebrew suffices.
+  if (
+    /not in the analysis timeline|appears twice|unreadable state|empty label|label is over/.test(
+      message,
+    )
+  ) {
+    return jsonError(400, INVALID_BODY);
+  }
+  if (/demo note is empty/.test(message)) return jsonError(400, INVALID_BODY);
+  if (/demo notes limit reached/.test(message)) {
+    return jsonError(400, "הגעתם למגבלת ההערות על הסרטון.");
+  }
   if (/daily audio preview limit/.test(message)) {
     return jsonError(429, "הגעתם למכסת ההשמעות היומית — נסו שוב מחר.");
   }
   // The per-account abuse ceiling. A fast rejection on purpose: the
   // platform-wide cap parks the job instead, and a parked job spins forever.
   if (err instanceof AccountBudgetError) {
-    // The core message names the capped kind — GPU caps refuse renders,
-    // TTS caps refuse recordings; the Hebrew should say which.
+    // The core message names the capped kind — GPU caps refuse renders, TTS
+    // caps refuse recordings, LLM caps refuse plan/copy generation; the
+    // Hebrew should say which.
     return jsonError(
       429,
       /gpu_seconds/.test(err.message)
         ? "הגעתם למכסת יצירת הסרטונים היומית של החשבון — נסו שוב מחר."
-        : "הגעתם למכסת ההקלטות היומית של החשבון — נסו שוב מחר.",
+        : /llm_tokens/.test(err.message)
+          ? "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר."
+          : "הגעתם למכסת ההקלטות היומית של החשבון — נסו שוב מחר.",
     );
   }
   // Typed, so the shortfall is a number the UI can render — not text scraped

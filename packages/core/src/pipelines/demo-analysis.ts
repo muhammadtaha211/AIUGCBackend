@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getConfigValueOr } from "../appConfig";
-import { assertBudget, recordUsage } from "../budget";
+import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { getEnv } from "../config";
 import type { Db } from "../db";
 import { demoAnalyses, demos, jobs } from "../db/schema";
@@ -325,6 +325,20 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       });
       return { kind: "done" };
     }
+
+    // The per-account abuse ceiling (0027). Analysis is the account's biggest
+    // LLM spend and auto-enqueues on every registered demo, so without this
+    // an upload loop runs uncapped to the platform ceiling — which parks LLM
+    // jobs for every account. Converted to PermanentError: an
+    // AccountBudgetError must fail fast, never park (renders.ts precedent).
+    await assertAccountBudget(ctx.db, "llm_tokens", demo.businessId).catch((err) => {
+      if (err instanceof AccountBudgetError) {
+        throw new PermanentError(err.message, {
+          customerMessage: "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר.",
+        });
+      }
+      throw err;
+    });
 
     await setAnalysis({ status: "analysing" });
 
