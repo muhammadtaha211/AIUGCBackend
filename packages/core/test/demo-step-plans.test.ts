@@ -388,6 +388,43 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     ).toEqual([]);
   });
 
+  it("names the success candidates when the plan continues past the result state (real a179f069)", () => {
+    // The a179f069 shape: the recording keeps going after the success moment,
+    // and the model selects steps from the unfinished second journey. The
+    // violation must name the candidate indexes and licence dropping the
+    // trailing steps — the one corrective retry has no other way to know the
+    // mechanical fix. Two candidates on purpose: the real timeline has two,
+    // and a message naming only one would steer the retry blind.
+    const continues: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחלה"] }),
+      state({ timestampMs: 1000, visibleText: ["הושלם"], actionType: "result" }),
+      state({ timestampMs: 2000, visibleText: ["המשך"] }),
+      state({ timestampMs: 3000, visibleText: ["נשמר"], actionType: "result" }),
+    ];
+    const violations = findPlanViolations(
+      [
+        { sourceIndex: 0, label: "התחלה" },
+        { sourceIndex: 1, label: "הושלם" },
+        { sourceIndex: 2, label: "המשך" },
+      ],
+      continues,
+      QUESTIONNAIRE,
+      8,
+      { minSteps: 6, notes: null },
+    );
+    const shapeViolation = violations.find((v) => v.includes("result/success"));
+    expect(shapeViolation).toBeDefined();
+    // Names every candidate to end on, and the minimum the drop must respect.
+    expect(shapeViolation).toContain("sourceIndex 1, 3");
+    expect(shapeViolation).toContain("drop every step after it");
+    expect(shapeViolation).toContain("fewer than 6 steps");
+    // The shortfall path is notes, never padding — "select additional states"
+    // wording made a live retry pad with a loading screen (an unfixable fresh
+    // violation, no third call). Pin the routing so it cannot come back.
+    expect(shapeViolation).toContain("keep the shorter plan");
+    expect(shapeViolation).toContain("never pad");
+  });
+
   it("pools visibleText across a sameStateAsPrevious run (real BotTeacher state 36)", () => {
     // Exact strings from demo ba70c3d7 / analysis 6a1b247e: the anchor frame's
     // OCR clipped "נשלים" to "נשלי"; the dup frames of the SAME screen read it

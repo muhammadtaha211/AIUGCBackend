@@ -299,9 +299,11 @@ export function findPlanViolations(
     // may have mistyped the success screen, and a plan cannot end on a state
     // that does not exist. A skip-kind "result" (a validation error the
     // analysis mistyped) is not selectable either, so it cannot force the rule.
-    const hasSelectableResult = timeline.some(
-      (s) => s.actionType === "result" && s.legibility !== "unreadable" && !isSkippedKind(s),
-    );
+    const successCandidates = timeline
+      .map((s, i) => ({ s, i }))
+      .filter(
+        ({ s }) => s.actionType === "result" && s.legibility !== "unreadable" && !isSkippedKind(s),
+      );
     const valid = steps.filter(
       (s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex],
     );
@@ -309,13 +311,24 @@ export function findPlanViolations(
     // "result" (the timeline then OFFERS a result state that is not a genuine
     // success), and a plan cannot be forced to end on one. The model may end
     // elsewhere only by explaining why in `notes` — never silently.
-    if (hasSelectableResult && valid.length > 0 && !shape.notes?.trim()) {
+    if (successCandidates.length > 0 && valid.length > 0 && !shape.notes?.trim()) {
       const last = valid.reduce((a, b) =>
         timeline[a.sourceIndex]!.timestampMs >= timeline[b.sourceIndex]!.timestampMs ? a : b,
       );
       if (timeline[last.sourceIndex]!.actionType !== "result") {
+        // Real recordings keep going after the success moment (a179f069: the
+        // success sits at 45s of an 80s recording), so "end on the result
+        // state" is not enough — the retry needs the candidate indexes and an
+        // explicit licence to drop the trailing steps, or it reshapes blind.
+        // The shortfall path is notes, never adding states: told to "select
+        // additional states" a live retry padded with a loading screen —
+        // a fresh violation with no third call to fix it.
         violations.push(
-          "the last step must be the result/success state — the video ends there; if the timeline has no genuine success state (an error, warning or validation message is never success), keep your best journey and explain that in `notes` (Hebrew) instead",
+          `the last step must be the result/success state — the video ends there. This timeline's success candidates are at sourceIndex ${successCandidates
+            .map(({ i }) => i)
+            .join(
+              ", ",
+            )}: end the plan on one of them and drop every step after it; if the drop leaves fewer than ${shape.minSteps} steps, keep the shorter plan and explain why in \`notes\` (Hebrew) — never pad with loading, duplicate or otherwise skipped states. If none of the candidates is a genuine success (an error, warning or validation message is never success), keep your best journey and explain that in \`notes\` (Hebrew) instead`,
         );
       }
     }
@@ -530,11 +543,15 @@ export async function generateStepPlan(
   if (violations.length > 0) {
     // "Minimal edits" matters: a from-scratch replan routinely fixes the named
     // violations while introducing brand-new ones (seen live: the retry swapped
-    // in a fresh 5-word label), and there is no third call.
+    // in a fresh 5-word label), and there is no third call. The previous plan
+    // is echoed back because each call is stateless — without it the model
+    // cannot see the plan it is told to minimally edit and reinvents it
+    // (seen live on a179f069: the retry dropped the success state the first
+    // call had correctly selected).
     output = await callOnce(
-      `${text}\n\nYour previous plan violated these rules:\n${violations
+      `${text}\n\nYour previous plan was:\n${JSON.stringify(output, null, 2)}\n\nIt violated these rules:\n${violations
         .map((v) => `- ${v}`)
-        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep steps and labels that were not named above unchanged, and keep every label at 4 words maximum.`,
+        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 4 words maximum.`,
     );
     violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
       minSteps,
