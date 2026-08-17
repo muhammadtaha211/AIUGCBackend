@@ -1,5 +1,6 @@
 import { renderMedia, selectComposition } from "@remotion/renderer";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { sampleDurationInFrames } from "../src/fixtures";
 import { getBundle } from "../src/render";
@@ -17,9 +18,23 @@ export const TONE_FIXTURE = `${FIXTURE_DIR}tone.wav`;
  *  different pitch from its embedded tone so the two are told apart by ear. */
 export const VOICEOVER_FIXTURE = `${FIXTURE_DIR}voiceover.wav`;
 export const TALKING_HEAD_FIXTURE = `${FIXTURE_DIR}talking-head.mp4`;
+/** Steps-format stand-ins: a 3.5s hook clip and a 24s "demo" whose testsrc
+ *  clock makes every trim visible — a cut jumps the on-screen timestamp. */
+export const STEPS_HOOK_FIXTURE = `${FIXTURE_DIR}steps-hook.mp4`;
+export const STEPS_DEMO_FIXTURE = `${FIXTURE_DIR}steps-demo.mp4`;
 
 export async function ensureFixtures(): Promise<void> {
   mkdirSync(FIXTURE_DIR, { recursive: true });
+
+  // ffmpeg lavfi, not Remotion, for the steps fixtures: no audio stream by
+  // construction (the format is silent) and the clock/hue drift come free.
+  // ffmpeg is already a worker-box requirement; a machine without it keeps
+  // every pre-steps command working and only these fixtures are skipped.
+  ensureLavfiFixture(STEPS_HOOK_FIXTURE, "testsrc2=size=1080x1920:rate=30:duration=3.5");
+  ensureLavfiFixture(STEPS_DEMO_FIXTURE, "testsrc=size=1080x1920:rate=30:duration=24", [
+    "-vf",
+    "hue=H=6.28*t/24", // slow hue rotation: each trim point also has its own tint
+  ]);
 
   // The tones must exist before bundling: Remotion copies public/ into the
   // bundle, and the compositions load them with staticFile().
@@ -50,6 +65,29 @@ export async function ensureFixtures(): Promise<void> {
     logLevel: "error",
   });
   console.log(`wrote ${TALKING_HEAD_FIXTURE}`);
+}
+
+/** Generate one silent lavfi mp4; warn-and-skip when ffmpeg fails or is
+ *  missing so studio/render:sample keep working on a box without it. Encodes
+ *  to a temp name and renames on success: ffmpeg creates the output before
+ *  encoding, so an interrupted run must not leave a truncated file that the
+ *  existsSync guard then trusts forever. */
+function ensureLavfiFixture(file: string, source: string, extraArgs: string[] = []): void {
+  if (existsSync(file)) return;
+  const tmp = file.replace(/\.mp4$/, ".tmp.mp4");
+  const result = spawnSync(
+    "ffmpeg",
+    ["-y", "-f", "lavfi", "-i", source, ...extraArgs, "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "20", tmp],
+    { stdio: ["ignore", "ignore", "pipe"] },
+  );
+  if (result.error || result.status !== 0) {
+    rmSync(tmp, { force: true });
+    const detail = result.error?.message ?? result.stderr?.toString().trim().slice(-300);
+    console.warn(`ffmpeg failed for ${file} (needed only for the steps preview/sample — is ffmpeg on PATH?): ${detail}`);
+    return;
+  }
+  renameSync(tmp, file);
+  console.log(`wrote ${file}`);
 }
 
 /** 16-bit mono PCM WAV — a soft tone that wobbles, standing in for speech. */

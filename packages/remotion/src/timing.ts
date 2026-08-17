@@ -81,6 +81,59 @@ export function serviceATimeline(input: {
   return { durationInFrames, hookFrames, demoVisibleFrames, avatarStartFrame };
 }
 
+export interface ServiceAStepsTimelineStep {
+  /** Absolute composition frame where this step's sequence starts. */
+  fromFrame: number;
+  durationInFrames: number;
+  /** Frames of the demo skipped before this step's first shown frame. */
+  trimBeforeFrames: number;
+}
+
+export interface ServiceAStepsTimeline {
+  durationInFrames: number;
+  hookFrames: number;
+  steps: ServiceAStepsTimelineStep[];
+}
+
+/** Marker in the out-of-range throw below. The throw fires in the browser
+ *  during selectComposition and reaches Node as a plain Error, so render.ts
+ *  matches this substring to remap it to RenderPropsError (permanent). */
+export const STEP_OUT_OF_RANGE = "outside the demo";
+
+/**
+ * Steps-format length: hook, then the steps back to back, hard cuts between.
+ * A step whose window runs past the demo's end is clamped to it; a step whose
+ * TRIM starts outside the demo throws — that is a bad plan, and the throw in
+ * `calculateServiceAStepsMetadata` fails the render before any frame is paid
+ * for, instead of showing a frozen or black clip.
+ * Steps are laid out in the order given: chronology is the server's job.
+ */
+export function serviceAStepsTimeline(input: {
+  hookFrames: number;
+  demoFrames: number;
+  steps: { startMs: number; durationMs: number }[];
+}): ServiceAStepsTimeline {
+  const hookFrames = Math.max(1, input.hookFrames);
+  const demoFrames = Math.max(1, input.demoFrames);
+
+  const steps: ServiceAStepsTimelineStep[] = [];
+  let cursor = hookFrames;
+  input.steps.forEach((step, i) => {
+    const trimBeforeFrames = msToFrame(step.startMs);
+    if (step.startMs < 0 || trimBeforeFrames >= demoFrames) {
+      throw new Error(
+        `step ${i} starts at ${step.startMs}ms — ${STEP_OUT_OF_RANGE} (${demoFrames} frames)`,
+      );
+    }
+    const endFrame = Math.min(msToFrame(step.startMs + step.durationMs), demoFrames);
+    const durationInFrames = Math.max(1, endFrame - trimBeforeFrames);
+    steps.push({ fromFrame: cursor, durationInFrames, trimBeforeFrames });
+    cursor += durationInFrames;
+  });
+
+  return { durationInFrames: Math.max(1, cursor), hookFrames, steps };
+}
+
 /**
  * Index of the chunk to show at `ms`, or -1 for none.
  * A chunk holds until the next one starts; the last chunk holds until its own

@@ -100,11 +100,36 @@ const FUNCTION_WORDS = new Set([
   "כאן", "שם", "אחרי", "לפני", "בתוך", "עד", "ואז", "הנה", "ככה", "פשוט",
 ]);
 
-/** Edge punctuation stripped before matching; case folded for Latin. */
+/**
+ * Edge punctuation stripped before matching; case folded for Latin. Both sides
+ * of every comparison go through here: NFC first, Hebrew geresh/gershayim
+ * unified with their ASCII lookalikes (לו״ז vs לו"ז), combining marks (niqqud)
+ * dropped — screen OCR and model labels disagree on all three.
+ */
 function normalizeWord(raw: string): string {
   return raw
+    .normalize("NFC")
+    .replace(/׳/g, "'")
+    .replace(/״/g, '"')
+    .replace(/\p{M}+/gu, "")
     .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")
     .toLowerCase();
+}
+
+/**
+ * Split into comparable word tokens: on anything that is not a letter, digit
+ * or an in-word quote mark (kept so acronyms like לו"ז survive as one token).
+ * Whitespace-only splitting left ·/־/– glued to neighbouring words whenever
+ * the OCR dropped a space.
+ */
+function tokenizeWords(text: string): string[] {
+  // \p{M} keeps combining niqqud attached to its letter; normalizeWord then
+  // strips it from the finished token.
+  return text
+    .normalize("NFC")
+    .split(/[^\p{L}\p{M}\p{N}'"׳״]+/u)
+    .map(normalizeWord)
+    .filter(Boolean);
 }
 
 /**
@@ -133,22 +158,38 @@ function wordVariants(word: string): string[] {
 function questionnaireWords(questionnaire: Questionnaire): string[] {
   const out: string[] = [];
   for (const value of Object.values(questionnaire)) {
-    if (typeof value === "string") out.push(...value.split(/\s+/));
+    if (typeof value === "string") out.push(...tokenizeWords(value));
     else if (Array.isArray(value)) {
-      for (const item of value) if (typeof item === "string") out.push(...item.split(/\s+/));
+      for (const item of value) if (typeof item === "string") out.push(...tokenizeWords(item));
     }
   }
   return out;
 }
 
-function expandToVariantSet(words: string[]): Set<string> {
+/** Input tokens must already be normalized (tokenizeWords output). */
+function expandToVariantSet(tokens: string[]): Set<string> {
   const set = new Set<string>();
-  for (const raw of words) {
-    const normalized = normalizeWord(raw);
-    if (!normalized) continue;
-    for (const variant of wordVariants(normalized)) set.add(variant);
+  for (const token of tokens) {
+    for (const variant of wordVariants(token)) set.add(variant);
   }
   return set;
+}
+
+/**
+ * The maximal run of states around `index` linked by `sameStateAsPrevious` —
+ * ONE physical screen that handheld drift split into several states. OCR
+ * quality varies frame to frame across the run (the real BotTeacher recording
+ * clipped "נשלים" to "נשלי" on the run's anchor while a dup frame read it
+ * fully), so a state's allowed label words pool the whole run's visibleText.
+ */
+function dupRunIndexes(timeline: AnalysisState[], index: number): number[] {
+  let start = index;
+  while (start > 0 && timeline[start]!.sameStateAsPrevious) start--;
+  let end = index;
+  while (end + 1 < timeline.length && timeline[end + 1]!.sameStateAsPrevious) end++;
+  const indexes: number[] = [];
+  for (let i = start; i <= end; i++) indexes.push(i);
+  return indexes;
 }
 
 /**
@@ -157,8 +198,9 @@ function expandToVariantSet(words: string[]): Set<string> {
  * enforced here, not just requested in the prompt. This constrains the MODEL —
  * user-edited labels never pass through it. `shape` adds the plan-shape rules
  * the generation path enforces on top of the per-step rules: the video must
- * end on the success state (when the timeline offers a selectable one), and a
- * below-minimum plan must explain itself in `notes`. Human edits deliberately
+ * end on the success state (when the timeline offers a selectable one and
+ * `notes` does not explain why it cannot), and a below-minimum plan must
+ * explain itself in `notes`. Human edits deliberately
  * skip both — deleting steps just makes the video shorter.
  */
 export function findPlanViolations(
@@ -196,6 +238,8 @@ export function findPlanViolations(
     if (step.label.length > MAX_LABEL_CHARS) {
       violations.push(`step ${i}: label is over ${MAX_LABEL_CHARS} characters`);
     }
+    // The 4-word cap counts what the viewer sees (whitespace words); the
+    // content check below works on normalized tokens instead.
     const words = step.label.split(/\s+/).map(normalizeWord).filter(Boolean);
     if (words.length === 0) {
       violations.push(`step ${i}: label is empty`);
@@ -204,12 +248,19 @@ export function findPlanViolations(
     if (words.length > 4) {
       violations.push(`step ${i}: label "${step.label}" is over 4 words`);
     }
-    const allowedState = expandToVariantSet(state.visibleText.flatMap((t) => t.split(/\s+/)));
-    for (const word of words) {
+    const allowedState = expandToVariantSet(
+      dupRunIndexes(timeline, step.sourceIndex).flatMap((j) =>
+        timeline[j]!.visibleText.flatMap(tokenizeWords),
+      ),
+    );
+    for (const word of tokenizeWords(step.label)) {
       // Variants, not the exact word: Hebrew glues ו/ש/כ onto function words
       // constantly ("וגם", "שכבר") and a false reject here costs a paid
       // corrective re-request — or the whole plan on the second offence.
       if (wordVariants(word).some((v) => FUNCTION_WORDS.has(v))) continue;
+      // A prefix letter left standalone by punctuation ("ל־BotTeacher" splits
+      // into ל + botteacher) carries no content — it cannot fabricate a claim.
+      if (word.length === 1 && HEBREW_PREFIXES.has(word)) continue;
       const matches = wordVariants(word).some(
         (v) => allowedState.has(v) || allowedQuestionnaire.has(v),
       );
@@ -232,13 +283,17 @@ export function findPlanViolations(
     const valid = steps.filter(
       (s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex],
     );
-    if (hasSelectableResult && valid.length > 0) {
+    // `notes` waives the rule: the analysis may have typed error screens as
+    // "result" (the timeline then OFFERS a result state that is not a genuine
+    // success), and a plan cannot be forced to end on one. The model may end
+    // elsewhere only by explaining why in `notes` — never silently.
+    if (hasSelectableResult && valid.length > 0 && !shape.notes?.trim()) {
       const last = valid.reduce((a, b) =>
         timeline[a.sourceIndex]!.timestampMs >= timeline[b.sourceIndex]!.timestampMs ? a : b,
       );
       if (timeline[last.sourceIndex]!.actionType !== "result") {
         violations.push(
-          "the last step must be the result/success state — the video ends there",
+          "the last step must be the result/success state — the video ends there; if the timeline has no genuine success state (an error, warning or validation message is never success), keep your best journey and explain that in `notes` (Hebrew) instead",
         );
       }
     }
@@ -443,10 +498,13 @@ export async function generateStepPlan(
     notes: output.notes,
   });
   if (violations.length > 0) {
+    // "Minimal edits" matters: a from-scratch replan routinely fixes the named
+    // violations while introducing brand-new ones (seen live: the retry swapped
+    // in a fresh 5-word label), and there is no third call.
     output = await callOnce(
-      `${text}\n\nYour previous plan violated these rules — return a corrected plan:\n${violations
+      `${text}\n\nYour previous plan violated these rules:\n${violations
         .map((v) => `- ${v}`)
-        .join("\n")}`,
+        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep steps and labels that were not named above unchanged, and keep every label at 4 words maximum.`,
     );
     violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
       minSteps,
@@ -698,7 +756,17 @@ export async function approvePlan(db: Db, planId: string): Promise<StepPlan> {
 const fixtureSchema = z.object({
   questionnaire: questionnaireSchema,
   timeline: analysisTimelineSchema,
-  expected: z.object({ sourceIndexes: z.array(z.number()) }),
+  expected: z.object({
+    // The live (real-key) selection. `dryRunSourceIndexes` overrides it under
+    // DRY_RUN, where the deterministic keyless plan ignores the prompt's skip
+    // rules and so can legitimately differ from what the model selects.
+    sourceIndexes: z.array(z.number()),
+    dryRunSourceIndexes: z.array(z.number()).optional(),
+    // For timelines with no genuine success state (the real-footage fixtures):
+    // a plan that explains itself in `notes` is green even when the selection
+    // drifts run to run — the notes ARE the expected behaviour.
+    allowNotes: z.boolean().optional(),
+  }),
 });
 
 export interface PlanRegressionResult {
@@ -728,15 +796,22 @@ export async function runPlanRegression(db: Db): Promise<PlanRegressionResult[]>
     try {
       const raw = JSON.parse(readFileSync(path.join(FIXTURES_DIR, file), "utf8")) as unknown;
       const fixture = fixtureSchema.parse(raw);
-      expected = [...fixture.expected.sourceIndexes].sort((a, b) => a - b);
+      const pinned =
+        getEnv().DRY_RUN && fixture.expected.dryRunSourceIndexes
+          ? fixture.expected.dryRunSourceIndexes
+          : fixture.expected.sourceIndexes;
+      expected = [...pinned].sort((a, b) => a - b);
       const draft = await generateStepPlan(db, {
         timeline: fixture.timeline,
         questionnaire: fixture.questionnaire,
       });
       const actual = draft.steps.map((s) => s.sourceIndex).sort((a, b) => a - b);
+      const setMatch = JSON.stringify(actual) === JSON.stringify(expected);
+      const explained =
+        (fixture.expected.allowNotes ?? false) && draft.steps.length > 0 && !!draft.notes?.trim();
       results.push({
         fixture: file,
-        pass: JSON.stringify(actual) === JSON.stringify(expected),
+        pass: setMatch || explained,
         expected,
         actual,
         steps: draft.steps.map((s) => ({ sourceIndex: s.sourceIndex, label: s.label })),

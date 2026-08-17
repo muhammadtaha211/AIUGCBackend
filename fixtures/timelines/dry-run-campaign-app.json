@@ -3,25 +3,196 @@
     "category": "app_or_digital",
     "product_name": "קמפיינר",
     "what_it_does": "יוצר קמפיינים אוטומטית",
-    "advantages": ["מהיר", "בעברית", "בלי מעצב"],
+    "advantages": [
+      "מהיר",
+      "בעברית",
+      "בלי מעצב"
+    ],
     "target_audience": "בעלי עסקים קטנים",
     "tone": "friendly"
   },
   "timeline": [
-    { "timestampMs": 0, "screenName": "מסך פתיחה", "visibleText": ["ברוכים הבאים"], "action": "האפליקציה נפתחת", "actionType": "idle", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/0.jpg" },
-    { "timestampMs": 1500, "screenName": "התחברות", "visibleText": ["התחברות", "אימייל", "סיסמה"], "action": "מסך ההתחברות מוצג", "actionType": "navigate", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/1500.jpg" },
-    { "timestampMs": 3000, "screenName": "התחברות", "visibleText": ["התחברות", "אימייל"], "action": "הקלדת אימייל", "actionType": "type", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/3000.jpg" },
-    { "timestampMs": 4500, "screenName": "מסך הבית", "visibleText": ["הפרויקטים שלי", "פרויקט חדש"], "action": "מעבר למסך הבית", "actionType": "navigate", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/4500.jpg" },
-    { "timestampMs": 6000, "screenName": "מסך הבית", "visibleText": ["הפרויקטים שלי"], "action": "אותו מסך, כמעט ללא שינוי", "actionType": "idle", "sameStateAsPrevious": true, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/6000.jpg" },
-    { "timestampMs": 8000, "screenName": "פרויקט חדש", "visibleText": ["פרויקט חדש", "שם הפרויקט"], "action": "לחיצה על פרויקט חדש", "actionType": "tap", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/8000.jpg" },
-    { "timestampMs": 9500, "screenName": "פרויקט חדש", "visibleText": ["שם הפרויקט", "קמפיין קיץ"], "action": "הקלדת שם הפרויקט", "actionType": "type", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/9500.jpg" },
-    { "timestampMs": 11000, "screenName": "בחירת תבנית", "visibleText": ["בחרו תבנית", "מודעה", "פוסט"], "action": "בחירת תבנית מהרשימה", "actionType": "select", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": "בחירת תבניות מוכנות — לא מוזכר בשאלון", "thumbPath": "assets/fixture/demo/states/11000.jpg" },
-    { "timestampMs": 12500, "screenName": "עורך", "visibleText": [], "action": "גלילה בעורך — ברק על המסך", "actionType": "scroll", "sameStateAsPrevious": false, "legibility": "low", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/12500.jpg" },
-    { "timestampMs": 14000, "screenName": "לא ברור", "visibleText": [], "action": "המסך לא קריא בפריים הזה", "actionType": "idle", "sameStateAsPrevious": false, "legibility": "unreadable", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/14000.jpg" },
-    { "timestampMs": 16000, "screenName": "עורך", "visibleText": ["שמירה", "תצוגה מקדימה"], "action": "לחיצה על שמירה", "actionType": "tap", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/16000.jpg" },
-    { "timestampMs": 18500, "screenName": "הצלחה", "visibleText": ["הקמפיין נוצר!", "שיתוף"], "action": "מסך ההצלחה — הפרויקט מוכן", "actionType": "result", "sameStateAsPrevious": false, "legibility": "high", "salienceNote": null, "thumbPath": "assets/fixture/demo/states/18500.jpg" }
+    {
+      "timestampMs": 0,
+      "screenName": "מסך פתיחה",
+      "visibleText": [
+        "ברוכים הבאים"
+      ],
+      "action": "האפליקציה נפתחת",
+      "actionType": "idle",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/0.jpg"
+    },
+    {
+      "timestampMs": 1500,
+      "screenName": "התחברות",
+      "visibleText": [
+        "התחברות",
+        "אימייל",
+        "סיסמה"
+      ],
+      "action": "מסך ההתחברות מוצג",
+      "actionType": "navigate",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/1500.jpg"
+    },
+    {
+      "timestampMs": 3000,
+      "screenName": "התחברות",
+      "visibleText": [
+        "התחברות",
+        "אימייל"
+      ],
+      "action": "הקלדת אימייל",
+      "actionType": "type",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/3000.jpg"
+    },
+    {
+      "timestampMs": 4500,
+      "screenName": "מסך הבית",
+      "visibleText": [
+        "הפרויקטים שלי",
+        "פרויקט חדש"
+      ],
+      "action": "מעבר למסך הבית",
+      "actionType": "navigate",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/4500.jpg"
+    },
+    {
+      "timestampMs": 6000,
+      "screenName": "מסך הבית",
+      "visibleText": [
+        "הפרויקטים שלי"
+      ],
+      "action": "אותו מסך, כמעט ללא שינוי",
+      "actionType": "idle",
+      "sameStateAsPrevious": true,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/6000.jpg"
+    },
+    {
+      "timestampMs": 8000,
+      "screenName": "פרויקט חדש",
+      "visibleText": [
+        "פרויקט חדש",
+        "שם הפרויקט"
+      ],
+      "action": "לחיצה על פרויקט חדש",
+      "actionType": "tap",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/8000.jpg"
+    },
+    {
+      "timestampMs": 9500,
+      "screenName": "פרויקט חדש",
+      "visibleText": [
+        "שם הפרויקט",
+        "קמפיין קיץ"
+      ],
+      "action": "הקלדת שם הפרויקט",
+      "actionType": "type",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/9500.jpg"
+    },
+    {
+      "timestampMs": 11000,
+      "screenName": "בחירת תבנית",
+      "visibleText": [
+        "בחרו תבנית",
+        "מודעה",
+        "פוסט"
+      ],
+      "action": "בחירת תבנית מהרשימה",
+      "actionType": "select",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": "בחירת תבניות מוכנות — לא מוזכר בשאלון",
+      "thumbPath": "assets/fixture/demo/states/11000.jpg"
+    },
+    {
+      "timestampMs": 12500,
+      "screenName": "עורך",
+      "visibleText": [],
+      "action": "גלילה בעורך — ברק על המסך",
+      "actionType": "scroll",
+      "sameStateAsPrevious": false,
+      "legibility": "low",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/12500.jpg"
+    },
+    {
+      "timestampMs": 14000,
+      "screenName": "לא ברור",
+      "visibleText": [],
+      "action": "המסך לא קריא בפריים הזה",
+      "actionType": "idle",
+      "sameStateAsPrevious": false,
+      "legibility": "unreadable",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/14000.jpg"
+    },
+    {
+      "timestampMs": 16000,
+      "screenName": "עורך",
+      "visibleText": [
+        "שמירה",
+        "תצוגה מקדימה"
+      ],
+      "action": "לחיצה על שמירה",
+      "actionType": "tap",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/16000.jpg"
+    },
+    {
+      "timestampMs": 18500,
+      "screenName": "הצלחה",
+      "visibleText": [
+        "הקמפיין נוצר!",
+        "שיתוף"
+      ],
+      "action": "מסך ההצלחה — הפרויקט מוכן",
+      "actionType": "result",
+      "sameStateAsPrevious": false,
+      "legibility": "high",
+      "salienceNote": null,
+      "thumbPath": "assets/fixture/demo/states/18500.jpg"
+    }
   ],
   "expected": {
-    "sourceIndexes": [1, 2, 3, 5, 6, 7, 10, 11]
+    "sourceIndexes": [
+      3,
+      5,
+      6,
+      7,
+      10,
+      11
+    ],
+    "dryRunSourceIndexes": [
+      1,
+      2,
+      3,
+      5,
+      6,
+      7,
+      10,
+      11
+    ]
   }
 }

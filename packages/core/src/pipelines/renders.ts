@@ -12,6 +12,7 @@ import {
   composites,
   creditLedger,
   demos,
+  demoStepPlans,
   events,
   hookClips,
   personaImages,
@@ -44,6 +45,7 @@ import {
 import { renderVideo, type RenderVideoProps, type TextSafeArea } from "../providers/remotion";
 import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
+import { planStepsSchema } from "./demo-step-plans";
 import type { VariantParams } from "./sets";
 
 /**
@@ -357,9 +359,12 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
 
     const localDir = path.join(WORK_DIR, "render", videoRenderId);
     mkdirSync(localDir, { recursive: true });
+    const format = (render.params as VariantParams).format;
     const props =
       render.service === "a"
-        ? await buildServiceAProps(ctx.db, render, localDir)
+        ? format === "steps"
+          ? await buildServiceAStepsProps(ctx.db, render, localDir)
+          : await buildServiceAProps(ctx.db, render, localDir)
         : await buildServiceBProps(ctx.db, render, localDir);
 
     const outPath = path.join(localDir, "final.mp4");
@@ -497,6 +502,68 @@ async function buildServiceAProps(
     // Last on purpose: the DRY_RUN render echoes a prefix of these props, and
     // captions are the one unbounded field.
     captions,
+  };
+}
+
+/**
+ * Steps format: the approved plan becomes trims + labels over the one
+ * normalized demo file. Silent by design — no VO, no captions, no audio
+ * lookups at all; the composition mounts the demo N times with different
+ * trims, so this downloads exactly two files.
+ */
+async function buildServiceAStepsProps(
+  db: Db,
+  render: typeof videoRenders.$inferSelect,
+  localDir: string,
+): Promise<RenderVideoProps> {
+  const params = render.params as VariantParams;
+  const storage = getStorage();
+
+  if (!render.setId) throw new PermanentError("service A render has no set");
+  const set = (await db.select().from(sets).where(eq(sets.id, render.setId)).limit(1))[0]!;
+  const demo = (await db.select().from(demos).where(eq(demos.id, set.demoId!)).limit(1))[0];
+  if (!demo?.normalizedPath) throw new PermanentError("demo has no normalized file");
+
+  const hookClip = (
+    await db.select().from(hookClips).where(eq(hookClips.id, params.hookClipId)).limit(1)
+  )[0];
+  if (!hookClip) throw new PermanentError("hook clip not found");
+
+  const hookLine = (
+    await db.select().from(scripts).where(eq(scripts.id, params.hookLineScriptId)).limit(1)
+  )[0];
+  if (!hookLine) throw new PermanentError("hook line script not found");
+
+  if (!params.stepPlanId) throw new PermanentError("steps render has no stepPlanId");
+  const plan = (
+    await db.select().from(demoStepPlans).where(eq(demoStepPlans.id, params.stepPlanId)).limit(1)
+  )[0];
+  if (!plan) throw new PermanentError("step plan not found");
+  // The hard gate, re-checked at render time exactly like audio approval.
+  if (!plan.approvedAt) throw new PermanentError("step plan is not approved (hard gate)");
+  // Malformed steps fail identically on every retry — permanent, like any
+  // other bad render input (only DB corruption gets here; plans are
+  // validated at write).
+  const parsedSteps = planStepsSchema.safeParse(plan.steps);
+  if (!parsedSteps.success) throw new PermanentError("step plan has malformed steps");
+  const steps = parsedSteps.data;
+
+  const demoPath = path.join(localDir, "demo.mp4");
+  const hookClipPath = path.join(localDir, "hook.mp4");
+  await storage.download(demo.normalizedPath, demoPath);
+  await storage.download(hookClip.filePath, hookClipPath);
+
+  return {
+    kind: "service_a_steps",
+    hookClipPath,
+    hookLine: hookLine.text,
+    hookTextSafeArea: resolveHookTextSafeArea(
+      params.textSafeArea,
+      hookClip.textSafeArea as TextSafeArea,
+    ),
+    demoPath,
+    steps: steps.map((s) => ({ startMs: s.timestampMs, durationMs: s.durationMs, label: s.label })),
+    watermark: render.watermarked,
   };
 }
 

@@ -90,10 +90,43 @@ export const serviceASchema = z.object({
   avatarDurationInFrames: z.number().optional(),
 });
 
+/** One step of the steps format: a window cut from the demo + its burned label. */
+export const stepSegmentSchema = z.object({
+  /** Where in the SOURCE demo this step's clip starts. */
+  startMs: z.number().nonnegative(),
+  /** Positive by contract: a zero/negative window (e.g. a bad
+   *  a_step_ms_by_action config value) must fail at pay time, not render a
+   *  1-frame flash — the timeline's 1-frame floor is rounding safety only. */
+  durationMs: z.number().positive(),
+  /** Short Hebrew line burned in the lower-third rect while the step plays. */
+  label: z.string(),
+});
+
+export const serviceAStepsSchema = z.object({
+  /** The bank reaction clip — always muted: the hook is read, not heard. */
+  hookSrc: z.string(),
+  hookLine: z.string(),
+  hookTextSafeArea: textSafeAreaSchema,
+  /** ONE demo file; every step mounts it with a different trim — no concat,
+   *  no intermediate encode. */
+  demoSrc: z.string(),
+  /** Chronological (the server sorts by timestamp — a property of the format). */
+  steps: z.array(stepSegmentSchema).min(1),
+  watermark: z.boolean(),
+  /**
+   * Filled in by `calculateServiceAStepsMetadata` (which probes the actual
+   * files), not by the caller. Absent only in Studio before metadata resolves.
+   */
+  hookDurationInFrames: z.number().optional(),
+  demoDurationInFrames: z.number().optional(),
+});
+
 export type WordTiming = z.infer<typeof wordTimingSchema>;
 export type CaptionChunk = z.infer<typeof captionChunkSchema>;
 export type ServiceBProps = z.infer<typeof serviceBSchema>;
 export type ServiceAProps = z.infer<typeof serviceASchema>;
+export type ServiceAStepsProps = z.infer<typeof serviceAStepsSchema>;
+export type StepSegment = z.infer<typeof stepSegmentSchema>;
 export type TextSafeArea = z.infer<typeof textSafeAreaSchema>;
 
 /** Locked output format: vertical 9:16, 1080x1920, 30fps. */

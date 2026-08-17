@@ -63,3 +63,19 @@ export const sampleCaptions: CaptionChunk[] = (() => {
  */
 export const sampleDurationInFrames =
   msToFrame(sampleCaptions[sampleCaptions.length - 1]!.endMs) + FPS / 2;
+
+/**
+ * Preview steps for the lavfi clock demo (fixtures/steps-demo.mp4, 24s): six
+ * windows in the 12–17s target shape. The demo's on-screen clock jumps at
+ * every cut, so a wrong trim is visible by eye, and the last step's window
+ * overruns the demo (21s + 3.5s > 24s) so the end-clamp genuinely binds —
+ * the sample ends exactly on the demo's final frame.
+ */
+export const sampleSteps = [
+  { startMs: 1000, durationMs: 1800, label: "נכנסים לאפליקציה" },
+  { startMs: 5000, durationMs: 1600, label: "בוחרים מוצר" },
+  { startMs: 9000, durationMs: 2200, label: "מוסיפים לסל" },
+  { startMs: 13_000, durationMs: 2200, label: "ממלאים פרטים" },
+  { startMs: 17_000, durationMs: 1600, label: "מאשרים הזמנה" },
+  { startMs: 21_000, durationMs: 3500, label: "וזהו, ההזמנה בדרך" },
+];

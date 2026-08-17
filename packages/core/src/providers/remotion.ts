@@ -45,6 +45,21 @@ export interface RenderServiceAProps {
   watermark: boolean;
 }
 
+export interface RenderServiceAStepsProps {
+  kind: "service_a_steps";
+  hookClipPath: string;
+  hookLine: string;
+  hookTextSafeArea: TextSafeArea;
+  /** ONE demo file; every step trims it — no concat, no intermediate encode.
+   *  No duration field: the composition probes the stored file itself. */
+  demoPath: string;
+  /** Chronological (the plan is server-sorted by timestamp). */
+  steps: { startMs: number; durationMs: number; label: string }[];
+  watermark: boolean;
+  /* Silent by design (locked): no voiceover, no captions, no music, no SFX —
+   * the output mp4 has no audio stream at all. */
+}
+
 export interface RenderServiceBProps {
   kind: "service_b";
   /** Lip-synced talking-head clip (InfiniteTalk output, downloaded locally). */
@@ -61,11 +76,18 @@ export interface RenderServiceBProps {
   watermark: boolean;
 }
 
-export type RenderVideoProps = RenderServiceAProps | RenderServiceBProps;
+export type RenderVideoProps =
+  | RenderServiceAProps
+  | RenderServiceAStepsProps
+  | RenderServiceBProps;
 
 /** @aiugc/remotion, loaded lazily — see loadRemotion(). */
 interface RemotionRenderModule {
   renderServiceA(props: Omit<RenderServiceAProps, "kind">, outPath: string): Promise<void>;
+  renderServiceASteps(
+    props: Omit<RenderServiceAStepsProps, "kind">,
+    outPath: string,
+  ): Promise<void>;
   renderServiceB(props: Omit<RenderServiceBProps, "kind">, outPath: string): Promise<void>;
 }
 
@@ -93,6 +115,9 @@ export async function renderVideo(props: RenderVideoProps, outPath: string): Pro
     if (props.kind === "service_a") {
       const { kind, ...serviceA } = props;
       await remotion.renderServiceA(serviceA, outPath);
+    } else if (props.kind === "service_a_steps") {
+      const { kind, ...serviceASteps } = props;
+      await remotion.renderServiceASteps(serviceASteps, outPath);
     } else {
       const { kind, ...serviceB } = props;
       await remotion.renderServiceB(serviceB, outPath);

@@ -14,7 +14,8 @@
     "studio": "tsx scripts/make-fixtures.ts && remotion studio src/index.ts",
     "render:sample": "tsx scripts/render-sample.ts",
     "render:sample:watermark": "tsx scripts/render-sample.ts --watermark",
-    "render:sample:a": "tsx scripts/render-sample.ts --service-a"
+    "render:sample:a": "tsx scripts/render-sample.ts --service-a",
+    "render:sample:steps": "tsx scripts/render-sample.ts --steps"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.499",

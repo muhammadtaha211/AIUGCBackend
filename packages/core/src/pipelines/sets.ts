@@ -19,12 +19,14 @@ import {
   creditCostsSchema,
   quoteEndingReroll,
   quoteServiceA,
+  quoteServiceASteps,
   quoteServiceB,
   type QuoteComponent,
 } from "../pricing";
 import { lipsyncExpressivenessSchema, type LipsyncExpressiveness } from "../providers/lipsync";
 import { businessOwnerId, creditBalance, debitRender, InsufficientCreditsError } from "./credits";
 import { isAdminOwned } from "./businesses";
+import { getStepPlan } from "./demo-step-plans";
 
 /**
  * A Set is a parameter grid over one demo + one questionnaire — the
@@ -35,6 +37,15 @@ export const setGridSchema = z.object({
   hookClipIds: z.array(z.string().uuid()).min(1),
   hookLineScriptIds: z.array(z.string().uuid()).min(1),
   mode: z.enum(["silent", "voiced"]),
+  /**
+   * "steps" = the step-plan format (silent, no captions, no VO, no outro);
+   * "full" = the older demo-with-captions format, CLI-reachable only. Absent
+   * resolves from stepPlanId so pre-existing grids and callers stay valid —
+   * the wizard always passes "steps" explicitly.
+   */
+  format: z.enum(["steps", "full"]).optional(),
+  /** Steps format: the APPROVED demo_step_plans row the render composes. */
+  stepPlanId: z.string().uuid().optional(),
   /** Required for silent mode: the benefit_captions script. */
   captionScriptId: z.string().uuid().optional(),
   /** Required for voiced mode: an APPROVED audio render. */
@@ -51,6 +62,10 @@ export interface VariantParams {
   hookClipId: string;
   hookLineScriptId: string;
   mode: "silent" | "voiced";
+  /** Absent on pre-steps rows = "full". renders.ts dispatches on this. */
+  format?: "steps" | "full";
+  /** Steps format: the approved plan this render composes (pinned by id). */
+  stepPlanId?: string;
   captionScriptId?: string;
   audioRenderId?: string;
   /** Service B: resolves to the persona's default reference image at render time. */
@@ -124,13 +139,33 @@ export async function createSet(
   opts: { businessId: string; demoId: string; grid: SetGrid; parentVariantId?: string },
 ) {
   const grid = setGridSchema.parse(opts.grid);
+  // Absent format on a grid with a stepPlanId means steps; absent on anything
+  // else means full — every pre-steps row and caller keeps its old meaning.
+  const format = grid.format ?? (grid.stepPlanId ? "steps" : "full");
+  // Refuse the contradictory grid rather than store a half-ignored field.
+  if (format === "full" && grid.stepPlanId) {
+    throw new Error("full format does not take a stepPlanId — pass format \"steps\" or drop it");
+  }
 
   const demoRows = await db.select().from(demos).where(eq(demos.id, opts.demoId)).limit(1);
   const demo = demoRows[0];
   if (demo?.status !== "ready") throw new Error("demo is not ready");
 
   let outro: Pick<VariantParams, "outroMode" | "voSliceMs"> = {};
-  if (grid.mode === "voiced") {
+  if (format === "steps") {
+    // Steps is silent by definition: no VO, no outro, no captions requirement.
+    if (grid.mode === "voiced") throw new Error("steps format is silent — voiced mode does not apply");
+    if (!grid.stepPlanId) throw new Error("steps format requires stepPlanId");
+    const plan = await getStepPlan(db, grid.stepPlanId);
+    if (!plan) throw new Error(`step plan ${grid.stepPlanId} not found`);
+    if (plan.demoId !== opts.demoId) {
+      throw new Error(`step plan ${grid.stepPlanId} belongs to a different demo`);
+    }
+    // The hard gate, same as audio: never render against an unapproved plan.
+    if (plan.status !== "ready" || !plan.approvedAt) {
+      throw new Error("step plan must be approved before rendering (hard gate)");
+    }
+  } else if (grid.mode === "voiced") {
     if (!grid.audioRenderId) throw new Error("voiced mode requires audioRenderId");
     const plan = await planAOutro(db, { demoId: opts.demoId, audioRenderId: grid.audioRenderId });
     if (plan.outroMode === "avatar" && !grid.personaId) {
@@ -153,6 +188,8 @@ export async function createSet(
       hookClipId,
       hookLineScriptId,
       mode: grid.mode,
+      format,
+      stepPlanId: grid.stepPlanId,
       captionScriptId: grid.captionScriptId,
       audioRenderId: grid.audioRenderId,
       personaId: grid.personaId,
@@ -161,15 +198,19 @@ export async function createSet(
     })),
   );
 
-  // Voiced sets are priced from the ending; silent sets have no VO to price
-  // from, so they fall back to the assembly flat + demo seconds.
-  const quote = grid.audioRenderId
-    ? await quoteASet(db, {
-        businessId: opts.businessId,
-        demoId: opts.demoId,
-        audioRenderId: grid.audioRenderId,
-      })
-    : await quoteSilentASet(db, { businessId: opts.businessId, demo });
+  // Steps is a flat (near-constant marginal cost); voiced full-format sets are
+  // priced from the ending; silent full-format sets have no VO to price from,
+  // so they fall back to the assembly flat + demo seconds.
+  const quote =
+    format === "steps"
+      ? await quoteStepsASet(db, opts.businessId)
+      : grid.audioRenderId
+        ? await quoteASet(db, {
+            businessId: opts.businessId,
+            demoId: opts.demoId,
+            audioRenderId: grid.audioRenderId,
+          })
+        : await quoteSilentASet(db, { businessId: opts.businessId, demo });
   assertAffordable(quote, cells.length);
 
   // One transaction: the set, its renders, their debits and their jobs commit
@@ -221,6 +262,13 @@ export async function createSet(
     }
     return { set, renders };
   });
+}
+
+/** Steps format: the flat — one amortised analysis + one Remotion render. */
+async function quoteStepsASet(db: Db, businessId: string): Promise<RenderQuote> {
+  const { chargeable, costs, balance } = await quoteContext(db, businessId);
+  const quote = quoteServiceASteps({ costs });
+  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
 }
 
 /** Silent Service A: no VO, so no ending — assembly flat + demo seconds only. */
@@ -288,6 +336,9 @@ export async function moreLikeThis(
       hookClipIds: opts.hookClipIds ?? [held.hookClipId],
       hookLineScriptIds: opts.hookLineScriptIds ?? [held.hookLineScriptId],
       mode: held.mode,
+      // Absent on pre-steps variants: createSet resolves absent to "full".
+      format: held.format,
+      stepPlanId: held.stepPlanId,
       captionScriptId: held.captionScriptId,
       audioRenderId: held.audioRenderId,
       personaId: held.personaId,

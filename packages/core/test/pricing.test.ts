@@ -4,6 +4,7 @@ import {
   quoteAssemblyRemix,
   quoteEndingReroll,
   quoteServiceA,
+  quoteServiceASteps,
   quoteServiceB,
   type CreditCosts,
 } from "../src/pricing";
@@ -23,6 +24,7 @@ const HYBRID: CreditCosts = {
   b_minimum_credits: 0,
   a_ending_reroll_per_second: 1,
   a_remix_assembly_credits: 2,
+  a_steps_credits: 5,
 };
 
 /** Model (i): marginal cost only — a flat plus the outro seconds. */
@@ -211,6 +213,22 @@ describe("quoteAssemblyRemix", () => {
       quoteServiceA({ demoSeconds: 35, outroMode: "avatar", outroSeconds: 6, costs: HYBRID })
         .credits,
     );
+  });
+});
+
+describe("quoteServiceASteps", () => {
+  it("is the flat key — never the uploaded duration", () => {
+    // A 3-minute recording under the full-format quote would price ~31
+    // credits for a ~20s output; the steps flat doesn't look at the demo.
+    const quote = quoteServiceASteps({ costs: HYBRID });
+    expect(quote.credits).toBe(5);
+    expect(quote.components).toEqual([{ kind: "steps", credits: 5 }]);
+  });
+
+  it("is floor-exempt — the flat IS the price, tuning it below the floor works", () => {
+    const quote = quoteServiceASteps({ costs: { ...HYBRID, a_steps_credits: 3 } });
+    expect(quote.credits).toBe(3);
+    expect(quote.minimumApplied).toBe(false);
   });
 });
 

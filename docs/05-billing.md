@@ -76,6 +76,7 @@ function. A second place that computes a price is a bug, not an optimisation.
 
 ```
 quoteServiceA({ demoSeconds, outroMode, outroSeconds, costs })
+quoteServiceASteps({ costs })
 quoteServiceB({ durationMs, costs })
 quoteEndingReroll({ sliceSeconds, costs })
 quoteAssemblyRemix({ costs })
@@ -86,7 +87,7 @@ Never ceil per component — a 34s demo with a 6.5s ending quotes 15 that way an
 and any drift between the displayed quote and the debit is the failure this module exists to
 prevent.
 
-### `credit_costs` (app_config, migration 0017)
+### `credit_costs` (app_config, migrations 0017 + 0026)
 
 ```json
 {
@@ -97,9 +98,14 @@ prevent.
   "b_per_second": 1,
   "b_minimum_credits": 0,
   "a_ending_reroll_per_second": 1,
-  "a_remix_assembly_credits": 2
+  "a_remix_assembly_credits": 2,
+  "a_steps_credits": 5
 }
 ```
+
+**Every key is required by `creditCostsSchema`** — restoring this row from an older copy of this
+block (without `a_steps_credits`) makes every quote path throw. 0026 must be applied before any
+build carrying the schema key deploys.
 
 Rates are `z.number()`, **not** `.int()` — whole-credit-per-second steps make tuning impossible.
 The charge is always an integer because of the single ceil. Tuning any of this is an `UPDATE` on
@@ -114,6 +120,11 @@ this row, never a deploy; the code does not know which pricing model won.
   clip, the hook line, or the text rect re-runs assembly and nothing else, at near-zero marginal
   cost. It still goes through `createSet`, so a naive floor would silently price it like a fresh
   video and kill the volume play.
+- `a_steps_credits` (0026) is the **flat price of a steps-format render**, also floor-exempt:
+  one analysis amortised over unlimited variants plus one Remotion render is near-constant
+  marginal cost. The full-format quote would bill the UPLOADED duration — a 3-minute recording
+  would price ~31 credits for a ~20s output, at a rate calibrated to subsidise a TTS funnel the
+  steps format doesn't use.
 
 ### Semantics (`credits.ts` + `sets.ts`)
 

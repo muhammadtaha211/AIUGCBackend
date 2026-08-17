@@ -20,6 +20,7 @@ import {
   updateScriptText,
 } from "../src/pipelines/copy";
 import { creditBalance } from "../src/pipelines/credits";
+import { approvePlan, getStepPlan, requestDemoPlan } from "../src/pipelines/demo-step-plans";
 import { createDemo } from "../src/pipelines/demos";
 import { listQcQueue, releaseRender } from "../src/pipelines/qc";
 import { createBRender, createSet, moreLikeThis, starVariant } from "../src/pipelines/sets";
@@ -239,6 +240,65 @@ describe("founder workflow (dry-run, end to end)", () => {
     expect(starEvents).toHaveLength(1);
     await drainAll();
   });
+
+  it(
+    "steps format: analyse -> plan -> approve gate -> flat-priced silent set",
+    { timeout: 60_000 },
+    async () => {
+      // The analysis is already ready: handleIngestDemo enqueued analyze_demo
+      // at the ready exit and the first leg's drainAll ran it.
+      const { planId } = await requestDemoPlan(db, demoId);
+      await drainAll();
+      expect((await getStepPlan(db, planId))?.status).toBe("ready");
+
+      const stepsGrid = {
+        hookClipIds: [hookClipId],
+        hookLineScriptIds: [hookLineIds[0]!],
+        mode: "silent" as const,
+        format: "steps" as const,
+        stepPlanId: planId,
+      };
+      // The hard gate: rendering against an unapproved plan must fail.
+      await expect(createSet(db, { businessId, demoId, grid: stepsGrid })).rejects.toThrow(
+        /approved/,
+      );
+
+      await approvePlan(db, planId);
+      const { renders } = await createSet(db, { businessId, demoId, grid: stepsGrid });
+      expect(renders).toHaveLength(1);
+      const params = renders[0]!.params as {
+        format?: string;
+        stepPlanId?: string;
+        outroMode?: string;
+      };
+      expect(params.format).toBe("steps");
+      expect(params.stepPlanId).toBe(planId);
+      // No VO means no outro decision — planAOutro must not have run.
+      expect(params.outroMode).toBeUndefined();
+      await drainAll();
+
+      const row = (
+        await db
+          .select()
+          .from(dbSchema.videoRenders)
+          .where(sql`${dbSchema.videoRenders.id} = ${renders[0]!.id}`)
+      )[0]!;
+      expect(row.status).toBe("released");
+
+      // The DRY_RUN render echoes its props into the output file: the steps
+      // composition got the plan's trims and labels — an .mp4 on disk.
+      const renderedProps = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+      expect(renderedProps).toContain('"kind":"service_a_steps"');
+      expect(renderedProps).toContain('"steps":[{');
+
+      // "More like this" carries the steps fields through the same gate.
+      const { renders: more } = await moreLikeThis(db, { variantId: renders[0]!.id });
+      const moreParams = more[0]!.params as { format?: string; stepPlanId?: string };
+      expect(moreParams.format).toBe("steps");
+      expect(moreParams.stepPlanId).toBe(planId);
+      await drainAll();
+    },
+  );
 
   it(
     "service B: b-script -> tts -> lipsync poll -> QC gate -> release",

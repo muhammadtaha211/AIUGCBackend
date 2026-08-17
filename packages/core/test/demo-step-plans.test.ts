@@ -298,6 +298,14 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         { minSteps: 1, notes: null },
       ),
     ).toEqual([]);
+    // Ends mid-journey but `notes` explains (the timeline's only "result"
+    // states may be mistyped error screens) -> the notes waive the rule.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, QUESTIONNAIRE, 8, {
+        minSteps: 1,
+        notes: "אין בהקלטה מסך סיום ברור",
+      }),
+    ).toEqual([]);
     // No selectable result in the timeline -> the rule cannot apply.
     expect(
       findPlanViolations(
@@ -333,6 +341,71 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         { minSteps: 6, notes: "יש רק שני מסכים מובחנים" },
       ),
     ).toEqual([]);
+  });
+
+  it("pools visibleText across a sameStateAsPrevious run (real BotTeacher state 36)", () => {
+    // Exact strings from demo ba70c3d7 / analysis 6a1b247e: the anchor frame's
+    // OCR clipped "נשלים" to "נשלי"; the dup frames of the SAME screen read it
+    // fully. The label must match against the whole run, not the anchor alone.
+    const run: AnalysisState[] = [
+      state({
+        timestampMs: 54_600,
+        visibleText: ["עוד רגע לפני שמתחילים – בואו נשלי", "הפרטים האקדמיים קובעים איך נתאים לך את המערכת. אפשר לשנות ב", "Mohamed Taha", "סוג תואר"],
+        actionType: "navigate",
+      }),
+      state({
+        timestampMs: 55_600,
+        visibleText: ["עוד רגע לפני שמתחילים – בואו נשלים פרט"],
+        sameStateAsPrevious: true,
+        legibility: "low",
+        actionType: "idle",
+      }),
+      state({
+        timestampMs: 56_800,
+        visibleText: ["רגע לפני שמתחילים – בואו נשלים פרטים"],
+        sameStateAsPrevious: true,
+        legibility: "low",
+        actionType: "idle",
+      }),
+    ];
+    // The word the anchor clipped, found on the dups: no violation.
+    expect(findPlanViolations([{ sourceIndex: 0, label: "בואו נשלים" }], run, QUESTIONNAIRE, 8)).toEqual([]);
+    // A word absent from the entire run still fails — pooling adds no slack.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "חוויה" }], run, QUESTIONNAIRE, 8).some((v) =>
+        v.includes("חוויה"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the מלאה true positive (real BotTeacher state 72)", () => {
+    // State 72's run is itself alone; the screen says "מבחן מלא", never "מלאה".
+    const tourState = state({
+      timestampMs: 109_800,
+      visibleText: ["boteacher", "BRONZE · עוזר אקדמי אישי", "6/11", "מכונת המבחנים", "סימולציה של מבחן מלא על חומר הקורס, עם ציון בסוף – כדי", "שתגיע למבחן האמיתי בלי חן", "המשך", "חזור", "דלג על הכל"],
+      actionType: "navigate",
+    });
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "סימולציה מלאה" }], [tourState], QUESTIONNAIRE, 8).some(
+        (v) => v.includes("מלאה"),
+      ),
+    ).toBe(true);
+    // Words genuinely on that screen pass, including across the · separator.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "מכונת המבחנים" }], [tourState], QUESTIONNAIRE, 8),
+    ).toEqual([]);
+  });
+
+  it("normalizes gershayim, glued separators and niqqud on both sides", () => {
+    const noisy: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ['הלו"ז שלי', "BRONZE·עוזר אקדמי", "שָׁלוֹם"] }),
+    ];
+    // Hebrew gershayim (U+05F4) in the label vs ASCII quote on screen.
+    expect(findPlanViolations([{ sourceIndex: 0, label: "לו״ז" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
+    // The OCR glued a · onto the word; whitespace splitting left it stuck.
+    expect(findPlanViolations([{ sourceIndex: 0, label: "עוזר" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
+    // Screen carries niqqud, the label does not.
+    expect(findPlanViolations([{ sourceIndex: 0, label: "שלום" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
   });
 
   it("allows function words but flags fabricated content words", () => {
