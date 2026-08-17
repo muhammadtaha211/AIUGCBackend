@@ -61,7 +61,7 @@ describe("clusterStates", () => {
   it("collapses a static screen into one cluster", async () => {
     const hashes = await frameHashes(staticClip, { fps: 5 });
     const timestamps = hashes.map((_, i) => i * 200);
-    const clusters = clusterStates(hashes, timestamps, { maxHamming: 10 });
+    const clusters = clusterStates(hashes, timestamps, { maxHamming: 14 });
     expect(clusters).toHaveLength(1);
     expect(clusters[0]!.startMs).toBe(0);
     expect(clusters[0]!.endMs).toBe(timestamps[timestamps.length - 1]);
@@ -70,7 +70,7 @@ describe("clusterStates", () => {
   it("splits on a real content change", async () => {
     const hashes = await frameHashes(twoScene, { fps: 5 });
     const timestamps = hashes.map((_, i) => i * 200);
-    const clusters = clusterStates(hashes, timestamps, { maxHamming: 10 });
+    const clusters = clusterStates(hashes, timestamps, { maxHamming: 14 });
     expect(clusters).toHaveLength(2);
     // The cut is at 2000ms; each cluster must sit fully on its own side.
     expect(clusters[0]!.endMs).toBeLessThan(2000);
@@ -84,7 +84,7 @@ describe("clusterStates", () => {
   it("splits a flat-to-flat cut on the luma band alone", async () => {
     const hashes = await frameHashes(flatCut, { fps: 5 });
     const timestamps = hashes.map((_, i) => i * 200);
-    const clusters = clusterStates(hashes, timestamps, { maxHamming: 10 });
+    const clusters = clusterStates(hashes, timestamps, { maxHamming: 14 });
     expect(clusters).toHaveLength(2);
   });
 
@@ -93,7 +93,7 @@ describe("clusterStates", () => {
     // Neighbour comparison would merge all 9 frames into one cluster.
     const hashes = Array.from({ length: 9 }, (_, i) => (1n << BigInt(3 * i)) - 1n);
     const timestamps = hashes.map((_, i) => i * 200);
-    const clusters = clusterStates(hashes, timestamps, { maxHamming: 10 });
+    const clusters = clusterStates(hashes, timestamps, { maxHamming: 14 });
     expect(clusters.length).toBeGreaterThan(1);
   });
 
@@ -102,13 +102,13 @@ describe("clusterStates", () => {
     const noise = (1n << 40n) - 1n; // far from stable
     const hashes = [stable, stable, stable, noise, stable, stable, stable];
     const timestamps = hashes.map((_, i) => i * 200);
-    const clusters = clusterStates(hashes, timestamps, { maxHamming: 10, minFrames: 2 });
+    const clusters = clusterStates(hashes, timestamps, { maxHamming: 14, minFrames: 2 });
     expect(clusters).toHaveLength(2);
     expect(clusters.map((c) => c.representativeMs)).not.toContain(600); // the noise frame
   });
 
   it("rejects mismatched input lengths", () => {
-    expect(() => clusterStates([0n], [], { maxHamming: 10 })).toThrow("1 hashes");
+    expect(() => clusterStates([0n], [], { maxHamming: 14 })).toThrow("1 hashes");
   });
 });
 

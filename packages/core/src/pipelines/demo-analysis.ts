@@ -79,8 +79,18 @@ type BatchFrame = z.infer<typeof batchOutputSchema>["frames"][number];
  * not shrink below it; the whole design depends on that legibility.
  */
 const ANALYSIS_FRAME_WIDTH = 768;
-/** dHash distance under which two sampled frames are the same UI state. */
-const MAX_HAMMING = 10;
+/**
+ * dHash distance under which two sampled frames are the same UI state.
+ * 14 is the ceiling: a flat-to-flat cut registers ~15 luma-band bits and must
+ * stay a split (media-steps.test.ts pins this). Raised from 10 after the first
+ * real-footage run — handheld drift split one unchanged Google account chooser
+ * into 11 states; at 14 the same recording keeps every genuine screen
+ * transition (measured margin: the first real merge appears at 24) while the
+ * chooser run drops to ~9 clusters. Only sub-screen deltas (a validation line
+ * appearing, an in-app tour tooltip swapping) merge below that, and pass 2
+ * skips those states anyway.
+ */
+const MAX_HAMMING = 14;
 /** A state must persist >=2 sampled frames — a single glare/shake frame is noise. */
 const MIN_CLUSTER_FRAMES = 2;
 
