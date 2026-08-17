@@ -514,18 +514,24 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
 
     // A batch still short after its own corrective retry is model behaviour on
     // this footage, not a transient fault — re-running the job will not help.
-    // A few degraded batches are absorbed; past the fraction gate the timeline
-    // is too holey to trust, and the failure is permanent.
-    const degraded = batches.filter((_, bi) => batchResults[bi]!.some((f) => !f)).length;
+    // Losing a few states out of eighty is absorbed; past the fraction gate
+    // the timeline is too holey to trust, and the failure is permanent.
+    // Measured in STATES, not batches: a batch that lost 1 frame of 10 is not
+    // a batch that lost all 10, and a short demo is often a single batch —
+    // one dropped frame must not condemn it.
+    const droppedCount = batches.reduce(
+      (n, _, bi) => n + batchResults[bi]!.filter((f) => !f).length,
+      0,
+    );
     const maxDegradedFraction = await getConfigValueOr(
       ctx.db,
       "a_analysis_max_degraded_fraction",
       z.number(),
-      0.5,
+      0.25,
     );
-    if (degraded / batches.length > maxDegradedFraction) {
+    if (droppedCount / kept.length > maxDegradedFraction) {
       throw new PermanentError(
-        `analysis degraded: ${degraded} of ${batches.length} batches returned short after corrective retry`,
+        `analysis degraded: ${droppedCount} of ${kept.length} states unreturned after corrective retries`,
         { customerMessage: "חלק גדול מדי מהצילום לא נותח — צלמו את ההדגמה שוב ונסו מחדש" },
       );
     }
