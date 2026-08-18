@@ -3,10 +3,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getConfigValueOr } from "../appConfig";
-import { assertBudget, recordUsage } from "../budget";
+import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { getEnv } from "../config";
 import type { Db } from "../db";
-import { demoAnalyses, demoStepPlans, demos } from "../db/schema";
+import { demoAnalyses, demoStepPlans, demos, jobs } from "../db/schema";
 import { BudgetError, PermanentError } from "../jobs/errors";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -20,6 +20,22 @@ import {
   subsampleClusters,
   type AnalysisState,
 } from "./demo-analysis";
+
+/**
+ * screenKinds the plan may never select — the deterministic form of the
+ * prompt's prose skip list (login screens, tours, onboarding...), added after
+ * a real run picked the login screen and two tour steps despite the prompt.
+ * "product", "other" and absent (v2-era analyses without screenKind) pass;
+ * missing means "no information", so those states stay prompt-governed.
+ * The Phase 8 picker groups/hides by the same set.
+ */
+export const PLAN_SKIP_SCREEN_KINDS: ReadonlySet<
+  NonNullable<AnalysisState["screenKind"]>
+> = new Set(["login", "loading", "onboarding", "error", "tour", "system"] as const);
+
+function isSkippedKind(state: AnalysisState): boolean {
+  return state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind);
+}
 
 /**
  * Pass 2 of the step-plan format: the SELECTION. Text-only on purpose — the
@@ -235,6 +251,11 @@ export function findPlanViolations(
     if (state.legibility === "unreadable") {
       violations.push(`step ${i}: state ${step.sourceIndex} is legibility "unreadable"`);
     }
+    if (isSkippedKind(state)) {
+      violations.push(
+        `step ${i}: state ${step.sourceIndex} is a "${state.screenKind}" screen — login, loading, onboarding, error, tour and system screens are never steps; select the customer using the product itself`,
+      );
+    }
     if (step.label.length > MAX_LABEL_CHARS) {
       violations.push(`step ${i}: label is over ${MAX_LABEL_CHARS} characters`);
     }
@@ -276,10 +297,13 @@ export function findPlanViolations(
     // The format invariant: the video ends on the success state. Enforceable
     // only when the timeline offers a selectable result state — the analysis
     // may have mistyped the success screen, and a plan cannot end on a state
-    // that does not exist.
-    const hasSelectableResult = timeline.some(
-      (s) => s.actionType === "result" && s.legibility !== "unreadable",
-    );
+    // that does not exist. A skip-kind "result" (a validation error the
+    // analysis mistyped) is not selectable either, so it cannot force the rule.
+    const successCandidates = timeline
+      .map((s, i) => ({ s, i }))
+      .filter(
+        ({ s }) => s.actionType === "result" && s.legibility !== "unreadable" && !isSkippedKind(s),
+      );
     const valid = steps.filter(
       (s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex],
     );
@@ -287,13 +311,24 @@ export function findPlanViolations(
     // "result" (the timeline then OFFERS a result state that is not a genuine
     // success), and a plan cannot be forced to end on one. The model may end
     // elsewhere only by explaining why in `notes` — never silently.
-    if (hasSelectableResult && valid.length > 0 && !shape.notes?.trim()) {
+    if (successCandidates.length > 0 && valid.length > 0 && !shape.notes?.trim()) {
       const last = valid.reduce((a, b) =>
         timeline[a.sourceIndex]!.timestampMs >= timeline[b.sourceIndex]!.timestampMs ? a : b,
       );
       if (timeline[last.sourceIndex]!.actionType !== "result") {
+        // Real recordings keep going after the success moment (a179f069: the
+        // success sits at 45s of an 80s recording), so "end on the result
+        // state" is not enough — the retry needs the candidate indexes and an
+        // explicit licence to drop the trailing steps, or it reshapes blind.
+        // The shortfall path is notes, never adding states: told to "select
+        // additional states" a live retry padded with a loading screen —
+        // a fresh violation with no third call to fix it.
         violations.push(
-          "the last step must be the result/success state — the video ends there; if the timeline has no genuine success state (an error, warning or validation message is never success), keep your best journey and explain that in `notes` (Hebrew) instead",
+          `the last step must be the result/success state — the video ends there. This timeline's success candidates are at sourceIndex ${successCandidates
+            .map(({ i }) => i)
+            .join(
+              ", ",
+            )}: end the plan on one of them and drop every step after it; if the drop leaves fewer than ${shape.minSteps} steps, keep the shorter plan and explain why in \`notes\` (Hebrew) — never pad with loading, duplicate or otherwise skipped states. If none of the candidates is a genuine success (an error, warning or validation message is never success), keep your best journey and explain that in \`notes\` (Hebrew) instead`,
         );
       }
     }
@@ -364,12 +399,15 @@ function dryRunPlan(
     .map((state, index) => ({ state, index }))
     .filter(
       ({ state }) =>
-        state.legibility === "high" && !state.sameStateAsPrevious && state.actionType !== "idle",
+        state.legibility === "high" &&
+        !state.sameStateAsPrevious &&
+        state.actionType !== "idle" &&
+        !isSkippedKind(state),
     );
   if (candidates.length === 0) {
     candidates = timeline
       .map((state, index) => ({ state, index }))
-      .filter(({ state }) => state.legibility !== "unreadable");
+      .filter(({ state }) => state.legibility !== "unreadable" && !isSkippedKind(state));
   }
   if (candidates.length === 0) throw new Error("dry-run plan: timeline has no usable states");
 
@@ -379,7 +417,10 @@ function dryRunPlan(
   // quality filter above dropped it).
   const results = timeline
     .map((state, index) => ({ state, index }))
-    .filter(({ state }) => state.actionType === "result" && state.legibility !== "unreadable");
+    .filter(
+      ({ state }) =>
+        state.actionType === "result" && state.legibility !== "unreadable" && !isSkippedKind(state),
+    );
   const lastResult = results[results.length - 1];
   let kept = subsampleClusters(candidates, maxSteps);
   if (lastResult) {
@@ -463,6 +504,8 @@ export async function generateStepPlan(
     visibleText: s.visibleText,
     action: s.action,
     actionType: s.actionType,
+    // undefined (v2-era analyses) drops out of the JSON entirely.
+    screenKind: s.screenKind,
     sameStateAsPrevious: s.sameStateAsPrevious,
     legibility: s.legibility,
     salienceNote: s.salienceNote,
@@ -500,11 +543,15 @@ export async function generateStepPlan(
   if (violations.length > 0) {
     // "Minimal edits" matters: a from-scratch replan routinely fixes the named
     // violations while introducing brand-new ones (seen live: the retry swapped
-    // in a fresh 5-word label), and there is no third call.
+    // in a fresh 5-word label), and there is no third call. The previous plan
+    // is echoed back because each call is stateless — without it the model
+    // cannot see the plan it is told to minimally edit and reinvents it
+    // (seen live on a179f069: the retry dropped the success state the first
+    // call had correctly selected).
     output = await callOnce(
-      `${text}\n\nYour previous plan violated these rules:\n${violations
+      `${text}\n\nYour previous plan was:\n${JSON.stringify(output, null, 2)}\n\nIt violated these rules:\n${violations
         .map((v) => `- ${v}`)
-        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep steps and labels that were not named above unchanged, and keep every label at 4 words maximum.`,
+        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 4 words maximum.`,
     );
     violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
       minSteps,
@@ -572,6 +619,24 @@ export async function requestDemoPlan(
     );
   }
 
+  // A regenerate while one is still generating collapses onto the in-flight
+  // job (mirrors requestDemoAnalysis's live-JOB check — a row stuck after a
+  // worker death must not lock requests out). Without this, every press is a
+  // cheap enqueue that outruns the route's usage-based budget gate, and the
+  // queued backlog spends past the cap after the route starts refusing.
+  const latest = await getLatestStepPlan(db, demoId);
+  if (latest && (latest.status === "pending" || latest.status === "planning")) {
+    const jobRows = await db
+      .select()
+      .from(jobs)
+      .where(eq(jobs.idempotencyKey, `plan:${latest.id}`))
+      .limit(1);
+    const live = jobRows[0];
+    if (live && (live.status === "queued" || live.status === "running")) {
+      return { planId: latest.id, jobId: live.id };
+    }
+  }
+
   const inserted = await db
     .insert(demoStepPlans)
     .values({ demoId, analysisId: ready.id, status: "pending" })
@@ -618,6 +683,18 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
       throw new PermanentError(err instanceof Error ? err.message : String(err), {
         customerMessage: "מלאו את שאלון העסק לפני יצירת התוכנית",
       });
+    });
+
+    // The confirm-to-execution window (renders.ts precedent): the route's
+    // budget gate reads usage that lags the queue, so a queued backlog would
+    // outrun it. Re-check here and fail fast — never park on an account cap.
+    await assertAccountBudget(ctx.db, "llm_tokens", demo.businessId).catch((err) => {
+      if (err instanceof AccountBudgetError) {
+        throw new PermanentError(err.message, {
+          customerMessage: "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר.",
+        });
+      }
+      throw err;
     });
 
     await setPlan({ status: "planning" });

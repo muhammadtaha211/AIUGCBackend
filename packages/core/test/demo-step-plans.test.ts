@@ -3,12 +3,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { recordUsage } from "../src/budget";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { HEAVY_JOB_TYPES, runLane } from "../src/jobs/worker";
-import { createBusiness, setQuestionnaire, type Questionnaire } from "../src/pipelines/businesses";
+import {
+  addDemoNote,
+  createBusiness,
+  MAX_DEMO_NOTES,
+  requireQuestionnaire,
+  setQuestionnaire,
+  type Questionnaire,
+} from "../src/pipelines/businesses";
 import type { AnalysisState } from "../src/pipelines/demo-analysis";
 import {
   approvePlan,
@@ -131,8 +139,9 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(plan?.notes).toBeNull();
 
     const steps = planStepsSchema.parse(plan!.steps);
-    // The canned analysis: idle/dup/low/unreadable states are skipped.
-    expect(steps.map((s) => s.sourceIndex)).toEqual([1, 2, 3, 5, 6, 7, 10, 11]);
+    // The canned analysis: idle/dup/low/unreadable states and the two login
+    // states (screenKind skip rule) are skipped.
+    expect(steps.map((s) => s.sourceIndex)).toEqual([3, 5, 6, 7, 10, 11]);
     for (let i = 1; i < steps.length; i++) {
       expect(steps[i]!.timestampMs).toBeGreaterThan(steps[i - 1]!.timestampMs);
     }
@@ -141,10 +150,11 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(last.actionType).toBe("result");
     expect(last.label).toBe("הקמפיין נוצר");
     expect(last.durationMs).toBe(2800);
-    // Total runtime lands in the 12-17s target band.
+    // Total runtime: six product steps at the per-action duration defaults.
+    // (The 12-17s band is a target for real recordings; the canned journey
+    // sits just under it now that its login states are filtered.)
     const total = steps.reduce((ms, s) => ms + s.durationMs, 0);
-    expect(total).toBeGreaterThanOrEqual(12_000);
-    expect(total).toBeLessThanOrEqual(17_000);
+    expect(total).toBe(11_800);
 
     const moments = unexplainedMomentsSchema.parse(plan!.unexplainedMoments);
     expect(moments).toHaveLength(1);
@@ -162,11 +172,46 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect((await getStepPlan(db, second))?.status).toBe("ready");
     expect((await getStepPlan(db, planId))?.status).toBe("ready");
   });
+
+  it("a regenerate while one is still generating collapses onto the live job", { timeout: 60_000 }, async () => {
+    // Every press must not be a fresh paid enqueue: the route's budget gate
+    // reads usage that lags the queue, so uncollapsed presses outrun it.
+    const first = await requestDemoPlan(db, demoId);
+    const second = await requestDemoPlan(db, demoId);
+    expect(second.planId).toBe(first.planId);
+    expect(second.jobId).toBe(first.jobId);
+    await drainAll();
+    expect((await getStepPlan(db, first.planId))?.status).toBe("ready");
+  });
+
+  it("the job-level account-cap backstop fails a queued plan fast, in Hebrew", { timeout: 60_000 }, async () => {
+    // A customer (not admin-bypassed) account at its 0027 llm_tokens ceiling:
+    // the queued job must die as a fast PermanentError — never park, never
+    // spend — even though it was enqueued before the cap was hit.
+    const customer = await createBusiness(db, { ownerEmail: "capped@example.com", name: "עסק שמור" });
+    await setQuestionnaire(db, customer.id, QUESTIONNAIRE);
+    const demo = await createDemo(db, { businessId: customer.id, filePath: tempFile("capped.mp4") });
+    await drainAll(); // ingest -> analysis ready
+
+    await recordUsage(db, {
+      provider: "anthropic",
+      kind: "llm_tokens",
+      quantity: 500_000,
+      businessId: customer.id,
+    });
+
+    const { planId: cappedPlanId } = await requestDemoPlan(db, demo.id);
+    await drainAll();
+    const plan = await getStepPlan(db, cappedPlanId);
+    expect(plan?.status).toBe("failed");
+    expect(plan?.failReason).toMatch(/מכסת/);
+  });
 });
 
 describe("plan lifecycle: edit, approve, fork", () => {
   it("edits before approval mutate in place, re-sorted chronologically server-side", async () => {
-    // Client sends the steps out of order with free-text labels.
+    // Client sends the steps out of order with free-text labels. sourceIndex 1
+    // is a login state — human edits deliberately bypass the model's skip rule.
     const updated = await updatePlanSteps(db, {
       planId,
       steps: [
@@ -343,6 +388,43 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     ).toEqual([]);
   });
 
+  it("names the success candidates when the plan continues past the result state (real a179f069)", () => {
+    // The a179f069 shape: the recording keeps going after the success moment,
+    // and the model selects steps from the unfinished second journey. The
+    // violation must name the candidate indexes and licence dropping the
+    // trailing steps — the one corrective retry has no other way to know the
+    // mechanical fix. Two candidates on purpose: the real timeline has two,
+    // and a message naming only one would steer the retry blind.
+    const continues: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחלה"] }),
+      state({ timestampMs: 1000, visibleText: ["הושלם"], actionType: "result" }),
+      state({ timestampMs: 2000, visibleText: ["המשך"] }),
+      state({ timestampMs: 3000, visibleText: ["נשמר"], actionType: "result" }),
+    ];
+    const violations = findPlanViolations(
+      [
+        { sourceIndex: 0, label: "התחלה" },
+        { sourceIndex: 1, label: "הושלם" },
+        { sourceIndex: 2, label: "המשך" },
+      ],
+      continues,
+      QUESTIONNAIRE,
+      8,
+      { minSteps: 6, notes: null },
+    );
+    const shapeViolation = violations.find((v) => v.includes("result/success"));
+    expect(shapeViolation).toBeDefined();
+    // Names every candidate to end on, and the minimum the drop must respect.
+    expect(shapeViolation).toContain("sourceIndex 1, 3");
+    expect(shapeViolation).toContain("drop every step after it");
+    expect(shapeViolation).toContain("fewer than 6 steps");
+    // The shortfall path is notes, never padding — "select additional states"
+    // wording made a live retry pad with a loading screen (an unfixable fresh
+    // violation, no third call). Pin the routing so it cannot come back.
+    expect(shapeViolation).toContain("keep the shorter plan");
+    expect(shapeViolation).toContain("never pad");
+  });
+
   it("pools visibleText across a sameStateAsPrevious run (real BotTeacher state 36)", () => {
     // Exact strings from demo ba70c3d7 / analysis 6a1b247e: the anchor frame's
     // OCR clipped "נשלים" to "נשלי"; the dup frames of the SAME screen read it
@@ -408,6 +490,19 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     expect(findPlanViolations([{ sourceIndex: 0, label: "שלום" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
   });
 
+  it("words from demo_notes are allowed label words — an explained moment becomes copy", () => {
+    // Not on state 0's screen and not elsewhere in the questionnaire...
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "תבניות מוכנות" }], timeline, QUESTIONNAIRE, 8)
+        .length,
+    ).toBeGreaterThan(0);
+    // ...but once the customer's answer carries them, the label passes.
+    const explained = { ...QUESTIONNAIRE, demo_notes: ["מסך בחירת תבניות מוכנות"] };
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "תבניות מוכנות" }], timeline, explained, 8),
+    ).toEqual([]);
+  });
+
   it("allows function words but flags fabricated content words", () => {
     expect(
       findPlanViolations([{ sourceIndex: 0, label: "רק פרויקט חדש" }], timeline, QUESTIONNAIRE, 8),
@@ -420,6 +515,36 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     );
     expect(violations.some((v) => v.includes("חוויה"))).toBe(true);
     expect(violations.some((v) => v.includes("מדהימה"))).toBe(true);
+  });
+
+  it("flags skip-kind screens for the model, treats absent screenKind as no information", () => {
+    const kinds: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחברות"], screenKind: "login" }),
+      state({ timestampMs: 1000, visibleText: ["דף הבית"], screenKind: "product" }),
+      state({ timestampMs: 2000, visibleText: ["שגיאה"], actionType: "result", screenKind: "error" }),
+      state({ timestampMs: 3000, visibleText: ["נשמר"] }), // v2-era: no screenKind
+    ];
+    // Login screens are never steps for the model.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "התחברות" }], kinds, QUESTIONNAIRE, 8).some(
+        (v) => v.includes('"login"'),
+      ),
+    ).toBe(true);
+    // product and absent screenKind both pass.
+    expect(
+      findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, QUESTIONNAIRE, 8),
+    ).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 3, label: "נשמר" }], kinds, QUESTIONNAIRE, 8),
+    ).toEqual([]);
+    // The only "result" is an error screen the analysis mistyped — the shape
+    // rule must not force the plan to end on a state it may never select.
+    expect(
+      findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, QUESTIONNAIRE, 8, {
+        minSteps: 1,
+        notes: null,
+      }),
+    ).toEqual([]);
   });
 
   it("flags structural violations: unreadable states, dups, range, word count, step count", () => {
@@ -464,6 +589,37 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       ).some((v) => v.includes("maximum is 1")),
     ).toBe(true);
     expect(findPlanViolations([], timeline, QUESTIONNAIRE, 8)).toEqual(["the plan has zero steps"]);
+  });
+});
+
+describe("demo notes (the questionnaire answer channel)", () => {
+  it("appends trimmed notes to the persisted questionnaire; empty and questionnaire-less rejected", async () => {
+    await expect(addDemoNote(db, businessId, "   ")).rejects.toThrow(/empty/);
+    const bare = await createBusiness(db, { ownerEmail: "bare@example.com", name: "בלי שאלון" });
+    await expect(addDemoNote(db, bare.id, "הערה")).rejects.toThrow(/no questionnaire/);
+
+    const notes = await addDemoNote(db, businessId, "  ההסבר של הלקוח  ");
+    expect(notes).toEqual(["ההסבר של הלקוח"]);
+    // Lands on the questionnaire itself, where both passes read it.
+    expect((await requireQuestionnaire(db, businessId)).demo_notes).toEqual(["ההסבר של הלקוח"]);
+  });
+
+  it("a questionnaire resubmit without demo_notes keeps them; explicit demo_notes replaces", async () => {
+    // Questionnaire forms never carry demo_notes — a resubmit must not
+    // silently discard answered moments.
+    await setQuestionnaire(db, businessId, QUESTIONNAIRE);
+    expect((await requireQuestionnaire(db, businessId)).demo_notes).toEqual(["ההסבר של הלקוח"]);
+
+    await setQuestionnaire(db, businessId, { ...QUESTIONNAIRE, demo_notes: ["אחרת"] });
+    expect((await requireQuestionnaire(db, businessId)).demo_notes).toEqual(["אחרת"]);
+  });
+
+  it("caps at MAX_DEMO_NOTES", async () => {
+    await setQuestionnaire(db, businessId, {
+      ...QUESTIONNAIRE,
+      demo_notes: Array.from({ length: MAX_DEMO_NOTES }, (_, i) => `הערה ${i}`),
+    });
+    await expect(addDemoNote(db, businessId, "אחת יותר מדי")).rejects.toThrow(/limit/);
   });
 });
 

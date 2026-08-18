@@ -76,6 +76,10 @@ export function isIngestingDemoStatus(status: string): boolean {
 /** The reuse picker pages ready demos four at a time (route + step agree). */
 export const DEMO_PAGE_SIZE = 4;
 
+/** The state picker pages analysis thumbs twelve at a time (route + picker
+ *  agree) — thumb URLs are only signed for the requested page. */
+export const ANALYSIS_PAGE_SIZE = 12;
+
 /** One row of GET /api/businesses/[id]/demos — reuse picker + demo library. */
 export type DemoSummary = {
   id: string;

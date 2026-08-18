@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { resetEnvCache } from "../src/config";
@@ -15,7 +16,9 @@ import {
   getLatestDemoAnalysis,
   illegibleFraction,
   requestDemoAnalysis,
+  salvageBatchFrames,
   subsampleClusters,
+  unreadableFraction,
 } from "../src/pipelines/demo-analysis";
 import { createDemo } from "../src/pipelines/demos";
 import { setStorage } from "../src/storage";
@@ -116,8 +119,14 @@ describe("analyze_demo (dry-run chain)", () => {
     expect(states.filter((s) => s.legibility === "unreadable")).toHaveLength(1);
     expect(states.filter((s) => s.legibility === "low")).toHaveLength(1);
     expect(states.filter((s) => s.sameStateAsPrevious)).toHaveLength(1);
-    // The canned mix stays under the 40% legibility gate.
-    expect(illegibleFraction(states)).toBeLessThan(0.4);
+    // screenKinds exercise the plan pass's skip rule: a loading splash and two
+    // login states, everything classified.
+    expect(states[0]!.screenKind).toBe("loading");
+    expect(states.filter((s) => s.screenKind === "login")).toHaveLength(2);
+    expect(states.every((s) => s.screenKind !== undefined)).toBe(true);
+    // The canned mix passes the split gate: 1/12 unreadable, 2/12 illegible.
+    expect(unreadableFraction(states)).toBeLessThanOrEqual(0.25);
+    expect(illegibleFraction(states)).toBeLessThanOrEqual(0.75);
 
     // Thumbs exist in storage at the recorded paths.
     for (const s of states) {
@@ -232,6 +241,28 @@ describe("subsampleClusters", () => {
   });
 });
 
+describe("salvageBatchFrames", () => {
+  it("is positionally complete when every index is claimed once, whatever the order", () => {
+    expect(salvageBatchFrames([{ index: 1 }, { index: 0 }, { index: 2 }], 3)).toEqual([
+      { index: 0 },
+      { index: 1 },
+      { index: 2 },
+    ]);
+  });
+
+  it("drops out-of-range, non-integer and duplicate claims; unclaimed positions stay null", () => {
+    expect(
+      salvageBatchFrames([{ index: 0 }, { index: 5 }, { index: -1 }, { index: 1.5 }, { index: 2 }], 4),
+    ).toEqual([{ index: 0 }, null, { index: 2 }, null]);
+  });
+
+  it("keeps the first claim when an index is claimed twice", () => {
+    const a = { index: 1, tag: "a" };
+    const b = { index: 1, tag: "b" };
+    expect(salvageBatchFrames([a, b], 2)).toEqual([null, a]);
+  });
+});
+
 describe("illegibleFraction", () => {
   it("counts low and unreadable together, and treats empty as fully illegible", () => {
     expect(
@@ -243,5 +274,65 @@ describe("illegibleFraction", () => {
       ]),
     ).toBe(0.5);
     expect(illegibleFraction([])).toBe(1);
+  });
+});
+
+describe("unreadableFraction", () => {
+  it("counts only unreadable, and treats empty as fully unreadable", () => {
+    expect(
+      unreadableFraction([
+        { legibility: "high" },
+        { legibility: "low" },
+        { legibility: "unreadable" },
+        { legibility: "unreadable" },
+      ]),
+    ).toBe(0.5);
+    expect(unreadableFraction([])).toBe(1);
+  });
+});
+
+describe("the split legibility gate on real footage", () => {
+  const loadTimeline = (name: string): { legibility: string }[] =>
+    (
+      JSON.parse(
+        readFileSync(
+          fileURLToPath(new URL(`../../../fixtures/timelines/${name}`, import.meta.url)),
+          "utf8",
+        ),
+      ) as { timeline: { legibility: string }[] }
+    ).timeline;
+  // The gate exactly as handleAnalyzeDemo applies it, pinned at the code
+  // defaults (a_analysis_unreadable_threshold 0.25 / a_analysis_legibility_threshold 0.75).
+  const rejectedByGate = (states: { legibility: string }[]) =>
+    unreadableFraction(states) > 0.25 || illegibleFraction(states) > 0.75;
+
+  it("passes both real-botteacher fixtures", () => {
+    const study = loadTimeline("real-botteacher-study-app.json");
+    expect(study).toHaveLength(80);
+    expect(unreadableFraction(study)).toBe(1 / 80);
+    expect(illegibleFraction(study)).toBe(20 / 80);
+    expect(rejectedByGate(study)).toBe(false);
+
+    const routing = loadTimeline("real-botteacher-file-routing.json");
+    expect(routing).toHaveLength(61);
+    expect(unreadableFraction(routing)).toBe(1 / 61);
+    expect(illegibleFraction(routing)).toBe(30 / 61);
+    // 30/61 ≈ 0.49 rejected this real, usable recording under the old single
+    // 0.4 gate — the regression the split exists to fix.
+    expect(illegibleFraction(routing)).toBeGreaterThan(0.4);
+    expect(rejectedByGate(routing)).toBe(false);
+  });
+
+  it("rejects unreadable-heavy footage the overall axis alone would pass", () => {
+    // 3 of 10 unreadable, nothing merely low: illegible 0.3 clears both the
+    // old 0.4 gate and the new 0.75 axis — only the unreadable axis catches
+    // it. This combination is the entire reason the gate is split.
+    const states = [
+      ...Array.from({ length: 3 }, () => ({ legibility: "unreadable" })),
+      ...Array.from({ length: 7 }, () => ({ legibility: "high" })),
+    ];
+    expect(unreadableFraction(states)).toBe(0.3);
+    expect(illegibleFraction(states)).toBe(0.3);
+    expect(rejectedByGate(states)).toBe(true);
   });
 });

@@ -168,7 +168,8 @@ export const demoAnalyses = pgTable(
       .references(() => demos.id),
     status: demoAnalysisStatus("status").notNull().default("pending"),
     // AnalysisState[]: { timestampMs, screenName, visibleText[], action,
-    // actionType, sameStateAsPrevious, legibility, salienceNote, thumbPath }
+    // actionType, screenKind?, sameStateAsPrevious, legibility, salienceNote,
+    // thumbPath } — screenKind absent on v2-era analyses
     timeline: jsonb("timeline"),
     stateCount: integer("state_count"),
     promptVersion: text("prompt_version"),

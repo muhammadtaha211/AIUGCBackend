@@ -1,7 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "../db";
 import { businesses, users } from "../db/schema";
+
+/** Enough for every moment of a 3-minute demo to get an answer; past that the
+ *  prompts bloat and something else is wrong. */
+export const MAX_DEMO_NOTES = 20;
 
 /** The "caption once" asset — every piece of generated copy derives from this. */
 export const questionnaireSchema = z.object({
@@ -16,6 +20,11 @@ export const questionnaireSchema = z.object({
   // Optional: what makes people say "wow" about the product. Step-plan quality
   // is bounded by how well the model knows what matters in the footage.
   wow: z.string().optional(),
+  // The customer's answers to the plan pass's unexplainedMoments, appended by
+  // addDemoNote. Part of the questionnaire on purpose: both passes read the
+  // questionnaire, and findPlanViolations already allows label words from any
+  // questionnaire string — an explained moment becomes usable copy.
+  demo_notes: z.array(z.string().min(1)).max(MAX_DEMO_NOTES).optional(),
 });
 
 export type Questionnaire = z.infer<typeof questionnaireSchema>;
@@ -49,11 +58,63 @@ export async function setQuestionnaire(
   data: unknown,
 ): Promise<Questionnaire> {
   const questionnaire = questionnaireSchema.parse(data);
+  // Questionnaire edits come from forms that never carry demo_notes — a
+  // resubmit must not silently discard the customer's answered moments.
+  // Sending demo_notes explicitly (even []) still replaces them.
+  if (!questionnaire.demo_notes) {
+    const existing = await db
+      .select({ questionnaire: businesses.questionnaire })
+      .from(businesses)
+      .where(eq(businesses.id, businessId))
+      .limit(1);
+    const prior = existing[0]?.questionnaire as { demo_notes?: string[] } | null;
+    if (prior?.demo_notes?.length) questionnaire.demo_notes = prior.demo_notes;
+  }
   await db
     .update(businesses)
     .set({ questionnaire, questionnaireUpdatedAt: new Date() })
     .where(eq(businesses.id, businessId));
   return questionnaire;
+}
+
+/**
+ * Append one answered unexplained-moment to questionnaire.demo_notes (the
+ * Phase 7 note endpoint's write path). Requires an existing questionnaire —
+ * a note explains footage, and footage analysis already requires one.
+ *
+ * The append is a single jsonb UPDATE with the cap in the WHERE: two quick
+ * answers must not clobber each other (a read-modify-write here loses the
+ * first note last-write-wins), and touching only the demo_notes key means a
+ * racing questionnaire edit is never reverted wholesale.
+ */
+export async function addDemoNote(
+  db: Db,
+  businessId: string,
+  text: string,
+): Promise<string[]> {
+  const note = text.trim();
+  if (!note) throw new Error("demo note is empty");
+  await requireQuestionnaire(db, businessId); // 404/no-questionnaire error path
+
+  const notesExpr = sql`coalesce(${businesses.questionnaire}->'demo_notes', '[]'::jsonb)`;
+  const updated = await db
+    .update(businesses)
+    .set({
+      questionnaire: sql`jsonb_set(${businesses.questionnaire}, '{demo_notes}', ${notesExpr} || ${JSON.stringify([note])}::jsonb)`,
+      questionnaireUpdatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(businesses.id, businessId),
+        sql`jsonb_array_length(${notesExpr}) < ${MAX_DEMO_NOTES}`,
+      ),
+    )
+    .returning({ questionnaire: businesses.questionnaire });
+  if (!updated[0]) {
+    // The questionnaire existed a moment ago — the only WHERE miss is the cap.
+    throw new Error(`demo notes limit reached (${MAX_DEMO_NOTES})`);
+  }
+  return (updated[0].questionnaire as { demo_notes?: string[] }).demo_notes ?? [];
 }
 
 export async function getBusiness(db: Db, businessId: string) {

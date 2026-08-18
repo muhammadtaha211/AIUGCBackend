@@ -3,9 +3,12 @@ import {
   aRenderRequestSchema,
   demoDescriptionRequestSchema,
   demoFileError,
+  demoNoteRequestSchema,
   demoUploadPath,
   isOwnedDemoUploadPath,
+  planStepsRequestSchema,
   registerDemoRequestSchema,
+  stepPlanResponse,
   uploadUrlRequestSchema,
   voScriptRequestSchema,
   MAX_DEMO_BYTES,
@@ -114,5 +117,82 @@ describe("request schemas", () => {
       false,
     );
     expect(demoDescriptionRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("plan edit wants 1-80 integer-indexed steps with 1-60 char labels", () => {
+    expect(
+      planStepsRequestSchema.safeParse({ steps: [{ sourceIndex: 0, label: "שמירה" }] }).success,
+    ).toBe(true);
+    expect(planStepsRequestSchema.safeParse({ steps: [] }).success).toBe(false);
+    expect(
+      planStepsRequestSchema.safeParse({ steps: [{ sourceIndex: -1, label: "א" }] }).success,
+    ).toBe(false);
+    expect(
+      planStepsRequestSchema.safeParse({ steps: [{ sourceIndex: 1.5, label: "א" }] }).success,
+    ).toBe(false);
+    expect(
+      planStepsRequestSchema.safeParse({ steps: [{ sourceIndex: 0, label: "" }] }).success,
+    ).toBe(false);
+    expect(
+      planStepsRequestSchema.safeParse({ steps: [{ sourceIndex: 0, label: "א".repeat(61) }] })
+        .success,
+    ).toBe(false);
+    expect(
+      planStepsRequestSchema.safeParse({
+        steps: Array.from({ length: 81 }, (_, i) => ({ sourceIndex: i, label: "א" })),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("demo note wants non-empty text up to 500 chars", () => {
+    expect(demoNoteRequestSchema.safeParse({ text: "מסך בחירת תבניות" }).success).toBe(true);
+    expect(demoNoteRequestSchema.safeParse({ text: "" }).success).toBe(false);
+    expect(demoNoteRequestSchema.safeParse({ text: "א".repeat(501) }).success).toBe(false);
+    expect(demoNoteRequestSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("step plan response shape", () => {
+  it("renames id->planId, defaults missing jsonb to [], hides nulls", () => {
+    const approvedAt = new Date();
+    expect(
+      stepPlanResponse({
+        id: "p1",
+        demoId: "d1",
+        analysisId: "a1",
+        status: "ready",
+        steps: [{ sourceIndex: 3 }],
+        unexplainedMoments: [],
+        notes: "הערה",
+        failReason: null,
+        approvedAt,
+      }),
+    ).toEqual({
+      planId: "p1",
+      demoId: "d1",
+      analysisId: "a1",
+      status: "ready",
+      steps: [{ sourceIndex: 3 }],
+      unexplainedMoments: [],
+      notes: "הערה",
+      approvedAt,
+    });
+
+    const failed = stepPlanResponse({
+      id: "p2",
+      demoId: "d1",
+      analysisId: "a1",
+      status: "failed",
+      steps: null,
+      unexplainedMoments: null,
+      notes: null,
+      failReason: "יצירת התוכנית נכשלה — נסו שוב",
+      approvedAt: null,
+    });
+    expect(failed.steps).toEqual([]);
+    expect(failed.unexplainedMoments).toEqual([]);
+    expect(failed.failReason).toBe("יצירת התוכנית נכשלה — נסו שוב");
+    expect(failed.notes).toBeUndefined();
+    expect(failed.approvedAt).toBeUndefined();
   });
 });

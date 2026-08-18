@@ -209,6 +209,103 @@ describe("migrations", () => {
     await pg.close();
   });
 
+  it("0028: split-gate backfill flips only eligible rows, clears stale fail_reason, strips the misplaced key", async () => {
+    // Build the PRE-0028 shape, then seed every row shape the migration
+    // reasons about — production has none of the guard shapes, so they are
+    // constructed here.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0028")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+
+    const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+    const user = uid(1);
+    const biz = uid(2);
+    const demo = (n: number) => uid(100 + n);
+    const row = (n: number) => uid(200 + n);
+    // unreadable 0, illegible 0.25 — passes both axes of the new gate.
+    const passing = JSON.stringify([
+      ...Array(3).fill({ legibility: "high" }),
+      { legibility: "low" },
+    ]);
+    // unreadable 0.3 > 0.25 while illegible 0.3 clears even the old 0.4 gate —
+    // fails only on the axis the split added.
+    const unreadableHeavy = JSON.stringify([
+      ...Array(3).fill({ legibility: "unreadable" }),
+      ...Array(7).fill({ legibility: "high" }),
+    ]);
+    // illegible 0.8 > 0.75 — fails the overall axis.
+    const illegibleHeavy = JSON.stringify([
+      ...Array(8).fill({ legibility: "low" }),
+      ...Array(2).fill({ legibility: "high" }),
+    ]);
+
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'gate@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES ('${biz}', '${user}', 'B');
+      INSERT INTO demos (id, business_id) VALUES
+        ${[1, 2, 3, 4, 5, 6, 7].map((n) => `('${demo(n)}', '${biz}')`).join(", ")};
+      INSERT INTO demo_analyses (id, demo_id, status, timeline, fail_reason, created_at) VALUES
+        ('${row(1)}', '${demo(1)}', 'rejected', '${passing}', 'צלמו שוב', '2026-08-01T00:00:00Z'),
+        ('${row(2)}', '${demo(2)}', 'rejected', NULL, 'צלמו שוב', '2026-08-01T00:00:00Z'),
+        ('${row(3)}', '${demo(3)}', 'ready', '${passing}', NULL, '2026-08-01T00:00:00Z'),
+        ('${row(4)}', '${demo(3)}', 'rejected', '${passing}', 'צלמו שוב', '2026-08-02T00:00:00Z'),
+        ('${row(5)}', '${demo(4)}', 'ready', '${passing}', 'צלמו שוב', '2026-08-01T00:00:00Z'),
+        ('${row(6)}', '${demo(5)}', 'rejected', '${passing}', 'צלמו שוב', '2026-08-01T00:00:00Z'),
+        ('${row(7)}', '${demo(5)}', 'rejected', '${passing}', 'צלמו שוב', '2026-08-02T00:00:00Z'),
+        ('${row(8)}', '${demo(6)}', 'rejected', '${unreadableHeavy}', 'צלמו שוב', '2026-08-01T00:00:00Z'),
+        ('${row(9)}', '${demo(7)}', 'rejected', '${illegibleHeavy}', 'צלמו שוב', '2026-08-01T00:00:00Z');
+      UPDATE app_config
+        SET value = value || '{"a_analysis_legibility_threshold": 0.75}'::jsonb
+        WHERE key = 'credit_costs';
+    `);
+
+    await pg.exec(readFileSync(join(MIGRATIONS_DIR, "0028_split_legibility_gate.sql"), "utf8"));
+
+    const rows = await pg.query<{ id: string; status: string; fail_reason: string | null }>(
+      "SELECT id, status, fail_reason FROM demo_analyses ORDER BY id",
+    );
+    const byId = new Map(rows.rows.map((r) => [r.id, r]));
+    // Eligible -> flipped, reason cleared, timeline untouched.
+    expect(byId.get(row(1))).toMatchObject({ status: "ready", fail_reason: null });
+    const kept = await pg.query<{ n: number }>(
+      `SELECT jsonb_array_length(timeline) AS n FROM demo_analyses WHERE id = '${row(1)}'`,
+    );
+    expect(kept.rows[0]!.n).toBe(4);
+    // Zero-cluster rejection (no timeline) untouched.
+    expect(byId.get(row(2))).toMatchObject({ status: "rejected", fail_reason: "צלמו שוב" });
+    // A rejected row whose demo already has a ready analysis is NOT flipped.
+    expect(byId.get(row(3))).toMatchObject({ status: "ready", fail_reason: null });
+    expect(byId.get(row(4))).toMatchObject({ status: "rejected", fail_reason: "צלמו שוב" });
+    // A ready row with a stale fail_reason (the hand-flip shape) is cleared.
+    expect(byId.get(row(5))).toMatchObject({ status: "ready", fail_reason: null });
+    // Two eligible rows on one demo: only the newest flips.
+    expect(byId.get(row(6))).toMatchObject({ status: "rejected", fail_reason: "צלמו שוב" });
+    expect(byId.get(row(7))).toMatchObject({ status: "ready", fail_reason: null });
+    // Fails the unreadable axis / the overall axis -> untouched.
+    expect(byId.get(row(8))).toMatchObject({ status: "rejected", fail_reason: "צלמו שוב" });
+    expect(byId.get(row(9))).toMatchObject({ status: "rejected", fail_reason: "צלמו שוב" });
+
+    // Invariants: at most one ready analysis per demo, no ready row keeps a reason.
+    const multiReady = await pg.query(
+      "SELECT demo_id FROM demo_analyses WHERE status = 'ready' GROUP BY demo_id HAVING count(*) > 1",
+    );
+    expect(multiReady.rows).toEqual([]);
+    const readyWithReason = await pg.query(
+      "SELECT id FROM demo_analyses WHERE status = 'ready' AND fail_reason IS NOT NULL",
+    );
+    expect(readyWithReason.rows).toEqual([]);
+
+    // The misplaced key is stripped from credit_costs; the real rates survive.
+    const cfg = await pg.query<{ value: Record<string, unknown> }>(
+      "SELECT value FROM app_config WHERE key = 'credit_costs'",
+    );
+    expect(cfg.rows[0]!.value).not.toHaveProperty("a_analysis_legibility_threshold");
+    expect(cfg.rows[0]!.value).toMatchObject({ a_steps_credits: 5 });
+
+    await pg.close();
+  });
+
   it("enforce the circular sets -> video_renders FK from 0001", async () => {
     const { db, pg } = await createTestDb();
 
