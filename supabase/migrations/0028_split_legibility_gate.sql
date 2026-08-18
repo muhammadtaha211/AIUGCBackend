@@ -11,8 +11,8 @@
 --   075933e0  80      0.013       0.300      ready
 --   208695ff  80      0.000       0.438      rejected
 --   a179f069  61      0.016       0.492      ready (hand-flipped from
---                                            rejected by a raw status-only
---                                            UPDATE — phase-1 V5 finding)
+--                                            rejected by a raw UPDATE —
+--                                            phase-1 V5 finding)
 --   4a682b35  52      0.019       0.538      rejected
 --
 -- Four of five carry exactly one unreadable state (~1 per analysis is the
@@ -44,11 +44,12 @@
 --
 -- 3) fail_reason hygiene: the code always nulls fail_reason when it writes
 --    'ready', so a ready row still carrying one can only come from a raw
---    status-only hand-flip — and it would surface the Hebrew refilm message
---    on a successful analysis. The pre-migration check (2026-08-18) found
---    a179f069 already reason-NULL (its xmin is the newest of the five rows,
---    consistent with a later hand-edit), so on production this statement
---    changes nothing — it is the invariant, kept.
+--    hand-flip that left it behind — and it would surface the Hebrew refilm
+--    message on a successful analysis. On production this statement changes
+--    nothing: the pre-migration check (2026-08-18) found a179f069 already
+--    reason-NULL, at the same xmin V5 recorded (10285) — one hand-edit UPDATE
+--    set status='ready' and cleared fail_reason together, no second write.
+--    The statement is the invariant, kept.
 --
 -- PREDICTED OUTCOME on production, to verify right after application —
 -- exactly two rows flip:

@@ -15,6 +15,7 @@ import {
   analysisTimelineSchema,
   getLatestDemoAnalysis,
   illegibleFraction,
+  legibilityVerdict,
   requestDemoAnalysis,
   salvageBatchFrames,
   subsampleClusters,
@@ -125,8 +126,9 @@ describe("analyze_demo (dry-run chain)", () => {
     expect(states.filter((s) => s.screenKind === "login")).toHaveLength(2);
     expect(states.every((s) => s.screenKind !== undefined)).toBe(true);
     // The canned mix passes the split gate: 1/12 unreadable, 2/12 illegible.
-    expect(unreadableFraction(states)).toBeLessThanOrEqual(0.25);
-    expect(illegibleFraction(states)).toBeLessThanOrEqual(0.75);
+    expect(legibilityVerdict(states, { unreadableMax: 0.25, illegibleMax: 0.75 })).toEqual({
+      ok: true,
+    });
 
     // Thumbs exist in storage at the recorded paths.
     for (const s of states) {
@@ -301,17 +303,16 @@ describe("the split legibility gate on real footage", () => {
         ),
       ) as { timeline: { legibility: string }[] }
     ).timeline;
-  // The gate exactly as handleAnalyzeDemo applies it, pinned at the code
-  // defaults (a_analysis_unreadable_threshold 0.25 / a_analysis_legibility_threshold 0.75).
-  const rejectedByGate = (states: { legibility: string }[]) =>
-    unreadableFraction(states) > 0.25 || illegibleFraction(states) > 0.75;
+  // handleAnalyzeDemo's config defaults for the two knobs
+  // (a_analysis_unreadable_threshold 0.25 / a_analysis_legibility_threshold 0.75).
+  const GATE_DEFAULTS = { unreadableMax: 0.25, illegibleMax: 0.75 };
 
   it("passes both real-botteacher fixtures", () => {
     const study = loadTimeline("real-botteacher-study-app.json");
     expect(study).toHaveLength(80);
     expect(unreadableFraction(study)).toBe(1 / 80);
     expect(illegibleFraction(study)).toBe(20 / 80);
-    expect(rejectedByGate(study)).toBe(false);
+    expect(legibilityVerdict(study, GATE_DEFAULTS)).toEqual({ ok: true });
 
     const routing = loadTimeline("real-botteacher-file-routing.json");
     expect(routing).toHaveLength(61);
@@ -320,7 +321,7 @@ describe("the split legibility gate on real footage", () => {
     // 30/61 ≈ 0.49 rejected this real, usable recording under the old single
     // 0.4 gate — the regression the split exists to fix.
     expect(illegibleFraction(routing)).toBeGreaterThan(0.4);
-    expect(rejectedByGate(routing)).toBe(false);
+    expect(legibilityVerdict(routing, GATE_DEFAULTS)).toEqual({ ok: true });
   });
 
   it("rejects unreadable-heavy footage the overall axis alone would pass", () => {
@@ -333,6 +334,35 @@ describe("the split legibility gate on real footage", () => {
     ];
     expect(unreadableFraction(states)).toBe(0.3);
     expect(illegibleFraction(states)).toBe(0.3);
-    expect(rejectedByGate(states)).toBe(true);
+    expect(legibilityVerdict(states, GATE_DEFAULTS)).toEqual({
+      ok: false,
+      axis: "unreadable",
+      fraction: 0.3,
+      threshold: 0.25,
+    });
+  });
+
+  it("rejects illegible-heavy footage on its own axis; unreadable wins when both trip", () => {
+    // 8/10 merely low: the unreadable axis passes, illegible 0.8 > 0.75.
+    const lowHeavy = [
+      ...Array.from({ length: 8 }, () => ({ legibility: "low" })),
+      ...Array.from({ length: 2 }, () => ({ legibility: "high" })),
+    ];
+    expect(legibilityVerdict(lowHeavy, GATE_DEFAULTS)).toEqual({
+      ok: false,
+      axis: "illegible",
+      fraction: 0.8,
+      threshold: 0.75,
+    });
+    // Both axes trip — the reported axis must be deterministic: unreadable first.
+    const bothTrip = [
+      ...Array.from({ length: 3 }, () => ({ legibility: "unreadable" })),
+      ...Array.from({ length: 5 }, () => ({ legibility: "low" })),
+      ...Array.from({ length: 2 }, () => ({ legibility: "high" })),
+    ];
+    expect(legibilityVerdict(bothTrip, GATE_DEFAULTS)).toMatchObject({
+      ok: false,
+      axis: "unreadable",
+    });
   });
 });

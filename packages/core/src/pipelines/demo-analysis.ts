@@ -143,6 +143,32 @@ export function unreadableFraction(states: { legibility: string }[]): number {
   return states.filter((s) => s.legibility === "unreadable").length / states.length;
 }
 
+export type LegibilityVerdict =
+  | { ok: true }
+  | { ok: false; axis: "unreadable" | "illegible"; fraction: number; threshold: number };
+
+/**
+ * The two-axis footage gate as a pure decision: thresholds are parameters
+ * (pricing.ts precedent — the caller loads config and passes it in). The
+ * unreadable axis is checked first, so the axis is deterministic when both
+ * trip. Empty timelines inherit the fractions' empty-is-1 convention and
+ * always fail on the unreadable axis.
+ */
+export function legibilityVerdict(
+  states: { legibility: string }[],
+  thresholds: { unreadableMax: number; illegibleMax: number },
+): LegibilityVerdict {
+  const unreadable = unreadableFraction(states);
+  if (unreadable > thresholds.unreadableMax) {
+    return { ok: false, axis: "unreadable", fraction: unreadable, threshold: thresholds.unreadableMax };
+  }
+  const illegible = illegibleFraction(states);
+  if (illegible > thresholds.illegibleMax) {
+    return { ok: false, axis: "illegible", fraction: illegible, threshold: thresholds.illegibleMax };
+  }
+  return { ok: true };
+}
+
 /**
  * Positional salvage of a model batch response: the entry claiming index i
  * lands at position i; out-of-range and duplicate claims are dropped; a
@@ -634,12 +660,16 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       z.number(),
       0.75,
     );
-    if (
-      unreadableFraction(assembled) > unreadableThreshold ||
-      illegibleFraction(assembled) > legibilityThreshold
-    ) {
+    const verdict = legibilityVerdict(assembled, {
+      unreadableMax: unreadableThreshold,
+      illegibleMax: legibilityThreshold,
+    });
+    if (!verdict.ok) {
       // The job did its work — the verdict on the FOOTAGE lives on the domain
       // row, customer-readable, with the timeline kept for founder debugging.
+      // This branch is pinned by no test: DRY_RUN writes ready and returns
+      // before the gate, so reaching it needs a stubbed vision provider —
+      // separate work. The decision itself is tested via legibilityVerdict.
       await setAnalysis({
         status: "rejected",
         timeline: assembled,
