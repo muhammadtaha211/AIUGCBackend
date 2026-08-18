@@ -137,6 +137,12 @@ export function illegibleFraction(states: { legibility: string }[]): number {
   return states.filter((s) => s.legibility !== "high").length / states.length;
 }
 
+/** Fraction of states the model could not read at all — same empty-is-1 convention. */
+export function unreadableFraction(states: { legibility: string }[]): number {
+  if (states.length === 0) return 1;
+  return states.filter((s) => s.legibility === "unreadable").length / states.length;
+}
+
 /**
  * Positional salvage of a model batch response: the entry claiming index i
  * lands at position i; out-of-range and duplicate claims are dropped; a
@@ -601,13 +607,37 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       );
     }
 
-    const threshold = await getConfigValueOr(
+    // Two-axis footage gate, calibrated on the first five real analyses
+    // (2026-08-18). "low" turned out to be the model's ordinary verdict on a
+    // filmed screen, not a refilm signal — measured across all five:
+    //   states  unreadable  illegible
+    //   80      0.013       0.300
+    //   80      0.000       0.438
+    //   52      0.019       0.538
+    //   80      0.013       0.250
+    //   61      0.016       0.492
+    // so the original single 0.4 gate over low+unreadable rejected working
+    // footage. "unreadable" is the actual refilm signal: four of five sit at
+    // exactly one unreadable state (~1 per analysis is the observed rate), so
+    // 0.25 leaves ~13x headroom. Max observed illegible is 0.538 — 0.75 passes
+    // everything real while still rejecting footage the model could barely
+    // read anywhere. Migration 0028 backfilled the rows the 0.4 gate rejected.
+    const unreadableThreshold = await getConfigValueOr(
+      ctx.db,
+      "a_analysis_unreadable_threshold",
+      z.number(),
+      0.25,
+    );
+    const legibilityThreshold = await getConfigValueOr(
       ctx.db,
       "a_analysis_legibility_threshold",
       z.number(),
-      0.4,
+      0.75,
     );
-    if (illegibleFraction(assembled) > threshold) {
+    if (
+      unreadableFraction(assembled) > unreadableThreshold ||
+      illegibleFraction(assembled) > legibilityThreshold
+    ) {
       // The job did its work — the verdict on the FOOTAGE lives on the domain
       // row, customer-readable, with the timeline kept for founder debugging.
       await setAnalysis({
