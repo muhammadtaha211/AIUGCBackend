@@ -1,15 +1,38 @@
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { getEnv } from "../config";
 import type { Db } from "../db";
 import { hookClips, jobs, personaImages, personas, structures, videoRenders } from "../db/schema";
-import { blurPlaceholder } from "../media/ffmpeg";
+import { enqueue, type Job } from "../jobs/queue";
+import { PermanentError } from "../jobs/errors";
+import type { JobContext, JobResult } from "../jobs/worker";
+import { blurPlaceholder, normalizeVideo, probe } from "../media/ffmpeg";
 import { SEED_STRUCTURES_DIR, WORK_DIR } from "../paths";
 import type { TextSafeArea } from "../providers/remotion";
-import { getStorage, storageKey } from "../storage";
+import { getStorage, splitPath, storageKey } from "../storage";
 
 /** Founder-curated banks: hook clips (closed, pre-rendered), personas, structures. */
+
+/**
+ * Every composition runs at exactly 30fps, so a bank clip at any other rate is
+ * resampled by the renderer and shows fewer distinct frames than the output
+ * claims. Nothing upstream catches it: the CLI takes the founder's --duration
+ * on trust and the admin upload validates MIME/size/dimensions/duration from
+ * the browser, which cannot read a frame rate at all.
+ */
+const COMPOSITION_FPS = 30;
+
+/**
+ * Re-encoding is destructive and in place, so it needs a real reason. 1% of
+ * 30fps covers NTSC 29.97, which duplicates one frame across a 4s clip and is
+ * invisible; 24 or 25fps duplicates one in five and judders. fps 0 means
+ * ffprobe could not tell us — never rewrite a master on a guess.
+ */
+export function needsNormalize(fps: number): boolean {
+  return fps > 0 && Math.abs(fps - COMPOSITION_FPS) > 0.3;
+}
 
 export async function addHookClip(
   db: Db,
@@ -38,7 +61,72 @@ export async function addHookClip(
     throw err;
   }
   await db.update(hookClips).set({ filePath }).where(eq(hookClips.id, clip.id));
+  // Same route as the admin upload rather than normalizing the local file
+  // here: one code path, one failure mode, and the CLI keeps working on a box
+  // without ffmpeg. `aiugc work` (or the worker) picks it up.
+  await requestHookClipNormalize(db, clip.id);
   return { ...clip, filePath };
+}
+
+/**
+ * Bring a stored hook clip to the composition's 30fps, in place.
+ *
+ * Idempotent: a clip already at rate is downloaded, probed and left alone, so
+ * re-running over the whole bank re-encodes nothing. `checkOnly` reports what
+ * it would do and touches nothing — the safe way to point this at the live
+ * bank. `durationMs` is deliberately not rewritten: resampling moves the last
+ * frame's presentation time by under one frame, the column is display-only
+ * (the renderer measures the file itself), and updating it would add a second
+ * write that a crash could leave half-done.
+ */
+export async function normalizeHookClip(
+  db: Db,
+  clipId: string,
+  opts: { checkOnly?: boolean } = {},
+): Promise<{ fps: number; normalized: boolean }> {
+  const rows = await db.select().from(hookClips).where(eq(hookClips.id, clipId)).limit(1);
+  const clip = rows[0];
+  if (!clip) throw new PermanentError(`hook clip ${clipId} not found`);
+  if (!clip.filePath.includes("/")) throw new PermanentError(`hook clip ${clipId} has no file`);
+
+  // Unique per run: the founder's `aiugc work` and the deployed worker share
+  // one database, so two runners can hold the same clip at the same time.
+  mkdirSync(path.join(WORK_DIR, "bank"), { recursive: true });
+  const dir = mkdtempSync(path.join(WORK_DIR, "bank", `${clipId}-`));
+  try {
+    const local = path.join(dir, "clip.mp4");
+    await getStorage().download(clip.filePath, local);
+    const { fps } = await probe(local);
+    if (!needsNormalize(fps) || opts.checkOnly) return { fps, normalized: false };
+
+    const normalized = path.join(dir, "clip-30fps.mp4");
+    await normalizeVideo(local, normalized);
+    // Back to the same storage path: file_path is what every picker and render
+    // reads, so a new key would just strand the old bytes behind it.
+    const { bucket, key } = splitPath(clip.filePath);
+    await getStorage().put(bucket, key, normalized);
+    return { fps, normalized: true };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Queue the worker to check a clip's frame rate. */
+export async function requestHookClipNormalize(db: Db, clipId: string): Promise<void> {
+  await enqueue(db, {
+    type: "normalize_hook_clip",
+    idempotencyKey: `normalize_hook_clip:${clipId}`,
+    payload: { clipId },
+  });
+}
+
+export async function handleNormalizeHookClip(job: Job, ctx: JobContext): Promise<JobResult> {
+  const { clipId } = job.payload as { clipId: string };
+  // DRY_RUN files are text stubs, not media — ffprobe rejects every one.
+  if (getEnv().DRY_RUN) return { kind: "done" };
+  const result = await normalizeHookClip(ctx.db, clipId);
+  ctx.log.info({ clipId, ...result }, "bank: checked hook clip frame rate");
+  return { kind: "done" };
 }
 
 export async function addPersona(

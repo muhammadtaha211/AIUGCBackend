@@ -1,5 +1,6 @@
 import type { Job } from "./jobs/queue";
 import type { HandlerRegistry, JobContext, JobResult } from "./jobs/worker";
+import { handleNormalizeHookClip } from "./pipelines/bank";
 import { handleBillingRenewals } from "./pipelines/billing";
 import {
   generateBenefitCaptions,
@@ -73,6 +74,7 @@ export function buildHandlers(): HandlerRegistry {
     generate_composite: handleGenerateComposite,
     lipsync: handleLipsync,
     render_video: handleRenderVideo,
+    normalize_hook_clip: handleNormalizeHookClip,
     janitor: handleJanitor,
     reap_dead_renders: handleReapDeadRenders,
     billing_renewals: handleBillingRenewals,

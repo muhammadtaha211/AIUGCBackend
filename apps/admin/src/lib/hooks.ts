@@ -64,10 +64,12 @@ export const uploadUrlRequestSchema = z.object({
 });
 
 /**
- * Bank clips are pre-rendered finals — no ingest/normalize step — so the
- * signed upload targets the assets bucket directly, in the same key shape the
- * CLI's addHookClip writes (the path uuid is minted before the row exists, so
- * it does not match the row id; file_path is the source of truth).
+ * Bank clips are pre-rendered finals, so the signed upload targets the assets
+ * bucket directly, in the same key shape the CLI's addHookClip writes (the
+ * path uuid is minted before the row exists, so it does not match the row id;
+ * file_path is the source of truth). Registering the row queues one
+ * normalize_hook_clip job — the only thing the browser cannot check is the
+ * frame rate, and the composition needs exactly 30fps.
  */
 export function hookUploadPath(uploadId: string): string {
   return `assets/bank/hook_clip/${uploadId}/clip.mp4`;

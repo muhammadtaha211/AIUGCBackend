@@ -13,6 +13,8 @@ import { PermanentError } from "../jobs/errors";
 export interface ProbeResult {
   width: number;
   height: number;
+  /** Container frame rate. 0 when ffprobe cannot report one. */
+  fps: number;
   durationMs: number;
   hasAudio: boolean;
 }
@@ -54,7 +56,13 @@ export async function probe(file: string): Promise<ProbeResult> {
     file,
   ]);
   const json = JSON.parse(out) as {
-    streams: { codec_type: string; width?: number; height?: number }[];
+    streams: {
+      codec_type: string;
+      width?: number;
+      height?: number;
+      avg_frame_rate?: string;
+      r_frame_rate?: string;
+    }[];
     format: { duration?: string };
   };
   const video = json.streams.find((s) => s.codec_type === "video");
@@ -64,13 +72,30 @@ export async function probe(file: string): Promise<ProbeResult> {
   return {
     width: video.width,
     height: video.height,
+    // avg first, r_frame_rate only as a fallback: r_frame_rate is the base
+    // timebase (the shortest representable interval), so a variable-rate clip
+    // averaging 6fps still reports 30 there. The question here is always how
+    // many distinct frames a second actually holds.
+    fps: parseRate(video.avg_frame_rate) || parseRate(video.r_frame_rate),
     durationMs: Math.round(Number(json.format.duration ?? 0) * 1000),
     hasAudio: json.streams.some((s) => s.codec_type === "audio"),
   };
 }
 
-/** Transcode any phone footage to the single normalized format. */
-export async function normalizeDemo(input: string, output: string): Promise<void> {
+/** ffprobe reports rates as "30/1" or "30000/1001", and "0/0" or "N/A" when it
+ *  has none. 0 means unknown — callers must not read it as a real rate. */
+export function parseRate(rate: string | undefined): number {
+  const [num, den] = (rate ?? "").split("/").map(Number);
+  if (!num || !den || !Number.isFinite(num / den)) return 0;
+  return num / den;
+}
+
+/**
+ * Transcode to the single delivery format: 1080x1920, 30fps, H.264 + AAC,
+ * moov at the head. Phone footage on ingest, and bank hook clips on upload —
+ * both have to be exactly 30fps because the compositions are.
+ */
+export async function normalizeVideo(input: string, output: string): Promise<void> {
   mkdirSync(path.dirname(output), { recursive: true });
   await run("ffmpeg", [
     "-y",

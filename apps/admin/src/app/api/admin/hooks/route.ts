@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, getStorage, schema } from "@aiugc/core";
+import { getDb, getStorage, requestHookClipNormalize, schema } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireAdmin } from "@/lib/api";
 import { hookMetadataError, isHookUploadPath, registerHookSchema } from "@/lib/hooks";
 
@@ -39,6 +39,18 @@ export async function POST(request: Request) {
         sourceClipId: body.data.sourceClipId,
       })
       .returning({ id: schema.hookClips.id });
+
+    // The browser cannot read a frame rate and Vercel has no ffmpeg, so the
+    // worker probes the stored object and re-encodes it if it is not 30fps.
+    // Best effort on purpose: the row is already committed, and failing the
+    // request here would have the founder upload the whole clip a second time
+    // and leave two active rows in the customer's picker. `aiugc bank
+    // normalize-hooks` is the backstop for a clip whose job never ran.
+    try {
+      await requestHookClipNormalize(db, inserted[0]!.id);
+    } catch {
+      // swallowed by design — see above
+    }
     return NextResponse.json({ hookId: inserted[0]!.id });
   } catch (err) {
     return coreErrorResponse(err);

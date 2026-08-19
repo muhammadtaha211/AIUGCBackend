@@ -6,7 +6,7 @@ import { demos } from "../db/schema";
 import { enqueue, type Job } from "../jobs/queue";
 import { PermanentError } from "../jobs/errors";
 import type { JobContext, JobResult } from "../jobs/worker";
-import { normalizeDemo, probe, thumbnail } from "../media/ffmpeg";
+import { normalizeVideo, probe, thumbnail } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import { getStorage, storageKey } from "../storage";
 
@@ -120,7 +120,14 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
         .update(demos)
         .set({
           status: "ready",
-          probe: { width: 1080, height: 1920, durationMs: 20_000, hasAudio: true, dryRun: true },
+          probe: {
+            width: 1080,
+            height: 1920,
+            fps: 30,
+            durationMs: 20_000,
+            hasAudio: true,
+            dryRun: true,
+          },
           durationMs: 20_000,
           normalizedPath: demo.rawPath,
           updatedAt: new Date(),
@@ -155,7 +162,7 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
 
     const localNormalized = path.join(WORK_DIR, "ingest", demoId, "normalized.mp4");
     const localThumb = path.join(WORK_DIR, "ingest", demoId, "thumb.jpg");
-    await normalizeDemo(localRaw, localNormalized);
+    await normalizeVideo(localRaw, localNormalized);
     await thumbnail(localNormalized, localThumb);
 
     const keyBase = { businessId: demo.businessId, entity: "demo" as const, id: demoId };

@@ -34,6 +34,7 @@ import {
   planStepsSchema,
   listQcQueue,
   moreLikeThis,
+  normalizeHookClip,
   observedWordsPerSecond,
   recentJobs,
   recentRenders,
@@ -44,6 +45,7 @@ import {
   requestDemoPlan,
   runLane,
   runPlanRegression,
+  schema,
   servedContentType,
   setQuestionnaire,
   starVariant,
@@ -435,6 +437,33 @@ bank
         tags: JSON.parse(opts.tags),
       });
       console.log(`hook clip added: ${clip.id}`);
+    }),
+  );
+
+bank
+  .command("normalize-hooks")
+  .description("re-encode bank clips that are not 30fps (the composition rate)")
+  .option("--check", "report each clip's frame rate and change nothing")
+  .action(
+    run(async (opts: { check?: boolean }) => {
+      const db = getDb();
+      const clips = await db.select({ id: schema.hookClips.id }).from(schema.hookClips);
+      let failed = 0;
+      for (const clip of clips) {
+        // Per clip: one unreadable row (a stranded "pending" file_path, a
+        // missing object) must not stop the rest of the bank being checked.
+        try {
+          const { fps, normalized } = await normalizeHookClip(db, clip.id, {
+            checkOnly: opts.check,
+          });
+          const verdict = normalized ? "-> re-encoded to 30fps" : opts.check ? "" : "ok";
+          console.log(`${clip.id}: ${fps ? `${fps.toFixed(3)}fps` : "rate unknown"} ${verdict}`);
+        } catch (err) {
+          failed++;
+          console.error(`${clip.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      console.log(`${clips.length} clip(s) checked, ${failed} unreadable`);
     }),
   );
 

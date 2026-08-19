@@ -87,7 +87,9 @@ export function storageKey(parts: {
   return [parts.businessId ?? "bank", parts.entity, parts.id, parts.filename].join("/");
 }
 
-function splitPath(storagePath: string): { bucket: Bucket; key: string } {
+/** "<bucket>/<key>" apart again — for callers that re-`put()` an object they
+ *  downloaded by its stored path, so the bucket is never guessed. */
+export function splitPath(storagePath: string): { bucket: Bucket; key: string } {
   const slash = storagePath.indexOf("/");
   return { bucket: storagePath.slice(0, slash) as Bucket, key: storagePath.slice(slash + 1) };
 }
