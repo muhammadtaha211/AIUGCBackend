@@ -9,7 +9,7 @@ import {
   type CalculateMetadataFunction,
 } from "remotion";
 import { HookLine } from "./ServiceA";
-import { Watermark } from "./overlays";
+import { ACTIVE_WORD_COLOR, Watermark } from "./overlays";
 import { FPS, HEIGHT, type ServiceAStepsProps } from "./schema";
 import { msToFrame, serviceAStepsTimeline } from "./timing";
 import { STEP_LABEL_RECT } from "./text-fit";
@@ -102,7 +102,7 @@ const StepSegment: React.FC<{
           transformOrigin: `50% ${LABEL_ORIGIN_Y}%`,
         }}
       >
-        <HookLine text={label} area={STEP_LABEL_RECT} />
+        <HookLine text={label} area={STEP_LABEL_RECT} color={ACTIVE_WORD_COLOR} />
       </AbsoluteFill>
     </>
   );

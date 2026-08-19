@@ -21,7 +21,8 @@ export const { fontFamily } = loadFont("normal", {
 const CAPTION_BOTTOM = 440;
 const SIDE_MARGIN = 110;
 
-const ACTIVE_WORD_COLOR = "#FFE04A";
+/** Exported: the steps format burns its step labels in the same yellow. */
+export const ACTIVE_WORD_COLOR = "#FFE04A";
 /** Brand mark burned into unpaid/sample exports. One constant to rebrand. */
 const WATERMARK_TEXT = "AIUGC";
 
