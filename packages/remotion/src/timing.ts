@@ -125,7 +125,24 @@ export function serviceAStepsTimeline(input: {
         `step ${i} starts at ${step.startMs}ms — ${STEP_OUT_OF_RANGE} (${demoFrames} frames)`,
       );
     }
-    const endFrame = Math.min(msToFrame(step.startMs + step.durationMs), demoFrames);
+    const wantedEndFrame = msToFrame(step.startMs + step.durationMs);
+    const endFrame = Math.min(wantedEndFrame, demoFrames);
+    if (endFrame < wantedEndFrame && i < input.steps.length - 1) {
+      // Defensive net. @aiugc/core's assembleSteps caps every step at the gap
+      // to the next one, and every selected state is inside the recording, so
+      // a NON-LAST step can only reach this clamp if the plan is malformed —
+      // its cut point is then not the one that was approved. The last step
+      // outrunning the recording is the normal case (the success state sits
+      // near the end and still takes its full duration) and is not logged: a
+      // net that fires on healthy renders is one nobody reads.
+      //
+      // This prints at the render's pinned logLevel "error". Remotion passes a
+      // browser console message's OWN level as the threshold, so a warn from
+      // the composition always reaches the worker's stdout.
+      console.warn(
+        `step ${i} clamped to the demo end: wanted ${wantedEndFrame} frames, demo has ${demoFrames}`,
+      );
+    }
     const durationInFrames = Math.max(1, endFrame - trimBeforeFrames);
     steps.push({ fromFrame: cursor, durationInFrames, trimBeforeFrames });
     cursor += durationInFrames;

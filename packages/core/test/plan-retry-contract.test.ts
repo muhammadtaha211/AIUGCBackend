@@ -52,15 +52,17 @@ function state(overrides: Partial<AnalysisState>): AnalysisState {
 }
 
 // The a179f069 shape in miniature: the success state (4) sits mid-recording
-// and the timeline keeps going after it.
+// and the timeline keeps going after it. 2s apart so the only violation these
+// mocks produce is the one under test — states closer together than a step is
+// long are a violation of their own (see the window model).
 const TIMELINE: AnalysisState[] = [
   state({ timestampMs: 0, visibleText: ["פתיחה"], actionType: "navigate" }),
-  state({ timestampMs: 1000, visibleText: ["בחירה"] }),
-  state({ timestampMs: 2000, visibleText: ["הקלדה"], actionType: "type" }),
-  state({ timestampMs: 3000, visibleText: ["אישור"], actionType: "select" }),
-  state({ timestampMs: 4000, visibleText: ["הצלחה"], actionType: "result" }),
-  state({ timestampMs: 5000, visibleText: ["המשך"], actionType: "navigate" }),
-  state({ timestampMs: 6000, visibleText: ["גלילה"], actionType: "scroll" }),
+  state({ timestampMs: 2000, visibleText: ["בחירה"] }),
+  state({ timestampMs: 4000, visibleText: ["הקלדה"], actionType: "type" }),
+  state({ timestampMs: 6000, visibleText: ["אישור"], actionType: "select" }),
+  state({ timestampMs: 8000, visibleText: ["הצלחה"], actionType: "result" }),
+  state({ timestampMs: 10_000, visibleText: ["המשך"], actionType: "navigate" }),
+  state({ timestampMs: 12_000, visibleText: ["גלילה"], actionType: "scroll" }),
 ];
 
 /** 6 legal labels, success state selected mid-plan, ends past it — exactly one

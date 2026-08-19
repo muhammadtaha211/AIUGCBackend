@@ -20,11 +20,16 @@ import {
 import type { AnalysisState } from "../src/pipelines/demo-analysis";
 import {
   approvePlan,
+  assembleSteps,
   findPlanViolations,
+  generateStepPlan,
   getStepPlan,
   planStepsSchema,
+  readTimeMs,
+  stepDurations,
   requestDemoPlan,
   runPlanRegression,
+  totalRuntimeMs,
   unexplainedMomentsSchema,
   updatePlanSteps,
 } from "../src/pipelines/demo-step-plans";
@@ -149,12 +154,25 @@ describe("plan_demo_steps (dry-run chain)", () => {
     const last = steps[steps.length - 1]!;
     expect(last.actionType).toBe("result");
     expect(last.label).toBe("הקמפיין נוצר");
+    // The last step has no neighbour to run into, so it gets the full
+    // per-action default.
     expect(last.durationMs).toBe(2800);
-    // Total runtime: six product steps at the per-action duration defaults.
-    // (The 12-17s band is a target for real recordings; the canned journey
-    // sits just under it now that its login states are filtered.)
+    // Every other step is capped at the gap to the next one: the two states
+    // 1500ms apart (5->6, 6->7) get 1500 instead of their 1600/2200 defaults.
+    expect(steps.map((s) => s.durationMs)).toEqual([1800, 1500, 1500, 1800, 1600, 2800]);
+    // No step's window may reach into the next step's: 200ms of source shown
+    // twice back to back is the defect this model exists to make impossible.
+    for (let i = 0; i < steps.length - 1; i++) {
+      expect(steps[i]!.timestampMs + steps[i]!.durationMs).toBeLessThanOrEqual(
+        steps[i + 1]!.timestampMs,
+      );
+    }
+    // Total runtime: six product steps. (The 12-17s band is a target for real
+    // recordings; the canned journey sits just under it now that its login
+    // states are filtered and its tight pairs are capped at their gaps.)
     const total = steps.reduce((ms, s) => ms + s.durationMs, 0);
-    expect(total).toBe(11_800);
+    expect(total).toBe(11_000);
+    expect(totalRuntimeMs(steps)).toBe(total);
 
     const moments = unexplainedMomentsSchema.parse(plan!.unexplainedMoments);
     expect(moments).toHaveLength(1);
@@ -225,7 +243,11 @@ describe("plan lifecycle: edit, approve, fork", () => {
     expect(steps.map((s) => s.sourceIndex)).toEqual([1, 11]); // re-sorted
     expect(steps[0]!.timestampMs).toBe(1500);
     expect(steps[0]!.actionType).toBe("navigate");
-    expect(steps[0]!.durationMs).toBe(1800); // derived, not client-supplied
+    // Derived, not client-supplied. 1500ms -> 18500ms is a wide gap, so both
+    // steps get what they asked for: step 0's 4-word label needs 2000ms to be
+    // read, which outbids navigate's 1800ms default; step 1 is last and takes
+    // result's 2800ms default over its label's 2000ms.
+    expect(steps[0]!.durationMs).toBe(2000);
     expect(steps[1]!.durationMs).toBe(2800);
   });
 
@@ -276,10 +298,12 @@ describe("plan lifecycle: edit, approve, fork", () => {
 });
 
 describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => {
+  // 2s apart: these fixtures stand for VALID plans, and two states closer
+  // together than one step is long are now a violation in their own right.
   const timeline: AnalysisState[] = [
     state({ timestampMs: 0, visibleText: ["פרויקט חדש", "שמירה"] }),
-    state({ timestampMs: 1000, visibleText: ["הקמפיין נוצר!"], actionType: "result" }),
-    state({ timestampMs: 2000, visibleText: [], legibility: "unreadable" }),
+    state({ timestampMs: 2000, visibleText: ["הקמפיין נוצר!"], actionType: "result" }),
+    state({ timestampMs: 4000, visibleText: [], legibility: "unreadable" }),
   ];
 
   it("accepts labels lifted from the screen or the questionnaire", () => {
@@ -328,6 +352,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, QUESTIONNAIRE, 8, {
         minSteps: 1,
         notes: null,
+        minStepMs: 1400,
       }).some((v) => v.includes("result/success")),
     ).toBe(true);
     // Ending on the result state passes.
@@ -340,7 +365,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         timeline,
         QUESTIONNAIRE,
         8,
-        { minSteps: 1, notes: null },
+        { minSteps: 1, notes: null, minStepMs: 1400 },
       ),
     ).toEqual([]);
     // Ends mid-journey but `notes` explains (the timeline's only "result"
@@ -349,6 +374,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, QUESTIONNAIRE, 8, {
         minSteps: 1,
         notes: "אין בהקלטה מסך סיום ברור",
+        minStepMs: 1400,
       }),
     ).toEqual([]);
     // No selectable result in the timeline -> the rule cannot apply.
@@ -358,7 +384,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         [state({ timestampMs: 0, visibleText: ["שמירה"] })],
         QUESTIONNAIRE,
         8,
-        { minSteps: 1, notes: null },
+        { minSteps: 1, notes: null, minStepMs: 1400 },
       ),
     ).toEqual([]);
     // Under the minimum: silent -> violation; explained in notes -> allowed.
@@ -371,7 +397,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         timeline,
         QUESTIONNAIRE,
         8,
-        { minSteps: 6, notes: null },
+        { minSteps: 6, notes: null, minStepMs: 1400 },
       ).some((v) => v.includes("fewer than the minimum")),
     ).toBe(true);
     expect(
@@ -383,7 +409,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         timeline,
         QUESTIONNAIRE,
         8,
-        { minSteps: 6, notes: "יש רק שני מסכים מובחנים" },
+        { minSteps: 6, notes: "יש רק שני מסכים מובחנים", minStepMs: 1400 },
       ),
     ).toEqual([]);
   });
@@ -397,9 +423,9 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     // and a message naming only one would steer the retry blind.
     const continues: AnalysisState[] = [
       state({ timestampMs: 0, visibleText: ["התחלה"] }),
-      state({ timestampMs: 1000, visibleText: ["הושלם"], actionType: "result" }),
-      state({ timestampMs: 2000, visibleText: ["המשך"] }),
-      state({ timestampMs: 3000, visibleText: ["נשמר"], actionType: "result" }),
+      state({ timestampMs: 2000, visibleText: ["הושלם"], actionType: "result" }),
+      state({ timestampMs: 4000, visibleText: ["המשך"] }),
+      state({ timestampMs: 6000, visibleText: ["נשמר"], actionType: "result" }),
     ];
     const violations = findPlanViolations(
       [
@@ -410,7 +436,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       continues,
       QUESTIONNAIRE,
       8,
-      { minSteps: 6, notes: null },
+      { minSteps: 6, notes: null, minStepMs: 1400 },
     );
     const shapeViolation = violations.find((v) => v.includes("result/success"));
     expect(shapeViolation).toBeDefined();
@@ -543,6 +569,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, QUESTIONNAIRE, 8, {
         minSteps: 1,
         notes: null,
+        minStepMs: 1400,
       }),
     ).toEqual([]);
   });
@@ -589,6 +616,209 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       ).some((v) => v.includes("maximum is 1")),
     ).toBe(true);
     expect(findPlanViolations([], timeline, QUESTIONNAIRE, 8)).toEqual(["the plan has zero steps"]);
+  });
+});
+
+describe("step durations (the window model)", () => {
+  /** Defaults: a missing app_config row IS the default, so this is what the
+   *  pipeline passes when nothing is configured. */
+  const DURATIONS = { byActionType: {}, minMs: 1400, maxMs: 4000 };
+
+  it("with no app_config rows the code constants are the configuration", async () => {
+    const defaults = await stepDurations(db);
+    // Spelled out, not imported: a test that reads the constant cannot notice
+    // the constant moving, and these two numbers ARE the shipped behaviour.
+    expect(defaults.minMs).toBe(1400);
+    expect(defaults.maxMs).toBe(4000);
+    expect(defaults.byActionType.result).toBe(2800);
+
+    await db.insert(dbSchema.appConfig).values([
+      { key: "a_step_ms_min", value: 2000 },
+      { key: "a_step_ms_max", value: 3000 },
+      { key: "a_step_ms_by_action", value: { result: 3300 } },
+    ]);
+    const configured = await stepDurations(db);
+    expect(configured.minMs).toBe(2000);
+    expect(configured.maxMs).toBe(3000);
+    expect(configured.byActionType.result).toBe(3300);
+    expect(configured.byActionType.tap).toBe(1600); // unlisted keys keep the default
+
+    // A pair the wrong way round must not make the clamp incoherent.
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: 900 })
+      .where(eq(dbSchema.appConfig.key, "a_step_ms_max"));
+    expect((await stepDurations(db)).maxMs).toBe(2000); // floored at minMs
+
+    await db
+      .delete(dbSchema.appConfig)
+      .where(
+        sql`${dbSchema.appConfig.key} in ('a_step_ms_min', 'a_step_ms_max', 'a_step_ms_by_action')`,
+      );
+    expect((await stepDurations(db)).minMs).toBe(1400);
+  });
+
+  it("readTimeMs grows with the label — a 6-word label outlasts a 2-word one", () => {
+    expect(readTimeMs("בוחרים מוצר")).toBeLessThan(
+      readTimeMs("מתחברים לאפליקציה בוחרים מוצר ומשלמים בהעברה"),
+    );
+    // 400ms lead + 2.5 words/sec. Spelled out rather than recomputed from the
+    // constants: a test that imports the guess cannot catch the guess moving.
+    expect(readTimeMs("בוחרים מוצר")).toBe(1200);
+    expect(readTimeMs("מתחברים לאפליקציה בוחרים מוצר ומשלמים בהעברה")).toBe(2800);
+    expect(readTimeMs("   ")).toBe(400); // no words: the lead alone
+  });
+
+  it("caps a step at the gap to the next state, never at a flat per-action number", () => {
+    // The real defect (fixtures/timelines/real-botteacher-file-routing.json):
+    // a `type` state 1600ms before the next selected one, given `type`'s flat
+    // 2200ms, rendered 600ms of source twice.
+    const timeline: AnalysisState[] = [
+      state({ timestampMs: 10_000, actionType: "type" }),
+      state({ timestampMs: 11_600, actionType: "result" }),
+    ];
+    const steps = assembleSteps(
+      [
+        { sourceIndex: 0, label: "ממלאים פרטים" },
+        { sourceIndex: 1, label: "מוכן" },
+      ],
+      timeline,
+      DURATIONS,
+    );
+    expect(steps[0]!.durationMs).toBe(1600); // the gap, not type's 2200
+    expect(steps[0]!.timestampMs + steps[0]!.durationMs).toBe(steps[1]!.timestampMs);
+    expect(steps[1]!.durationMs).toBe(2800); // last step: no neighbour to hit
+  });
+
+  it("never overlaps, whatever order the selection arrives in", () => {
+    // The client sends steps unsorted (the picker is a grid). Durations must
+    // be computed against the CHRONOLOGICAL neighbour, not the array one.
+    const timeline: AnalysisState[] = [
+      state({ timestampMs: 0, actionType: "navigate" }),
+      state({ timestampMs: 1500, actionType: "tap" }),
+      state({ timestampMs: 3000, actionType: "type" }),
+      state({ timestampMs: 30_000, actionType: "result" }),
+    ];
+    const steps = assembleSteps(
+      [
+        { sourceIndex: 2, label: "שלוש" },
+        { sourceIndex: 0, label: "אחת" },
+        { sourceIndex: 3, label: "סוף" },
+        { sourceIndex: 1, label: "שתיים" },
+      ],
+      timeline,
+      DURATIONS,
+    );
+    expect(steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3]);
+    for (let i = 0; i < steps.length - 1; i++) {
+      expect(steps[i]!.timestampMs + steps[i]!.durationMs).toBeLessThanOrEqual(
+        steps[i + 1]!.timestampMs,
+      );
+    }
+  });
+
+  it("respects the floor and the ceiling", () => {
+    const timeline: AnalysisState[] = [
+      state({ timestampMs: 0, actionType: "tap" }),
+      // 400ms later: two states inside one step. The MODEL is stopped by
+      // findPlanViolations; a human edit reaches here, and the floor is the
+      // backstop — a 400ms clip is not a step, it is a flicker.
+      state({ timestampMs: 400, actionType: "result" }),
+    ];
+    const tooClose = assembleSteps(
+      [
+        { sourceIndex: 0, label: "אחת" },
+        { sourceIndex: 1, label: "סוף" },
+      ],
+      timeline,
+      DURATIONS,
+    );
+    expect(tooClose[0]!.durationMs).toBe(1400);
+
+    // Ceiling: a label nobody could read inside 4s, with all the room it wants.
+    const roomy: AnalysisState[] = [state({ timestampMs: 0, actionType: "result" })];
+    const long = assembleSteps(
+      [{ sourceIndex: 0, label: "אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע עשר" }],
+      roomy,
+      DURATIONS,
+    );
+    expect(readTimeMs("אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע עשר")).toBe(4400);
+    expect(long[0]!.durationMs).toBe(4000);
+  });
+
+  it("the canned DRY_RUN plan obeys the min-gap rule it is validated against", async () => {
+    // dryRunPlan is run through the SAME findPlanViolations as a real plan, so
+    // a canned plan that trips the rule throws instead of producing a plan —
+    // and subsampleClusters always keeps its last element before lastResult is
+    // appended, so (final candidate, success screen) is exactly the pair a
+    // real recording puts under one step apart.
+    const tight: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["פתיחה"], actionType: "navigate" }),
+      state({ timestampMs: 4000, visibleText: ["בחירה"], actionType: "tap" }),
+      state({ timestampMs: 8000, visibleText: ["הקלדה"], actionType: "type" }),
+      state({ timestampMs: 44_600, visibleText: ["שמירה"], actionType: "tap" }),
+      state({ timestampMs: 45_000, visibleText: ["נוצר"], actionType: "result" }),
+    ];
+    const draft = await generateStepPlan(db, { timeline: tight, questionnaire: QUESTIONNAIRE });
+    const picked = draft.steps.map((s) => s.timestampMs);
+    expect(picked).toContain(45_000); // the ending is the one state it cannot lose
+    expect(picked).not.toContain(44_600); // its too-close neighbour is dropped
+    for (let i = 1; i < picked.length; i++) {
+      expect(picked[i]! - picked[i - 1]!).toBeGreaterThanOrEqual(1400);
+    }
+  });
+
+  it("two states inside one step are a VIOLATION for the model, not a short clip", () => {
+    // Real timelines put states 400ms apart (fixtures/timelines: the botteacher
+    // recordings both do). Selecting both is a selection bug — the corrective
+    // retry has to see it, because no duration can honour both windows.
+    const timeline: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחלה"] }),
+      state({ timestampMs: 400, visibleText: ["המשך"] }),
+      state({ timestampMs: 9000, visibleText: ["נשמר"], actionType: "result" }),
+    ];
+    const violations = findPlanViolations(
+      [
+        { sourceIndex: 0, label: "התחלה" },
+        { sourceIndex: 1, label: "המשך" },
+        { sourceIndex: 2, label: "נשמר" },
+      ],
+      timeline,
+      QUESTIONNAIRE,
+      8,
+      { minSteps: 1, notes: null, minStepMs: 1400 },
+    );
+    const tooClose = violations.find((v) => v.includes("400ms apart"));
+    expect(tooClose).toBeDefined();
+    expect(tooClose).toContain("states 0 and 1");
+    // `notes` waives the shape rules above it — it must NOT waive this one:
+    // nothing explains a clip shorter than the eye can land on.
+    expect(
+      findPlanViolations(
+        [
+          { sourceIndex: 0, label: "התחלה" },
+          { sourceIndex: 1, label: "המשך" },
+          { sourceIndex: 2, label: "נשמר" },
+        ],
+        timeline,
+        QUESTIONNAIRE,
+        8,
+        { minSteps: 1, notes: "הקלטה קצרה", minStepMs: 1400 },
+      ).some((v) => v.includes("400ms apart")),
+    ).toBe(true);
+    // Far enough apart -> silent.
+    expect(
+      findPlanViolations(
+        [
+          { sourceIndex: 0, label: "התחלה" },
+          { sourceIndex: 2, label: "נשמר" },
+        ],
+        timeline,
+        QUESTIONNAIRE,
+        8,
+        { minSteps: 1, notes: null, minStepMs: 1400 },
+      ),
+    ).toEqual([]);
   });
 });
 

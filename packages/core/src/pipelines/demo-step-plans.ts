@@ -92,6 +92,39 @@ const DEFAULT_STEP_MS: Record<AnalysisState["actionType"], number> = {
   idle: 1600,
 };
 
+/** Floor and ceiling on one step's clip, whatever the arithmetic asks for.
+ *  Config `a_step_ms_min` / `a_step_ms_max` override (no seeded row: a missing
+ *  key IS the default). The floor is a legibility limit — a label the eye
+ *  cannot land on is worse than no label; the ceiling stops one step eating
+ *  the ad. Both are guesses, like DEFAULT_STEP_MS. */
+const MIN_STEP_MS = 1400;
+const MAX_STEP_MS = 4000;
+
+/** Fixed allowance before the label is being read at all: the 5-frame pop-in
+ *  (ServiceASteps) plus the eye reaching the lower third after the hard cut. */
+const LABEL_LEAD_MS = 400;
+/** Hebrew burned-caption reading rate. The slow end of the 2.5-3 words/sec
+ *  band on purpose — the viewer is watching the demo, not the caption. */
+const LABEL_WORDS_PER_SECOND = 2.5;
+
+/**
+ * How long a burned step label needs to stay up to be read. A GUESS, exactly
+ * like DEFAULT_STEP_MS, and labelled as one: nobody has measured Israeli
+ * viewers reading these. Exported and pure because pass 2's runtime check and
+ * the wizard's still-preview must use the same number the plan was built with.
+ */
+export function readTimeMs(label: string): number {
+  const words = label.trim().split(/\s+/).filter(Boolean).length;
+  return LABEL_LEAD_MS + Math.round((words / LABEL_WORDS_PER_SECOND) * 1000);
+}
+
+/** On-screen length of the steps (the hook clip sits on top of this). Exported
+ *  for pass 2 and the wizard preview — deliberately not wired into any
+ *  validator here. */
+export function totalRuntimeMs(steps: PlanStep[]): number {
+  return steps.reduce((ms, step) => ms + step.durationMs, 0);
+}
+
 const MAX_LABEL_CHARS = 60;
 
 /** Rough cost bookkeeping — same math as pipelines/copy.ts (3rd use is Phase 6's problem). */
@@ -215,16 +248,17 @@ function dupRunIndexes(timeline: AnalysisState[], index: number): number[] {
  * user-edited labels never pass through it. `shape` adds the plan-shape rules
  * the generation path enforces on top of the per-step rules: the video must
  * end on the success state (when the timeline offers a selectable one and
- * `notes` does not explain why it cannot), and a below-minimum plan must
- * explain itself in `notes`. Human edits deliberately
- * skip both — deleting steps just makes the video shorter.
+ * `notes` does not explain why it cannot), a below-minimum plan must
+ * explain itself in `notes`, and no two selected states may sit closer
+ * together than one step is long. Human edits deliberately
+ * skip all three — deleting steps just makes the video shorter.
  */
 export function findPlanViolations(
   steps: { sourceIndex: number; label: string }[],
   timeline: AnalysisState[],
   questionnaire: Questionnaire,
   maxSteps: number,
-  shape?: { minSteps: number; notes: string | null },
+  shape?: { minSteps: number; notes: string | null; minStepMs: number },
 ): string[] {
   const violations: string[] = [];
   if (steps.length === 0) {
@@ -337,6 +371,26 @@ export function findPlanViolations(
         `the plan has ${steps.length} steps, fewer than the minimum ${shape.minSteps} — either select more genuinely distinct steps or explain why in \`notes\` (Hebrew); never pad`,
       );
     }
+    // Two selections inside one step's length are the same moment on screen:
+    // the second clip would have to open before the first one closed. Real
+    // timelines put states 400ms apart, so this is reachable, and it is
+    // arithmetic rather than taste — assembleSteps cannot honour both, and
+    // silently shortening one is what put 200ms of source on screen twice.
+    // Named here so the ONE corrective retry can drop one of the pair; the
+    // `notes` escape hatch does not apply, nothing explains a 400ms clip.
+    const chronological = [...seen].sort(
+      (a, b) => timeline[a]!.timestampMs - timeline[b]!.timestampMs,
+    );
+    for (let i = 1; i < chronological.length; i++) {
+      const before = chronological[i - 1]!;
+      const after = chronological[i]!;
+      const gap = timeline[after]!.timestampMs - timeline[before]!.timestampMs;
+      if (gap < shape.minStepMs) {
+        violations.push(
+          `states ${before} and ${after} are only ${gap}ms apart — a step is at least ${shape.minStepMs}ms long, so these two are the same moment on screen; keep whichever reads better and select a genuinely different state instead of the other`,
+        );
+      }
+    }
   }
   return violations;
 }
@@ -352,35 +406,80 @@ export interface StepPlanDraft {
   promptVersion: string;
 }
 
-async function stepDurations(db: Db): Promise<Record<string, number>> {
+export interface StepDurationConfig {
+  byActionType: Record<string, number>;
+  minMs: number;
+  maxMs: number;
+}
+
+/** Exported for the test that pins the defaults: with no app_config rows the
+ *  code constants ARE the configuration, and nothing else observes them. */
+export async function stepDurations(db: Db): Promise<StepDurationConfig> {
   const configured = await getConfigValueOr(
     db,
     "a_step_ms_by_action",
     z.record(z.string(), z.number()),
     {},
   );
-  return { ...DEFAULT_STEP_MS, ...configured };
+  const minMs = await getConfigValueOr(db, "a_step_ms_min", z.number(), MIN_STEP_MS);
+  return {
+    byActionType: { ...DEFAULT_STEP_MS, ...configured },
+    minMs,
+    // Same guard as a_steps_max: a config pair the wrong way round must not
+    // make the clamp incoherent.
+    maxMs: Math.max(minMs, await getConfigValueOr(db, "a_step_ms_max", z.number(), MAX_STEP_MS)),
+  };
 }
 
-/** sourceIndex is the source of truth: timestamp and actionType come from the
- *  selected state, durationMs from config — chronological by construction. */
-function assembleSteps(
+/**
+ * sourceIndex is the source of truth: timestamp and actionType come from the
+ * selected state — chronological by construction.
+ *
+ * Duration is derived from the state AND its neighbour. A flat per-actionType
+ * lookup has no idea where the next step begins, so a 1800ms `type` step in
+ * front of a state 1600ms later rendered 200ms of source twice, back to back
+ * (real: fixtures/timelines/real-botteacher-file-routing.json, proven in
+ * pixels). The last step has no neighbour, so it gets what it asked for.
+ *
+ * The gap cap removes overlap for every plan whose selected states are at
+ * least minMs apart, and findPlanViolations enforces exactly that on the model
+ * path. It does NOT hold below the floor: the floor is applied AFTER the cap,
+ * so two states 400ms apart still produce a 1400ms window that runs 1000ms
+ * into the next one. That is deliberate — a 400ms clip is a flicker, not a
+ * step — but it means updatePlanSteps, which has no violation channel and no
+ * retry, can still store an overlapping plan if a human picks two states
+ * inside one step. Closing that is a product call (reject the edit, or merge
+ * the pair), not arithmetic, so it is not decided here.
+ */
+export function assembleSteps(
   selected: { sourceIndex: number; label: string }[],
   timeline: AnalysisState[],
-  durations: Record<string, number>,
+  durations: StepDurationConfig,
 ): PlanStep[] {
-  return selected
-    .map(({ sourceIndex, label }) => {
-      const state = timeline[sourceIndex]!;
-      return {
-        timestampMs: state.timestampMs,
-        actionType: state.actionType,
-        label: label.trim(),
-        sourceIndex,
-        durationMs: durations[state.actionType] ?? DEFAULT_STEP_MS[state.actionType],
-      };
-    })
+  const ordered = selected
+    .map(({ sourceIndex, label }) => ({
+      timestampMs: timeline[sourceIndex]!.timestampMs,
+      actionType: timeline[sourceIndex]!.actionType,
+      label: label.trim(),
+      sourceIndex,
+    }))
     .sort((a, b) => a.timestampMs - b.timestampMs);
+
+  return ordered.map((step, i) => {
+    const desired = Math.max(
+      durations.byActionType[step.actionType] ?? DEFAULT_STEP_MS[step.actionType],
+      readTimeMs(step.label),
+    );
+    const next = ordered[i + 1];
+    const gapToNext = next ? next.timestampMs - step.timestampMs : desired;
+    return {
+      ...step,
+      durationMs: Math.min(
+        Math.max(Math.min(desired, gapToNext), durations.minMs),
+        durations.maxMs,
+      ),
+    };
+  });
 }
 
 /**
@@ -394,6 +493,7 @@ function dryRunPlan(
   questionnaire: Questionnaire,
   minSteps: number,
   maxSteps: number,
+  minStepMs: number,
 ): PlanOutput {
   let candidates = timeline
     .map((state, index) => ({ state, index }))
@@ -430,6 +530,22 @@ function dryRunPlan(
     );
     kept.push(lastResult);
   }
+
+  // ...and respect the min-gap rule too, for the same reason. subsampleClusters
+  // always keeps its last element and lastResult is appended straight after it,
+  // so (final candidate, success screen) is exactly the pair a real recording
+  // is most likely to have under one step apart — leaving it in would make the
+  // canned plan fail its own validation and throw. Walk backwards dropping the
+  // EARLIER of any too-close pair: the ending is the one state the format
+  // cannot lose. Dropping below minSteps is fine — `notes` already explains it.
+  const spaced: typeof kept = [];
+  for (let i = kept.length - 1; i >= 0; i--) {
+    const next = spaced[spaced.length - 1];
+    if (!next || next.state.timestampMs - kept[i]!.state.timestampMs >= minStepMs) {
+      spaced.push(kept[i]!);
+    }
+  }
+  kept = spaced.reverse();
 
   const steps = kept.map(({ state, index }) => ({
     sourceIndex: index,
@@ -479,12 +595,19 @@ export async function generateStepPlan(
   const durations = await stepDurations(db);
 
   if (getEnv().DRY_RUN) {
-    const canned = dryRunPlan(opts.timeline, opts.questionnaire, minSteps, maxSteps);
+    const canned = dryRunPlan(
+      opts.timeline,
+      opts.questionnaire,
+      minSteps,
+      maxSteps,
+      durations.minMs,
+    );
     // The canned plan goes through the same enforcement as a real one, so the
     // whole validation path runs keyless; a violation here is a code bug.
     const violations = findPlanViolations(canned.steps, opts.timeline, opts.questionnaire, maxSteps, {
       minSteps,
       notes: canned.notes,
+      minStepMs: durations.minMs,
     });
     if (violations.length > 0) {
       throw new Error(`dry-run plan violates its own rules: ${violations.join("; ")}`);
@@ -539,6 +662,7 @@ export async function generateStepPlan(
   let violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
     minSteps,
     notes: output.notes,
+    minStepMs: durations.minMs,
   });
   if (violations.length > 0) {
     // "Minimal edits" matters: a from-scratch replan routinely fixes the named
@@ -556,6 +680,7 @@ export async function generateStepPlan(
     violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
       minSteps,
       notes: output.notes,
+      minStepMs: durations.minMs,
     });
     if (violations.length > 0) {
       throw new PermanentError(`plan violates label rules after retry: ${violations.join("; ")}`, {
