@@ -1,6 +1,7 @@
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition, type FfmpegOverrideFn } from "@remotion/renderer";
 import { existsSync, mkdirSync } from "node:fs";
+import { freemem } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveLocalFiles } from "./serve-files";
@@ -265,6 +266,14 @@ async function runRender(
   const composition = await selectComposition({ serveUrl, id, inputProps });
 
   mkdirSync(path.dirname(outPath), { recursive: true });
+  // The 2026-08-18 stutter was dated to a too-small ambient frame cache, but
+  // what made that box tight was never established — it was reconstructed from
+  // surviving temp dirs. These are the two numbers that reconstruction needed:
+  // record them at every render start so the next occurrence proves itself.
+  // outPath carries the render id (WORK_DIR/render/<videoRenderId>/final.mp4).
+  console.log(
+    `[render] ${id} out=${outPath} freemem=${freemem()} offthreadVideoCacheSizeInBytes=${OFFTHREAD_VIDEO_CACHE_BYTES}`,
+  );
   await renderMedia({
     composition,
     serveUrl,
