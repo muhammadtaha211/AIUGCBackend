@@ -88,6 +88,44 @@ export const bt709FfmpegOverride: FfmpegOverrideFn = ({ type, args }) => {
   ];
 };
 
+/**
+ * Size of Remotion's <OffthreadVideo> decoded-frame cache, pinned.
+ *
+ * Remotion's default is `null` = half of the memory FREE when the render
+ * starts (`os.freemem()` on Windows), so the same inputs can render
+ * differently depending on what else the box happens to be running. That is
+ * not a performance knob. A 1080x1920 frame costs ~6MB in this cache, and once
+ * a thread's share cannot hold a couple of them the compositor prunes to one
+ * frame and then answers the NEXT timestamp out of that near-empty cache —
+ * its own verbose log, verbatim:
+ *
+ *   Pruned 5 on thread 0 to save memory, keeping 1. Cache size on thread: 6MB,
+ *     total cache: 6MB, max cache on thread: 9MB
+ *   Found timestamp with too much threshold, but will let it pass because no
+ *     closer frames found. difference = 512, threshold = 511
+ *
+ * 512 ticks is exactly one frame at this file's time base: it hands back the
+ * previous frame rather than decoding the one asked for. Timestamps, duration
+ * and playback speed all stay correct, so nothing downstream notices — the ad
+ * just stutters. Measured against the compositor directly (no browser), on the
+ * 88s/1080x1920 demo of render 448d257c at its 5-step plan's exact timestamps:
+ *
+ *   cache  20MB -> 12.2-12.8 distinct fps per step segment, hook 14.6   (91s)
+ *   cache  50MB -> 23.9 per step                                        (68s)
+ *   cache 100MB -> 30.0 per step, clean                                 (19s)
+ *   cache 200/400/800MB -> 30.0 per step                          (19/26/19s)
+ *   cache 512MB -> 30.0 per step, zero "too much threshold" logged       (17s)
+ *
+ * Wall clock for all 423 extractions in brackets: it flattens from 100MB up,
+ * including at the ~2.3GB the default picked that day, so the pin buys the
+ * determinism for free. 512MB is 5x the smallest size that measured clean;
+ * with both files open the compositor reported a 256MB budget per decode
+ * thread, ~40 frames each. It assumes the box has that much to spare, which
+ * anything running headless Chrome does. Do not remove this: it is
+ * correctness, not tuning.
+ */
+const OFFTHREAD_VIDEO_CACHE_BYTES = 512 * 1024 * 1024;
+
 const ENTRY_POINT = fileURLToPath(new URL("./index.ts", import.meta.url));
 
 let bundlePromise: Promise<string> | undefined;
@@ -231,6 +269,7 @@ async function runRender(
     // the range conversion real and completes the VUI tags.
     colorSpace: "bt709",
     ffmpegOverride: bt709FfmpegOverride,
+    offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
     outputLocation: outPath,
     inputProps,
     logLevel: "error",
