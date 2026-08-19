@@ -116,13 +116,22 @@ export const bt709FfmpegOverride: FfmpegOverrideFn = ({ type, args }) => {
  *   cache 200/400/800MB -> 30.0 per step                          (19/26/19s)
  *   cache 512MB -> 30.0 per step, zero "too much threshold" logged       (17s)
  *
- * Wall clock for all 423 extractions in brackets: it flattens from 100MB up,
- * including at the ~2.3GB the default picked that day, so the pin buys the
- * determinism for free. 512MB is 5x the smallest size that measured clean;
- * with both files open the compositor reported a 256MB budget per decode
- * thread, ~40 frames each. It assumes the box has that much to spare, which
- * anything running headless Chrome does. Do not remove this: it is
- * correctness, not tuning.
+ * Wall clock for all 423 extractions in brackets — it flattens from 100MB up,
+ * so the pin buys determinism for free. Full renders of that plan on a quiet
+ * box agree: 95-103s and 397/423 mpdecimate-distinct frames at the default,
+ * 169s and 345/423 at 25MB. The 2026-08-18 render kept 341/423 with a
+ * per-segment difference fingerprint matching 25MB, which is what dates the
+ * fault to this mechanism. What it was on that box that made the cache that
+ * small was never established — half of free memory implies ~50MB free, and
+ * nothing on disk records it. The pin makes the question moot: the size no
+ * longer depends on anything ambient.
+ *
+ * 512MB total; with both files open the compositor reported a 256MB budget per
+ * decode thread, ~40 frames each. Damage was seen at 50MB and below and never
+ * at 100MB or above, on a handful of runs per size — the boundary is fuzzy, so
+ * this is deliberately far above it. Note it is a floor as well as a ceiling:
+ * unlike the default it will not shrink on a small host. Do not remove it: it
+ * is correctness, not tuning.
  */
 const OFFTHREAD_VIDEO_CACHE_BYTES = 512 * 1024 * 1024;
 
