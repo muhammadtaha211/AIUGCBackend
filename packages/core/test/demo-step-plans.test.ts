@@ -180,6 +180,30 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(moments[0]!.timestampMs).toBe(11_000);
   });
 
+  it("the canned plan reaches the minimum when index-even thinning would not", { timeout: 60_000 }, async () => {
+    // subsampleClusters thins by INDEX, so a cluster of states close together
+    // can spend most of the cap before the min-gap walk runs — and the
+    // minimum-step waiver counts a forward greedy over the legal pool, sees
+    // the states the thinning threw away, and refuses to forgive the
+    // shortfall. generateStepPlan then threw "dry-run plan violates its own
+    // rules" on the path the whole suite, `aiugc plan regress` keyless and a
+    // DRY_RUN worker all run. Timestamps are on the analyser's real grid
+    // (multiples of 200ms, never closer than 400ms) over an 8.6s recording.
+    const ts = [0, 1200, 1600, 2200, 4000, 4400, 5000, 5600, 8000, 8600];
+    const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר"];
+    const timeline = ts.map((t, i) =>
+      state({
+        timestampMs: t,
+        visibleText: [words[i]!],
+        actionType: i === ts.length - 1 ? "result" : "tap",
+      }),
+    );
+    const draft = await generateStepPlan(db, { timeline, questionnaire: QUESTIONNAIRE });
+    expect(draft.steps.length).toBeGreaterThanOrEqual(5);
+    // The ending is the one state the format cannot lose.
+    expect(draft.steps[draft.steps.length - 1]!.sourceIndex).toBe(ts.length - 1);
+  });
+
   it("plan_demo_steps runs on the light lane", () => {
     expect(HEAVY_JOB_TYPES).not.toContain("plan_demo_steps");
   });
@@ -775,6 +799,48 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     ).toBe(true);
     expect(findPlanViolations([], timeline, QUESTIONNAIRE, 8)).toEqual(["the plan has zero steps"]);
   });
+
+  it("the confirm step can be an instruction instead of the button's own label", () => {
+    // The real a179f069 confirm dialog. Before אשרו/אישרו were allowlisted,
+    // EVERY instruction form was rejected here and reading the button label
+    // back ("אישר ניתוב לחומר קורס") was the only caption that passed — the
+    // validator forced the transcription the prompt forbids.
+    const confirm = [
+      state({
+        timestampMs: 0,
+        actionType: "select",
+        visibleText: ["Takin Syllabus.txt", "זוהה סילבוס", "יעד ניתוב", "חומר קורס", "אישר ניתוב (1)"],
+      }),
+    ];
+    const ok = (label: string) =>
+      findPlanViolations([{ sourceIndex: 0, label }], confirm, QUESTIONNAIRE, 8).length === 0;
+    expect(ok("אשרו את הניתוב")).toBe(true);
+    expect(ok("אישרו את הניתוב")).toBe(true);
+    // ה-prefixed forms need no entries of their own: unlike "היכנסו", which
+    // halts prefix-stripping at the yod, these strip straight to the base.
+    expect(ok("האשרו את הניתוב")).toBe(true);
+    expect(ok("ואשרו את היעד")).toBe(true);
+    expect(ok("התחילו ניתוב")).toBe(true);
+    // במקום closed the file-routing fixture; שלו/שלה closed the pronoun set,
+    // which passed "שלהם" by double-stripping while rejecting the singular.
+    expect(ok("במקום זה")).toBe(true);
+    expect(ok("שלו")).toBe(true);
+    expect(ok("שלה")).toBe(true);
+  });
+
+  it("morphology is still not matched — a claim and a plural stay rejected", () => {
+    // Deliberate, and measured rather than papered over: "הקמפיין" is the
+    // questionnaire's own noun in the definite singular and it still fails
+    // against "קמפיינים", which is what keeps dry-run-campaign-app red.
+    const screen = [state({ timestampMs: 0, visibleText: ["שמירה"] })];
+    const words = (label: string) =>
+      findPlanViolations([{ sourceIndex: 0, label }], screen, QUESTIONNAIRE, 8);
+    expect(words("הקמפיין נוצר").some((v) => v.includes('"הקמפיין"'))).toBe(true);
+    // A benefit the customer never claimed stays out. ("אוטומטית" would pass
+    // here — it is in this questionnaire's what_it_does, which is the rule
+    // working, not failing.)
+    expect(words("בחינם").some((v) => v.includes('"בחינם"'))).toBe(true);
+  });
 });
 
 describe("the runtime band (steps only — the hook sits on top)", () => {
@@ -856,12 +922,16 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
       { sourceIndex: 2, label: "שש" },
     ];
     // 1000 (gap) + 2800 (six words, read-time) + 2800 (result) = 6600ms.
+    // Asserted through the CEILING: this timeline's states are 1000ms apart,
+    // so only two of them can ever be selected and the 11s floor is genuinely
+    // unreachable — the floor's escape now says so and stays quiet. The
+    // ceiling has no escape, and reports the same assembled number.
     expect(
       findPlanViolations(steps, tight, QUESTIONNAIRE, 8, {
         minSteps: 1,
         notes: null,
         minStepMs: 1400,
-        runtime: band,
+        runtime: { durations: DURATIONS, minMs: 5000, maxMs: 6000 },
       }).find((x) => x.includes("total")),
     ).toContain("6600ms");
   });
@@ -917,6 +987,81 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
         runtime: band,
       }).some((x) => x.includes("too SHORT")),
     ).toBe(true);
+  });
+
+  it("the floor's escape measures capped gaps, not wall clock", () => {
+    // Two states 30 seconds apart. The wall clock says 30s is available, but a
+    // step can only claim the gap to the state actually selected after it,
+    // capped at one step's ceiling — so the most this timeline can ever
+    // assemble is 2 x 2800 = 5600ms and the 11s floor is unreachable. The old
+    // span-based bound read 30000 + 2800 and ordered the model to add states
+    // that do not exist, burning the one retry on a permanent failure.
+    const twoStates: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
+      state({ timestampMs: 30_000, visibleText: ["שש"], actionType: "result" }),
+    ];
+    expect(
+      findPlanViolations(
+        [
+          { sourceIndex: 0, label: "אחת" },
+          { sourceIndex: 1, label: "שש" },
+        ],
+        twoStates,
+        QUESTIONNAIRE,
+        8,
+        { minSteps: 1, notes: null, minStepMs: 1400, runtime: band },
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("a caption must outlast its own read time", () => {
+  const DURATIONS = { byActionType: {}, minMs: 1400, maxMs: 4000 };
+  const band = { durations: DURATIONS, minMs: 11_000, maxMs: 16_000 };
+  /** The shipped a179f069 shape: a long caption on a state only 1600ms before
+   *  the next selected one, so the gap cap overrides the read-time floor. */
+  const squeezed: AnalysisState[] = [
+    state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
+    state({ timestampMs: 1600, visibleText: ["שתיים"], actionType: "select" }),
+    state({ timestampMs: 20_000, visibleText: ["שלוש"], actionType: "result" }),
+  ];
+  const steps = (first: string) => [
+    { sourceIndex: 0, label: first },
+    { sourceIndex: 1, label: "שתיים" },
+    { sourceIndex: 2, label: "שלוש" },
+  ];
+  const check = (first: string) =>
+    findPlanViolations(steps(first), squeezed, QUESTIONNAIRE, 8, {
+      minSteps: 1,
+      notes: null,
+      minStepMs: 1400,
+      runtime: band,
+    });
+
+  it("flags the caption the gap cap squeezed, and names both exits", () => {
+    // Six words need 2800ms; the window is 1600ms because state 1 is 1600ms
+    // later. (1600 - 400 lead) at 2.5 words/sec = 3 words that would fit.
+    const hit = check("אחת אחת אחת אחת אחת אחת").find((v) => v.includes("but needs"));
+    expect(hit).toBeDefined();
+    expect(hit).toContain("state 0");
+    expect(hit).toContain("1600ms");
+    expect(hit).toContain("2800ms");
+    expect(hit).toContain("cut it to 3 words");
+    // Rewriting alone often cannot fix it, so the merge exit must be offered.
+    expect(hit).toContain("drop one of the two states");
+  });
+
+  it("stays silent when every caption fits its window", () => {
+    expect(check("אחת").some((v) => v.includes("but needs"))).toBe(false);
+  });
+
+  it("never fires on the human path — no `shape`, no shape rules", () => {
+    // Human edits go through updatePlanSteps, which never calls this at all;
+    // this pins the same split the min-gap rule has, so a customer who picks
+    // two nearby states gets a short clip rather than a blocked save.
+    expect(
+      findPlanViolations(steps("אחת אחת אחת אחת אחת אחת"), squeezed, QUESTIONNAIRE, 8),
+    ).toEqual([]);
   });
 });
 

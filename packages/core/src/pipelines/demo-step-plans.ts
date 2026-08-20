@@ -159,13 +159,17 @@ const HEBREW_PREFIXES = new Set(["ו", "ה", "ב", "ל", "מ", "ש", "כ"]);
 const FUNCTION_WORDS = new Set([
   "של", "את", "עם", "על", "אל", "זה", "זו", "זאת", "זהו", "אז", "גם", "רק",
   "כל", "לא", "יש", "אין", "עוד", "כבר", "או", "אם", "כי", "מה", "מי", "איך",
-  "כאן", "שם", "אחרי", "לפני", "בתוך", "עד", "ואז", "הנה", "ככה", "פשוט",
+  "כאן", "שם", "אחרי", "לפני", "בתוך", "עד", "ואז", "הנה", "ככה", "פשוט", "במקום",
   // Pronouns and possessives. A caption addressed to the viewer needs them and
   // none of them can carry a product claim. The two-letter members are
   // reachable by prefix-stripping — "כלי" strips כ down to "לי" and passes —
   // which is the same 1-2 char slack window wordVariants already documents.
   "הוא", "היא", "הם", "הן", "אתם", "שלי", "שלך", "שלכם", "לי", "לך", "לכם",
   "אותו", "אותה", "אותם",
+  // שלו/שלה close the half-added set: they strip to "לו"/"לה", which are not
+  // members, so the singular third person false-rejected while the plural
+  // "שלהם" passed by double-stripping down to "הם". An asymmetry nobody chose.
+  "שלו", "שלה",
 ]);
 
 /**
@@ -196,6 +200,16 @@ const INSTRUCTIONAL_VERBS = new Set([
   "חפשו", // search
   "שמרו", // save
   "גללו", // scroll
+  // approve/confirm. Its absence is what forced the transcription at the
+  // confirm step: every instruction form ("אשרו את הניתוב", "לאשר ניתוב") was
+  // rejected and reading the button label back was the only caption that
+  // passed. The ה-prefixed spellings need no entries of their own — unlike
+  // "היכנסו", which halts prefix-stripping at the yod, "האשרו" strips its ה
+  // straight down to "אשרו" and matches.
+  "אשרו", "אישרו",
+  // start/begin. Listed as the ה-initial surface form for the same reason
+  // "היכנסו" is: stripping ה leaves "תחילו", which is not the base.
+  "התחילו", "התחלו",
 ]);
 
 /**
@@ -481,7 +495,32 @@ export function findPlanViolations(
       // sum of DEFAULT_STEP_MS is a number the video never shows. The message
       // carries the current total and the direction to move — the ONE
       // corrective retry has no other way to know which way that is.
-      const total = totalRuntimeMs(assembleSteps(valid, timeline, shape.runtime.durations));
+      const assembled = assembleSteps(valid, timeline, shape.runtime.durations);
+      const total = totalRuntimeMs(assembled);
+      // A caption the eye cannot finish is not a caption. readTimeMs is
+      // already the floor assembleSteps ASKS for, but the gap cap overrides it
+      // — so the assembled window is the only place this is visible, and
+      // nothing looked. The shipped a179f069 plan burned two of six captions
+      // under their own read time, including a two-line one on screen 1600ms.
+      //
+      // Both exits have to be named. The squeeze comes from the NEXT selected
+      // state, so rewriting the label in place often cannot fix it; merging
+      // the pair into one caption is the other half of the remedy, and it is
+      // exactly what the ONE-CAPTION-PER-BEAT rule asks for anyway.
+      for (const step of assembled) {
+        const needed = readTimeMs(step.label);
+        if (step.durationMs >= needed) continue;
+        const fits = Math.floor(
+          ((step.durationMs - LABEL_LEAD_MS) / 1000) * LABEL_WORDS_PER_SECOND,
+        );
+        violations.push(
+          `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — its window is capped by the gap to the next selected state, so ${
+            fits >= 1
+              ? `either cut it to ${fits} word${fits === 1 ? "" : "s"} or fewer`
+              : "there is no label short enough to fit"
+          }, or drop one of the two states and let a single caption cover the whole beat`,
+        );
+      }
       // The FLOOR needs the same unreachability escape as the minimum count.
       // demos.ts accepts an 8-second recording, and 8 seconds of source cannot
       // make 11 seconds of steps however it is cut — telling the model to add
@@ -491,9 +530,6 @@ export function findPlanViolations(
       // next one, so their sum cannot exceed the span of the selectable
       // states, and no single step can outlast one step's ceiling. The CEILING
       // gets no such escape — a long plan can always drop steps.
-      const selectable = timeline.filter(
-        (s) => s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious,
-      );
       const stepCeilingMs = Math.min(
         shape.runtime.durations.maxMs,
         Math.max(
@@ -502,11 +538,25 @@ export function findPlanViolations(
           ...Object.values(shape.runtime.durations.byActionType),
         ),
       );
-      const span =
-        selectable.length > 0
-          ? selectable[selectable.length - 1]!.timestampMs - selectable[0]!.timestampMs
-          : 0;
-      const reachableMs = Math.min(span + stepCeilingMs, maxSteps * stepCeilingMs);
+      // Wall-clock span was the wrong measure: it counted the dead air between
+      // two states as claimable, when a step can only ever claim the gap to
+      // the state actually selected after it. min(x, ceiling) is subadditive,
+      // so merging two gaps never beats keeping both — the tightest legal
+      // selection (every state that clears one step's length) is therefore the
+      // richest, and its capped-gap sum is a real upper bound. The old number
+      // over-estimated, so timelines that provably could not reach the floor
+      // were told to add states that do not exist.
+      let reachableMs = stepCeilingMs; // the last step, which has no neighbour
+      let prevMs: number | null = null;
+      for (const s of timeline) {
+        if (s.legibility === "unreadable" || isSkippedKind(s) || s.sameStateAsPrevious) continue;
+        if (prevMs !== null) {
+          if (s.timestampMs - prevMs < shape.minStepMs) continue;
+          reachableMs += Math.min(s.timestampMs - prevMs, stepCeilingMs);
+        }
+        prevMs = s.timestampMs;
+      }
+      reachableMs = Math.min(reachableMs, maxSteps * stepCeilingMs);
       if (total < shape.runtime.minMs && reachableMs >= shape.runtime.minMs) {
         violations.push(
           `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
@@ -707,10 +757,37 @@ function dryRunPlan(
   // minimum-step waiver will NOT forgive (it counts the legal pool). When even
   // the legal pool is short the waiver does forgive it, so a short plan there
   // is correct rather than a throw.
+  // Maximum-cardinality selection that still ends on the success screen: walk
+  // BACKWARDS from the ending taking every state that clears one step's
+  // length. On a line that greedy is optimal, and it is the same walk the
+  // minimum-step waiver counts — which is the whole point. `pick` thins with
+  // subsampleClusters, which is index-even, so a burst of near-duplicate
+  // frames can spend most of the cap before the min-gap walk even runs; the
+  // waiver then sees states the canned plan threw away and refuses to forgive
+  // the shortfall, and the keyless path throws. Widening the POOL cannot help
+  // when the loss is in the THINNING, which is what the earlier fix missed.
+  const dense = (pool: typeof indexed): typeof indexed => {
+    const end = lastResult ?? pool[pool.length - 1];
+    if (!end) return [];
+    const out = [end];
+    for (let i = pool.length - 1; i >= 0; i--) {
+      const c = pool[i]!;
+      if (c.index === end.index || c.state.timestampMs > end.state.timestampMs) continue;
+      if (out[out.length - 1]!.state.timestampMs - c.state.timestampMs >= minStepMs) out.push(c);
+    }
+    // Newest-first while building; chronological out, trimmed off the FRONT so
+    // the ending always survives the cap.
+    return out.reverse().slice(-maxSteps);
+  };
+
   let kept = pick(quality);
   if (kept.length < minSteps) {
     const wider = pick(legal);
     if (wider.length > kept.length) kept = wider;
+  }
+  if (kept.length < minSteps) {
+    const densest = dense(legal);
+    if (densest.length > kept.length) kept = densest;
   }
 
   const steps = kept.map(({ state, index }) => ({
