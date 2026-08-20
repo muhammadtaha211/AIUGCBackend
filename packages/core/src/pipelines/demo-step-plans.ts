@@ -11,6 +11,7 @@ import { BudgetError, PermanentError } from "../jobs/errors";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { FIXTURES_DIR } from "../paths";
+import { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { questionnaireSchema, requireQuestionnaire, type Questionnaire } from "./businesses";
@@ -21,17 +22,10 @@ import {
   type AnalysisState,
 } from "./demo-analysis";
 
-/**
- * screenKinds the plan may never select — the deterministic form of the
- * prompt's prose skip list (login screens, tours, onboarding...), added after
- * a real run picked the login screen and two tour steps despite the prompt.
- * "product", "other" and absent (v2-era analyses without screenKind) pass;
- * missing means "no information", so those states stay prompt-governed.
- * The Phase 8 picker groups/hides by the same set.
- */
-export const PLAN_SKIP_SCREEN_KINDS: ReadonlySet<
-  NonNullable<AnalysisState["screenKind"]>
-> = new Set(["login", "loading", "onboarding", "error", "tour", "system"] as const);
+// Both live in ../plan-format so the wizard's picker can import them without
+// dragging this module's db/fs/provider imports into a browser bundle. Kept
+// re-exported here because every server caller already imports them from here.
+export { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS };
 
 function isSkippedKind(state: AnalysisState): boolean {
   return state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind);
@@ -133,12 +127,109 @@ export function totalRuntimeMs(steps: PlanStep[]): number {
   return steps.reduce((ms, step) => ms + step.durationMs, 0);
 }
 
-const MAX_LABEL_CHARS = 60;
 /** Hard ceiling on a caption, in whitespace words. Not a target — holding
  *  labels to a 3-5 word average is the prompt's job. Also bounds the longest
  *  window a single step can earn, which the runtime band's reachability
  *  check needs. */
 const MAX_LABEL_WORDS = 6;
+
+/** The prompt's caption FLOOR, in whitespace words. Deliberately NOT enforced
+ *  in findPlanViolations — the human edit path may go shorter and nothing here
+ *  rejects it — but the generated timing block needs it: under the read time of
+ *  a floor-length caption no caption is legal at all, which is the gap below
+ *  which two states cannot both be selected. */
+const MIN_LABEL_WORDS = 3;
+
+/** readTimeMs by word count. The prompt's timing block and the runtime check
+ *  read the same function — which is the whole point of generating the block. */
+function readTimeMsForWords(words: number): number {
+  return readTimeMs("x ".repeat(words));
+}
+
+/**
+ * Every number in the prompt's timing section, GENERATED from readTimeMs and
+ * the duration config instead of restated by hand in the markdown.
+ *
+ * v10 hand-wrote the same table and its first row drifted: it licensed a
+ * 3-word caption at a 1.4s gap when readTimeMs asks 1.6s, so the prompt
+ * authorised plans findPlanViolations then rejected — two of the campaign-app
+ * regression failures came from that one row. A table that can disagree with
+ * the function is the bug, so the table comes from the function.
+ *
+ * Arithmetic only, no prose: the argument for WHY a gap is a ceiling lives in
+ * the versioned prompt file, where a change to it bumps the prompt version.
+ */
+export function planTimingMarkdown(opts: {
+  durations: StepDurationConfig;
+  runtime: { minMs: number; maxMs: number };
+  minSteps: number;
+  maxSteps: number;
+}): string {
+  const { durations, runtime, minSteps, maxSteps } = opts;
+  const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+  // The clamp assembleSteps applies to every step, minus the gap ceiling: this
+  // block states what a step is worth when nothing cuts it short.
+  const clamp = (ms: number) => Math.min(Math.max(ms, durations.minMs), durations.maxMs);
+  const range = (from: number, to: number): number[] =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+  // Rows the clamp could never grant are not offers. A configured
+  // a_step_ms_max below a row's read time caps every step under it, so the row
+  // would promise a window the code never hands out — and the totals below it,
+  // same function same config, would contradict it. Never empty: a ceiling
+  // under the shortest read time is a broken config, not a shorter table.
+  const grantable = range(MIN_LABEL_WORDS, MAX_LABEL_WORDS).filter(
+    (w) => readTimeMsForWords(w) <= durations.maxMs,
+  );
+  const lengths = grantable.length > 0 ? grantable : [MIN_LABEL_WORDS];
+  const readRows = lengths.map((w) => `| ${w} words | ${secs(readTimeMsForWords(w))} |`);
+
+  const kindFloors = Object.entries(durations.byActionType)
+    .map(([kind, ms]) => `${kind} ${secs(clamp(ms))}`)
+    .join(", ");
+
+  // Two rules meet at this gap and the larger one wins: below one step's own
+  // length the pair is the same moment on screen (the min-gap violation), and
+  // below the shortest caption's read time no caption fits. Reading only the
+  // second understates it whenever a_step_ms_min is raised past it.
+  const noPairBelowMs = Math.max(readTimeMsForWords(lengths[0]!), durations.minMs);
+
+  // The ending has no neighbour, so it keeps the longer of its own kind and
+  // its caption; every other step is worth at least its caption's read time.
+  const endingMs = (w: number) =>
+    clamp(Math.max(durations.byActionType.result ?? DEFAULT_STEP_MS.result, readTimeMsForWords(w)));
+  // The LEAST a shape can run, never a prediction. A step is worth the longer
+  // of its caption and its own kind, so the kinds the model picks can only
+  // push the total UP: a floor of 9.2s reaches 11.6s on `scroll` states. The
+  // grid used to print a pass/fail verdict per cell, which was true only for
+  // the one action type whose default happens to equal a floor-length
+  // caption's read time — the same restated-arithmetic bug one level up.
+  const floorMs = (steps: number, w: number) =>
+    (steps - 1) * clamp(readTimeMsForWords(w)) + endingMs(w);
+  const totalRows = range(minSteps, maxSteps).map(
+    (n) => `| ${n} | ${lengths.map((w) => secs(floorMs(n, w))).join(" | ")} |`,
+  );
+
+  return [
+    "| caption | seconds it needs |",
+    "| ------- | ---------------- |",
+    ...readRows,
+    "",
+    `Under a ${secs(noPairBelowMs)} gap you may not select both states at all.`,
+    "",
+    `A state's own kind sets a second floor: ${kindFloors}. A step runs the LONGER of its kind and its caption, and never longer than the gap to your next selected state.`,
+    "",
+    `The steps must total ${(runtime.minMs / 1000).toFixed(1)}-${secs(runtime.maxMs)}; aim near ${secs(
+      Math.round((runtime.minMs + runtime.maxMs) / 2),
+    )}. Ending on a ${secs(endingMs(lengths[0]!))} success state, this is the LEAST each shape can run — the kinds you select can only push it up, never down:`,
+    "",
+    `| steps | ${lengths.map((w) => `${w}-word captions`).join(" | ")} |`,
+    `| ----- | ${lengths.map(() => "---------------").join(" | ")} |`,
+    ...totalRows,
+    "",
+    `A shape whose floor is already over ${secs(runtime.maxMs)} cannot be rescued — drop a step or shorten the captions. A shape whose floor is under ${(runtime.minMs / 1000).toFixed(1)}s only reaches the band if the states you picked run longer than their captions, so add up the kinds you actually selected before you settle.`,
+  ].join("\n");
+}
 
 /** Rough cost bookkeeping — same math as pipelines/copy.ts (3rd use is Phase 6's problem). */
 function llmCostAgorot(inputTokens: number, outputTokens: number): number {
@@ -159,13 +250,17 @@ const HEBREW_PREFIXES = new Set(["ו", "ה", "ב", "ל", "מ", "ש", "כ"]);
 const FUNCTION_WORDS = new Set([
   "של", "את", "עם", "על", "אל", "זה", "זו", "זאת", "זהו", "אז", "גם", "רק",
   "כל", "לא", "יש", "אין", "עוד", "כבר", "או", "אם", "כי", "מה", "מי", "איך",
-  "כאן", "שם", "אחרי", "לפני", "בתוך", "עד", "ואז", "הנה", "ככה", "פשוט",
+  "כאן", "שם", "אחרי", "לפני", "בתוך", "עד", "ואז", "הנה", "ככה", "פשוט", "במקום",
   // Pronouns and possessives. A caption addressed to the viewer needs them and
   // none of them can carry a product claim. The two-letter members are
   // reachable by prefix-stripping — "כלי" strips כ down to "לי" and passes —
   // which is the same 1-2 char slack window wordVariants already documents.
   "הוא", "היא", "הם", "הן", "אתם", "שלי", "שלך", "שלכם", "לי", "לך", "לכם",
   "אותו", "אותה", "אותם",
+  // שלו/שלה close the half-added set: they strip to "לו"/"לה", which are not
+  // members, so the singular third person false-rejected while the plural
+  // "שלהם" passed by double-stripping down to "הם". An asymmetry nobody chose.
+  "שלו", "שלה",
 ]);
 
 /**
@@ -196,6 +291,16 @@ const INSTRUCTIONAL_VERBS = new Set([
   "חפשו", // search
   "שמרו", // save
   "גללו", // scroll
+  // approve/confirm. Its absence is what forced the transcription at the
+  // confirm step: every instruction form ("אשרו את הניתוב", "לאשר ניתוב") was
+  // rejected and reading the button label back was the only caption that
+  // passed. The ה-prefixed spellings need no entries of their own — unlike
+  // "היכנסו", which halts prefix-stripping at the yod, "האשרו" strips its ה
+  // straight down to "אשרו" and matches.
+  "אשרו", "אישרו",
+  // start/begin. Listed as the ה-initial surface form for the same reason
+  // "היכנסו" is: stripping ה leaves "תחילו", which is not the base.
+  "התחילו", "התחלו",
 ]);
 
 /**
@@ -441,10 +546,29 @@ export function findPlanViolations(
       // legal states are bunched inside one step's length cannot reach
       // minSteps however it is read. Walking chronologically and taking every
       // state that clears the gap yields the largest legal selection there is.
+      //
+      // Bounded by the ENDING. A state after the success screen can never be a
+      // step — the rule above forbids it — so counting one here demands a plan
+      // the other rule rejects. That is not hypothetical: it is what kept
+      // dryRunPlan's shortfall alive, because the canned plan stops at the
+      // ending and this walk did not.
+      //
+      // Deliberately NOT conditioned on `notes`. Reading notes here is what 2e
+      // removed, and it bites immediately: dryRunPlan still sets notes to
+      // explain a shortfall, which would switch this bound back off in exactly
+      // the case it exists for. When notes does waive the last-step rule the
+      // model may end later than this, so the bound under-counts and forgives
+      // a little more — the mild direction for a rule that only ever ADDS a
+      // violation.
+      const endsAtMs =
+        successCandidates.length > 0
+          ? successCandidates[successCandidates.length - 1]!.s.timestampMs
+          : Number.POSITIVE_INFINITY;
       let selectable = 0;
       let lastMs = Number.NEGATIVE_INFINITY;
       for (const s of timeline) {
         if (s.legibility === "unreadable" || isSkippedKind(s) || s.sameStateAsPrevious) continue;
+        if (s.timestampMs > endsAtMs) break;
         if (s.timestampMs - lastMs < shape.minStepMs) continue;
         selectable++;
         lastMs = s.timestampMs;
@@ -481,7 +605,32 @@ export function findPlanViolations(
       // sum of DEFAULT_STEP_MS is a number the video never shows. The message
       // carries the current total and the direction to move — the ONE
       // corrective retry has no other way to know which way that is.
-      const total = totalRuntimeMs(assembleSteps(valid, timeline, shape.runtime.durations));
+      const assembled = assembleSteps(valid, timeline, shape.runtime.durations);
+      const total = totalRuntimeMs(assembled);
+      // A caption the eye cannot finish is not a caption. readTimeMs is
+      // already the floor assembleSteps ASKS for, but the gap cap overrides it
+      // — so the assembled window is the only place this is visible, and
+      // nothing looked. The shipped a179f069 plan burned two of six captions
+      // under their own read time, including a two-line one on screen 1600ms.
+      //
+      // Both exits have to be named. The squeeze comes from the NEXT selected
+      // state, so rewriting the label in place often cannot fix it; merging
+      // the pair into one caption is the other half of the remedy, and it is
+      // exactly what the ONE-CAPTION-PER-BEAT rule asks for anyway.
+      for (const step of assembled) {
+        const needed = readTimeMs(step.label);
+        if (step.durationMs >= needed) continue;
+        const fits = Math.floor(
+          ((step.durationMs - LABEL_LEAD_MS) / 1000) * LABEL_WORDS_PER_SECOND,
+        );
+        violations.push(
+          `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — its window is capped by the gap to the next selected state, so ${
+            fits >= 1
+              ? `either cut it to ${fits} word${fits === 1 ? "" : "s"} or fewer`
+              : "there is no label short enough to fit"
+          }, or drop one of the two states and let a single caption cover the whole beat`,
+        );
+      }
       // The FLOOR needs the same unreachability escape as the minimum count.
       // demos.ts accepts an 8-second recording, and 8 seconds of source cannot
       // make 11 seconds of steps however it is cut — telling the model to add
@@ -491,22 +640,53 @@ export function findPlanViolations(
       // next one, so their sum cannot exceed the span of the selectable
       // states, and no single step can outlast one step's ceiling. The CEILING
       // gets no such escape — a long plan can always drop steps.
-      const selectable = timeline.filter(
-        (s) => s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious,
-      );
       const stepCeilingMs = Math.min(
         shape.runtime.durations.maxMs,
         Math.max(
           shape.runtime.durations.minMs,
-          readTimeMs("x ".repeat(MAX_LABEL_WORDS)),
+          readTimeMsForWords(MAX_LABEL_WORDS),
           ...Object.values(shape.runtime.durations.byActionType),
         ),
       );
-      const span =
-        selectable.length > 0
-          ? selectable[selectable.length - 1]!.timestampMs - selectable[0]!.timestampMs
-          : 0;
-      const reachableMs = Math.min(span + stepCeilingMs, maxSteps * stepCeilingMs);
+      // How much video the best legal selection could possibly assemble. Both
+      // cheap approximations of this are wrong, in opposite directions:
+      //
+      //   wall-clock span  — counts dead air between states as claimable, so
+      //     it over-estimates and orders the model to add states that do not
+      //     exist, burning the one retry on a permanent failure;
+      //   leftmost greedy  — takes every state at the earliest legal moment,
+      //     which is maximum CARDINALITY but not maximum COVERAGE. It can
+      //     spend its last pick just under minStepMs before the final state
+      //     and then be barred from it, stranding the very success screen the
+      //     plan is required to end on. That under-estimates, and an
+      //     under-estimate switches the floor check OFF — a genuinely short
+      //     ad then ships with no violation and no retry at all.
+      //
+      // So compute it exactly. maxSteps is 8 and a timeline is tens of states,
+      // so the obvious O(n^2 * maxSteps) walk is free: best[i][k] is the most
+      // capped-gap coverage a k+1-state selection ending at state i can have.
+      const sel = timeline.filter(
+        (s) => s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious,
+      );
+      let reachableMs = sel.length > 0 ? stepCeilingMs : 0;
+      const best = sel.map(() => new Array<number>(maxSteps).fill(-1));
+      for (let i = 0; i < sel.length; i++) {
+        best[i]![0] = 0; // a selection of one state: no gaps yet
+        for (let j = 0; j < i; j++) {
+          const gap = sel[i]!.timestampMs - sel[j]!.timestampMs;
+          if (gap < shape.minStepMs) continue;
+          for (let k = 1; k < maxSteps; k++) {
+            const prev = best[j]![k - 1]!;
+            if (prev < 0) continue;
+            best[i]![k] = Math.max(best[i]![k]!, prev + Math.min(gap, stepCeilingMs));
+          }
+        }
+        // Whatever the selection, its LAST step has no neighbour to run into
+        // and so earns a full ceiling on top of the gaps.
+        for (const coverage of best[i]!) {
+          if (coverage >= 0) reachableMs = Math.max(reachableMs, coverage + stepCeilingMs);
+        }
+      }
       if (total < shape.runtime.minMs && reachableMs >= shape.runtime.minMs) {
         violations.push(
           `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
@@ -554,6 +734,24 @@ export async function stepDurations(db: Db): Promise<StepDurationConfig> {
     // Same guard as a_steps_max: a config pair the wrong way round must not
     // make the clamp incoherent.
     maxMs: Math.max(minMs, await getConfigValueOr(db, "a_step_ms_max", z.number(), MAX_STEP_MS)),
+  };
+}
+
+/** The format's total-runtime band, read the same way stepDurations reads its
+ *  pair: a missing app_config row IS the default, so these constants are what
+ *  production actually runs on. Exported for the same reason stepDurations is
+ *  — the suite pins the shipped band here; every band passed to
+ *  findPlanViolations in a test is a literal, so nothing else does. */
+export async function stepRuntimeBand(db: Db): Promise<{ minMs: number; maxMs: number }> {
+  const minMs = await getConfigValueOr(db, "a_steps_runtime_min_ms", z.number(), MIN_RUNTIME_MS);
+  return {
+    minMs,
+    // Same guard as a_steps_max/a_step_ms_max: a config pair the wrong way
+    // round must not make the band unsatisfiable.
+    maxMs: Math.max(
+      minMs,
+      await getConfigValueOr(db, "a_steps_runtime_max_ms", z.number(), MAX_RUNTIME_MS),
+    ),
   };
 }
 
@@ -689,10 +887,37 @@ function dryRunPlan(
   // minimum-step waiver will NOT forgive (it counts the legal pool). When even
   // the legal pool is short the waiver does forgive it, so a short plan there
   // is correct rather than a throw.
+  // Maximum-cardinality selection that still ends on the success screen: walk
+  // BACKWARDS from the ending taking every state that clears one step's
+  // length. On a line that greedy is optimal, and it is the same walk the
+  // minimum-step waiver counts — which is the whole point. `pick` thins with
+  // subsampleClusters, which is index-even, so a burst of near-duplicate
+  // frames can spend most of the cap before the min-gap walk even runs; the
+  // waiver then sees states the canned plan threw away and refuses to forgive
+  // the shortfall, and the keyless path throws. Widening the POOL cannot help
+  // when the loss is in the THINNING, which is what the earlier fix missed.
+  const dense = (pool: typeof indexed): typeof indexed => {
+    const end = lastResult ?? pool[pool.length - 1];
+    if (!end) return [];
+    const out = [end];
+    for (let i = pool.length - 1; i >= 0; i--) {
+      const c = pool[i]!;
+      if (c.index === end.index || c.state.timestampMs > end.state.timestampMs) continue;
+      if (out[out.length - 1]!.state.timestampMs - c.state.timestampMs >= minStepMs) out.push(c);
+    }
+    // Newest-first while building; chronological out, trimmed off the FRONT so
+    // the ending always survives the cap.
+    return out.reverse().slice(-maxSteps);
+  };
+
   let kept = pick(quality);
   if (kept.length < minSteps) {
     const wider = pick(legal);
     if (wider.length > kept.length) kept = wider;
+  }
+  if (kept.length < minSteps) {
+    const densest = dense(legal);
+    if (densest.length > kept.length) kept = densest;
   }
 
   const steps = kept.map(({ state, index }) => ({
@@ -741,22 +966,7 @@ export async function generateStepPlan(
     await getConfigValueOr(db, "a_steps_max", z.number(), 8),
   );
   const durations = await stepDurations(db);
-  const runtimeMinMs = await getConfigValueOr(
-    db,
-    "a_steps_runtime_min_ms",
-    z.number(),
-    MIN_RUNTIME_MS,
-  );
-  const runtime = {
-    durations,
-    minMs: runtimeMinMs,
-    // Same guard as a_steps_max/a_step_ms_max: a config pair the wrong way
-    // round must not make the band unsatisfiable.
-    maxMs: Math.max(
-      runtimeMinMs,
-      await getConfigValueOr(db, "a_steps_runtime_max_ms", z.number(), MAX_RUNTIME_MS),
-    ),
-  };
+  const runtime = { durations, ...(await stepRuntimeBand(db)) };
 
   if (getEnv().DRY_RUN) {
     const canned = dryRunPlan(
@@ -809,6 +1019,9 @@ export async function generateStepPlan(
     timeline: JSON.stringify(promptTimeline, null, 2),
     min: minSteps,
     max: maxSteps,
+    // v11+. Older prompt files never reference {{timing}} and are unaffected —
+    // renderPrompt only substitutes what the template asks for.
+    timing: planTimingMarkdown({ durations, runtime, minSteps, maxSteps }),
   });
 
   // A BudgetError from the second call parks the JOB, and the resume re-runs

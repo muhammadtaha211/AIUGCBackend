@@ -1,4 +1,26 @@
 {
+  "_comment": [
+    "RED ON PURPOSE since plan_demo_steps@v11 (2026-08-20). Category (c): the expectation",
+    "states a target v11 deliberately no longer aims at. The regress harness ignores this key",
+    "(fixtureSchema strips what it does not name).",
+    "",
+    "expected.sourceIndexes pins 12, the routing dialog with the destination chosen. v11's",
+    "one-beat test merges that dialog's whole run: states 11/12 share 4 of the longer array's",
+    "9 entries (44%) and 12/13 share 3 of 7 exactly — 4 of 7 once the OCR drift between",
+    "'(1) אישר ניתוב' and '(1) אישור ניתוב' is counted as shared, which v11 tells the model to",
+    "do. Both are over the one-third threshold, so 11-12-13 collapse to ONE beat, and the rule",
+    "says keep the LATER state. That is 13, not 12. Nothing else about the expectation moved.",
+    "",
+    "Re-pin 12 -> 13 only after a run shows the model actually getting there. The 2026-08-20",
+    "v11 run did not: it captioned state 11 at six words inside a 1600ms window and came out",
+    "10000ms long, i.e. it never applied the merge that would have removed the pair.",
+    "",
+    "That failure is NOT the arithmetic bug v11 fixed, and it would have failed identically under",
+    "v10: the 11->12 gap is exactly 1600ms, where v10's broken first row and readTimeMs agree, and",
+    "v10 capped that band at three words too — it never licensed six. v10's row was wrong only",
+    "for gaps in [1400, 1600). What went wrong here is the model not applying a rule the prompt",
+    "states correctly, which no table can fix."
+  ],
   "questionnaire": {
     "category": "app_or_digital",
     "product_name": "BotTeacher",
@@ -1421,7 +1443,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [1, 2, 3, 11, 12, 36],
+    "sourceIndexes": [1, 2, 3, 12, 36],
     "dryRunSourceIndexes": [
       3,
       11,

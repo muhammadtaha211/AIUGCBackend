@@ -1,4 +1,27 @@
 {
+  "_comment": [
+    "RED ON PURPOSE since plan_demo_steps@v11 (2026-08-20), for two independent reasons.",
+    "The regress harness ignores this key (fixtureSchema strips what it does not name).",
+    "",
+    "(b) ACCEPTED COST — do not fix. The model reaches for הקמפיין (it is on state 11 as",
+    "'!הקמפיין נוצר') while captioning state 10, and the questionnaire only offers קמפיינים.",
+    "Prefix-stripping gets הקמפיין down to קמפיין, which is still not קמפיינים, so the",
+    "anti-fabrication rule rejects it. That is Hebrew plural morphology, not a bug: widening",
+    "wordVariants far enough to bridge it would let real invented claims through.",
+    "",
+    "(c) STALE TARGET. expected.sourceIndexes selects 5, 6 and 7, which sit 1500ms apart. The",
+    "read-time rule (added in 1ea1d94, AFTER this expectation was pinned) gives a step only the",
+    "gap to its next SELECTED state, and a three-word caption needs 1600ms — while the prompt's",
+    "floor is three words. Only states 5 and 6 are squeezed by this: 3 has 3500ms of room, 7 has",
+    "5000ms, 10 has 2500ms and 11 is last. So the pin is mechanically satisfiable (3/2/2/3/3/3",
+    "words totals exactly 11000ms and findPlanViolations passes it) but only by writing two-word",
+    "captions on 5 and 6, which the prompt forbids as field labels.",
+    "",
+    "A plan obeying both drops one of the bunched pair. Beware the obvious replacement:",
+    "[3, 5, 7, 10, 11] runs 9600ms at three-word captions and 10800ms at four, both under the",
+    "band — it only lands inside with longer captions on the roomy steps. Re-pin only after a run",
+    "shows what the model reaches; do NOT relax the read-time rule to make this green."
+  ],
   "questionnaire": {
     "category": "app_or_digital",
     "product_name": "קמפיינר",
