@@ -204,6 +204,26 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(draft.steps[draft.steps.length - 1]!.sourceIndex).toBe(ts.length - 1);
   });
 
+  it("the minimum counts only states the ending rule allows", { timeout: 60_000 }, async () => {
+    // Real recordings keep rolling after the success screen, and a state after
+    // it can never be a step — the last-step rule forbids it. Counting those
+    // states as "selectable" demanded a plan the other rule rejects, which is
+    // the other half of the keyless throw: the canned plan stops at the ending
+    // and this walk did not. Here four states precede the success screen and
+    // four follow it, against a minimum of five.
+    const ts = [0, 1600, 3200, 20_000, 25_000, 26_600, 28_200, 29_800];
+    const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
+    const timeline = ts.map((t, i) =>
+      state({
+        timestampMs: t,
+        visibleText: [words[i]!],
+        actionType: i === 3 ? "result" : "tap",
+      }),
+    );
+    const draft = await generateStepPlan(db, { timeline, questionnaire: QUESTIONNAIRE });
+    expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3]);
+  });
+
   it("plan_demo_steps runs on the light lane", () => {
     expect(HEAVY_JOB_TYPES).not.toContain("plan_demo_steps");
   });
@@ -986,6 +1006,34 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
         minStepMs: 1400,
         runtime: band,
       }).some((x) => x.includes("too SHORT")),
+    ).toBe(true);
+  });
+
+  it("the floor's escape never strands the ending — a reachable floor stays enforced", () => {
+    // The leftmost greedy this replaced took every state at the earliest legal
+    // moment (maximum CARDINALITY) and then could not take the final state,
+    // 600ms later — so it valued this timeline at 10800ms, declared the 11s
+    // floor unreachable and switched the check OFF. A 9000ms plan then shipped
+    // with zero violations. The floor IS reachable here: skipping 8000 to take
+    // 8600 assembles 11000ms.
+    const ts = [0, 1400, 2400, 3200, 5600, 6400, 8000, 8600];
+    const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
+    const grid: AnalysisState[] = ts.map((t, i) =>
+      state({
+        timestampMs: t,
+        visibleText: [words[i]!],
+        actionType: i === ts.length - 1 ? "result" : "tap",
+      }),
+    );
+    const short = [0, 1, 3, 4, 7].map((i) => ({ sourceIndex: i, label: words[i]! }));
+    expect(totalRuntimeMs(assembleSteps(short, grid, DURATIONS))).toBe(9000);
+    expect(
+      findPlanViolations(short, grid, QUESTIONNAIRE, 8, {
+        minSteps: 5,
+        notes: null,
+        minStepMs: 1400,
+        runtime: band,
+      }).some((v) => v.includes("too SHORT")),
     ).toBe(true);
   });
 

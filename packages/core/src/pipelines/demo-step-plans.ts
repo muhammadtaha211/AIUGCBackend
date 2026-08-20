@@ -455,10 +455,29 @@ export function findPlanViolations(
       // legal states are bunched inside one step's length cannot reach
       // minSteps however it is read. Walking chronologically and taking every
       // state that clears the gap yields the largest legal selection there is.
+      //
+      // Bounded by the ENDING. A state after the success screen can never be a
+      // step — the rule above forbids it — so counting one here demands a plan
+      // the other rule rejects. That is not hypothetical: it is what kept
+      // dryRunPlan's shortfall alive, because the canned plan stops at the
+      // ending and this walk did not.
+      //
+      // Deliberately NOT conditioned on `notes`. Reading notes here is what 2e
+      // removed, and it bites immediately: dryRunPlan still sets notes to
+      // explain a shortfall, which would switch this bound back off in exactly
+      // the case it exists for. When notes does waive the last-step rule the
+      // model may end later than this, so the bound under-counts and forgives
+      // a little more — the mild direction for a rule that only ever ADDS a
+      // violation.
+      const endsAtMs =
+        successCandidates.length > 0
+          ? successCandidates[successCandidates.length - 1]!.s.timestampMs
+          : Number.POSITIVE_INFINITY;
       let selectable = 0;
       let lastMs = Number.NEGATIVE_INFINITY;
       for (const s of timeline) {
         if (s.legibility === "unreadable" || isSkippedKind(s) || s.sameStateAsPrevious) continue;
+        if (s.timestampMs > endsAtMs) break;
         if (s.timestampMs - lastMs < shape.minStepMs) continue;
         selectable++;
         lastMs = s.timestampMs;
@@ -538,25 +557,45 @@ export function findPlanViolations(
           ...Object.values(shape.runtime.durations.byActionType),
         ),
       );
-      // Wall-clock span was the wrong measure: it counted the dead air between
-      // two states as claimable, when a step can only ever claim the gap to
-      // the state actually selected after it. min(x, ceiling) is subadditive,
-      // so merging two gaps never beats keeping both — the tightest legal
-      // selection (every state that clears one step's length) is therefore the
-      // richest, and its capped-gap sum is a real upper bound. The old number
-      // over-estimated, so timelines that provably could not reach the floor
-      // were told to add states that do not exist.
-      let reachableMs = stepCeilingMs; // the last step, which has no neighbour
-      let prevMs: number | null = null;
-      for (const s of timeline) {
-        if (s.legibility === "unreadable" || isSkippedKind(s) || s.sameStateAsPrevious) continue;
-        if (prevMs !== null) {
-          if (s.timestampMs - prevMs < shape.minStepMs) continue;
-          reachableMs += Math.min(s.timestampMs - prevMs, stepCeilingMs);
+      // How much video the best legal selection could possibly assemble. Both
+      // cheap approximations of this are wrong, in opposite directions:
+      //
+      //   wall-clock span  — counts dead air between states as claimable, so
+      //     it over-estimates and orders the model to add states that do not
+      //     exist, burning the one retry on a permanent failure;
+      //   leftmost greedy  — takes every state at the earliest legal moment,
+      //     which is maximum CARDINALITY but not maximum COVERAGE. It can
+      //     spend its last pick just under minStepMs before the final state
+      //     and then be barred from it, stranding the very success screen the
+      //     plan is required to end on. That under-estimates, and an
+      //     under-estimate switches the floor check OFF — a genuinely short
+      //     ad then ships with no violation and no retry at all.
+      //
+      // So compute it exactly. maxSteps is 8 and a timeline is tens of states,
+      // so the obvious O(n^2 * maxSteps) walk is free: best[i][k] is the most
+      // capped-gap coverage a k+1-state selection ending at state i can have.
+      const sel = timeline.filter(
+        (s) => s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious,
+      );
+      let reachableMs = sel.length > 0 ? stepCeilingMs : 0;
+      const best = sel.map(() => new Array<number>(maxSteps).fill(-1));
+      for (let i = 0; i < sel.length; i++) {
+        best[i]![0] = 0; // a selection of one state: no gaps yet
+        for (let j = 0; j < i; j++) {
+          const gap = sel[i]!.timestampMs - sel[j]!.timestampMs;
+          if (gap < shape.minStepMs) continue;
+          for (let k = 1; k < maxSteps; k++) {
+            const prev = best[j]![k - 1]!;
+            if (prev < 0) continue;
+            best[i]![k] = Math.max(best[i]![k]!, prev + Math.min(gap, stepCeilingMs));
+          }
         }
-        prevMs = s.timestampMs;
+        // Whatever the selection, its LAST step has no neighbour to run into
+        // and so earns a full ceiling on top of the gaps.
+        for (const coverage of best[i]!) {
+          if (coverage >= 0) reachableMs = Math.max(reachableMs, coverage + stepCeilingMs);
+        }
       }
-      reachableMs = Math.min(reachableMs, maxSteps * stepCeilingMs);
       if (total < shape.runtime.minMs && reachableMs >= shape.runtime.minMs) {
         violations.push(
           `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
