@@ -557,6 +557,24 @@ export async function stepDurations(db: Db): Promise<StepDurationConfig> {
   };
 }
 
+/** The format's total-runtime band, read the same way stepDurations reads its
+ *  pair: a missing app_config row IS the default, so these constants are what
+ *  production actually runs on. Exported for the same reason stepDurations is
+ *  — the suite pins the shipped band here; every band passed to
+ *  findPlanViolations in a test is a literal, so nothing else does. */
+export async function stepRuntimeBand(db: Db): Promise<{ minMs: number; maxMs: number }> {
+  const minMs = await getConfigValueOr(db, "a_steps_runtime_min_ms", z.number(), MIN_RUNTIME_MS);
+  return {
+    minMs,
+    // Same guard as a_steps_max/a_step_ms_max: a config pair the wrong way
+    // round must not make the band unsatisfiable.
+    maxMs: Math.max(
+      minMs,
+      await getConfigValueOr(db, "a_steps_runtime_max_ms", z.number(), MAX_RUNTIME_MS),
+    ),
+  };
+}
+
 /**
  * sourceIndex is the source of truth: timestamp and actionType come from the
  * selected state — chronological by construction.
@@ -741,22 +759,7 @@ export async function generateStepPlan(
     await getConfigValueOr(db, "a_steps_max", z.number(), 8),
   );
   const durations = await stepDurations(db);
-  const runtimeMinMs = await getConfigValueOr(
-    db,
-    "a_steps_runtime_min_ms",
-    z.number(),
-    MIN_RUNTIME_MS,
-  );
-  const runtime = {
-    durations,
-    minMs: runtimeMinMs,
-    // Same guard as a_steps_max/a_step_ms_max: a config pair the wrong way
-    // round must not make the band unsatisfiable.
-    maxMs: Math.max(
-      runtimeMinMs,
-      await getConfigValueOr(db, "a_steps_runtime_max_ms", z.number(), MAX_RUNTIME_MS),
-    ),
-  };
+  const runtime = { durations, ...(await stepRuntimeBand(db)) };
 
   if (getEnv().DRY_RUN) {
     const canned = dryRunPlan(

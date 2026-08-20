@@ -27,6 +27,7 @@ import {
   planStepsSchema,
   readTimeMs,
   stepDurations,
+  stepRuntimeBand,
   requestDemoPlan,
   runPlanRegression,
   totalRuntimeMs,
@@ -956,6 +957,34 @@ describe("step durations (the window model)", () => {
         sql`${dbSchema.appConfig.key} in ('a_step_ms_min', 'a_step_ms_max', 'a_step_ms_by_action')`,
       );
     expect((await stepDurations(db)).minMs).toBe(1400);
+  });
+
+  it("with no app_config rows the runtime band is the code constants", async () => {
+    // Every band in this file is a literal passed straight to
+    // findPlanViolations, so without this the shipped 11-16s band was the one
+    // duration default no test pinned: MIN_RUNTIME_MS could be edited to any
+    // value and the suite stayed green.
+    expect(await stepRuntimeBand(db)).toEqual({ minMs: 11_000, maxMs: 16_000 });
+
+    await db.insert(dbSchema.appConfig).values([
+      { key: "a_steps_runtime_min_ms", value: 9000 },
+      { key: "a_steps_runtime_max_ms", value: 14_000 },
+    ]);
+    expect(await stepRuntimeBand(db)).toEqual({ minMs: 9000, maxMs: 14_000 });
+
+    // A pair the wrong way round must not make the band unsatisfiable.
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: 5000 })
+      .where(eq(dbSchema.appConfig.key, "a_steps_runtime_max_ms"));
+    expect((await stepRuntimeBand(db)).maxMs).toBe(9000); // floored at minMs
+
+    await db
+      .delete(dbSchema.appConfig)
+      .where(
+        sql`${dbSchema.appConfig.key} in ('a_steps_runtime_min_ms', 'a_steps_runtime_max_ms')`,
+      );
+    expect(await stepRuntimeBand(db)).toEqual({ minMs: 11_000, maxMs: 16_000 });
   });
 
   it("readTimeMs grows with the label — a 6-word label outlasts a 2-word one", () => {
