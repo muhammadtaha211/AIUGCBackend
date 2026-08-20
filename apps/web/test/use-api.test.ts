@@ -3,6 +3,7 @@ import {
   apiFetch,
   MAX_POLL_FAILURES,
   NETWORK_ERROR,
+  pollErrorRoute,
   postJson,
   recordPollFailure,
 } from "../src/lib/use-api";
@@ -99,5 +100,23 @@ describe("recordPollFailure — polls give up instead of spinning forever", () =
   it("a success resets the count (callers set failures back to 0)", () => {
     // After a reset, the next failure starts the count over.
     expect(recordPollFailure(0)).toEqual({ failures: 1, stalled: false });
+  });
+});
+
+describe("pollErrorRoute — 404 is a normal state when the caller says so", () => {
+  it("routes 404 to missing only for callers that handle it", () => {
+    expect(pollErrorRoute(404, true)).toBe("missing");
+    expect(pollErrorRoute(404, false)).toBe("fatal");
+  });
+
+  it("403 is fatal regardless — ownership never becomes a quiet wait", () => {
+    expect(pollErrorRoute(403, true)).toBe("fatal");
+    expect(pollErrorRoute(403, false)).toBe("fatal");
+  });
+
+  it("everything else is transient and retried", () => {
+    expect(pollErrorRoute(500, true)).toBe("transient");
+    expect(pollErrorRoute(0, false)).toBe("transient");
+    expect(pollErrorRoute(429, true)).toBe("transient");
   });
 });

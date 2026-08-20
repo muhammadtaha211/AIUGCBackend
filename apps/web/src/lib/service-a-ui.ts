@@ -1,12 +1,14 @@
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { readTimeMs } from "@aiugc/core/plan-format";
 import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
 
 /**
  * Pure, client-safe helpers for the Service A wizard. No imports from
- * @aiugc/core's main entry (client bundle) — the "hook-geometry" subpath is
- * the deliberate exception: pure math + zod, safe in the client. Server rules
- * live in src/lib/service-a.ts and are re-validated on every request; the
- * duplicates here only save a round-trip. Mirrors src/lib/service-b-ui.ts.
+ * @aiugc/core's main entry (client bundle) — the "hook-geometry" and
+ * "plan-format" subpaths are the deliberate exceptions: pure math + constants,
+ * safe in the client. Server rules live in src/lib/service-a.ts and are
+ * re-validated on every request; the duplicates here only save a round-trip.
+ * Mirrors src/lib/service-b-ui.ts.
  */
 
 // ---------------------------------------------------------------------------
@@ -14,22 +16,23 @@ import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } 
 // ---------------------------------------------------------------------------
 
 export type AWizardStep =
-  "persona" | "hook" | "hookStudio" | "demo" | "script" | "audio" | "render";
+  "persona" | "hook" | "hookStudio" | "demo" | "plan" | "script" | "audio" | "render";
+
+export type AWizardFormat = "steps" | "full";
 
 /**
- * One fixed path — Service A has no category-driven steps. Persona first: the
- * hook gallery filters by the chosen persona (swapped clips + generic ones)
- * and the structure strip shows the face that narrates and closes the video.
+ * Format-aware, mirroring B's wizardSteps(category). "steps" is the web
+ * wizard: silent format, no persona (the render path consumes none, hook lines
+ * default to feminine first person and stay freely editable in the hook
+ * studio), no script, no audio. "full" is the voiced seven-step path — today
+ * CLI-only; the shape stays here so the two formats are one decision apart,
+ * not two files apart.
  */
-export const A_WIZARD_STEPS: AWizardStep[] = [
-  "persona",
-  "hook",
-  "hookStudio",
-  "demo",
-  "script",
-  "audio",
-  "render",
-];
+export function aWizardSteps(format: AWizardFormat): AWizardStep[] {
+  return format === "steps"
+    ? ["hook", "hookStudio", "demo", "plan", "render"]
+    : ["persona", "hook", "hookStudio", "demo", "script", "audio", "render"];
+}
 
 // ---------------------------------------------------------------------------
 // Demo pre-checks (client-side copy of src/lib/service-a.ts rules)
@@ -90,6 +93,229 @@ export type DemoSummary = {
   thumbUrl?: string;
   createdAt: string;
 };
+
+// ---------------------------------------------------------------------------
+// Durable identity (?demo=<id>&step=<n> on /home/a/new)
+// ---------------------------------------------------------------------------
+
+/**
+ * Only demo id + step index survive a reload — the rest of the wizard state
+ * (hook, hook line, rect) is deliberately session-local. Carried as query
+ * params on the static route via history.replaceState: resumable links and
+ * browser reload without touching routing, and it survives the sidebar's
+ * router.refresh() on a business switch (which is exactly why the restore
+ * re-checks ownership — see restoredDemo).
+ */
+export type AWizardIdentity = { demoId: string | null; step: number };
+
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Parse ?demo=&step= — anything malformed degrades to a fresh wizard. */
+export function identityFromSearch(search: string, stepCount: number): AWizardIdentity {
+  const params = new URLSearchParams(search);
+  const demoRaw = params.get("demo");
+  const demoId = demoRaw !== null && UUID_SHAPE.test(demoRaw) ? demoRaw : null;
+  const stepRaw = Number(params.get("step"));
+  const step = Number.isInteger(stepRaw) && stepRaw >= 0 && stepRaw < stepCount ? stepRaw : 0;
+  return { demoId, step };
+}
+
+/** The inverse — "" when there is nothing worth persisting. */
+export function identitySearch(demoId: string | null, step: number): string {
+  const params = new URLSearchParams();
+  if (demoId) params.set("demo", demoId);
+  if (step > 0) params.set("step", String(step));
+  const joined = params.toString();
+  return joined ? `?${joined}` : "";
+}
+
+/**
+ * The step a reload can land on. Two rules, both learned the hard way:
+ * the plan step needs a READY demo (a mid-ingest demo lands on the demo step,
+ * whose own UI handles ingest polling and rejection — the plan step would
+ * promise an analysis that may never come), and hookStudio can never be
+ * restored (the chosen hook is session-local), so an index pointing at it
+ * reroutes to the gallery instead of rendering an empty card.
+ */
+export function clampRestoredStep(
+  step: number,
+  steps: AWizardStep[],
+  demo: Pick<DemoState, "status"> | null,
+): number {
+  const target = demo === null ? "hook" : demo.status === "ready" ? "plan" : "demo";
+  const max = steps.indexOf(target);
+  const clamped = Math.max(0, Math.min(step, max === -1 ? 0 : max));
+  return steps[clamped] === "hookStudio" ? Math.max(0, steps.indexOf("hook")) : clamped;
+}
+
+/**
+ * Whether the wizard may write ?demo=&step= to the URL. Never while restoring
+ * — and after a TRANSIENT restore failure (network blip, 5xx), never while the
+ * wizard still sits fresh at the start: writing there would replaceState the
+ * durable link away, and durability is the whole point. The moment the
+ * customer actually moves (a demo lands or the step changes) the wizard owns
+ * the URL again. Definitive rejections (403/404, wrong business, rejected
+ * demo) are not "failed" — those discard the identity on purpose.
+ */
+export function shouldSyncIdentity(opts: {
+  restoring: boolean;
+  restoreFailed: boolean;
+  demoId: string | null;
+  step: number;
+}): boolean {
+  if (opts.restoring) return false;
+  if (opts.restoreFailed && opts.demoId === null && opts.step === 0) return false;
+  return true;
+}
+
+/**
+ * Accept or discard a restored demo. The business check is the point: the
+ * demo GET's requireDemo only proves the USER owns the demo — an account with
+ * two businesses would otherwise carry ?demo= across a sidebar business
+ * switch and edit business A's demo under business B's chrome. A rejected
+ * demo is not resumable either — the demo step starts it over. The stored
+ * footage note rides along: without it, restore + back-to-demo + continue
+ * would PATCH an empty description over the saved one ("blank clears").
+ */
+export function restoredDemo(
+  demoId: string,
+  body: {
+    status: string;
+    businessId?: string;
+    description?: string;
+    durationMs?: number;
+    thumbUrl?: string;
+  },
+  businessId: string,
+): { demo: DemoState; description: string } | null {
+  if (body.businessId !== businessId) return null;
+  if (body.status === "rejected") return null;
+  return {
+    demo: {
+      id: demoId,
+      status: body.status,
+      durationMs: body.durationMs,
+      thumbUrl: body.thumbUrl,
+    },
+    description: body.description ?? "",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The step plan surface (read-only in 8a; the editor lands in 8b)
+// ---------------------------------------------------------------------------
+
+/** One stored plan step on the wire — durationMs is ASSEMBLED (gap-capped). */
+export type PlanStepWire = {
+  timestampMs: number;
+  actionType: string;
+  label: string;
+  sourceIndex: number;
+  durationMs: number;
+};
+
+/** stepPlanResponse — the one shape every plan-touching route returns. */
+export type StepPlanWire = {
+  planId: string;
+  demoId: string;
+  analysisId: string;
+  status: string; // pending | planning | ready | failed
+  steps: PlanStepWire[];
+  notes?: string;
+  failReason?: string;
+  approvedAt?: string;
+};
+
+/** One analysis state from GET .../analysis (?indexes= adds thumbUrl). */
+export type AnalysisStateWire = {
+  index: number;
+  timestampMs: number;
+  screenName: string;
+  visibleText: string[];
+  thumbUrl?: string;
+};
+
+/** A plan still generating — poll, and the retry button stays disabled:
+ *  requestDemoPlan collapses onto the in-flight job in this window, so a
+ *  click here would be a silent no-op. */
+export function isActivePlanStatus(status: string): boolean {
+  return status === "pending" || status === "planning";
+}
+
+/**
+ * demo_analyses statuses that mean "still working" — the plan step keeps its
+ * gentle poll up through these. NB the stored spelling is "analysing"
+ * (British, matching the pg enum): "analyzing" here would deactivate the poll
+ * mid-analysis and strand the customer on a blank card with no spinner.
+ */
+export function isAnalysisWorkingStatus(status: string): boolean {
+  return status === "pending" || status === "analysing";
+}
+
+/**
+ * The ?indexes= batches for a plan's cards. The route caps one request at
+ * ANALYSIS_PAGE_SIZE signed thumbs, and plan size follows the a_steps_max
+ * config knob — a single oversized request would 400 on every retry, so the
+ * client chunks instead. Deduped; order preserved.
+ */
+export function analysisIndexBatches(indexes: number[]): number[][] {
+  const unique = [...new Set(indexes)];
+  const batches: number[][] = [];
+  for (let i = 0; i < unique.length; i += ANALYSIS_PAGE_SIZE) {
+    batches.push(unique.slice(i, i + ANALYSIS_PAGE_SIZE));
+  }
+  return batches;
+}
+
+const PLAN_FAILED_GENERIC = "יצירת תוכנית הצעדים נכשלה — אפשר לנסות שוב.";
+
+/**
+ * The failure line the customer sees. fail_reason is usually customer-facing
+ * Hebrew, but PermanentErrors without a customerMessage land as raw English
+ * ("demo <id> not found") — that reads as a bug and leaks an id, so anything
+ * without Hebrew letters shows the generic line with the raw string kept
+ * behind a details toggle (RLS hides jobs.last_error entirely; this is one of
+ * the few diagnostics that reaches the client at all).
+ */
+export function planFailureNotice(failReason?: string): { message: string; raw?: string } {
+  if (failReason && /[֐-׿]/.test(failReason)) return { message: failReason };
+  return failReason
+    ? { message: PLAN_FAILED_GENERIC, raw: failReason }
+    : { message: PLAN_FAILED_GENERIC };
+}
+
+/**
+ * What a plan POST response meant. Same planId back = the request collapsed
+ * onto the in-flight job (requestDemoPlan's pending/planning window) — the
+ * customer must see "already running", never a silent nothing.
+ */
+export function retryOutcome(
+  currentPlanId: string | null,
+  response: { planId: string },
+): "started" | "already_running" {
+  return response.planId === currentPlanId ? "already_running" : "started";
+}
+
+/**
+ * Read-time headroom: how much longer the step stays up than the label needs.
+ * Negative = the caption is on screen for less time than it takes to read —
+ * the exact defect the model path rejects and the human path allows silently.
+ * Uses the exported readTimeMs, never a client-side copy of the formula.
+ */
+export function stepHeadroomMs(step: Pick<PlanStepWire, "label" | "durationMs">): number {
+  return step.durationMs - readTimeMs(step.label);
+}
+
+/** Chronological display order — order derives from timestamp, nothing else. */
+export function sortedPlanSteps(steps: PlanStepWire[]): PlanStepWire[] {
+  return [...steps].sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+/** m:ss position of a step inside the demo. */
+export function fmtTimestamp(ms: number): string {
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
 
 export type HookClip = {
   id: string;

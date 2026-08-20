@@ -11,7 +11,14 @@ import { BudgetError, PermanentError } from "../jobs/errors";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { FIXTURES_DIR } from "../paths";
-import { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
+import {
+  LABEL_LEAD_MS,
+  LABEL_WORDS_PER_SECOND,
+  MAX_LABEL_CHARS,
+  PLAN_SKIP_SCREEN_KINDS,
+  readTimeMs,
+  totalRuntimeMs,
+} from "../plan-format";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { questionnaireSchema, requireQuestionnaire, type Questionnaire } from "./businesses";
@@ -22,10 +29,11 @@ import {
   type AnalysisState,
 } from "./demo-analysis";
 
-// Both live in ../plan-format so the wizard's picker can import them without
-// dragging this module's db/fs/provider imports into a browser bundle. Kept
-// re-exported here because every server caller already imports them from here.
-export { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS };
+// These live in ../plan-format so the wizard's picker and plan surface can
+// import them without dragging this module's db/fs/provider imports into a
+// browser bundle. Kept re-exported here because every server caller already
+// imports them from here.
+export { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS, readTimeMs, totalRuntimeMs };
 
 function isSkippedKind(state: AnalysisState): boolean {
   return state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind);
@@ -101,31 +109,6 @@ const MAX_STEP_MS = 4000;
  *  (no seeded row: a missing key IS the default). */
 const MIN_RUNTIME_MS = 11_000;
 const MAX_RUNTIME_MS = 16_000;
-
-/** Fixed allowance before the label is being read at all: the 5-frame pop-in
- *  (ServiceASteps) plus the eye reaching the lower third after the hard cut. */
-const LABEL_LEAD_MS = 400;
-/** Hebrew burned-caption reading rate. The slow end of the 2.5-3 words/sec
- *  band on purpose — the viewer is watching the demo, not the caption. */
-const LABEL_WORDS_PER_SECOND = 2.5;
-
-/**
- * How long a burned step label needs to stay up to be read. A GUESS, exactly
- * like DEFAULT_STEP_MS, and labelled as one: nobody has measured Israeli
- * viewers reading these. Exported and pure because pass 2's runtime check and
- * the wizard's still-preview must use the same number the plan was built with.
- */
-export function readTimeMs(label: string): number {
-  const words = label.trim().split(/\s+/).filter(Boolean).length;
-  return LABEL_LEAD_MS + Math.round((words / LABEL_WORDS_PER_SECOND) * 1000);
-}
-
-/** On-screen length of the steps (the hook clip sits on top of this). The
- *  runtime band in findPlanViolations measures this over ASSEMBLED steps, and
- *  the wizard preview shows the same number. */
-export function totalRuntimeMs(steps: PlanStep[]): number {
-  return steps.reduce((ms, step) => ms + step.durationMs, 0);
-}
 
 /** Hard ceiling on a caption, in whitespace words. Not a target — holding
  *  labels to a 3-5 word average is the prompt's job. Also bounds the longest

@@ -253,9 +253,10 @@ export function StepDemo({
         onChange={(event) => setDescription(event.target.value)}
         placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
       />
+      {/* Steps format is silent — no narration promise here. The note is
+          stored on the demo row (voiced CLI runs on the same demo do use it). */}
       <p className="mt-1.5 text-[13px] text-ink/55">
-        כותבים פעם אחת לכל סרטון, זה עוזר לקריינות להתייחס למה שבאמת רואים. אפשר לדלג, נכתוב לפי
-        השאלון.
+        כותבים פעם אחת לכל סרטון — ההערה נשמרת יחד איתו ועוזרת לנו להבין מה מצולם. אפשר לדלג.
       </p>
     </div>
   );
