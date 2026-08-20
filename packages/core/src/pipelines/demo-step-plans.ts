@@ -480,7 +480,7 @@ export function findPlanViolations(
       const total = totalRuntimeMs(assembleSteps(valid, timeline, shape.runtime.durations));
       if (total < shape.runtime.minMs) {
         violations.push(
-          `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: select more distinct states, or states whose labels earn longer windows`,
+          `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
         );
       } else if (total > shape.runtime.maxMs) {
         violations.push(

@@ -804,6 +804,14 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     expect(v).toContain("6200ms");
     expect(v).toContain("too SHORT");
     expect(v).toContain("11000-16000ms");
+    // The retry prompt orders MINIMAL edits and every untouched step kept; a
+    // live v4 retry read that as "do not add" and handed back the same short
+    // plan with a note suggesting the very fix it would not make. So this
+    // message has to licence the addition — and bound it, because the one
+    // time a retry was told plainly to add states it padded with a loading
+    // screen.
+    expect(v).toContain("ADD one or two more distinct product states");
+    expect(v).toContain("never add a loading, duplicate or otherwise skipped state");
   });
 
   it("flags a plan that is too long", () => {
