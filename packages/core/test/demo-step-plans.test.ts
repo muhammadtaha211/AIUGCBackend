@@ -865,6 +865,48 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     ).toContain("6600ms");
   });
 
+  it("waives the FLOOR when the recording is too short to reach it, never the ceiling", () => {
+    // demos.ts accepts an 8-second recording. Every selectable state selected,
+    // perfectly spaced, assembles to 10000ms — the floor is unreachable, so
+    // "ADD one or two more distinct product states" is advice about states
+    // that do not exist. Before the waiver this burned the retry and failed
+    // the plan permanently, with a Hebrew "try again" that never would.
+    const eightSeconds: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
+      state({ timestampMs: 2000, visibleText: ["שתיים"], actionType: "tap" }),
+      state({ timestampMs: 4000, visibleText: ["שלוש"], actionType: "type" }),
+      state({ timestampMs: 6000, visibleText: ["ארבע"], actionType: "select" }),
+      state({ timestampMs: 8000, visibleText: ["חמש"], actionType: "result" }),
+    ];
+    const everything = eightSeconds.map((s, i) => ({
+      sourceIndex: i,
+      label: s.visibleText[0]!,
+    }));
+    expect(totalRuntimeMs(assembleSteps(everything, eightSeconds, DURATIONS))).toBe(10_000);
+    expect(
+      findPlanViolations(everything, eightSeconds, QUESTIONNAIRE, 8, {
+        minSteps: 5,
+        notes: null,
+        minStepMs: 1400,
+        runtime: band,
+      }),
+    ).toEqual([]);
+    // The same 10000ms plan on a recording long enough to do better IS flagged
+    // — the waiver is about the timeline, never about the total.
+    expect(
+      shape(pick(0, 1, 5)).some((v) => v.includes("too SHORT")),
+    ).toBe(true);
+    // And the ceiling never gets the escape: a long plan can always drop steps.
+    expect(
+      findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, QUESTIONNAIRE, 8, {
+        minSteps: 1,
+        notes: null,
+        minStepMs: 1400,
+        runtime: { ...band, minMs: 30_000, maxMs: 12_000 },
+      }).some((v) => v.includes("too LONG")),
+    ).toBe(true);
+  });
+
   it("notes does not waive the band — a short ad is short however it is explained", () => {
     expect(
       findPlanViolations(pick(0, 1, 5), wide, QUESTIONNAIRE, 8, {
@@ -1018,6 +1060,27 @@ describe("step durations (the window model)", () => {
     );
     expect(readTimeMs("אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע עשר")).toBe(4400);
     expect(long[0]!.durationMs).toBe(4000);
+  });
+
+  it("the canned DRY_RUN plan tops up from the legal pool rather than throwing", async () => {
+    // dryRunPlan prefers "high"/non-idle states; findPlanViolations' min-step
+    // waiver counts every LEGAL state, "low" and idle included. On mostly-dim
+    // footage the quality pool alone lands under the minimum on a timeline the
+    // waiver does not forgive, and the keyless path threw — on the very path
+    // the whole suite, `aiugc plan regress` and a DRY_RUN worker all run.
+    const dim: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate", legibility: "low" }),
+      state({ timestampMs: 3000, visibleText: ["שתיים"], actionType: "tap", legibility: "low" }),
+      state({ timestampMs: 6000, visibleText: ["שלוש"], actionType: "type" }),
+      state({ timestampMs: 9000, visibleText: ["ארבע"], actionType: "select" }),
+      state({ timestampMs: 12_000, visibleText: ["חמש"], actionType: "scroll", legibility: "low" }),
+      state({ timestampMs: 15_000, visibleText: ["שש"], actionType: "result" }),
+    ];
+    const draft = await generateStepPlan(db, { timeline: dim, questionnaire: QUESTIONNAIRE });
+    // The quality pool holds three states; the legal pool holds six, so the
+    // plan tops up instead of dying under the 5-step minimum.
+    expect(draft.steps.length).toBeGreaterThanOrEqual(5);
+    expect(draft.steps[draft.steps.length - 1]!.actionType).toBe("result");
   });
 
   it("the canned DRY_RUN plan obeys the min-gap rule it is validated against", async () => {

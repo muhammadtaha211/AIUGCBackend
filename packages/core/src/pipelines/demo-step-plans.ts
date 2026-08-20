@@ -134,6 +134,11 @@ export function totalRuntimeMs(steps: PlanStep[]): number {
 }
 
 const MAX_LABEL_CHARS = 60;
+/** Hard ceiling on a caption, in whitespace words. Not a target — holding
+ *  labels to a 3-5 word average is the prompt's job. Also bounds the longest
+ *  window a single step can earn, which the runtime band's reachability
+ *  check needs. */
+const MAX_LABEL_WORDS = 6;
 
 /** Rough cost bookkeeping — same math as pipelines/copy.ts (3rd use is Phase 6's problem). */
 function llmCostAgorot(inputTokens: number, outputTokens: number): number {
@@ -348,15 +353,14 @@ export function findPlanViolations(
       violations.push(`step ${i}: label is over ${MAX_LABEL_CHARS} characters`);
     }
     // The word cap counts what the viewer sees (whitespace words); the content
-    // check below works on normalized tokens instead. Six is a hard ceiling,
-    // not a target — holding labels to a 3-5 word average is the prompt's job.
+    // check below works on normalized tokens instead.
     const words = step.label.split(/\s+/).map(normalizeWord).filter(Boolean);
     if (words.length === 0) {
       violations.push(`step ${i}: label is empty`);
       return;
     }
-    if (words.length > 6) {
-      violations.push(`step ${i}: label "${step.label}" is over 6 words`);
+    if (words.length > MAX_LABEL_WORDS) {
+      violations.push(`step ${i}: label "${step.label}" is over ${MAX_LABEL_WORDS} words`);
     }
     const allowedState = expandToVariantSet(
       dupRunIndexes(timeline, step.sourceIndex).flatMap((j) =>
@@ -478,7 +482,32 @@ export function findPlanViolations(
       // carries the current total and the direction to move — the ONE
       // corrective retry has no other way to know which way that is.
       const total = totalRuntimeMs(assembleSteps(valid, timeline, shape.runtime.durations));
-      if (total < shape.runtime.minMs) {
+      // The FLOOR needs the same unreachability escape as the minimum count.
+      // demos.ts accepts an 8-second recording, and 8 seconds of source cannot
+      // make 11 seconds of steps however it is cut — telling the model to add
+      // states it does not have burns the one retry and fails the plan
+      // permanently, with a customer-facing "try again" that never works.
+      // Sound upper bound: every non-last step is capped at the gap to the
+      // next one, so their sum cannot exceed the span of the selectable
+      // states, and no single step can outlast one step's ceiling. The CEILING
+      // gets no such escape — a long plan can always drop steps.
+      const selectable = timeline.filter(
+        (s) => s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious,
+      );
+      const stepCeilingMs = Math.min(
+        shape.runtime.durations.maxMs,
+        Math.max(
+          shape.runtime.durations.minMs,
+          readTimeMs("x ".repeat(MAX_LABEL_WORDS)),
+          ...Object.values(shape.runtime.durations.byActionType),
+        ),
+      );
+      const span =
+        selectable.length > 0
+          ? selectable[selectable.length - 1]!.timestampMs - selectable[0]!.timestampMs
+          : 0;
+      const reachableMs = Math.min(span + stepCeilingMs, maxSteps * stepCeilingMs);
+      if (total < shape.runtime.minMs && reachableMs >= shape.runtime.minMs) {
         violations.push(
           `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
         );
@@ -595,21 +624,27 @@ function dryRunPlan(
   maxSteps: number,
   minStepMs: number,
 ): PlanOutput {
-  let candidates = timeline
-    .map((state, index) => ({ state, index }))
-    .filter(
-      ({ state }) =>
-        state.legibility === "high" &&
-        !state.sameStateAsPrevious &&
-        state.actionType !== "idle" &&
-        !isSkippedKind(state),
-    );
-  if (candidates.length === 0) {
-    candidates = timeline
-      .map((state, index) => ({ state, index }))
-      .filter(({ state }) => state.legibility !== "unreadable" && !isSkippedKind(state));
+  const indexed = timeline.map((state, index) => ({ state, index }));
+  // The quality pool the canned plan prefers, and the wider pool the validator
+  // will actually accept. They are NOT the same set — "low" and idle states
+  // are legal steps, they are just poor ones — so a timeline that is mostly
+  // dim leaves the quality pool short of minSteps while the minimum-step
+  // waiver, which counts the wider pool, does not forgive it. The keyless path
+  // then throws. Prefer quality, fall back to legal.
+  const quality = indexed.filter(
+    ({ state }) =>
+      state.legibility === "high" &&
+      !state.sameStateAsPrevious &&
+      state.actionType !== "idle" &&
+      !isSkippedKind(state),
+  );
+  const legal = indexed.filter(
+    ({ state }) =>
+      state.legibility !== "unreadable" && !isSkippedKind(state) && !state.sameStateAsPrevious,
+  );
+  if (quality.length === 0 && legal.length === 0) {
+    throw new Error("dry-run plan: timeline has no usable states");
   }
-  if (candidates.length === 0) throw new Error("dry-run plan: timeline has no usable states");
 
   // End on the LAST selectable result state when one exists — the same shape
   // rule findPlanViolations enforces, so the keyless plan always passes its
@@ -622,32 +657,43 @@ function dryRunPlan(
         state.actionType === "result" && state.legibility !== "unreadable" && !isSkippedKind(state),
     );
   const lastResult = results[results.length - 1];
-  let kept = subsampleClusters(candidates, maxSteps);
-  if (lastResult) {
-    kept = subsampleClusters(
-      kept.filter(({ state }) => state.timestampMs < lastResult.state.timestampMs),
-      maxSteps - 1,
-    );
-    kept.push(lastResult);
-  }
 
-  // ...and respect the min-gap rule too, for the same reason. subsampleClusters
-  // always keeps its last element and lastResult is appended straight after it,
-  // so (final candidate, success screen) is exactly the pair a real recording
-  // is most likely to have under one step apart — leaving it in would make the
-  // canned plan fail its own validation and throw. Walk backwards dropping the
-  // EARLIER of any too-close pair: the ending is the one state the format
-  // cannot lose. Dropping below minSteps is fine — this is the same walk the
-  // minimum-step waiver does, so a timeline that forces the drop is a timeline
-  // the waiver already forgives.
-  const spaced: typeof kept = [];
-  for (let i = kept.length - 1; i >= 0; i--) {
-    const next = spaced[spaced.length - 1];
-    if (!next || next.state.timestampMs - kept[i]!.state.timestampMs >= minStepMs) {
-      spaced.push(kept[i]!);
+  // Thin to the cap keeping the ending, then respect the min-gap rule.
+  // subsampleClusters always keeps its last element and lastResult is appended
+  // straight after it, so (final candidate, success screen) is exactly the pair
+  // a real recording is most likely to have under one step apart — leaving it
+  // in would make the canned plan fail its own validation and throw. Walk
+  // backwards dropping the EARLIER of any too-close pair: the ending is the one
+  // state the format cannot lose.
+  const pick = (pool: typeof indexed): typeof indexed => {
+    let kept = subsampleClusters(pool, maxSteps);
+    if (lastResult) {
+      kept = subsampleClusters(
+        kept.filter(({ state }) => state.timestampMs < lastResult.state.timestampMs),
+        maxSteps - 1,
+      );
+      kept.push(lastResult);
     }
+    const spaced: typeof kept = [];
+    for (let i = kept.length - 1; i >= 0; i--) {
+      const next = spaced[spaced.length - 1];
+      if (!next || next.state.timestampMs - kept[i]!.state.timestampMs >= minStepMs) {
+        spaced.push(kept[i]!);
+      }
+    }
+    return spaced.reverse();
+  };
+
+  // Quality first; top up from the legal pool only when quality alone lands
+  // under the minimum, because that is precisely the shortfall the
+  // minimum-step waiver will NOT forgive (it counts the legal pool). When even
+  // the legal pool is short the waiver does forgive it, so a short plan there
+  // is correct rather than a throw.
+  let kept = pick(quality);
+  if (kept.length < minSteps) {
+    const wider = pick(legal);
+    if (wider.length > kept.length) kept = wider;
   }
-  kept = spaced.reverse();
 
   const steps = kept.map(({ state, index }) => ({
     sourceIndex: index,
