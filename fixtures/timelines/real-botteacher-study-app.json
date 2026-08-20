@@ -1,4 +1,21 @@
 {
+  "_comment": [
+    "GREEN, but not by the selection — read this before trusting the PASS. expected.allowNotes",
+    "is true, so any plan with at least one step and a non-empty `notes` counts as green: this",
+    "recording has no genuine success state (its only `result` candidates are validation errors",
+    "and the end of the in-app tour), and saying so IS the wanted behaviour. The pinned",
+    "sourceIndexes are therefore documentation, not the pass condition — the 2026-08-20 v11 run",
+    "returned [1, 13, 36, 42, 51, 61] and passed on the note.",
+    "",
+    "This fixture went PASS -> FAIL under v10, which dropped v9's fallback licensing a button",
+    "label as a caption: with that anchor gone the model invented words and lost the ending.",
+    "v11 recovers it. The regress harness ignores this key (fixtureSchema strips what it does",
+    "not name).",
+    "",
+    "Note also that this is the v1-era analysis (demo 724d68df): no state carries a screenKind,",
+    "so PLAN_SKIP_SCREEN_KINDS matches nothing here and the login / tour / onboarding screens",
+    "are governed by the prompt's prose alone."
+  ],
   "questionnaire": {
     "tone": "friendly",
     "category": "app_or_digital",

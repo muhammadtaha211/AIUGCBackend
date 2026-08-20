@@ -1,4 +1,22 @@
 {
+  "_comment": [
+    "RED ON PURPOSE since plan_demo_steps@v11 (2026-08-20), for two independent reasons.",
+    "The regress harness ignores this key (fixtureSchema strips what it does not name).",
+    "",
+    "(b) ACCEPTED COST — do not fix. The model reaches for הקמפיין (it is on state 11 as",
+    "'!הקמפיין נוצר') while captioning state 10, and the questionnaire only offers קמפיינים.",
+    "Prefix-stripping gets הקמפיין down to קמפיין, which is still not קמפיינים, so the",
+    "anti-fabrication rule rejects it. That is Hebrew plural morphology, not a bug: widening",
+    "wordVariants far enough to bridge it would let real invented claims through.",
+    "",
+    "(c) STALE TARGET. expected.sourceIndexes selects 5, 6 and 7, which sit 1500ms apart.",
+    "The read-time rule (added in 1ea1d94, AFTER this expectation was pinned) gives a step",
+    "only the gap to the next selected state, and a three-word caption needs 1600ms — while",
+    "the prompt's floor is three words. So this selection is only captionable in two words,",
+    "which is a field label rather than a caption. A v11 plan that obeys both rules drops one",
+    "of the bunched pair and lands on something like [3, 5, 7, 10, 11]. Re-pin the expectation",
+    "if that is the wanted shape; do NOT relax the read-time rule to make this green."
+  ],
   "questionnaire": {
     "category": "app_or_digital",
     "product_name": "קמפיינר",
