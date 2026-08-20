@@ -1,6 +1,7 @@
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition, type FfmpegOverrideFn } from "@remotion/renderer";
 import { existsSync, mkdirSync } from "node:fs";
+import { freemem } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveLocalFiles } from "./serve-files";
@@ -87,6 +88,53 @@ export const bt709FfmpegOverride: FfmpegOverrideFn = ({ type, args }) => {
     args[args.length - 1]!,
   ];
 };
+
+/**
+ * Size of Remotion's <OffthreadVideo> decoded-frame cache, pinned.
+ *
+ * Remotion's default is `null` = half of the memory FREE when the render
+ * starts (`os.freemem()` on Windows), so the same inputs can render
+ * differently depending on what else the box happens to be running. That is
+ * not a performance knob. A 1080x1920 frame costs ~6MB in this cache, and once
+ * a thread's share cannot hold a couple of them the compositor prunes to one
+ * frame and then answers the NEXT timestamp out of that near-empty cache —
+ * its own verbose log, verbatim:
+ *
+ *   Pruned 5 on thread 0 to save memory, keeping 1. Cache size on thread: 6MB,
+ *     total cache: 6MB, max cache on thread: 9MB
+ *   Found timestamp with too much threshold, but will let it pass because no
+ *     closer frames found. difference = 512, threshold = 511
+ *
+ * 512 ticks is exactly one frame at this file's time base: it hands back the
+ * previous frame rather than decoding the one asked for. Timestamps, duration
+ * and playback speed all stay correct, so nothing downstream notices — the ad
+ * just stutters. Measured against the compositor directly (no browser), on the
+ * 88s/1080x1920 demo of render 448d257c at its 5-step plan's exact timestamps:
+ *
+ *   cache  20MB -> 12.2-12.8 distinct fps per step segment, hook 14.6   (91s)
+ *   cache  50MB -> 23.9 per step                                        (68s)
+ *   cache 100MB -> 30.0 per step, clean                                 (19s)
+ *   cache 200/400/800MB -> 30.0 per step                          (19/26/19s)
+ *   cache 512MB -> 30.0 per step, zero "too much threshold" logged       (17s)
+ *
+ * Wall clock for all 423 extractions in brackets — it flattens from 100MB up,
+ * so the pin buys determinism for free. Full renders of that plan on a quiet
+ * box agree: 95-103s and 397/423 mpdecimate-distinct frames at the default,
+ * 169s and 345/423 at 25MB. The 2026-08-18 render kept 341/423 with a
+ * per-segment difference fingerprint matching 25MB, which is what dates the
+ * fault to this mechanism. What it was on that box that made the cache that
+ * small was never established — half of free memory implies ~50MB free, and
+ * nothing on disk records it. The pin makes the question moot: the size no
+ * longer depends on anything ambient.
+ *
+ * 512MB total; with both files open the compositor reported a 256MB budget per
+ * decode thread, ~40 frames each. Damage was seen at 50MB and below and never
+ * at 100MB or above, on a handful of runs per size — the boundary is fuzzy, so
+ * this is deliberately far above it. Note it is a floor as well as a ceiling:
+ * unlike the default it will not shrink on a small host. Do not remove it: it
+ * is correctness, not tuning.
+ */
+const OFFTHREAD_VIDEO_CACHE_BYTES = 512 * 1024 * 1024;
 
 const ENTRY_POINT = fileURLToPath(new URL("./index.ts", import.meta.url));
 
@@ -218,6 +266,14 @@ async function runRender(
   const composition = await selectComposition({ serveUrl, id, inputProps });
 
   mkdirSync(path.dirname(outPath), { recursive: true });
+  // The 2026-08-18 stutter was dated to a too-small ambient frame cache, but
+  // what made that box tight was never established — it was reconstructed from
+  // surviving temp dirs. These are the two numbers that reconstruction needed:
+  // record them at every render start so the next occurrence proves itself.
+  // outPath carries the render id (WORK_DIR/render/<videoRenderId>/final.mp4).
+  console.log(
+    `[render] ${id} out=${outPath} freemem=${freemem()} offthreadVideoCacheSizeInBytes=${OFFTHREAD_VIDEO_CACHE_BYTES}`,
+  );
   await renderMedia({
     composition,
     serveUrl,
@@ -231,6 +287,7 @@ async function runRender(
     // the range conversion real and completes the VUI tags.
     colorSpace: "bt709",
     ffmpegOverride: bt709FfmpegOverride,
+    offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
     outputLocation: outPath,
     inputProps,
     logLevel: "error",

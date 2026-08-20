@@ -81,6 +81,7 @@ export async function lipsyncResolution(db: Db): Promise<LipsyncResolution> {
 const DRY_RUN_PROBE: ProbeResult = {
   width: 1080,
   height: 1920,
+  fps: 25,
   durationMs: 10_000,
   hasAudio: true,
 };

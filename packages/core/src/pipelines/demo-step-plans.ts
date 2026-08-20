@@ -80,8 +80,9 @@ const planOutputSchema = z.object({
 });
 type PlanOutput = z.infer<typeof planOutputSchema>;
 
-/** Per-step clip length by what the state shows; ~2s average keeps 6-8 steps
- *  inside the 12-17s target. Config `a_step_ms_by_action` overrides per key. */
+/** Per-step clip length by what the state shows. The band this feeds is
+ *  MIN/MAX_RUNTIME_MS below — an executable check, not this comment's
+ *  arithmetic. Config `a_step_ms_by_action` overrides per key. */
 const DEFAULT_STEP_MS: Record<AnalysisState["actionType"], number> = {
   navigate: 1800,
   tap: 1600,
@@ -92,7 +93,52 @@ const DEFAULT_STEP_MS: Record<AnalysisState["actionType"], number> = {
   idle: 1600,
 };
 
+/** Floor and ceiling on one step's clip, whatever the arithmetic asks for.
+ *  Config `a_step_ms_min` / `a_step_ms_max` override (no seeded row: a missing
+ *  key IS the default). The floor is a legibility limit — a label the eye
+ *  cannot land on is worse than no label; the ceiling stops one step eating
+ *  the ad. Both are guesses, like DEFAULT_STEP_MS. */
+const MIN_STEP_MS = 1400;
+const MAX_STEP_MS = 4000;
+
+/** The steps' own on-screen length — the hook clip is NOT counted, it sits on
+ *  top. With the bank's ~4s hook this lands the finished ad in the 15-20s
+ *  band. Config `a_steps_runtime_min_ms` / `a_steps_runtime_max_ms` override
+ *  (no seeded row: a missing key IS the default). */
+const MIN_RUNTIME_MS = 11_000;
+const MAX_RUNTIME_MS = 16_000;
+
+/** Fixed allowance before the label is being read at all: the 5-frame pop-in
+ *  (ServiceASteps) plus the eye reaching the lower third after the hard cut. */
+const LABEL_LEAD_MS = 400;
+/** Hebrew burned-caption reading rate. The slow end of the 2.5-3 words/sec
+ *  band on purpose — the viewer is watching the demo, not the caption. */
+const LABEL_WORDS_PER_SECOND = 2.5;
+
+/**
+ * How long a burned step label needs to stay up to be read. A GUESS, exactly
+ * like DEFAULT_STEP_MS, and labelled as one: nobody has measured Israeli
+ * viewers reading these. Exported and pure because pass 2's runtime check and
+ * the wizard's still-preview must use the same number the plan was built with.
+ */
+export function readTimeMs(label: string): number {
+  const words = label.trim().split(/\s+/).filter(Boolean).length;
+  return LABEL_LEAD_MS + Math.round((words / LABEL_WORDS_PER_SECOND) * 1000);
+}
+
+/** On-screen length of the steps (the hook clip sits on top of this). The
+ *  runtime band in findPlanViolations measures this over ASSEMBLED steps, and
+ *  the wizard preview shows the same number. */
+export function totalRuntimeMs(steps: PlanStep[]): number {
+  return steps.reduce((ms, step) => ms + step.durationMs, 0);
+}
+
 const MAX_LABEL_CHARS = 60;
+/** Hard ceiling on a caption, in whitespace words. Not a target — holding
+ *  labels to a 3-5 word average is the prompt's job. Also bounds the longest
+ *  window a single step can earn, which the runtime band's reachability
+ *  check needs. */
+const MAX_LABEL_WORDS = 6;
 
 /** Rough cost bookkeeping — same math as pipelines/copy.ts (3rd use is Phase 6's problem). */
 function llmCostAgorot(inputTokens: number, outputTokens: number): number {
@@ -114,6 +160,42 @@ const FUNCTION_WORDS = new Set([
   "של", "את", "עם", "על", "אל", "זה", "זו", "זאת", "זהו", "אז", "גם", "רק",
   "כל", "לא", "יש", "אין", "עוד", "כבר", "או", "אם", "כי", "מה", "מי", "איך",
   "כאן", "שם", "אחרי", "לפני", "בתוך", "עד", "ואז", "הנה", "ככה", "פשוט",
+  // Pronouns and possessives. A caption addressed to the viewer needs them and
+  // none of them can carry a product claim. The two-letter members are
+  // reachable by prefix-stripping — "כלי" strips כ down to "לי" and passes —
+  // which is the same 1-2 char slack window wordVariants already documents.
+  "הוא", "היא", "הם", "הן", "אתם", "שלי", "שלך", "שלכם", "לי", "לך", "לכם",
+  "אותו", "אותה", "אותם",
+]);
+
+/**
+ * Instruction verbs: the words that make a caption an INSTRUCTION ("go here",
+ * "upload it") rather than a transcription of the screen. They are never on
+ * screen by nature — a button reads "שמירה", the caption that tells you to
+ * press it reads "שמרו" — and they carry no product claim, which is why they
+ * are safe to allow while the anti-fabrication rule stays otherwise intact.
+ *
+ * SURFACE FORMS, not roots. Hebrew imperative morphology defeats the
+ * prefix-stripping in wordVariants (היכנסו strips ה and then halts at י), so
+ * the plene and defective spellings are listed separately, plural imperative
+ * only. Deliberately conservative, exactly like FUNCTION_WORDS: every addition
+ * weakens the rule, and a verb that could be read as a claim about the product
+ * does not belong in here.
+ */
+const INSTRUCTIONAL_VERBS = new Set([
+  "כנסו", "היכנסו", "הכנסו", // enter
+  "לחצו", // click
+  "בחרו", // choose
+  "העלו", // upload
+  "פתחו", // open
+  "הקלידו", "כתבו", // type
+  "גררו", // drag
+  "סמנו", // mark
+  "מלאו", // fill
+  "שלחו", // send
+  "חפשו", // search
+  "שמרו", // save
+  "גללו", // scroll
 ]);
 
 /**
@@ -215,16 +297,27 @@ function dupRunIndexes(timeline: AnalysisState[], index: number): number[] {
  * user-edited labels never pass through it. `shape` adds the plan-shape rules
  * the generation path enforces on top of the per-step rules: the video must
  * end on the success state (when the timeline offers a selectable one and
- * `notes` does not explain why it cannot), and a below-minimum plan must
- * explain itself in `notes`. Human edits deliberately
- * skip both — deleting steps just makes the video shorter.
+ * `notes` does not explain why it cannot); a below-minimum plan is a violation
+ * unless the timeline itself cannot offer that many selectable states; no two
+ * selected states may sit closer together than one step is long; and, when
+ * `shape.runtime` is supplied, the assembled steps must total inside the
+ * format's band. Human edits deliberately skip all four — deleting steps just
+ * makes the video shorter.
  */
 export function findPlanViolations(
   steps: { sourceIndex: number; label: string }[],
   timeline: AnalysisState[],
   questionnaire: Questionnaire,
   maxSteps: number,
-  shape?: { minSteps: number; notes: string | null },
+  shape?: {
+    minSteps: number;
+    notes: string | null;
+    minStepMs: number;
+    /** Absent = do not check the total. Present, it carries the duration
+     *  config because the check measures ASSEMBLED windows: a sum of nominal
+     *  DEFAULT_STEP_MS is a number the video never shows. */
+    runtime?: { durations: StepDurationConfig; minMs: number; maxMs: number };
+  },
 ): string[] {
   const violations: string[] = [];
   if (steps.length === 0) {
@@ -259,15 +352,15 @@ export function findPlanViolations(
     if (step.label.length > MAX_LABEL_CHARS) {
       violations.push(`step ${i}: label is over ${MAX_LABEL_CHARS} characters`);
     }
-    // The 4-word cap counts what the viewer sees (whitespace words); the
-    // content check below works on normalized tokens instead.
+    // The word cap counts what the viewer sees (whitespace words); the content
+    // check below works on normalized tokens instead.
     const words = step.label.split(/\s+/).map(normalizeWord).filter(Boolean);
     if (words.length === 0) {
       violations.push(`step ${i}: label is empty`);
       return;
     }
-    if (words.length > 4) {
-      violations.push(`step ${i}: label "${step.label}" is over 4 words`);
+    if (words.length > MAX_LABEL_WORDS) {
+      violations.push(`step ${i}: label "${step.label}" is over ${MAX_LABEL_WORDS} words`);
     }
     const allowedState = expandToVariantSet(
       dupRunIndexes(timeline, step.sourceIndex).flatMap((j) =>
@@ -279,6 +372,9 @@ export function findPlanViolations(
       // constantly ("וגם", "שכבר") and a false reject here costs a paid
       // corrective re-request — or the whole plan on the second offence.
       if (wordVariants(word).some((v) => FUNCTION_WORDS.has(v))) continue;
+      // Same variant matching, same reason: "ולחצו" must not cost a paid
+      // corrective re-request over a glued ו.
+      if (wordVariants(word).some((v) => INSTRUCTIONAL_VERBS.has(v))) continue;
       // A prefix letter left standalone by punctuation ("ל־BotTeacher" splits
       // into ל + botteacher) carries no content — it cannot fabricate a claim.
       if (word.length === 1 && HEBREW_PREFIXES.has(word)) continue;
@@ -320,22 +416,106 @@ export function findPlanViolations(
         // success sits at 45s of an 80s recording), so "end on the result
         // state" is not enough — the retry needs the candidate indexes and an
         // explicit licence to drop the trailing steps, or it reshapes blind.
-        // The shortfall path is notes, never adding states: told to "select
-        // additional states" a live retry padded with a loading screen —
-        // a fresh violation with no third call to fix it.
+        // The shortfall path used to be notes; it is not any more (the
+        // minimum-step rule below no longer reads notes). So the message has
+        // to name what may be added AND what may not: told plainly to "select
+        // additional states" a live retry padded with a loading screen — a
+        // fresh violation with no third call to fix it.
         violations.push(
           `the last step must be the result/success state — the video ends there. This timeline's success candidates are at sourceIndex ${successCandidates
             .map(({ i }) => i)
             .join(
               ", ",
-            )}: end the plan on one of them and drop every step after it; if the drop leaves fewer than ${shape.minSteps} steps, keep the shorter plan and explain why in \`notes\` (Hebrew) — never pad with loading, duplicate or otherwise skipped states. If none of the candidates is a genuine success (an error, warning or validation message is never success), keep your best journey and explain that in \`notes\` (Hebrew) instead`,
+            )}: end the plan on one of them and drop every step after it; if the drop leaves fewer than ${shape.minSteps} steps, select additional distinct product states from BEFORE that ending — never pad with loading, duplicate or otherwise skipped states. If none of the candidates is a genuine success (an error, warning or validation message is never success), keep your best journey and explain that in \`notes\` (Hebrew) instead`,
         );
       }
     }
-    if (steps.length < shape.minSteps && !shape.notes?.trim()) {
-      violations.push(
-        `the plan has ${steps.length} steps, fewer than the minimum ${shape.minSteps} — either select more genuinely distinct steps or explain why in \`notes\` (Hebrew); never pad`,
+    // `notes` does NOT waive this one. It was written for the last-step rule
+    // above and waived both, which is how a 5-step plan with a 26-second hole
+    // in the middle passed. The waiver is deterministic instead: a timeline
+    // that cannot offer minSteps selectable states has no longer plan to give,
+    // and "selectable" is exactly what the per-step rules above accept.
+    if (steps.length < shape.minSteps) {
+      // Spacing counts as well as legality: two legal states 400ms apart can
+      // never both be steps (the min-gap rule below), so a timeline whose
+      // legal states are bunched inside one step's length cannot reach
+      // minSteps however it is read. Walking chronologically and taking every
+      // state that clears the gap yields the largest legal selection there is.
+      let selectable = 0;
+      let lastMs = Number.NEGATIVE_INFINITY;
+      for (const s of timeline) {
+        if (s.legibility === "unreadable" || isSkippedKind(s) || s.sameStateAsPrevious) continue;
+        if (s.timestampMs - lastMs < shape.minStepMs) continue;
+        selectable++;
+        lastMs = s.timestampMs;
+      }
+      if (selectable >= shape.minSteps) {
+        violations.push(
+          `the plan has ${steps.length} steps, fewer than the minimum ${shape.minSteps} — this timeline offers ${selectable} selectable states, so select more genuinely distinct ones; \`notes\` does not waive this, and never pad with loading, duplicate or otherwise skipped states`,
+        );
+      }
+    }
+    // Two selections inside one step's length are the same moment on screen:
+    // the second clip would have to open before the first one closed. Real
+    // timelines put states 400ms apart, so this is reachable, and it is
+    // arithmetic rather than taste — assembleSteps cannot honour both, and
+    // silently shortening one is what put 200ms of source on screen twice.
+    // Named here so the ONE corrective retry can drop one of the pair; the
+    // `notes` escape hatch does not apply, nothing explains a 400ms clip.
+    const chronological = [...seen].sort(
+      (a, b) => timeline[a]!.timestampMs - timeline[b]!.timestampMs,
+    );
+    for (let i = 1; i < chronological.length; i++) {
+      const before = chronological[i - 1]!;
+      const after = chronological[i]!;
+      const gap = timeline[after]!.timestampMs - timeline[before]!.timestampMs;
+      if (gap < shape.minStepMs) {
+        violations.push(
+          `states ${before} and ${after} are only ${gap}ms apart — a step is at least ${shape.minStepMs}ms long, so these two are the same moment on screen; keep whichever reads better and select a genuinely different state instead of the other`,
+        );
+      }
+    }
+    if (shape.runtime) {
+      // ASSEMBLED, never nominal: readTimeMs lifts a long label above its
+      // per-action default and the gap cap pulls a tight pair below it, so a
+      // sum of DEFAULT_STEP_MS is a number the video never shows. The message
+      // carries the current total and the direction to move — the ONE
+      // corrective retry has no other way to know which way that is.
+      const total = totalRuntimeMs(assembleSteps(valid, timeline, shape.runtime.durations));
+      // The FLOOR needs the same unreachability escape as the minimum count.
+      // demos.ts accepts an 8-second recording, and 8 seconds of source cannot
+      // make 11 seconds of steps however it is cut — telling the model to add
+      // states it does not have burns the one retry and fails the plan
+      // permanently, with a customer-facing "try again" that never works.
+      // Sound upper bound: every non-last step is capped at the gap to the
+      // next one, so their sum cannot exceed the span of the selectable
+      // states, and no single step can outlast one step's ceiling. The CEILING
+      // gets no such escape — a long plan can always drop steps.
+      const selectable = timeline.filter(
+        (s) => s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious,
       );
+      const stepCeilingMs = Math.min(
+        shape.runtime.durations.maxMs,
+        Math.max(
+          shape.runtime.durations.minMs,
+          readTimeMs("x ".repeat(MAX_LABEL_WORDS)),
+          ...Object.values(shape.runtime.durations.byActionType),
+        ),
+      );
+      const span =
+        selectable.length > 0
+          ? selectable[selectable.length - 1]!.timestampMs - selectable[0]!.timestampMs
+          : 0;
+      const reachableMs = Math.min(span + stepCeilingMs, maxSteps * stepCeilingMs);
+      if (total < shape.runtime.minMs && reachableMs >= shape.runtime.minMs) {
+        violations.push(
+          `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
+        );
+      } else if (total > shape.runtime.maxMs) {
+        violations.push(
+          `the steps total ${total}ms of video, over the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too LONG: drop the least essential steps`,
+        );
+      }
     }
   }
   return violations;
@@ -352,35 +532,83 @@ export interface StepPlanDraft {
   promptVersion: string;
 }
 
-async function stepDurations(db: Db): Promise<Record<string, number>> {
+export interface StepDurationConfig {
+  byActionType: Record<string, number>;
+  minMs: number;
+  maxMs: number;
+}
+
+/** Exported for the test that pins the defaults: with no app_config rows the
+ *  code constants ARE the configuration, and nothing else observes them. */
+export async function stepDurations(db: Db): Promise<StepDurationConfig> {
   const configured = await getConfigValueOr(
     db,
     "a_step_ms_by_action",
     z.record(z.string(), z.number()),
     {},
   );
-  return { ...DEFAULT_STEP_MS, ...configured };
+  const minMs = await getConfigValueOr(db, "a_step_ms_min", z.number(), MIN_STEP_MS);
+  return {
+    byActionType: { ...DEFAULT_STEP_MS, ...configured },
+    minMs,
+    // Same guard as a_steps_max: a config pair the wrong way round must not
+    // make the clamp incoherent.
+    maxMs: Math.max(minMs, await getConfigValueOr(db, "a_step_ms_max", z.number(), MAX_STEP_MS)),
+  };
 }
 
-/** sourceIndex is the source of truth: timestamp and actionType come from the
- *  selected state, durationMs from config — chronological by construction. */
-function assembleSteps(
+/**
+ * sourceIndex is the source of truth: timestamp and actionType come from the
+ * selected state — chronological by construction.
+ *
+ * Duration is derived from the state AND its neighbour. A flat per-actionType
+ * lookup has no idea where the next step begins, so a 1800ms `type` step in
+ * front of a state 1600ms later rendered 200ms of source twice, back to back
+ * (real: fixtures/timelines/real-botteacher-file-routing.json, proven in
+ * pixels). The last step has no neighbour, so it gets what it asked for.
+ *
+ * The gap to the next step is a HARD ceiling — the floor yields to it, not the
+ * other way round. Two selections closer together than minMs are a violation
+ * on the model path (findPlanViolations, which has a retry channel to fix
+ * them) but a legitimate edit on the human path: updatePlanSteps has no
+ * violation channel, and the founder's call is that the customer's pick is
+ * honoured. A short clip is an honest render of what they selected; silently
+ * rewinding the video 1000ms into the previous step never is. So a 400ms gap
+ * renders a 400ms clip.
+ */
+export function assembleSteps(
   selected: { sourceIndex: number; label: string }[],
   timeline: AnalysisState[],
-  durations: Record<string, number>,
+  durations: StepDurationConfig,
 ): PlanStep[] {
-  return selected
-    .map(({ sourceIndex, label }) => {
-      const state = timeline[sourceIndex]!;
-      return {
-        timestampMs: state.timestampMs,
-        actionType: state.actionType,
-        label: label.trim(),
-        sourceIndex,
-        durationMs: durations[state.actionType] ?? DEFAULT_STEP_MS[state.actionType],
-      };
-    })
+  const ordered = selected
+    .map(({ sourceIndex, label }) => ({
+      timestampMs: timeline[sourceIndex]!.timestampMs,
+      actionType: timeline[sourceIndex]!.actionType,
+      label: label.trim(),
+      sourceIndex,
+    }))
     .sort((a, b) => a.timestampMs - b.timestampMs);
+
+  return ordered.map((step, i) => {
+    const desired = Math.max(
+      durations.byActionType[step.actionType] ?? DEFAULT_STEP_MS[step.actionType],
+      readTimeMs(step.label),
+    );
+    const next = ordered[i + 1];
+    // The last step has no neighbour to run into, so it gets all the room it
+    // asks for; every other step gets at most the gap. The trailing `room`
+    // is what makes the ceiling beat the floor.
+    const room = next ? next.timestampMs - step.timestampMs : Number.POSITIVE_INFINITY;
+    return {
+      ...step,
+      durationMs: Math.min(
+        Math.max(Math.min(desired, room), durations.minMs),
+        durations.maxMs,
+        room,
+      ),
+    };
+  });
 }
 
 /**
@@ -394,22 +622,29 @@ function dryRunPlan(
   questionnaire: Questionnaire,
   minSteps: number,
   maxSteps: number,
+  minStepMs: number,
 ): PlanOutput {
-  let candidates = timeline
-    .map((state, index) => ({ state, index }))
-    .filter(
-      ({ state }) =>
-        state.legibility === "high" &&
-        !state.sameStateAsPrevious &&
-        state.actionType !== "idle" &&
-        !isSkippedKind(state),
-    );
-  if (candidates.length === 0) {
-    candidates = timeline
-      .map((state, index) => ({ state, index }))
-      .filter(({ state }) => state.legibility !== "unreadable" && !isSkippedKind(state));
+  const indexed = timeline.map((state, index) => ({ state, index }));
+  // The quality pool the canned plan prefers, and the wider pool the validator
+  // will actually accept. They are NOT the same set — "low" and idle states
+  // are legal steps, they are just poor ones — so a timeline that is mostly
+  // dim leaves the quality pool short of minSteps while the minimum-step
+  // waiver, which counts the wider pool, does not forgive it. The keyless path
+  // then throws. Prefer quality, fall back to legal.
+  const quality = indexed.filter(
+    ({ state }) =>
+      state.legibility === "high" &&
+      !state.sameStateAsPrevious &&
+      state.actionType !== "idle" &&
+      !isSkippedKind(state),
+  );
+  const legal = indexed.filter(
+    ({ state }) =>
+      state.legibility !== "unreadable" && !isSkippedKind(state) && !state.sameStateAsPrevious,
+  );
+  if (quality.length === 0 && legal.length === 0) {
+    throw new Error("dry-run plan: timeline has no usable states");
   }
-  if (candidates.length === 0) throw new Error("dry-run plan: timeline has no usable states");
 
   // End on the LAST selectable result state when one exists — the same shape
   // rule findPlanViolations enforces, so the keyless plan always passes its
@@ -422,13 +657,42 @@ function dryRunPlan(
         state.actionType === "result" && state.legibility !== "unreadable" && !isSkippedKind(state),
     );
   const lastResult = results[results.length - 1];
-  let kept = subsampleClusters(candidates, maxSteps);
-  if (lastResult) {
-    kept = subsampleClusters(
-      kept.filter(({ state }) => state.timestampMs < lastResult.state.timestampMs),
-      maxSteps - 1,
-    );
-    kept.push(lastResult);
+
+  // Thin to the cap keeping the ending, then respect the min-gap rule.
+  // subsampleClusters always keeps its last element and lastResult is appended
+  // straight after it, so (final candidate, success screen) is exactly the pair
+  // a real recording is most likely to have under one step apart — leaving it
+  // in would make the canned plan fail its own validation and throw. Walk
+  // backwards dropping the EARLIER of any too-close pair: the ending is the one
+  // state the format cannot lose.
+  const pick = (pool: typeof indexed): typeof indexed => {
+    let kept = subsampleClusters(pool, maxSteps);
+    if (lastResult) {
+      kept = subsampleClusters(
+        kept.filter(({ state }) => state.timestampMs < lastResult.state.timestampMs),
+        maxSteps - 1,
+      );
+      kept.push(lastResult);
+    }
+    const spaced: typeof kept = [];
+    for (let i = kept.length - 1; i >= 0; i--) {
+      const next = spaced[spaced.length - 1];
+      if (!next || next.state.timestampMs - kept[i]!.state.timestampMs >= minStepMs) {
+        spaced.push(kept[i]!);
+      }
+    }
+    return spaced.reverse();
+  };
+
+  // Quality first; top up from the legal pool only when quality alone lands
+  // under the minimum, because that is precisely the shortfall the
+  // minimum-step waiver will NOT forgive (it counts the legal pool). When even
+  // the legal pool is short the waiver does forgive it, so a short plan there
+  // is correct rather than a throw.
+  let kept = pick(quality);
+  if (kept.length < minSteps) {
+    const wider = pick(legal);
+    if (wider.length > kept.length) kept = wider;
   }
 
   const steps = kept.map(({ state, index }) => ({
@@ -471,20 +735,50 @@ export async function generateStepPlan(
     jobId?: string;
   },
 ): Promise<StepPlanDraft> {
-  const minSteps = Math.max(1, await getConfigValueOr(db, "a_steps_min", z.number(), 6));
+  const minSteps = Math.max(1, await getConfigValueOr(db, "a_steps_min", z.number(), 5));
   const maxSteps = Math.max(
     minSteps,
     await getConfigValueOr(db, "a_steps_max", z.number(), 8),
   );
   const durations = await stepDurations(db);
+  const runtimeMinMs = await getConfigValueOr(
+    db,
+    "a_steps_runtime_min_ms",
+    z.number(),
+    MIN_RUNTIME_MS,
+  );
+  const runtime = {
+    durations,
+    minMs: runtimeMinMs,
+    // Same guard as a_steps_max/a_step_ms_max: a config pair the wrong way
+    // round must not make the band unsatisfiable.
+    maxMs: Math.max(
+      runtimeMinMs,
+      await getConfigValueOr(db, "a_steps_runtime_max_ms", z.number(), MAX_RUNTIME_MS),
+    ),
+  };
 
   if (getEnv().DRY_RUN) {
-    const canned = dryRunPlan(opts.timeline, opts.questionnaire, minSteps, maxSteps);
+    const canned = dryRunPlan(
+      opts.timeline,
+      opts.questionnaire,
+      minSteps,
+      maxSteps,
+      durations.minMs,
+    );
     // The canned plan goes through the same enforcement as a real one, so the
     // whole validation path runs keyless; a violation here is a code bug.
+    //
+    // Minus the runtime band, deliberately. The canned labels are the first
+    // line of OCR off each screen, so their read-time — and therefore the
+    // assembled total — measures the recording's own text, not anything a
+    // writer chose. Holding a mechanical stub to a band that exists to size
+    // AUTHORED Hebrew would mean tuning the stub, not the format. The band is
+    // unit-tested directly and enforced on every model plan.
     const violations = findPlanViolations(canned.steps, opts.timeline, opts.questionnaire, maxSteps, {
       minSteps,
       notes: canned.notes,
+      minStepMs: durations.minMs,
     });
     if (violations.length > 0) {
       throw new Error(`dry-run plan violates its own rules: ${violations.join("; ")}`);
@@ -539,6 +833,8 @@ export async function generateStepPlan(
   let violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
     minSteps,
     notes: output.notes,
+    minStepMs: durations.minMs,
+    runtime,
   });
   if (violations.length > 0) {
     // "Minimal edits" matters: a from-scratch replan routinely fixes the named
@@ -551,11 +847,13 @@ export async function generateStepPlan(
     output = await callOnce(
       `${text}\n\nYour previous plan was:\n${JSON.stringify(output, null, 2)}\n\nIt violated these rules:\n${violations
         .map((v) => `- ${v}`)
-        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 4 words maximum.`,
+        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`,
     );
     violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
       minSteps,
       notes: output.notes,
+      minStepMs: durations.minMs,
+      runtime,
     });
     if (violations.length > 0) {
       throw new PermanentError(`plan violates label rules after retry: ${violations.join("; ")}`, {

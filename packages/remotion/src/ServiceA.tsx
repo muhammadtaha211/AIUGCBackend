@@ -153,7 +153,12 @@ const AvatarSegment: React.FC<{
   );
 };
 
-export const HookLine: React.FC<{ text: string; area: TextSafeArea }> = ({ text, area }) => {
+export const HookLine: React.FC<{ text: string; area: TextSafeArea; color?: string }> = ({
+  text,
+  area,
+  // White for the hook line; the steps format burns its labels yellow.
+  color = "white",
+}) => {
   const fontSize = useMemo(
     () =>
       fitFontSize({
@@ -192,7 +197,7 @@ export const HookLine: React.FC<{ text: string; area: TextSafeArea }> = ({ text,
         fontWeight: 800,
         fontSize,
         lineHeight: HOOK_FONT.lineHeight,
-        color: "white",
+        color,
         textShadow: TEXT_OUTLINE,
       }}
     >
