@@ -1,4 +1,5 @@
 import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
+import { MAX_LABEL_CHARS } from "@aiugc/core/plan-format";
 import { z } from "zod";
 
 /**
@@ -87,16 +88,18 @@ export const voScriptRequestSchema = z.object({
 
 /**
  * The full ordered step array the picker sends on every edit. Labels cap at
- * core's MAX_LABEL_CHARS (60); the array caps at the analysis max_states
- * default (80) — the server re-derives everything else from sourceIndex and
- * re-sorts by timestamp, so order and duplicates are its problem, not ours.
+ * core's MAX_LABEL_CHARS, imported rather than repeated so the wizard's field,
+ * this schema and findPlanViolations cannot disagree; the array caps at the
+ * analysis max_states default (80) — the server re-derives everything else
+ * from sourceIndex and re-sorts by timestamp, so order and duplicates are its
+ * problem, not ours.
  */
 export const planStepsRequestSchema = z.object({
   steps: z
     .array(
       z.object({
         sourceIndex: z.number().int().min(0),
-        label: z.string().min(1).max(60),
+        label: z.string().min(1).max(MAX_LABEL_CHARS),
       }),
     )
     .min(1)

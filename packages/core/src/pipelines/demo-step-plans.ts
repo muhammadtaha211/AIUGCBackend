@@ -11,6 +11,7 @@ import { BudgetError, PermanentError } from "../jobs/errors";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { FIXTURES_DIR } from "../paths";
+import { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { questionnaireSchema, requireQuestionnaire, type Questionnaire } from "./businesses";
@@ -21,17 +22,10 @@ import {
   type AnalysisState,
 } from "./demo-analysis";
 
-/**
- * screenKinds the plan may never select — the deterministic form of the
- * prompt's prose skip list (login screens, tours, onboarding...), added after
- * a real run picked the login screen and two tour steps despite the prompt.
- * "product", "other" and absent (v2-era analyses without screenKind) pass;
- * missing means "no information", so those states stay prompt-governed.
- * The Phase 8 picker groups/hides by the same set.
- */
-export const PLAN_SKIP_SCREEN_KINDS: ReadonlySet<
-  NonNullable<AnalysisState["screenKind"]>
-> = new Set(["login", "loading", "onboarding", "error", "tour", "system"] as const);
+// Both live in ../plan-format so the wizard's picker can import them without
+// dragging this module's db/fs/provider imports into a browser bundle. Kept
+// re-exported here because every server caller already imports them from here.
+export { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS };
 
 function isSkippedKind(state: AnalysisState): boolean {
   return state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind);
@@ -133,7 +127,6 @@ export function totalRuntimeMs(steps: PlanStep[]): number {
   return steps.reduce((ms, step) => ms + step.durationMs, 0);
 }
 
-const MAX_LABEL_CHARS = 60;
 /** Hard ceiling on a caption, in whitespace words. Not a target — holding
  *  labels to a 3-5 word average is the prompt's job. Also bounds the longest
  *  window a single step can earn, which the runtime band's reachability

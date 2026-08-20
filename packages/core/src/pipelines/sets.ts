@@ -265,7 +265,7 @@ export async function createSet(
 }
 
 /** Steps format: the flat — one amortised analysis + one Remotion render. */
-async function quoteStepsASet(db: Db, businessId: string): Promise<RenderQuote> {
+export async function quoteStepsASet(db: Db, businessId: string): Promise<RenderQuote> {
   const { chargeable, costs, balance } = await quoteContext(db, businessId);
   const quote = quoteServiceASteps({ costs });
   return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
