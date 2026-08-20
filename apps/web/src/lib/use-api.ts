@@ -83,12 +83,31 @@ export function recordPollFailure(failures: number): { failures: number; stalled
 }
 
 /**
+ * Pure: where a poll error goes. 404 is a NORMAL state for endpoints whose row
+ * appears later (the plan/analysis GETs 404 until their job inserts it) — those
+ * callers pass onMissing and must not be ejected through onFatal. 403 is always
+ * fatal; everything else is transient and retried.
+ */
+export function pollErrorRoute(
+  status: number,
+  hasMissing: boolean,
+): "missing" | "fatal" | "transient" {
+  if (status === 404 && hasMissing) return "missing";
+  if (status === 403 || status === 404) return "fatal";
+  return "transient";
+}
+
+/**
  * Poll a status endpoint while `active`. Success resets the failure count and
  * hands the body to `onResult`; 403/404 means the resource is gone for this
  * session (`onFatal`); anything else is transient and retried — but after
  * MAX_POLL_FAILURES consecutive failures the poll stops and `stalled` carries
  * the Hebrew error. The caller must render `stalled` with a retry control, so
  * a poll can never leave a spinner up forever.
+ *
+ * `onMissing` reroutes 404 only: for the plan/analysis endpoints a 404 is a
+ * NORMAL state (the job has not inserted its row yet), and ejecting the
+ * customer through onFatal there would kill a working flow. 403 stays fatal.
  */
 export function useJobPoll<T>(
   active: boolean,
@@ -96,19 +115,33 @@ export function useJobPoll<T>(
   intervalMs: number,
   onResult: (body: T) => void,
   onFatal: (message: string) => void,
+  onMissing?: () => void,
 ): { slow: boolean; stalled: string | null; retry: () => void } {
   const [stalled, setStalled] = useState<string | null>(null);
   const failures = useRef(0);
+  // Ticks fire on an interval without awaiting each other, so on a connection
+  // slower than the interval several requests are in flight when `active`
+  // flips off. A late delivery must be dropped: an out-of-order "planning"
+  // body landing after "ready" would visibly regress the surface and refire
+  // its downstream fetches.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const slow = usePolling(active && stalled === null, intervalMs, () => {
     void (async () => {
       const result = await apiFetch<T>(url);
+      if (!activeRef.current) return;
       if (result.ok) {
         failures.current = 0;
         onResult(result.body);
         return;
       }
-      if (result.status === 403 || result.status === 404) return onFatal(result.error);
+      const route = pollErrorRoute(result.status, onMissing !== undefined);
+      if (route === "missing") {
+        failures.current = 0;
+        return onMissing!();
+      }
+      if (route === "fatal") return onFatal(result.error);
       const next = recordPollFailure(failures.current);
       failures.current = next.failures;
       if (next.stalled) setStalled(result.error);

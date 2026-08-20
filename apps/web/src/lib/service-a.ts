@@ -1,6 +1,7 @@
 import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 import { MAX_LABEL_CHARS } from "@aiugc/core/plan-format";
 import { z } from "zod";
+import { ANALYSIS_PAGE_SIZE } from "./service-a-ui";
 
 /**
  * Pure, unit-testable parts of the Service A HTTP layer: request body schemas
@@ -110,6 +111,26 @@ export const planStepsRequestSchema = z.object({
 export const demoNoteRequestSchema = z.object({
   text: z.string().min(1).max(500),
 });
+
+/**
+ * `?indexes=3,17,29` on the analysis GET: the exact states a plan's steps point
+ * at, signed in one call. Strict on purpose — dedupes, but rejects (null)
+ * malformed parts, out-of-range indexes and more than ANALYSIS_PAGE_SIZE
+ * entries rather than silently dropping them: a silently-shortened list would
+ * render a plan with missing cards and no error anywhere.
+ */
+export function parseAnalysisIndexes(raw: string, timelineLength: number): number[] | null {
+  const parts = raw.split(",");
+  const seen = new Set<number>();
+  for (const part of parts) {
+    if (!/^\d+$/.test(part)) return null;
+    const index = Number(part);
+    if (index >= timelineLength) return null;
+    seen.add(index);
+  }
+  if (seen.size === 0 || seen.size > ANALYSIS_PAGE_SIZE) return null;
+  return [...seen];
+}
 
 /**
  * The one plan shape every plan-touching route returns (GET/POST edit/approve

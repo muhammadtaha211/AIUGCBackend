@@ -22,8 +22,10 @@ import { PlacementEditor, fittedFontSize, useHookLineMeasure } from "./placement
 
 type StepHookStudioProps = {
   businessId: string;
-  /** The speaker — hook lines are written in this persona's first person. */
-  personaId: string;
+  /** The speaker — hook lines are written in this persona's first person.
+   *  Absent (the steps wizard has no persona): core's documented default
+   *  writes feminine first person, and the line stays freely editable here. */
+  personaId?: string;
   hook: HookClip;
   hookBatch: HookBatch | null;
   setHookBatch: (value: HookBatch | null) => void;
@@ -96,7 +98,7 @@ export function StepHookStudio({
     setBusy("options");
     const result = await postJson<{ options: HookLineOption[] }>(
       `/api/businesses/${businessId}/hook-lines`,
-      { personaId, avoid: hookAvoid },
+      { ...(personaId ? { personaId } : {}), avoid: hookAvoid },
     );
     setBusy(null);
     if (!result.ok) {

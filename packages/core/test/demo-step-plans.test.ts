@@ -1694,3 +1694,16 @@ describe("plan regress (fixtures/timelines)", () => {
     for (const r of results) expect(r.pass).toBe(true);
   });
 });
+
+/**
+ * The 8a move: readTimeMs/totalRuntimeMs live in plan-format (client-safe) and
+ * demo-step-plans re-exports them. Reference equality — not equal output — is
+ * the pin: a drifted private copy would still produce equal output today.
+ */
+describe("plan-format re-export identity", () => {
+  it("the re-exports ARE the plan-format functions, not copies", async () => {
+    const planFormat = await import("../src/plan-format");
+    expect(readTimeMs).toBe(planFormat.readTimeMs);
+    expect(totalRuntimeMs).toBe(planFormat.totalRuntimeMs);
+  });
+});

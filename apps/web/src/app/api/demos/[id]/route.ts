@@ -24,10 +24,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     const body: {
       status: string;
+      /** The owning business — the wizard's URL-restore refuses a demo from a
+       *  different business than the one selected (same user, wrong tenant). */
+      businessId: string;
+      /** The stored footage note. The wizard's URL-restore prefills its field
+       *  from this — otherwise a restore + continue would PATCH "" over the
+       *  saved note ("blank clears"). Safe beside the 2s ingest poll: the
+       *  poll writes demo state only, never the locally-edited note field. */
+      description?: string;
       rejectReason?: string;
       durationMs?: number;
       thumbUrl?: string;
-    } = { status: demo.status };
+    } = { status: demo.status, businessId: demo.businessId };
+    if (demo.description) body.description = demo.description;
     if (demo.rejectReason) body.rejectReason = demo.rejectReason;
     if (demo.durationMs) body.durationMs = demo.durationMs;
     if (demo.status === "ready" && demo.thumbPath) {
@@ -41,8 +50,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 /**
  * The optional "what the footage shows" note (soft VO grounding). Stored on
- * the demos row; blank clears. Deliberately NOT echoed by the polling GET —
- * the wizard edits it locally while ingest polls every 2s.
+ * the demos row; blank clears. The GET echoes it for the URL-restore prefill;
+ * the wizard still edits it locally while ingest polls every 2s (the poll
+ * never writes the note field).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

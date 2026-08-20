@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { readTimeMs } from "@aiugc/core/plan-format";
 import {
-  A_WIZARD_STEPS,
+  analysisIndexBatches,
   aRenderStageIndex,
+  aWizardSteps,
+  clampRestoredStep,
   clientDemoFileError,
   demoDurationError,
   endingForRemainder,
@@ -9,17 +12,31 @@ import {
   estimatedEnding,
   estimateVoSeconds,
   hookHalfOptions,
+  identityFromSearch,
+  identitySearch,
   isActiveARenderStatus,
+  isActivePlanStatus,
+  isAnalysisWorkingStatus,
   isIngestingDemoStatus,
+  planFailureNotice,
+  restoredDemo,
+  retryOutcome,
   sameSpeakerGender,
   shapeSummary,
+  shouldSyncIdentity,
+  sortedPlanSteps,
+  stepHeadroomMs,
   type HookBatch,
   type HookLineOption,
 } from "../src/lib/service-a-ui";
 
-describe("wizard steps", () => {
-  it("is one fixed path, persona first (the gallery filters by persona)", () => {
-    expect(A_WIZARD_STEPS).toEqual([
+describe("wizard steps (format-aware, mirrors B's wizardSteps)", () => {
+  it("steps format: five steps, no persona, no script, no audio", () => {
+    expect(aWizardSteps("steps")).toEqual(["hook", "hookStudio", "demo", "plan", "render"]);
+  });
+
+  it("full format keeps the voiced seven-step path (CLI-only today)", () => {
+    expect(aWizardSteps("full")).toEqual([
       "persona",
       "hook",
       "hookStudio",
@@ -28,6 +45,199 @@ describe("wizard steps", () => {
       "audio",
       "render",
     ]);
+  });
+});
+
+describe("durable identity (?demo=&step=)", () => {
+  const STEPS = aWizardSteps("steps");
+  const DEMO = "9553ea19-7313-46db-9214-4011e4bdee34";
+
+  it("round-trips demo id and step index through the search string", () => {
+    const search = identitySearch(DEMO, 3);
+    expect(search).toBe(`?demo=${DEMO}&step=3`);
+    expect(identityFromSearch(search, STEPS.length)).toEqual({ demoId: DEMO, step: 3 });
+  });
+
+  it("serializes nothing when there is nothing worth persisting", () => {
+    expect(identitySearch(null, 0)).toBe("");
+  });
+
+  it("degrades malformed input to a fresh wizard instead of trusting it", () => {
+    expect(identityFromSearch("?demo=not-a-uuid&step=3", STEPS.length).demoId).toBeNull();
+    expect(identityFromSearch(`?demo=${DEMO}&step=99`, STEPS.length).step).toBe(0);
+    expect(identityFromSearch(`?demo=${DEMO}&step=-1`, STEPS.length).step).toBe(0);
+    expect(identityFromSearch("", STEPS.length)).toEqual({ demoId: null, step: 0 });
+  });
+
+  it("clamps a restored step to what the surviving state can support", () => {
+    const ready = { status: "ready" };
+    // With a READY demo the plan step is restorable; render (index 4) is not in 8a.
+    expect(clampRestoredStep(4, STEPS, ready)).toBe(STEPS.indexOf("plan"));
+    expect(clampRestoredStep(3, STEPS, ready)).toBe(3);
+    // Without a demo nothing past the gallery is — the hook is session-local.
+    expect(clampRestoredStep(3, STEPS, null)).toBe(0);
+    expect(clampRestoredStep(1, STEPS, null)).toBe(0);
+  });
+
+  /**
+   * A mid-ingest demo lands on the DEMO step, never the plan step: the demo
+   * step owns ingest polling and rejection, while the plan step would promise
+   * an analysis that a later ingest rejection guarantees never comes.
+   */
+  it("routes a not-ready demo to the demo step, not the plan step", () => {
+    for (const status of ["uploaded", "probing", "normalizing"]) {
+      expect(clampRestoredStep(3, STEPS, { status })).toBe(STEPS.indexOf("demo"));
+    }
+  });
+
+  /**
+   * hookStudio needs the session-local hook, which no reload can restore —
+   * ?step=1 must land on the gallery, not on a step card that renders nothing
+   * (below lg the rail has no jump buttons, so a blank card is a dead end).
+   */
+  it("reroutes a restored hookStudio index to the hook gallery", () => {
+    expect(clampRestoredStep(1, STEPS, { status: "ready" })).toBe(STEPS.indexOf("hook"));
+  });
+
+  /**
+   * A TRANSIENT restore failure must not let the URL-sync replaceState the
+   * durable link away — a reload is the retry. The hold releases the moment
+   * the customer actually moves.
+   */
+  it("holds the URL after a transient restore failure until the customer moves", () => {
+    const failed = { restoring: false, restoreFailed: true, demoId: null, step: 0 };
+    expect(shouldSyncIdentity(failed)).toBe(false);
+    expect(shouldSyncIdentity({ ...failed, demoId: DEMO })).toBe(true);
+    expect(shouldSyncIdentity({ ...failed, step: 1 })).toBe(true);
+    expect(shouldSyncIdentity({ ...failed, restoreFailed: false })).toBe(true);
+    expect(
+      shouldSyncIdentity({ restoring: true, restoreFailed: false, demoId: DEMO, step: 3 }),
+    ).toBe(false);
+  });
+
+  /**
+   * The risk case the URL identity creates: an account with TWO businesses
+   * carries ?demo= across the sidebar switch. requireUser + requireBusiness
+   * both pass (same user), so the business scope check here is the only thing
+   * stopping business A's demo being edited under business B's chrome.
+   */
+  it("refuses a demo owned by a different business than the wizard's", () => {
+    const body = { status: "ready", businessId: "biz-a", durationMs: 88089 };
+    expect(restoredDemo(DEMO, body, "biz-b")).toBeNull();
+    expect(restoredDemo(DEMO, body, "biz-a")).toEqual({
+      demo: { id: DEMO, status: "ready", durationMs: 88089, thumbUrl: undefined },
+      description: "",
+    });
+  });
+
+  /**
+   * The stored footage note rides along on restore. Without it, restore +
+   * back-to-demo + continue PATCHes "" over the saved note ("blank clears").
+   */
+  it("carries the stored description so continue cannot blank-clear it", () => {
+    const body = { status: "ready", businessId: "biz-a", description: "גלילה בתפריט" };
+    expect(restoredDemo(DEMO, body, "biz-a")?.description).toBe("גלילה בתפריט");
+  });
+
+  it("refuses a body with no businessId at all (old server, no scope proof)", () => {
+    expect(restoredDemo(DEMO, { status: "ready" }, "biz-a")).toBeNull();
+  });
+
+  it("does not resume a rejected demo — the demo step starts over", () => {
+    expect(restoredDemo(DEMO, { status: "rejected", businessId: "biz-a" }, "biz-a")).toBeNull();
+  });
+});
+
+describe("plan surface helpers", () => {
+  it("pending/planning are the in-flight window (poll on, retry off)", () => {
+    expect(isActivePlanStatus("pending")).toBe(true);
+    expect(isActivePlanStatus("planning")).toBe(true);
+    expect(isActivePlanStatus("ready")).toBe(false);
+    expect(isActivePlanStatus("failed")).toBe(false);
+  });
+
+  /**
+   * The pg enum spells it "analysing" (British). The American spelling once
+   * shipped here and deactivated the analysis poll mid-run — the customer sat
+   * on a blank card with no spinner until they left and re-entered the step.
+   */
+  it("analysis working statuses match the stored enum spelling exactly", () => {
+    expect(isAnalysisWorkingStatus("pending")).toBe(true);
+    expect(isAnalysisWorkingStatus("analysing")).toBe(true);
+    expect(isAnalysisWorkingStatus("analyzing")).toBe(false); // not a DB value
+    expect(isAnalysisWorkingStatus("ready")).toBe(false);
+    expect(isAnalysisWorkingStatus("failed")).toBe(false);
+    expect(isAnalysisWorkingStatus("rejected")).toBe(false);
+  });
+
+  /**
+   * a_steps_max is a config knob: a plan can outgrow the route's 12-index cap,
+   * and one oversized ?indexes= request would 400 on every retry. Chunking is
+   * the client's job.
+   */
+  it("splits a plan's sourceIndexes into route-sized batches, deduped", () => {
+    expect(analysisIndexBatches([3, 17, 3, 29])).toEqual([[3, 17, 29]]);
+    const thirteen = Array.from({ length: 13 }, (_, i) => i * 2);
+    const batches = analysisIndexBatches(thirteen);
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toHaveLength(12);
+    expect(batches[1]).toEqual([24]);
+    expect(analysisIndexBatches([])).toEqual([]);
+  });
+
+  it("Hebrew failReason passes through untouched, with no raw leftover", () => {
+    const notice = planFailureNotice("יצירת התוכנית נכשלה — נסו שוב");
+    expect(notice.message).toBe("יצירת התוכנית נכשלה — נסו שוב");
+    expect(notice.raw).toBeUndefined();
+  });
+
+  it("a raw English failReason shows the Hebrew generic and keeps the string", () => {
+    const notice = planFailureNotice("demo 9553ea19 not found");
+    expect(notice.message).toMatch(/[֐-׿]/);
+    expect(notice.message).not.toContain("9553ea19");
+    expect(notice.raw).toBe("demo 9553ea19 not found");
+  });
+
+  it("no failReason at all still yields the Hebrew generic", () => {
+    const notice = planFailureNotice(undefined);
+    expect(notice.message).toMatch(/[֐-׿]/);
+    expect(notice.raw).toBeUndefined();
+  });
+
+  /**
+   * requestDemoPlan returns the SAME planId when it collapses onto the
+   * in-flight job — the response shape is identical to a fresh create, so
+   * planId comparison is the only signal, and it must render as "already
+   * running", never as a silent nothing.
+   */
+  it("same planId back means the retry collapsed onto the in-flight job", () => {
+    expect(retryOutcome("plan-1", { planId: "plan-1" })).toBe("already_running");
+    expect(retryOutcome("plan-1", { planId: "plan-2" })).toBe("started");
+    expect(retryOutcome(null, { planId: "plan-1" })).toBe("started");
+  });
+
+  /**
+   * Pins that the surface uses the SHIPPED readTimeMs, not a client-side copy:
+   * 3 words at 2.5 w/s + 400ms lead = 1600ms. If plan-format's formula moves,
+   * this number moves with it and the assertion still holds; a private copy
+   * would freeze it and this test would catch the drift.
+   */
+  it("read-time headroom = assembled duration minus the shipped readTimeMs", () => {
+    const step = { label: "פותחים את האפליקציה", durationMs: 2000 };
+    expect(stepHeadroomMs(step)).toBe(2000 - readTimeMs(step.label));
+    // A caption on screen for less than its read time goes negative.
+    expect(stepHeadroomMs({ label: "אחת שתיים שלוש", durationMs: 1400 })).toBe(1400 - 1600);
+  });
+
+  it("display order derives from timestamp, nothing else", () => {
+    const steps = [
+      { timestampMs: 9000, actionType: "result", label: "ג", sourceIndex: 40, durationMs: 2000 },
+      { timestampMs: 1000, actionType: "tap", label: "א", sourceIndex: 3, durationMs: 2000 },
+      { timestampMs: 5000, actionType: "scroll", label: "ב", sourceIndex: 17, durationMs: 2000 },
+    ];
+    expect(sortedPlanSteps(steps).map((s) => s.label)).toEqual(["א", "ב", "ג"]);
+    // And the input array is not mutated.
+    expect(steps[0]!.label).toBe("ג");
   });
 });
 

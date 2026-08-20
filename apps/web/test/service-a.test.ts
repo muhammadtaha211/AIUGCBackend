@@ -6,6 +6,7 @@ import {
   demoNoteRequestSchema,
   demoUploadPath,
   isOwnedDemoUploadPath,
+  parseAnalysisIndexes,
   planStepsRequestSchema,
   registerDemoRequestSchema,
   stepPlanResponse,
@@ -194,5 +195,34 @@ describe("step plan response shape", () => {
     expect(failed.failReason).toBe("יצירת התוכנית נכשלה — נסו שוב");
     expect(failed.notes).toBeUndefined();
     expect(failed.approvedAt).toBeUndefined();
+  });
+});
+
+describe("analysis ?indexes= parsing", () => {
+  it("accepts a comma-separated int list within the timeline, deduped", () => {
+    expect(parseAnalysisIndexes("3,17,29", 61)).toEqual([3, 17, 29]);
+    expect(parseAnalysisIndexes("3,3,17", 61)).toEqual([3, 17]);
+    expect(parseAnalysisIndexes("0", 1)).toEqual([0]);
+  });
+
+  it("rejects out-of-range indexes instead of silently dropping them", () => {
+    expect(parseAnalysisIndexes("3,61", 61)).toBeNull();
+    expect(parseAnalysisIndexes("0", 0)).toBeNull();
+  });
+
+  it("rejects malformed parts", () => {
+    expect(parseAnalysisIndexes("", 61)).toBeNull();
+    expect(parseAnalysisIndexes("3,,7", 61)).toBeNull();
+    expect(parseAnalysisIndexes("3, 7", 61)).toBeNull();
+    expect(parseAnalysisIndexes("-1", 61)).toBeNull();
+    expect(parseAnalysisIndexes("1.5", 61)).toBeNull();
+    expect(parseAnalysisIndexes("abc", 61)).toBeNull();
+  });
+
+  it("caps at ANALYSIS_PAGE_SIZE distinct indexes — signing is per-URL work", () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => i).join(",");
+    expect(parseAnalysisIndexes(twelve, 61)).toHaveLength(12);
+    const thirteen = Array.from({ length: 13 }, (_, i) => i).join(",");
+    expect(parseAnalysisIndexes(thirteen, 61)).toBeNull();
   });
 });

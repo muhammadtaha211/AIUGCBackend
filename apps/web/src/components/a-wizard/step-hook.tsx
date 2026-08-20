@@ -8,8 +8,9 @@ import type { HookClip } from "@/lib/service-a-ui";
 import { apiFetch } from "@/lib/use-api";
 
 type StepHookProps = {
-  /** Filters the gallery: this persona's swapped clips + the generic ones. */
-  personaId: string;
+  /** Set = filter to this persona's swapped clips + the generic ones; absent
+   *  (the steps wizard has no persona) = the generic bank only. */
+  personaId?: string;
   selected: HookClip | null;
   onSelect: (hook: HookClip) => void;
   onBack: () => void;
@@ -17,7 +18,7 @@ type StepHookProps = {
   onFatal: (message: string) => void;
 };
 
-/** Step 2: pick the reaction clip from the founder-curated bank. */
+/** Pick the reaction clip from the founder-curated bank. */
 export function StepHook({
   personaId,
   selected,
@@ -33,7 +34,7 @@ export function StepHook({
     setError(null);
     setHooks(null);
     const result = await apiFetch<{ hooks: HookClip[] }>(
-      `/api/hooks?personaId=${encodeURIComponent(personaId)}`,
+      personaId ? `/api/hooks?personaId=${encodeURIComponent(personaId)}` : "/api/hooks",
     );
     if (result.ok) setHooks(result.body.hooks);
     else if (result.status === 403 || result.status === 404) onFatal(result.error);
@@ -49,7 +50,7 @@ export function StepHook({
     <div>
       <StepHeader
         title="בחרו קליפ פתיחה"
-        sub="הפתיח עוצר את הגלילה ברגע הראשון, ומיד אחריו הדמות שבחרתם מקריינת את הסרטון וסוגרת אותו."
+        sub="הפתיח עוצר את הגלילה ברגע הראשון, ומיד אחריו חותכים ישר לסרטון המוצר שלכם."
         onBack={onBack}
       />
 
