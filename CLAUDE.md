@@ -7,16 +7,16 @@ Read this fully before every task. It is the source of truth for what this proje
 A Hebrew-first AI UGC ad platform for advertisers targeting Israelis. Two services, one shared pipeline:
 
 - **Service A — Hook+Demo generator.** One fixed format: a 3–4s pre-rendered AI reaction clip (from a closed, founder-curated bank) with a Hebrew text hook burned on → hard cut into the customer's own phone-filmed product demo → burned Hebrew RTL captions (v1: evenly-paced benefit captions) → optional Hebrew voiceover (ElevenLabs V3), loosely synced by design. Variants are the product: one demo + one questionnaire → many ads (hook clip × hook line × copy angle × voiced/silent).
-- **Service B — Hebrew AI avatar ads.** 5–10 consistent generated personas, each a small bank of reference images + a pinned ElevenLabs voice. A render is a single reference image (the persona's default, an explicit image, or an approved product-in-hand composite) + ElevenLabs V3 audio through InfiniteTalk lip-sync — talking head with product B-roll cutaways (reuses A's engine). Self-serve behind a founder QC-release gate; DFY tier on the same pipeline.
+- **Service B — Hebrew AI avatar ads.** 5–10 consistent generated personas, each a small bank of reference images + a pinned ElevenLabs voice. A render is a single reference image (the persona's default, an explicit image, or an approved product-in-hand composite) + ElevenLabs V3 audio through HeyGen lip-sync — talking head with product B-roll cutaways (reuses A's engine). Self-serve behind a founder QC-release gate; DFY tier on the same pipeline.
 
-Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre-validation. The founder is user #1, generating cold-outreach sample ads via CLI before the UI exists. Full product/backend spec: `docs/backend-handover.md` — read it when a task touches pipeline logic, schema, or external services.
+Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre-validation. The founder is user #1, generating cold-outreach sample ads via CLI before the UI exists. Full product/backend spec: `docs/00-overview.md` and the numbered docs it indexes — read them when a task touches pipeline logic, schema, or external services.
 
 ## Architecture (V0)
 
-- Single monorepo. `apps/web` = Next.js (App Router, TypeScript) on Vercel. `apps/worker` = one Node worker (queue consumer, ffmpeg, Remotion renders). `packages/pipeline` = all pipeline logic as importable pure-ish functions with CLI entrypoints.
+- Single monorepo. `apps/web` = Next.js (App Router, TypeScript) on Vercel. `apps/worker` = one Node worker (queue consumer, ffmpeg, Remotion renders). `packages/core` = everything else, with the pipeline logic in `packages/core/src/pipelines/` as importable pure-ish functions and `apps/cli` as their entrypoint. There is no `packages/pipeline` — do not create one.
 - Supabase: Postgres, Auth, Storage (signed URLs).
 - All heavy work (TTS, lip-sync GPU, renders) runs as async, retryable jobs on the worker. Nothing heavy in a Vercel function, ever.
-- External services: Anthropic API (`claude-sonnet-4-6`, all copywriting), ElevenLabs V3 (Hebrew TTS), InfiniteTalk on serverless GPU (Service B), Remotion via `@remotion/renderer` on the worker, ffmpeg/ffprobe for probing/normalize/stretch.
+- External services: Anthropic API (`claude-sonnet-4-6`, all copywriting), ElevenLabs V3 (Hebrew TTS), HeyGen for avatar lip-sync (Service B; it replaced InfiniteTalk-on-fal in 2026-08 — see docs/04 and `providers/lipsync.ts`; `FAL_KEY` stays for nano-banana composites), Remotion via `@remotion/renderer` on the worker, ffmpeg/ffprobe for probing/normalize/stretch.
 - Payments: Israeli gateway (Grow/PayPlus/Cardcom) for recurring card billing + Green Invoice/iCount for automatic חשבונית מס. Bit for one-offs. No Stripe (unavailable in Israel), no Paddle.
 
 ## Locked decisions — do not reopen, do not "improve"
@@ -32,7 +32,7 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 9. All output video: vertical 9:16, 1080×1920, H.264 MP4. All user-facing copy: Hebrew.
 10. Boring tech, minimal moving parts. No new infrastructure, framework, or paid service without the founder asking for it.
 11. Runtime image generation (nano-banana composites) is founder-approved for Service B product-in-hand composites only. The Service A hook-bank rule (#2 — no runtime face/video generation for hooks) is untouched.
-12. Service B renders from a single reference image (or an approved composite) + audio via InfiniteTalk. No video-to-video.
+12. Service B renders from a single reference image (or an approved composite) + audio via HeyGen. No video-to-video.
 
 ## How to work — every task
 
@@ -44,7 +44,7 @@ Invoke the `/karpathy-guidelines` skill at the beginning of every coding task an
 
 - Prefer editing existing code over adding new files; prefer deleting over adding.
 - One task = one concern. If you notice something else broken, note it at the end — don't fix it silently.
-- Pipeline logic lives in `packages/pipeline` as importable functions callable from CLI, worker, and API alike. The web app is a thin shell over the same functions.
+- Pipeline logic lives in `packages/core/src/pipelines/` as importable functions callable from CLI, worker, and API alike. The web app is a thin shell over the same functions.
 - Every external API call (Anthropic, ElevenLabs, GPU, gateway) goes through one wrapper module per service: typed input/output, timeout, retry policy, and cost-relevant params logged. No inline `fetch` to third parties scattered around.
 - Jobs must be idempotent and resumable. Assume any step can crash mid-way and be retried.
 - Hebrew/RTL: use CSS logical properties (`ms-`/`me-`, `text-start`), isolate LTR islands (URLs, numbers) with bidi isolation, test any text-touching UI with real Hebrew strings, not lorem ipsum.
