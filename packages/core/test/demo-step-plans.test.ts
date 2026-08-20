@@ -17,7 +17,7 @@ import {
   setQuestionnaire,
   type Questionnaire,
 } from "../src/pipelines/businesses";
-import type { AnalysisState } from "../src/pipelines/demo-analysis";
+import { getLatestDemoAnalysis, type AnalysisState } from "../src/pipelines/demo-analysis";
 import {
   approvePlan,
   assembleSteps,
@@ -273,6 +273,39 @@ describe("plan lifecycle: edit, approve, fork", () => {
     await expect(
       updatePlanSteps(db, { planId, steps: [{ sourceIndex: 9, label: "לא קריא" }] }),
     ).rejects.toThrow(/unreadable/);
+  });
+
+  it("a human's too-close pair is accepted and stored short, never rewound", async () => {
+    // updatePlanSteps has no violation channel and no retry: whatever the
+    // customer ticked in the picker is what renders. Two states 400ms apart
+    // are a VIOLATION on the model path (below) and a 400ms clip here.
+    const tight = await createDemo(db, { businessId, filePath: tempFile("tight.mp4") });
+    await drainAll(); // ingest -> analysis ready
+    const analysis = (await getLatestDemoAnalysis(db, tight.id))!;
+    await db
+      .update(dbSchema.demoAnalyses)
+      .set({
+        timeline: [
+          state({ timestampMs: 0, visibleText: ["אחת"], actionType: "tap" }),
+          state({ timestampMs: 400, visibleText: ["סוף"], actionType: "result" }),
+        ],
+      })
+      .where(eq(dbSchema.demoAnalyses.id, analysis.id));
+    const inserted = await db
+      .insert(dbSchema.demoStepPlans)
+      .values({ demoId: tight.id, analysisId: analysis.id, status: "ready", steps: [] })
+      .returning();
+
+    const updated = await updatePlanSteps(db, {
+      planId: inserted[0]!.id,
+      steps: [
+        { sourceIndex: 0, label: "אחת" },
+        { sourceIndex: 1, label: "סוף" },
+      ],
+    });
+    const steps = planStepsSchema.parse(updated.steps);
+    expect(steps[0]!.durationMs).toBe(400);
+    expect(steps[0]!.timestampMs + steps[0]!.durationMs).toBe(steps[1]!.timestampMs);
   });
 
   it("approve is the gate; editing an approved plan forks a fresh unapproved row", async () => {
@@ -717,12 +750,14 @@ describe("step durations (the window model)", () => {
     }
   });
 
-  it("respects the floor and the ceiling", () => {
+  it("the gap beats the floor — a too-close pair renders short, never overlapping", () => {
     const timeline: AnalysisState[] = [
       state({ timestampMs: 0, actionType: "tap" }),
       // 400ms later: two states inside one step. The MODEL is stopped by
-      // findPlanViolations; a human edit reaches here, and the floor is the
-      // backstop — a 400ms clip is not a step, it is a flicker.
+      // findPlanViolations; a human edit reaches here and is HONOURED. The
+      // floor yielding is the decision: 1400ms here rewinds the video a full
+      // second into the next step, which nobody picked. 400ms of what the
+      // customer chose is honest; 1000ms of replayed source is not.
       state({ timestampMs: 400, actionType: "result" }),
     ];
     const tooClose = assembleSteps(
@@ -733,7 +768,21 @@ describe("step durations (the window model)", () => {
       timeline,
       DURATIONS,
     );
-    expect(tooClose[0]!.durationMs).toBe(1400);
+    expect(tooClose[0]!.durationMs).toBe(400);
+    expect(tooClose[0]!.timestampMs + tooClose[0]!.durationMs).toBe(tooClose[1]!.timestampMs);
+
+    // The floor still binds when there IS room: a configured per-action length
+    // under it is raised, because nothing is being run into.
+    const roomy2: AnalysisState[] = [
+      state({ timestampMs: 0, actionType: "tap" }),
+      state({ timestampMs: 30_000, actionType: "result" }),
+    ];
+    expect(
+      assembleSteps([{ sourceIndex: 0, label: "אחת" }, { sourceIndex: 1, label: "סוף" }], roomy2, {
+        ...DURATIONS,
+        byActionType: { tap: 900 },
+      })[0]!.durationMs,
+    ).toBe(1400);
 
     // Ceiling: a label nobody could read inside 4s, with all the room it wants.
     const roomy: AnalysisState[] = [state({ timestampMs: 0, actionType: "result" })];

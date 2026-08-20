@@ -441,15 +441,14 @@ export async function stepDurations(db: Db): Promise<StepDurationConfig> {
  * (real: fixtures/timelines/real-botteacher-file-routing.json, proven in
  * pixels). The last step has no neighbour, so it gets what it asked for.
  *
- * The gap cap removes overlap for every plan whose selected states are at
- * least minMs apart, and findPlanViolations enforces exactly that on the model
- * path. It does NOT hold below the floor: the floor is applied AFTER the cap,
- * so two states 400ms apart still produce a 1400ms window that runs 1000ms
- * into the next one. That is deliberate — a 400ms clip is a flicker, not a
- * step — but it means updatePlanSteps, which has no violation channel and no
- * retry, can still store an overlapping plan if a human picks two states
- * inside one step. Closing that is a product call (reject the edit, or merge
- * the pair), not arithmetic, so it is not decided here.
+ * The gap to the next step is a HARD ceiling — the floor yields to it, not the
+ * other way round. Two selections closer together than minMs are a violation
+ * on the model path (findPlanViolations, which has a retry channel to fix
+ * them) but a legitimate edit on the human path: updatePlanSteps has no
+ * violation channel, and the founder's call is that the customer's pick is
+ * honoured. A short clip is an honest render of what they selected; silently
+ * rewinding the video 1000ms into the previous step never is. So a 400ms gap
+ * renders a 400ms clip.
  */
 export function assembleSteps(
   selected: { sourceIndex: number; label: string }[],
@@ -471,12 +470,16 @@ export function assembleSteps(
       readTimeMs(step.label),
     );
     const next = ordered[i + 1];
-    const gapToNext = next ? next.timestampMs - step.timestampMs : desired;
+    // The last step has no neighbour to run into, so it gets all the room it
+    // asks for; every other step gets at most the gap. The trailing `room`
+    // is what makes the ceiling beat the floor.
+    const room = next ? next.timestampMs - step.timestampMs : Number.POSITIVE_INFINITY;
     return {
       ...step,
       durationMs: Math.min(
-        Math.max(Math.min(desired, gapToNext), durations.minMs),
+        Math.max(Math.min(desired, room), durations.minMs),
         durations.maxMs,
+        room,
       ),
     };
   });
