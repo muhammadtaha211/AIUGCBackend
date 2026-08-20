@@ -173,24 +173,41 @@ export function planTimingMarkdown(opts: {
   const range = (from: number, to: number): number[] =>
     Array.from({ length: to - from + 1 }, (_, i) => from + i);
 
-  const lengths = range(MIN_LABEL_WORDS, MAX_LABEL_WORDS);
+  // Rows the clamp could never grant are not offers. A configured
+  // a_step_ms_max below a row's read time caps every step under it, so the row
+  // would promise a window the code never hands out — and the totals below it,
+  // same function same config, would contradict it. Never empty: a ceiling
+  // under the shortest read time is a broken config, not a shorter table.
+  const grantable = range(MIN_LABEL_WORDS, MAX_LABEL_WORDS).filter(
+    (w) => readTimeMsForWords(w) <= durations.maxMs,
+  );
+  const lengths = grantable.length > 0 ? grantable : [MIN_LABEL_WORDS];
   const readRows = lengths.map((w) => `| ${w} words | ${secs(readTimeMsForWords(w))} |`);
 
   const kindFloors = Object.entries(durations.byActionType)
     .map(([kind, ms]) => `${kind} ${secs(clamp(ms))}`)
     .join(", ");
 
+  // Two rules meet at this gap and the larger one wins: below one step's own
+  // length the pair is the same moment on screen (the min-gap violation), and
+  // below the shortest caption's read time no caption fits. Reading only the
+  // second understates it whenever a_step_ms_min is raised past it.
+  const noPairBelowMs = Math.max(readTimeMsForWords(lengths[0]!), durations.minMs);
+
   // The ending has no neighbour, so it keeps the longer of its own kind and
   // its caption; every other step is worth at least its caption's read time.
   const endingMs = (w: number) =>
     clamp(Math.max(durations.byActionType.result ?? DEFAULT_STEP_MS.result, readTimeMsForWords(w)));
-  const totalMs = (steps: number, w: number) =>
+  // The LEAST a shape can run, never a prediction. A step is worth the longer
+  // of its caption and its own kind, so the kinds the model picks can only
+  // push the total UP: a floor of 9.2s reaches 11.6s on `scroll` states. The
+  // grid used to print a pass/fail verdict per cell, which was true only for
+  // the one action type whose default happens to equal a floor-length
+  // caption's read time — the same restated-arithmetic bug one level up.
+  const floorMs = (steps: number, w: number) =>
     (steps - 1) * clamp(readTimeMsForWords(w)) + endingMs(w);
-  const verdict = (ms: number) =>
-    ms < runtime.minMs ? "too SHORT" : ms > runtime.maxMs ? "too LONG" : "passes";
   const totalRows = range(minSteps, maxSteps).map(
-    (n) =>
-      `| ${n} | ${lengths.map((w) => `${secs(totalMs(n, w))} — ${verdict(totalMs(n, w))}`).join(" | ")} |`,
+    (n) => `| ${n} | ${lengths.map((w) => secs(floorMs(n, w))).join(" | ")} |`,
   );
 
   return [
@@ -198,17 +215,19 @@ export function planTimingMarkdown(opts: {
     "| ------- | ---------------- |",
     ...readRows,
     "",
-    `Under a ${secs(readTimeMsForWords(MIN_LABEL_WORDS))} gap no caption is legal at all, so you may not select both states.`,
+    `Under a ${secs(noPairBelowMs)} gap you may not select both states at all.`,
     "",
     `A state's own kind sets a second floor: ${kindFloors}. A step runs the LONGER of its kind and its caption, and never longer than the gap to your next selected state.`,
     "",
     `The steps must total ${(runtime.minMs / 1000).toFixed(1)}-${secs(runtime.maxMs)}; aim near ${secs(
       Math.round((runtime.minMs + runtime.maxMs) / 2),
-    )}. Uncapped, ending on a ${secs(endingMs(MIN_LABEL_WORDS))} success state:`,
+    )}. Ending on a ${secs(endingMs(lengths[0]!))} success state, this is the LEAST each shape can run — the kinds you select can only push it up, never down:`,
     "",
     `| steps | ${lengths.map((w) => `${w}-word captions`).join(" | ")} |`,
     `| ----- | ${lengths.map(() => "---------------").join(" | ")} |`,
     ...totalRows,
+    "",
+    `A shape whose floor is already over ${secs(runtime.maxMs)} cannot be rescued — drop a step or shorten the captions. A shape whose floor is under ${(runtime.minMs / 1000).toFixed(1)}s only reaches the band if the states you picked run longer than their captions, so add up the kinds you actually selected before you settle.`,
   ].join("\n");
 }
 

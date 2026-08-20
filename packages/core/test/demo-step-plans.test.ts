@@ -1185,13 +1185,56 @@ describe("the prompt's timing block is generated from the code, not restated", (
     }
   });
 
-  it("names the no-caption-fits gap as the shortest row, not a rounder number", () => {
+  it("names the gap below which no pair is selectable, not a rounder number", () => {
     const shortest = readRows[0]!;
     expect(shortest.ms).toBe(1600);
-    expect(block).toContain(`Under a ${(shortest.ms / 1000).toFixed(1)}s gap no caption is legal`);
+    expect(block).toContain(`Under a ${(shortest.ms / 1000).toFixed(1)}s gap`);
   });
 
-  it("every totals cell is the runtime assembleSteps actually produces", () => {
+  it("takes the min-gap rule into account when a raised floor outruns the read time", () => {
+    // The two rules share this boundary and the larger wins. At the shipped
+    // a_step_ms_min (1400) the read time binds; raise it and it does not, and
+    // a block that only ever divides readTimeMs understates the gap.
+    const raised = planTimingMarkdown({
+      durations: { ...DURATIONS, minMs: 2600 },
+      runtime: BAND,
+      minSteps: 5,
+      maxSteps: 8,
+    });
+    expect(raised).toContain("Under a 2.6s gap");
+  });
+
+  it("stops offering caption lengths a configured ceiling could never grant", () => {
+    // a_step_ms_max below a row's read time caps every step under it, so the
+    // row would advertise a window assembleSteps never hands out.
+    const tight = planTimingMarkdown({
+      durations: { ...DURATIONS, maxMs: 2000 },
+      runtime: BAND,
+      minSteps: 5,
+      maxSteps: 8,
+    });
+    const rows = (text: string) =>
+      [...text.matchAll(/^\| (\d+) words \| ([\d.]+)s \|$/gm)].map((m) => Number(m[1]));
+    expect(rows(tight)).toEqual([3, 4]);
+    // ...and never empties out, however low the ceiling goes.
+    expect(
+      rows(
+        planTimingMarkdown({
+          durations: { ...DURATIONS, minMs: 400, maxMs: 800 },
+          runtime: BAND,
+          minSteps: 5,
+          maxSteps: 8,
+        }),
+      ),
+    ).toEqual([3]);
+  });
+
+  it("every totals cell is a floor no legal plan of that shape can undercut", () => {
+    // The cells used to carry a pass/fail verdict, and that verdict was right
+    // only for `tap` — the one action type whose default equals a 3-word read
+    // time. This walks EVERY action type: the cell must be the floor, `tap`
+    // must sit exactly on it, and nothing may fall below it.
+    const kinds = ["tap", "navigate", "select", "type", "scroll", "idle"] as const;
     const rows = [...block.matchAll(/^\| (\d+) \| (.+) \|$/gm)];
     expect(rows.map((m) => Number(m[1]))).toEqual([5, 6, 7, 8]);
     for (const match of rows) {
@@ -1200,29 +1243,41 @@ describe("the prompt's timing block is generated from the code, not restated", (
       expect(cells).toHaveLength(readRows.length);
       cells.forEach((cell, i) => {
         const words = readRows[i]!.words;
-        const parsed = /^([\d.]+)s — (.+)$/.exec(cell.trim())!;
+        const floorMs = Math.round(Number(/^([\d.]+)s$/.exec(cell.trim())![1]) * 1000);
         // States 10s apart: nothing is capped by a neighbour, which is the
-        // "uncapped" the grid claims to describe.
-        const timeline: AnalysisState[] = Array.from({ length: stepCount }, (_, k) =>
-          state({
-            timestampMs: k * 10_000,
-            visibleText: ["אחת"],
-            actionType: k === stepCount - 1 ? "result" : "tap",
-          }),
-        );
-        const total = totalRuntimeMs(
-          assembleSteps(
-            timeline.map((_, k) => ({ sourceIndex: k, label: label(words) })),
-            timeline,
-            DURATIONS,
-          ),
-        );
-        expect(Math.round(Number(parsed[1]) * 1000), cell).toBe(total);
-        expect(parsed[2], cell).toBe(
-          total < BAND.minMs ? "too SHORT" : total > BAND.maxMs ? "too LONG" : "passes",
-        );
+        // only condition the floor claims.
+        const totalFor = (kind: (typeof kinds)[number]) => {
+          const timeline: AnalysisState[] = Array.from({ length: stepCount }, (_, k) =>
+            state({
+              timestampMs: k * 10_000,
+              visibleText: ["אחת"],
+              actionType: k === stepCount - 1 ? "result" : kind,
+            }),
+          );
+          return totalRuntimeMs(
+            assembleSteps(
+              timeline.map((_, k) => ({ sourceIndex: k, label: label(words) })),
+              timeline,
+              DURATIONS,
+            ),
+          );
+        };
+        for (const kind of kinds) {
+          expect(totalFor(kind), `${cell} on ${kind}`).toBeGreaterThanOrEqual(floorMs);
+        }
+        expect(totalFor("tap"), `${cell} on tap`).toBe(floorMs);
       });
     }
+  });
+
+  it("prints no per-shape verdict, because the shape alone cannot decide one", () => {
+    // A `scroll`-heavy 5x3-word plan runs 11.6s and passes where the floor
+    // (9.2s) is under the band; an 8x3-word one runs 18.2s and is too long
+    // where the floor (14.0s) is inside it. Any verdict printed per cell is
+    // wrong in one of those two directions.
+    expect(block).not.toContain("too SHORT");
+    expect(block).not.toContain("passes");
+    expect(block).toContain("this is the LEAST each shape can run");
   });
 
   it("the latest prompt file asks for the block, and the caller's vars satisfy it", () => {
@@ -1247,7 +1302,7 @@ describe("the prompt's timing block is generated from the code, not restated", (
   });
 });
 
-describe("the one-beat test's calibration (v11)", () => {
+describe("the one-beat test's calibration", () => {
   // v11 replaced v10's "if most of the entries are the same" with a measured
   // threshold, because "most" reads as a majority and the real one-beat pair
   // sits at 44% — so the model correctly called it two screens, twice.
@@ -1270,15 +1325,54 @@ describe("the one-beat test's calibration (v11)", () => {
     // moves them makes the prompt's examples wrong, and that is worth a red.
     expect(timeline[11]!.visibleText).toHaveLength(9);
     expect(timeline[12]!.visibleText).toHaveLength(6);
-    expect(sharedEntries(11, 12)).toHaveLength(4);
     expect(timeline[2]!.visibleText).toHaveLength(17);
     expect(timeline[3]!.visibleText).toHaveLength(5);
-    expect(sharedEntries(2, 3)).toHaveLength(3);
+
+    // The STRINGS, not just the counts. v11 quotes these seven entries by
+    // name; counts alone stay green when a re-OCR swaps which entries overlap
+    // (state 12 re-reading `Black Hole` as `boteacher` keeps the count at 4),
+    // and the prompt would then be citing entries that are no longer shared.
+    expect(sharedEntries(11, 12)).toEqual([
+      "Black Hole",
+      "Takin Syllabus.txt",
+      "זוהה סילבוס",
+      "יעד ניתוב",
+    ]);
+    expect(sharedEntries(2, 3)).toEqual([
+      "שפוך פה הכל",
+      "boteacher יעשה לך סדר",
+      "מבחן ללא פתרון לא ייקלט למערכת",
+    ]);
+    // The LATEST prompt, not a pinned version: the quoted entries have to
+    // survive into whatever is actually being sent.
+    const prompt = readFileSync(
+      path.join(
+        PROMPTS_DIR,
+        "plan_demo_steps",
+        `v${latestPromptVersion("plan_demo_steps")}.md`,
+      ),
+      "utf8",
+    );
+    for (const entry of [...sharedEntries(11, 12), ...sharedEntries(2, 3)]) {
+      expect(prompt, `v11 quotes ${entry}`).toContain(entry);
+    }
 
     expect(overlap(11, 12)).toBeGreaterThanOrEqual(1 / 3);
     expect(overlap(2, 3)).toBeLessThan(1 / 3);
     // And below a majority, which is why v10's wording merged neither pair.
     expect(overlap(11, 12)).toBeLessThan(0.5);
+  });
+
+  it("also merges 12/13, the pair that decides where the dialog run ends", () => {
+    // The founder's brief named 11/12 AND 12/13 as pairs v10's "most of the
+    // entries" failed to merge. 12/13 is the one the prompt has no worked
+    // example for, and it is what extends the run past state 12 — so it is
+    // pinned here rather than left to be rediscovered.
+    expect(sharedEntries(12, 13)).toEqual(["Black Hole", "יעד ניתוב", "חומר קורס"]);
+    expect(overlap(12, 13)).toBeGreaterThanOrEqual(1 / 3);
+    // Exact matching misses the OCR near-miss v11 tells the model to count.
+    expect(timeline[12]!.visibleText).toContain("אישר ניתוב (1)");
+    expect(timeline[13]!.visibleText).toContain("אישור ניתוב (1)");
   });
 
   it("dividing by the SHORTER array is what would merge the two-beat pair", () => {

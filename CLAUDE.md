@@ -13,7 +13,7 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 
 ## Architecture (V0)
 
-- Single monorepo. `apps/web` = Next.js (App Router, TypeScript) on Vercel. `apps/worker` = one Node worker (queue consumer, ffmpeg, Remotion renders). `packages/core` = everything else, with the pipeline logic in `packages/core/src/pipelines/` as importable pure-ish functions and `apps/cli` as their entrypoint. There is no `packages/pipeline` — do not create one.
+- Single monorepo. `apps/web` = Next.js (App Router, TypeScript) on Vercel. `apps/worker` = one Node worker (queue consumer, ffmpeg, Remotion renders). `apps/admin` = the founder console. `apps/cli` = the entrypoint the founder actually uses (`aiugc ...`, ~45 commands). `packages/core` = pipeline logic, jobs, db and provider wrappers, with the pipelines themselves in `packages/core/src/pipelines/` as importable pure-ish functions. `packages/remotion` = every composition. There is no `packages/pipeline` — do not create one.
 - Supabase: Postgres, Auth, Storage (signed URLs).
 - All heavy work (TTS, lip-sync GPU, renders) runs as async, retryable jobs on the worker. Nothing heavy in a Vercel function, ever.
 - External services: Anthropic API (`claude-sonnet-4-6`, all copywriting), ElevenLabs V3 (Hebrew TTS), HeyGen for avatar lip-sync (Service B; it replaced InfiniteTalk-on-fal in 2026-08 — see docs/04 and `providers/lipsync.ts`; `FAL_KEY` stays for nano-banana composites), Remotion via `@remotion/renderer` on the worker, ffmpeg/ffprobe for probing/normalize/stretch.
@@ -84,7 +84,14 @@ pnpm --filter @aiugc/remotion render:sample:a # ServiceA sample (hook line + ava
 
 Never run `next build` while `pnpm dev` is serving — the build replaces `.next` and the running dev server starts 404-ing its own chunks (symptom: every page stuck on its loading state, DevTools shows 404 on `/_next/static/chunks/main-app.js`). Recovery: stop dev, delete `apps/web/.next`, start dev again.
 
-Still to come: `pnpm worker` (job loop), `pnpm pipeline <cmd>` (CLI entrypoints), `pnpm db:migrate`.
+The CLI is `apps/cli` and it is where the pipeline is driven today:
+
+```
+pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI: demo, plan, copy, set, bank, qc, work, status, costs
+pnpm --filter @aiugc/worker dev        # the job loop (also `aiugc work --once` to drain and exit)
+```
+
+Still to come: `pnpm db:migrate` (migrations are applied by hand — see docs/01).
 
 ## When unsure
 

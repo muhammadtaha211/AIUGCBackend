@@ -13,9 +13,13 @@
     "",
     "Re-pin 12 -> 13 only after a run shows the model actually getting there. The 2026-08-20",
     "v11 run did not: it captioned state 11 at six words inside a 1600ms window and came out",
-    "10000ms long, i.e. it never applied the merge that would have removed the pair. That is a",
-    "compliance failure against a rule the prompt now states correctly, not bad arithmetic —",
-    "under v10 the same 1600ms window was legal because the gap table's first row was wrong."
+    "10000ms long, i.e. it never applied the merge that would have removed the pair.",
+    "",
+    "That failure is NOT the arithmetic bug v11 fixed, and it would have failed identically under",
+    "v10: the 11->12 gap is exactly 1600ms, where v10's broken first row and readTimeMs agree, and",
+    "v10 capped that band at three words too — it never licensed six. v10's row was wrong only",
+    "for gaps in [1400, 1600). What went wrong here is the model not applying a rule the prompt",
+    "states correctly, which no table can fix."
   ],
   "questionnaire": {
     "category": "app_or_digital",
