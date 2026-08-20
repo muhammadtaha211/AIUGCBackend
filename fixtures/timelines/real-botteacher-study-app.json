@@ -12,9 +12,11 @@
     "v11 recovers it. The regress harness ignores this key (fixtureSchema strips what it does",
     "not name).",
     "",
-    "Note also that this is the v1-era analysis (demo 724d68df): no state carries a screenKind,",
-    "so PLAN_SKIP_SCREEN_KINDS matches nothing here and the login / tour / onboarding screens",
-    "are governed by the prompt's prose alone."
+    "Note also that this is a v1-era analysis — it is demo ba70c3d7's (analysis 6a1b247e, all 80",
+    "screenName+timestamp pairs match), NOT demo 724d68df's, which is a second v1 analysis of the",
+    "same 80-state recording with different OCR. No state here carries a screenKind, so",
+    "PLAN_SKIP_SCREEN_KINDS matches nothing and the login / tour / onboarding screens are",
+    "governed by the prompt's prose alone."
   ],
   "questionnaire": {
     "tone": "friendly",
