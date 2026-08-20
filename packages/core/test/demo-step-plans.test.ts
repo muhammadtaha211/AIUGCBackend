@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -25,6 +25,7 @@ import {
   generateStepPlan,
   getStepPlan,
   planStepsSchema,
+  planTimingMarkdown,
   readTimeMs,
   stepDurations,
   stepRuntimeBand,
@@ -35,6 +36,8 @@ import {
   updatePlanSteps,
 } from "../src/pipelines/demo-step-plans";
 import { createDemo } from "../src/pipelines/demos";
+import { FIXTURES_DIR, PROMPTS_DIR } from "../src/paths";
+import { latestPromptVersion, renderPrompt } from "../src/prompts";
 import { setStorage } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
 import { tempStorage } from "./helpers/storage";
@@ -1110,6 +1113,180 @@ describe("a caption must outlast its own read time", () => {
     expect(
       findPlanViolations(steps("אחת אחת אחת אחת אחת אחת"), squeezed, QUESTIONNAIRE, 8),
     ).toEqual([]);
+  });
+});
+
+describe("the prompt's timing block is generated from the code, not restated", () => {
+  // The production defaults, spelled out rather than imported: a test that
+  // reads the same constants the generator reads cannot catch either moving.
+  // assembleSteps falls back to exactly these when byActionType is empty.
+  const DURATIONS = {
+    byActionType: {
+      navigate: 1800,
+      tap: 1600,
+      type: 2200,
+      select: 1800,
+      scroll: 2200,
+      result: 2800,
+      idle: 1600,
+    },
+    minMs: 1400,
+    maxMs: 4000,
+  };
+  const BAND = { minMs: 11_000, maxMs: 16_000 };
+  const block = planTimingMarkdown({
+    durations: DURATIONS,
+    runtime: BAND,
+    minSteps: 5,
+    maxSteps: 8,
+  });
+  const label = (words: number) => Array.from({ length: words }, () => "אחת").join(" ");
+
+  /** Only the read-time violations, for a caption on state 0 with `gapMs` to
+   *  the next SELECTED state — the squeeze the gap ceiling describes. */
+  const readTimeViolations = (gapMs: number, first: string): string[] => {
+    const timeline: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "tap" }),
+      state({ timestampMs: gapMs, visibleText: ["שתיים"], actionType: "tap" }),
+      state({ timestampMs: gapMs + 30_000, visibleText: ["שלוש"], actionType: "result" }),
+    ];
+    return findPlanViolations(
+      [
+        { sourceIndex: 0, label: first },
+        { sourceIndex: 1, label: "שתיים" },
+        { sourceIndex: 2, label: "שלוש" },
+      ],
+      timeline,
+      QUESTIONNAIRE,
+      8,
+      { minSteps: 1, notes: null, minStepMs: 1400, runtime: { durations: DURATIONS, ...BAND } },
+    ).filter((v) => v.includes("but needs"));
+  };
+
+  const readRows = [...block.matchAll(/^\| (\d+) words \| ([\d.]+)s \|$/gm)].map((m) => ({
+    words: Number(m[1]),
+    ms: Math.round(Number(m[2]) * 1000),
+  }));
+
+  it("offers one row per legal caption length", () => {
+    expect(readRows.map((r) => r.words)).toEqual([3, 4, 5, 6]);
+  });
+
+  it("every row is the gap findPlanViolations actually demands — v10's first row was not", () => {
+    // v10 hand-wrote "1.4-2.0s -> 3 words". readTimeMs asks 1600ms for three
+    // words, so the prompt licensed plans this very check then rejected — two
+    // of the campaign-app regression failures. Each row is now walked through
+    // the check itself: at the stated gap the caption is legal, 100ms under it
+    // is not. A row that drifts from readTimeMs fails one of the two.
+    for (const row of readRows) {
+      expect(readTimeMs(label(row.words))).toBe(row.ms);
+      expect(readTimeViolations(row.ms, label(row.words))).toEqual([]);
+      expect(readTimeViolations(row.ms - 100, label(row.words))).toHaveLength(1);
+    }
+  });
+
+  it("names the no-caption-fits gap as the shortest row, not a rounder number", () => {
+    const shortest = readRows[0]!;
+    expect(shortest.ms).toBe(1600);
+    expect(block).toContain(`Under a ${(shortest.ms / 1000).toFixed(1)}s gap no caption is legal`);
+  });
+
+  it("every totals cell is the runtime assembleSteps actually produces", () => {
+    const rows = [...block.matchAll(/^\| (\d+) \| (.+) \|$/gm)];
+    expect(rows.map((m) => Number(m[1]))).toEqual([5, 6, 7, 8]);
+    for (const match of rows) {
+      const stepCount = Number(match[1]);
+      const cells = match[2]!.split(" | ");
+      expect(cells).toHaveLength(readRows.length);
+      cells.forEach((cell, i) => {
+        const words = readRows[i]!.words;
+        const parsed = /^([\d.]+)s — (.+)$/.exec(cell.trim())!;
+        // States 10s apart: nothing is capped by a neighbour, which is the
+        // "uncapped" the grid claims to describe.
+        const timeline: AnalysisState[] = Array.from({ length: stepCount }, (_, k) =>
+          state({
+            timestampMs: k * 10_000,
+            visibleText: ["אחת"],
+            actionType: k === stepCount - 1 ? "result" : "tap",
+          }),
+        );
+        const total = totalRuntimeMs(
+          assembleSteps(
+            timeline.map((_, k) => ({ sourceIndex: k, label: label(words) })),
+            timeline,
+            DURATIONS,
+          ),
+        );
+        expect(Math.round(Number(parsed[1]) * 1000), cell).toBe(total);
+        expect(parsed[2], cell).toBe(
+          total < BAND.minMs ? "too SHORT" : total > BAND.maxMs ? "too LONG" : "passes",
+        );
+      });
+    }
+  });
+
+  it("the latest prompt file asks for the block, and the caller's vars satisfy it", () => {
+    // renderPrompt substitutes only what the template references, so a prompt
+    // that stops asking for {{timing}} loses every derived number in silence —
+    // and one that asks for a variable generateStepPlan does not pass throws on
+    // the paid path only. Both are checked here, against whatever is latest.
+    const version = latestPromptVersion("plan_demo_steps");
+    const file = readFileSync(path.join(PROMPTS_DIR, "plan_demo_steps", `v${version}.md`), "utf8");
+    expect(file).toContain("{{timing}}");
+
+    const { text, promptVersion } = renderPrompt("plan_demo_steps", {
+      questionnaire: "{}",
+      timeline: "[]",
+      min: 5,
+      max: 8,
+      timing: block,
+    });
+    expect(promptVersion).toBe(`plan_demo_steps@v${version}`);
+    expect(text).toContain(block);
+    expect(text).not.toContain("{{");
+  });
+});
+
+describe("the one-beat test's calibration (v11)", () => {
+  // v11 replaced v10's "if most of the entries are the same" with a measured
+  // threshold, because "most" reads as a majority and the real one-beat pair
+  // sits at 44% — so the model correctly called it two screens, twice.
+  const timeline = (
+    JSON.parse(
+      readFileSync(path.join(FIXTURES_DIR, "real-botteacher-file-routing.json"), "utf8"),
+    ) as { timeline: AnalysisState[] }
+  ).timeline;
+  const sharedEntries = (a: number, b: number): string[] => {
+    const left = new Set(timeline[a]!.visibleText);
+    return timeline[b]!.visibleText.filter((t) => left.has(t));
+  };
+  /** v11's rule: shared entries over the LONGER of the two arrays. */
+  const overlap = (a: number, b: number): number =>
+    sharedEntries(a, b).length /
+    Math.max(timeline[a]!.visibleText.length, timeline[b]!.visibleText.length);
+
+  it("puts the one-beat pair and the two-beat pair on opposite sides of a third", () => {
+    // The counts v11's two worked pairs quote. A re-snapshotted fixture that
+    // moves them makes the prompt's examples wrong, and that is worth a red.
+    expect(timeline[11]!.visibleText).toHaveLength(9);
+    expect(timeline[12]!.visibleText).toHaveLength(6);
+    expect(sharedEntries(11, 12)).toHaveLength(4);
+    expect(timeline[2]!.visibleText).toHaveLength(17);
+    expect(timeline[3]!.visibleText).toHaveLength(5);
+    expect(sharedEntries(2, 3)).toHaveLength(3);
+
+    expect(overlap(11, 12)).toBeGreaterThanOrEqual(1 / 3);
+    expect(overlap(2, 3)).toBeLessThan(1 / 3);
+    // And below a majority, which is why v10's wording merged neither pair.
+    expect(overlap(11, 12)).toBeLessThan(0.5);
+  });
+
+  it("dividing by the SHORTER array is what would merge the two-beat pair", () => {
+    // States 2 and 3 are the dashboard and the panel that opens over it: most
+    // of the small panel's text is also on the dashboard behind it. The rule
+    // has to name its divisor or it swallows every dialog in the timeline.
+    const short = Math.min(timeline[2]!.visibleText.length, timeline[3]!.visibleText.length);
+    expect(sharedEntries(2, 3).length / short).toBeGreaterThan(0.5);
   });
 });
 

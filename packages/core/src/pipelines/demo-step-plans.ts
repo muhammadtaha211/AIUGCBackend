@@ -140,6 +140,85 @@ const MAX_LABEL_CHARS = 60;
  *  check needs. */
 const MAX_LABEL_WORDS = 6;
 
+/** The prompt's caption FLOOR, in whitespace words. Deliberately NOT enforced
+ *  in findPlanViolations — the human edit path may go shorter and nothing here
+ *  rejects it — but the generated timing block needs it: under the read time of
+ *  a floor-length caption no caption is legal at all, which is the gap below
+ *  which two states cannot both be selected. */
+const MIN_LABEL_WORDS = 3;
+
+/** readTimeMs by word count. The prompt's timing block and the runtime check
+ *  read the same function — which is the whole point of generating the block. */
+function readTimeMsForWords(words: number): number {
+  return readTimeMs("x ".repeat(words));
+}
+
+/**
+ * Every number in the prompt's timing section, GENERATED from readTimeMs and
+ * the duration config instead of restated by hand in the markdown.
+ *
+ * v10 hand-wrote the same table and its first row drifted: it licensed a
+ * 3-word caption at a 1.4s gap when readTimeMs asks 1.6s, so the prompt
+ * authorised plans findPlanViolations then rejected — two of the campaign-app
+ * regression failures came from that one row. A table that can disagree with
+ * the function is the bug, so the table comes from the function.
+ *
+ * Arithmetic only, no prose: the argument for WHY a gap is a ceiling lives in
+ * the versioned prompt file, where a change to it bumps the prompt version.
+ */
+export function planTimingMarkdown(opts: {
+  durations: StepDurationConfig;
+  runtime: { minMs: number; maxMs: number };
+  minSteps: number;
+  maxSteps: number;
+}): string {
+  const { durations, runtime, minSteps, maxSteps } = opts;
+  const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+  // The clamp assembleSteps applies to every step, minus the gap ceiling: this
+  // block states what a step is worth when nothing cuts it short.
+  const clamp = (ms: number) => Math.min(Math.max(ms, durations.minMs), durations.maxMs);
+  const range = (from: number, to: number): number[] =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+  const lengths = range(MIN_LABEL_WORDS, MAX_LABEL_WORDS);
+  const readRows = lengths.map((w) => `| ${w} words | ${secs(readTimeMsForWords(w))} |`);
+
+  const kindFloors = Object.entries(durations.byActionType)
+    .map(([kind, ms]) => `${kind} ${secs(clamp(ms))}`)
+    .join(", ");
+
+  // The ending has no neighbour, so it keeps the longer of its own kind and
+  // its caption; every other step is worth at least its caption's read time.
+  const endingMs = (w: number) =>
+    clamp(Math.max(durations.byActionType.result ?? DEFAULT_STEP_MS.result, readTimeMsForWords(w)));
+  const totalMs = (steps: number, w: number) =>
+    (steps - 1) * clamp(readTimeMsForWords(w)) + endingMs(w);
+  const verdict = (ms: number) =>
+    ms < runtime.minMs ? "too SHORT" : ms > runtime.maxMs ? "too LONG" : "passes";
+  const totalRows = range(minSteps, maxSteps).map(
+    (n) =>
+      `| ${n} | ${lengths.map((w) => `${secs(totalMs(n, w))} — ${verdict(totalMs(n, w))}`).join(" | ")} |`,
+  );
+
+  return [
+    "| caption | seconds it needs |",
+    "| ------- | ---------------- |",
+    ...readRows,
+    "",
+    `Under a ${secs(readTimeMsForWords(MIN_LABEL_WORDS))} gap no caption is legal at all, so you may not select both states.`,
+    "",
+    `A state's own kind sets a second floor: ${kindFloors}. A step runs the LONGER of its kind and its caption, and never longer than the gap to your next selected state.`,
+    "",
+    `The steps must total ${(runtime.minMs / 1000).toFixed(1)}-${secs(runtime.maxMs)}; aim near ${secs(
+      Math.round((runtime.minMs + runtime.maxMs) / 2),
+    )}. Uncapped, ending on a ${secs(endingMs(MIN_LABEL_WORDS))} success state:`,
+    "",
+    `| steps | ${lengths.map((w) => `${w}-word captions`).join(" | ")} |`,
+    `| ----- | ${lengths.map(() => "---------------").join(" | ")} |`,
+    ...totalRows,
+  ].join("\n");
+}
+
 /** Rough cost bookkeeping — same math as pipelines/copy.ts (3rd use is Phase 6's problem). */
 function llmCostAgorot(inputTokens: number, outputTokens: number): number {
   return Math.ceil(((inputTokens * 3 + outputTokens * 15) / 1_000_000) * 370);
@@ -553,7 +632,7 @@ export function findPlanViolations(
         shape.runtime.durations.maxMs,
         Math.max(
           shape.runtime.durations.minMs,
-          readTimeMs("x ".repeat(MAX_LABEL_WORDS)),
+          readTimeMsForWords(MAX_LABEL_WORDS),
           ...Object.values(shape.runtime.durations.byActionType),
         ),
       );
@@ -928,6 +1007,9 @@ export async function generateStepPlan(
     timeline: JSON.stringify(promptTimeline, null, 2),
     min: minSteps,
     max: maxSteps,
+    // v11+. Older prompt files never reference {{timing}} and are unaffected —
+    // renderPrompt only substitutes what the template asks for.
+    timing: planTimingMarkdown({ durations, runtime, minSteps, maxSteps }),
   });
 
   // A BudgetError from the second call parks the JOB, and the resume re-runs
