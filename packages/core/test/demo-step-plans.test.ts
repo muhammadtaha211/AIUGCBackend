@@ -420,7 +420,37 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         { minSteps: 1, notes: null, minStepMs: 1400 },
       ),
     ).toEqual([]);
-    // Under the minimum: silent -> violation; explained in notes -> allowed.
+    // Under the minimum on a timeline that could carry more -> violation...
+    const roomy: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"] }),
+      state({ timestampMs: 2000, visibleText: ["שתיים"] }),
+      state({ timestampMs: 4000, visibleText: ["שלוש"] }),
+      state({ timestampMs: 6000, visibleText: ["ארבע"] }),
+      state({ timestampMs: 8000, visibleText: ["חמש"], actionType: "result" }),
+    ];
+    const short = [
+      { sourceIndex: 0, label: "אחת" },
+      { sourceIndex: 4, label: "חמש" },
+    ];
+    expect(
+      findPlanViolations(short, roomy, QUESTIONNAIRE, 8, {
+        minSteps: 5,
+        notes: null,
+        minStepMs: 1400,
+      }).some((v) => v.includes("fewer than the minimum")),
+    ).toBe(true);
+    // ...and `notes` does NOT waive it any more. That hatch belongs to the
+    // last-step rule alone; waiving both is how a 5-step plan with a
+    // 26-second hole in the middle passed.
+    expect(
+      findPlanViolations(short, roomy, QUESTIONNAIRE, 8, {
+        minSteps: 5,
+        notes: "בסרטון אין יותר צעדים",
+        minStepMs: 1400,
+      }).some((v) => v.includes("fewer than the minimum")),
+    ).toBe(true);
+    // The waiver is the timeline itself: two selectable states cannot make 6,
+    // whatever the model writes in `notes`.
     expect(
       findPlanViolations(
         [
@@ -431,20 +461,47 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         QUESTIONNAIRE,
         8,
         { minSteps: 6, notes: null, minStepMs: 1400 },
-      ).some((v) => v.includes("fewer than the minimum")),
-    ).toBe(true);
-    expect(
-      findPlanViolations(
-        [
-          { sourceIndex: 0, label: "שמירה" },
-          { sourceIndex: 1, label: "נוצר" },
-        ],
-        timeline,
-        QUESTIONNAIRE,
-        8,
-        { minSteps: 6, notes: "יש רק שני מסכים מובחנים", minStepMs: 1400 },
       ),
     ).toEqual([]);
+  });
+
+  it("the min-step waiver counts SPACING, not just legal states", () => {
+    // Five legal states, but the last two sit 400ms apart: the min-gap rule
+    // means at most four can ever be steps, so a 4-step plan is the longest
+    // plan this timeline has and must not be flagged.
+    const bunched: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"] }),
+      state({ timestampMs: 2000, visibleText: ["שתיים"] }),
+      state({ timestampMs: 4000, visibleText: ["שלוש"] }),
+      state({ timestampMs: 6000, visibleText: ["ארבע"] }),
+      state({ timestampMs: 6400, visibleText: ["חמש"], actionType: "result" }),
+    ];
+    const four = [
+      { sourceIndex: 0, label: "אחת" },
+      { sourceIndex: 1, label: "שתיים" },
+      { sourceIndex: 2, label: "שלוש" },
+      { sourceIndex: 4, label: "חמש" },
+    ];
+    expect(
+      findPlanViolations(four, bunched, QUESTIONNAIRE, 8, {
+        minSteps: 5,
+        notes: null,
+        minStepMs: 1400,
+      }),
+    ).toEqual([]);
+    // Space that pair out and the same 4-step plan IS a violation.
+    const spread = bunched.map((s, i) =>
+      i === 4 ? state({ ...s, timestampMs: 8000 }) : s,
+    );
+    expect(
+      findPlanViolations(
+        four.map((s) => (s.sourceIndex === 4 ? { ...s } : s)),
+        spread,
+        QUESTIONNAIRE,
+        8,
+        { minSteps: 5, notes: null, minStepMs: 1400 },
+      ).some((v) => v.includes("fewer than the minimum")),
+    ).toBe(true);
   });
 
   it("names the success candidates when the plan continues past the result state (real a179f069)", () => {
@@ -477,11 +534,13 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     expect(shapeViolation).toContain("sourceIndex 1, 3");
     expect(shapeViolation).toContain("drop every step after it");
     expect(shapeViolation).toContain("fewer than 6 steps");
-    // The shortfall path is notes, never padding — "select additional states"
-    // wording made a live retry pad with a loading screen (an unfixable fresh
-    // violation, no third call). Pin the routing so it cannot come back.
-    expect(shapeViolation).toContain("keep the shorter plan");
-    expect(shapeViolation).toContain("never pad");
+    // The shortfall path is no longer notes (notes stopped waiving the
+    // minimum), so the message routes to adding states — and has to say in the
+    // same breath what may not be added: "select additional states" on its own
+    // made a live retry pad with a loading screen, an unfixable fresh
+    // violation with no third call. Pin both halves.
+    expect(shapeViolation).toContain("select additional distinct product states");
+    expect(shapeViolation).toContain("never pad with loading, duplicate or otherwise skipped");
   });
 
   it("pools visibleText across a sameStateAsPrevious run (real BotTeacher state 36)", () => {
@@ -562,6 +621,62 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     ).toEqual([]);
   });
 
+  it("allows instruction verbs — a caption tells you what to DO (real a179f069 state 1)", () => {
+    // Verbatim visibleText from the shipped analysis. The opening caption the
+    // format wants is "go to boteacher.com", and every word of it has to
+    // clear the anti-fabrication rule: "boteacher" off the screen, "כנסו" off
+    // the instruction allowlist. Before the allowlist this failed on exactly
+    // one word and cost a paid corrective re-request.
+    const home = state({
+      timestampMs: 2800,
+      visibleText: ["Create /", "Higgsfe", "https://boteacher.com", "Ask about this page", "Apps", "boteacher", "שבוע", "יום", "היום", "מרחב לנשום"],
+      actionType: "navigate",
+      legibility: "low",
+    });
+    expect(findPlanViolations([{ sourceIndex: 0, label: "כנסו לboteacher" }], [home], QUESTIONNAIRE, 8)).toEqual([]);
+    // Prefixed forms cost nothing either — Hebrew glues ו onto verbs too.
+    expect(findPlanViolations([{ sourceIndex: 0, label: "ולחצו boteacher" }], [home], QUESTIONNAIRE, 8)).toEqual([]);
+    // A verb that is NOT on the list still fails: the allowlist is a list, not
+    // a morphology rule.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "הורידו boteacher" }], [home], QUESTIONNAIRE, 8).some(
+        (v) => v.includes("הורידו"),
+      ),
+    ).toBe(true);
+  });
+
+  it("allows pronouns addressed to the viewer", () => {
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "שמירה שלכם" }], timeline, QUESTIONNAIRE, 8),
+    ).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 1, label: "הוא נוצר" }], timeline, QUESTIONNAIRE, 8),
+    ).toEqual([]);
+  });
+
+  it("still rejects a product claim absent from the screen and the questionnaire", () => {
+    // The rule 2b loosens for instructions must NOT loosen for claims:
+    // "automatically" is a promise about the product, and a promise the
+    // recording does not show belongs in the questionnaire (which the
+    // validator already reads) — never in a caption the model invented.
+    const bare: Questionnaire = { ...QUESTIONNAIRE, what_it_does: "יוצר קמפיינים" };
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "שמירה אוטומטית" }], timeline, bare, 8).some((v) =>
+        v.includes("אוטומטית"),
+      ),
+    ).toBe(true);
+    // No root or morphology matching either: the questionnaire saying
+    // "אוטומטי" does not license "אוטומטית".
+    expect(
+      findPlanViolations(
+        [{ sourceIndex: 0, label: "שמירה אוטומטית" }],
+        timeline,
+        { ...bare, what_it_does: "יוצר קמפיינים אוטומטי" },
+        8,
+      ).some((v) => v.includes("אוטומטית")),
+    ).toBe(true);
+  });
+
   it("allows function words but flags fabricated content words", () => {
     expect(
       findPlanViolations([{ sourceIndex: 0, label: "רק פרויקט חדש" }], timeline, QUESTIONNAIRE, 8),
@@ -629,13 +744,22 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         (v) => v.includes("not in the timeline"),
       ),
     ).toBe(true);
+    // Six is the ceiling: five passes, seven does not.
     expect(
       findPlanViolations(
         [{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש" }],
         timeline,
         QUESTIONNAIRE,
         8,
-      ).some((v) => v.includes("over 4 words")),
+      ),
+    ).toEqual([]);
+    expect(
+      findPlanViolations(
+        [{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש שמירה פרויקט" }],
+        timeline,
+        QUESTIONNAIRE,
+        8,
+      ).some((v) => v.includes("over 6 words")),
     ).toBe(true);
     expect(
       findPlanViolations(
@@ -649,6 +773,99 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       ).some((v) => v.includes("maximum is 1")),
     ).toBe(true);
     expect(findPlanViolations([], timeline, QUESTIONNAIRE, 8)).toEqual(["the plan has zero steps"]);
+  });
+});
+
+describe("the runtime band (steps only — the hook sits on top)", () => {
+  const DURATIONS = { byActionType: {}, minMs: 1400, maxMs: 4000 };
+  const band = { durations: DURATIONS, minMs: 11_000, maxMs: 16_000 };
+  /** Six states 3s apart ending on a result: room for any plan shape. */
+  const wide: AnalysisState[] = [
+    state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
+    state({ timestampMs: 3000, visibleText: ["שתיים"], actionType: "tap" }),
+    state({ timestampMs: 6000, visibleText: ["שלוש"], actionType: "type" }),
+    state({ timestampMs: 9000, visibleText: ["ארבע"], actionType: "select" }),
+    state({ timestampMs: 12_000, visibleText: ["חמש"], actionType: "scroll" }),
+    state({ timestampMs: 15_000, visibleText: ["שש"], actionType: "result" }),
+  ];
+  const pick = (...i: number[]) =>
+    i.map((n) => ({ sourceIndex: n, label: wide[n]!.visibleText[0]! }));
+  const shape = (steps: { sourceIndex: number; label: string }[]) =>
+    findPlanViolations(steps, wide, QUESTIONNAIRE, 8, {
+      minSteps: 1,
+      notes: null,
+      minStepMs: 1400,
+      runtime: band,
+    });
+
+  it("flags a plan that is too short, and says which way to move", () => {
+    // 1800 + 1600 + 2800 = 6200ms.
+    const v = shape(pick(0, 1, 5)).find((x) => x.includes("total"));
+    expect(v).toContain("6200ms");
+    expect(v).toContain("too SHORT");
+    expect(v).toContain("11000-16000ms");
+  });
+
+  it("flags a plan that is too long", () => {
+    // Eight states would be needed to overrun a 3s grid, so squeeze the band
+    // instead — the rule is the comparison, not the constant.
+    const v = findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, QUESTIONNAIRE, 8, {
+      minSteps: 1,
+      notes: null,
+      minStepMs: 1400,
+      runtime: { ...band, maxMs: 12_000 },
+    }).find((x) => x.includes("total"));
+    expect(v).toContain("12400ms");
+    expect(v).toContain("too LONG");
+  });
+
+  it("is silent inside the band, and absent when no band is supplied", () => {
+    // 1800 + 1600 + 2200 + 1800 + 2200 + 2800 = 12400ms.
+    expect(shape(pick(0, 1, 2, 3, 4, 5))).toEqual([]);
+    expect(
+      findPlanViolations(pick(0, 1, 5), wide, QUESTIONNAIRE, 8, {
+        minSteps: 1,
+        notes: null,
+        minStepMs: 1400,
+      }),
+    ).toEqual([]);
+  });
+
+  it("measures ASSEMBLED windows, not nominal per-action defaults", () => {
+    // Nominal: navigate 1800 + tap 1600 + result 2800 = 6200 (in nobody's
+    // band). Assembled: the 1000ms gap caps step 0 and a six-word label lifts
+    // step 1 over its 1600 default. A check reading DEFAULT_STEP_MS would see
+    // a number this video never shows.
+    const tight: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
+      state({ timestampMs: 1000, visibleText: ["אחת שתיים שלוש ארבע חמש שש"], actionType: "tap" }),
+      state({ timestampMs: 20_000, visibleText: ["שש"], actionType: "result" }),
+    ];
+    const steps = [
+      { sourceIndex: 0, label: "אחת" },
+      { sourceIndex: 1, label: "אחת שתיים שלוש ארבע חמש שש" },
+      { sourceIndex: 2, label: "שש" },
+    ];
+    // 1000 (gap) + 2800 (six words, read-time) + 2800 (result) = 6600ms.
+    expect(
+      findPlanViolations(steps, tight, QUESTIONNAIRE, 8, {
+        minSteps: 1,
+        notes: null,
+        minStepMs: 1400,
+        runtime: band,
+      }).find((x) => x.includes("total")),
+    ).toContain("6600ms");
+  });
+
+  it("notes does not waive the band — a short ad is short however it is explained", () => {
+    expect(
+      findPlanViolations(pick(0, 1, 5), wide, QUESTIONNAIRE, 8, {
+        minSteps: 1,
+        notes: "בסרטון אין יותר מסכים",
+        minStepMs: 1400,
+        runtime: band,
+      }).some((x) => x.includes("too SHORT")),
+    ).toBe(true);
   });
 });
 

@@ -51,31 +51,34 @@ function state(overrides: Partial<AnalysisState>): AnalysisState {
   };
 }
 
-// The a179f069 shape in miniature: the success state (4) sits mid-recording
-// and the timeline keeps going after it. 2s apart so the only violation these
+// The a179f069 shape in miniature: the success state (5) sits mid-recording
+// and the timeline keeps going after it. 3s apart so the only violation these
 // mocks produce is the one under test — states closer together than a step is
-// long are a violation of their own (see the window model).
+// long are a violation of their own, and a grid this wide leaves both plans
+// below inside the runtime band (see the window model).
 const TIMELINE: AnalysisState[] = [
   state({ timestampMs: 0, visibleText: ["פתיחה"], actionType: "navigate" }),
-  state({ timestampMs: 2000, visibleText: ["בחירה"] }),
-  state({ timestampMs: 4000, visibleText: ["הקלדה"], actionType: "type" }),
-  state({ timestampMs: 6000, visibleText: ["אישור"], actionType: "select" }),
-  state({ timestampMs: 8000, visibleText: ["הצלחה"], actionType: "result" }),
-  state({ timestampMs: 10_000, visibleText: ["המשך"], actionType: "navigate" }),
+  state({ timestampMs: 3000, visibleText: ["בחירה"] }),
+  state({ timestampMs: 6000, visibleText: ["הקלדה"], actionType: "type" }),
+  state({ timestampMs: 9000, visibleText: ["אישור"], actionType: "select" }),
   state({ timestampMs: 12_000, visibleText: ["גלילה"], actionType: "scroll" }),
+  state({ timestampMs: 15_000, visibleText: ["הצלחה"], actionType: "result" }),
+  state({ timestampMs: 18_000, visibleText: ["המשך"], actionType: "navigate" }),
 ];
 
-/** 6 legal labels, success state selected mid-plan, ends past it — exactly one
- *  violation (the last-step shape rule), like a179f069's first call. */
+/** 7 legal labels totalling 14200ms, success state selected mid-plan, ends
+ *  past it — exactly one violation (the last-step shape rule), like
+ *  a179f069's first call. */
 const ENDS_PAST_SUCCESS = {
   object: {
     steps: [
       { sourceIndex: 0, label: "פתיחה" },
       { sourceIndex: 1, label: "בחירה" },
       { sourceIndex: 2, label: "הקלדה" },
-      { sourceIndex: 4, label: "הצלחה" },
-      { sourceIndex: 5, label: "המשך" },
-      { sourceIndex: 6, label: "גלילה" },
+      { sourceIndex: 3, label: "אישור" },
+      { sourceIndex: 4, label: "גלילה" },
+      { sourceIndex: 5, label: "הצלחה" },
+      { sourceIndex: 6, label: "המשך" },
     ],
     unexplainedMoments: [],
     notes: null,
@@ -83,18 +86,21 @@ const ENDS_PAST_SUCCESS = {
   usage: { inputTokens: 1000, outputTokens: 200 },
 };
 
-/** The mechanical fix the violation message asks for: trailing steps dropped,
- *  the shortfall below the 6-step minimum explained in notes. */
+/** The mechanical fix the violation message asks for: the one trailing step
+ *  dropped, leaving 6 steps and 12400ms. `notes` is null on purpose — it
+ *  waives the last-step rule only, and this plan does not need waiving. */
 const FIXED = {
   object: {
     steps: [
       { sourceIndex: 0, label: "פתיחה" },
       { sourceIndex: 1, label: "בחירה" },
       { sourceIndex: 2, label: "הקלדה" },
-      { sourceIndex: 4, label: "הצלחה" },
+      { sourceIndex: 3, label: "אישור" },
+      { sourceIndex: 4, label: "גלילה" },
+      { sourceIndex: 5, label: "הצלחה" },
     ],
     unexplainedMoments: [],
-    notes: "אחרי מסך ההצלחה מתחיל מסע נפרד, לכן נשארו 4 צעדים בלבד",
+    notes: null,
   },
   usage: { inputTokens: 1100, outputTokens: 180 },
 };
@@ -130,13 +136,13 @@ describe("generateStepPlan corrective retry (real DB, mocked Claude)", () => {
     expect(retryPrompt).toContain("Your previous plan was:");
     expect(retryPrompt).toContain('"sourceIndex": 6'); // the offending trailing step, echoed
     // The violation names the candidates and the mechanical fix.
-    expect(retryPrompt).toContain("success candidates are at sourceIndex 4");
+    expect(retryPrompt).toContain("success candidates are at sourceIndex 5");
     expect(retryPrompt).toContain("drop every step after it");
 
-    // The fixed plan lands: ends on the success state, shortfall explained.
-    expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 4]);
+    // The fixed plan lands: ends on the success state, nothing to explain.
+    expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3, 4, 5]);
     expect(draft.steps[draft.steps.length - 1]!.actionType).toBe("result");
-    expect(draft.notes).toBeTruthy();
+    expect(draft.notes).toBeNull();
   });
 
   it("a still-violating retry is a PermanentError — never a third call", async () => {
@@ -154,6 +160,6 @@ describe("generateStepPlan corrective retry (real DB, mocked Claude)", () => {
     const draft = await generateStepPlan(db, { timeline: TIMELINE, questionnaire: QUESTIONNAIRE });
 
     expect(generateObject).toHaveBeenCalledTimes(1);
-    expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 4]);
+    expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });
