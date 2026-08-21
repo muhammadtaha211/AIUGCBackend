@@ -10,13 +10,15 @@ import {
   aRenderStageIndex,
   isActiveARenderStatus,
   retryableCreateFailure,
+  stepsBalanceLine,
+  stepsConfirmLabel,
   stepsShapeSummary,
   type HookClip,
   type HookLineOption,
   type PinnedPlan,
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
-import { hasShortfall, quoteLine, shortfallLine, type QuoteView } from "@/lib/quote-ui";
+import { hasShortfall, shortfallLine, type QuoteView } from "@/lib/quote-ui";
 import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
@@ -170,10 +172,10 @@ export function StepARender({
               {stepsShapeSummary(plan, hook.durationMs)}
             </p>
 
-            {/* The exact price, from the same function the confirm debits
-                with. Absent entirely on the admin bypass. */}
+            {/* Balance only — the price rides on the confirm button itself
+                (stepsConfirmLabel). Absent entirely on the admin bypass. */}
             {quote && !hasShortfall(quote) && (
-              <p className="mt-3 text-[13px] text-ink/60">{quoteLine(quote)}</p>
+              <p className="mt-3 text-[13px] text-ink/60">{stepsBalanceLine(quote)}</p>
             )}
             {hasShortfall(quote) && (
               <p
@@ -203,7 +205,7 @@ export function StepARender({
               disabled={hasShortfall(quote) || (createError !== null && !createError.retryable)}
               onClick={() => void start()}
             >
-              צור סרטון
+              {stepsConfirmLabel(quote)}
             </Button>
 
             {/* The only other quote refresh (the 402 handler) sits behind the

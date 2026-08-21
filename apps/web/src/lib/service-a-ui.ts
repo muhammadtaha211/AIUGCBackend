@@ -725,6 +725,22 @@ export function retryableCreateFailure(status: number): boolean {
 }
 
 /**
+ * The confirm button's own label carries the price (founder ruling after the
+ * 8e walkthrough: the 13px quoteLine under the summary did not read as a
+ * price — the number the click costs belongs ON the thing being clicked).
+ * null = admin bypass: nothing is charged, so no price is named.
+ */
+export function stepsConfirmLabel(quote: { credits: number } | null): string {
+  return quote ? `צור סרטון · ${quote.credits} קרדיטים` : "צור סרטון";
+}
+
+/** The supporting line under the summary: balance only — the price itself
+ *  lives on the button now, and repeating it here would just dilute it. */
+export function stepsBalanceLine(quote: { balance: number }): string {
+  return `היתרה שלכם: ${quote.balance} קרדיטים.`;
+}
+
+/**
  * Everything a steps render is made from, as one comparable key. The lifted
  * render must be discarded when ANY of these change — a render made with the
  * old hook clip, hook line, rect or plan must never answer for a new

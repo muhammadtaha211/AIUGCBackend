@@ -37,6 +37,8 @@ import {
   shouldSyncIdentity,
   sortedPlanSteps,
   stepHeadroomMs,
+  stepsBalanceLine,
+  stepsConfirmLabel,
   stepsPayload,
   stepsShapeSummary,
   type AnalysisStateWire,
@@ -780,6 +782,15 @@ describe("the render step, steps format (8e)", () => {
     expect(retryableCreateFailure(402)).toBe(true);
     expect(retryableCreateFailure(500)).toBe(true);
     expect(retryableCreateFailure(0)).toBe(true);
+  });
+
+  it("the confirm button itself carries the price; the line carries the balance", () => {
+    // Founder ruling after the 8e walkthrough: the small gray quoteLine did
+    // not read as a price — the cost belongs on the thing being clicked.
+    expect(stepsConfirmLabel({ credits: 5 })).toBe("צור סרטון · 5 קרדיטים");
+    // Admin bypass: nothing is charged, so no price is named anywhere.
+    expect(stepsConfirmLabel(null)).toBe("צור סרטון");
+    expect(stepsBalanceLine({ balance: 142 })).toBe("היתרה שלכם: 142 קרדיטים.");
   });
 
   it("renderCompositionKey changes when ANY composition input changes", () => {
