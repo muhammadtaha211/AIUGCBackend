@@ -5,6 +5,7 @@ import {
   MIN_LABEL_WORDS,
   PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
+  totalRuntimeMs,
 } from "@aiugc/core/plan-format";
 import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
 
@@ -677,6 +678,67 @@ export function shapeSummary(shape: AShape): string {
     return `${base} ← סיום עם הדמות ${formatSeconds(shape.outroSeconds)} שנ׳ (הדמות מופיעה ומסיימת את הקריינות)${cost}.`;
   }
   return `${base} — הקריינות מסתיימת יחד עם הסרטון.`;
+}
+
+// ---------------------------------------------------------------------------
+// The render step, steps format (8e)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the render step composes from, PINNED at continue-click time — never
+ * "latest", so a fork created after the click cannot silently switch what
+ * renders (createSet's approval gate on the pinned id is the backstop).
+ * Carries the two display numbers so the render step needs no plan fetch.
+ */
+export type PinnedPlan = { planId: string; stepCount: number; stepsTotalMs: number };
+
+export function pinnedPlanFrom(plan: Pick<StepPlanWire, "planId" | "steps">): PinnedPlan {
+  return {
+    planId: plan.planId,
+    stepCount: plan.steps.length,
+    stepsTotalMs: totalRuntimeMs(plan.steps),
+  };
+}
+
+/**
+ * The steps analog of shapeSummary — same voice, no VO and no ending to name.
+ * "בלי קריינות" is load-bearing: silent is the format's design, and a customer
+ * who expected sound must learn it here, before paying, not from the video.
+ */
+export function stepsShapeSummary(
+  plan: Pick<PinnedPlan, "stepCount" | "stepsTotalMs">,
+  hookDurationMs: number,
+): string {
+  const total = formatSeconds((hookDurationMs + plan.stepsTotalMs) / 1000);
+  return `פתיח ${formatSeconds(hookDurationMs / 1000)} שנ׳ ← ${plan.stepCount} צעדים מסרטון המוצר שלכם — סך הכול ${total} שנ׳, בלי קריינות.`;
+}
+
+/**
+ * Whether "נסה שוב" can be honest after a failed steps create. 409 = the
+ * pinned plan lost its approval gate — an identical retry fails identically
+ * until the plan step fixes it. A 402 stays retryable on purpose: the 402
+ * handler refreshes the quote, and the shortfall gate on the FRESH numbers is
+ * what decides the button — after a top-up the retry is legitimate.
+ */
+export function retryableCreateFailure(status: number): boolean {
+  return status !== 409;
+}
+
+/**
+ * Everything a steps render is made from, as one comparable key. The lifted
+ * render must be discarded when ANY of these change — a render made with the
+ * old hook clip, hook line, rect or plan must never answer for a new
+ * composition (review finding: keying the reset on planId alone let a
+ * same-plan hook swap re-show the old video as the new ad).
+ */
+export function renderCompositionKey(
+  planId: string,
+  hook: Pick<HookClip, "id">,
+  hookLine: Pick<HookLineOption, "scriptId">,
+  rect: SafeRect | null,
+): string {
+  const rectKey = rect ? `${rect.x},${rect.y},${rect.w},${rect.h}` : "default";
+  return [planId, hook.id, hookLine.scriptId, rectKey].join("|");
 }
 
 // ---------------------------------------------------------------------------

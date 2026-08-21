@@ -34,6 +34,10 @@ type StepPlanProps = {
   demoId: string;
   /** The chosen clip's real length — the steps-only total names it when known. */
   hookDurationMs?: number;
+  /** §4: continue to the render step with THIS plan pinned. Absent when the
+   *  wizard cannot compose yet (hook/hook line lost to a reload) — the button
+   *  simply doesn't render, and re-picking a hook brings it back. */
+  onContinue?: (plan: StepPlanWire) => void;
   onBack: () => void;
   onFatal: (message: string) => void;
 };
@@ -56,7 +60,7 @@ type PlanAction = "save" | "approve" | "fork";
  * customer can act on — including the 404s, which are NORMAL (no plan yet /
  * analysis row not inserted yet) and must never eject through onFatal.
  */
-export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanProps) {
+export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }: StepPlanProps) {
   const [plan, setPlan] = useState<StepPlanWire | null>(null);
   /** The editable copy of a ready plan's steps, chronological. Reseeded from
    *  every server response (adoptPlan) — the response is the wizard's truth. */
@@ -505,6 +509,7 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
           hookDurationMs={hookDurationMs}
           actionBusy={actionBusy}
           actionError={actionError}
+          onContinue={onContinue}
           onLabelChange={setLabel}
           onDelete={deleteStep}
           onAddStep={addStep}
@@ -602,6 +607,7 @@ function PlanEditor({
   hookDurationMs,
   actionBusy,
   actionError,
+  onContinue,
   onLabelChange,
   onDelete,
   onAddStep,
@@ -620,6 +626,7 @@ function PlanEditor({
   hookDurationMs?: number;
   actionBusy: PlanAction | null;
   actionError: string | null;
+  onContinue?: (plan: StepPlanWire) => void;
   onLabelChange: (sourceIndex: number, label: string) => void;
   onDelete: (sourceIndex: number) => void;
   onAddStep: (state: AnalysisStateWire, label: string) => void;
@@ -632,6 +639,21 @@ function PlanEditor({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const approved = plan.approvedAt !== undefined;
+  /** Approve's success swaps the approved block in during the click's own
+   *  commit — and the add-a-step button unmounting above lifts the whole
+   *  block ~50px, so no in-block geometry keeps controls out of the cursor
+   *  band (two skeptic rounds proved the arithmetic wrong). Instead the
+   *  block's controls ARM shortly after the swap: a double-click's second
+   *  press lands on a disabled control, never a live one. */
+  const [approvedActionsArmed, setApprovedActionsArmed] = useState(false);
+  useEffect(() => {
+    if (!approved) {
+      setApprovedActionsArmed(false);
+      return;
+    }
+    const timer = setTimeout(() => setApprovedActionsArmed(true), 400);
+    return () => clearTimeout(timer);
+  }, [approved]);
   const dirty = planStepsDirty(draft, plan.steps);
   const blocked = draftBlockedReason(draft);
   const thinWarning = deleteWarning(draft.length);
@@ -719,8 +741,8 @@ function PlanEditor({
                         founder (user #1). */}
                     {headroom < 0 ? (
                       <p className="mt-1 text-[13px] text-amber-700">
-                        הצעד הזה קצר מדי לכיתוב — הוא ייחתך לצעד הבא לפני שיספיקו לקרוא אותו
-                        (חסרות {fmtSeconds(-headroom)} שנ׳). קצרו את הכיתוב.
+                        הצעד הזה קצר מדי לכיתוב — הוא ייחתך לצעד הבא לפני שיספיקו לקרוא אותו (חסרות{" "}
+                        {fmtSeconds(-headroom)} שנ׳). קצרו את הכיתוב.
                       </p>
                     ) : (
                       <p className="mt-1 text-[13px] text-ink/45">
@@ -786,8 +808,7 @@ function PlanEditor({
 
       <p className="mt-3 text-sm text-ink/60">
         סך הצעדים: {fmtSeconds(totalMs)} שנ׳
-        {draft.some((step) => step.added) ? " (בלי הצעדים החדשים — יתעדכן בשמירה)" : ""} — בלי
-        הפתיח
+        {draft.some((step) => step.added) ? " (בלי הצעדים החדשים — יתעדכן בשמירה)" : ""} — בלי הפתיח
         {hookDurationMs !== undefined
           ? `, שמוסיף עוד ${fmtSeconds(hookDurationMs)} שנ׳ בתחילת הסרטון`
           : ", שמתווסף בתחילת הסרטון"}
@@ -806,19 +827,35 @@ function PlanEditor({
             התוכנית אושרה ✓
           </p>
           <p className="mt-2 text-[13px] text-ink/55">
-            רוצים לשנות משהו? עריכה תיצור עותק חדש שידרוש אישור מחדש — סרטונים שכבר נוצרו
-            ממשיכים להשתמש בתוכנית שאושרה.
+            רוצים לשנות משהו? עריכה תיצור עותק חדש שידרוש אישור מחדש — סרטונים שכבר נוצרו ממשיכים
+            להשתמש בתוכנית שאושרה.
           </p>
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-3"
-            loading={actionBusy === "fork"}
-            disabled={actionBusy !== null && actionBusy !== "fork"}
-            onClick={onEditCopy}
-          >
-            עריכת עותק חדש
-          </Button>
+          {/* Continue pins THIS plan at click time; a fork repoints the wizard
+              at the unapproved copy, so the button disappears with the badge
+              until the copy is approved. Both controls stay disabled until
+              approvedActionsArmed — position alone cannot keep them out of a
+              double-clicked approve's cursor band (see the arm effect). */}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {onContinue && (
+              <Button
+                type="button"
+                size="lg"
+                disabled={actionBusy !== null || !approvedActionsArmed}
+                onClick={() => onContinue(plan)}
+              >
+                המשך ליצירת הסרטון
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              loading={actionBusy === "fork"}
+              disabled={(actionBusy !== null && actionBusy !== "fork") || !approvedActionsArmed}
+              onClick={onEditCopy}
+            >
+              עריכת עותק חדש
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="mt-5">

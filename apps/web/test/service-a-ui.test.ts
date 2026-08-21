@@ -25,9 +25,12 @@ import {
   labelWordCount,
   labelWordWarning,
   pickerPools,
+  pinnedPlanFrom,
   planFailureNotice,
+  renderCompositionKey,
   planStepsDirty,
   restoredDemo,
+  retryableCreateFailure,
   retryOutcome,
   sameSpeakerGender,
   shapeSummary,
@@ -35,6 +38,7 @@ import {
   sortedPlanSteps,
   stepHeadroomMs,
   stepsPayload,
+  stepsShapeSummary,
   type AnalysisStateWire,
   type HookBatch,
   type HookLineOption,
@@ -727,7 +731,12 @@ describe("inventory picker (8c)", () => {
     it("an added step makes the draft dirty; removing it restores clean", () => {
       const next = insertDraftStep(draft, wire(2, { timestampMs: 2000 }), "חדש");
       expect(planStepsDirty(next, draft)).toBe(true);
-      expect(planStepsDirty(next.filter((s) => !s.added), draft)).toBe(false);
+      expect(
+        planStepsDirty(
+          next.filter((s) => !s.added),
+          draft,
+        ),
+      ).toBe(false);
     });
 
     it("re-adding a deleted step with its stored label round-trips to clean", () => {
@@ -738,5 +747,53 @@ describe("inventory picker (8c)", () => {
       const readded = insertDraftStep(withoutLast, wire(3, { timestampMs: 3000 }), "אחרון");
       expect(planStepsDirty(readded, draft)).toBe(false);
     });
+  });
+});
+
+describe("the render step, steps format (8e)", () => {
+  const step = (sourceIndex: number, durationMs: number): PlanStepWire => ({
+    sourceIndex,
+    label: "צעד",
+    timestampMs: sourceIndex * 1000,
+    actionType: "tap",
+    durationMs,
+  });
+
+  it("pinnedPlanFrom pins the id and sums the stored durations", () => {
+    expect(pinnedPlanFrom({ planId: "p1", steps: [step(0, 1600), step(1, 2400)] })).toEqual({
+      planId: "p1",
+      stepCount: 2,
+      stepsTotalMs: 4000,
+    });
+  });
+
+  it("stepsShapeSummary names the hook, the step count, the total and the silence", () => {
+    expect(stepsShapeSummary({ stepCount: 5, stepsTotalMs: 16_500 }, 3_500)).toBe(
+      "פתיח 3.5 שנ׳ ← 5 צעדים מסרטון המוצר שלכם — סך הכול 20 שנ׳, בלי קריינות.",
+    );
+  });
+
+  it("retryableCreateFailure: only the approval 409 takes the retry away", () => {
+    expect(retryableCreateFailure(409)).toBe(false);
+    // 402 stays retryable — the refreshed quote's shortfall gate is what
+    // decides the button, and after a top-up the retry is legitimate.
+    expect(retryableCreateFailure(402)).toBe(true);
+    expect(retryableCreateFailure(500)).toBe(true);
+    expect(retryableCreateFailure(0)).toBe(true);
+  });
+
+  it("renderCompositionKey changes when ANY composition input changes", () => {
+    // Review finding: keying the render reset on planId alone let a same-plan
+    // hook swap re-show the old video as the new ad. All four inputs count.
+    const base = renderCompositionKey("p1", { id: "h1" }, { scriptId: "s1" }, null);
+    expect(renderCompositionKey("p1", { id: "h1" }, { scriptId: "s1" }, null)).toBe(base);
+    expect(renderCompositionKey("p2", { id: "h1" }, { scriptId: "s1" }, null)).not.toBe(base);
+    expect(renderCompositionKey("p1", { id: "h2" }, { scriptId: "s1" }, null)).not.toBe(base);
+    expect(renderCompositionKey("p1", { id: "h1" }, { scriptId: "s2" }, null)).not.toBe(base);
+    const rect = { x: 40, y: 900, w: 1000, h: 300 };
+    expect(renderCompositionKey("p1", { id: "h1" }, { scriptId: "s1" }, rect)).not.toBe(base);
+    expect(
+      renderCompositionKey("p1", { id: "h1" }, { scriptId: "s1" }, { ...rect, y: 901 }),
+    ).not.toBe(renderCompositionKey("p1", { id: "h1" }, { scriptId: "s1" }, rect));
   });
 });
