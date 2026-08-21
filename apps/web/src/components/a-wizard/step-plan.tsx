@@ -651,10 +651,13 @@ function PlanEditor({
                   {fmtSeconds(step.durationMs)} שנ׳
                 </p>
                 {/* A caption on screen for less than its read time is the exact
-                    defect the model path rejects and a human edit allows. */}
+                    defect the model path rejects and a human edit allows. The
+                    copy names the consequence and the remedy — "displayed X
+                    less than its read time" confused the founder (user #1). */}
                 {headroom < 0 ? (
                   <p className="mt-1 text-[13px] text-amber-700">
-                    הכיתוב מוצג {fmtSeconds(-headroom)} שנ׳ פחות מזמן הקריאה שלו
+                    הצעד הזה קצר מדי לכיתוב — הוא ייחתך לצעד הבא לפני שיספיקו לקרוא אותו (חסרות{" "}
+                    {fmtSeconds(-headroom)} שנ׳). קצרו את הכיתוב.
                   </p>
                 ) : (
                   <p className="mt-1 text-[13px] text-ink/45">
