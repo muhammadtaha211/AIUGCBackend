@@ -55,6 +55,11 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
   /** Bumped by the attach-retry button — the one recovery from a failed mount
    *  GET, which otherwise dead-ends (no poll runs and nothing clears error). */
   const [attachNonce, setAttachNonce] = useState(0);
+  /** The last generate press was refused by a daily quota (429). Retrying
+   *  cannot succeed until the rolling window clears and the customer cannot
+   *  raise their own cap, so every "try again" control comes off the screen —
+   *  the banner already says נסו שוב מחר, and a live button contradicts it. */
+  const [quotaBlocked, setQuotaBlocked] = useState(false);
 
   async function refreshAnalysis() {
     const result = await apiFetch<{ status: string; failReason?: string }>(
@@ -194,12 +199,17 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
     setBusy(false);
     if (!result.ok) {
       if (result.status === 403) return onFatal(result.error);
+      // 429 = the account's daily quota, not a transient failure. The route
+      // rejects before it inserts a plan row, so there is nothing to poll and
+      // nothing a second press can change.
+      if (result.status === 429) setQuotaBlocked(true);
       // 409 = the analysis stopped being ready under us — re-read it, and
       // only then set the message: refreshAnalysis clears error on success,
       // which would wipe a message set before it resolved.
       if (result.status === 409) await refreshAnalysis();
       return setError(result.error);
     }
+    setQuotaBlocked(false);
     if (retryOutcome(plan?.planId ?? null, result.body) === "already_running") {
       return setNotice(ALREADY_RUNNING);
     }
@@ -282,15 +292,17 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
       {loaded && planMissing && analysis?.status === "ready" && (
         <div className="mt-6 rounded-xl border border-dashed border-ink/15 bg-ink/[0.04] px-6 py-10 text-center">
           <p className="text-sm text-ink/75">עוד אין תוכנית צעדים לסרטון הזה.</p>
-          <Button
-            type="button"
-            size="lg"
-            className="mt-5"
-            loading={busy}
-            onClick={() => void requestPlan()}
-          >
-            צור תוכנית צעדים
-          </Button>
+          {!quotaBlocked && (
+            <Button
+              type="button"
+              size="lg"
+              className="mt-5"
+              loading={busy}
+              onClick={() => void requestPlan()}
+            >
+              צור תוכנית צעדים
+            </Button>
+          )}
         </div>
       )}
 
@@ -328,15 +340,21 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
               </details>
             )}
           </div>
-          <Button
-            type="button"
-            size="lg"
-            className="mt-4"
-            loading={busy}
-            onClick={() => void requestPlan()}
-          >
-            נסה שוב
-          </Button>
+          {/* Two ways the quota reaches this card: the route refused THIS
+              client's press (quotaBlocked), or the plan JOB hit the cap at
+              execution and stored the quota Hebrew as fail_reason
+              (failure.retryable). Both must take the button away. */}
+          {!quotaBlocked && failure.retryable && (
+            <Button
+              type="button"
+              size="lg"
+              className="mt-4"
+              loading={busy}
+              onClick={() => void requestPlan()}
+            >
+              נסה שוב
+            </Button>
+          )}
           {notice && <p className="mt-3 text-sm text-ink/60">{notice}</p>}
         </div>
       )}

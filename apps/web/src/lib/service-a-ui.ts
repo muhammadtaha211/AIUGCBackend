@@ -270,6 +270,20 @@ export function analysisIndexBatches(indexes: number[]): number[][] {
 const PLAN_FAILED_GENERIC = "יצירת תוכנית הצעדים נכשלה — אפשר לנסות שוב.";
 
 /**
+ * The tail every daily-quota line ends with. A quota refusal is the one plan
+ * failure a retry cannot fix — the rolling 24h window has to clear first, and
+ * the customer cannot raise their own cap — so the failure card drops its
+ * retry button when it sees this.
+ *
+ * LOAD-BEARING COPY. The plan job stores this Hebrew verbatim as fail_reason
+ * (packages/core/src/pipelines/demo-step-plans.ts, the AccountBudgetError
+ * catch) and the route returns it as the 429 body (src/lib/api-errors.ts).
+ * Rewording the quota lines without moving this marker puts the lying button
+ * back; the test that pins the exact stored string is what goes red.
+ */
+const QUOTA_MARKER = "נסו שוב מחר";
+
+/**
  * The failure line the customer sees. fail_reason is usually customer-facing
  * Hebrew, but PermanentErrors without a customerMessage land as raw English
  * ("demo <id> not found") — that reads as a bug and leaks an id, so anything
@@ -277,11 +291,18 @@ const PLAN_FAILED_GENERIC = "יצירת תוכנית הצעדים נכשלה —
  * behind a details toggle (RLS hides jobs.last_error entirely; this is one of
  * the few diagnostics that reaches the client at all).
  */
-export function planFailureNotice(failReason?: string): { message: string; raw?: string } {
-  if (failReason && /[֐-׿]/.test(failReason)) return { message: failReason };
+export function planFailureNotice(failReason?: string): {
+  message: string;
+  raw?: string;
+  /** false = a daily quota refused it; offering "try again" here would lie. */
+  retryable: boolean;
+} {
+  if (failReason && /[֐-׿]/.test(failReason)) {
+    return { message: failReason, retryable: !failReason.includes(QUOTA_MARKER) };
+  }
   return failReason
-    ? { message: PLAN_FAILED_GENERIC, raw: failReason }
-    : { message: PLAN_FAILED_GENERIC };
+    ? { message: PLAN_FAILED_GENERIC, raw: failReason, retryable: true }
+    : { message: PLAN_FAILED_GENERIC, retryable: true };
 }
 
 /**

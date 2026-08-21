@@ -198,6 +198,35 @@ describe("plan surface helpers", () => {
     expect(notice.raw).toBe("demo 9553ea19 not found");
   });
 
+  /**
+   * The plan JOB re-checks the account cap at execution and stores this exact
+   * Hebrew as fail_reason (packages/core/src/pipelines/demo-step-plans.ts,
+   * the AccountBudgetError catch). It is the one plan failure a retry cannot
+   * fix, so the card must not offer one. If this string is reworded, this
+   * test goes red BEFORE the lying button ships.
+   */
+  it("a quota fail_reason is shown verbatim and marked not retryable", () => {
+    const stored = "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר.";
+    const notice = planFailureNotice(stored);
+    expect(notice.message).toBe(stored);
+    expect(notice.retryable).toBe(false);
+  });
+
+  it("the GPU and TTS quota lines are equally not retryable", () => {
+    for (const line of [
+      "הגעתם למכסת יצירת הסרטונים היומית של החשבון — נסו שוב מחר.",
+      "הגעתם למכסת ההקלטות היומית של החשבון — נסו שוב מחר.",
+    ]) {
+      expect(planFailureNotice(line).retryable).toBe(false);
+    }
+  });
+
+  it("an ordinary validator failure stays retryable", () => {
+    expect(planFailureNotice("יצירת תוכנית הצעדים נכשלה — נסו שוב").retryable).toBe(true);
+    expect(planFailureNotice("demo 9553ea19 not found").retryable).toBe(true);
+    expect(planFailureNotice(undefined).retryable).toBe(true);
+  });
+
   it("no failReason at all still yields the Hebrew generic", () => {
     const notice = planFailureNotice(undefined);
     expect(notice.message).toMatch(/[֐-׿]/);
