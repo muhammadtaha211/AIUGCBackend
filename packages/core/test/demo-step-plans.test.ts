@@ -1707,3 +1707,18 @@ describe("plan-format re-export identity", () => {
     expect(totalRuntimeMs).toBe(planFormat.totalRuntimeMs);
   });
 });
+
+/**
+ * The 8b move: the label word band and the a_steps_min default live in
+ * plan-format so the wizard's soft warnings share the server's numbers.
+ * Value pins; the validator's own use of MAX_LABEL_WORDS is pinned by the
+ * "over 6 words" violation test above.
+ */
+describe("plan-format editor constants (8b move)", () => {
+  it("word band and min-steps default hold their shipped values", async () => {
+    const planFormat = await import("../src/plan-format");
+    expect(planFormat.MAX_LABEL_WORDS).toBe(6);
+    expect(planFormat.MIN_LABEL_WORDS).toBe(3);
+    expect(planFormat.A_STEPS_MIN_DEFAULT).toBe(5);
+  });
+});

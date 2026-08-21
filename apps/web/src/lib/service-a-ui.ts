@@ -1,5 +1,10 @@
 import type { SafeRect } from "@aiugc/core/hook-geometry";
-import { readTimeMs } from "@aiugc/core/plan-format";
+import {
+  A_STEPS_MIN_DEFAULT,
+  MAX_LABEL_WORDS,
+  MIN_LABEL_WORDS,
+  readTimeMs,
+} from "@aiugc/core/plan-format";
 import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
 
 /**
@@ -330,6 +335,70 @@ export function stepHeadroomMs(step: Pick<PlanStepWire, "label" | "durationMs">)
 /** Chronological display order — order derives from timestamp, nothing else. */
 export function sortedPlanSteps(steps: PlanStepWire[]): PlanStepWire[] {
   return [...steps].sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+// ---------------------------------------------------------------------------
+// The plan editor (8b) — pure decisions behind step-plan.tsx's editor
+// ---------------------------------------------------------------------------
+
+/** Whitespace words, the same split readTimeMs counts. */
+export function labelWordCount(label: string): number {
+  return label.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * The soft word warning, firing at MAX_LABEL_WORDS (the model path's hard
+ * ceiling; the target band is 3–5). ADVISORY ONLY: the human edit path is
+ * never rejected on word count, and nothing client-side ever validates a
+ * label against visibleText — the anti-fabrication rule constrains the
+ * model, not the customer.
+ */
+export function labelWordWarning(label: string): string | null {
+  return labelWordCount(label) >= MAX_LABEL_WORDS
+    ? `כיתוב ארוך — עדיף ${MIN_LABEL_WORDS}–${MAX_LABEL_WORDS - 1} מילים כדי שיספיקו לקרוא אותו.`
+    : null;
+}
+
+/** Soft: below the a_steps_min default the ad starts feeling thin. The server
+ *  accepts any non-empty plan — deleting stays allowed, this only names it. */
+export function deleteWarning(stepCount: number): string | null {
+  return stepCount < A_STEPS_MIN_DEFAULT
+    ? `בתוכנית פחות מ-${A_STEPS_MIN_DEFAULT} צעדים — המודעה עלולה להרגיש קצרה מדי.`
+    : null;
+}
+
+/** A reason the draft cannot be saved, or null. Only the empty label — the
+ *  input's own maxLength enforces MAX_LABEL_CHARS. */
+export function draftBlockedReason(draft: Pick<PlanStepWire, "label">[]): string | null {
+  return draft.some((step) => step.label.trim().length === 0)
+    ? "יש צעד בלי כיתוב — כתבו כיתוב או מחקו את הצעד."
+    : null;
+}
+
+/** The PATCH body: exactly what the customer can edit. The server re-derives
+ *  timestamp/actionType/duration from sourceIndex and re-sorts by timestamp. */
+export function stepsPayload(
+  draft: Pick<PlanStepWire, "sourceIndex" | "label">[],
+): { sourceIndex: number; label: string }[] {
+  return draft.map((step) => ({ sourceIndex: step.sourceIndex, label: step.label.trim() }));
+}
+
+/**
+ * Whether the draft differs from the stored plan. Both sides are ordered by
+ * timestamp (the draft seeds from sortedPlanSteps and is never reordered), so
+ * position-wise comparison suffices. Labels compare trimmed because the
+ * payload trims — a whitespace-only edit would round-trip to "no change".
+ */
+export function planStepsDirty(
+  draft: Pick<PlanStepWire, "sourceIndex" | "label">[],
+  stored: PlanStepWire[],
+): boolean {
+  const base = sortedPlanSteps(stored);
+  if (draft.length !== base.length) return true;
+  return draft.some(
+    (step, i) =>
+      step.sourceIndex !== base[i]!.sourceIndex || step.label.trim() !== base[i]!.label.trim(),
+  );
 }
 
 /** m:ss position of a step inside the demo. */

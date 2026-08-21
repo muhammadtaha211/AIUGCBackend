@@ -6,7 +6,9 @@ import {
   aWizardSteps,
   clampRestoredStep,
   clientDemoFileError,
+  deleteWarning,
   demoDurationError,
+  draftBlockedReason,
   endingForRemainder,
   endingSentence,
   estimatedEnding,
@@ -18,7 +20,10 @@ import {
   isActivePlanStatus,
   isAnalysisWorkingStatus,
   isIngestingDemoStatus,
+  labelWordCount,
+  labelWordWarning,
   planFailureNotice,
+  planStepsDirty,
   restoredDemo,
   retryOutcome,
   sameSpeakerGender,
@@ -26,8 +31,10 @@ import {
   shouldSyncIdentity,
   sortedPlanSteps,
   stepHeadroomMs,
+  stepsPayload,
   type HookBatch,
   type HookLineOption,
+  type PlanStepWire,
 } from "../src/lib/service-a-ui";
 
 describe("wizard steps (format-aware, mirrors B's wizardSteps)", () => {
@@ -585,5 +592,64 @@ describe("speaker gender (hook-line invalidation)", () => {
     expect(sameSpeakerGender("female", null)).toBe(true);
     expect(sameSpeakerGender(null, null)).toBe(true);
     expect(sameSpeakerGender(null, "male")).toBe(false);
+  });
+});
+
+describe("plan editor helpers (8b)", () => {
+  const step = (
+    sourceIndex: number,
+    label: string,
+    timestampMs = sourceIndex * 1000,
+  ): PlanStepWire => ({ sourceIndex, label, timestampMs, actionType: "tap", durationMs: 1600 });
+
+  it("counts whitespace words the way readTimeMs does", () => {
+    expect(labelWordCount("לחצו על הכפתור")).toBe(3);
+    expect(labelWordCount("  מילה  ")).toBe(1);
+    expect(labelWordCount("   ")).toBe(0);
+  });
+
+  it("soft word warning fires at 6 words and stays silent through 5", () => {
+    expect(labelWordWarning("אחת שתיים שלוש ארבע חמש")).toBeNull();
+    expect(labelWordWarning("אחת שתיים שלוש ארבע חמש שש")).not.toBeNull();
+    expect(labelWordWarning("אחת שתיים שלוש ארבע חמש שש שבע")).not.toBeNull();
+  });
+
+  it("delete warning names plans below the a_steps_min default only", () => {
+    expect(deleteWarning(6)).toBeNull();
+    expect(deleteWarning(5)).toBeNull();
+    expect(deleteWarning(4)).not.toBeNull();
+    expect(deleteWarning(1)).not.toBeNull();
+  });
+
+  it("only an empty label blocks saving — content is never judged", () => {
+    // The anti-fabrication rule constrains the MODEL; no helper here reads
+    // visibleText, so any non-empty human label saves.
+    expect(draftBlockedReason([step(0, "כיתוב"), step(1, "עוד כיתוב")])).toBeNull();
+    expect(draftBlockedReason([step(0, "כיתוב"), step(1, "   ")])).not.toBeNull();
+  });
+
+  it("payload carries exactly sourceIndex + trimmed label, in draft order", () => {
+    expect(stepsPayload([step(3, " לחצו כאן "), step(1, "סיום")])).toEqual([
+      { sourceIndex: 3, label: "לחצו כאן" },
+      { sourceIndex: 1, label: "סיום" },
+    ]);
+  });
+
+  describe("dirty detection", () => {
+    // Wire order is unsorted on purpose — dirty comparison must sort stored.
+    const stored = [step(2, "שני", 2000), step(1, "ראשון", 1000)];
+
+    it("a freshly seeded draft is clean, whatever order the wire delivered", () => {
+      expect(planStepsDirty(sortedPlanSteps(stored), stored)).toBe(false);
+    });
+
+    it("a label edit is dirty; a whitespace-only edit is not (the payload trims)", () => {
+      expect(planStepsDirty([step(1, "אחר", 1000), step(2, "שני", 2000)], stored)).toBe(true);
+      expect(planStepsDirty([step(1, " ראשון ", 1000), step(2, "שני", 2000)], stored)).toBe(false);
+    });
+
+    it("a deletion is dirty", () => {
+      expect(planStepsDirty([step(1, "ראשון", 1000)], stored)).toBe(true);
+    });
   });
 });

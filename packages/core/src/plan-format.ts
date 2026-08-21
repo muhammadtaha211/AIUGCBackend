@@ -29,6 +29,26 @@ export const PLAN_SKIP_SCREEN_KINDS: ReadonlySet<NonNullable<AnalysisState["scre
  *  third copy of the number. */
 export const MAX_LABEL_CHARS = 60;
 
+/** Hard ceiling on a caption, in whitespace words. Not a target — holding
+ *  labels to a 3-5 word average is the prompt's job. Also bounds the longest
+ *  window a single step can earn, which the runtime band's reachability
+ *  check needs. Hard on the MODEL path only (findPlanViolations); the wizard
+ *  shows it as a soft warning and the human edit path is never rejected on it. */
+export const MAX_LABEL_WORDS = 6;
+
+/** The prompt's caption FLOOR, in whitespace words. Deliberately NOT enforced
+ *  in findPlanViolations — the human edit path may go shorter and nothing here
+ *  rejects it — but the generated timing block needs it: under the read time of
+ *  a floor-length caption no caption is legal at all, which is the gap below
+ *  which two states cannot both be selected. */
+export const MIN_LABEL_WORDS = 3;
+
+/** Code default for the `a_steps_min` config knob (fewest steps a generated
+ *  plan should have). The wizard's delete warning uses it too — a config row,
+ *  if one is ever seeded, wins server-side and the client warning drifts until
+ *  this constant is updated to match. */
+export const A_STEPS_MIN_DEFAULT = 5;
+
 /** Fixed allowance before the label is being read at all: the 5-frame pop-in
  *  (ServiceASteps) plus the eye reaching the lower third after the hard cut. */
 export const LABEL_LEAD_MS = 400;
