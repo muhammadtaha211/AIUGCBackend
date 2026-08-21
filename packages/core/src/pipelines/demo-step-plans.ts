@@ -12,9 +12,12 @@ import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { FIXTURES_DIR } from "../paths";
 import {
+  A_STEPS_MIN_DEFAULT,
   LABEL_LEAD_MS,
   LABEL_WORDS_PER_SECOND,
   MAX_LABEL_CHARS,
+  MAX_LABEL_WORDS,
+  MIN_LABEL_WORDS,
   PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
   totalRuntimeMs,
@@ -110,18 +113,9 @@ const MAX_STEP_MS = 4000;
 const MIN_RUNTIME_MS = 11_000;
 const MAX_RUNTIME_MS = 16_000;
 
-/** Hard ceiling on a caption, in whitespace words. Not a target — holding
- *  labels to a 3-5 word average is the prompt's job. Also bounds the longest
- *  window a single step can earn, which the runtime band's reachability
- *  check needs. */
-const MAX_LABEL_WORDS = 6;
-
-/** The prompt's caption FLOOR, in whitespace words. Deliberately NOT enforced
- *  in findPlanViolations — the human edit path may go shorter and nothing here
- *  rejects it — but the generated timing block needs it: under the read time of
- *  a floor-length caption no caption is legal at all, which is the gap below
- *  which two states cannot both be selected. */
-const MIN_LABEL_WORDS = 3;
+// MAX_LABEL_WORDS / MIN_LABEL_WORDS live in ../plan-format (imported above):
+// the wizard's soft word warning needs the ceiling, and this module's db/fs/
+// provider imports can't reach a browser bundle.
 
 /** readTimeMs by word count. The prompt's timing block and the runtime check
  *  read the same function — which is the whole point of generating the block. */
@@ -943,7 +937,10 @@ export async function generateStepPlan(
     jobId?: string;
   },
 ): Promise<StepPlanDraft> {
-  const minSteps = Math.max(1, await getConfigValueOr(db, "a_steps_min", z.number(), 5));
+  const minSteps = Math.max(
+    1,
+    await getConfigValueOr(db, "a_steps_min", z.number(), A_STEPS_MIN_DEFAULT),
+  );
   const maxSteps = Math.max(
     minSteps,
     await getConfigValueOr(db, "a_steps_max", z.number(), 8),

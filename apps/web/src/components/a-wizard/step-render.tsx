@@ -9,23 +9,27 @@ import {
   A_RENDER_STAGES,
   aRenderStageIndex,
   isActiveARenderStatus,
-  shapeSummary,
-  type AShape,
+  retryableCreateFailure,
+  stepsShapeSummary,
+  type HookClip,
+  type HookLineOption,
+  type PinnedPlan,
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { hasShortfall, quoteLine, shortfallLine, type QuoteView } from "@/lib/quote-ui";
 import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
-import { postJson, useJobPoll } from "@/lib/use-api";
+import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
 type StepARenderProps = {
   businessId: string;
   demoId: string;
-  hookClipId: string;
-  hookLineScriptId: string;
-  audioId: string;
-  personaId: string;
-  /** The hook-studio placement; absent = the clip's default safe area. */
-  textSafeArea?: SafeRect;
+  hook: HookClip;
+  hookLine: HookLineOption;
+  /** The hook-studio placement; null = the clip's default safe area. */
+  rect: SafeRect | null;
+  /** Pinned at continue-click time — a fork after the click cannot switch
+   *  what renders (createSet's approval gate on this id is the backstop). */
+  plan: PinnedPlan;
   render: RenderState | null;
   setRender: (render: RenderState | null) => void;
   onBack: () => void;
@@ -33,64 +37,75 @@ type StepARenderProps = {
 };
 
 /**
- * Step 6: the advisory shape first — the projected composition (hook + demo +
- * ending), computed from the approved audio's exact duration — then an
- * explicit confirm enqueues the render. A long ending is chosen here, never
- * discovered. Nothing blocks.
+ * Step 5, steps format (8e): the flat price + the composition summary first,
+ * then an explicit confirm enqueues the render. Everything heavy is local
+ * (Remotion on the worker) — no VO, no ending, no lipsync — so the price is
+ * one flat and the shape is one sentence. Nothing blocks except a shortfall.
  */
 export function StepARender({
   businessId,
   demoId,
-  hookClipId,
-  hookLineScriptId,
-  audioId,
-  personaId,
-  textSafeArea,
+  hook,
+  hookLine,
+  rect,
+  plan,
   render,
   setRender,
   onBack,
   onFatal,
 }: StepARenderProps) {
-  const [shape, setShape] = useState<AShape | null>(null);
-  const [quote, setQuote] = useState<QuoteView>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** undefined = not loaded yet; null = admin bypass (nothing is charged). */
+  const [quote, setQuote] = useState<QuoteView | undefined>(undefined);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<{ message: string; retryable: boolean } | null>(
+    null,
+  );
   const [starting, setStarting] = useState(false);
+  /** The shortfall recheck's in-flight flag — its button disables while the
+   *  fresh quote is loading, so one press means one GET. */
+  const [rechecking, setRechecking] = useState(false);
 
-  async function loadShape() {
-    setError(null);
-    const result = await postJson<AShape & { quote: QuoteView }>(
-      `/api/businesses/${businessId}/a-sets/preview`,
-      { demoId, audioId, hookClipId },
+  async function loadQuote() {
+    setQuoteError(null);
+    const result = await apiFetch<{ quote: QuoteView }>(
+      `/api/businesses/${businessId}/a-sets/steps/quote`,
     );
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
-      return setError(result.error);
+      return setQuoteError(result.error);
     }
-    setShape(result.body);
     setQuote(result.body.quote);
   }
 
-  // The shape is informative, not a gate — load it once on entering the step.
+  // The price is informative, not a gate — load it once on entering the step.
   useEffect(() => {
-    if (render === null && shape === null) void loadShape();
-    // loadShape reads only props; render/shape gate the one-time fetch.
-  }, [render, shape]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (render === null && quote === undefined) void loadQuote();
+    // loadQuote reads only props; render/quote gate the one-time fetch.
+  }, [render, quote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function start() {
     setStarting(true);
-    setError(null);
-    const result = await postJson<{ renderId: string }>(`/api/businesses/${businessId}/a-sets`, {
-      demoId,
-      hookClipId,
-      hookLineScriptId,
-      audioId,
-      personaId,
-      textSafeArea,
-    });
+    setCreateError(null);
+    const result = await postJson<{ renderId: string }>(
+      `/api/businesses/${businessId}/a-sets/steps`,
+      {
+        demoId,
+        stepPlanId: plan.planId,
+        hookClipId: hook.id,
+        hookLineScriptId: hookLine.scriptId,
+        textSafeArea: rect ?? undefined,
+      },
+    );
     setStarting(false);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
-      return setError(result.error);
+      // The balance moved under us — refresh the numbers the screen shows;
+      // the shortfall gate on the FRESH quote is what disables the button.
+      if (result.status === 402) void loadQuote();
+      return setCreateError({
+        message: result.error,
+        retryable: retryableCreateFailure(result.status),
+      });
     }
     setRender({ id: result.body.renderId, status: "queued" });
   }
@@ -117,46 +132,46 @@ export function StepARender({
     onFatal,
   );
 
-  // Before enqueue: the advisory shape + explicit confirm. Back still allowed.
+  // Before enqueue: the summary + the price + explicit confirm. Back allowed.
   if (render === null) {
     return (
       <div>
         <StepHeader
           title="ככה המודעה תיבנה"
-          sub="מבנה הסרטון לפי ההקלטה שאישרתם, אפשר לחזור אחורה ולשנות."
+          sub="מבנה הסרטון לפי התוכנית שאישרתם, אפשר לחזור אחורה ולשנות."
           onBack={onBack}
         />
 
-        {error && (
+        {quoteError && (
           <div className="mt-6">
             <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
-              {error}
+              {quoteError}
             </p>
             <Button
               type="button"
               variant="secondary"
               className="mt-4"
-              onClick={() => (shape === null ? void loadShape() : void start())}
+              onClick={() => void loadQuote()}
             >
               נסה שוב
             </Button>
           </div>
         )}
 
-        {shape === null && !error && (
+        {quote === undefined && !quoteError && (
           <div className="mt-8 flex items-center justify-center gap-2 py-10 text-sm text-ink/55">
-            <Spinner /> מחשבים את מבנה הסרטון…
+            <Spinner /> טוענים את המחיר…
           </div>
         )}
 
-        {shape !== null && (
+        {quote !== undefined && (
           <>
             <p className="mt-6 rounded-xl border border-ink/[0.08] bg-white px-5 py-4 text-sm leading-relaxed text-ink/80">
-              {shapeSummary(shape)}
+              {stepsShapeSummary(plan, hook.durationMs)}
             </p>
 
-            {/* The exact price, from the same function the confirm debits with.
-                Absent entirely on the admin bypass. */}
+            {/* The exact price, from the same function the confirm debits
+                with. Absent entirely on the admin bypass. */}
             {quote && !hasShortfall(quote) && (
               <p className="mt-3 text-[13px] text-ink/60">{quoteLine(quote)}</p>
             )}
@@ -169,16 +184,55 @@ export function StepARender({
               </p>
             )}
 
+            {createError && (
+              <p
+                role="alert"
+                className="mt-3 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700"
+              >
+                {createError.message}
+              </p>
+            )}
+
+            {/* A non-retryable failure (409: the pinned plan lost its gate)
+                disables rather than hides — "try again" on it would lie. */}
             <Button
               type="button"
               size="lg"
               className="mt-7 w-full"
               loading={starting}
-              disabled={hasShortfall(quote)}
+              disabled={hasShortfall(quote) || (createError !== null && !createError.retryable)}
               onClick={() => void start()}
             >
               צור סרטון
             </Button>
+
+            {/* The only other quote refresh (the 402 handler) sits behind the
+                confirm this shortfall just disabled — without this, a top-up
+                leaves the screen stale and dead-ended. BELOW the confirm on
+                purpose: a successful recheck shrinks the content above, and
+                had this sat above, the newly-enabled confirm would slide up
+                into the spot the cursor is parked on (skeptic-caught). Down
+                here the shrink leaves the cursor over empty space. Clearing
+                createError drops a stale 402 alert that would otherwise
+                contradict the fresh balance beside it. */}
+            {hasShortfall(quote) && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="mt-3"
+                loading={rechecking}
+                onClick={() =>
+                  void (async () => {
+                    setCreateError(null);
+                    setRechecking(true);
+                    await loadQuote();
+                    setRechecking(false);
+                  })()
+                }
+              >
+                בדיקת היתרה מחדש
+              </Button>
+            )}
           </>
         )}
       </div>
@@ -225,7 +279,7 @@ export function StepARender({
             size="lg"
             className="flex-1"
             onClick={() => {
-              setRender(null); // back to the shape screen; confirm re-enqueues
+              setRender(null); // back to the summary screen; confirm re-enqueues
             }}
           >
             נסה שוב
@@ -302,13 +356,7 @@ export function StepARender({
       </ol>
 
       {slow && (
-        <p className="mt-6 text-center text-sm text-ink/55">
-          {/* Only an avatar ending passes through lipsync — don't blame a
-              persona that isn't in the video. */}
-          {shape?.outroMode === "avatar"
-            ? "עדיין עובד… סרטון עם סיום דמות יכול לקחת כמה דקות."
-            : "עדיין עובד… זה יכול לקחת עוד רגע."}
-        </p>
+        <p className="mt-6 text-center text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>
       )}
 
       <Link href="/home" className="mt-8 block text-center">

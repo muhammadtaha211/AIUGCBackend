@@ -1,5 +1,12 @@
 import type { SafeRect } from "@aiugc/core/hook-geometry";
-import { readTimeMs } from "@aiugc/core/plan-format";
+import {
+  A_STEPS_MIN_DEFAULT,
+  MAX_LABEL_WORDS,
+  MIN_LABEL_WORDS,
+  PLAN_SKIP_SCREEN_KINDS,
+  readTimeMs,
+  totalRuntimeMs,
+} from "@aiugc/core/plan-format";
 import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
 
 /**
@@ -226,12 +233,19 @@ export type StepPlanWire = {
   approvedAt?: string;
 };
 
-/** One analysis state from GET .../analysis (?indexes= adds thumbUrl). */
+/** One analysis state from GET .../analysis — the route sends every field on
+ *  all three query shapes; only thumbUrl is conditional (?indexes=/?page=). */
 export type AnalysisStateWire = {
   index: number;
   timestampMs: number;
   screenName: string;
   visibleText: string[];
+  action: string;
+  actionType: string;
+  screenKind?: string;
+  sameStateAsPrevious: boolean;
+  legibility: string;
+  salienceNote?: string;
   thumbUrl?: string;
 };
 
@@ -330,6 +344,133 @@ export function stepHeadroomMs(step: Pick<PlanStepWire, "label" | "durationMs">)
 /** Chronological display order — order derives from timestamp, nothing else. */
 export function sortedPlanSteps(steps: PlanStepWire[]): PlanStepWire[] {
   return [...steps].sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+// ---------------------------------------------------------------------------
+// The plan editor (8b) — pure decisions behind step-plan.tsx's editor
+// ---------------------------------------------------------------------------
+
+/** Whitespace words, the same split readTimeMs counts. */
+export function labelWordCount(label: string): number {
+  return label.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * The soft word warning, firing at MAX_LABEL_WORDS (the model path's hard
+ * ceiling; the target band is 3–5). ADVISORY ONLY: the human edit path is
+ * never rejected on word count, and nothing client-side ever validates a
+ * label against visibleText — the anti-fabrication rule constrains the
+ * model, not the customer.
+ */
+export function labelWordWarning(label: string): string | null {
+  return labelWordCount(label) >= MAX_LABEL_WORDS
+    ? `כיתוב ארוך — עדיף ${MIN_LABEL_WORDS}–${MAX_LABEL_WORDS - 1} מילים כדי שיספיקו לקרוא אותו.`
+    : null;
+}
+
+/** Soft: below the a_steps_min default the ad starts feeling thin. The server
+ *  accepts any non-empty plan — deleting stays allowed, this only names it. */
+export function deleteWarning(stepCount: number): string | null {
+  return stepCount < A_STEPS_MIN_DEFAULT
+    ? `בתוכנית פחות מ-${A_STEPS_MIN_DEFAULT} צעדים — המודעה עלולה להרגיש קצרה מדי.`
+    : null;
+}
+
+/** A reason the draft cannot be saved, or null. Only the empty label — the
+ *  input's own maxLength enforces MAX_LABEL_CHARS. */
+export function draftBlockedReason(draft: Pick<PlanStepWire, "label">[]): string | null {
+  return draft.some((step) => step.label.trim().length === 0)
+    ? "יש צעד בלי כיתוב — כתבו כיתוב או מחקו את הצעד."
+    : null;
+}
+
+/** The PATCH body: exactly what the customer can edit. The server re-derives
+ *  timestamp/actionType/duration from sourceIndex and re-sorts by timestamp. */
+export function stepsPayload(
+  draft: Pick<PlanStepWire, "sourceIndex" | "label">[],
+): { sourceIndex: number; label: string }[] {
+  return draft.map((step) => ({ sourceIndex: step.sourceIndex, label: step.label.trim() }));
+}
+
+/**
+ * Whether the draft differs from the stored plan. Both sides are ordered by
+ * timestamp (the draft seeds from sortedPlanSteps and is never reordered), so
+ * position-wise comparison suffices. Labels compare trimmed because the
+ * payload trims — a whitespace-only edit would round-trip to "no change".
+ */
+export function planStepsDirty(
+  draft: Pick<PlanStepWire, "sourceIndex" | "label">[],
+  stored: PlanStepWire[],
+): boolean {
+  const base = sortedPlanSteps(stored);
+  if (draft.length !== base.length) return true;
+  return draft.some(
+    (step, i) =>
+      step.sourceIndex !== base[i]!.sourceIndex || step.label.trim() !== base[i]!.label.trim(),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The inventory picker (8c) — pure decisions behind state-picker.tsx
+// ---------------------------------------------------------------------------
+
+/** Client mirror of core's isSkippedKind. Absent screenKind means "no
+ *  information" and stays visible — the documented per-state semantics, which
+ *  is also the whole v1 handling: detected on the data, not on promptVersion,
+ *  so a v1 analysis (no screenKind anywhere) simply lands in the main grid. */
+export function isSkippedScreenKind(screenKind?: string): boolean {
+  return (
+    screenKind !== undefined && (PLAN_SKIP_SCREEN_KINDS as ReadonlySet<string>).has(screenKind)
+  );
+}
+
+/**
+ * The picker's two tiers, mirroring core's quality/legal pool split
+ * (dryRunPlan): the main grid prefers exactly what the model path prefers;
+ * the collapsed tier keeps everything legal-but-poor pickable — a human may
+ * legitimately want the OAuth screen in a signup-flow ad. Unreadable states
+ * are dropped entirely: the server rejects them whoever selected them, so a
+ * tile for one would be a dead pick.
+ */
+export function pickerPools(states: AnalysisStateWire[]): {
+  quality: AnalysisStateWire[];
+  other: AnalysisStateWire[];
+} {
+  const quality: AnalysisStateWire[] = [];
+  const other: AnalysisStateWire[] = [];
+  for (const state of states) {
+    if (state.legibility === "unreadable") continue;
+    const preferred =
+      state.legibility === "high" &&
+      !state.sameStateAsPrevious &&
+      state.actionType !== "idle" &&
+      !isSkippedScreenKind(state.screenKind);
+    (preferred ? quality : other).push(state);
+  }
+  return { quality, other };
+}
+
+/** A plan step that exists only in the draft until the next save. The server
+ *  assembles the real durationMs on PATCH; until then the card says so
+ *  instead of showing a number that was never computed. */
+export type DraftStep = PlanStepWire & { added?: boolean };
+
+/** Insert a picked state into the draft — chronological by construction:
+ *  order derives from timestamp, and the server re-sorts anyway. */
+export function insertDraftStep(
+  draft: DraftStep[],
+  state: Pick<AnalysisStateWire, "index" | "timestampMs" | "actionType">,
+  label: string,
+): DraftStep[] {
+  const step: DraftStep = {
+    sourceIndex: state.index,
+    timestampMs: state.timestampMs,
+    actionType: state.actionType,
+    label: label.trim(),
+    durationMs: 0,
+    added: true,
+  };
+  return [...draft, step].sort((a, b) => a.timestampMs - b.timestampMs);
 }
 
 /** m:ss position of a step inside the demo. */
@@ -537,6 +678,67 @@ export function shapeSummary(shape: AShape): string {
     return `${base} ← סיום עם הדמות ${formatSeconds(shape.outroSeconds)} שנ׳ (הדמות מופיעה ומסיימת את הקריינות)${cost}.`;
   }
   return `${base} — הקריינות מסתיימת יחד עם הסרטון.`;
+}
+
+// ---------------------------------------------------------------------------
+// The render step, steps format (8e)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the render step composes from, PINNED at continue-click time — never
+ * "latest", so a fork created after the click cannot silently switch what
+ * renders (createSet's approval gate on the pinned id is the backstop).
+ * Carries the two display numbers so the render step needs no plan fetch.
+ */
+export type PinnedPlan = { planId: string; stepCount: number; stepsTotalMs: number };
+
+export function pinnedPlanFrom(plan: Pick<StepPlanWire, "planId" | "steps">): PinnedPlan {
+  return {
+    planId: plan.planId,
+    stepCount: plan.steps.length,
+    stepsTotalMs: totalRuntimeMs(plan.steps),
+  };
+}
+
+/**
+ * The steps analog of shapeSummary — same voice, no VO and no ending to name.
+ * "בלי קריינות" is load-bearing: silent is the format's design, and a customer
+ * who expected sound must learn it here, before paying, not from the video.
+ */
+export function stepsShapeSummary(
+  plan: Pick<PinnedPlan, "stepCount" | "stepsTotalMs">,
+  hookDurationMs: number,
+): string {
+  const total = formatSeconds((hookDurationMs + plan.stepsTotalMs) / 1000);
+  return `פתיח ${formatSeconds(hookDurationMs / 1000)} שנ׳ ← ${plan.stepCount} צעדים מסרטון המוצר שלכם — סך הכול ${total} שנ׳, בלי קריינות.`;
+}
+
+/**
+ * Whether "נסה שוב" can be honest after a failed steps create. 409 = the
+ * pinned plan lost its approval gate — an identical retry fails identically
+ * until the plan step fixes it. A 402 stays retryable on purpose: the 402
+ * handler refreshes the quote, and the shortfall gate on the FRESH numbers is
+ * what decides the button — after a top-up the retry is legitimate.
+ */
+export function retryableCreateFailure(status: number): boolean {
+  return status !== 409;
+}
+
+/**
+ * Everything a steps render is made from, as one comparable key. The lifted
+ * render must be discarded when ANY of these change — a render made with the
+ * old hook clip, hook line, rect or plan must never answer for a new
+ * composition (review finding: keying the reset on planId alone let a
+ * same-plan hook swap re-show the old video as the new ad).
+ */
+export function renderCompositionKey(
+  planId: string,
+  hook: Pick<HookClip, "id">,
+  hookLine: Pick<HookLineOption, "scriptId">,
+  rect: SafeRect | null,
+): string {
+  const rectKey = rect ? `${rect.x},${rect.y},${rect.w},${rect.h}` : "default";
+  return [planId, hook.id, hookLine.scriptId, rectKey].join("|");
 }
 
 // ---------------------------------------------------------------------------

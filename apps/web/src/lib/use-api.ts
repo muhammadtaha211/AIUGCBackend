@@ -44,6 +44,14 @@ export function postJson<T>(url: string, payload?: unknown): Promise<ApiResult<T
   });
 }
 
+export function patchJson<T>(url: string, payload: unknown): Promise<ApiResult<T>> {
+  return apiFetch<T>(url, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 const SLOW_AFTER_MS = 60_000;
 
 /**

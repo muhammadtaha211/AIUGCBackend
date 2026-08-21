@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aRenderRequestSchema,
+  aStepsRenderRequestSchema,
   demoDescriptionRequestSchema,
   demoFileError,
   demoNoteRequestSchema,
@@ -106,6 +107,34 @@ describe("request schemas", () => {
     expect(
       aRenderRequestSchema.safeParse({ ...body, textSafeArea: { x: 400, y: 0, w: 900, h: 500 } })
         .success,
+    ).toBe(false);
+  });
+
+  it("steps render body: plan pinned by id, silent — no audio, no persona", () => {
+    const body = {
+      demoId: UUID,
+      stepPlanId: UUID,
+      hookClipId: UUID,
+      hookLineScriptId: UUID,
+    };
+    expect(aStepsRenderRequestSchema.safeParse(body).success).toBe(true);
+    expect(aStepsRenderRequestSchema.safeParse({ ...body, stepPlanId: undefined }).success).toBe(
+      false,
+    );
+    expect(aStepsRenderRequestSchema.safeParse({ ...body, stepPlanId: "latest" }).success).toBe(
+      false,
+    );
+    expect(
+      aStepsRenderRequestSchema.safeParse({
+        ...body,
+        textSafeArea: { x: 40, y: 900, w: 1000, h: 300 },
+      }).success,
+    ).toBe(true);
+    expect(
+      aStepsRenderRequestSchema.safeParse({
+        ...body,
+        textSafeArea: { x: 400, y: 0, w: 900, h: 500 },
+      }).success,
     ).toBe(false);
   });
 

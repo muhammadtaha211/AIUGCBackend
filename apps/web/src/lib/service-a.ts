@@ -186,3 +186,14 @@ export const aRenderRequestSchema = z.object({
   /** The hook-studio placement; absent = the clip's default safe area. */
   textSafeArea: textSafeAreaSchema.optional(),
 });
+
+/** Steps-format render (8e): a silent 1×1 set from an APPROVED plan, pinned
+ *  by id. No audio, no persona — the format is silent by definition. */
+export const aStepsRenderRequestSchema = z.object({
+  demoId: z.string().uuid(),
+  stepPlanId: z.string().uuid(),
+  hookClipId: z.string().uuid(),
+  hookLineScriptId: z.string().uuid(),
+  /** The hook-studio placement; absent = the clip's default safe area. */
+  textSafeArea: textSafeAreaSchema.optional(),
+});

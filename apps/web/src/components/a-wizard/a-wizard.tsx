@@ -10,6 +10,8 @@ import {
   clampRestoredStep,
   identityFromSearch,
   identitySearch,
+  pinnedPlanFrom,
+  renderCompositionKey,
   restoredDemo,
   shouldSyncIdentity,
   type AWizardStep,
@@ -17,12 +19,16 @@ import {
   type HookBatch,
   type HookClip,
   type HookLineOption,
+  type PinnedPlan,
+  type StepPlanWire,
 } from "@/lib/service-a-ui";
+import type { RenderState } from "@/lib/service-b-ui";
 import { apiFetch } from "@/lib/use-api";
 import { StepDemo } from "./step-demo";
 import { StepHook } from "./step-hook";
 import { StepHookStudio } from "./step-hook-studio";
 import { StepPlan } from "./step-plan";
+import { StepARender } from "./step-render";
 
 const STEP_TITLES: Record<AWizardStep, string> = {
   persona: "בחירת דמות",
@@ -75,6 +81,15 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
   const [rect, setRect] = useState<SafeRect | null>(null);
   const [demo, setDemo] = useState<DemoState | null>(null);
   const [demoDescription, setDemoDescription] = useState("");
+  /** §4: the plan the render step composes, pinned at continue-click time —
+   *  a fork created after the click cannot switch what renders. */
+  const [pinnedPlan, setPinnedPlan] = useState<PinnedPlan | null>(null);
+  /** Lifted (not step-local) so back-nav mid-render re-attaches to the poll
+   *  instead of landing on a fresh confirm that could double-charge. */
+  const [aRender, setARender] = useState<RenderState | null>(null);
+  /** The composition aRender was continued with — a continue whose key
+   *  differs discards it (see renderCompositionKey). */
+  const [aRenderKey, setARenderKey] = useState<string | null>(null);
 
   // Restore ?demo=&step= once, on mount. The demo GET proves the USER owns the
   // demo; restoredDemo additionally refuses one from a different business than
@@ -149,6 +164,22 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
     setHook(next);
   }
 
+  /** The approved plan's continue. A different COMPOSITION — plan, hook clip,
+   *  hook line or placement — means a different video, so the old render's
+   *  screen (released or in flight) must not answer for it. Keyed on all four
+   *  inputs, not just the plan: a same-plan hook swap is still a new video. */
+  function continueToRender(plan: StepPlanWire) {
+    if (!hook || !hookLine) return; // continue is only offered when both are held
+    const pinned = pinnedPlanFrom(plan);
+    const key = renderCompositionKey(pinned.planId, hook, hookLine, rect);
+    if (key !== aRenderKey) {
+      setARender(null);
+      setARenderKey(key);
+    }
+    setPinnedPlan(pinned);
+    goNext();
+  }
+
   const step = steps[stepIndex]!;
 
   if (fatal) {
@@ -182,6 +213,10 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
             labels={steps.map((each) => STEP_TITLES[each])}
             current={stepIndex}
             onJump={jumpTo}
+            // Same rule as the B wizard: once a render exists the choices are
+            // paid for — no more rail-jumping back to change them (the failed
+            // screen's retry clears aRender and unlocks).
+            locked={aRender !== null}
           />
           <div className="hidden lg:mt-8 lg:block">
             <StructureStrip hook={hook} demo={demo} />
@@ -247,19 +282,30 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
                 <StepPlan
                   demoId={demo.id}
                   hookDurationMs={hook?.durationMs}
+                  // Absent after a reload: the hook is session-local, and the
+                  // render step cannot compose without it — the customer
+                  // re-picks a hook before continue reappears.
+                  onContinue={hook && hookLine ? continueToRender : undefined}
                   onBack={goBack}
                   onFatal={setFatal}
                 />
               )}
 
-              {/* The render step lands with the steps quote/preview + create
-                  routes in a later phase; the plan step deliberately has no
-                  continue until approve exists, so this is reachable only by
-                  hand-editing the URL. */}
-              {!restoring && step === "render" && (
-                <p className="py-10 text-center text-sm text-ink/60">
-                  יצירת הסרטון תיפתח כאן בקרוב — קודם מאשרים את תוכנית הצעדים.
-                </p>
+              {/* Reachable only through continue — restore clamps to the plan
+                  step at most, so hook/hookLine/pinnedPlan are always held. */}
+              {!restoring && step === "render" && demo && hook && hookLine && pinnedPlan && (
+                <StepARender
+                  businessId={businessId}
+                  demoId={demo.id}
+                  hook={hook}
+                  hookLine={hookLine}
+                  rect={rect}
+                  plan={pinnedPlan}
+                  render={aRender}
+                  setRender={setARender}
+                  onBack={goBack}
+                  onFatal={setFatal}
+                />
               )}
             </div>
           </div>
