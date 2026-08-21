@@ -12,6 +12,7 @@ import {
   deleteWarning,
   draftBlockedReason,
   fmtTimestamp,
+  insertDraftStep,
   isActivePlanStatus,
   isAnalysisWorkingStatus,
   labelWordWarning,
@@ -22,11 +23,12 @@ import {
   stepHeadroomMs,
   stepsPayload,
   type AnalysisStateWire,
-  type PlanStepWire,
+  type DraftStep,
   type StepPlanWire,
 } from "@/lib/service-a-ui";
 import { apiFetch, patchJson, postJson, useJobPoll, type ApiResult } from "@/lib/use-api";
 import { useHookLineMeasure } from "./placement-editor";
+import { StatePicker } from "./state-picker";
 
 type StepPlanProps = {
   demoId: string;
@@ -58,7 +60,7 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
   const [plan, setPlan] = useState<StepPlanWire | null>(null);
   /** The editable copy of a ready plan's steps, chronological. Reseeded from
    *  every server response (adoptPlan) — the response is the wizard's truth. */
-  const [draft, setDraft] = useState<PlanStepWire[] | null>(null);
+  const [draft, setDraft] = useState<DraftStep[] | null>(null);
   const [actionBusy, setActionBusy] = useState<PlanAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   /** Latest plan GET said 404 — a normal state, not an error. */
@@ -72,6 +74,10 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
   const [cardsError, setCardsError] = useState(false);
+  /** Bumped by the cards retry button — a failed thumb fetch must be
+   *  recoverable in place, never via a page refresh that would discard an
+   *  unsaved draft. */
+  const [cardsNonce, setCardsNonce] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -185,10 +191,12 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
   // Keyed by the INDEX SIGNATURE, not array identity: every poll body is a
   // fresh array, and identity-keying would blank rendered cards back to
   // skeletons and re-sign every thumb on a late-arriving duplicate.
-  const readySteps = plan?.status === "ready" ? plan.steps : null;
+  // The DRAFT drives the key (8c): an added step's card needs its state's
+  // thumb + visibleText, and the merge below fetches exactly that one index.
+  // Label edits don't move the key; deletions shrink it to a held subset.
   const cardsKey =
-    readySteps && readySteps.length > 0
-      ? [...new Set(readySteps.map((step) => step.sourceIndex))].join(",")
+    plan?.status === "ready" && draft && draft.length > 0
+      ? [...new Set(draft.map((step) => step.sourceIndex))].join(",")
       : null;
   useEffect(() => {
     if (cardsKey === null) return;
@@ -237,7 +245,7 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
       cancelled = true;
     };
     // onFatal is a useState setter; cardsKey changes only with the selection.
-  }, [demoId, cardsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [demoId, cardsKey, cardsNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Generate / retry — one button, disabled through the collapse window. */
   async function requestPlan() {
@@ -326,6 +334,25 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
   function discardDraft() {
     if (plan) setDraft(sortedPlanSteps(plan.steps));
     setActionError(null);
+  }
+
+  /** 8c: the picker grows the draft; save persists it like any other edit.
+   *  Guarded during an in-flight action — adoptPlan is about to reseed the
+   *  draft and would silently drop the addition. */
+  function addStep(state: AnalysisStateWire, label: string) {
+    if (actionBusy !== null) return;
+    setDraft((d) => {
+      if (!d) return d;
+      // Defensive twin of the picker's own check — never two draft rows with
+      // one sourceIndex (duplicate card keys, and the server rejects the save
+      // with a generic 400).
+      if (d.some((step) => step.sourceIndex === state.index)) return d;
+      const next = insertDraftStep(d, state, label);
+      // Re-adding a deleted step with its stored label reproduces the saved
+      // plan exactly: reseed from it, restoring the real duration instead of
+      // leaving a permanent "computed on save" card no save can ever clear.
+      return plan && !planStepsDirty(next, plan.steps) ? sortedPlanSteps(plan.steps) : next;
+    });
   }
 
   const failure = plan?.status === "failed" ? planFailureNotice(plan.failReason) : null;
@@ -466,6 +493,11 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
 
       {plan?.status === "ready" && draft && (
         <PlanEditor
+          // Keyed by plan id so a fork remounts the editor chrome — without
+          // this, pickerOpen survives approve and the picker pops open
+          // uninvited the moment "edit a copy" lands.
+          key={plan.planId}
+          demoId={demoId}
           plan={plan}
           draft={draft}
           cards={cards}
@@ -475,10 +507,13 @@ export function StepPlan({ demoId, hookDurationMs, onBack, onFatal }: StepPlanPr
           actionError={actionError}
           onLabelChange={setLabel}
           onDelete={deleteStep}
+          onAddStep={addStep}
           onDiscard={discardDraft}
           onSave={saveDraft}
           onApprove={approve}
           onEditCopy={editCopy}
+          onRetryCards={() => setCardsNonce((n) => n + 1)}
+          onFatal={onFatal}
         />
       )}
     </div>
@@ -553,11 +588,13 @@ function StepStill({ thumbUrl, label }: { thumbUrl?: string; label: string }) {
 
 /**
  * The cards plus the editor chrome. Unapproved: editable labels, delete,
- * save/discard, and the approve gate (approve hides while dirty — what gets
- * approved is always exactly what is saved). Approved: read-only cards, the
- * approval badge, and the explicit edit-a-copy fork.
+ * add-a-step via the inventory picker (8c), save/discard, and the approve
+ * gate (approve disables while dirty — what gets approved is always exactly
+ * what is saved). Approved: read-only cards, the approval badge, and the
+ * explicit edit-a-copy fork.
  */
 function PlanEditor({
+  demoId,
   plan,
   draft,
   cards,
@@ -567,13 +604,17 @@ function PlanEditor({
   actionError,
   onLabelChange,
   onDelete,
+  onAddStep,
   onDiscard,
   onSave,
   onApprove,
   onEditCopy,
+  onRetryCards,
+  onFatal,
 }: {
+  demoId: string;
   plan: StepPlanWire;
-  draft: PlanStepWire[];
+  draft: DraftStep[];
   cards: Map<number, AnalysisStateWire> | null;
   cardsError: boolean;
   hookDurationMs?: number;
@@ -581,11 +622,15 @@ function PlanEditor({
   actionError: string | null;
   onLabelChange: (sourceIndex: number, label: string) => void;
   onDelete: (sourceIndex: number) => void;
+  onAddStep: (state: AnalysisStateWire, label: string) => void;
   onDiscard: () => void;
   onSave: () => void;
   onApprove: () => void;
   onEditCopy: () => void;
+  onRetryCards: () => void;
+  onFatal: (message: string) => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const approved = plan.approvedAt !== undefined;
   const dirty = planStepsDirty(draft, plan.steps);
   const blocked = draftBlockedReason(draft);
@@ -604,9 +649,16 @@ function PlanEditor({
       )}
 
       {cardsError && (
-        <p role="alert" className="mt-3 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
-          לא הצלחנו לטעון את תמונות הצעדים — רעננו את הדף כדי לנסות שוב.
-        </p>
+        <div className="mt-3">
+          {/* In-place retry, never "refresh the page" — a refresh would
+              discard the unsaved draft this editor may be holding. */}
+          <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+            לא הצלחנו לטעון חלק מתמונות הצעדים.
+          </p>
+          <Button type="button" variant="secondary" className="mt-2" onClick={onRetryCards}>
+            נסו שוב
+          </Button>
+        </div>
       )}
 
       <ol className="mt-3 flex flex-col gap-2">
@@ -646,23 +698,36 @@ function PlanEditor({
                 {!approved && wordWarning && (
                   <p className="mt-1 text-[13px] text-amber-700">{wordWarning}</p>
                 )}
-                <p className="mt-1 text-[13px] text-ink/60">
-                  <span dir="ltr">{fmtTimestamp(step.timestampMs)}</span> בסרטון · מוצג{" "}
-                  {fmtSeconds(step.durationMs)} שנ׳
-                </p>
-                {/* A caption on screen for less than its read time is the exact
-                    defect the model path rejects and a human edit allows. The
-                    copy names the consequence and the remedy — "displayed X
-                    less than its read time" confused the founder (user #1). */}
-                {headroom < 0 ? (
-                  <p className="mt-1 text-[13px] text-amber-700">
-                    הצעד הזה קצר מדי לכיתוב — הוא ייחתך לצעד הבא לפני שיספיקו לקרוא אותו (חסרות{" "}
-                    {fmtSeconds(-headroom)} שנ׳). קצרו את הכיתוב.
+                {step.added ? (
+                  // A draft-only step: the server assembles its duration on
+                  // save (and may shorten its neighbours' windows too), so no
+                  // number is shown that was never computed.
+                  <p className="mt-1 text-[13px] text-ink/60">
+                    <span dir="ltr">{fmtTimestamp(step.timestampMs)}</span> בסרטון · משך ההצגה
+                    והמרווח יחושבו בשמירה
                   </p>
                 ) : (
-                  <p className="mt-1 text-[13px] text-ink/45">
-                    מרווח קריאה {fmtSeconds(headroom)} שנ׳
-                  </p>
+                  <>
+                    <p className="mt-1 text-[13px] text-ink/60">
+                      <span dir="ltr">{fmtTimestamp(step.timestampMs)}</span> בסרטון · מוצג{" "}
+                      {fmtSeconds(step.durationMs)} שנ׳
+                    </p>
+                    {/* A caption on screen for less than its read time is the
+                        exact defect the model path rejects and a human edit
+                        allows. The copy names the consequence and the remedy —
+                        "displayed X less than its read time" confused the
+                        founder (user #1). */}
+                    {headroom < 0 ? (
+                      <p className="mt-1 text-[13px] text-amber-700">
+                        הצעד הזה קצר מדי לכיתוב — הוא ייחתך לצעד הבא לפני שיספיקו לקרוא אותו
+                        (חסרות {fmtSeconds(-headroom)} שנ׳). קצרו את הכיתוב.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-[13px] text-ink/45">
+                        מרווח קריאה {fmtSeconds(headroom)} שנ׳
+                      </p>
+                    )}
+                  </>
                 )}
                 {state && state.visibleText.length > 0 && (
                   // In edit mode the list is the palette the customer picks
@@ -688,6 +753,31 @@ function PlanEditor({
         })}
       </ol>
 
+      {/* Add-a-step lives HERE, on the editor, before the approve block —
+          the customer must see the option before signing off the plan.
+          Post-approve it comes back through the edit-a-copy fork. */}
+      {!approved &&
+        (pickerOpen ? (
+          <StatePicker
+            demoId={demoId}
+            inPlan={new Set(draft.map((step) => step.sourceIndex))}
+            addDisabled={actionBusy !== null}
+            onAdd={onAddStep}
+            onClose={() => setPickerOpen(false)}
+            onFatal={onFatal}
+          />
+        ) : (
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-3"
+            disabled={actionBusy !== null}
+            onClick={() => setPickerOpen(true)}
+          >
+            הוספת צעד
+          </Button>
+        ))}
+
       {thinWarning && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
           {thinWarning}
@@ -695,7 +785,9 @@ function PlanEditor({
       )}
 
       <p className="mt-3 text-sm text-ink/60">
-        סך הצעדים: {fmtSeconds(totalMs)} שנ׳ — בלי הפתיח
+        סך הצעדים: {fmtSeconds(totalMs)} שנ׳
+        {draft.some((step) => step.added) ? " (בלי הצעדים החדשים — יתעדכן בשמירה)" : ""} — בלי
+        הפתיח
         {hookDurationMs !== undefined
           ? `, שמוסיף עוד ${fmtSeconds(hookDurationMs)} שנ׳ בתחילת הסרטון`
           : ", שמתווסף בתחילת הסרטון"}

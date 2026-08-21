@@ -3,6 +3,7 @@ import {
   A_STEPS_MIN_DEFAULT,
   MAX_LABEL_WORDS,
   MIN_LABEL_WORDS,
+  PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
 } from "@aiugc/core/plan-format";
 import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
@@ -231,12 +232,19 @@ export type StepPlanWire = {
   approvedAt?: string;
 };
 
-/** One analysis state from GET .../analysis (?indexes= adds thumbUrl). */
+/** One analysis state from GET .../analysis — the route sends every field on
+ *  all three query shapes; only thumbUrl is conditional (?indexes=/?page=). */
 export type AnalysisStateWire = {
   index: number;
   timestampMs: number;
   screenName: string;
   visibleText: string[];
+  action: string;
+  actionType: string;
+  screenKind?: string;
+  sameStateAsPrevious: boolean;
+  legibility: string;
+  salienceNote?: string;
   thumbUrl?: string;
 };
 
@@ -399,6 +407,69 @@ export function planStepsDirty(
     (step, i) =>
       step.sourceIndex !== base[i]!.sourceIndex || step.label.trim() !== base[i]!.label.trim(),
   );
+}
+
+// ---------------------------------------------------------------------------
+// The inventory picker (8c) — pure decisions behind state-picker.tsx
+// ---------------------------------------------------------------------------
+
+/** Client mirror of core's isSkippedKind. Absent screenKind means "no
+ *  information" and stays visible — the documented per-state semantics, which
+ *  is also the whole v1 handling: detected on the data, not on promptVersion,
+ *  so a v1 analysis (no screenKind anywhere) simply lands in the main grid. */
+export function isSkippedScreenKind(screenKind?: string): boolean {
+  return (
+    screenKind !== undefined && (PLAN_SKIP_SCREEN_KINDS as ReadonlySet<string>).has(screenKind)
+  );
+}
+
+/**
+ * The picker's two tiers, mirroring core's quality/legal pool split
+ * (dryRunPlan): the main grid prefers exactly what the model path prefers;
+ * the collapsed tier keeps everything legal-but-poor pickable — a human may
+ * legitimately want the OAuth screen in a signup-flow ad. Unreadable states
+ * are dropped entirely: the server rejects them whoever selected them, so a
+ * tile for one would be a dead pick.
+ */
+export function pickerPools(states: AnalysisStateWire[]): {
+  quality: AnalysisStateWire[];
+  other: AnalysisStateWire[];
+} {
+  const quality: AnalysisStateWire[] = [];
+  const other: AnalysisStateWire[] = [];
+  for (const state of states) {
+    if (state.legibility === "unreadable") continue;
+    const preferred =
+      state.legibility === "high" &&
+      !state.sameStateAsPrevious &&
+      state.actionType !== "idle" &&
+      !isSkippedScreenKind(state.screenKind);
+    (preferred ? quality : other).push(state);
+  }
+  return { quality, other };
+}
+
+/** A plan step that exists only in the draft until the next save. The server
+ *  assembles the real durationMs on PATCH; until then the card says so
+ *  instead of showing a number that was never computed. */
+export type DraftStep = PlanStepWire & { added?: boolean };
+
+/** Insert a picked state into the draft — chronological by construction:
+ *  order derives from timestamp, and the server re-sorts anyway. */
+export function insertDraftStep(
+  draft: DraftStep[],
+  state: Pick<AnalysisStateWire, "index" | "timestampMs" | "actionType">,
+  label: string,
+): DraftStep[] {
+  const step: DraftStep = {
+    sourceIndex: state.index,
+    timestampMs: state.timestampMs,
+    actionType: state.actionType,
+    label: label.trim(),
+    durationMs: 0,
+    added: true,
+  };
+  return [...draft, step].sort((a, b) => a.timestampMs - b.timestampMs);
 }
 
 /** m:ss position of a step inside the demo. */

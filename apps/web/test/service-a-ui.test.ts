@@ -16,12 +16,15 @@ import {
   hookHalfOptions,
   identityFromSearch,
   identitySearch,
+  insertDraftStep,
+  isSkippedScreenKind,
   isActiveARenderStatus,
   isActivePlanStatus,
   isAnalysisWorkingStatus,
   isIngestingDemoStatus,
   labelWordCount,
   labelWordWarning,
+  pickerPools,
   planFailureNotice,
   planStepsDirty,
   restoredDemo,
@@ -32,6 +35,7 @@ import {
   sortedPlanSteps,
   stepHeadroomMs,
   stepsPayload,
+  type AnalysisStateWire,
   type HookBatch,
   type HookLineOption,
   type PlanStepWire,
@@ -650,6 +654,89 @@ describe("plan editor helpers (8b)", () => {
 
     it("a deletion is dirty", () => {
       expect(planStepsDirty([step(1, "ראשון", 1000)], stored)).toBe(true);
+    });
+  });
+});
+
+describe("inventory picker (8c)", () => {
+  const wire = (index: number, over: Partial<AnalysisStateWire> = {}): AnalysisStateWire => ({
+    index,
+    timestampMs: index * 1000,
+    screenName: `מסך ${index}`,
+    visibleText: [],
+    action: "פעולה",
+    actionType: "tap",
+    sameStateAsPrevious: false,
+    legibility: "high",
+    ...over,
+  });
+
+  it("absent screenKind means no information — stays visible (the v1 case, on the data)", () => {
+    expect(isSkippedScreenKind(undefined)).toBe(false);
+    expect(isSkippedScreenKind("login")).toBe(true);
+    expect(isSkippedScreenKind("product")).toBe(false);
+  });
+
+  it("splits quality from legal-but-poor and drops unreadable entirely", () => {
+    const states = [
+      wire(0),
+      wire(1, { legibility: "low" }),
+      wire(2, { sameStateAsPrevious: true }),
+      wire(3, { actionType: "idle" }),
+      wire(4, { screenKind: "login" }),
+      wire(5, { legibility: "unreadable" }), // no tile — the server rejects it anyway
+      wire(6, { screenKind: "product" }),
+    ];
+    const { quality, other } = pickerPools(states);
+    expect(quality.map((s) => s.index)).toEqual([0, 6]);
+    expect(other.map((s) => s.index)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("a v1 timeline (no screenKind anywhere) fills the main grid on the data alone", () => {
+    const { quality, other } = pickerPools([wire(0), wire(1), wire(2)]);
+    expect(quality).toHaveLength(3);
+    expect(other).toHaveLength(0);
+  });
+
+  describe("insertDraftStep (add-a-step)", () => {
+    const step = (sourceIndex: number, label: string, timestampMs: number): PlanStepWire => ({
+      sourceIndex,
+      label,
+      timestampMs,
+      actionType: "tap",
+      durationMs: 1600,
+    });
+    const draft = [step(1, "ראשון", 1000), step(3, "אחרון", 3000)];
+
+    it("inserts chronologically, trimmed, flagged, with no invented duration", () => {
+      const next = insertDraftStep(
+        draft,
+        wire(2, { timestampMs: 2000, actionType: "result" }),
+        "  חדש  ",
+      );
+      expect(next.map((s) => s.sourceIndex)).toEqual([1, 2, 3]);
+      expect(next[1]).toMatchObject({
+        label: "חדש",
+        actionType: "result",
+        durationMs: 0,
+        added: true,
+      });
+      expect(draft).toHaveLength(2); // the input draft is untouched
+    });
+
+    it("an added step makes the draft dirty; removing it restores clean", () => {
+      const next = insertDraftStep(draft, wire(2, { timestampMs: 2000 }), "חדש");
+      expect(planStepsDirty(next, draft)).toBe(true);
+      expect(planStepsDirty(next.filter((s) => !s.added), draft)).toBe(false);
+    });
+
+    it("re-adding a deleted step with its stored label round-trips to clean", () => {
+      // The addStep path relies on this: dirty=false after such a re-add is
+      // what lets the editor reseed from the stored plan (real durations)
+      // instead of keeping a permanent "computed on save" card.
+      const withoutLast = [step(1, "ראשון", 1000)];
+      const readded = insertDraftStep(withoutLast, wire(3, { timestampMs: 3000 }), "אחרון");
+      expect(planStepsDirty(readded, draft)).toBe(false);
     });
   });
 });
