@@ -3,7 +3,16 @@ import { eq, sql } from "drizzle-orm";
 import { createTestDb } from "./helpers/pglite";
 import { jobs } from "../src/db/schema";
 import { PermanentError } from "../src/jobs/errors";
-import { claim, complete, enqueue, recoverExpiredLeases } from "../src/jobs/queue";
+import {
+  claim,
+  complete,
+  deriveJobProgress,
+  enqueue,
+  getJobProgress,
+  JOB_LEASE_MS,
+  recoverExpiredLeases,
+  WORKER_HEARTBEAT_STALE_MS,
+} from "../src/jobs/queue";
 import { ensureReaperJob } from "../src/jobs/schedule";
 import { runJob, runLane } from "../src/jobs/worker";
 
@@ -216,6 +225,192 @@ describe("lease recovery (worker killed between claim and completion)", () => {
     // maxAttempts is effectively infinite — a reclaim can never kill the singleton.
     expect(healed!.attempts).toBe(1);
     expect(healed!.maxAttempts).toBe(1_000_000);
+    await pg.close();
+  });
+});
+
+describe("job progress", () => {
+  const now = new Date("2026-08-22T12:00:00Z");
+  const secondsAgo = (s: number) => new Date(now.getTime() - s * 1000);
+
+  it("derives state from the job row, elapsed from the right anchor", () => {
+    expect(deriveJobProgress({ now })).toEqual({ state: "missing", heartbeat: "unknown" });
+    expect(
+      deriveJobProgress({
+        job: { status: "queued", lockedAt: null, createdAt: secondsAgo(90), runAt: now },
+        now,
+      }),
+    ).toEqual({ state: "queued", elapsedMs: 90_000, heartbeat: "unknown" });
+    // Running measures from the claim, not the enqueue.
+    expect(
+      deriveJobProgress({
+        job: {
+          status: "running",
+          lockedAt: secondsAgo(30),
+          createdAt: secondsAgo(300),
+          runAt: now,
+        },
+        now,
+      }),
+    ).toEqual({ state: "running", elapsedMs: 30_000, heartbeat: "unknown" });
+    expect(
+      deriveJobProgress({
+        job: { status: "succeeded", lockedAt: null, createdAt: now, runAt: now },
+        now,
+      }).state,
+    ).toBe("done");
+    for (const status of ["failed", "dead"] as const) {
+      expect(
+        deriveJobProgress({ job: { status, lockedAt: null, createdAt: now, runAt: now }, now })
+          .state,
+      ).toBe("failed");
+    }
+  });
+
+  it("ahead passes through only for queued jobs with a count", () => {
+    const queued = { status: "queued", lockedAt: null, createdAt: now, runAt: now } as const;
+    expect(deriveJobProgress({ job: queued, aheadCount: 3, now }).ahead).toBe(3);
+    expect(deriveJobProgress({ job: queued, now }).ahead).toBeUndefined();
+    expect(
+      deriveJobProgress({
+        job: { status: "running", lockedAt: null, createdAt: now, runAt: now },
+        aheadCount: 3,
+        now,
+      }).ahead,
+    ).toBeUndefined();
+  });
+
+  it("a deliberately-rescheduled queued job carries resumeAtMs; a near-now one does not", () => {
+    const at = (runAt: Date) =>
+      deriveJobProgress({
+        job: { status: "queued", lockedAt: null, createdAt: secondsAgo(10), runAt },
+        now,
+      }).resumeAtMs;
+    // Budget park / deep backoff: hours out — "starts soon" would be a lie.
+    const parked = new Date(now.getTime() + 4 * 60 * 60_000);
+    expect(at(parked)).toBe(parked.getTime());
+    // First-retry backoff (~30-40s) and ordinary queue wait read as normal.
+    expect(at(new Date(now.getTime() + 40_000))).toBeUndefined();
+    expect(at(secondsAgo(5))).toBeUndefined();
+  });
+
+  it("heartbeat: fresh reaper = alive, past the threshold = stale, absent = unknown", () => {
+    const at = (heartbeatAt?: Date) => deriveJobProgress({ heartbeatAt, now }).heartbeat;
+    expect(at(undefined)).toBe("unknown");
+    expect(at(secondsAgo(60))).toBe("alive");
+    // Exactly at the threshold is still alive — only PAST it is stale.
+    expect(at(new Date(now.getTime() - WORKER_HEARTBEAT_STALE_MS))).toBe("alive");
+    expect(at(new Date(now.getTime() - WORKER_HEARTBEAT_STALE_MS - 1))).toBe("stale");
+  });
+
+  it("a lease-valid running lock proves a worker even when the reaper is starved", () => {
+    // The reaper shares the sequential light lane: a single long light job
+    // (a 1GB ingest) starves it past the stale window while the pipeline is
+    // demonstrably working — the running lock must keep the heartbeat alive.
+    const staleReaper = new Date(now.getTime() - WORKER_HEARTBEAT_STALE_MS - 60_000);
+    const at = (runningLockedAt?: Date, heartbeatAt?: Date) =>
+      deriveJobProgress({ heartbeatAt, runningLockedAt, now }).heartbeat;
+    expect(at(secondsAgo(240), staleReaper)).toBe("alive");
+    expect(at(secondsAgo(240), undefined)).toBe("alive");
+    // A lock older than the lease proves nothing — the sweep will reclaim it.
+    expect(at(new Date(now.getTime() - JOB_LEASE_MS - 1), staleReaper)).toBe("stale");
+    expect(at(new Date(now.getTime() - JOB_LEASE_MS - 1), undefined)).toBe("unknown");
+  });
+
+  it("getJobProgress counts the lane ahead of a queued job in claim order", async () => {
+    const { db, pg } = await createTestDb();
+    const heavy = ["render_video", "lipsync", "analyze_demo"] as const;
+    // Real-clock relative: claim() and the ahead count compare against the
+    // DB's own now(), so the fixed test clock above cannot be used here.
+    const realSecondsAgo = (s: number) => new Date(Date.now() - s * 1000);
+
+    // Claim order is run_at asc: one running render, two runnable heavy jobs
+    // earlier than ours, one light job (other lane), one future heavy job.
+    await enqueue(db, {
+      type: "render_video",
+      idempotencyKey: "r:running",
+      runAt: realSecondsAgo(50),
+    });
+    expect((await claim(db, { workerId: "w", types: heavy }))?.idempotencyKey).toBe("r:running");
+    await enqueue(db, {
+      type: "render_video",
+      idempotencyKey: "r:early",
+      runAt: realSecondsAgo(40),
+    });
+    await enqueue(db, { type: "lipsync", idempotencyKey: "l:early", runAt: realSecondsAgo(30) });
+    await enqueue(db, { type: "janitor", idempotencyKey: "j:light", runAt: realSecondsAgo(60) });
+    await enqueue(db, {
+      type: "analyze_demo",
+      idempotencyKey: "analyze:me",
+      runAt: realSecondsAgo(20),
+    });
+    await enqueue(db, {
+      type: "render_video",
+      idempotencyKey: "r:future",
+      runAt: new Date(Date.now() + 60_000),
+    });
+
+    const progress = await getJobProgress(db, {
+      idempotencyKey: "analyze:me",
+      aheadOfTypes: heavy,
+    });
+    expect(progress.state).toBe("queued");
+    // r:early + l:early + the running render; never itself, the light job, or
+    // the future one.
+    expect(progress.ahead).toBe(3);
+    // No reaper row, but r:running's fresh lock proves a worker.
+    expect(progress.heartbeat).toBe("alive");
+
+    await pg.close();
+  });
+
+  it("getJobProgress reads the reaper singleton — and a fresh running lock — as the heartbeat", async () => {
+    const { db, pg } = await createTestDb();
+    await ensureReaperJob(db);
+    await enqueue(db, { type: "ingest_demo", idempotencyKey: "ingest:d1" });
+
+    const fresh = await getJobProgress(db, { idempotencyKey: "ingest:d1" });
+    expect(fresh.state).toBe("queued");
+    expect(fresh.heartbeat).toBe("alive");
+
+    await db
+      .update(jobs)
+      .set({ updatedAt: new Date(Date.now() - WORKER_HEARTBEAT_STALE_MS - 60_000) })
+      .where(eq(jobs.idempotencyKey, "reap_dead_renders"));
+    const stale = await getJobProgress(db, { idempotencyKey: "ingest:d1" });
+    expect(stale.heartbeat).toBe("stale");
+
+    // The starved-reaper hole: claim the ingest (a long light job) — its own
+    // lease-valid lock must read as alive, not "nothing is processing this".
+    // (Typed claim: the stale reaper row is older and would be picked first.)
+    expect((await claim(db, { workerId: "w", types: ["ingest_demo"] }))?.idempotencyKey).toBe(
+      "ingest:d1",
+    );
+    const working = await getJobProgress(db, { idempotencyKey: "ingest:d1" });
+    expect(working.state).toBe("running");
+    expect(working.heartbeat).toBe("alive");
+
+    expect((await getJobProgress(db, { idempotencyKey: "ingest:nope" })).state).toBe("missing");
+
+    await pg.close();
+  });
+
+  it("newestMatching follows a re-run key family instead of the first attempt's corpse", async () => {
+    const { db, pg } = await createTestDb();
+    await enqueue(db, { type: "analyze_demo", idempotencyKey: "analyze:d9" });
+    await db
+      .update(jobs)
+      .set({ status: "failed", createdAt: new Date(Date.now() - 60_000) })
+      .where(eq(jobs.idempotencyKey, "analyze:d9"));
+    await enqueue(db, { type: "analyze_demo", idempotencyKey: "analyze:d9:r1" });
+
+    // Pinned to the bare key: the dead first attempt.
+    expect((await getJobProgress(db, { idempotencyKey: "analyze:d9" })).state).toBe("failed");
+    // newestMatching: the live retry.
+    expect(
+      (await getJobProgress(db, { idempotencyKey: "analyze:d9", newestMatching: true })).state,
+    ).toBe("queued");
+
     await pg.close();
   });
 });

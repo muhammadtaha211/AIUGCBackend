@@ -6,12 +6,18 @@ import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
 import {
+  analysisBackgroundLine,
+  clientDemoAspectError,
   clientDemoFileError,
   DEMO_PAGE_SIZE,
   demoDurationError,
+  duplicateDemoMatch,
+  ingestStuckView,
   isIngestingDemoStatus,
+  restoredDemo,
   type DemoState,
   type DemoSummary,
+  type ReadyDemoDuration,
 } from "@/lib/service-a-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
@@ -27,16 +33,40 @@ type StepDemoProps = {
 };
 
 const UPLOAD_FAILED = "ההעלאה נכשלה, בדקו את החיבור ונסו שוב.";
+const EXISTING_LOAD_FAILED = "לא הצלחנו לטעון את הסרטון הקיים — נסו שוב.";
+const UPLOAD_BUSY = "הפעולה הקודמת עדיין מסתיימת — נסו לבחור שוב בעוד רגע.";
 
-/** Duration off the file's metadata; undefined when the browser can't decode. */
-function readVideoSeconds(file: File): Promise<number | undefined> {
+/**
+ * The rules that actually gate a usable recording — the analysis validator
+ * hard-requires the last step to be a genuine success state, so footage with
+ * no payoff cannot produce a plan at any number of retries. Guidance only:
+ * nothing here gates the upload.
+ */
+const RECORDING_RULES = [
+  "מצלמים משימה אחת שלמה, מההתחלה ועד הסוף.",
+  "מסיימים על מסך הצלחה שרואים בבירור — אישור הזמנה, הודעת הצלחה, התוצאה המוכנה. בלי סוף כזה אין מודעה.",
+  "אורך מומלץ: 30–90 שניות.",
+  "מתחילים אחרי ההתחברות — בלי מסכי לוגין, הרשמה וטפסים אישיים.",
+  "בלי זמן מת — כל שנייה מקדמת את המשימה.",
+  "טקסט שמופיע על המסך צריך לצאת קריא בצילום.",
+  "מצלמים את המסך בטלפון ביד — קצת רעד זה בסדר, זה בדיוק הסגנון.",
+];
+
+/** Metadata off the file; undefined when the browser can't decode it. */
+function readVideoMeta(
+  file: File,
+): Promise<{ seconds: number; width: number; height: number } | undefined> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
     video.preload = "metadata";
     video.onloadedmetadata = () => {
       URL.revokeObjectURL(url);
-      resolve(Number.isFinite(video.duration) ? video.duration : undefined);
+      resolve(
+        Number.isFinite(video.duration)
+          ? { seconds: video.duration, width: video.videoWidth, height: video.videoHeight }
+          : undefined,
+      );
     };
     video.onerror = () => {
       URL.revokeObjectURL(url);
@@ -44,6 +74,27 @@ function readVideoSeconds(file: File): Promise<number | undefined> {
     };
     video.src = url;
   });
+}
+
+/**
+ * Mount-under-cursor guard: controls that swap into a just-clicked position
+ * stay disabled until shortly after they mount (PlanEditor's
+ * approvedActionsArmed pattern — geometry fixes are proven-failed twice).
+ * Cancelling an upload or dismissing the duplicate card lands the picker's
+ * enabled reuse rows in the clicked button's band; this arm is what keeps a
+ * double-click's second press off them.
+ */
+function useArmedOnMount(active: boolean): boolean {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setArmed(false);
+      return;
+    }
+    const timer = setTimeout(() => setArmed(true), 400);
+    return () => clearTimeout(timer);
+  }, [active]);
+  return armed;
 }
 
 /**
@@ -70,23 +121,29 @@ function DemoRowSkeleton({ ghost = false }: { ghost?: boolean }) {
   );
 }
 
-/** XHR instead of fetch for the one thing fetch can't do: upload progress. */
+/**
+ * XHR instead of fetch for the two things fetch can't do: upload progress and
+ * a cancel that actually stops the bytes (8d). onabort resolves "aborted" so
+ * the caller can return to the picker with no error shown.
+ */
 function putWithProgress(
   url: string,
   file: File,
   onProgress: (percent: number) => void,
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const xhr = new XMLHttpRequest();
+): { promise: Promise<"ok" | "failed" | "aborted">; abort: () => void } {
+  const xhr = new XMLHttpRequest();
+  const promise = new Promise<"ok" | "failed" | "aborted">((resolve) => {
     xhr.open("PUT", url);
     xhr.setRequestHeader("content-type", file.type);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
     };
-    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
-    xhr.onerror = () => resolve(false);
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300 ? "ok" : "failed");
+    xhr.onerror = () => resolve("failed");
+    xhr.onabort = () => resolve("aborted");
     xhr.send(file);
   });
+  return { promise, abort: () => xhr.abort() };
 }
 
 /**
@@ -94,6 +151,13 @@ function putWithProgress(
  * storage directly (signed upload URL — a demo is far over the route body
  * limit); a small route registers the object and queues ingest, and we poll
  * until the demo is ready or rejected with a Hebrew reason.
+ *
+ * 8d: reuse-first layout with good-input guidance before the upload button
+ * (every demo that reaches ready is analyzed once, unconditionally — the
+ * highest-leverage place to prevent unusable footage is here, before the
+ * bytes move); a duration-match warning against fumbled re-uploads; cancel on
+ * the upload; and a pipeline-derived stuck state, because a dead worker keeps
+ * the status poll returning 200 forever.
  */
 export function StepDemo({
   businessId,
@@ -112,8 +176,32 @@ export function StepDemo({
   /** Ready-demo count across all pages — null until the first response lands. */
   const [readyTotal, setReadyTotal] = useState<number | null>(null);
   const [page, setPage] = useState(1);
+  /** Every ready demo's duration — the duplicate brake checks all of them,
+   *  not just the visible page. */
+  const [allDurations, setAllDurations] = useState<ReadyDemoDuration[]>([]);
+  /** The guidance example pair; null until fetched or when the objects are
+   *  absent (the section then shows the rules without media). */
+  const [samples, setSamples] = useState<{ recordingUrl: string; adUrl: string } | null>(null);
+  /** A picked file whose duration matches an existing ready demo — held here
+   *  while the customer decides; upload continues only on their explicit go. */
+  const [pendingDuplicate, setPendingDuplicate] = useState<{
+    file: File;
+    match: ReadyDemoDuration;
+  } | null>(null);
+  const [pickingExisting, setPickingExisting] = useState(false);
   const busy = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  /** Cancel token for the in-flight upload attempt — minted in upload() the
+   *  same frame the cancel button first renders, so every window from the
+   *  metadata decode to the end of the PUT is genuinely cancellable. */
+  const cancelToken = useRef<{ cancelled: boolean } | null>(null);
+  /** Aborts the XHR itself once the PUT is in flight. */
+  const abortPut = useRef<(() => void) | null>(null);
+  /** Registration committed: cancel is no longer implementable. The ref makes
+   *  cancelUpload inert in the same frame (a state read would be stale); the
+   *  state twin swaps the button out of the card. */
+  const finalizing = useRef(false);
+  const [finalizingUi, setFinalizingUi] = useState(false);
 
   // Refetch whenever the picker is showing (mount, "החלפת הסרטון", page change)
   // so a demo uploaded moments ago appears too. The route pages ready demos
@@ -125,9 +213,12 @@ export function StepDemo({
     let cancelled = false;
     setPageDemos(null);
     void (async () => {
-      const result = await apiFetch<{ demos: DemoSummary[]; total: number }>(
-        `/api/businesses/${businessId}/demos?page=${page}`,
-      );
+      const result = await apiFetch<{
+        demos: DemoSummary[];
+        total: number;
+        durations?: ReadyDemoDuration[];
+        samples?: { recordingUrl: string; adUrl: string };
+      }>(`/api/businesses/${businessId}/demos?page=${page}`);
       if (cancelled) return;
       if (!result.ok) {
         setPageDemos([]);
@@ -138,6 +229,8 @@ export function StepDemo({
       if (result.body.demos.length === 0 && page > 1) return setPage(1);
       setPageDemos(result.body.demos);
       setReadyTotal(result.body.total);
+      setAllDurations(result.body.durations ?? []);
+      setSamples(result.body.samples ?? null);
     })();
     return () => {
       cancelled = true;
@@ -175,36 +268,80 @@ export function StepDemo({
     setError(message);
   }
 
+  /**
+   * Pre-checks at file selection. The picker dies synchronously (the uploading
+   * state renders this same frame; the metadata read runs behind it). A new
+   * file is a new demo row — a description prefilled from a reused demo must
+   * not silently attach to it, hence the reset. A duration match hands over to
+   * the duplicate card instead of uploading: every demo that reaches ready is
+   * a full fresh analysis, so a fumbled re-upload is real money.
+   */
   async function upload(file: File) {
-    if (busy.current) return;
+    // busy is only reachable here in the cancel-unwind window (the file input
+    // is unmounted during an upload) — say so instead of silently eating the
+    // newly-picked file.
+    if (busy.current) return setError(UPLOAD_BUSY);
     busy.current = true;
-    // The picker dies synchronously on selection: the uploading state (and the
-    // description field) render this same frame; the metadata pre-check and
-    // signed-URL mint run behind it, never in front of it.
     setError(null);
+    // The token exists from the FIRST frame the cancel button does — a cancel
+    // during the metadata decode (seconds on a 1GB tail-moov MOV) must stick,
+    // not mutate a dead token while the upload proceeds underneath it.
+    const token = { cancelled: false };
+    cancelToken.current = token;
     setUploadPercent(0);
-    // A new file is a new demo row — a description prefilled from a reused
-    // demo must not silently attach to it.
     setDescription("");
     try {
       const invalid = clientDemoFileError(file);
       if (invalid) return fail(invalid);
-      const seconds = await readVideoSeconds(file);
-      const badDuration = seconds !== undefined ? demoDurationError(seconds) : null;
+      const meta = await readVideoMeta(file);
+      if (token.cancelled) return;
+      // Aspect first: it already saves a possibly-1GB upload and the wait
+      // (NOT analysis money — reject-at-probe precedes the analysis enqueue).
+      const badAspect = clientDemoAspectError(meta?.width, meta?.height);
+      if (badAspect) return fail(badAspect);
+      const badDuration = meta !== undefined ? demoDurationError(meta.seconds) : null;
       if (badDuration) return fail(badDuration);
-
-      const target = await postJson<{ uploadUrl: string; uploadPath: string }>(
-        `/api/businesses/${businessId}/demos/upload-url`,
-        { type: file.type, size: file.size },
-      );
-      if (!target.ok) {
-        if (target.status === 403 || target.status === 404) return onFatal(target.error);
-        return fail(target.error);
+      const match = meta !== undefined ? duplicateDemoMatch(meta.seconds, allDurations) : null;
+      if (match) {
+        setUploadPercent(null);
+        setPendingDuplicate({ file, match });
+        return;
       }
+      await proceedUpload(file, token);
+    } finally {
+      busy.current = false;
+    }
+  }
 
-      const uploaded = await putWithProgress(target.body.uploadUrl, file, setUploadPercent);
-      if (!uploaded) return fail(UPLOAD_FAILED);
+  /** Mint -> PUT (abortable) -> register. Checks the caller's cancel token
+   *  between stages so ביטול works in the mint window and never registers a
+   *  demo whose upload the customer walked away from. Once the PUT is done,
+   *  registration is COMMITTED: cancel goes inert (ref, same frame) and the
+   *  button unmounts — an un-cancellable button that pretends otherwise was
+   *  the review's top money finding. */
+  async function proceedUpload(file: File, token: { cancelled: boolean }) {
+    setUploadPercent(0);
 
+    const target = await postJson<{ uploadUrl: string; uploadPath: string }>(
+      `/api/businesses/${businessId}/demos/upload-url`,
+      { type: file.type, size: file.size },
+    );
+    if (token.cancelled) return setUploadPercent(null);
+    if (!target.ok) {
+      if (target.status === 403 || target.status === 404) return onFatal(target.error);
+      return fail(target.error);
+    }
+
+    const put = putWithProgress(target.body.uploadUrl, file, setUploadPercent);
+    abortPut.current = put.abort;
+    const outcome = await put.promise;
+    abortPut.current = null;
+    if (outcome === "aborted" || token.cancelled) return setUploadPercent(null);
+    if (outcome === "failed") return fail(UPLOAD_FAILED);
+
+    finalizing.current = true;
+    setFinalizingUi(true);
+    try {
       const registered = await postJson<{ demoId: string }>(`/api/businesses/${businessId}/demos`, {
         uploadPath: target.body.uploadPath,
       });
@@ -217,8 +354,57 @@ export function StepDemo({
       setDemo({ id: registered.body.demoId, status: "uploaded" });
       setUploadPercent(null);
     } finally {
+      finalizing.current = false;
+      setFinalizingUi(false);
+    }
+  }
+
+  /** ביטול on the progress card: silent return to the picker, no error.
+   *  Inert once registration committed — nothing it could honestly do. */
+  function cancelUpload() {
+    if (finalizing.current) return;
+    if (cancelToken.current) cancelToken.current.cancelled = true;
+    abortPut.current?.();
+    setUploadPercent(null);
+  }
+
+  /** The duplicate card's "upload anyway" — the explicit go. */
+  async function forceUpload() {
+    if (busy.current || !pendingDuplicate) return;
+    busy.current = true;
+    const file = pendingDuplicate.file;
+    setPendingDuplicate(null);
+    const token = { cancelled: false };
+    cancelToken.current = token;
+    try {
+      await proceedUpload(file, token);
+    } finally {
       busy.current = false;
     }
+  }
+
+  /** The duplicate card's "use the existing one": one GET for the full row
+   *  (thumb, saved note) — the durations list carries neither. */
+  async function selectExisting(match: ReadyDemoDuration) {
+    setPickingExisting(true);
+    setError(null);
+    const result = await apiFetch<{
+      status: string;
+      businessId?: string;
+      description?: string;
+      durationMs?: number;
+      thumbUrl?: string;
+    }>(`/api/demos/${match.id}`);
+    setPickingExisting(false);
+    if (!result.ok) {
+      if (result.status === 403) return onFatal(result.error);
+      return setError(result.error);
+    }
+    const restored = restoredDemo(match.id, result.body, businessId);
+    if (!restored) return setError(EXISTING_LOAD_FAILED);
+    setPendingDuplicate(null);
+    setDemo(restored.demo);
+    setDescription(restored.description);
   }
 
   const ingesting = demo !== null && isIngestingDemoStatus(demo.status);
@@ -236,6 +422,15 @@ export function StepDemo({
     },
     onFatal,
   );
+  /** Pipeline-derived stuck state (8d): a dead worker keeps the poll healthy
+   *  forever, so "nothing is processing this" can only come from the body. */
+  const stuck = ingesting ? ingestStuckView(demo.ingest) : null;
+
+  const pickerVisible = demo === null && uploadPercent === null && pendingDuplicate === null;
+  /** Both surfaces can mount under a parked cursor (cancel/dismiss for the
+   *  picker; the metadata decode's card swap for the duplicate card). */
+  const pickerArmed = useArmedOnMount(pickerVisible);
+  const duplicateArmed = useArmedOnMount(pendingDuplicate !== null);
 
   /**
    * The optional "what the footage shows" note — mounts the moment a file is
@@ -264,22 +459,19 @@ export function StepDemo({
   const totalPages = readyTotal === null ? 1 : Math.ceil(readyTotal / DEMO_PAGE_SIZE);
 
   /**
-   * Reuse a previous demo — below the upload button (the primary action never
-   * moves as this loads or pages). While a page is in flight the same slots
-   * hold skeleton rows, so the section height never jumps; a short last page
-   * pads with invisible rows for the same reason. Zero ready demos (or a
-   * failed fetch) removes the whole section — a first-time user sees only
-   * the upload button.
+   * Reuse a previous demo — ABOVE the upload path (8d): picking an existing
+   * demo costs nothing, a new upload is a full fresh analysis, so the free
+   * path comes first. While a page is in flight the same slots hold skeleton
+   * rows, so the section height never jumps; a short last page pads with
+   * invisible rows for the same reason. Zero ready demos (or a failed fetch)
+   * removes the whole section — a first-time user sees guidance then upload.
    */
   const previousSection = (readyTotal === null || readyTotal > 0) && (
     <div className="mt-6">
-      <div className="flex items-center gap-3 text-xs text-ink/55">
-        <span className="h-px flex-1 bg-ink/10" />
-        או
-        <span className="h-px flex-1 bg-ink/10" />
-      </div>
-      <p className="mt-5 text-sm font-medium text-ink">סרטונים שכבר העליתם</p>
-      <p className="mt-1 text-[13px] text-ink/55">אפשר לבחור סרטון קיים במקום להעלות חדש.</p>
+      <p className="text-sm font-medium text-ink">סרטונים שכבר העליתם</p>
+      <p className="mt-1 text-[13px] text-ink/55">
+        אפשר לבחור סרטון קיים במקום להעלות חדש — בחירה כזו לא מפעילה ניתוח חדש.
+      </p>
       <ul className="mt-3 flex flex-col gap-2">
         {pageDemos === null
           ? Array.from({ length: DEMO_PAGE_SIZE }, (_, i) => <DemoRowSkeleton key={i} />)
@@ -287,6 +479,7 @@ export function StepDemo({
               <li key={row.id}>
                 <button
                   type="button"
+                  disabled={!pickerArmed}
                   onClick={() => selectPrevious(row)}
                   className="flex w-full items-center gap-4 rounded-xl border border-ink/[0.08] bg-white p-3 text-start transition-colors duration-150 hover:border-accent/60 hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                 >
@@ -327,6 +520,7 @@ export function StepDemo({
             <button
               key={n}
               type="button"
+              disabled={!pickerArmed}
               onClick={() => setPage(n)}
               aria-current={n === page ? "page" : undefined}
               className={`size-8 rounded-lg border text-sm tabular-nums transition-colors duration-150 ${
@@ -338,6 +532,58 @@ export function StepDemo({
               {n}
             </button>
           ))}
+        </div>
+      )}
+      <div className="mt-6 flex items-center gap-3 text-xs text-ink/55">
+        <span className="h-px flex-1 bg-ink/10" />
+        או מעלים סרטון חדש
+        <span className="h-px flex-1 bg-ink/10" />
+      </div>
+    </div>
+  );
+
+  /**
+   * Good-input guidance, before the upload button (8d). The rules are the
+   * ones the analysis actually gates on — footage with no payoff screen can
+   * never produce a plan — and the example pair SHOWS the acceptable
+   * handheld roughness no rule can describe. Guidance only, nothing gated.
+   */
+  const guidanceSection = (
+    <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white p-4">
+      <p className="text-sm font-medium text-ink">מה כדאי לצלם?</p>
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {RECORDING_RULES.map((rule) => (
+          <li key={rule} className="flex gap-2 text-[13px] text-ink/70">
+            <span aria-hidden className="text-accent">
+              ✓
+            </span>
+            {rule}
+          </li>
+        ))}
+      </ul>
+      {samples && (
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div>
+            {/* Signed, short-lived URLs — refetched with the picker. */}
+            <video
+              src={samples.recordingUrl}
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-[9/16] w-full rounded-lg bg-ink/10 object-cover"
+            />
+            <p className="mt-1.5 text-center text-[13px] text-ink/60">ככה נראה צילום טוב</p>
+          </div>
+          <div>
+            <video
+              src={samples.adUrl}
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-[9/16] w-full rounded-lg bg-ink/10 object-cover"
+            />
+            <p className="mt-1.5 text-center text-[13px] text-ink/60">וזו המודעה שיצאה ממנו</p>
+          </div>
         </div>
       )}
     </div>
@@ -358,14 +604,21 @@ export function StepDemo({
       />
       <button
         type="button"
+        disabled={!pickerArmed}
         onClick={() => fileInput.current?.click()}
-        className="mt-6 w-full rounded-xl border border-dashed border-white/20 bg-ink/[0.04] px-6 py-12 text-center transition-colors duration-150 hover:border-accent/60 hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        className="mt-4 w-full rounded-xl border border-dashed border-white/20 bg-ink/[0.04] px-6 py-12 text-center transition-colors duration-150 hover:border-accent/60 hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
       >
         <span className="block text-base font-medium text-ink">בחירת סרטון מהמכשיר</span>
         <span className="mt-2 block text-sm text-ink/60">
           וידאו אנכי (9:16), באורך 8 שניות עד 3 דקות, MP4 או MOV עד 1GB
         </span>
       </button>
+      {readyTotal !== null && readyTotal > 0 && (
+        <p className="mt-2 text-[13px] text-ink/55">
+          כל סרטון חדש עובר ניתוח מלא שלוקח כמה דקות — אם כבר העליתם את הסרטון, בחרו אותו מהרשימה
+          למעלה.
+        </p>
+      )}
     </>
   );
 
@@ -383,7 +636,8 @@ export function StepDemo({
       )}
 
       {/* Uploading: browser -> storage, with real progress (mounted from the
-          selection frame — pre-checks run behind this state). */}
+          selection frame — pre-checks run behind this state). Cancel actually
+          stops the bytes and returns to the picker silently. */}
       {uploadPercent !== null && (
         <>
           <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white px-6 py-8">
@@ -397,15 +651,74 @@ export function StepDemo({
             <p dir="ltr" className="mt-2 text-end text-xs tabular-nums text-ink/55">
               {uploadPercent}%
             </p>
+            {/* Past the PUT, cancel is not implementable — the button gives
+                way to a static line rather than lie (review's top finding). */}
+            {finalizingUi ? (
+              <p className="mt-4 text-sm text-ink/60">שומרים את הסרטון…</p>
+            ) : (
+              <Button type="button" variant="secondary" className="mt-4" onClick={cancelUpload}>
+                ביטול ההעלאה
+              </Button>
+            )}
           </div>
           {descriptionField}
         </>
       )}
 
-      {demo === null && uploadPercent === null && (
+      {/* The duplicate brake (8d): the picked file's duration matches a ready
+          demo. The free path is the primary action; the paid override sits
+          BELOW it, and nothing uploads until one is chosen. */}
+      {demo === null && uploadPercent === null && pendingDuplicate !== null && (
+        <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white p-4">
+          <p className="text-sm font-medium text-ink">נראה שכבר העליתם את הסרטון הזה</p>
+          <p className="mt-1 text-[13px] text-ink/60">
+            יש ברשימה סרטון באורך זהה
+            {pendingDuplicate.match.durationMs !== undefined &&
+              ` (${Math.round(pendingDuplicate.match.durationMs / 1000)} שניות)`}
+            , שהועלה ב־
+            {new Date(pendingDuplicate.match.createdAt).toLocaleDateString("he-IL")}. בחירה בסרטון
+            הקיים חוסכת ניתוח כפול של אותו סרטון.
+          </p>
+          {pendingDuplicate.match.description && (
+            <p className="mt-1.5 line-clamp-2 text-[13px] text-ink/55">
+              {pendingDuplicate.match.description}
+            </p>
+          )}
+          <div className="mt-4 flex flex-col items-start gap-3">
+            <Button
+              type="button"
+              size="lg"
+              loading={pickingExisting}
+              disabled={!duplicateArmed}
+              onClick={() => void selectExisting(pendingDuplicate.match)}
+            >
+              להשתמש בסרטון הקיים
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pickingExisting || !duplicateArmed}
+              onClick={() => void forceUpload()}
+            >
+              זה סרטון חדש — להעלות בכל זאת
+            </Button>
+            <button
+              type="button"
+              disabled={pickingExisting || !duplicateArmed}
+              onClick={() => setPendingDuplicate(null)}
+              className="text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
+            >
+              ביטול
+            </button>
+          </div>
+        </div>
+      )}
+
+      {demo === null && uploadPercent === null && pendingDuplicate === null && (
         <>
-          {picker}
           {previousSection}
+          {guidanceSection}
+          {picker}
         </>
       )}
 
@@ -420,7 +733,35 @@ export function StepDemo({
         </div>
       )}
 
-      {ingesting && !stalled && (
+      {/* The pipeline said "nothing is processing this" (8d) — a dead ingest
+          job (red: re-uploading is the remedy) or no worker claiming past the
+          heartbeat window (amber: the upload is safe, processing resumes by
+          itself). The poll stays up either way so recovery heals the screen. */}
+      {ingesting && !stalled && stuck && (
+        <div className="mt-6">
+          <p
+            role="alert"
+            className={`rounded-lg px-3 py-2.5 text-sm ${
+              stuck.dead ? "bg-red-100 text-red-700" : "bg-amber-50 text-amber-900"
+            }`}
+          >
+            {stuck.line}
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-4"
+            onClick={() => {
+              setDemo(null);
+              setError(null);
+            }}
+          >
+            בחירת סרטון אחר
+          </Button>
+        </div>
+      )}
+
+      {ingesting && !stalled && !stuck && (
         <>
           <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
             <Spinner className="size-6 text-ink/60" />
@@ -472,6 +813,14 @@ export function StepDemo({
               )}
             </div>
           </div>
+
+          {/* 8d: the analysis started at ingest and runs on behind this
+              screen for minutes — said before the customer meets the wait. */}
+          {analysisBackgroundLine(demo.analysis?.status) && (
+            <p className="mt-3 text-[13px] text-ink/55">
+              {analysisBackgroundLine(demo.analysis?.status)}
+            </p>
+          )}
 
           {descriptionField}
 

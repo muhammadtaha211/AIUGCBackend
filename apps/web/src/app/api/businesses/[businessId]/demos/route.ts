@@ -9,8 +9,32 @@ import {
   requireUser,
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
-import { isOwnedDemoUploadPath, registerDemoRequestSchema } from "@/lib/service-a";
+import {
+  A_SAMPLE_AD_PATH,
+  A_SAMPLE_RECORDING_PATH,
+  isOwnedDemoUploadPath,
+  registerDemoRequestSchema,
+} from "@/lib/service-a";
 import { DEMO_PAGE_SIZE } from "@/lib/service-a-ui";
+
+/**
+ * The good-input example pair for the wizard's guidance section, signed
+ * short-lived like every asset. The objects are founder-curated and may not
+ * exist yet (fresh environment, pre-upload) — that must degrade to "no media,
+ * rules only", never break the picker, hence null on ANY signing failure.
+ */
+async function signedSamples(
+  storage: ReturnType<typeof getStorage>,
+): Promise<{ recordingUrl: string; adUrl: string } | null> {
+  try {
+    return {
+      recordingUrl: await storage.signedUrl(A_SAMPLE_RECORDING_PATH, SIGNED_URL_TTL_SECONDS),
+      adUrl: await storage.signedUrl(A_SAMPLE_AD_PATH, SIGNED_URL_TTL_SECONDS),
+    };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Step 2 of the demo upload: the browser finished its direct upload — register
@@ -100,7 +124,24 @@ export async function GET(
           : undefined,
       })),
     );
-    return NextResponse.json(paged ? { demos, total: ready.length } : { demos });
+    if (!paged) return NextResponse.json({ demos });
+
+    // Wizard extras (8d): every ready row's duration for the duplicate-upload
+    // brake (durations are free — thumbs are the expensive part), and the
+    // guidance section's example pair.
+    const durations = ready.map((row) => ({
+      id: row.id,
+      durationMs: row.durationMs ?? undefined,
+      description: row.description ?? undefined,
+      createdAt: row.createdAt,
+    }));
+    const samples = await signedSamples(storage);
+    return NextResponse.json({
+      demos,
+      total: ready.length,
+      durations,
+      ...(samples ? { samples } : {}),
+    });
   } catch (err) {
     return coreErrorResponse(err);
   }

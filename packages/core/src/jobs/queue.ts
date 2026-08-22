@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { desc, eq, like, sql } from "drizzle-orm";
 import type { Db } from "../db";
 import { jobs } from "../db/schema";
 
@@ -214,6 +214,163 @@ export async function parkForBudget(
       updatedAt: new Date(),
     })
     .where(eq(jobs.id, jobId));
+}
+
+// ---------------------------------------------------------------------------
+// Job progress (read-only): what the customer-facing wait surfaces show.
+// The queue has no push channel, so "is anything processing this" is derived
+// from two rows the system already maintains: the job itself and the reaper
+// singleton, whose ~60s self-reschedule doubles as a worker heartbeat.
+// ---------------------------------------------------------------------------
+
+/**
+ * How stale the reaper row may be before "no worker is claiming". The reaper
+ * reschedules itself every ~60s on the light lane; 3 minutes absorbs a slow
+ * cycle and clock skew without leaving a dead worker undetected for long.
+ * NB: the light lane claims the reaper, so a wedged HEAVY lane still reads
+ * "alive" — the 30min job lease is the backstop for that case.
+ */
+export const WORKER_HEARTBEAT_STALE_MS = 3 * 60_000;
+
+/**
+ * A queued job whose run_at sits further than this in the future is
+ * deliberately SCHEDULED (transient backoff, budget park) — "starts soon"
+ * would be a lie, so JobProgress carries resumeAtMs instead. First-retry
+ * backoff (~30-40s) stays under it and keeps reading as an ordinary wait.
+ */
+export const JOB_DELAY_VISIBLE_MS = 60_000;
+
+export type WorkerHeartbeat = "alive" | "stale" | "unknown";
+
+export type JobProgress = {
+  /** missing = no job row (nothing was ever enqueued, or the janitor purged it). */
+  state: "missing" | "queued" | "running" | "failed" | "done";
+  /** Same-lane jobs that will run first (claim order = run_at). Only set for
+   *  queued jobs when the caller named the lane's types. */
+  ahead?: number;
+  /** Queued: since enqueue (createdAt — backoff moves runAt, not the wait the
+   *  customer has felt). Running: since the claim. */
+  elapsedMs?: number;
+  /** Queued jobs pushed meaningfully into the future (backoff, budget park):
+   *  when they will next be runnable. Absent = runnable now-ish. */
+  resumeAtMs?: number;
+  heartbeat: WorkerHeartbeat;
+};
+
+/**
+ * Pure derivation — exported for tests; getJobProgress feeds it.
+ *
+ * The heartbeat is TWO signals, either one proves a worker: a fresh reaper
+ * row, or ANY running job whose lock is inside the lease. The reaper alone is
+ * not enough — it shares the strictly-sequential light lane, so a single long
+ * light job (a 1GB demo ingest) starves it past the stale window and the wait
+ * surfaces would tell the very customer whose demo IS being processed that
+ * nothing is processing it. The lease-bounded running lock closes that hole;
+ * the cost is a wedged worker reading "alive" for at most JOB_LEASE_MS.
+ */
+export function deriveJobProgress(opts: {
+  job?: Pick<Job, "status" | "lockedAt" | "createdAt" | "runAt">;
+  aheadCount?: number;
+  heartbeatAt?: Date;
+  /** Newest locked_at across ALL running jobs (any lane), if any. */
+  runningLockedAt?: Date;
+  now: Date;
+}): JobProgress {
+  const reaperFresh =
+    opts.heartbeatAt !== undefined &&
+    opts.now.getTime() - opts.heartbeatAt.getTime() <= WORKER_HEARTBEAT_STALE_MS;
+  const leaseFresh =
+    opts.runningLockedAt !== undefined &&
+    opts.now.getTime() - opts.runningLockedAt.getTime() <= JOB_LEASE_MS;
+  const heartbeat: WorkerHeartbeat =
+    reaperFresh || leaseFresh ? "alive" : opts.heartbeatAt === undefined ? "unknown" : "stale";
+  const job = opts.job;
+  if (!job) return { state: "missing", heartbeat };
+  if (job.status === "queued") {
+    const delayMs = job.runAt.getTime() - opts.now.getTime();
+    return {
+      state: "queued",
+      ...(opts.aheadCount !== undefined ? { ahead: opts.aheadCount } : {}),
+      elapsedMs: Math.max(0, opts.now.getTime() - job.createdAt.getTime()),
+      ...(delayMs > JOB_DELAY_VISIBLE_MS ? { resumeAtMs: job.runAt.getTime() } : {}),
+      heartbeat,
+    };
+  }
+  if (job.status === "running") {
+    const since = job.lockedAt ?? job.createdAt;
+    return {
+      state: "running",
+      elapsedMs: Math.max(0, opts.now.getTime() - since.getTime()),
+      heartbeat,
+    };
+  }
+  if (job.status === "succeeded") return { state: "done", heartbeat };
+  return { state: "failed", heartbeat };
+}
+
+/**
+ * Progress of one job by its idempotency key. `aheadOfTypes` is the job's
+ * LANE (e.g. HEAVY_JOB_TYPES for analyze_demo) — passed in by the caller so
+ * this module never imports lane policy from worker.ts (cycle). Ahead counts
+ * runnable same-lane jobs that claim() would pick first, plus the one running.
+ * `newestMatching` treats the key as a PREFIX and reads the newest job under
+ * it — for families like analyze:{demoId} / analyze:{demoId}:rN (founder
+ * re-runs), where pinning the bare key would report the first attempt's
+ * corpse forever while the live retry runs.
+ */
+export async function getJobProgress(
+  db: Db,
+  opts: { idempotencyKey: string; aheadOfTypes?: readonly string[]; newestMatching?: boolean },
+): Promise<JobProgress> {
+  const now = new Date();
+  const jobRows = await db
+    .select()
+    .from(jobs)
+    .where(
+      opts.newestMatching
+        ? like(jobs.idempotencyKey, `${opts.idempotencyKey}%`)
+        : eq(jobs.idempotencyKey, opts.idempotencyKey),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  const job = jobRows[0];
+
+  const reaperRows = await db
+    .select({ updatedAt: jobs.updatedAt })
+    .from(jobs)
+    .where(eq(jobs.idempotencyKey, "reap_dead_renders"))
+    .limit(1);
+
+  const runningRows = await db.execute(
+    sql`select max(locked_at) as m from jobs where status = 'running'`,
+  );
+  const rawRunning = rowsOf(runningRows)[0]?.m;
+  const runningLockedAt = rawRunning == null ? undefined : toDate(rawRunning);
+
+  let aheadCount: number | undefined;
+  if (job?.status === "queued" && opts.aheadOfTypes && opts.aheadOfTypes.length > 0) {
+    const laneTypes = sql`array[${sql.join(
+      opts.aheadOfTypes.map((t) => sql`${t}`),
+      sql`, `,
+    )}]::text[]`;
+    const result = await db.execute(sql`
+      select
+        count(*) filter (
+          where status = 'queued' and run_at < ${job.runAt} and id <> ${job.id}
+        )
+        + count(*) filter (where status = 'running') as n
+      from jobs where type = any(${laneTypes})
+    `);
+    aheadCount = Number(rowsOf(result)[0]?.n ?? 0);
+  }
+
+  return deriveJobProgress({
+    job,
+    aheadCount,
+    heartbeatAt: reaperRows[0]?.updatedAt,
+    runningLockedAt,
+    now,
+  });
 }
 
 // ---------------------------------------------------------------------------

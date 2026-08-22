@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { getAudioWithScript, getLatestDemoAnalysis, getStepPlan, schema, type Db } from "@aiugc/core";
+import { getAudioWithScript, getStepPlan, schema, type Db } from "@aiugc/core";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { businessAccess, isUuid } from "@/lib/service-b";
 import { coreErrorMapping } from "@/lib/api-errors";
@@ -139,26 +139,6 @@ export async function requireDemo(
   const owned = await requireBusiness(db, rows[0].businessId, userId);
   if ("response" in owned) return owned;
   return { demo: rows[0] };
-}
-
-/**
- * The demo's NEWEST analysis attempt (any status — the wizard polls through
- * pending/analysing and must see rejected/failed with their Hebrew failReason).
- * 404 until the analyze job has inserted its row; the demo poll covers before.
- */
-export async function requireAnalysis(
-  db: Db,
-  demoId: string,
-  userId: string,
-): Promise<
-  | { demo: typeof schema.demos.$inferSelect; analysis: typeof schema.demoAnalyses.$inferSelect }
-  | { response: NextResponse }
-> {
-  const found = await requireDemo(db, demoId, userId);
-  if ("response" in found) return found;
-  const analysis = await getLatestDemoAnalysis(db, demoId);
-  if (!analysis) return { response: jsonError(404, NOT_FOUND) };
-  return { demo: found.demo, analysis };
 }
 
 /** Step plan by id, ownership resolved through its demo's business. */

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
 import {
   analysisIndexBatches,
+  analysisWaitView,
   deleteWarning,
   draftBlockedReason,
   fmtTimestamp,
@@ -24,6 +25,7 @@ import {
   stepsPayload,
   type AnalysisStateWire,
   type DraftStep,
+  type JobProgressWire,
   type StepPlanWire,
 } from "@/lib/service-a-ui";
 import { apiFetch, patchJson, postJson, useJobPoll, type ApiResult } from "@/lib/use-api";
@@ -69,8 +71,13 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
   const [actionError, setActionError] = useState<string | null>(null);
   /** Latest plan GET said 404 — a normal state, not an error. */
   const [planMissing, setPlanMissing] = useState(false);
-  /** null = not fetched yet; "missing" = analysis GET 404s (job not started). */
-  const [analysis, setAnalysis] = useState<{ status: string; failReason?: string } | null>(null);
+  /** null = not fetched yet; "missing" = no analysis row (the route answers
+   *  200 with the analyze job's progress since 8d; a plain 404 = the demo). */
+  const [analysis, setAnalysis] = useState<{
+    status: string;
+    failReason?: string;
+    job?: JobProgressWire;
+  } | null>(null);
   /** sourceIndex -> state, for the ready plan's cards. null while loading. */
   const [cards, setCards] = useState<Map<number, AnalysisStateWire> | null>(null);
   /** Mirror for the cards effect's missing-index check: reading `cards` there
@@ -104,7 +111,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
   }
 
   async function refreshAnalysis() {
-    const result = await apiFetch<{ status: string; failReason?: string }>(
+    const result = await apiFetch<{ status: string; failReason?: string; job?: JobProgressWire }>(
       `/api/demos/${demoId}/analysis`,
     );
     if (result.ok) {
@@ -157,7 +164,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
     (analysis === null ||
       analysis.status === "missing" ||
       isAnalysisWorkingStatus(analysis.status));
-  const analysisPoll = useJobPoll<{ status: string; failReason?: string }>(
+  const analysisPoll = useJobPoll<{ status: string; failReason?: string; job?: JobProgressWire }>(
     waitingForAnalysis,
     `/api/demos/${demoId}/analysis`,
     3_000,
@@ -396,16 +403,47 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
       )}
 
       {/* The analysis is still queued/running (heavy lane — minutes, not
-          seconds). Queued, never "failed", never a silent spinner. */}
-      {waitingForAnalysis && !analysisPoll.stalled && (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
-          <Spinner className="size-6 text-ink/60" />
-          <p className="text-sm text-ink/75">הסרטון בתור לניתוח — זה לוקח כמה דקות.</p>
-          {analysisPoll.slow && (
-            <p className="text-sm text-ink/55">עדיין עובד… אפשר להשאיר את החלון פתוח.</p>
-          )}
-        </div>
-      )}
+          seconds). Real progress since 8d: queue position while queued,
+          elapsed while running, an honest "stuck" when no worker is claiming
+          (a dead pipeline keeps this poll returning 200 forever — HTTP
+          failures cannot carry that signal), and a dead analyze job renders
+          as failure instead of an eternal spinner. The poll stays up in every
+          branch so a recovering worker heals the screen by itself. */}
+      {waitingForAnalysis &&
+        !analysisPoll.stalled &&
+        (() => {
+          const view = analysisWaitView(analysis?.job);
+          if (view.kind === "failed") {
+            return (
+              <p
+                role="alert"
+                className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700"
+              >
+                ניתוח הסרטון נכשל — נסו סרטון אחר.
+              </p>
+            );
+          }
+          if (view.kind === "stuck") {
+            return (
+              <p
+                role="alert"
+                className="mt-6 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900"
+              >
+                {view.line}
+              </p>
+            );
+          }
+          return (
+            <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
+              <Spinner className="size-6 text-ink/60" />
+              <p className="text-sm text-ink/75">{view.line}</p>
+              {view.sub && <p className="text-sm text-ink/55">{view.sub}</p>}
+              {analysisPoll.slow && (
+                <p className="text-sm text-ink/55">עדיין עובד… אפשר להשאיר את החלון פתוח.</p>
+              )}
+            </div>
+          );
+        })()}
       {waitingForAnalysis && analysisPoll.stalled && (
         <div className="mt-6">
           <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">

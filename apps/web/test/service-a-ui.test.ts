@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { readTimeMs } from "@aiugc/core/plan-format";
 import {
+  analysisBackgroundLine,
   analysisIndexBatches,
+  analysisWaitView,
   aRenderStageIndex,
   aWizardSteps,
   clampRestoredStep,
+  clientDemoAspectError,
   clientDemoFileError,
   deleteWarning,
   demoDurationError,
+  DUPLICATE_DURATION_TOLERANCE_MS,
+  duplicateDemoMatch,
+  fmtElapsedHe,
+  ingestStuckView,
   draftBlockedReason,
   endingForRemainder,
   endingSentence,
@@ -44,7 +51,9 @@ import {
   type AnalysisStateWire,
   type HookBatch,
   type HookLineOption,
+  type JobProgressWire,
   type PlanStepWire,
+  type ReadyDemoDuration,
 } from "../src/lib/service-a-ui";
 
 describe("wizard steps (format-aware, mirrors B's wizardSteps)", () => {
@@ -806,5 +815,150 @@ describe("the render step, steps format (8e)", () => {
     expect(
       renderCompositionKey("p1", { id: "h1" }, { scriptId: "s1" }, { ...rect, y: 901 }),
     ).not.toBe(renderCompositionKey("p1", { id: "h1" }, { scriptId: "s1" }, rect));
+  });
+});
+
+describe("the demo step rework (8d)", () => {
+  it("aspect gate: horizontal and square fail with the probe's own Hebrew; vertical passes", () => {
+    // Same string the ingest probe stores as rejectReason — the gate only
+    // moves the rejection before the (possibly 1GB) upload.
+    expect(clientDemoAspectError(1920, 1080)).toBe("הסרטון אופקי — צריך וידאו אנכי (9:16)");
+    expect(clientDemoAspectError(1080, 1080)).not.toBeNull(); // mirrors the probe's height <= width
+    expect(clientDemoAspectError(1080, 1920)).toBeNull();
+    // Undecodable metadata skips the gate — the server re-checks.
+    expect(clientDemoAspectError(undefined, undefined)).toBeNull();
+    expect(clientDemoAspectError(0, 0)).toBeNull(); // audio-only track
+  });
+
+  describe("duplicate-upload brake", () => {
+    const row = (id: string, durationMs: number | undefined, createdAt: string) =>
+      ({ id, durationMs, createdAt }) as ReadyDemoDuration;
+
+    it("matches within the tolerance, inclusive, and not past it", () => {
+      const rows = [row("a", 30_000, "2026-08-01")];
+      expect(duplicateDemoMatch(30, rows)?.id).toBe("a");
+      expect(duplicateDemoMatch((30_000 + DUPLICATE_DURATION_TOLERANCE_MS) / 1000, rows)?.id).toBe(
+        "a",
+      );
+      expect(duplicateDemoMatch((30_000 + DUPLICATE_DURATION_TOLERANCE_MS + 1) / 1000, rows)).toBe(
+        null,
+      );
+      expect(duplicateDemoMatch(31, rows)).toBe(null);
+    });
+
+    it("skips rows without a duration and offers the newest match", () => {
+      const rows = [
+        row("old", 30_000, "2026-08-01T10:00:00Z"),
+        row("nodur", undefined, "2026-08-20T10:00:00Z"),
+        row("new", 30_100, "2026-08-15T10:00:00Z"),
+      ];
+      expect(duplicateDemoMatch(30, rows)?.id).toBe("new");
+      expect(duplicateDemoMatch(30, [])).toBe(null);
+    });
+  });
+
+  it("fmtElapsedHe speaks whole minutes, never seconds", () => {
+    expect(fmtElapsedHe(0)).toBe("פחות מדקה");
+    expect(fmtElapsedHe(59_000)).toBe("פחות מדקה");
+    expect(fmtElapsedHe(60_000)).toBe("דקה");
+    expect(fmtElapsedHe(119_000)).toBe("דקה");
+    expect(fmtElapsedHe(5 * 60_000)).toBe("5 דקות");
+  });
+
+  describe("analysisWaitView", () => {
+    const job = (over: Partial<JobProgressWire>): JobProgressWire => ({
+      state: "queued",
+      heartbeat: "alive",
+      ...over,
+    });
+
+    it("no payload degrades to the pre-8d generic line", () => {
+      expect(analysisWaitView(undefined)).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+      });
+    });
+
+    it("a dead analyze job is a failure, never an eternal spinner — even with a stale heartbeat", () => {
+      expect(analysisWaitView(job({ state: "failed" })).kind).toBe("failed");
+      expect(analysisWaitView(job({ state: "failed", heartbeat: "stale" })).kind).toBe("failed");
+    });
+
+    it("a stale heartbeat over live work reads as stuck; unknown does NOT (fresh envs)", () => {
+      expect(analysisWaitView(job({ heartbeat: "stale" })).kind).toBe("stuck");
+      expect(analysisWaitView(job({ state: "running", heartbeat: "stale" })).kind).toBe("stuck");
+      expect(analysisWaitView(job({ heartbeat: "unknown" })).kind).toBe("waiting");
+    });
+
+    it("queued: position when known, 'soon' at zero, silence when unknown", () => {
+      expect(analysisWaitView(job({ ahead: 2 }))).toMatchObject({
+        kind: "waiting",
+        sub: "לפני הסרטון שלכם יש עוד 2 עבודות בתור.",
+      });
+      // Singular — "עוד 1 עבודות" is not Hebrew.
+      expect(analysisWaitView(job({ ahead: 1 }))).toMatchObject({
+        sub: "לפני הסרטון שלכם יש עוד עבודה אחת בתור.",
+      });
+      expect(analysisWaitView(job({ ahead: 0 }))).toMatchObject({ sub: "הניתוח יתחיל בקרוב." });
+      // Unknown queue depth must not promise "soon" from behind three renders.
+      expect(analysisWaitView(job({}))).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+      });
+    });
+
+    it("a budget-parked or deep-backoff job reads as paused, never 'starts soon'", () => {
+      // resumeAtMs wins over ahead: the position is meaningless for a job
+      // that will not be runnable for hours.
+      expect(analysisWaitView(job({ ahead: 0, resumeAtMs: 4_000_000_000_000 }))).toMatchObject({
+        kind: "waiting",
+        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+      });
+    });
+
+    it("running: elapsed on a minutes scale", () => {
+      expect(analysisWaitView(job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual({
+        kind: "waiting",
+        line: "מנתחים את הסרטון עכשיו — רץ כבר 3 דקות.",
+      });
+      expect(analysisWaitView(job({ state: "running" }))).toEqual({
+        kind: "waiting",
+        line: "מנתחים את הסרטון עכשיו.",
+      });
+    });
+  });
+
+  describe("ingestStuckView", () => {
+    const job = (over: Partial<JobProgressWire>): JobProgressWire => ({
+      state: "queued",
+      heartbeat: "alive",
+      ...over,
+    });
+
+    it("null while the pipeline is genuinely working (or unreported)", () => {
+      expect(ingestStuckView(undefined)).toBe(null);
+      expect(ingestStuckView(job({}))).toBe(null);
+      expect(ingestStuckView(job({ state: "running" }))).toBe(null);
+      expect(ingestStuckView(job({ heartbeat: "unknown" }))).toBe(null);
+    });
+
+    it("a dead job is dead (re-upload is the remedy); a stale worker is not", () => {
+      expect(ingestStuckView(job({ state: "failed" }))?.dead).toBe(true);
+      expect(ingestStuckView(job({ heartbeat: "stale" }))?.dead).toBe(false);
+      expect(ingestStuckView(job({ state: "running", heartbeat: "stale" }))?.dead).toBe(false);
+    });
+  });
+
+  it("the ready card's background line shows only while the analysis is still owed", () => {
+    for (const status of ["missing", "pending", "analysing"]) {
+      expect(analysisBackgroundLine(status)).toBe(
+        "הסרטון נשלח לניתוח שרץ ברקע כמה דקות — אפשר להמשיך בינתיים.",
+      );
+    }
+    for (const status of ["ready", "failed", "rejected"]) {
+      expect(analysisBackgroundLine(status)).toBe(null);
+    }
+    // Absent status = a locally-constructed reuse row — say nothing.
+    expect(analysisBackgroundLine(undefined)).toBe(null);
   });
 });
