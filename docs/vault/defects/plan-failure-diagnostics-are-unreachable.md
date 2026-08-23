@@ -33,6 +33,13 @@ The real violation is in `jobs.last_error`, written from the `PermanentError` at
 Every one of those is actionable, and several are things the customer could fix by re-recording or
 editing. None of them reaches the customer.
 
+**The retry the customer is offered is not futile — it is uninformative.** The failures are not
+deterministic: 16 of the 19 plan rows belong to one demo (`9553ea19`), and on that demo failed and
+ready plans interleave over time — a failure at 2026-08-17 02:13Z, a ready plan on 08-18, three
+consecutive failures on 08-20 at 02:39 / 02:50 / 02:52, ready plans after. Pressing retry does
+produce a passing plan a fair share of the time. What it does not do is tell the customer what to
+change, so each press is 2 paid Claude calls and a coin flip.
+
 ## The stated cause is wrong, and it matters
 
 The handover, and the code comment at `apps/web/src/lib/service-a-ui.ts:549-550`, both say **RLS

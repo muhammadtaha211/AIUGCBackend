@@ -19,7 +19,10 @@ const room = next ? next.timestampMs - step.timestampMs : Number.POSITIVE_INFINI
 ```
 
 The comment two lines up states the intent — "the last step gets what it asks for". What it asks for
-is the floor, `MIN_STEP_MS = 3000` ([[steps-format-defaults-are-code-constants]]).
+is `clamp(max(byActionType[kind], readTimeMs(label)), minMs, maxMs)`. For plans generated **from now
+on** that is the floor, `MIN_STEP_MS = 3000` ([[steps-format-defaults-are-code-constants]]). Every
+last step currently stored is **2800** — the `result` kind's own default — because all ten plans
+predate `b60b5b6`, when the floor was 1400 and did not bind.
 
 **Nothing between that number and the render ever compares it against the demo's own length.**
 `updatePlanSteps` calls `assembleSteps` without loading the demo row at all; the plan API route
@@ -32,10 +35,11 @@ composition has 1.2s of footage to show for a step billed and displayed at 3.0s.
 
 ## Nobody has hit it — yet
 
-I checked every stored plan and every steps-format render against its demo's `duration_ms`. **All 12
-plan rows with steps and all 6 steps renders have negative overrun** — every last step fits, with
-room to spare. The two demos that have plans have comfortable tails: last step at 45,000 ms of an
-88,089 ms recording, and 51,400 ms of 57,498 ms.
+I checked every stored plan against its demo's `duration_ms`. Of the 19 plan rows, **10 carry a
+non-empty `steps` array** (the other 9 are `failed` with `steps = null`), and **all 10 have negative
+overrun** — every last step fits. The tightest is plan `0d1b5f41` on demo `3828bab7`: last step
+starts at 51,400 ms, runs 2,800 ms, against a 57,498 ms recording — **3,298 ms of slack.** All 6
+steps-format renders are among those 10.
 
 It is one recording away. Demos `ee69edfa`, `724d68df` and `ba70c3d7` are all the 122,561 ms
 BotTeacher study-app recording, whose **last analysed state sits at 121,400 ms — 1,161 ms of tail**
@@ -56,8 +60,19 @@ number to be wrong about.
 ## Blast radius
 
 A customer approves "20.5s" and gets 18.7s, with no warning anywhere and no way to tell which step
-was truncated. It is a correctness bug in the number the product asks the customer to agree to,
-which is the same class as a wrong price — small in seconds, not small in kind.
+was truncated.
+
+**It is not a billing defect.** `quoteStepsASet` (`packages/core/src/pipelines/sets.ts:268`, called
+at `:206`) prices a steps set flat, without reading runtime at all
+([[credit-costs-row]]) — so nobody is overcharged per second. The harm is consent: the number the
+product asks the customer to agree to is not the number it delivers.
+
+**There is a second consequence nobody would look for.** The wizard's legibility warning is computed
+from the same overstated duration — `stepHeadroomMs(step) = step.durationMs - readTimeMs(step.label)`
+(`apps/web/src/lib/service-a-ui.ts:583-584`), consumed at
+`apps/web/src/components/a-wizard/step-plan.tsx:774`. A last step that renders 1.2 s can therefore
+pass the "caption outlasts its read time" check computed against 3.0 s. The customer is told the
+caption is readable when the shipped frames do not give it time to be read.
 
 ## Fix shape
 

@@ -69,4 +69,17 @@ Either make `ensureUser` upgrade — `if (existing[0].role !== role) update` —
 silent _demotion_ would be worse than the current bug, keep it read-only and make the CLI print the
 role it found and warn when it differs from the flag. One line either way.
 
-Verify a role with SQL, never by re-running the command with `--admin`.
+## How to detect and repair it today
+
+Detection is one query — there is no CLI equivalent, because `grep -n "role" apps/cli/src/index.ts`
+returns **nothing**: `aiugc` has no role command at all.
+
+```sql
+select email, role from users order by created_at;
+```
+
+Repair goes through the admin console, not the CLI:
+`apps/admin/src/app/api/admin/users/[userId]/role/route.ts:30` does the
+`update(users).set({ role })` that `ensureUser` refuses to.
+
+Verify a role with SQL, never by re-running `business create --admin`.

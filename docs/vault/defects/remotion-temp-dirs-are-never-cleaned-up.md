@@ -20,6 +20,12 @@ Before the cleanup, three days of accumulation: **90 directories, 3.13 GB**, old
 **largest, not typical** - 90 directories at those sizes would be 5-9 GB, not 3.13 GB, and the one
 directory the controlled run produced was 29.7 MB. Most of the 90 were smaller or near-empty.
 
+**Only one of the two families is a real leak.** `remotion-v4.0.499-assets*` IS torn down by the
+renderer on the happy path — `select-composition.js:132` pushes `result.cleanupServer(true)` onto a
+cleanup list that `:173` runs in a `.finally()`. The assets shells left behind are failed or
+interrupted cleanups, which is the other reason the arithmetic does not reconcile. The
+`remotion-webpack-bundle-*` family is the one nothing ever removes.
+
 ## What it cost
 
 C: reached **0.18 GB free** and `packages/remotion/test/frame-delivery.test.ts` began failing with
@@ -80,3 +86,10 @@ Interim mitigation, no code: clear `%TEMP%\remotion-*` between sessions.
 ## Not fixed
 
 Recorded, not fixed — the founder cleared the symptom on 2026-08-23 and the mechanism is untouched.
+
+## What this note does not prove
+
+The leak is proven from code and from the controlled 0-to-1 measurement. **That the leak caused the
+disk-full incident is not proven.** 3.13 GB of `remotion-*` was the largest single contributor to a
+`%TEMP%` holding 4.59 GB, on a drive with 232 GB used. It is a sufficient explanation for the last
+few hundred megabytes, not a demonstrated cause of the whole shortfall.

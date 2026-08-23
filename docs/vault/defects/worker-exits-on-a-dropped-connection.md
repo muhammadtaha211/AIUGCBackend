@@ -38,8 +38,10 @@ The irony is right there in the source: the comment above the sweep's catch says
 must not add a crash path"** (`worker.ts:92`). The author guarded the sweep and left the poll it
 guards bare — and the poll runs every 2 seconds, forever, while the sweep runs once a minute.
 
-`runJob` does catch handler errors (`worker.ts:53`), but its catch handler itself writes to the DB
-(`failPermanent`, `parkForBudget`), so a connection lost mid-job escapes by the same route.
+`runJob` does catch handler errors (`worker.ts:53`), but the catch block's own recovery writes are
+unguarded — `failPermanent` (`worker.ts:56`), `parkForBudget` (`:59`), `failTransient` (`:62`). If
+the database is what is unreachable, the error handler throws out of its own catch and reaches the
+same `exit(1)`. The hole is wider than the poll.
 
 `Promise.all` in `main()` rejects on the first lane to fail, so **a light-lane poll failure kills a
 heavy lane that may be mid-Remotion-render.** There is no `unhandledRejection` or
@@ -70,6 +72,11 @@ write lands inside the query window. Rare, not constant.
 `--watch`, no supervisor, no Dockerfile, no pm2 or systemd unit anywhere in the repo. **`exit(1)` is
 terminal.** The queue keeps accepting jobs; nothing drains them; the wizard spins.
 
+**And nothing tells anyone.** The crash writes one pino line to stdout and exits; `logger` is a bare
+`pino({ level })` with no transport (`packages/core/src/logger.ts:5-7`). `SENTRY_DSN` is declared at
+`packages/core/src/config.ts:11`, but **no `@sentry` package is installed** and nothing initialises
+it, so nothing is reported anywhere. The founder finds out by noticing jobs have stopped moving.
+
 ## It has happened twice, and both times it cost money
 
 I first looked for jobs stuck at `status = 'running'` and found none — but that is the wrong
@@ -95,6 +102,13 @@ re-bought API calls, and a 31-minute stall on a job that normally takes seconds.
 What is _not_ established is that a pooler drop caused these two specifically. `lease expired`
 records that the lock holder stopped, not why — a crash, a laptop sleep or a Ctrl-C leaves the
 identical marker. The code path above is a sufficient explanation, not a proven one.
+
+**The recovery worked both times, and that is what keeps the severity down.** Both jobs are now
+`succeeded`. `recoverExpiredLeases` reclaims a job whose lock is older than
+`JOB_LEASE_MS = 30 * 60_000` (`packages/core/src/jobs/queue.ts:95`), and the sweep runs every
+`LEASE_SWEEP_INTERVAL_MS = 60_000` (`worker.ts:114`). The worst case is therefore a ~30-minute
+stall — but only once somebody restarts the worker, because the sweep lives inside the loop that
+died.
 
 ## Fix shape
 

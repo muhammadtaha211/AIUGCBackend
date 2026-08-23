@@ -35,9 +35,15 @@ above. Everything else that ends up burned into a frame is unchecked.
 | step label, model-generated   | `findPlanViolations`                  | none             |
 | step label, **human-edited**  | `updatePlanSteps`                     | none             |
 
-`updateScriptText` inserts `text` verbatim — no validation of any kind between the request body and
-the row. That is the hook studio's free-text editing, the feature
-[[0001-five-step-steps-wizard]] leaned on to justify dropping the persona step.
+`updateScriptText` inserts `text` verbatim. That is the hook studio's free-text editing — the
+feature [[0001-five-step-steps-wizard]] leaned on to justify dropping the persona step — reached
+from `apps/web/src/components/a-wizard/step-hook-studio.tsx` through
+`apps/web/src/app/api/scripts/[id]/text/route.ts`.
+
+The route does validate, but narrowly: `route.ts:28` is
+`if (found.script.kind === "b_script" && wordBudget)`, so the only check is a **word budget**, and
+it applies **only to `b_script`**. A hook line goes through untouched, and no codepoint is looked at
+on any kind.
 
 `findPlanViolations` checks a label's **length** (`MAX_LABEL_CHARS`), **word count**
 (`MAX_LABEL_WORDS`) and **provenance** (words must come from `visibleText` or the questionnaire) —

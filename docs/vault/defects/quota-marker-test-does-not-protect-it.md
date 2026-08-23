@@ -61,6 +61,17 @@ returns exactly two hits, `apps/web/test/api-errors.test.ts:21` and
 `apps/web/test/service-a-ui.test.ts:239` — **both in `apps/web`, both hardcoded copies.** Nothing in
 `packages/core` pins the string that `packages/core` produces.
 
+**The sibling path shows what the guard should look like.** `packages/core/test/credits-wiring.test.ts:646`
+asserts the _render_ quota string against a row the pipeline actually wrote:
+
+```ts
+expect(row.error).toBe("הגעתם למכסת יצירת הסרטונים היומית של החשבון — נסו שוב מחר");
+```
+
+That is a core test pinning a core literal, so rewording `renders.ts:118` does go red. The plan path
+at `demo-step-plans.ts:1209` is the **only** one of the quota lines with no test on the producing
+side — which is exactly the line `planFailureNotice` depends on.
+
 ## Blast radius
 
 One wrong button on one failure class, so the user-facing harm is small — they click retry, it fails
