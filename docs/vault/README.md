@@ -38,12 +38,18 @@ honestly fill in `status` and `verified` is not ready to be written.
 Marked here so the gaps are visible rather than assumed absent. Each needs verifying against the
 code or the DB, not transcribing from a handover:
 
-- `facts/` — config state, credit costs, test suite counts, healthy gate durations, the corpus
-  (demos, analyses, fixtures), client-graph tracer state
-- `decisions/` — URL identity, `?indexes=` over plan-GET signing, the `plan-format` move, the
-  mount-under-cursor rule, price-on-button
+- ~~`facts/`~~ — **done 2026-08-23.** 14 notes: config state, credit costs, test counts, gate
+  durations and results, the corpus, the fixtures, the tracer, plus four the backfill turned up
+  (`first-call-violation-rate`, `events-table-is-empty`, `disk-is-full`,
+  `credit-ledger-is-keyed-to-the-account`).
+- ~~`falsified/`~~ — **done 2026-08-23.** The −30 credit balance, `docs/backend-handover.md`, and
+  "every upload spends ₪2.40" all written.
 - `defects/` — the rev-6 §6 list: worker restart policy, owed migration 0027→1.5M, `--admin` no-op,
   RLS-hidden validator diagnostics, `נסו שוב מחר` substring coupling, `serve-files.ts` ranges,
-  unrenderable hook line, last-step-shorter-than-displayed
-- `falsified/` — the −30 credit balance, `docs/backend-handover.md`, "every upload spends ₪2.40"
+  unrenderable hook line, last-step-shorter-than-displayed. Add from the facts pass:
+  Remotion leaks 3.13 GB of temp dirs, `study-app`'s `_comment` contradicts its own
+  `dryRunSourceIndexes`, `recordAudioScriptPointerMove` is dead code, `llmCostAgorot` is
+  triplicated past its own "extract at the 3rd" rule, `apps/cli` and `apps/worker` have no tests.
 - `phases/` — 8a through 8e
+- `decisions/` — URL identity, `?indexes=` over plan-GET signing, the `plan-format` move, the
+  mount-under-cursor rule, price-on-button
