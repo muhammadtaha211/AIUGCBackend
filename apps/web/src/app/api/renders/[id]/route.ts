@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { getDb, getStorage } from "@aiugc/core";
+import {
+  getDb,
+  getJobProgress,
+  getStorage,
+  HEAVY_JOB_TYPES,
+  type JobProgress,
+} from "@aiugc/core";
 import { coreErrorResponse, requireRender, requireUser, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 
 /**
@@ -23,9 +29,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       thumbUrl?: string;
       failureReason?: string;
       refunded?: boolean;
+      /** Render job progress (8d pattern) — queue position, elapsed, the
+       *  renderMedia percent, and the heartbeat that tells "still working"
+       *  from "nothing is processing this". */
+      job?: JobProgress;
     } = {
       status: render.status,
     };
+    if (render.status === "queued" || render.status === "rendering") {
+      body.job = await getJobProgress(db, {
+        idempotencyKey: `render:${id}`,
+        aheadOfTypes: HEAVY_JOB_TYPES,
+      });
+    }
     if (render.status === "released") {
       const storage = getStorage();
       if (render.filePath) {

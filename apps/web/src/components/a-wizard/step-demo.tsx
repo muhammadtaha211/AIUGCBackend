@@ -12,6 +12,7 @@ import {
   DEMO_PAGE_SIZE,
   demoDurationError,
   duplicateDemoMatch,
+  ingestPhaseView,
   ingestStuckView,
   isIngestingDemoStatus,
   restoredDemo,
@@ -425,6 +426,7 @@ export function StepDemo({
   /** Pipeline-derived stuck state (8d): a dead worker keeps the poll healthy
    *  forever, so "nothing is processing this" can only come from the body. */
   const stuck = ingesting ? ingestStuckView(demo.ingest) : null;
+  const ingestPhase = ingesting ? ingestPhaseView(demo.status, demo.ingest) : null;
 
   const pickerVisible = demo === null && uploadPercent === null && pendingDuplicate === null;
   /** Both surfaces can mount under a parked cursor (cancel/dismiss for the
@@ -761,11 +763,12 @@ export function StepDemo({
         </div>
       )}
 
-      {ingesting && !stalled && !stuck && (
+      {ingesting && !stalled && !stuck && ingestPhase && (
         <>
           <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
             <Spinner className="size-6 text-ink/60" />
-            <p className="text-sm text-ink/75">בודקים ומכינים את הסרטון…</p>
+            <p className="text-sm text-ink/75">{ingestPhase.line}</p>
+            {ingestPhase.sub && <p className="text-sm text-ink/55">{ingestPhase.sub}</p>}
             {slow && <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
           </div>
           {descriptionField}

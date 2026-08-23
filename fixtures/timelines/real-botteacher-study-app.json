@@ -2017,6 +2017,14 @@
       78,
       79
     ],
-    "allowNotes": true
+    "allowNotes": true,
+    "dryRunSourceIndexes": [
+      1,
+      16,
+      40,
+      45,
+      51,
+      79
+    ]
   }
 }

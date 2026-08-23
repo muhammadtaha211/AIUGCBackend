@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/brand";
@@ -85,6 +85,27 @@ export function Sidebar({
   const [switching, startSwitching] = useTransition();
 
   const selected = businesses.find((business) => business.id === selectedId) ?? businesses[0];
+
+  // The businesses list and balance are layout-fetched props, and nothing
+  // re-renders the layout while this tab sits open — a credit grant made from
+  // the admin console (or CLI) stays invisible until a reload. Refresh on
+  // window focus so coming back to the tab shows the current numbers; the
+  // throttle keeps alt-tab flicker from stacking full server-tree renders.
+  // Dashboard ONLY: on the wizard routes a refresh re-runs their server
+  // gates too, and a balance that hit 0 mid-session would swap a mounted
+  // wizard (in-flight render screen, unsaved plan edits) for the no-credits
+  // card on a mere alt-tab.
+  const lastFocusRefresh = useRef(0);
+  useEffect(() => {
+    if (pathname !== "/home") return;
+    const onFocus = () => {
+      if (Date.now() - lastFocusRefresh.current < 5_000) return;
+      lastFocusRefresh.current = Date.now();
+      router.refresh();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [router, pathname]);
 
   function selectBusiness(id: string) {
     document.cookie = `${BUSINESS_COOKIE}=${id}; path=/; max-age=31536000`;

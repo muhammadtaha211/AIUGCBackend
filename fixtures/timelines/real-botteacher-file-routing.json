@@ -1443,12 +1443,18 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [1, 2, 3, 12, 36],
-    "dryRunSourceIndexes": [
+    "sourceIndexes": [
+      1,
+      2,
       3,
-      11,
-      15,
-      16,
+      12,
+      36
+    ],
+    "dryRunSourceIndexes": [
+      0,
+      12,
+      20,
+      29,
       36
     ]
   }

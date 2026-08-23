@@ -149,6 +149,9 @@ export type RenderState = {
   failureReason?: string;
   /** True only when the refund actually happened (refunded_at set server-side). */
   refunded?: boolean;
+  /** Render job progress while queued/rendering (type lives with the other
+   *  8d wire shapes; the import is type-only, so no runtime dependency). */
+  job?: import("./service-a-ui").JobProgressWire;
 };
 
 /**

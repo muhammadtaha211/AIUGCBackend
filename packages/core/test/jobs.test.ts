@@ -267,6 +267,36 @@ describe("job progress", () => {
     }
   });
 
+  it("progress surfaces only a running job's sane 0-1 checkpoint fraction", () => {
+    const running = (state: unknown) =>
+      deriveJobProgress({
+        job: { status: "running", lockedAt: secondsAgo(30), createdAt: now, runAt: now, state },
+        now,
+      }).progress;
+    expect(running({ renderProgress: 0.42 })).toBe(0.42);
+    expect(running({ renderProgress: 0 })).toBe(0);
+    expect(running({ renderProgress: 1 })).toBe(1);
+    // Other handlers' state shapes, junk, and out-of-range values stay silent.
+    expect(running({})).toBeUndefined();
+    expect(running({ falRequestId: "abc" })).toBeUndefined();
+    expect(running({ renderProgress: "0.5" })).toBeUndefined();
+    expect(running({ renderProgress: 1.5 })).toBeUndefined();
+    expect(running(undefined)).toBeUndefined();
+    // A queued job never carries one, whatever a stale checkpoint left behind.
+    expect(
+      deriveJobProgress({
+        job: {
+          status: "queued",
+          lockedAt: null,
+          createdAt: now,
+          runAt: now,
+          state: { renderProgress: 0.9 },
+        },
+        now,
+      }).progress,
+    ).toBeUndefined();
+  });
+
   it("ahead passes through only for queued jobs with a count", () => {
     const queued = { status: "queued", lockedAt: null, createdAt: now, runAt: now } as const;
     expect(deriveJobProgress({ job: queued, aheadCount: 3, now }).ahead).toBe(3);

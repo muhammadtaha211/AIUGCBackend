@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readTimeMs } from "@aiugc/core/plan-format";
 import {
+  addWarning,
   analysisBackgroundLine,
   analysisIndexBatches,
   analysisWaitView,
@@ -14,6 +15,7 @@ import {
   DUPLICATE_DURATION_TOLERANCE_MS,
   duplicateDemoMatch,
   fmtElapsedHe,
+  ingestPhaseView,
   ingestStuckView,
   draftBlockedReason,
   endingForRemainder,
@@ -34,7 +36,9 @@ import {
   pickerPools,
   pinnedPlanFrom,
   planFailureNotice,
+  planWaitView,
   renderCompositionKey,
+  renderWaitView,
   planStepsDirty,
   restoredDemo,
   retryableCreateFailure,
@@ -640,6 +644,13 @@ describe("plan editor helpers (8b)", () => {
     expect(deleteWarning(1)).not.toBeNull();
   });
 
+  it("add warning names plans above the a_steps_max default only — 7 stays silent", () => {
+    expect(addWarning(6)).toBeNull();
+    expect(addWarning(7)).toBeNull();
+    expect(addWarning(8)).not.toBeNull();
+    expect(addWarning(12)).not.toBeNull();
+  });
+
   it("only an empty label blocks saving — content is never judged", () => {
     // The anti-fabrication rule constrains the MODEL; no helper here reads
     // visibleText, so any non-empty human label saves.
@@ -946,6 +957,139 @@ describe("the demo step rework (8d)", () => {
       expect(ingestStuckView(job({ state: "failed" }))?.dead).toBe(true);
       expect(ingestStuckView(job({ heartbeat: "stale" }))?.dead).toBe(false);
       expect(ingestStuckView(job({ state: "running", heartbeat: "stale" }))?.dead).toBe(false);
+    });
+  });
+
+  describe("ingestPhaseView", () => {
+    const job = (over: Partial<JobProgressWire>): JobProgressWire => ({
+      state: "queued",
+      heartbeat: "alive",
+      ...over,
+    });
+
+    it("stages ride the real demo.status transitions", () => {
+      expect(ingestPhaseView("uploaded").line).toBe("הסרטון בתור לעיבוד…");
+      expect(ingestPhaseView("probing").line).toBe("בודקים את הסרטון…");
+      expect(ingestPhaseView("normalizing").line).toBe("מכינים את הסרטון…");
+    });
+
+    it("elapsed rides only a RUNNING job payload, whole minutes", () => {
+      expect(ingestPhaseView("normalizing", job({ state: "running", elapsedMs: 2 * 60_000 }))).toEqual(
+        { line: "מכינים את הסרטון…", sub: "רץ כבר 2 דקות." },
+      );
+      expect(ingestPhaseView("normalizing", job({ elapsedMs: 2 * 60_000 })).sub).toBeUndefined();
+      expect(ingestPhaseView("probing", job({ state: "running" })).sub).toBeUndefined();
+    });
+  });
+
+  describe("planWaitView", () => {
+    const job = (over: Partial<JobProgressWire>): JobProgressWire => ({
+      state: "queued",
+      heartbeat: "alive",
+      ...over,
+    });
+
+    it("pending vs planning are the two honest stages; no payload still works", () => {
+      expect(planWaitView("pending", undefined)).toEqual({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+      });
+      expect(planWaitView("planning", undefined)).toEqual({
+        kind: "waiting",
+        line: "בונים את תוכנית הצעדים…",
+      });
+    });
+
+    it("planning + running job shows elapsed", () => {
+      expect(planWaitView("planning", job({ state: "running", elapsedMs: 60_000 }))).toEqual({
+        kind: "waiting",
+        line: "בונים את תוכנית הצעדים…",
+        sub: "רץ כבר דקה.",
+      });
+    });
+
+    it("a dead plan job is a failure, never an eternal spinner", () => {
+      expect(planWaitView("pending", job({ state: "failed" })).kind).toBe("failed");
+      expect(planWaitView("planning", job({ state: "failed", heartbeat: "stale" })).kind).toBe(
+        "failed",
+      );
+    });
+
+    it("a stale heartbeat over live work reads as stuck; unknown does NOT", () => {
+      expect(planWaitView("pending", job({ heartbeat: "stale" })).kind).toBe("stuck");
+      expect(planWaitView("planning", job({ state: "running", heartbeat: "stale" })).kind).toBe(
+        "stuck",
+      );
+      expect(planWaitView("pending", job({ heartbeat: "unknown" })).kind).toBe("waiting");
+    });
+
+    it("a budget-parked plan job reads as paused — even when the row already says planning", () => {
+      expect(planWaitView("pending", job({ resumeAtMs: 4_000_000_000_000 }))).toMatchObject({
+        kind: "waiting",
+        sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
+      });
+      // The real park: the row flips to "planning" BEFORE the paid call, so a
+      // mid-call BudgetError leaves planning + a queued job hours out — the
+      // active "building now" line over that park would be a lie.
+      expect(planWaitView("planning", job({ resumeAtMs: 4_000_000_000_000 }))).toMatchObject({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+        sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
+      });
+    });
+  });
+
+  describe("renderWaitView", () => {
+    const job = (over: Partial<JobProgressWire>): JobProgressWire => ({
+      state: "queued",
+      heartbeat: "alive",
+      ...over,
+    });
+
+    it("queued: position when known, silence when unknown", () => {
+      expect(renderWaitView("queued", job({ ahead: 2 }))).toEqual({
+        kind: "waiting",
+        sub: "לפני הסרטון שלכם יש עוד 2 עבודות בתור.",
+      });
+      expect(renderWaitView("queued", job({ ahead: 1 }))).toEqual({
+        kind: "waiting",
+        sub: "לפני הסרטון שלכם יש עוד עבודה אחת בתור.",
+      });
+      expect(renderWaitView("queued", job({ ahead: 0 }))).toEqual({
+        kind: "waiting",
+        sub: "העיבוד יתחיל בקרוב.",
+      });
+      expect(renderWaitView("queued", job({}))).toEqual({ kind: "waiting" });
+      expect(renderWaitView("queued", undefined)).toEqual({ kind: "waiting" });
+    });
+
+    it("a backoff-parked render job reads as paused — resumeAtMs beats ahead", () => {
+      expect(renderWaitView("queued", job({ ahead: 0, resumeAtMs: 4_000_000_000_000 }))).toEqual({
+        kind: "waiting",
+        sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות.",
+      });
+    });
+
+    it("rendering: whole-percent frames + elapsed; percent never invented", () => {
+      expect(
+        renderWaitView("rendering", job({ state: "running", progress: 0.437, elapsedMs: 60_000 })),
+      ).toEqual({ kind: "waiting", sub: "43% מהפריימים מוכנים — רץ כבר דקה." });
+      expect(renderWaitView("rendering", job({ state: "running", progress: 0.437 }))).toEqual({
+        kind: "waiting",
+        sub: "43% מהפריימים מוכנים.",
+      });
+      expect(renderWaitView("rendering", job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual(
+        { kind: "waiting", sub: "רץ כבר 3 דקות." },
+      );
+      expect(renderWaitView("rendering", undefined)).toEqual({ kind: "waiting" });
+    });
+
+    it("a stale heartbeat over live work reads as stuck; unknown does NOT", () => {
+      expect(renderWaitView("queued", job({ heartbeat: "stale" })).kind).toBe("stuck");
+      expect(renderWaitView("rendering", job({ state: "running", heartbeat: "stale" })).kind).toBe(
+        "stuck",
+      );
+      expect(renderWaitView("queued", job({ heartbeat: "unknown" })).kind).toBe("waiting");
     });
   });
 

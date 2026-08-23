@@ -197,21 +197,23 @@ const REFILM_MESSAGE =
  * result) inside the stubbed 20s demo, with one low-legibility state, one
  * unreadable state, one duplicate and two login states so downstream rules
  * (picker dimming, the plan pass's never-select-unreadable and
- * never-select-skip-kind rules) run for real.
+ * never-select-skip-kind rules) run for real. The six selectable product
+ * states sit >= MIN_STEP_MS apart on purpose — the canned plan is the happy
+ * path, so it must select all of them under the min-gap walk.
  */
 function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
   const states: Omit<AnalysisState, "thumbPath">[] = [
     { timestampMs: 0, screenName: "מסך פתיחה", visibleText: ["ברוכים הבאים"], action: "האפליקציה נפתחת", actionType: "idle", screenKind: "loading", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 1500, screenName: "התחברות", visibleText: ["התחברות", "אימייל", "סיסמה"], action: "מסך ההתחברות מוצג", actionType: "navigate", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 3000, screenName: "התחברות", visibleText: ["התחברות", "אימייל"], action: "הקלדת אימייל", actionType: "type", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 4500, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי", "פרויקט חדש"], action: "מעבר למסך הבית", actionType: "navigate", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 6000, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי"], action: "אותו מסך, כמעט ללא שינוי", actionType: "idle", screenKind: "product", sameStateAsPrevious: true, legibility: "high", salienceNote: null },
-    { timestampMs: 8000, screenName: "פרויקט חדש", visibleText: ["פרויקט חדש", "שם הפרויקט"], action: "לחיצה על פרויקט חדש", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 9500, screenName: "פרויקט חדש", visibleText: ["שם הפרויקט", "קמפיין קיץ"], action: "הקלדת שם הפרויקט", actionType: "type", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 11000, screenName: "בחירת תבנית", visibleText: ["בחרו תבנית", "מודעה", "פוסט"], action: "בחירת תבנית מהרשימה", actionType: "select", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: "בחירת תבניות מוכנות — לא מוזכר בשאלון" },
-    { timestampMs: 12500, screenName: "עורך", visibleText: [], action: "גלילה בעורך — ברק על המסך", actionType: "scroll", screenKind: "product", sameStateAsPrevious: false, legibility: "low", salienceNote: null },
-    { timestampMs: 14000, screenName: "לא ברור", visibleText: [], action: "המסך לא קריא בפריים הזה", actionType: "idle", screenKind: "other", sameStateAsPrevious: false, legibility: "unreadable", salienceNote: null },
-    { timestampMs: 16000, screenName: "עורך", visibleText: ["שמירה", "תצוגה מקדימה"], action: "לחיצה על שמירה", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 1000, screenName: "התחברות", visibleText: ["התחברות", "אימייל", "סיסמה"], action: "מסך ההתחברות מוצג", actionType: "navigate", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 2000, screenName: "התחברות", visibleText: ["התחברות", "אימייל"], action: "הקלדת אימייל", actionType: "type", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 3000, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי", "פרויקט חדש"], action: "מעבר למסך הבית", actionType: "navigate", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 4000, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי"], action: "אותו מסך, כמעט ללא שינוי", actionType: "idle", screenKind: "product", sameStateAsPrevious: true, legibility: "high", salienceNote: null },
+    { timestampMs: 6000, screenName: "פרויקט חדש", visibleText: ["פרויקט חדש", "שם הפרויקט"], action: "לחיצה על פרויקט חדש", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 9000, screenName: "פרויקט חדש", visibleText: ["שם הפרויקט", "קמפיין קיץ"], action: "הקלדת שם הפרויקט", actionType: "type", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    { timestampMs: 12000, screenName: "בחירת תבנית", visibleText: ["בחרו תבנית", "מודעה", "פוסט"], action: "בחירת תבנית מהרשימה", actionType: "select", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: "בחירת תבניות מוכנות — לא מוזכר בשאלון" },
+    { timestampMs: 13500, screenName: "עורך", visibleText: [], action: "גלילה בעורך — ברק על המסך", actionType: "scroll", screenKind: "product", sameStateAsPrevious: false, legibility: "low", salienceNote: null },
+    { timestampMs: 14500, screenName: "לא ברור", visibleText: [], action: "המסך לא קריא בפריים הזה", actionType: "idle", screenKind: "other", sameStateAsPrevious: false, legibility: "unreadable", salienceNote: null },
+    { timestampMs: 15500, screenName: "עורך", visibleText: ["שמירה", "תצוגה מקדימה"], action: "לחיצה על שמירה", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
     { timestampMs: 18500, screenName: "הצלחה", visibleText: ["הקמפיין נוצר!", "שיתוף"], action: "מסך ההצלחה — הפרויקט מוכן", actionType: "result", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
   ];
   return states.map((s) => ({ ...s, thumbPath: thumbPathAt(s.timestampMs) }));

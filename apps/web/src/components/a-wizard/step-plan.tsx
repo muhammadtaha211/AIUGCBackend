@@ -8,6 +8,7 @@ import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
 import {
+  addWarning,
   analysisIndexBatches,
   analysisWaitView,
   deleteWarning,
@@ -17,6 +18,7 @@ import {
   isActivePlanStatus,
   isAnalysisWorkingStatus,
   labelWordWarning,
+  planWaitView,
   planFailureNotice,
   planStepsDirty,
   retryOutcome,
@@ -480,16 +482,59 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
         </div>
       )}
 
-      {generating && !planPoll.stalled && (
-        <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
-          <Spinner className="size-6 text-ink/60" />
-          <p className="text-sm text-ink/75">בונים את תוכנית הצעדים…</p>
-          {planPoll.slow && (
-            <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>
-          )}
-          {notice && <p className="text-sm text-ink/55">{notice}</p>}
-        </div>
-      )}
+      {/* Same 8d honest-progress treatment as the analysis wait above: the
+          plan GET rides the job payload along, so the spinner can tell
+          queued from planning from stuck from dead — a dead plan job used to
+          leave this spinner up forever. */}
+      {generating &&
+        !planPoll.stalled &&
+        (() => {
+          const view = planWaitView(plan!.status, plan!.job);
+          if (view.kind === "failed") {
+            return (
+              <div className="mt-6">
+                <p
+                  role="alert"
+                  className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700"
+                >
+                  יצירת התוכנית נכשלה ולא תמשיך מעצמה.
+                </p>
+                {!quotaBlocked && (
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="mt-4"
+                    loading={busy}
+                    onClick={() => void requestPlan()}
+                  >
+                    נסה שוב
+                  </Button>
+                )}
+              </div>
+            );
+          }
+          if (view.kind === "stuck") {
+            return (
+              <p
+                role="alert"
+                className="mt-6 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900"
+              >
+                {view.line}
+              </p>
+            );
+          }
+          return (
+            <div className="mt-6 flex flex-col items-center gap-3 rounded-xl border border-ink/[0.08] bg-white px-6 py-10 text-center">
+              <Spinner className="size-6 text-ink/60" />
+              <p className="text-sm text-ink/75">{view.line}</p>
+              {view.sub && <p className="text-sm text-ink/55">{view.sub}</p>}
+              {planPoll.slow && (
+                <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>
+              )}
+              {notice && <p className="text-sm text-ink/55">{notice}</p>}
+            </div>
+          );
+        })()}
       {generating && planPoll.stalled && (
         <div className="mt-6">
           <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
@@ -694,7 +739,8 @@ function PlanEditor({
   }, [approved]);
   const dirty = planStepsDirty(draft, plan.steps);
   const blocked = draftBlockedReason(draft);
-  const thinWarning = deleteWarning(draft.length);
+  // Mutually exclusive by arithmetic (< min vs > max), so one slot renders both.
+  const countWarning = deleteWarning(draft.length) ?? addWarning(draft.length);
   // Draft durations are the STORED assembly — a label/delete edit can widen a
   // step's window server-side, so pre-save numbers are conservative and the
   // save response corrects them.
@@ -838,9 +884,12 @@ function PlanEditor({
           </Button>
         ))}
 
-      {thinWarning && (
+      {/* Advice to add/trim steps is actionable only while editing — on the
+          approved read-only view it would nag about controls that are not
+          there (only the edit-a-copy fork can change the count). */}
+      {!approved && countWarning && (
         <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
-          {thinWarning}
+          {countWarning}
         </p>
       )}
 

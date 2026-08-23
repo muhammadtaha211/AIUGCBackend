@@ -251,6 +251,11 @@ export type JobProgress = {
   /** Queued: since enqueue (createdAt — backoff moves runAt, not the wait the
    *  customer has felt). Running: since the claim. */
   elapsedMs?: number;
+  /** Running only: the handler's own 0-1 fraction, when it checkpoints one
+   *  (state.renderProgress — today only render_video writes it, from
+   *  renderMedia's frame loop). Frames only: bundling and the upload after
+   *  sit outside it, so elapsedMs stays the primary signal. */
+  progress?: number;
   /** Queued jobs pushed meaningfully into the future (backoff, budget park):
    *  when they will next be runnable. Absent = runnable now-ish. */
   resumeAtMs?: number;
@@ -269,7 +274,7 @@ export type JobProgress = {
  * the cost is a wedged worker reading "alive" for at most JOB_LEASE_MS.
  */
 export function deriveJobProgress(opts: {
-  job?: Pick<Job, "status" | "lockedAt" | "createdAt" | "runAt">;
+  job?: Pick<Job, "status" | "lockedAt" | "createdAt" | "runAt"> & { state?: unknown };
   aheadCount?: number;
   heartbeatAt?: Date;
   /** Newest locked_at across ALL running jobs (any lane), if any. */
@@ -298,9 +303,16 @@ export function deriveJobProgress(opts: {
   }
   if (job.status === "running") {
     const since = job.lockedAt ?? job.createdAt;
+    // Defensive read off the checkpoint jsonb — anything but a 0-1 number
+    // (older rows, other handlers' state shapes) simply doesn't surface.
+    const fraction = (job.state as { renderProgress?: unknown } | null | undefined)
+      ?.renderProgress;
     return {
       state: "running",
       elapsedMs: Math.max(0, opts.now.getTime() - since.getTime()),
+      ...(typeof fraction === "number" && fraction >= 0 && fraction <= 1
+        ? { progress: fraction }
+        : {}),
       heartbeat,
     };
   }

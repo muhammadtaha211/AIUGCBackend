@@ -358,6 +358,13 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
       .set({ status: "rendering", updatedAt: new Date() })
       .where(eq(videoRenders.id, videoRenderId));
 
+    // Clear any renderProgress a FAILED prior attempt checkpointed:
+    // failTransient/claim/lease-recovery all keep jobs.state, so without this
+    // a retry that died at 95% shows the customer "95%" for the whole
+    // re-download/re-bundle window and then collapses to 0 — stale progress
+    // presented as current, the exact lie this surface exists to remove.
+    await ctx.checkpoint({});
+
     const localDir = path.join(WORK_DIR, "render", videoRenderId);
     mkdirSync(localDir, { recursive: true });
     const format = (render.params as VariantParams).format;
@@ -369,24 +376,42 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
         : await buildServiceBProps(ctx.db, render, localDir);
 
     const outPath = path.join(localDir, "final.mp4");
-    await renderVideo(props, outPath);
+    // Whole percents on the job's state jsonb, throttled — renderMedia calls
+    // this many times a second and the customer poll reads every 2.5s.
+    // Fire-and-forget with a swallowed error: a DB blip must never sink a
+    // paid render. Idempotency holds: render_video keeps no other state and
+    // never reads it on entry, so a crash-retry just overwrites the fraction.
+    let lastPct = -1;
+    let lastWriteAt = 0;
+    const onProgress = (fraction: number) => {
+      const pct = Math.floor(fraction * 100);
+      if (pct <= lastPct || Date.now() - lastWriteAt < 2_000) return;
+      lastPct = pct;
+      lastWriteAt = Date.now();
+      void ctx.checkpoint({ renderProgress: fraction }).catch(() => {});
+    };
+    await renderVideo(props, outPath, onProgress);
 
     const storage = getStorage();
-    const filePath = await storage.put(
-      "renders",
-      storageKey({
-        businessId: render.businessId,
-        entity: "video",
-        id: videoRenderId,
-        filename: "final.mp4",
-      }),
-      outPath,
-    );
+    const localThumb = path.join(localDir, "thumb.jpg");
+    // The mp4 upload and the thumbnail grab both only READ outPath — run them
+    // together so the ffmpeg second rides inside the upload's network time.
+    const [filePath] = await Promise.all([
+      storage.put(
+        "renders",
+        storageKey({
+          businessId: render.businessId,
+          entity: "video",
+          id: videoRenderId,
+          filename: "final.mp4",
+        }),
+        outPath,
+      ),
+      getEnv().DRY_RUN ? Promise.resolve() : thumbnail(outPath, localThumb),
+    ]);
 
     let thumbPath: string | undefined;
     if (!getEnv().DRY_RUN) {
-      const localThumb = path.join(localDir, "thumb.jpg");
-      await thumbnail(outPath, localThumb);
       thumbPath = await storage.put(
         "renders",
         storageKey({
@@ -443,8 +468,12 @@ async function buildServiceAProps(
 
   const demoPath = path.join(localDir, "demo.mp4");
   const hookClipPath = path.join(localDir, "hook.mp4");
-  await storage.download(demo.normalizedPath, demoPath);
-  await storage.download(hookClip.filePath, hookClipPath);
+  // Independent files, concurrent fetch — sequential awaits here were pure
+  // wall-clock waste on every render.
+  await Promise.all([
+    storage.download(demo.normalizedPath, demoPath),
+    storage.download(hookClip.filePath, hookClipPath),
+  ]);
 
   let captions: CaptionChunk[];
   let voiceoverPath: string | undefined;
@@ -551,8 +580,11 @@ async function buildServiceAStepsProps(
 
   const demoPath = path.join(localDir, "demo.mp4");
   const hookClipPath = path.join(localDir, "hook.mp4");
-  await storage.download(demo.normalizedPath, demoPath);
-  await storage.download(hookClip.filePath, hookClipPath);
+  // Independent files, concurrent fetch — same as buildServiceAProps.
+  await Promise.all([
+    storage.download(demo.normalizedPath, demoPath),
+    storage.download(hookClip.filePath, hookClipPath),
+  ]);
 
   return {
     kind: "service_a_steps",

@@ -136,6 +136,21 @@ export const bt709FfmpegOverride: FfmpegOverrideFn = ({ type, args }) => {
  */
 const OFFTHREAD_VIDEO_CACHE_BYTES = 512 * 1024 * 1024;
 
+/**
+ * Browser tabs rendering frames in parallel. Remotion's default is half the
+ * machine's threads — ambient, like the cache default above, so the same
+ * render runs at different speeds depending on the box. Pinned for the
+ * founder's 8-thread worker box: tabs only shard frame ranges (bit-identical
+ * output), and the two spare threads keep the encoder pipe and the offthread
+ * compositor fed. The tab count does not split the frame cache above — that
+ * budget belongs to the compositor's decode threads, not the tabs.
+ *
+ * Measured 2026-08-23, render:sample:a back-to-back on the (busy) founder
+ * box: default (4 tabs) 174s -> 6 tabs 87s; output probed clean
+ * (1080x1920 h264, expected duration).
+ */
+const RENDER_CONCURRENCY = 6;
+
 const ENTRY_POINT = fileURLToPath(new URL("./index.ts", import.meta.url));
 
 let bundlePromise: Promise<string> | undefined;
@@ -149,7 +164,11 @@ export function getBundle(): Promise<string> {
   return bundlePromise;
 }
 
-export async function renderServiceA(input: RenderServiceAInput, outPath: string): Promise<void> {
+export async function renderServiceA(
+  input: RenderServiceAInput,
+  outPath: string,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
   const files = [input.hookClipPath, input.demoPath];
   if (input.voiceoverPath) files.push(input.voiceoverPath);
   if (input.avatarPath) files.push(input.avatarPath);
@@ -173,7 +192,7 @@ export async function renderServiceA(input: RenderServiceAInput, outPath: string
     if (!props.success) {
       throw new RenderPropsError(`invalid ServiceA props: ${props.error.message}`);
     }
-    await runRender("ServiceA", props.data, outPath);
+    await runRender("ServiceA", props.data, outPath, { onProgress });
   } finally {
     await served.close();
   }
@@ -182,6 +201,7 @@ export async function renderServiceA(input: RenderServiceAInput, outPath: string
 export async function renderServiceASteps(
   input: RenderServiceAStepsInput,
   outPath: string,
+  onProgress?: (fraction: number) => void,
 ): Promise<void> {
   const files = [input.hookClipPath, input.demoPath];
   assertFilesExist(files);
@@ -209,6 +229,7 @@ export async function renderServiceASteps(
       await runRender("ServiceASteps", props.data, outPath, {
         enforceAudioTrack: false,
         muted: true,
+        onProgress,
       });
     } catch (err) {
       // The out-of-range-trim throw fires in the browser during
@@ -224,7 +245,11 @@ export async function renderServiceASteps(
   }
 }
 
-export async function renderServiceB(input: RenderServiceBInput, outPath: string): Promise<void> {
+export async function renderServiceB(
+  input: RenderServiceBInput,
+  outPath: string,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
   const files = [input.talkingHeadPath, input.voiceoverPath, ...input.brollPaths];
   assertFilesExist(files);
 
@@ -240,7 +265,7 @@ export async function renderServiceB(input: RenderServiceBInput, outPath: string
     if (!props.success) {
       throw new RenderPropsError(`invalid ServiceB props: ${props.error.message}`);
     }
-    await runRender("ServiceB", props.data, outPath);
+    await runRender("ServiceB", props.data, outPath, { onProgress });
   } finally {
     await served.close();
   }
@@ -260,8 +285,16 @@ async function runRender(
   id: "ServiceA" | "ServiceASteps" | "ServiceB",
   inputProps: ServiceAProps | ServiceAStepsProps | ServiceBProps,
   outPath: string,
-  opts?: { enforceAudioTrack?: boolean; muted?: boolean },
+  opts?: {
+    enforceAudioTrack?: boolean;
+    muted?: boolean;
+    /** renderMedia's 0-1 fraction, forwarded so the worker can surface real
+     *  render progress. Frames only — bundling, selectComposition and the
+     *  upload after are outside it. */
+    onProgress?: (fraction: number) => void;
+  },
 ): Promise<void> {
+  const { onProgress, ...renderOpts } = opts ?? {};
   const serveUrl = await getBundle();
   const composition = await selectComposition({ serveUrl, id, inputProps });
 
@@ -287,10 +320,12 @@ async function runRender(
     // the range conversion real and completes the VUI tags.
     colorSpace: "bt709",
     ffmpegOverride: bt709FfmpegOverride,
+    concurrency: RENDER_CONCURRENCY,
     offthreadVideoCacheSizeInBytes: OFFTHREAD_VIDEO_CACHE_BYTES,
     outputLocation: outPath,
     inputProps,
     logLevel: "error",
-    ...opts,
+    ...(onProgress ? { onProgress: ({ progress }) => onProgress(progress) } : {}),
+    ...renderOpts,
   });
 }

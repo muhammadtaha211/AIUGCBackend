@@ -49,6 +49,14 @@ export const MIN_LABEL_WORDS = 3;
  *  this constant is updated to match. */
 export const A_STEPS_MIN_DEFAULT = 5;
 
+/** Code default for the `a_steps_max` config knob (most steps a GENERATED plan
+ *  may have — the human edit path is never capped, the wizard just warns past
+ *  it that the format works best short). Same drift deal as A_STEPS_MIN_DEFAULT:
+ *  a seeded config row wins server-side until this constant is updated to match.
+ *  7 is arithmetic, not taste: at the 3s step floor, 7 steps already fill the
+ *  21s runtime ceiling exactly. */
+export const A_STEPS_MAX_DEFAULT = 7;
+
 /** Fixed allowance before the label is being read at all: the 5-frame pop-in
  *  (ServiceASteps) plus the eye reaching the lower third after the hard cut. */
 export const LABEL_LEAD_MS = 400;
@@ -63,7 +71,15 @@ export const LABEL_WORDS_PER_SECOND = 2.5;
  * the wizard's still-preview must use the same number the plan was built with.
  */
 export function readTimeMs(label: string): number {
-  const words = label.trim().split(/\s+/).filter(Boolean).length;
+  // Count only tokens carrying a letter or digit — the same set the word CAP
+  // counts (its normalizeWord drops punctuation-only tokens like a spaced
+  // dash). Counting raw whitespace tokens here let a cap-legal 6-word label
+  // read as 7 (3200ms > the 3s step floor), busting the 21s band on 7-step
+  // plans that the generated timing table licenses at the ceiling exactly.
+  const words = label
+    .trim()
+    .split(/\s+/)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
   return LABEL_LEAD_MS + Math.round((words / LABEL_WORDS_PER_SECOND) * 1000);
 }
 
