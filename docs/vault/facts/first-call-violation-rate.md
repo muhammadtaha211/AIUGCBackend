@@ -45,7 +45,9 @@ final attempt also needed a corrective call.
 For all 15 single-attempt jobs the two calls are **5.4 to 14.1 seconds apart**. A parked job
 rechecks hourly, so a park-and-resume would show a gap of at least an hour, not eight seconds. The
 outlier proves the contrast: `50f676a7`, the one `attempts = 1` job, spans **1,855.7 s** across its
-three calls.
+three calls — and its `jobs.last_error` says why:
+`lease expired: worker died mid-run (was locked by cli:light)`
+([[worker-exits-on-a-dropped-connection]]).
 
 Second confirmation: **every second call is larger than its first**, in all 15 — e.g.
 22,540 → 23,287 and 29,063 → 30,226 tokens. That is what the corrective prompt predicts, because it

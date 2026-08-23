@@ -33,10 +33,14 @@ Say ~₪2.30, not "₪2.40" — and never a single figure without the range, bec
 ## Retries re-pay in full
 
 `5e98a9f4` took 3 attempts and spent 17 calls / ₪4.35 — **2.1× a clean run**, and 17 is above the
-per-attempt ceiling of 16 calls, so more than one attempt certainly bought batches. _Why_ a retry
-re-buys rather than resuming from its checkpoint is **not established here** — the count is
-measured, the mechanism is not. Budget for a bad upload at
-roughly double, not at the clean figure.
+per-attempt ceiling of 16 calls, so more than one attempt certainly bought batches.
+
+The trigger is known: that job's `jobs.last_error` reads
+`lease expired: worker died mid-run (was locked by local:heavy)`. **The worker died and the lease
+sweep reclaimed the job** — no handler decided to retry. See
+[[worker-exits-on-a-dropped-connection]]. So this premium is the price of a worker crash, not of a
+flaky analysis. Budget for a bad upload at roughly double, but expect the cause to be
+infrastructure rather than the demo.
 
 `63c186dd` took 1 attempt and 9 calls, so a single retry does not always double it — that job
 evidently failed late enough to have already done most of its work, or early enough to have done
