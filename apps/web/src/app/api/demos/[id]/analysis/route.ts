@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
-import { analysisTimelineSchema, getDb, getStorage } from "@aiugc/core";
+import {
+  analysisTimelineSchema,
+  getDb,
+  getJobProgress,
+  getLatestDemoAnalysis,
+  getStorage,
+  HEAVY_JOB_TYPES,
+  type JobProgress,
+} from "@aiugc/core";
 import {
   coreErrorResponse,
   INVALID_BODY,
   jsonError,
-  requireAnalysis,
+  requireDemo,
   requireUser,
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
 import { parseAnalysisIndexes } from "@/lib/service-a";
-import { ANALYSIS_PAGE_SIZE } from "@/lib/service-a-ui";
+import { ANALYSIS_PAGE_SIZE, isAnalysisWorkingStatus } from "@/lib/service-a-ui";
 
 /**
  * Poll the demo's newest analysis: status while it runs, the Hebrew failReason
@@ -20,6 +28,12 @@ import { ANALYSIS_PAGE_SIZE } from "@/lib/service-a-ui";
  * - `?indexes=3,17,29`: exactly those states WITH signed thumbs — the plan
  *   surface's per-step lookup (a plan's 5-8 sourceIndexes span pages). Capped
  *   at ANALYSIS_PAGE_SIZE and 400s on any out-of-range or malformed index.
+ *
+ * No analysis row is a NORMAL state, not a 404 (8d): the row appears only when
+ * the analyze job starts, so the whole heavy-lane queue wait used to be
+ * indistinguishable from a dead pipeline. It now answers 200 with
+ * `status:"missing"` plus the analyze job's progress; a working row carries
+ * the same `job` payload. 404 remains for a missing/unowned DEMO only.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -28,19 +42,34 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const db = getDb();
-    const found = await requireAnalysis(db, id, auth.userId);
+    const found = await requireDemo(db, id, auth.userId);
     if ("response" in found) return found.response;
-    const { analysis } = found;
+    const analysis = await getLatestDemoAnalysis(db, id);
+
+    // newestMatching: founder re-runs enqueue as analyze:{id}:rN — pinning the
+    // bare key would report the first attempt's corpse while the retry runs.
+    const analysisJob = (): Promise<JobProgress> =>
+      getJobProgress(db, {
+        idempotencyKey: `analyze:${id}`,
+        aheadOfTypes: HEAVY_JOB_TYPES,
+        newestMatching: true,
+      });
+
+    if (!analysis) {
+      return NextResponse.json({ status: "missing", job: await analysisJob() });
+    }
 
     const body: {
       analysisId: string;
       status: string;
       failReason?: string;
+      job?: JobProgress;
       stateCount?: number;
       states?: unknown[];
       total?: number;
     } = { analysisId: analysis.id, status: analysis.status };
     if (analysis.failReason) body.failReason = analysis.failReason;
+    if (isAnalysisWorkingStatus(analysis.status)) body.job = await analysisJob();
     if (!analysis.timeline) return NextResponse.json(body);
 
     // rejected rows keep their timeline for founder debugging — the customer

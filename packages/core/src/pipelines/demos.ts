@@ -11,7 +11,7 @@ import { WORK_DIR } from "../paths";
 import { getStorage, storageKey } from "../storage";
 
 // Up to 3 minutes: step-plan demos are one continuous screen recording that
-// the analysis pass mines for states — the render uses ~15-20s of it.
+// the analysis pass mines for states — the render uses ~16-21s of it.
 const MIN_DURATION_MS = 8_000;
 const MAX_DURATION_MS = 180_000;
 

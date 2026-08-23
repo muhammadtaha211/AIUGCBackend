@@ -15,7 +15,9 @@ export type QuoteView = { credits: number; balance: number; shortfall: number } 
 
 const formatSeconds = (seconds: number): string => `${Math.round(seconds * 10) / 10}`;
 
-/** THE price sentence. One phrasing for both services — do not fork it. */
+/** THE price sentence for B and voiced A. The steps format deliberately does
+ *  NOT use it (founder ruling, 8e walkthrough): its price rides on the confirm
+ *  button itself (stepsConfirmLabel) with a balance-only supporting line. */
 export function quoteLine(quote: NonNullable<QuoteView>): string {
   return `היצירה תעלה ${quote.credits} קרדיטים. היתרה שלכם: ${quote.balance}.`;
 }

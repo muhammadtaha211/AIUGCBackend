@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
-import { assertAccountBudget, getDb, getLatestStepPlan, requestDemoPlan } from "@aiugc/core";
+import {
+  assertAccountBudget,
+  getDb,
+  getJobProgress,
+  getLatestStepPlan,
+  requestDemoPlan,
+} from "@aiugc/core";
 import { coreErrorResponse, jsonError, NOT_FOUND, requireDemo, requireUser } from "@/lib/api";
 import { stepPlanResponse } from "@/lib/service-a";
+import { isActivePlanStatus } from "@/lib/service-a-ui";
 
 /** Poll the demo's newest step plan (any status — the wizard re-attaches to it). */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,7 +23,18 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     const plan = await getLatestStepPlan(db, id);
     if (!plan) return jsonError(404, NOT_FOUND);
-    return NextResponse.json(stepPlanResponse(plan));
+    // While generating, ride the job's progress along (8d pattern, the demo
+    // GET's minimal form): a dead plan job otherwise leaves the row pending
+    // forever and the wizard spinning with it. The bare key is exact — every
+    // retry is a NEW plan row. No aheadOfTypes: core exports no light-lane
+    // type list, and the wait view says nothing when `ahead` is undefined.
+    const body = stepPlanResponse(plan) as ReturnType<typeof stepPlanResponse> & {
+      job?: Awaited<ReturnType<typeof getJobProgress>>;
+    };
+    if (isActivePlanStatus(plan.status)) {
+      body.job = await getJobProgress(db, { idempotencyKey: `plan:${plan.id}` });
+    }
+    return NextResponse.json(body);
   } catch (err) {
     return coreErrorResponse(err);
   }

@@ -99,12 +99,19 @@ export function StatePicker({
         if (result.status === 403) return onFatal(result.error);
         return setError(result.error);
       }
-      const signed = (result.body.states ?? []).filter(
+      // A 200 without states = the analysis stopped being ready under us (the
+      // route answers {status:"missing"} since 8d instead of 404) — silence
+      // here would leave skeleton tiles forever with no error anywhere.
+      if (!result.body.states) return setError(INVENTORY_ERROR);
+      const signed = result.body.states.filter(
         (state): state is AnalysisStateWire & { thumbUrl: string } => state.thumbUrl !== undefined,
       );
       setThumbs(
         (prev) =>
-          new Map([...prev, ...signed.map((state): [number, string] => [state.index, state.thumbUrl])]),
+          new Map([
+            ...prev,
+            ...signed.map((state): [number, string] => [state.index, state.thumbUrl]),
+          ]),
       );
     }
   }

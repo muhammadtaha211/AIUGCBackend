@@ -1,5 +1,6 @@
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import {
+  A_STEPS_MAX_DEFAULT,
   A_STEPS_MIN_DEFAULT,
   MAX_LABEL_WORDS,
   MIN_LABEL_WORDS,
@@ -66,6 +67,56 @@ export function demoDurationError(seconds: number): string | null {
   return null;
 }
 
+/**
+ * Pre-upload aspect gate — the browser already decoded the metadata for the
+ * duration check, so a horizontal video fails HERE instead of after a
+ * possibly-1GB upload. Same Hebrew the ingest probe stores as rejectReason.
+ * NB this saves the upload and the wait, never analysis money: reject-at-probe
+ * already precedes the analysis enqueue. Undecodable metadata (undefined)
+ * skips the gate, same as the duration check — the server re-checks.
+ */
+export function clientDemoAspectError(width?: number, height?: number): string | null {
+  if (width === undefined || height === undefined || width === 0 || height === 0) return null;
+  return height <= width ? "הסרטון אופקי — צריך וידאו אנכי (9:16)" : null;
+}
+
+// ---------------------------------------------------------------------------
+// The duplicate-upload brake (8d): a fumbled re-upload of footage that is
+// already analyzed costs a full fresh analysis. Duration is the only signal
+// the browser has before the bytes move — a match is a QUESTION, never a gate.
+// ---------------------------------------------------------------------------
+
+/**
+ * Browser-decoded duration vs ffprobe-on-normalized rarely agree exactly;
+ * measured drift is well under this. Tight on purpose — a false "you already
+ * uploaded this" on genuinely new footage erodes trust in the warning.
+ */
+export const DUPLICATE_DURATION_TOLERANCE_MS = 250;
+
+/** One ready demo's identity for the duplicate check + the "use existing"
+ *  offer — every ready row, not just the visible page (route sends all). */
+export type ReadyDemoDuration = {
+  id: string;
+  durationMs?: number;
+  description?: string;
+  createdAt: string;
+};
+
+/** The newest ready demo whose duration matches the picked file, or null. */
+export function duplicateDemoMatch(
+  seconds: number,
+  rows: ReadyDemoDuration[],
+): ReadyDemoDuration | null {
+  const ms = seconds * 1000;
+  const matches = rows.filter(
+    (row) =>
+      row.durationMs !== undefined &&
+      Math.abs(row.durationMs - ms) <= DUPLICATE_DURATION_TOLERANCE_MS,
+  );
+  if (matches.length === 0) return null;
+  return matches.reduce((newest, row) => (row.createdAt > newest.createdAt ? row : newest));
+}
+
 // ---------------------------------------------------------------------------
 // Wizard state carried across steps
 // ---------------------------------------------------------------------------
@@ -76,11 +127,201 @@ export type DemoState = {
   rejectReason?: string;
   durationMs?: number;
   thumbUrl?: string;
+  /** Ingest pipeline progress — present on the demo GET while ingesting. */
+  ingest?: JobProgressWire;
+  /** Newest analysis attempt's status ("missing" = none yet) — present on the
+   *  demo GET once ready; absent on locally-constructed states (reuse rows). */
+  analysis?: { status: string };
 };
 
 /** A demo still moving through ingest — the step keeps polling while true. */
 export function isIngestingDemoStatus(status: string): boolean {
   return status === "uploaded" || status === "probing" || status === "normalizing";
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline progress (8d): the queue has no push channel, so the wait surfaces
+// derive "is anything processing this" from core's getJobProgress payload.
+// ---------------------------------------------------------------------------
+
+/** core's JobProgress on the wire (demo GET `ingest`, analysis/plan/render
+ *  GET `job`). */
+export type JobProgressWire = {
+  state: "missing" | "queued" | "running" | "failed" | "done";
+  ahead?: number;
+  elapsedMs?: number;
+  /** Queued but deliberately scheduled in the future (backoff, budget park). */
+  resumeAtMs?: number;
+  /** Running only: the handler's checkpointed 0-1 fraction (render frames). */
+  progress?: number;
+  heartbeat: "alive" | "stale" | "unknown";
+};
+
+/** "רץ כבר X" — whole minutes, never implying seconds-scale progress. */
+export function fmtElapsedHe(elapsedMs: number): string {
+  const minutes = Math.floor(elapsedMs / 60_000);
+  if (minutes < 1) return "פחות מדקה";
+  if (minutes === 1) return "דקה";
+  return `${minutes} דקות`;
+}
+
+export type AnalysisWaitView =
+  | { kind: "waiting"; line: string; sub?: string }
+  | { kind: "stuck"; line: string }
+  /** The analyze job died with no analysis row — the caller renders its
+   *  existing failed-analysis copy. Without this the card spins forever. */
+  | { kind: "failed" };
+
+const ANALYSIS_QUEUED_LINE = "הסרטון בתור לניתוח — זה לוקח כמה דקות.";
+const PIPELINE_STUCK_LINE =
+  "משהו נתקע אצלנו וה{מה} לא מתקדם כרגע — זה לא בצד שלכם. הסרטון שמור, והוא יימשך אוטומטית. אפשר לחזור לכאן מאוחר יותר.";
+const stuckLine = (what: string) => PIPELINE_STUCK_LINE.replace("{מה}", what);
+
+/**
+ * What the plan step's analysis wait shows. Real timescale, honest states:
+ * queue position while queued (analyze_demo shares the heavy lane with
+ * renders — the wait is minutes to tens of minutes), elapsed while running,
+ * "stuck" when no worker has claimed anything past the heartbeat window, and
+ * "failed" when the job is dead. No payload (older server, first poll still
+ * in flight) degrades to the pre-8d generic line.
+ */
+export function analysisWaitView(job?: JobProgressWire): AnalysisWaitView {
+  if (!job) return { kind: "waiting", line: ANALYSIS_QUEUED_LINE };
+  if (job.state === "failed") return { kind: "failed" };
+  if (job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
+    return { kind: "stuck", line: stuckLine("ניתוח") };
+  }
+  if (job.state === "running") {
+    return {
+      kind: "waiting",
+      line:
+        job.elapsedMs !== undefined
+          ? `מנתחים את הסרטון עכשיו — רץ כבר ${fmtElapsedHe(job.elapsedMs)}.`
+          : "מנתחים את הסרטון עכשיו.",
+    };
+  }
+  if (job.state === "queued") {
+    // A deliberately-rescheduled job (backoff, budget park) is PAUSED, not in
+    // line — "starts soon" over an hours-long park would be a lie.
+    if (job.resumeAtMs !== undefined) {
+      return {
+        kind: "waiting",
+        line: ANALYSIS_QUEUED_LINE,
+        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+      };
+    }
+    // ahead undefined = the queue depth is unknown (no lane named) — say
+    // nothing rather than promising "soon" from behind three renders.
+    const sub =
+      job.ahead === undefined
+        ? undefined
+        : job.ahead === 1
+          ? "לפני הסרטון שלכם יש עוד עבודה אחת בתור."
+          : job.ahead > 1
+            ? `לפני הסרטון שלכם יש עוד ${job.ahead} עבודות בתור.`
+            : "הניתוח יתחיל בקרוב.";
+    return { kind: "waiting", line: ANALYSIS_QUEUED_LINE, ...(sub ? { sub } : {}) };
+  }
+  // missing/done: enqueue race or a just-finished job — the next poll resolves.
+  return { kind: "waiting", line: ANALYSIS_QUEUED_LINE };
+}
+
+export type PlanWaitView =
+  | { kind: "waiting"; line: string; sub?: string }
+  | { kind: "stuck"; line: string }
+  /** The plan job died with the row stuck pending/planning — the caller
+   *  renders a failure card with retry (a retry is a NEW plan row, so the
+   *  button genuinely works here, unlike the analysis). */
+  | { kind: "failed" };
+
+/**
+ * The plan-generation wait — analysisWaitView's twin over the plan GET's 8d
+ * payload. The staged copy rides the plan ROW's real transition: "pending"
+ * (enqueued, the light lane may be busy) vs "planning" (flipped right before
+ * the paid Claude call — the model is working now). Elapsed is garnish on the
+ * planning stage; a stale heartbeat or a dead job stops the spinner lying.
+ * No queue position: the plan GET passes no lane (core exports no light-lane
+ * type list), so `ahead` is undefined and nothing is promised.
+ */
+export function planWaitView(status: string, job?: JobProgressWire): PlanWaitView {
+  if (job?.state === "failed") return { kind: "failed" };
+  if (job && job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
+    return { kind: "stuck", line: stuckLine("תכנון") };
+  }
+  // A parked/deep-backoff job is PAUSED whatever the row says — the row sits
+  // on "planning" when the budget park hit mid-call (the flip happens before
+  // the paid call), and "building now" over an hours-long park is a lie. Same
+  // ruling as the analysis wait: resumeAtMs beats the row status.
+  if (job?.state === "queued" && job.resumeAtMs !== undefined) {
+    return {
+      kind: "waiting",
+      line: "התוכנית ממתינה בתור…",
+      sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
+    };
+  }
+  if (status === "planning") {
+    const sub =
+      job?.state === "running" && job.elapsedMs !== undefined
+        ? `רץ כבר ${fmtElapsedHe(job.elapsedMs)}.`
+        : undefined;
+    return { kind: "waiting", line: "בונים את תוכנית הצעדים…", ...(sub ? { sub } : {}) };
+  }
+  return { kind: "waiting", line: "התוכנית ממתינה בתור…" };
+}
+
+/**
+ * The ingest spinner's staged copy. The stages are the REAL demo.status
+ * transitions the worker writes as it goes (uploaded -> probing ->
+ * normalizing), not invented progress — the poll already carries them, the
+ * old spinner just never read them. Elapsed rides the ingest job payload
+ * while it runs, whole minutes only (fmtElapsedHe).
+ */
+export function ingestPhaseView(
+  status: string,
+  job?: JobProgressWire,
+): { line: string; sub?: string } {
+  const line =
+    status === "probing"
+      ? "בודקים את הסרטון…"
+      : status === "normalizing"
+        ? "מכינים את הסרטון…"
+        : "הסרטון בתור לעיבוד…";
+  const sub =
+    job?.state === "running" && job.elapsedMs !== undefined
+      ? `רץ כבר ${fmtElapsedHe(job.elapsedMs)}.`
+      : undefined;
+  return sub ? { line, sub } : { line };
+}
+
+/**
+ * The demo step's way out of a stalled ingest. null = still working normally
+ * (spinner stays). dead = the job exhausted its retries: nothing will resume
+ * it, so re-uploading is the honest remedy; the stale case is the opposite —
+ * the upload is safe and processing resumes when a worker returns.
+ */
+export function ingestStuckView(job?: JobProgressWire): { line: string; dead: boolean } | null {
+  if (!job) return null;
+  if (job.state === "failed") {
+    return { dead: true, line: "עיבוד הסרטון נכשל ולא ימשיך מעצמו — נסו להעלות את הסרטון שוב." };
+  }
+  if (job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
+    return { dead: false, line: stuckLine("עיבוד") };
+  }
+  return null;
+}
+
+/**
+ * The ready card's passive line: analysis was enqueued at ingest and runs on
+ * behind this screen for minutes — said in the past tense ("was sent") so the
+ * line stays true even after the un-polled ready card goes stale. Absent
+ * status (a reused demo, constructed locally) shows nothing: its analysis
+ * finished long ago and the plan step owns any residual wait.
+ */
+export function analysisBackgroundLine(analysisStatus?: string): string | null {
+  if (analysisStatus === undefined) return null;
+  return analysisStatus === "missing" || isAnalysisWorkingStatus(analysisStatus)
+    ? "הסרטון נשלח לניתוח שרץ ברקע כמה דקות — אפשר להמשיך בינתיים."
+    : null;
 }
 
 /** The reuse picker pages ready demos four at a time (route + step agree). */
@@ -231,6 +472,8 @@ export type StepPlanWire = {
   notes?: string;
   failReason?: string;
   approvedAt?: string;
+  /** Plan job progress — attached by the GET while pending/planning (8d). */
+  job?: JobProgressWire;
 };
 
 /** One analysis state from GET .../analysis — the route sends every field on
@@ -373,6 +616,15 @@ export function labelWordWarning(label: string): string | null {
 export function deleteWarning(stepCount: number): string | null {
   return stepCount < A_STEPS_MIN_DEFAULT
     ? `בתוכנית פחות מ-${A_STEPS_MIN_DEFAULT} צעדים — המודעה עלולה להרגיש קצרה מדי.`
+    : null;
+}
+
+/** Soft, the add-side twin: past the a_steps_max default (the MODEL's cap —
+ *  the founder's ruling is that hand edits are never capped) the ad outgrows
+ *  the format. Advisory only; adding stays allowed, this only names it. */
+export function addWarning(stepCount: number): string | null {
+  return stepCount > A_STEPS_MAX_DEFAULT
+    ? `בתוכנית יותר מ-${A_STEPS_MAX_DEFAULT} צעדים — הפורמט הזה עובד הכי טוב במודעות קצרות, שקלו להשאיר רק את הצעדים החשובים.`
     : null;
 }
 
@@ -725,6 +977,22 @@ export function retryableCreateFailure(status: number): boolean {
 }
 
 /**
+ * The confirm button's own label carries the price (founder ruling after the
+ * 8e walkthrough: the 13px quoteLine under the summary did not read as a
+ * price — the number the click costs belongs ON the thing being clicked).
+ * null = admin bypass: nothing is charged, so no price is named.
+ */
+export function stepsConfirmLabel(quote: { credits: number } | null): string {
+  return quote ? `צור סרטון · ${quote.credits} קרדיטים` : "צור סרטון";
+}
+
+/** The supporting line under the summary: balance only — the price itself
+ *  lives on the button now, and repeating it here would just dilute it. */
+export function stepsBalanceLine(quote: { balance: number }): string {
+  return `היתרה שלכם: ${quote.balance} קרדיטים.`;
+}
+
+/**
  * Everything a steps render is made from, as one comparable key. The lifted
  * render must be discarded when ANY of these change — a render made with the
  * old hook clip, hook line, rect or plan must never answer for a new
@@ -764,4 +1032,50 @@ export function aRenderStageIndex(status: string): number {
 /** A render still moving through the pipeline (avatar endings pass lipsync first). */
 export function isActiveARenderStatus(status: string): boolean {
   return status === "queued" || status === "rendering" || status === "qc_pending";
+}
+
+export type RenderWaitView = { kind: "waiting"; sub?: string } | { kind: "stuck"; line: string };
+
+/**
+ * The line under the render-stage timeline (8d payload from the renders GET).
+ * Queue position while queued (the heavy lane can hold a whole demo analysis
+ * ahead of this render); percent + elapsed while rendering — the percent is
+ * renderMedia's frame loop only, so elapsed keeps running through the
+ * bundling before it and the upload after it; amber stuck line when no
+ * worker is claiming. No "failed" kind: a dead render job always lands the
+ * render row itself on "failed" (failRenderOnTerminal), which the step's
+ * existing failure card owns.
+ */
+export function renderWaitView(status: string, job?: JobProgressWire): RenderWaitView {
+  if (job && job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
+    return { kind: "stuck", line: stuckLine("עיבוד") };
+  }
+  if (status === "queued" && job?.state === "queued") {
+    // A backoff-delayed job is PAUSED, not next in line — "starts soon" over
+    // a minutes-long park is a lie (same ruling as the other wait views).
+    if (job.resumeAtMs !== undefined) {
+      return { kind: "waiting", sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות." };
+    }
+    const sub =
+      job.ahead === undefined
+        ? undefined
+        : job.ahead === 1
+          ? "לפני הסרטון שלכם יש עוד עבודה אחת בתור."
+          : job.ahead > 1
+            ? `לפני הסרטון שלכם יש עוד ${job.ahead} עבודות בתור.`
+            : "העיבוד יתחיל בקרוב.";
+    return { kind: "waiting", ...(sub ? { sub } : {}) };
+  }
+  if (status === "rendering" && job?.state === "running") {
+    const pct = job.progress !== undefined ? Math.floor(job.progress * 100) : undefined;
+    const elapsed = job.elapsedMs !== undefined ? fmtElapsedHe(job.elapsedMs) : undefined;
+    const sub =
+      pct !== undefined
+        ? `${pct}% מהפריימים מוכנים${elapsed ? ` — רץ כבר ${elapsed}` : ""}.`
+        : elapsed
+          ? `רץ כבר ${elapsed}.`
+          : undefined;
+    return { kind: "waiting", ...(sub ? { sub } : {}) };
+  }
+  return { kind: "waiting" };
 }

@@ -158,12 +158,11 @@ describe("plan_demo_steps (dry-run chain)", () => {
     const last = steps[steps.length - 1]!;
     expect(last.actionType).toBe("result");
     expect(last.label).toBe("הקמפיין נוצר");
-    // The last step has no neighbour to run into, so it gets the full
-    // per-action default.
-    expect(last.durationMs).toBe(2800);
-    // Every other step is capped at the gap to the next one: the two states
-    // 1500ms apart (5->6, 6->7) get 1500 instead of their 1600/2200 defaults.
-    expect(steps.map((s) => s.durationMs)).toEqual([1800, 1500, 1500, 1800, 1600, 2800]);
+    // Every per-action default sits under the 3s floor, so every step —
+    // including the ending — runs exactly MIN_STEP_MS (the canned timeline's
+    // selected states are all >= 3s apart, so the gap cap never bites).
+    expect(last.durationMs).toBe(3000);
+    expect(steps.map((s) => s.durationMs)).toEqual([3000, 3000, 3000, 3000, 3000, 3000]);
     // No step's window may reach into the next step's: 200ms of source shown
     // twice back to back is the defect this model exists to make impossible.
     for (let i = 0; i < steps.length - 1; i++) {
@@ -171,16 +170,15 @@ describe("plan_demo_steps (dry-run chain)", () => {
         steps[i + 1]!.timestampMs,
       );
     }
-    // Total runtime: six product steps. (The 12-17s band is a target for real
-    // recordings; the canned journey sits just under it now that its login
-    // states are filtered and its tight pairs are capped at their gaps.)
+    // Total runtime: six product steps at the 3s floor — inside the 16-21s
+    // band real recordings are held to.
     const total = steps.reduce((ms, s) => ms + s.durationMs, 0);
-    expect(total).toBe(11_000);
+    expect(total).toBe(18_000);
     expect(totalRuntimeMs(steps)).toBe(total);
 
     const moments = unexplainedMomentsSchema.parse(plan!.unexplainedMoments);
     expect(moments).toHaveLength(1);
-    expect(moments[0]!.timestampMs).toBe(11_000);
+    expect(moments[0]!.timestampMs).toBe(12_000);
   });
 
   it("the canned plan reaches the minimum when index-even thinning would not", { timeout: 60_000 }, async () => {
@@ -191,8 +189,8 @@ describe("plan_demo_steps (dry-run chain)", () => {
     // shortfall. generateStepPlan then threw "dry-run plan violates its own
     // rules" on the path the whole suite, `aiugc plan regress` keyless and a
     // DRY_RUN worker all run. Timestamps are on the analyser's real grid
-    // (multiples of 200ms, never closer than 400ms) over an 8.6s recording.
-    const ts = [0, 1200, 1600, 2200, 4000, 4400, 5000, 5600, 8000, 8600];
+    // (multiples of 200ms, never closer than 400ms) over a 21.6s recording.
+    const ts = [0, 3000, 4000, 5600, 10_000, 11_000, 12_600, 14_000, 20_000, 21_600];
     const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר"];
     const timeline = ts.map((t, i) =>
       state({
@@ -214,7 +212,7 @@ describe("plan_demo_steps (dry-run chain)", () => {
     // the other half of the keyless throw: the canned plan stops at the ending
     // and this walk did not. Here four states precede the success screen and
     // four follow it, against a minimum of five.
-    const ts = [0, 1600, 3200, 20_000, 25_000, 26_600, 28_200, 29_800];
+    const ts = [0, 3200, 6400, 20_000, 25_000, 26_600, 28_200, 29_800];
     const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
     const timeline = ts.map((t, i) =>
       state({
@@ -289,14 +287,14 @@ describe("plan lifecycle: edit, approve, fork", () => {
     expect(updated.approvedAt).toBeNull();
     const steps = planStepsSchema.parse(updated.steps);
     expect(steps.map((s) => s.sourceIndex)).toEqual([1, 11]); // re-sorted
-    expect(steps[0]!.timestampMs).toBe(1500);
+    expect(steps[0]!.timestampMs).toBe(1000);
     expect(steps[0]!.actionType).toBe("navigate");
-    // Derived, not client-supplied. 1500ms -> 18500ms is a wide gap, so both
-    // steps get what they asked for: step 0's 4-word label needs 2000ms to be
-    // read, which outbids navigate's 1800ms default; step 1 is last and takes
-    // result's 2800ms default over its label's 2000ms.
-    expect(steps[0]!.durationMs).toBe(2000);
-    expect(steps[1]!.durationMs).toBe(2800);
+    // Derived, not client-supplied. 1000ms -> 18500ms is a wide gap, so
+    // nothing squeezes either step — and both their asks (step 0's 4-word
+    // label needs 2000ms, step 1's result default is 2800ms) sit under the 3s
+    // floor, so both steps run exactly MIN_STEP_MS.
+    expect(steps[0]!.durationMs).toBe(3000);
+    expect(steps[1]!.durationMs).toBe(3000);
   });
 
   it("rejects duplicate, out-of-range and empty-label steps", async () => {
@@ -1040,6 +1038,36 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     ).toBe(true);
   });
 
+  it("the floor's escape ignores states after the success — post-success filming cannot certify an unreachable floor", () => {
+    // Success at 12s of a 21s recording, customer kept filming after it (the
+    // normal case, per the last-step rule's own comment). An ending-compliant
+    // plan tops out at 5 steps x 3000ms = 15000ms; the states at 15/18/21s can
+    // never be steps, so counting their coverage (>= the 16s floor) would
+    // order the model to add pre-ending states that do not exist, burn the one
+    // retry, and fail the plan permanently. Bounded at the ending, the escape
+    // forgives the shortfall — shipped at the 3s-floor change, when the raised
+    // band moved this asymmetry onto ordinary short demos.
+    const ts = [0, 3000, 6000, 9000, 12_000, 15_000, 18_000, 21_000];
+    const grid: AnalysisState[] = ts.map((t, i) =>
+      state({
+        timestampMs: t,
+        visibleText: [`מסך ${i}`],
+        actionType: i === 4 ? "result" : "tap",
+      }),
+    );
+    const plan = [0, 1, 2, 3, 4].map((i) => ({ sourceIndex: i, label: `מסך ${i}` }));
+    const floorEra = { byActionType: {}, minMs: 3000, maxMs: 4000 };
+    expect(totalRuntimeMs(assembleSteps(plan, grid, floorEra))).toBe(15_000);
+    expect(
+      findPlanViolations(plan, grid, QUESTIONNAIRE, 7, {
+        minSteps: 5,
+        notes: null,
+        minStepMs: 3000,
+        runtime: { durations: floorEra, minMs: 16_000, maxMs: 21_000 },
+      }),
+    ).toEqual([]);
+  });
+
   it("the floor's escape measures capped gaps, not wall clock", () => {
     // Two states 30 seconds apart. The wall clock says 30s is available, but a
     // step can only claim the gap to the state actually selected after it,
@@ -1393,7 +1421,7 @@ describe("step durations (the window model)", () => {
     const defaults = await stepDurations(db);
     // Spelled out, not imported: a test that reads the constant cannot notice
     // the constant moving, and these two numbers ARE the shipped behaviour.
-    expect(defaults.minMs).toBe(1400);
+    expect(defaults.minMs).toBe(3000);
     expect(defaults.maxMs).toBe(4000);
     expect(defaults.byActionType.result).toBe(2800);
 
@@ -1420,15 +1448,15 @@ describe("step durations (the window model)", () => {
       .where(
         sql`${dbSchema.appConfig.key} in ('a_step_ms_min', 'a_step_ms_max', 'a_step_ms_by_action')`,
       );
-    expect((await stepDurations(db)).minMs).toBe(1400);
+    expect((await stepDurations(db)).minMs).toBe(3000);
   });
 
   it("with no app_config rows the runtime band is the code constants", async () => {
     // Every band in this file is a literal passed straight to
-    // findPlanViolations, so without this the shipped 11-16s band was the one
+    // findPlanViolations, so without this the shipped 16-21s band was the one
     // duration default no test pinned: MIN_RUNTIME_MS could be edited to any
     // value and the suite stayed green.
-    expect(await stepRuntimeBand(db)).toEqual({ minMs: 11_000, maxMs: 16_000 });
+    expect(await stepRuntimeBand(db)).toEqual({ minMs: 16_000, maxMs: 21_000 });
 
     await db.insert(dbSchema.appConfig).values([
       { key: "a_steps_runtime_min_ms", value: 9000 },
@@ -1448,7 +1476,7 @@ describe("step durations (the window model)", () => {
       .where(
         sql`${dbSchema.appConfig.key} in ('a_steps_runtime_min_ms', 'a_steps_runtime_max_ms')`,
       );
-    expect(await stepRuntimeBand(db)).toEqual({ minMs: 11_000, maxMs: 16_000 });
+    expect(await stepRuntimeBand(db)).toEqual({ minMs: 16_000, maxMs: 21_000 });
   });
 
   it("readTimeMs grows with the label — a 6-word label outlasts a 2-word one", () => {
@@ -1459,6 +1487,13 @@ describe("step durations (the window model)", () => {
     // constants: a test that imports the guess cannot catch the guess moving.
     expect(readTimeMs("בוחרים מוצר")).toBe(1200);
     expect(readTimeMs("מתחברים לאפליקציה בוחרים מוצר ומשלמים בהעברה")).toBe(2800);
+    // A punctuation-only token (spaced dash) is not a read word — and the
+    // 6-word cap already skips it, so counting it here made a cap-legal label
+    // read as 7 words and outgrow the 3s floor with the 7-step band at zero
+    // slack.
+    expect(readTimeMs("פתחו את התפריט — בחרו פרויקט חדש")).toBe(
+      readTimeMs("פתחו את התפריט בחרו פרויקט חדש"),
+    );
     expect(readTimeMs("   ")).toBe(400); // no words: the lead alone
   });
 

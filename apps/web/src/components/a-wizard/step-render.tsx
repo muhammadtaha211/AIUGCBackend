@@ -9,14 +9,18 @@ import {
   A_RENDER_STAGES,
   aRenderStageIndex,
   isActiveARenderStatus,
+  renderWaitView,
   retryableCreateFailure,
+  stepsBalanceLine,
+  type JobProgressWire,
+  stepsConfirmLabel,
   stepsShapeSummary,
   type HookClip,
   type HookLineOption,
   type PinnedPlan,
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
-import { hasShortfall, quoteLine, shortfallLine, type QuoteView } from "@/lib/quote-ui";
+import { hasShortfall, shortfallLine, type QuoteView } from "@/lib/quote-ui";
 import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
@@ -115,7 +119,13 @@ export function StepARender({
     slow,
     stalled,
     retry: retryPolling,
-  } = useJobPoll<{ status: string; videoUrl?: string; failureReason?: string; refunded?: boolean }>(
+  } = useJobPoll<{
+    status: string;
+    videoUrl?: string;
+    failureReason?: string;
+    refunded?: boolean;
+    job?: JobProgressWire;
+  }>(
     inFlight,
     `/api/renders/${render?.id}`,
     2_500,
@@ -127,6 +137,7 @@ export function StepARender({
         videoUrl: body.videoUrl,
         failureReason: body.failureReason,
         refunded: body.refunded,
+        job: body.job,
       });
     },
     onFatal,
@@ -170,10 +181,10 @@ export function StepARender({
               {stepsShapeSummary(plan, hook.durationMs)}
             </p>
 
-            {/* The exact price, from the same function the confirm debits
-                with. Absent entirely on the admin bypass. */}
+            {/* Balance only — the price rides on the confirm button itself
+                (stepsConfirmLabel). Absent entirely on the admin bypass. */}
             {quote && !hasShortfall(quote) && (
-              <p className="mt-3 text-[13px] text-ink/60">{quoteLine(quote)}</p>
+              <p className="mt-3 text-[13px] text-ink/60">{stepsBalanceLine(quote)}</p>
             )}
             {hasShortfall(quote) && (
               <p
@@ -203,7 +214,7 @@ export function StepARender({
               disabled={hasShortfall(quote) || (createError !== null && !createError.retryable)}
               onClick={() => void start()}
             >
-              צור סרטון
+              {stepsConfirmLabel(quote)}
             </Button>
 
             {/* The only other quote refresh (the 402 handler) sits behind the
@@ -315,8 +326,11 @@ export function StepARender({
     );
   }
 
-  // In flight: the status timeline (A auto-releases — no QC stage).
+  // In flight: the status timeline (A auto-releases — no QC stage), with the
+  // 8d job payload deciding the line under it — queue position, then percent
+  // + elapsed, then an honest amber "stuck" when no worker is claiming.
   const stage = aRenderStageIndex(render.status);
+  const wait = renderWaitView(render.status, render.job);
   return (
     <div>
       <StepHeader
@@ -339,9 +353,11 @@ export function StepARender({
                       : "border-ink/15 text-ink/40"
                 }`}
               >
+                {/* No spinning while the stuck line below says nothing is
+                    progressing — the two signals must not contradict. */}
                 {done ? (
                   <Check />
-                ) : current ? (
+                ) : current && wait.kind !== "stuck" ? (
                   <Spinner />
                 ) : (
                   <span className="text-xs">{index + 1}</span>
@@ -355,7 +371,17 @@ export function StepARender({
         })}
       </ol>
 
-      {slow && (
+      {wait.kind === "stuck" ? (
+        <p
+          role="alert"
+          className="mt-6 rounded-lg bg-amber-50 px-3 py-2.5 text-center text-sm text-amber-900"
+        >
+          {wait.line}
+        </p>
+      ) : (
+        wait.sub && <p className="mt-6 text-center text-sm text-ink/60">{wait.sub}</p>
+      )}
+      {wait.kind !== "stuck" && slow && !wait.sub && (
         <p className="mt-6 text-center text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>
       )}
 

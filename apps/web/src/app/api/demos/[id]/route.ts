@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { getDb, getStorage, setDemoDescription } from "@aiugc/core";
+import {
+  getDb,
+  getJobProgress,
+  getLatestDemoAnalysis,
+  getStorage,
+  setDemoDescription,
+  type JobProgress,
+} from "@aiugc/core";
 import {
   coreErrorResponse,
   INVALID_BODY,
@@ -9,6 +16,7 @@ import {
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
 import { demoDescriptionRequestSchema } from "@/lib/service-a";
+import { isIngestingDemoStatus } from "@/lib/service-a-ui";
 
 /** Poll demo ingest: status, the Hebrew reject reason, thumb when ready. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,12 +43,26 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       rejectReason?: string;
       durationMs?: number;
       thumbUrl?: string;
+      /** Ingest pipeline progress (8d) — the poll's way to tell "still
+       *  working" from "nothing is processing this" (a dead worker keeps
+       *  this GET healthy forever, so HTTP failures can't carry it). */
+      ingest?: JobProgress;
+      /** Newest analysis status once ready — feeds the ready card's
+       *  "runs on in the background" line. "missing" = no row yet. */
+      analysis?: { status: string };
     } = { status: demo.status, businessId: demo.businessId };
     if (demo.description) body.description = demo.description;
     if (demo.rejectReason) body.rejectReason = demo.rejectReason;
     if (demo.durationMs) body.durationMs = demo.durationMs;
-    if (demo.status === "ready" && demo.thumbPath) {
-      body.thumbUrl = await getStorage().signedUrl(demo.thumbPath, SIGNED_URL_TTL_SECONDS);
+    if (isIngestingDemoStatus(demo.status)) {
+      body.ingest = await getJobProgress(db, { idempotencyKey: `ingest:${id}` });
+    }
+    if (demo.status === "ready") {
+      if (demo.thumbPath) {
+        body.thumbUrl = await getStorage().signedUrl(demo.thumbPath, SIGNED_URL_TTL_SECONDS);
+      }
+      const analysis = await getLatestDemoAnalysis(db, id);
+      body.analysis = { status: analysis?.status ?? "missing" };
     }
     return NextResponse.json(body);
   } catch (err) {

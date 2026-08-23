@@ -81,14 +81,27 @@ export type RenderVideoProps =
   | RenderServiceAStepsProps
   | RenderServiceBProps;
 
+/** renderMedia's 0-1 frame fraction, surfaced so the worker can checkpoint
+ *  honest render progress for the customer poll. */
+export type RenderProgressCallback = (fraction: number) => void;
+
 /** @aiugc/remotion, loaded lazily — see loadRemotion(). */
 interface RemotionRenderModule {
-  renderServiceA(props: Omit<RenderServiceAProps, "kind">, outPath: string): Promise<void>;
+  renderServiceA(
+    props: Omit<RenderServiceAProps, "kind">,
+    outPath: string,
+    onProgress?: RenderProgressCallback,
+  ): Promise<void>;
   renderServiceASteps(
     props: Omit<RenderServiceAStepsProps, "kind">,
     outPath: string,
+    onProgress?: RenderProgressCallback,
   ): Promise<void>;
-  renderServiceB(props: Omit<RenderServiceBProps, "kind">, outPath: string): Promise<void>;
+  renderServiceB(
+    props: Omit<RenderServiceBProps, "kind">,
+    outPath: string,
+    onProgress?: RenderProgressCallback,
+  ): Promise<void>;
 }
 
 /**
@@ -103,7 +116,11 @@ async function loadRemotion(): Promise<RemotionRenderModule> {
   return (await import(specifier)) as RemotionRenderModule;
 }
 
-export async function renderVideo(props: RenderVideoProps, outPath: string): Promise<void> {
+export async function renderVideo(
+  props: RenderVideoProps,
+  outPath: string,
+  onProgress?: RenderProgressCallback,
+): Promise<void> {
   if (getEnv().DRY_RUN) {
     mkdirSync(path.dirname(outPath), { recursive: true });
     writeFileSync(outPath, `DRY_RUN placeholder render: ${JSON.stringify(props).slice(0, 500)}`);
@@ -114,13 +131,13 @@ export async function renderVideo(props: RenderVideoProps, outPath: string): Pro
   try {
     if (props.kind === "service_a") {
       const { kind, ...serviceA } = props;
-      await remotion.renderServiceA(serviceA, outPath);
+      await remotion.renderServiceA(serviceA, outPath, onProgress);
     } else if (props.kind === "service_a_steps") {
       const { kind, ...serviceASteps } = props;
-      await remotion.renderServiceASteps(serviceASteps, outPath);
+      await remotion.renderServiceASteps(serviceASteps, outPath, onProgress);
     } else {
       const { kind, ...serviceB } = props;
-      await remotion.renderServiceB(serviceB, outPath);
+      await remotion.renderServiceB(serviceB, outPath, onProgress);
     }
   } catch (err) {
     // Bad inputs (missing local file, props that fail the composition schema)

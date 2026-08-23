@@ -34,6 +34,31 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 11. Runtime image generation (nano-banana composites) is founder-approved for Service B product-in-hand composites only. The Service A hook-bank rule (#2 — no runtime face/video generation for hooks) is untouched.
 12. Service B renders from a single reference image (or an approved composite) + audio via HeyGen. No video-to-video.
 
+## Project memory — the vault
+
+`docs/vault/` is the project's source of truth for decisions, measured facts, defects and falsified
+claims. It is git-tracked; a note changes in the same commit as the code it describes.
+
+**Read it:**
+
+- At session start, read `docs/vault/README.md` and `docs/vault/CONVENTIONS.md`.
+- Before asserting any project fact — a cap, a balance, a version, a cost, a decision, a file path —
+  grep the vault. If a note exists, use it and name the file. If its `verified` date is more than 14
+  days old, re-measure before relying on it, then update the note.
+- Before proposing an approach, grep `docs/vault/falsified/`. Do not re-derive a dead hypothesis.
+
+**Write to it** at these moments and not otherwise:
+
+- A phase gate closes → `phases/`, with gate results and commit SHAs.
+- A number is measured → `facts/`, with the exact command that produced it.
+- The founder makes a decision → `decisions/`, with the options offered and the reason chosen.
+- A claim is disproved → `falsified/`. Never delete it; the original note gets `status: superseded`.
+- A defect is found and not fixed → `defects/`.
+
+**Never** write speculation, plans in progress, or inference presented as measurement. Every note
+carries `status:` and `verified:` frontmatter per CONVENTIONS.md. If you cannot fill those in
+honestly, the note is not ready to write.
+
 ## How to work — every task
 
 ### 1. Start: load the guidelines skill

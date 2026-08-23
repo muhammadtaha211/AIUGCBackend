@@ -149,6 +149,10 @@ export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
     if ("error" in result) return result.error;
     document.cookie = `${BUSINESS_COOKIE}=${result.businessId}; path=/; max-age=31536000`;
     router.push("/home");
+    // The push alone re-fetches only the page segment: home/layout.tsx (the
+    // sidebar's business list and balance) stays mounted and stale, so the
+    // new business is missing from the switcher until a hard reload.
+    router.refresh();
     return null;
   }
 

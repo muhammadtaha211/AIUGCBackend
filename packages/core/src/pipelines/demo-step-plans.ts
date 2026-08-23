@@ -12,6 +12,7 @@ import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { FIXTURES_DIR } from "../paths";
 import {
+  A_STEPS_MAX_DEFAULT,
   A_STEPS_MIN_DEFAULT,
   LABEL_LEAD_MS,
   LABEL_WORDS_PER_SECOND,
@@ -100,18 +101,24 @@ const DEFAULT_STEP_MS: Record<AnalysisState["actionType"], number> = {
 
 /** Floor and ceiling on one step's clip, whatever the arithmetic asks for.
  *  Config `a_step_ms_min` / `a_step_ms_max` override (no seeded row: a missing
- *  key IS the default). The floor is a legibility limit — a label the eye
- *  cannot land on is worse than no label; the ceiling stops one step eating
- *  the ad. Both are guesses, like DEFAULT_STEP_MS. */
-const MIN_STEP_MS = 1400;
+ *  key IS the default). The floor is a pacing limit — founder testing found 2s
+ *  steps go by too fast to land; the ceiling stops one step eating the ad.
+ *  Note the 3s floor sits ABOVE every DEFAULT_STEP_MS entry and above a
+ *  6-word caption's read time (2800ms), so an unsqueezed step runs exactly
+ *  the floor; the per-kind table only matters again if the floor drops or a
+ *  config row raises a kind past it. Hand-picked states closer than the floor
+ *  still render the gap (the ceiling beats the floor — see assembleSteps). */
+const MIN_STEP_MS = 3000;
 const MAX_STEP_MS = 4000;
 
 /** The steps' own on-screen length — the hook clip is NOT counted, it sits on
- *  top. With the bank's ~4s hook this lands the finished ad in the 15-20s
- *  band. Config `a_steps_runtime_min_ms` / `a_steps_runtime_max_ms` override
+ *  top. With the bank's ~4s hook this lands the finished ad in the 20-25s
+ *  band the founder asked for. At the 3s step floor only 6-7 step shapes fit
+ *  the band; sparser recordings pass through the reachability escape below.
+ *  Config `a_steps_runtime_min_ms` / `a_steps_runtime_max_ms` override
  *  (no seeded row: a missing key IS the default). */
-const MIN_RUNTIME_MS = 11_000;
-const MAX_RUNTIME_MS = 16_000;
+const MIN_RUNTIME_MS = 16_000;
+const MAX_RUNTIME_MS = 21_000;
 
 // MAX_LABEL_WORDS / MIN_LABEL_WORDS live in ../plan-format (imported above):
 // the wizard's soft word warning needs the ceiling, and this module's db/fs/
@@ -639,11 +646,28 @@ export function findPlanViolations(
       //     under-estimate switches the floor check OFF — a genuinely short
       //     ad then ships with no violation and no retry at all.
       //
-      // So compute it exactly. maxSteps is 8 and a timeline is tens of states,
+      // So compute it exactly. maxSteps is single-digit and a timeline is tens of states,
       // so the obvious O(n^2 * maxSteps) walk is free: best[i][k] is the most
       // capped-gap coverage a k+1-state selection ending at state i can have.
+      // Bounded by the ENDING, same argument as the minimum-step walk above:
+      // a state after the last success candidate can never be a step, so
+      // counting its coverage certifies a floor no ending-compliant plan can
+      // reach — the retry is then ordered to add pre-ending states that do
+      // not exist and the plan fails permanently. (Real recordings keep
+      // rolling after the success moment, so post-ending states are the
+      // normal case, not an edge.) When `notes` waives the ending rule the
+      // bound under-counts and this escape forgives a little more — the mild
+      // direction, exactly as the walk's comment argues.
+      const reachEndsAtMs =
+        successCandidates.length > 0
+          ? successCandidates[successCandidates.length - 1]!.s.timestampMs
+          : Number.POSITIVE_INFINITY;
       const sel = timeline.filter(
-        (s) => s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious,
+        (s) =>
+          s.legibility !== "unreadable" &&
+          !isSkippedKind(s) &&
+          !s.sameStateAsPrevious &&
+          s.timestampMs <= reachEndsAtMs,
       );
       let reachableMs = sel.length > 0 ? stepCeilingMs : 0;
       const best = sel.map(() => new Array<number>(maxSteps).fill(-1));
@@ -943,7 +967,7 @@ export async function generateStepPlan(
   );
   const maxSteps = Math.max(
     minSteps,
-    await getConfigValueOr(db, "a_steps_max", z.number(), 8),
+    await getConfigValueOr(db, "a_steps_max", z.number(), A_STEPS_MAX_DEFAULT),
   );
   const durations = await stepDurations(db);
   const runtime = { durations, ...(await stepRuntimeBand(db)) };

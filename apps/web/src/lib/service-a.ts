@@ -46,6 +46,15 @@ export function demoUploadPath(businessId: string, uploadId: string, type: strin
   return `raw/${businessId}/demo/${uploadId}/demo${DEMO_EXTENSIONS[type] ?? ".mp4"}`;
 }
 
+/**
+ * The founder-curated good-input example served on the demo step: a sample
+ * recording and the ad it produced. Fixed storage paths — replacing the
+ * example is overwriting these two objects (upsert put), never a code change.
+ * Currently placeholders; see packages/core/.work/upload-a-samples.ts.
+ */
+export const A_SAMPLE_RECORDING_PATH = "assets/samples/a-steps/recording.mp4";
+export const A_SAMPLE_AD_PATH = "assets/samples/a-steps/ad.mp4";
+
 /** Register accepts only paths this business's own upload-url route minted. */
 export function isOwnedDemoUploadPath(businessId: string, uploadPath: string): boolean {
   const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
