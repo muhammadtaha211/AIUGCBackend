@@ -1,0 +1,96 @@
+---
+type: fact
+status: verified
+verified: 2026-08-23
+method: "node -e over each file for state counts and expected block; git show b60b5b6 -- fixtures/timelines/ for the last change; each file's own _comment quoted verbatim"
+source: code
+---
+
+# The four timeline fixtures: three red on purpose, one green two different ways
+
+`fixtures/timelines/*.json`. Every file carries a `_comment` array explaining its own colour — read
+it before touching `expected`.
+
+**RED/GREEN is per-mode, not per-fixture.** The "RED ON PURPOSE" prose in each file describes the
+**live, paid** path only. Under `DRY_RUN` — which is what `pnpm test` runs — the assertion at
+`packages/core/test/demo-step-plans.test.ts:1729` is
+`for (const r of results) expect(r.pass).toBe(true);`, so **all four must be green**. They are: the
+core suite passed 339/339 on 2026-08-23 at commit `b60b5b6` ([[gate-results]]).
+
+`runPlanRegression` picks the key by mode — `demo-step-plans.ts:1392-1393` prefers
+`dryRunSourceIndexes` when `getEnv().DRY_RUN` is set and the key is present, and falls back to
+`sourceIndexes` otherwise. The column below is the **live** colour.
+
+| file                                  | bytes  | states | expectation                                            | live colour          |
+| ------------------------------------- | ------ | ------ | ------------------------------------------------------ | -------------------- |
+| `dry-run-campaign-app.json`           | 7,049  | 12     | `sourceIndexes` + `dryRunSourceIndexes`                | **RED** since `@v11` |
+| `real-botteacher-file-routing.json`   | 64,754 | 61     | `sourceIndexes` + `dryRunSourceIndexes`                | **RED** since `@v11` |
+| `real-botteacher-six-word-label.json` | 81,311 | 80     | `sourceIndexes` (placeholder) + `dryRunSourceIndexes`  | **RED** from birth   |
+| `real-botteacher-study-app.json`      | 80,726 | 80     | `sourceIndexes` + `allowNotes` + `dryRunSourceIndexes` | GREEN                |
+
+## Pinned values, as of `b60b5b6`
+
+| file           | `sourceIndexes` (live)                           | `dryRunSourceIndexes` (mechanical) |
+| -------------- | ------------------------------------------------ | ---------------------------------- |
+| campaign-app   | `[3,5,6,7,10,11]`                                | `[1,3,5,7,11]`                     |
+| file-routing   | `[1,2,3,12,36]`                                  | `[0,12,20,29,36]`                  |
+| six-word-label | `[42,47,48,60,74,79]`                            | `[42,47,48,60,74,79]`              |
+| study-app      | `[1,13,36,42,49,56,78,79]` (+`allowNotes: true`) | `[1,16,40,45,51,79]`               |
+
+The two keys are separate worlds and must not be conflated: `sourceIndexes` is what a **live, paid**
+`aiugc plan regress` run is measured against; `dryRunSourceIndexes` is what the keyless canned
+planner returns and what `pnpm test` asserts. `allowNotes` is a third, live-only escape.
+
+## `b60b5b6` re-pinned every mechanical expectation
+
+The `readTimeMs` and step-duration changes moved what the canned planner produces, so the commit
+rewrote all three existing `dryRunSourceIndexes` and **added one to `study-app` that had never had
+one**:
+
+- campaign-app: `[1,2,3,5,6,7,10,11]` → `[1,3,5,7,11]`
+- file-routing: `[3,11,15,16,36]` → `[0,12,20,29,36]`
+- study-app: _(absent)_ → `[1,16,40,45,51,79]`
+
+No `sourceIndexes` changed. `six-word-label` was untouched.
+
+## Only three of the four were documented together
+
+Commit `e40e0e6` (2026-08-20, "docs: say in each fixture why it is red") wrote the prose for three
+files. `real-botteacher-six-word-label.json` did not exist yet — it landed a day later in `1b48bb3`
+(2026-08-21) with its own separately written "RED ON PURPOSE from birth" comment.
+
+`b60b5b6` did **not** re-pin `six-word-label`, so it still carries the pre-change
+`dryRunSourceIndexes` from `1b48bb3` while the other three were rewritten. Its own comment calls that
+pin "LOAD-BEARING … Changing it turns the core suite red". The suite is green, so the new mechanical
+planner still returns that exact set — but it is the one fixture whose pin was not re-derived, and
+that is worth knowing before touching the planner again.
+
+## `study-app`'s `_comment` is now false
+
+Its comment still says, of the DRY_RUN path:
+
+> "There is no dryRunSourceIndexes to absorb a difference either."
+
+There is one, as of `b60b5b6`: `dryRunSourceIndexes: [1,16,40,45,51,79]`. The comment's follow-on
+claim — that the pinned `sourceIndexes` are "the ONLY pass condition" under `DRY_RUN` — is false for
+the same reason, because `demo-step-plans.ts:1392-1393` prefers the dry-run key when it exists.
+
+The prose contradicts the data in the same file. Recorded as a defect when `defects/` is written;
+noted here so nobody trusts the sentence.
+
+## A cosmetic oddity
+
+`dry-run-campaign-app.json`'s comment announces "two independent reasons" and then labels them
+**(b)** and **(c)**. There is no (a) and there never was — checked every revision of the file back
+to `02842ea`. It was born mislabelled in `e40e0e6`.
+
+## Cost of a live run
+
+`aiugc plan regress` runs **every** file in the directory — there is no `--fixture` flag. The
+`six-word-label` file alone documents its own cost as ~2 paid Claude calls, ~40k tokens, ~₪0.50 per
+run, for a row guaranteed red until its placeholder pin is replaced.
+
+## Related
+
+- [[v10-is-the-last-working-prompt]] — the runs these fixtures produced
+- [[first-call-violation-rate]]
