@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { createSet, getDb, schema } from "@aiugc/core";
+import {
+  businessOwnerId,
+  createSet,
+  creditBalance,
+  getDb,
+  isAdminOwned,
+  schema,
+} from "@aiugc/core";
 import {
   coreErrorResponse,
   INVALID_BODY,
@@ -10,7 +17,7 @@ import {
   requirePlan,
   requireUser,
 } from "@/lib/api";
-import { aStepsRenderRequestSchema } from "@/lib/service-a";
+import { aStepsRenderRequestSchema, type AStepsCreateResponse } from "@/lib/service-a";
 
 /**
  * Create a steps-format Service A render: a silent 1×1 set (one hook clip x
@@ -84,7 +91,15 @@ export async function POST(
         textSafeArea,
       },
     });
-    return NextResponse.json({ renderId: renders[0]!.id });
+    // The post-debit balance, re-queried after the commit (exact under
+    // concurrent ledger movement; the quote is not in hand here) — the wizard
+    // pushes it into the sidebar's BalanceProvider, which is the whole
+    // balance-freshness design: a push at the moment of the spend, never a
+    // router.refresh() that would re-run the wizard page's server gate.
+    const balance = (await isAdminOwned(db, businessId))
+      ? null
+      : await creditBalance(db, await businessOwnerId(db, businessId));
+    return NextResponse.json({ renderId: renders[0]!.id, balance } satisfies AStepsCreateResponse);
   } catch (err) {
     return coreErrorResponse(err);
   }

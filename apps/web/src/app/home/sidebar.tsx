@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/brand";
+import { useBalance } from "./balance-context";
 import {
   Check,
   ChevronDown,
@@ -68,15 +69,15 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
 export function Sidebar({
   businesses,
   selectedId,
-  balance,
   email,
 }: {
   businesses: { id: string; name: string }[];
   selectedId: string | null;
-  /** null = admin bypass — no credits card. */
-  balance: number | null;
   email: string;
 }) {
+  // Server-seeded, pushed-to by the wizard's create/refund paths (null =
+  // admin bypass — no credits card). See balance-context.tsx.
+  const { balance } = useBalance();
   const router = useRouter();
   const pathname = usePathname();
   const [openMenu, setOpenMenu] = useState<"business" | "profile" | "mobileProfile" | null>(null);

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { businessOwnerId, creditBalance, getDb, isAdminOwned } from "@aiugc/core";
 
 export type WizardGate = {
@@ -18,10 +19,14 @@ export type WizardGate = {
  *
  * Deliberately a balance check and nothing else, so a future resume-draft flow
  * can reopen a wizard without fighting it.
+ *
+ * cache(): the layout and a wizard page both call this in the same RSC
+ * render, which was two identical query sets per full load / router.refresh.
+ * Per-request memoization only — nothing persists across requests.
  */
-export async function wizardGate(businessId: string): Promise<WizardGate> {
+export const wizardGate = cache(async (businessId: string): Promise<WizardGate> => {
   const db = getDb();
   if (await isAdminOwned(db, businessId)) return { allowed: true, balance: null };
   const balance = await creditBalance(db, await businessOwnerId(db, businessId));
   return { allowed: balance > 0, balance };
-}
+});

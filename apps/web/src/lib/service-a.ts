@@ -199,6 +199,11 @@ export const aRenderRequestSchema = z.object({
   textSafeArea: textSafeAreaSchema.optional(),
 });
 
+/** The steps-format create response. `balance` is the post-debit account
+ *  balance (null = admin bypass, never debited) — the wizard pushes it into
+ *  the sidebar's BalanceProvider the moment the render starts. */
+export type AStepsCreateResponse = { renderId: string; balance: number | null };
+
 /** Steps-format render (8e): a silent 1×1 set from an APPROVED plan, pinned
  *  by id. No audio, no persona — the format is silent by definition. */
 export const aStepsRenderRequestSchema = z.object({
