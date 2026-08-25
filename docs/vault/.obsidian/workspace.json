@@ -31,10 +31,14 @@
             "id": "5dbb0175cb025564",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "type": "markdown",
+              "state": {
+                "file": "phases/8d-demo-step-rework.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "8d-demo-step-rework"
             }
           }
         ]
@@ -115,7 +119,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "facts/token-and-money-budgets.md",
+                "file": "phases/8d-demo-step-rework.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -134,7 +138,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "facts/token-and-money-budgets.md",
+                "file": "phases/8d-demo-step-rework.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
@@ -177,7 +181,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "facts/token-and-money-budgets.md",
+                "file": "phases/8d-demo-step-rework.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
@@ -204,16 +208,43 @@
       "bases:Create new base": false
     }
   },
-  "active": "2944e1d7538bd7f7",
+  "active": "5dbb0175cb025564",
   "lastOpenFiles": [
-    "Welcome.md",
+    "falsified/plan-format-re-export-has-server-callers.md",
+    "falsified/plan-format-re-export-has-server-callers.md.tmp.7908.58f95fd7e8b7",
+    "phases/8d-demo-step-rework.md",
+    "phases/8c-inventory-picker.md.tmp.7908.72d14fe6e1c1",
+    "phases/8e-render-step.md",
+    "phases/8e-render-step.md.tmp.7908.e575ed3b6bfa",
+    "phases/8c-inventory-picker.md",
+    "phases/8b-plan-editor.md",
+    "phases/8a-wizard-shell-and-read-only-plan.md",
     "facts/token-and-money-budgets.md",
-    "decisions/0001-five-step-steps-wizard.md",
-    "falsified/v10-is-the-last-working-prompt.md",
-    "README.md",
-    "falsified",
-    "decisions",
-    "conventions.md",
-    "facts"
+    "defects/sedwSy6qV",
+    "defects/character-guard-covers-only-generated-hook-lines.md",
+    "defects/fixture-comments-are-arithmetic-against-superseded-constants.md",
+    "defects/serve-files-mishandles-suffix-ranges.md",
+    "defects/last-step-renders-shorter-than-the-wizard-promises.md",
+    "defects/llm-cost-formula-is-copied-four-times.md",
+    "defects/migration-ledger-stops-at-0007.md",
+    "defects/migration-0027-still-seeds-the-old-llm-cap.md",
+    "defects/worker-exits-on-a-dropped-connection.md",
+    "defects/sedOQZkvd",
+    "defects/plan-failure-diagnostics-are-unreachable.md",
+    "defects/cli-and-worker-have-no-tests.md",
+    "defects/quote-reroll-for-render-is-dead-code.md",
+    "defects/llm-cost-formula-is-triplicated.md",
+    "defects/remotion-temp-dirs-are-never-cleaned-up.md",
+    "defects/admin-flag-is-a-noop-on-existing-accounts.md",
+    "defects/sed3Qaj59",
+    "defects/quota-marker-test-does-not-protect-it.md",
+    "defects/content-policy-classifier-never-runs.md",
+    "falsified/sedxnU5qd",
+    "falsified/sed3WrwPR",
+    "facts/sedq19FCE",
+    "facts/sedahKiHB",
+    "facts/remotion-temp-leak-filled-the-disk.md",
+    "CONVENTIONS.md",
+    "README.md"
   ]
 }
