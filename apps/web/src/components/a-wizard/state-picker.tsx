@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { MAX_LABEL_CHARS } from "@aiugc/core/plan-format";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
@@ -15,7 +15,8 @@ import {
 import { apiFetch } from "@/lib/use-api";
 
 /**
- * The inventory picker (8c): add-a-step is choosing from the analysed grid —
+ * The inventory panel (8c as a picker; always-open since the 2026-08-25
+ * reframe): adding a step is choosing from the analysed grid —
  * never scrubbing a timeline. One no-query GET loads the whole inventory's
  * METADATA (no thumbs, no signing); the eligible list is then paged densely
  * ANALYSIS_PAGE_SIZE at a time and thumbs are signed via ?indexes= only for
@@ -28,11 +29,16 @@ import { apiFetch } from "@/lib/use-api";
  * legal-but-poor states pickable. Unreadable states have no tile — the
  * server rejects them whoever selected them.
  *
+ * Tapping a tile opens the add panel on a full-width grid row DIRECTLY BELOW
+ * the tapped tile — below-the-action placement, so the tiles above
+ * (including the one under the parked cursor) never move; the
+ * mount-under-cursor rule satisfied without an arm delay.
+ *
  * Adding grows the DRAFT only. The editor's own save/approve machinery
  * persists it; nothing here talks to the plan routes.
  */
 
-type StatePickerProps = {
+type InventoryPanelProps = {
   demoId: string;
   /** sourceIndexes already in the draft — their tiles are marked, not hidden. */
   inPlan: Set<number>;
@@ -40,20 +46,18 @@ type StatePickerProps = {
    *  the draft reseed and be silently dropped. */
   addDisabled: boolean;
   onAdd: (state: AnalysisStateWire, label: string) => void;
-  onClose: () => void;
   onFatal: (message: string) => void;
 };
 
-const INVENTORY_ERROR = "לא הצלחנו לטעון את רשימת המסכים — נסו לפתוח שוב.";
+const INVENTORY_ERROR = "לא הצלחנו לטעון את רשימת המסכים — רעננו את העמוד ונסו שוב.";
 
-export function StatePicker({
+export function InventoryPanel({
   demoId,
   inPlan,
   addDisabled,
   onAdd,
-  onClose,
   onFatal,
-}: StatePickerProps) {
+}: InventoryPanelProps) {
   const [inventory, setInventory] = useState<AnalysisStateWire[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** index -> signed thumbUrl, accumulated page by page. */
@@ -169,13 +173,11 @@ export function StatePicker({
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-ink/[0.08] bg-ink/[0.02] p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-ink">בחרו מסך מהסרטון להוספה כצעד</p>
-        <Button type="button" variant="ghost" className="!h-8 !px-2 text-[13px]" onClick={onClose}>
-          סגירה
-        </Button>
-      </div>
+    <div className="mt-4 rounded-xl border border-ink/[0.08] bg-ink/[0.02] p-4">
+      <p className="text-sm font-medium text-ink">מאגר המסכים מהסרטון</p>
+      <p className="mt-0.5 text-[13px] text-ink/60">
+        לחצו על מסך כדי להוסיף אותו כצעד לתוכנית.
+      </p>
 
       {error && (
         <div className="mt-3">
@@ -204,49 +206,6 @@ export function StatePicker({
         </div>
       )}
 
-      {picked && (
-        <div className="mt-3 flex items-start gap-3 rounded-lg border border-accent/40 bg-white p-3">
-          {thumbs.has(picked.index) ? (
-            // Signed, short-lived URL — next/image optimization would break it.
-            <img
-              src={thumbs.get(picked.index)}
-              alt=""
-              className="aspect-[9/16] w-16 shrink-0 rounded-md object-cover"
-            />
-          ) : (
-            <span className="aspect-[9/16] w-16 shrink-0 animate-pulse rounded-md bg-ink/10" />
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-ink">
-              {picked.screenName} · <span dir="ltr">{fmtTimestamp(picked.timestampMs)}</span>
-            </p>
-            {picked.visibleText.length > 0 && (
-              <p className="mt-1 text-xs text-ink/50">על המסך: {picked.visibleText.join(" · ")}</p>
-            )}
-            <input
-              dir="rtl"
-              value={label}
-              maxLength={MAX_LABEL_CHARS}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder="כיתוב לצעד הזה"
-              aria-label="כיתוב לצעד החדש"
-              className="mt-2 w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
-            />
-            {labelWordWarning(label) && (
-              <p className="mt-1 text-[13px] text-amber-700">{labelWordWarning(label)}</p>
-            )}
-            <div className="mt-2 flex items-center gap-2">
-              <Button type="button" disabled={!label.trim() || addDisabled} onClick={confirmAdd}>
-                הוסיפו לצעדים
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => setPicked(null)}>
-                ביטול
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {pools && (
         <>
           <TileGrid
@@ -255,6 +214,19 @@ export function StatePicker({
             inPlan={inPlan}
             pickedIndex={picked?.index ?? null}
             onPick={pick}
+            pickedPanel={
+              picked && (
+                <PickedPanel
+                  picked={picked}
+                  thumbUrl={thumbs.get(picked.index)}
+                  label={label}
+                  setLabel={setLabel}
+                  addDisabled={addDisabled}
+                  onConfirm={confirmAdd}
+                  onCancel={() => setPicked(null)}
+                />
+              )
+            }
           />
           {qualityVisible < pools.quality.length && (
             <Button
@@ -296,6 +268,19 @@ export function StatePicker({
                     inPlan={inPlan}
                     pickedIndex={picked?.index ?? null}
                     onPick={pick}
+                    pickedPanel={
+                      picked && (
+                        <PickedPanel
+                          picked={picked}
+                          thumbUrl={thumbs.get(picked.index)}
+                          label={label}
+                          setLabel={setLabel}
+                          addDisabled={addDisabled}
+                          onConfirm={confirmAdd}
+                          onCancel={() => setPicked(null)}
+                        />
+                      )
+                    }
                   />
                   {otherVisible < pools.other.length && (
                     <Button
@@ -324,12 +309,16 @@ function TileGrid({
   inPlan,
   pickedIndex,
   onPick,
+  pickedPanel,
 }: {
   states: AnalysisStateWire[];
   thumbs: Map<number, string>;
   inPlan: Set<number>;
   pickedIndex: number | null;
   onPick: (state: AnalysisStateWire) => void;
+  /** Rendered on a full-width row directly under the picked tile's row —
+   *  grid auto-placement keeps every tile before it in place. */
+  pickedPanel?: React.ReactNode;
 }) {
   if (states.length === 0) return null;
   return (
@@ -337,41 +326,107 @@ function TileGrid({
       {states.map((state) => {
         const taken = inPlan.has(state.index);
         return (
-          <button
-            key={state.index}
-            type="button"
-            disabled={taken}
-            onClick={() => onPick(state)}
-            className={`rounded-lg border p-1.5 text-start transition-colors ${
-              pickedIndex === state.index
-                ? "border-accent bg-accent/10"
-                : "border-ink/[0.08] bg-white hover:border-ink/25"
-            } ${taken ? "opacity-50" : ""}`}
-          >
-            <span className="relative block aspect-[9/16] overflow-hidden rounded-md bg-ink/10">
-              {thumbs.has(state.index) ? (
-                // Signed, short-lived URL — next/image optimization would break it.
-                <img
-                  src={thumbs.get(state.index)}
-                  alt=""
-                  className="absolute inset-0 size-full object-cover"
-                />
-              ) : (
-                <span className="absolute inset-0 animate-pulse bg-ink/10" />
-              )}
-              {taken && (
-                <span className="absolute inset-x-0 bottom-0 bg-ink/70 py-0.5 text-center text-[10px] font-medium text-white">
-                  בתוכנית
-                </span>
-              )}
-            </span>
-            <span className="mt-1 block truncate text-[11px] text-ink/75">{state.screenName}</span>
-            <span dir="ltr" className="block text-[10px] text-ink/45">
-              {fmtTimestamp(state.timestampMs)}
-            </span>
-          </button>
+          <Fragment key={state.index}>
+            <button
+              type="button"
+              disabled={taken}
+              aria-expanded={pickedIndex === state.index || undefined}
+              onClick={() => onPick(state)}
+              className={`rounded-lg border p-1.5 text-start transition-colors ${
+                pickedIndex === state.index
+                  ? "border-accent bg-accent/10"
+                  : "border-ink/[0.08] bg-white hover:border-ink/25"
+              } ${taken ? "opacity-50" : ""}`}
+            >
+              <span className="relative block aspect-[9/16] overflow-hidden rounded-md bg-ink/10">
+                {thumbs.has(state.index) ? (
+                  // Signed, short-lived URL — next/image optimization would break it.
+                  <img
+                    src={thumbs.get(state.index)}
+                    alt=""
+                    className="absolute inset-0 size-full object-cover"
+                  />
+                ) : (
+                  <span className="absolute inset-0 animate-pulse bg-ink/10" />
+                )}
+                {taken && (
+                  <span className="absolute inset-x-0 bottom-0 bg-ink/70 py-0.5 text-center text-[10px] font-medium text-white">
+                    בתוכנית
+                  </span>
+                )}
+              </span>
+              <span className="mt-1 block truncate text-[11px] text-ink/75">
+                {state.screenName}
+              </span>
+              <span dir="ltr" className="block text-[10px] text-ink/45">
+                {fmtTimestamp(state.timestampMs)}
+              </span>
+            </button>
+            {pickedIndex === state.index && pickedPanel && (
+              <div className="col-span-full">{pickedPanel}</div>
+            )}
+          </Fragment>
         );
       })}
+    </div>
+  );
+}
+
+/** The add panel for the tapped tile: thumb, screen facts, the label input
+ *  and the confirm/cancel pair. Mounted by TileGrid below the tile itself. */
+function PickedPanel({
+  picked,
+  thumbUrl,
+  label,
+  setLabel,
+  addDisabled,
+  onConfirm,
+  onCancel,
+}: {
+  picked: AnalysisStateWire;
+  thumbUrl?: string;
+  label: string;
+  setLabel: (label: string) => void;
+  addDisabled: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-accent/40 bg-white p-3">
+      {thumbUrl ? (
+        // Signed, short-lived URL — next/image optimization would break it.
+        <img src={thumbUrl} alt="" className="aspect-[9/16] w-16 shrink-0 rounded-md object-cover" />
+      ) : (
+        <span className="aspect-[9/16] w-16 shrink-0 animate-pulse rounded-md bg-ink/10" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink">
+          {picked.screenName} · <span dir="ltr">{fmtTimestamp(picked.timestampMs)}</span>
+        </p>
+        {picked.visibleText.length > 0 && (
+          <p className="mt-1 text-xs text-ink/50">על המסך: {picked.visibleText.join(" · ")}</p>
+        )}
+        <input
+          dir="rtl"
+          value={label}
+          maxLength={MAX_LABEL_CHARS}
+          onChange={(event) => setLabel(event.target.value)}
+          placeholder="כיתוב לצעד הזה"
+          aria-label="כיתוב לצעד החדש"
+          className="mt-2 w-full rounded-lg border border-ink/15 bg-white px-2.5 py-1.5 text-sm text-ink focus:border-accent focus:outline-none"
+        />
+        {labelWordWarning(label) && (
+          <p className="mt-1 text-[13px] text-amber-700">{labelWordWarning(label)}</p>
+        )}
+        <div className="mt-2 flex items-center gap-2">
+          <Button type="button" disabled={!label.trim() || addDisabled} onClick={onConfirm}>
+            הוסיפו לצעדים
+          </Button>
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            ביטול
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

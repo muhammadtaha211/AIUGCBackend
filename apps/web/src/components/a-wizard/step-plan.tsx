@@ -32,7 +32,7 @@ import {
 } from "@/lib/service-a-ui";
 import { apiFetch, patchJson, postJson, useJobPoll, type ApiResult } from "@/lib/use-api";
 import { useHookLineMeasure } from "./placement-editor";
-import { StatePicker } from "./state-picker";
+import { InventoryPanel } from "./state-picker";
 
 type StepPlanProps = {
   demoId: string;
@@ -375,7 +375,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
     <div>
       <StepHeader
         title="תוכנית הצעדים"
-        sub="המערכת בוחרת מהסרטון שלכם את הצעדים שיופיעו במודעה, עם כיתוב לכל צעד."
+        sub="המערכת מזהה את המסכים בסרטון ומרכיבה מהם טיוטה — הצעדים הסופיים הם הבחירה שלכם."
         onBack={onBack}
       />
 
@@ -721,7 +721,6 @@ function PlanEditor({
   onRetryCards: () => void;
   onFatal: (message: string) => void;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
   const approved = plan.approvedAt !== undefined;
   /** Approve's success swaps the approved block in during the click's own
    *  commit — and the add-a-step button unmounting above lifts the whole
@@ -748,8 +747,21 @@ function PlanEditor({
   const totalMs = totalRuntimeMs(draft);
   return (
     <div className="mt-6">
+      {/* The reframe (founder, 2026-08-25): the draft is an OFFER, the
+          customer's own selection is the product of this step. Said before
+          the cards so a wrong draft reads as "edit me", not "bad service". */}
+      {!approved && (
+        <div className="rounded-xl border border-ink/[0.08] bg-white px-4 py-3">
+          <p className="text-sm font-medium text-ink">הרכבנו לכם טיוטה ראשונית</p>
+          <p className="mt-0.5 text-[13px] text-ink/60">
+            הטיוטה מורכבת מהמסכים שזיהינו בסרטון, והיא לא תמיד קולעת. עברו על כל צעד, צפו בו, מחקו
+            מה שלא מתאים — והוסיפו צעדים מתוך מאגר המסכים שלמטה.
+          </p>
+        </div>
+      )}
+
       {plan.notes && (
-        <div className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+        <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
           <p className="font-semibold">שימו לב</p>
           <p className="mt-0.5">{plan.notes}</p>
         </div>
@@ -846,8 +858,8 @@ function PlanEditor({
                 {!approved && (
                   <Button
                     type="button"
-                    variant="ghost"
-                    className="mt-1.5 !h-8 !px-2 text-[13px]"
+                    variant="danger"
+                    className="mt-2 !h-8 !px-2.5 text-[13px]"
                     disabled={draft.length === 1 || actionBusy !== null}
                     onClick={() => onDelete(step.sourceIndex)}
                   >
@@ -860,30 +872,20 @@ function PlanEditor({
         })}
       </ol>
 
-      {/* Add-a-step lives HERE, on the editor, before the approve block —
-          the customer must see the option before signing off the plan.
-          Post-approve it comes back through the edit-a-copy fork. */}
-      {!approved &&
-        (pickerOpen ? (
-          <StatePicker
-            demoId={demoId}
-            inPlan={new Set(draft.map((step) => step.sourceIndex))}
-            addDisabled={actionBusy !== null}
-            onAdd={onAddStep}
-            onClose={() => setPickerOpen(false)}
-            onFatal={onFatal}
-          />
-        ) : (
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-3"
-            disabled={actionBusy !== null}
-            onClick={() => setPickerOpen(true)}
-          >
-            הוספת צעד
-          </Button>
-        ))}
+      {/* The inventory lives HERE, always open, on the editor before the
+          approve block — picking steps IS this screen's job (founder reframe,
+          2026-08-25: the old add-a-step button at the bottom read as an
+          afterthought and the draft as final). Post-approve it comes back
+          through the edit-a-copy fork. */}
+      {!approved && (
+        <InventoryPanel
+          demoId={demoId}
+          inPlan={new Set(draft.map((step) => step.sourceIndex))}
+          addDisabled={actionBusy !== null}
+          onAdd={onAddStep}
+          onFatal={onFatal}
+        />
+      )}
 
       {/* Advice to add/trim steps is actionable only while editing — on the
           approved read-only view it would nag about controls that are not
