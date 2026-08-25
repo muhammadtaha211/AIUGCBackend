@@ -27,6 +27,7 @@ import {
   identityFromSearch,
   identitySearch,
   insertDraftStep,
+  inventorySections,
   isSkippedScreenKind,
   isActiveARenderStatus,
   isActivePlanStatus,
@@ -748,6 +749,34 @@ describe("inventory picker (8c)", () => {
     const { quality, other } = pickerPools([wire(0), wire(1), wire(2)]);
     expect(quality).toHaveLength(3);
     expect(other).toHaveLength(0);
+  });
+
+  describe("inventorySections (0030)", () => {
+    const quality = [wire(0), wire(2), wire(5), wire(7)];
+
+    it("no grouping collapses to one untitled section — exactly the flat grid", () => {
+      expect(inventorySections(quality)).toEqual([{ title: null, states: quality }]);
+      expect(inventorySections(quality, [])).toEqual([{ title: null, states: quality }]);
+    });
+
+    it("groups the quality pool, buckets leftovers, drops junk indexes", () => {
+      const sections = inventorySections(quality, [
+        // 3 is not in the quality pool (grouped server-side over a wider
+        // predicate era, say) — dropped; 0 claimed twice — second claim
+        // dropped; order inside a section re-sorts chronologically.
+        { title: "פרסום פוסט", stateIndexes: [2, 0, 3] },
+        { title: "מעקב", stateIndexes: [5, 0] },
+      ]);
+      expect(sections.map((s) => s.title)).toEqual(["פרסום פוסט", "מעקב", "עוד מסכים"]);
+      expect(sections[0]!.states.map((s) => s.index)).toEqual([0, 2]);
+      expect(sections[1]!.states.map((s) => s.index)).toEqual([5]);
+      expect(sections[2]!.states.map((s) => s.index)).toEqual([7]);
+    });
+
+    it("a grouping that matches nothing in the pool degrades to the flat grid", () => {
+      const sections = inventorySections(quality, [{ title: "ריקה", stateIndexes: [99] }]);
+      expect(sections).toEqual([{ title: null, states: quality }]);
+    });
   });
 
   describe("insertDraftStep (add-a-step)", () => {

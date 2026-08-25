@@ -9,9 +9,12 @@ import {
   analysisIndexBatches,
   clipWindow,
   fmtTimestamp,
+  inventorySections,
   labelWordWarning,
   pickerPools,
   type AnalysisStateWire,
+  type InventorySection,
+  type InventorySectionWire,
 } from "@/lib/service-a-ui";
 import { apiFetch } from "@/lib/use-api";
 import { ClipVideo, type ClipPlayer, type ClipTarget } from "./clip-player";
@@ -62,6 +65,12 @@ function tileTarget(state: AnalysisStateWire): ClipTarget {
   return { key: `tile:${state.index}`, ...clipWindow(state.timestampMs, 0) };
 }
 
+/** Tiles a section shows before its own הציגו-עוד: one-ish row for a titled
+ *  task section; the untitled fallback grid keeps the old full page. */
+function sectionPreviewCount(section: InventorySection): number {
+  return section.title === null ? ANALYSIS_PAGE_SIZE : 4;
+}
+
 export function InventoryPanel({
   demoId,
   inPlan,
@@ -71,18 +80,24 @@ export function InventoryPanel({
   onFatal,
 }: InventoryPanelProps) {
   const [inventory, setInventory] = useState<AnalysisStateWire[] | null>(null);
+  const [sectionsWire, setSectionsWire] = useState<InventorySectionWire[] | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   /** index -> signed thumbUrl, accumulated page by page. */
   const [thumbs, setThumbs] = useState<Map<number, string>>(new Map());
   const thumbsRef = useRef(thumbs);
   thumbsRef.current = thumbs;
   const [thumbsBusy, setThumbsBusy] = useState(false);
-  const [qualityVisible, setQualityVisible] = useState(ANALYSIS_PAGE_SIZE);
+  /** Per-section visible tile count (keyed by section position); a missing
+   *  entry means that section's preview count. */
+  const [sectionVisible, setSectionVisible] = useState<Map<number, number>>(new Map());
   const [otherVisible, setOtherVisible] = useState(0);
   const [otherOpen, setOtherOpen] = useState(false);
   /** The tile awaiting its label; null = just browsing. */
   const [picked, setPicked] = useState<AnalysisStateWire | null>(null);
   const [label, setLabel] = useState("");
+
+  const visibleOf = (position: number, section: InventorySection): number =>
+    sectionVisible.get(position) ?? sectionPreviewCount(section);
 
   /** Sign thumbs for every wanted-but-missing index: the committed visible
    *  ranges of BOTH tiers (collapsing hides tiles but never shrinks the
@@ -93,8 +108,11 @@ export function InventoryPanel({
    *  being refetched (a failure will re-raise it). */
   async function wantThumbs(extra: number[]) {
     const current = inventory ? pickerPools(inventory) : null;
+    const currentSections = current ? inventorySections(current.quality, sectionsWire) : null;
     const wanted = new Set([
-      ...(current?.quality.slice(0, qualityVisible).map((state) => state.index) ?? []),
+      ...(currentSections?.flatMap((section, i) =>
+        section.states.slice(0, visibleOf(i, section)).map((state) => state.index),
+      ) ?? []),
       ...(current?.other.slice(0, otherVisible).map((state) => state.index) ?? []),
       ...extra,
     ]);
@@ -132,13 +150,16 @@ export function InventoryPanel({
     }
   }
 
-  // The inventory: metadata only, one request, then the first page's thumbs.
+  // The inventory: metadata (+ any stored sections) in one request, then the
+  // thumbs for every section's preview slice.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const result = await apiFetch<{ status: string; states?: AnalysisStateWire[] }>(
-        `/api/demos/${demoId}/analysis`,
-      );
+      const result = await apiFetch<{
+        status: string;
+        states?: AnalysisStateWire[];
+        sections?: InventorySectionWire[];
+      }>(`/api/demos/${demoId}/analysis`);
       if (cancelled) return;
       if (!result.ok) {
         if (result.status === 403) return onFatal(result.error);
@@ -146,8 +167,18 @@ export function InventoryPanel({
       }
       if (result.body.status !== "ready" || !result.body.states) return setError(INVENTORY_ERROR);
       setInventory(result.body.states);
-      const { quality } = pickerPools(result.body.states);
-      void wantThumbs(quality.slice(0, ANALYSIS_PAGE_SIZE).map((state) => state.index));
+      setSectionsWire(result.body.sections);
+      // Computed from the response, not from state — the commits above have
+      // not landed when this runs (the `extra` param exists for exactly this).
+      const initial = inventorySections(
+        pickerPools(result.body.states).quality,
+        result.body.sections,
+      );
+      void wantThumbs(
+        initial.flatMap((section) =>
+          section.states.slice(0, sectionPreviewCount(section)).map((state) => state.index),
+        ),
+      );
     })();
     return () => {
       cancelled = true;
@@ -156,10 +187,18 @@ export function InventoryPanel({
   }, [demoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pools = inventory ? pickerPools(inventory) : null;
+  const sections = pools ? inventorySections(pools.quality, sectionsWire) : null;
 
   function showMore(pool: AnalysisStateWire[], visible: number, grow: (n: number) => void) {
     const next = pool.slice(visible, visible + ANALYSIS_PAGE_SIZE);
     grow(visible + ANALYSIS_PAGE_SIZE);
+    void wantThumbs(next.map((state) => state.index));
+  }
+
+  function showMoreInSection(position: number, section: InventorySection) {
+    const visible = visibleOf(position, section);
+    const next = section.states.slice(visible, visible + ANALYSIS_PAGE_SIZE);
+    setSectionVisible((prev) => new Map(prev).set(position, visible + ANALYSIS_PAGE_SIZE));
     void wantThumbs(next.map((state) => state.index));
   }
 
@@ -186,6 +225,18 @@ export function InventoryPanel({
   function retryThumbs() {
     void wantThumbs([]);
   }
+
+  const pickedPanel = picked && (
+    <PickedPanel
+      picked={picked}
+      thumbUrl={thumbs.get(picked.index)}
+      label={label}
+      setLabel={setLabel}
+      addDisabled={addDisabled}
+      onConfirm={confirmAdd}
+      onCancel={() => setPicked(null)}
+    />
+  );
 
   return (
     <div className="mt-4 rounded-xl border border-ink/[0.08] bg-ink/[0.02] p-4">
@@ -221,40 +272,41 @@ export function InventoryPanel({
         </div>
       )}
 
-      {pools && (
+      {pools && sections && (
         <>
-          <TileGrid
-            states={pools.quality.slice(0, qualityVisible)}
-            thumbs={thumbs}
-            inPlan={inPlan}
-            pickedIndex={picked?.index ?? null}
-            player={player}
-            onPick={pick}
-            pickedPanel={
-              picked && (
-                <PickedPanel
-                  picked={picked}
-                  thumbUrl={thumbs.get(picked.index)}
-                  label={label}
-                  setLabel={setLabel}
-                  addDisabled={addDisabled}
-                  onConfirm={confirmAdd}
-                  onCancel={() => setPicked(null)}
+          {/* The task sections (0030) — or one untitled section, which IS the
+              old flat grid, whenever no grouping exists. Sections subdivide
+              the quality pool only; the collapsed tier below is untouched. */}
+          {sections.map((section, position) => {
+            const visible = visibleOf(position, section);
+            return (
+              <div key={section.title ?? position}>
+                {section.title && (
+                  <p className="mt-4 text-[13px] font-semibold text-ink/80">{section.title}</p>
+                )}
+                <TileGrid
+                  states={section.states.slice(0, visible)}
+                  thumbs={thumbs}
+                  inPlan={inPlan}
+                  pickedIndex={picked?.index ?? null}
+                  player={player}
+                  onPick={pick}
+                  pickedPanel={pickedPanel}
                 />
-              )
-            }
-          />
-          {qualityVisible < pools.quality.length && (
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-3"
-              loading={thumbsBusy}
-              onClick={() => showMore(pools.quality, qualityVisible, setQualityVisible)}
-            >
-              הציגו עוד מסכים
-            </Button>
-          )}
+                {visible < section.states.length && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-2 !h-8 !px-2.5 text-[13px]"
+                    loading={thumbsBusy}
+                    onClick={() => showMoreInSection(position, section)}
+                  >
+                    הציגו עוד ({section.states.length - visible})
+                  </Button>
+                )}
+              </div>
+            );
+          })}
 
           {pools.other.length > 0 && (
             <div className="mt-4">
@@ -285,19 +337,7 @@ export function InventoryPanel({
                     pickedIndex={picked?.index ?? null}
                     player={player}
                     onPick={pick}
-                    pickedPanel={
-                      picked && (
-                        <PickedPanel
-                          picked={picked}
-                          thumbUrl={thumbs.get(picked.index)}
-                          label={label}
-                          setLabel={setLabel}
-                          addDisabled={addDisabled}
-                          onConfirm={confirmAdd}
-                          onCancel={() => setPicked(null)}
-                        />
-                      )
-                    }
+                    pickedPanel={pickedPanel}
                   />
                   {otherVisible < pools.other.length && (
                     <Button

@@ -712,6 +712,47 @@ export function pickerPools(states: AnalysisStateWire[]): {
   return { quality, other };
 }
 
+/** One stored grouping, as the analysis GET serves it (0030). */
+export type InventorySectionWire = { title: string; stateIndexes: number[] };
+
+/** A rendered inventory section. `title: null` = the untitled flat grid —
+ *  both the no-grouping fallback and the whole pre-0030 world. */
+export type InventorySection = { title: string | null; states: AnalysisStateWire[] };
+
+/**
+ * Fold the stored groupings over the QUALITY pool (sections never touch the
+ * collapsed "פחות מתאימים" tier). Absent/empty groupings collapse to one
+ * untitled section holding today's exact flat grid — the fallback for old
+ * analyses, failed groupings and capped accounts. Quality states the
+ * grouping missed land in a trailing "עוד מסכים" bucket; indexes outside
+ * the quality pool (or claimed twice) are dropped, mirroring the server-side
+ * validator's rules on the client's stricter pool.
+ */
+export function inventorySections(
+  quality: AnalysisStateWire[],
+  sections?: InventorySectionWire[],
+): InventorySection[] {
+  if (!sections || sections.length === 0) return [{ title: null, states: quality }];
+  const byIndex = new Map(quality.map((state) => [state.index, state]));
+  const used = new Set<number>();
+  const out: InventorySection[] = [];
+  for (const section of sections) {
+    const states: AnalysisStateWire[] = [];
+    for (const index of section.stateIndexes) {
+      if (!byIndex.has(index) || used.has(index)) continue;
+      used.add(index);
+      states.push(byIndex.get(index)!);
+    }
+    states.sort((a, b) => a.timestampMs - b.timestampMs);
+    if (states.length > 0) out.push({ title: section.title, states });
+  }
+  const leftovers = quality.filter((state) => !used.has(state.index));
+  if (leftovers.length > 0) {
+    out.push({ title: out.length > 0 ? "עוד מסכים" : null, states: leftovers });
+  }
+  return out;
+}
+
 /** A plan step that exists only in the draft until the next save. The server
  *  assembles the real durationMs on PATCH; until then the card says so
  *  instead of showing a number that was never computed. */

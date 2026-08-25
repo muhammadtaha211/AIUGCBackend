@@ -1,4 +1,4 @@
-import { desc, eq, like } from "drizzle-orm";
+import { and, desc, eq, isNull, like } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -18,7 +18,8 @@ import {
   type StateCluster,
 } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
-import { generateObjectWithImages } from "../providers/anthropic";
+import { PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
+import { generateObject, generateObjectWithImages } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { getStorage, storageKey } from "../storage";
 import { requireQuestionnaire } from "./businesses";
@@ -70,6 +71,48 @@ export const analysisStateSchema = z.object({
 export type AnalysisState = z.infer<typeof analysisStateSchema>;
 
 export const analysisTimelineSchema = z.array(analysisStateSchema);
+
+/**
+ * Task-level Hebrew groupings of the timeline for the wizard's inventory —
+ * demo_analyses.sections (0030). Written once by group_analysis_states after
+ * the analysis lands ready; NULL means "not grouped" and the UI renders the
+ * flat grid, so nothing anywhere may treat a missing grouping as an error.
+ */
+export const analysisSectionsSchema = z.array(
+  z.object({
+    title: z.string().min(1),
+    stateIndexes: z.array(z.number().int().nonnegative()),
+  }),
+);
+export type AnalysisSection = z.infer<typeof analysisSectionsSchema>[number];
+
+/** Sections the grouping model may not return, as model-facing English —
+ *  the same deterministic-check-plus-one-corrective-call shape as
+ *  findPlanViolations, scaled down. */
+export function findSectionViolations(
+  sections: AnalysisSection[],
+  timelineLength: number,
+): string[] {
+  const violations: string[] = [];
+  if (sections.length === 0) violations.push("zero sections");
+  if (sections.length > 6) violations.push(`${sections.length} sections — the maximum is 6`);
+  const seen = new Set<number>();
+  sections.forEach((section, i) => {
+    if (!/[֐-׿]/.test(section.title)) {
+      violations.push(`section ${i}: title "${section.title}" is not Hebrew`);
+    }
+    if (section.stateIndexes.length === 0) violations.push(`section ${i}: has no states`);
+    for (const index of section.stateIndexes) {
+      if (index >= timelineLength) {
+        violations.push(`section ${i}: state ${index} is not in the timeline`);
+      } else if (seen.has(index)) {
+        violations.push(`section ${i}: state ${index} appears in two sections`);
+      }
+      seen.add(index);
+    }
+  });
+  return violations;
+}
 
 /** What the model returns per batch — timestamps and thumb paths are attached in code. */
 const batchOutputSchema = z.object({
@@ -357,6 +400,7 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
         stateCount: timeline.length,
         promptVersion: "analyze_demo@dry-run",
       });
+      await enqueueSections(ctx.db, analysisId);
       return { kind: "done" };
     }
 
@@ -689,6 +733,7 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       promptVersion,
       failReason: null,
     });
+    await enqueueSections(ctx.db, analysisId);
     return { kind: "done" };
   } catch (err) {
     // Mirror terminal failures onto the domain row (docs/02); a parked budget
@@ -702,4 +747,175 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
     }
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sections: task-level Hebrew groupings of a ready timeline (0030)
+// ---------------------------------------------------------------------------
+
+/** One grouping per analysis, enqueued the moment it lands ready. Light lane
+ *  (not in HEAVY_JOB_TYPES); also the CLI backfill's enqueue (`aiugc demo
+ *  sections`) — the shared idempotency key is what makes both safe. */
+export async function enqueueSections(db: Db, analysisId: string): Promise<void> {
+  await enqueue(db, {
+    type: "group_analysis_states",
+    idempotencyKey: `sections:${analysisId}`,
+    payload: { analysisId },
+  });
+}
+
+/** Backfill (`aiugc demo sections`): enqueue a grouping for every ready
+ *  analysis that has none. Key sequencing follows requestDemoAnalysis's rN
+ *  pattern — a grouping that gave up gracefully leaves a SUCCEEDED job on the
+ *  bare key with sections still NULL, and a bare re-enqueue would collapse
+ *  onto it forever; a live job is left alone. */
+export async function enqueueMissingSections(db: Db): Promise<number> {
+  const rows = await db
+    .select({ id: demoAnalyses.id })
+    .from(demoAnalyses)
+    .where(and(eq(demoAnalyses.status, "ready"), isNull(demoAnalyses.sections)));
+  let queued = 0;
+  for (const row of rows) {
+    const priorJobs = await db
+      .select({ id: jobs.id, status: jobs.status })
+      .from(jobs)
+      .where(like(jobs.idempotencyKey, `sections:${row.id}%`));
+    if (priorJobs.some((j) => j.status === "queued" || j.status === "running")) continue;
+    const key =
+      priorJobs.length === 0 ? `sections:${row.id}` : `sections:${row.id}:r${priorJobs.length}`;
+    const { created } = await enqueue(db, {
+      type: "group_analysis_states",
+      idempotencyKey: key,
+      payload: { analysisId: row.id },
+    });
+    if (created) queued++;
+  }
+  return queued;
+}
+
+/** The quality pool, with absolute timeline indexes — the same predicate as
+ *  the wizard's main grid (pickerPools) and dryRunPlan's preferred pool: the
+ *  grouping only ever organizes states a customer is steered toward. */
+function qualityPool(timeline: AnalysisState[]): { state: AnalysisState; index: number }[] {
+  return timeline
+    .map((state, index) => ({ state, index }))
+    .filter(
+      ({ state }) =>
+        state.legibility === "high" &&
+        !state.sameStateAsPrevious &&
+        state.actionType !== "idle" &&
+        !(state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind)),
+    );
+}
+
+/**
+ * Group a ready analysis's quality states into 2-5 Hebrew task sections
+ * ("פרסום פוסט"-style noun phrases — founder tone ruling 2026-08-25). Text
+ * only, one cheap call plus at most one corrective, and every failure mode —
+ * budget refusal, invalid output after the retry — ends as `done` with
+ * sections left NULL: the grouping is a UI nicety and the flat grid is its
+ * fallback, so it must never park the lane or surface as a customer-facing
+ * failure. Transient API errors still ride the queue's ordinary retries.
+ */
+export async function handleGroupAnalysisSections(job: Job, ctx: JobContext): Promise<JobResult> {
+  const { analysisId } = job.payload as { analysisId: string };
+  const rows = await ctx.db
+    .select()
+    .from(demoAnalyses)
+    .where(eq(demoAnalyses.id, analysisId))
+    .limit(1);
+  const analysis = rows[0];
+  if (!analysis) throw new PermanentError(`analysis ${analysisId} not found`);
+  if (analysis.status !== "ready" || !analysis.timeline) {
+    throw new PermanentError(`analysis ${analysisId} is "${analysis.status}" — nothing to group`);
+  }
+  // Computed once, ever — a retry (or the CLI backfill racing the auto
+  // enqueue) after a finished grouping is a success no-op, not a new spend.
+  if (analysis.sections !== null) return { kind: "done" };
+
+  const timeline = analysisTimelineSchema.parse(analysis.timeline);
+  const quality = qualityPool(timeline);
+  if (quality.length === 0) return { kind: "done" };
+
+  const write = async (sections: AnalysisSection[], promptVersion: string) => {
+    await ctx.db
+      .update(demoAnalyses)
+      .set({ sections, sectionsPromptVersion: promptVersion, updatedAt: new Date() })
+      .where(eq(demoAnalyses.id, analysisId));
+  };
+
+  if (getEnv().DRY_RUN) {
+    // Two fixed-title halves, so the keyless e2e exercises the sectioned UI.
+    const mid = Math.ceil(quality.length / 2);
+    const sections: AnalysisSection[] = [
+      { title: "תחילת השימוש", stateIndexes: quality.slice(0, mid).map((q) => q.index) },
+    ];
+    if (quality.length > mid) {
+      sections.push({ title: "התוצאה", stateIndexes: quality.slice(mid).map((q) => q.index) });
+    }
+    await write(sections, "group_analysis_states@dry-run");
+    return { kind: "done" };
+  }
+
+  const demoRows = await ctx.db.select().from(demos).where(eq(demos.id, analysis.demoId)).limit(1);
+  const businessId = demoRows[0]?.businessId;
+  try {
+    await assertBudget(ctx.db, "llm_tokens");
+    if (businessId) await assertAccountBudget(ctx.db, "llm_tokens", businessId);
+  } catch (err) {
+    ctx.log.warn(
+      { analysisId, err: err instanceof Error ? err.message : String(err) },
+      "sections: budget refused — inventory stays flat",
+    );
+    return { kind: "done" };
+  }
+
+  const promptStates = quality.map(({ state, index }) => ({
+    index,
+    screenName: state.screenName,
+    action: state.action,
+    actionType: state.actionType,
+    visibleText: state.visibleText,
+  }));
+  const { text, promptVersion } = renderPrompt("group_analysis_states", {
+    states: JSON.stringify(promptStates, null, 2),
+    count: promptStates.length,
+  });
+
+  const outputSchema = z.object({ sections: analysisSectionsSchema });
+  const callOnce = async (prompt: string) => {
+    const { object, usage } = await generateObject({ prompt, schema: outputSchema });
+    await recordUsage(ctx.db, {
+      provider: "anthropic",
+      kind: "llm_tokens",
+      quantity: usage.inputTokens + usage.outputTokens,
+      costEstimateAgorot: llmCostAgorot(usage.inputTokens, usage.outputTokens),
+      jobId: job.id,
+      businessId,
+    });
+    return object;
+  };
+
+  let output = await callOnce(text);
+  let violations = findSectionViolations(output.sections, timeline.length);
+  if (violations.length > 0) {
+    output = await callOnce(
+      `${text}\n\nYour previous answer was:\n${JSON.stringify(output, null, 2)}\n\nIt violated these rules:\n${violations
+        .map((v) => `- ${v}`)
+        .join(
+          "\n",
+        )}\n\nReturn the same grouping with the minimal edits that fix every violation named above.`,
+    );
+    violations = findSectionViolations(output.sections, timeline.length);
+  }
+  if (violations.length > 0) {
+    ctx.log.warn(
+      { analysisId, violations },
+      "sections: model output invalid after retry — inventory stays flat",
+    );
+    return { kind: "done" };
+  }
+
+  await write(output.sections, promptVersion);
+  return { kind: "done" };
 }

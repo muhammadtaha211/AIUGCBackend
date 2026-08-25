@@ -39,6 +39,7 @@ export const PORTABLE_MIGRATIONS = [
   "0027_llm_caps_account_first.sql",
   "0028_split_legibility_gate.sql",
   "0029_plan_failure_diagnostics.sql",
+  "0030_analysis_sections.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */
