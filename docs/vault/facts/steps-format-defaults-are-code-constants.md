@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-08-23
-method: "select key from app_config (13 rows, none of these) + sed -n on packages/core/src/plan-format.ts and packages/core/src/pipelines/demo-step-plans.ts"
+verified: 2026-08-25
+method: "select key from app_config (13 rows, none of these, verified 2026-08-23) + grep -n on packages/core/src/plan-format.ts and packages/core/src/pipelines/demo-step-plans.ts"
 source: db
 ---
 
@@ -20,8 +20,8 @@ configuration.
 | `a_steps_max`            | `A_STEPS_MAX_DEFAULT` | `7`                                              | `packages/core/src/plan-format.ts:58`                |
 | `a_step_ms_min`          | `MIN_STEP_MS`         | `3000`                                           | `packages/core/src/pipelines/demo-step-plans.ts:111` |
 | `a_step_ms_max`          | `MAX_STEP_MS`         | `4000`                                           | `packages/core/src/pipelines/demo-step-plans.ts:112` |
-| `a_steps_runtime_min_ms` | `MIN_RUNTIME_MS`      | `16000`                                          | `packages/core/src/pipelines/demo-step-plans.ts:121` |
-| `a_steps_runtime_max_ms` | `MAX_RUNTIME_MS`      | `21000`                                          | `packages/core/src/pipelines/demo-step-plans.ts:122` |
+| `a_steps_runtime_min_ms` | `MIN_RUNTIME_MS`      | `15000` (16000 from `b60b5b6` until 2026-08-25)  | `packages/core/src/pipelines/demo-step-plans.ts:125` |
+| `a_steps_runtime_max_ms` | `MAX_RUNTIME_MS`      | `21000`                                          | `packages/core/src/pipelines/demo-step-plans.ts:126` |
 | `a_step_ms_by_action`    | `DEFAULT_STEP_MS`     | per-kind map, all entries below the 3000ms floor | `packages/core/src/pipelines/demo-step-plans.ts`     |
 
 ## `b60b5b6` moved four of these, and the commit subject buries it
@@ -40,6 +40,12 @@ Diffed with `git show b60b5b6 -- packages/core/src/pipelines/demo-step-plans.ts 
 The max was a literal `8` inline at the `getConfigValueOr` call before the constant was extracted, so
 "introduce `A_STEPS_MAX_DEFAULT`" is also a cap reduction. **Anyone reading a plan row created before
 2026-08-23 is reading a plan generated under an 8-step cap and an 11–16s band.**
+
+That commit's 16s floor also contradicted its own 3000ms step floor: every unsqueezed step renders
+exactly 3000ms, so the 5-step minimum totalled 15000ms and could never satisfy the band — the
+deterministic failure class behind the founder's 4-in-a-row live failures. Fixed 2026-08-25 by
+[[0002-runtime-band-floor-is-15s]]; the band-coherence test in
+`packages/core/test/demo-step-plans.test.ts` now pins the arithmetic.
 
 `readTimeMs` changed in the same commit (`plan-format.ts:73-85`): it now counts only tokens
 containing a letter or digit (`/[\p{L}\p{N}]/u`), so a punctuation-only token such as a spaced dash

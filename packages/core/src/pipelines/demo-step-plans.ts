@@ -112,12 +112,17 @@ const MIN_STEP_MS = 3000;
 const MAX_STEP_MS = 4000;
 
 /** The steps' own on-screen length — the hook clip is NOT counted, it sits on
- *  top. With the bank's ~4s hook this lands the finished ad in the 20-25s
- *  band the founder asked for. At the 3s step floor only 6-7 step shapes fit
- *  the band; sparser recordings pass through the reachability escape below.
+ *  top. With the bank's ~4s hook this lands the finished ad at ~19-25s.
+ *  The floor is minSteps × the step floor ON PURPOSE (founder decision
+ *  2026-08-25, docs/vault/decisions/0002-runtime-band-floor-is-15s.md): every
+ *  unsqueezed step renders exactly the 3s floor, so a 16s floor made the
+ *  5-step minimum arithmetically unsatisfiable — every 5-step plan violated
+ *  the band, and the prompt was licensing exactly that shape. At 15s every
+ *  minSteps..maxSteps shape fits the band by construction; sparser recordings
+ *  still pass through the reachability escape below.
  *  Config `a_steps_runtime_min_ms` / `a_steps_runtime_max_ms` override
  *  (no seeded row: a missing key IS the default). */
-const MIN_RUNTIME_MS = 16_000;
+const MIN_RUNTIME_MS = 15_000;
 const MAX_RUNTIME_MS = 21_000;
 
 // MAX_LABEL_WORDS / MIN_LABEL_WORDS live in ../plan-format (imported above):
