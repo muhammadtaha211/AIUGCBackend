@@ -3,16 +3,18 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { MAX_LABEL_CHARS } from "@aiugc/core/plan-format";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/icons";
+import { Play, Spinner } from "@/components/ui/icons";
 import {
   ANALYSIS_PAGE_SIZE,
   analysisIndexBatches,
+  clipWindow,
   fmtTimestamp,
   labelWordWarning,
   pickerPools,
   type AnalysisStateWire,
 } from "@/lib/service-a-ui";
 import { apiFetch } from "@/lib/use-api";
+import { ClipVideo, type ClipPlayer, type ClipTarget } from "./clip-player";
 
 /**
  * The inventory panel (8c as a picker; always-open since the 2026-08-25
@@ -45,16 +47,26 @@ type InventoryPanelProps = {
   /** True while the editor has a request in flight — adding then would race
    *  the draft reseed and be silently dropped. */
   addDisabled: boolean;
+  /** The editor's shared preview player — hover autoplays a tile (desktop),
+   *  tap selects AND plays (the mobile path). */
+  player: ClipPlayer;
   onAdd: (state: AnalysisStateWire, label: string) => void;
   onFatal: (message: string) => void;
 };
 
 const INVENTORY_ERROR = "לא הצלחנו לטעון את רשימת המסכים — רעננו את העמוד ונסו שוב.";
 
+/** An inventory state's preview window: no stored duration exists, so it
+ *  plays the render-floor fallback (clipWindow's 3s). */
+function tileTarget(state: AnalysisStateWire): ClipTarget {
+  return { key: `tile:${state.index}`, ...clipWindow(state.timestampMs, 0) };
+}
+
 export function InventoryPanel({
   demoId,
   inPlan,
   addDisabled,
+  player,
   onAdd,
   onFatal,
 }: InventoryPanelProps) {
@@ -154,6 +166,9 @@ export function InventoryPanel({
   function pick(state: AnalysisStateWire) {
     setPicked(state);
     setLabel("");
+    // Tap = select + preview, one gesture — on touch there is no hover, so
+    // this IS the mobile playback path.
+    player.play(tileTarget(state));
   }
 
   function confirmAdd() {
@@ -213,6 +228,7 @@ export function InventoryPanel({
             thumbs={thumbs}
             inPlan={inPlan}
             pickedIndex={picked?.index ?? null}
+            player={player}
             onPick={pick}
             pickedPanel={
               picked && (
@@ -267,6 +283,7 @@ export function InventoryPanel({
                     thumbs={thumbs}
                     inPlan={inPlan}
                     pickedIndex={picked?.index ?? null}
+                    player={player}
                     onPick={pick}
                     pickedPanel={
                       picked && (
@@ -308,6 +325,7 @@ function TileGrid({
   thumbs,
   inPlan,
   pickedIndex,
+  player,
   onPick,
   pickedPanel,
 }: {
@@ -315,6 +333,7 @@ function TileGrid({
   thumbs: Map<number, string>;
   inPlan: Set<number>;
   pickedIndex: number | null;
+  player: ClipPlayer;
   onPick: (state: AnalysisStateWire) => void;
   /** Rendered on a full-width row directly under the picked tile's row —
    *  grid auto-placement keeps every tile before it in place. */
@@ -325,6 +344,7 @@ function TileGrid({
     <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
       {states.map((state) => {
         const taken = inPlan.has(state.index);
+        const previewing = player.active?.key === tileTarget(state).key;
         return (
           <Fragment key={state.index}>
             <button
@@ -332,6 +352,14 @@ function TileGrid({
               disabled={taken}
               aria-expanded={pickedIndex === state.index || undefined}
               onClick={() => onPick(state)}
+              // Desktop hover autoplays the muted preview in place; leaving
+              // stops OUR clip only (never one another tile just started).
+              // Touch synthesizes mouseenter before click, which starts the
+              // same preview the tap starts — no special-casing.
+              onMouseEnter={() => player.play(tileTarget(state))}
+              onMouseLeave={() => {
+                if (previewing) player.stop();
+              }}
               className={`rounded-lg border p-1.5 text-start transition-colors ${
                 pickedIndex === state.index
                   ? "border-accent bg-accent/10"
@@ -348,6 +376,13 @@ function TileGrid({
                   />
                 ) : (
                   <span className="absolute inset-0 animate-pulse bg-ink/10" />
+                )}
+                {previewing && <ClipVideo player={player} />}
+                {/* The playability advert — hidden while the preview runs. */}
+                {!previewing && (
+                  <span className="absolute start-1 top-1 flex size-5 items-center justify-center rounded-full bg-ink/55 text-white">
+                    <Play className="size-2.5 translate-x-px" />
+                  </span>
                 )}
                 {taken && (
                   <span className="absolute inset-x-0 bottom-0 bg-ink/70 py-0.5 text-center text-[10px] font-medium text-white">

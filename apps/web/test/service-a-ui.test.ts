@@ -17,6 +17,7 @@ import {
   fmtElapsedHe,
   ingestPhaseView,
   ingestStuckView,
+  clipWindow,
   draftBlockedReason,
   endingForRemainder,
   endingSentence,
@@ -213,6 +214,14 @@ describe("plan surface helpers", () => {
     expect(batches[0]).toHaveLength(12);
     expect(batches[1]).toEqual([24]);
     expect(analysisIndexBatches([])).toEqual([]);
+  });
+
+  it("clipWindow: stored duration plays as-is, zero falls back to the render floor", () => {
+    // A saved step previews exactly its assembled window; a draft-added step
+    // or raw inventory state (durationMs 0) previews the 3s floor every
+    // unsqueezed step actually renders.
+    expect(clipWindow(12_000, 3400)).toEqual({ startMs: 12_000, endMs: 15_400 });
+    expect(clipWindow(9000, 0)).toEqual({ startMs: 9000, endMs: 12_000 });
   });
 
   it("Hebrew failReason passes through untouched, with no raw leftover", () => {

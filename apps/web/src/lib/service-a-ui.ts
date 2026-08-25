@@ -741,6 +741,22 @@ export function fmtTimestamp(ms: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
+/** What an inventory state or a draft-added step previews for: the render
+ *  floor every unsqueezed step actually runs (MIN_STEP_MS, server-side in
+ *  demo-step-plans.ts — unimportable into a browser bundle, hence restated).
+ *  A fixed window on purpose: raw gaps between neighbouring states range
+ *  from ~400ms flashes to tens of seconds, neither of which previews what
+ *  picking the state buys. */
+export const PREVIEW_FALLBACK_MS = 3000;
+
+/** The preview window for a clip. A stored step plays its assembled window;
+ *  a draft-added step or an inventory state (durationMs 0/absent) plays the
+ *  fallback. No clamp against the video's end — the <video> element's own
+ *  `ended` event stops playback there. */
+export function clipWindow(startMs: number, durationMs: number): { startMs: number; endMs: number } {
+  return { startMs, endMs: startMs + (durationMs > 0 ? durationMs : PREVIEW_FALLBACK_MS) };
+}
+
 export type HookClip = {
   id: string;
   durationMs: number;
