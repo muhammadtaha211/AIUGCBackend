@@ -1,12 +1,32 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "read demo_step_plans.fail_reason and the matching jobs.last_error for the failed plan jobs (read-only, packages/core/.work/vault-worker-eviD.ts); traced the read path through apps/web/src/lib/api.ts:9 and packages/core/src/db/index.ts:22-30"
+verified: 2026-08-25
+method: "read demo_step_plans.fail_reason and the matching jobs.last_error for the failed plan jobs (read-only, packages/core/.work/vault-worker-eviD.ts); traced the read path through apps/web/src/lib/api.ts:9 and packages/core/src/db/index.ts:22-30; fix verified by packages/core/test/plan-retry-contract.test.ts (handlePlanDemoSteps diagnostics describe)"
 source: db
 ---
 
 # When a plan fails the customer is told nothing, and the reason it is nothing is not RLS
+
+## FIXED 2026-08-25 (migration 0029 + the same commit's code)
+
+Both symptoms closed, structurally rather than by the join this note proposed:
+
+- `demo_step_plans.fail_kind` (`validator | quota | input | internal | transient`) and
+  `retry_violations` (string[][], one entry per model call, written on success AND failure) landed
+  in 0029. The English violation text is now durable **on the plan row itself** — better than
+  joining `jobs.last_error`, because successes keep their history too.
+- `prompt_version` is written on the validator-failure path (`PlanViolationError` carries it; the
+  handler writes it), so per-version failure rates are derivable from now on.
+- The customer line is classified per failure class in `violationCustomerMessage`
+  (`demo-step-plans.ts`): fabrication → "add a demo description and retry", skip-kind picks →
+  "refilm focusing on product use", everything else keeps the generic line.
+- The wrong RLS comment in `service-a-ui.ts` is corrected in place.
+
+The nine pre-0029 failed rows stay as they are — NULL `fail_kind`, NULL `prompt_version` — and are
+the reason the UI keeps a substring fallback ([[quota-marker-test-does-not-protect-it]]).
+
+---
 
 ## What the customer gets
 

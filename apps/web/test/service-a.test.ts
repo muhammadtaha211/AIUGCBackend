@@ -195,6 +195,7 @@ describe("step plan response shape", () => {
         unexplainedMoments: [],
         notes: "הערה",
         failReason: null,
+        failKind: null,
         approvedAt,
       }),
     ).toEqual({
@@ -217,11 +218,13 @@ describe("step plan response shape", () => {
       unexplainedMoments: null,
       notes: null,
       failReason: "יצירת התוכנית נכשלה — נסו שוב",
+      failKind: "validator",
       approvedAt: null,
     });
     expect(failed.steps).toEqual([]);
     expect(failed.unexplainedMoments).toEqual([]);
     expect(failed.failReason).toBe("יצירת התוכנית נכשלה — נסו שוב");
+    expect(failed.failKind).toBe("validator");
     expect(failed.notes).toBeUndefined();
     expect(failed.approvedAt).toBeUndefined();
   });

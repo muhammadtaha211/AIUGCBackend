@@ -155,6 +155,7 @@ export function stepPlanResponse(plan: {
   unexplainedMoments: unknown;
   notes: string | null;
   failReason: string | null;
+  failKind: string | null;
   approvedAt: Date | null;
 }): {
   planId: string;
@@ -165,6 +166,7 @@ export function stepPlanResponse(plan: {
   unexplainedMoments: unknown;
   notes?: string;
   failReason?: string;
+  failKind?: string;
   approvedAt?: Date;
 } {
   return {
@@ -176,6 +178,7 @@ export function stepPlanResponse(plan: {
     unexplainedMoments: plan.unexplainedMoments ?? [],
     notes: plan.notes ?? undefined,
     failReason: plan.failReason ?? undefined,
+    failKind: plan.failKind ?? undefined,
     approvedAt: plan.approvedAt ?? undefined,
   };
 }

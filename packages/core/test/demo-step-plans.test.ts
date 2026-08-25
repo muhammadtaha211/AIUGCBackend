@@ -425,6 +425,29 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     ).toEqual([]);
   });
 
+  it("demo-description words are allowed label words — the upload note widens the vocabulary", () => {
+    // "קופון" is on no screen and in no questionnaire field; only the
+    // customer's own note carries it — the same customer-authored-claims
+    // principle as demo_notes, wired per-demo instead of per-business.
+    const steps = [{ sourceIndex: 0, label: "קופון הנחה" }];
+    expect(
+      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8, undefined, "מזינים קופון הנחה בקופה"),
+    ).toEqual([]);
+    // Absent everywhere -> still a violation. The description weakens the
+    // rule by exactly its own words, nothing more.
+    expect(
+      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8).some((v) =>
+        v.includes("appears neither"),
+      ),
+    ).toBe(true);
+    // Blank and null are the no-description case, not a wildcard.
+    expect(
+      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8, undefined, "   ").some((v) =>
+        v.includes("appears neither"),
+      ),
+    ).toBe(true);
+  });
+
   it("shape rules: model plans must end on the result state and explain under-min counts", () => {
     // Ends mid-journey while a selectable result state exists -> violation.
     expect(
@@ -1333,6 +1356,9 @@ describe("the prompt's timing block is generated from the code, not restated", (
       min: 5,
       max: 7,
       timing: block,
+      // v13+ — same one-way compatibility as {{timing}}: extra vars are
+      // ignored by older templates, absent ones throw on the latest.
+      demo_description: "(אין)",
     });
     expect(promptVersion).toBe(`plan_demo_steps@v${version}`);
     expect(text).toContain(block);

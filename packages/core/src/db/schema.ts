@@ -214,6 +214,15 @@ export const demoStepPlans = pgTable(
     // The hard gate: createSet refuses steps-format renders without it.
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     failReason: text("fail_reason"),
+    // Structured failure class: validator | quota | input | internal |
+    // transient. What the UI branches on instead of substring-matching the
+    // Hebrew failReason; NULL on rows from before 0029. (0029)
+    failKind: text("fail_kind"),
+    // string[][] — per model call, the violations findPlanViolations returned
+    // AFTER that call (last entry empty on success). Written on success AND
+    // failure: the per-rule/per-version failure rate is computed from this.
+    // (0029)
+    retryViolations: jsonb("retry_violations"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

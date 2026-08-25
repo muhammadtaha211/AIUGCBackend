@@ -437,11 +437,20 @@ export function StepDemo({
   /**
    * The optional "what the footage shows" note — mounts the moment a file is
    * chosen (upload + ingest are dead time anyway) and stays editable while on
-   * the step. Once per demo; saved on continue. Every VO script for this demo
-   * inherits it.
+   * the step. Once per demo; saved on continue. Feeds the step-plan prompt
+   * and its caption vocabulary (plan_demo_steps v13) and every VO script for
+   * this demo — the "improves the plan" promise below is real.
+   *
+   * `waiting` = upload/ingest still running: the lead line invites filling
+   * the dead time; once the demo is ready the same line drops the clause.
    */
-  const descriptionField = (
+  const descriptionField = (waiting: boolean) => (
     <div className="mt-5">
+      <p className="text-[13px] font-medium text-ink/70">
+        {waiting
+          ? "בזמן שהסרטון עולה, ספרו לנו מה רואים בו — זה עוזר לנו לבנות תוכנית צעדים וכיתובים מדויקים יותר."
+          : "ספרו לנו מה רואים בסרטון — זה עוזר לנו לבנות תוכנית צעדים וכיתובים מדויקים יותר."}
+      </p>
       <TextAreaField
         label="מה רואים בסרטון? (לא חובה)"
         rows={3}
@@ -450,10 +459,8 @@ export function StepDemo({
         onChange={(event) => setDescription(event.target.value)}
         placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
       />
-      {/* Steps format is silent — no narration promise here. The note is
-          stored on the demo row (voiced CLI runs on the same demo do use it). */}
       <p className="mt-1.5 text-[13px] text-ink/55">
-        כותבים פעם אחת לכל סרטון — ההערה נשמרת יחד איתו ועוזרת לנו להבין מה מצולם. אפשר לדלג.
+        כותבים פעם אחת לכל סרטון — ההערה נשמרת יחד איתו. אפשר לדלג.
       </p>
     </div>
   );
@@ -663,7 +670,7 @@ export function StepDemo({
               </Button>
             )}
           </div>
-          {descriptionField}
+          {descriptionField(true)}
         </>
       )}
 
@@ -771,7 +778,7 @@ export function StepDemo({
             {ingestPhase.sub && <p className="text-sm text-ink/55">{ingestPhase.sub}</p>}
             {slow && <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
           </div>
-          {descriptionField}
+          {descriptionField(true)}
         </>
       )}
 
@@ -825,7 +832,7 @@ export function StepDemo({
             </p>
           )}
 
-          {descriptionField}
+          {descriptionField(false)}
 
           <Button
             type="button"

@@ -368,7 +368,8 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
     });
   }
 
-  const failure = plan?.status === "failed" ? planFailureNotice(plan.failReason) : null;
+  const failure =
+    plan?.status === "failed" ? planFailureNotice(plan.failReason, plan.failKind) : null;
 
   return (
     <div>

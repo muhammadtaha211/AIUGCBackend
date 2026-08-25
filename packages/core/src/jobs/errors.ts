@@ -16,10 +16,16 @@ export class PermanentError extends Error {
    * (RENDER_FAILED_MESSAGE) — video_renders.error is Hebrew by construction.
    */
   readonly customerMessage?: string;
+  /**
+   * Structured failure class for rows that record one (demo_step_plans.fail_kind,
+   * 0029). Free-form by design at this layer — each pipeline owns its closed set.
+   */
+  readonly failKind?: string;
 
-  constructor(message: string, opts?: { customerMessage?: string }) {
+  constructor(message: string, opts?: { customerMessage?: string; failKind?: string }) {
     super(message);
     this.customerMessage = opts?.customerMessage;
+    this.failKind = opts?.failKind;
   }
 }
 

@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-08-23
-method: "ls prompts/*/ ; packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc"
+verified: 2026-08-25
+method: "ls prompts/*/ ; packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23)"
 source: code
 ---
 
@@ -14,10 +14,15 @@ b_script          v1..v8                                    (latest v8)
 benefit_captions  v1 v2                                     (latest v2)
 content_policy    v1                                        (latest v1)
 hook_lines        v1..v7                                    (latest v7)
-plan_demo_steps   v1..v12                                   (latest v12)
+plan_demo_steps   v1..v13                                   (latest v13)
 tts_enhance       v1..v4                                    (latest v4)
 vo_script         v1..v7                                    (latest v7)
 ```
+
+v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
+the file landed while two pre-change workers were live, and both had to be restarted in the same
+session. Its other change deletes v12's "keep five and write the uncapped ones long" route, which
+was arithmetically false under the shipped constants ([[0002-runtime-band-floor-is-15s]]).
 
 ## Resolution is "highest number wins", numerically
 
@@ -29,8 +34,9 @@ version and **no caller in the repo passes it** — all six call sites
 `demo-step-plans.ts:1021`, `tts.ts:183`) omit it. Every prompt in production is whatever the
 highest-numbered file happens to be.
 
-`plan_demo_steps@v12` is both the newest file on disk and the version on the newest production plan
-row (`0d1b5f41`, 2026-08-22 10:29). **They agree — no newer prompt has landed unrun.**
+As of the 2026-08-23 DB check, `plan_demo_steps@v12` was both the newest file and the version on
+the newest production plan row (`0d1b5f41`, 2026-08-22 10:29). **v13 has not run in production
+yet** — the first live plan after 2026-08-25 stamps it.
 
 ## The restart trap, stated precisely
 

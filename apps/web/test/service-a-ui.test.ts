@@ -257,6 +257,23 @@ describe("plan surface helpers", () => {
     expect(planFailureNotice(undefined).retryable).toBe(true);
   });
 
+  /**
+   * fail_kind (0029) is the structured signal; the Hebrew substring above is
+   * only the fallback for rows from before the column existed. With a kind
+   * present the wording of fail_reason decides NOTHING — the reworded-quota
+   * hazard the substring guard could never actually protect against
+   * (docs/vault/defects/quota-marker-test-does-not-protect-it.md).
+   */
+  it("failKind decides retryability over the wording when present", () => {
+    // A reworded quota line with the marker gone: kind still kills the button.
+    expect(planFailureNotice("חרגתם מהמכסה היומית.", "quota").retryable).toBe(false);
+    // A validator line that happens to contain the marker: kind keeps it.
+    expect(planFailureNotice("משהו נכשל — נסו שוב מחר אולי", "validator").retryable).toBe(true);
+    expect(planFailureNotice("יצירת תוכנית הצעדים נכשלה — נסו שוב", "transient").retryable).toBe(
+      true,
+    );
+  });
+
   it("no failReason at all still yields the Hebrew generic", () => {
     const notice = planFailureNotice(undefined);
     expect(notice.message).toMatch(/[֐-׿]/);

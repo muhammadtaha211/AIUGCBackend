@@ -210,6 +210,7 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "decisions/0002-runtime-band-floor-is-15s.md",
     "falsified/plan-format-re-export-has-server-callers.md",
     "falsified/plan-format-re-export-has-server-callers.md.tmp.7908.58f95fd7e8b7",
     "phases/8d-demo-step-rework.md",
@@ -244,7 +245,6 @@
     "facts/sedq19FCE",
     "facts/sedahKiHB",
     "facts/remotion-temp-leak-filled-the-disk.md",
-    "CONVENTIONS.md",
-    "README.md"
+    "CONVENTIONS.md"
   ]
 }

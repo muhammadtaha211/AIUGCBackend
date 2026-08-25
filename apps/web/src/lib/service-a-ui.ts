@@ -471,6 +471,9 @@ export type StepPlanWire = {
   steps: PlanStepWire[];
   notes?: string;
   failReason?: string;
+  /** validator | quota | input | internal | transient — absent on rows from
+   *  before 0029, where the quota substring marker is the only signal. */
+  failKind?: string;
   approvedAt?: string;
   /** Plan job progress — attached by the GET while pending/planning (8d). */
   job?: JobProgressWire;
@@ -532,11 +535,10 @@ const PLAN_FAILED_GENERIC = "יצירת תוכנית הצעדים נכשלה —
  * the customer cannot raise their own cap — so the failure card drops its
  * retry button when it sees this.
  *
- * LOAD-BEARING COPY. The plan job stores this Hebrew verbatim as fail_reason
- * (packages/core/src/pipelines/demo-step-plans.ts, the AccountBudgetError
- * catch) and the route returns it as the 429 body (src/lib/api-errors.ts).
- * Rewording the quota lines without moving this marker puts the lying button
- * back; the test that pins the exact stored string is what goes red.
+ * LEGACY FALLBACK since 0029: rows written by the current job carry the
+ * structured fail_kind and never reach this substring. It stays only for
+ * failed rows from before the column existed (and the 429 route body, which
+ * carries no row at all).
  */
 const QUOTA_MARKER = "נסו שוב מחר";
 
@@ -545,21 +547,29 @@ const QUOTA_MARKER = "נסו שוב מחר";
  * Hebrew, but PermanentErrors without a customerMessage land as raw English
  * ("demo <id> not found") — that reads as a bug and leaks an id, so anything
  * without Hebrew letters shows the generic line with the raw string kept
- * behind a details toggle (RLS hides jobs.last_error entirely; this is one of
- * the few diagnostics that reaches the client at all).
+ * behind a details toggle. (jobs.last_error never reaches any route — nothing
+ * queries it, not an RLS matter — so this is one of the few diagnostics that
+ * reaches the client at all.)
+ *
+ * failKind (demo_step_plans.fail_kind, 0029) decides retryability when
+ * present; the QUOTA_MARKER substring is the pre-0029 fallback.
  */
-export function planFailureNotice(failReason?: string): {
+export function planFailureNotice(
+  failReason?: string,
+  failKind?: string,
+): {
   message: string;
   raw?: string;
   /** false = a daily quota refused it; offering "try again" here would lie. */
   retryable: boolean;
 } {
+  const quotaHit = failKind ? failKind === "quota" : (failReason?.includes(QUOTA_MARKER) ?? false);
   if (failReason && /[֐-׿]/.test(failReason)) {
-    return { message: failReason, retryable: !failReason.includes(QUOTA_MARKER) };
+    return { message: failReason, retryable: !quotaHit };
   }
   return failReason
-    ? { message: PLAN_FAILED_GENERIC, raw: failReason, retryable: true }
-    : { message: PLAN_FAILED_GENERIC, retryable: true };
+    ? { message: PLAN_FAILED_GENERIC, raw: failReason, retryable: !quotaHit }
+    : { message: PLAN_FAILED_GENERIC, retryable: !quotaHit };
 }
 
 /**
