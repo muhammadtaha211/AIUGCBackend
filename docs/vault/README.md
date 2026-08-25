@@ -19,13 +19,13 @@ visible as a stale note instead of hiding inside a wall of confident prose.
 
 ## Structure
 
-| Folder | Holds | One note per |
-|---|---|---|
-| `facts/` | Measured values — caps, balances, costs, timings, config state | thing measured |
-| `decisions/` | Choices made, with the options and the reason | decision |
-| `falsified/` | Claims that were believed and then disproved | dead claim |
-| `defects/` | Known problems, fixed or deliberately not | defect |
-| `phases/` | What each build phase shipped, its gate, its commit SHAs | phase |
+| Folder       | Holds                                                          | One note per   |
+| ------------ | -------------------------------------------------------------- | -------------- |
+| `facts/`     | Measured values — caps, balances, costs, timings, config state | thing measured |
+| `decisions/` | Choices made, with the options and the reason                  | decision       |
+| `falsified/` | Claims that were believed and then disproved                   | dead claim     |
+| `defects/`   | Known problems, fixed or deliberately not                      | defect         |
+| `phases/`    | What each build phase shipped, its gate, its commit SHAs       | phase          |
 
 ## The one rule
 
@@ -48,7 +48,7 @@ code or the DB, not transcribing from a handover:
 - ~~`defects/`~~ — **done 2026-08-23.** 15 notes. All eight rev-6 §6 items were checked; two came
   back with their premise wrong and are recorded with the correction (`serve-files.ts` ranges is a
   latent suffix-range nit, not broken Range handling; the unrenderable hook line **cannot** ship —
-  the generated path throws — but three *other* burned-text paths have no character guard at all).
+  the generated path throws — but three _other_ burned-text paths have no character guard at all).
   The RLS diagnosis on plan diagnostics was also wrong: `getDb()` bypasses RLS, nothing queries the
   column. Seven notes came from this pass and the facts pass rather than the list, the sharpest
   being that the content-policy classifier has never been called in the repo's entire history while
@@ -57,6 +57,14 @@ code or the DB, not transcribing from a handover:
   One rev-6 item was **dropped as false**: `recordAudioScriptPointerMove` is not dead code — it is
   called from `apps/web/src/app/api/audio/[id]/route.ts:31` and its zero rows are a passing
   assertion.
-- `phases/` — 8a through 8e
+
+- ~~`phases/`~~ — **done 2026-08-25.** Five notes, 8a through 8e, each with its gate re-run at that
+  exact commit in a detached worktree. Three things the backfill established that the commit log
+  does not say: **8e landed 4h54m before 8d** and the letters are plan identifiers, not build order
+  ([[8d-demo-step-rework]]); the gates are written down nowhere, so each phase's gate had to be read
+  off the tests it added; and `pnpm lint` was already red at 8a's parent, so it is not a phase
+  signal. Several commit-message claims did not survive the diff and are recorded in the notes
+  themselves; one became [[plan-format-re-export-has-server-callers]].
 - `decisions/` — URL identity, `?indexes=` over plan-GET signing, the `plan-format` move, the
-  mount-under-cursor rule, price-on-button
+  mount-under-cursor rule, price-on-button (`3cf0302` — see [[8e-render-step]] for the commit and
+  the walkthrough it came out of)
