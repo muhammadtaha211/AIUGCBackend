@@ -97,6 +97,17 @@ the caller. With a 2 s poll around a short `UPDATE`, the socket is idle most of 
 realistic trigger is the stale-pooled-socket case, where the reset is not observed until the next
 write lands inside the query window. Rare, not constant.
 
+**Correction 2026-08-26 — "rare" was reasoned, and the measurement disagrees:**
+[[worker-death-tally-2026-08-20-to-25]] recovers the babysitting sessions' live tally — **at least
+13 deaths in the six days 08-20 → 08-25**, i.e. roughly two per day under active development, with
+uptimes from 59 to 869 minutes. Eleven of the thirteen have recovered crash lines, all through
+this exact fatal path and on **four distinct error strings**, not one: `read ECONNRESET` (×8),
+`write CONNECT_TIMEOUT`, `canceling statement due to statement timeout`, and
+`getaddrinfo ENOTFOUND` — so the trigger class is broader than the stale-socket case reasoned
+above (a DNS failure is not a pooler recycle). One death left no crash line at all — an external
+kill, cause undetermined, consistent with OOM, sleep, or a manual kill — and one row's detail did
+not survive the transcripts.
+
 ## Nothing restarts it
 
 `apps/worker/package.json` has `"dev": "tsx src/index.ts"` and `"start": "tsx src/index.ts"`. No
@@ -129,6 +140,20 @@ anomalies already recorded elsewhere in this vault**, and this is their cause:
 
 So the mechanism is not hypothetical and the cost is not zero: **two deaths, roughly 2 ILS of
 re-bought API calls, and a 31-minute stall on a job that normally takes seconds.**
+
+**Correction 2026-08-26 — "twice" counted stranded jobs, not deaths.** The `lease expired` marker
+only appears when the dying worker held a claim; most deaths hit an idle-polling lane and left no
+queue-side trace. The process-side tally is **≥13 over 08-20 → 08-25**
+([[worker-death-tally-2026-08-20-to-25]]), and both markers above predate that window — so the
+evidenced total is **≥16 deaths**, three of them stranding a claimed job. The third marker, found
+2026-08-26: `a7d427ab` (`reap_dead_renders`, locked by `local:light`, reclaimed 08-25 10:57Z) — a
+later death that stranded only the free reaper singleton, so the cost figure above still stands.
+Where it ran is also settled now: every crash line carries hostname `DESKTOP-1ELVETN` (the
+founder's dev machine), and `jobs.locked_by` has only ever held `local:*`/`cli:*` — no server box
+has ever run a worker. Lid-close/Ctrl-C is excluded for the eleven crashes with recovered crash
+lines (SIGINT drains gracefully and exits 0; these logged `worker crashed` with an error object
+and exited 1), and crashes 1–2 of the tally landed between git commits minutes apart — a machine
+demonstrably awake.
 
 What is _not_ established is that a pooler drop caused these two specifically. `lease expired`
 records that the lock holder stopped, not why — a crash, a laptop sleep or a Ctrl-C leaves the
