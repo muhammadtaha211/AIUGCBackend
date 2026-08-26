@@ -208,6 +208,7 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "decisions/0005-google-oauth-deferred.md",
     "facts/supabase-link-state-removed.md",
     "defects/cli-created-user-blocks-that-email-from-ever-signing-up.md",
     "facts/new-project-pipeline-storage-roundtrip.md",
@@ -237,7 +238,6 @@
     "facts/token-and-money-budgets.md",
     "defects/sedwSy6qV",
     "defects/character-guard-covers-only-generated-hook-lines.md",
-    "defects/fixture-comments-are-arithmetic-against-superseded-constants.md",
     "defects/sedOQZkvd",
     "defects/sed3Qaj59",
     "falsified/sedxnU5qd",

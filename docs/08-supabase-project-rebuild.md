@@ -288,10 +288,10 @@ box is running, update its `.env` and `sudo systemctl restart aiugc-worker` (kee
 `WORKER_ID=hetzner`).
 
 Auth settings do not come from the database. On the new project: enable the **Email** provider
-(it was disabled by default on the old one and signups fail with `email_provider_disabled` until
-it is on), set the Site URL, and set the redirect allow-list.
-`apps/web/src/lib/auth.ts:71` calls `signInWithOAuth`, so any OAuth provider you had configured
-needs re-adding with new callback URLs — see §8A.
+(it is off by default and signups fail with `email_provider_disabled` until it is on), set the
+Site URL, and set the redirect allow-list — the full procedure and its verification are **§8A**.
+Google is deferred and was never configured on the old project either; **§8B** is the from-scratch
+build for when it is revisited.
 
 > **Always pass `--db-url`.** `supabase/.temp/` used to hold link state pointing at the OLD project
 > (`project-ref`, `linked-project.json` and `pooler-url` all named `mtpmrqltldfwhziyyzdu`), so any
@@ -303,140 +303,228 @@ needs re-adding with new callback URLs — see §8A.
 
 ---
 
-## 8A. Google OAuth — the last thing holding the old project open
+## 8A. Email sign-up — the launch path
 
-Google is the only provider configured. Nothing about it lives in the database or in any
-migration: it is entirely GoTrue tenant config, which is why the rebuild did not carry it.
+**Email is the only provider for launch.** Google is deferred
+(`docs/vault/decisions/0005-google-oauth-deferred.md`, §8B below). Nothing about either provider
+lives in the database or in a migration — it is all GoTrue tenant config, which is why the rebuild
+did not carry any of it.
 
-### Step 1 — copy two values out of the old project
+The Email provider is **off by default on a new project**, and until it is on, signup fails with
+`email_provider_disabled`. `apps/web/src/lib/auth.ts:32-34` already maps that code to a Hebrew
+message naming the fix, so the symptom is legible if it happens.
 
-Old project → **Authentication → Providers → Google**. Copy:
+### Step 1 — dashboard settings
 
-| Field             | Notes                                                             |
-| ----------------- | ----------------------------------------------------------------- |
-| **Client ID**     | ends `.apps.googleusercontent.com`                                |
-| **Client Secret** | usually starts `GOCSPX-`                                          |
+New project → **Authentication → Providers → Email** → **Enable**. Confirm the browser URL
+contains `hyaqydcmwbnbaiqqufow` before changing anything.
 
-Also note whether **Skip nonce check** is on and whether **Authorized Client IDs** has anything
-in it — if either is set, mirror it. Both are normally untouched.
-
-### Step 2 — paste them into the new project
-
-New project → **Authentication → Providers → Google** → toggle **Enable**, paste both values,
-Save. Confirm the browser URL contains `hyaqydcmwbnbaiqqufow`; if it shows any other ref you are
-editing the old project.
-
-That screen also displays its own callback URL. It should read exactly:
-
-```
-https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
-```
-
-### Step 3 — add that callback URL in Google Cloud Console
-
-console.cloud.google.com → **APIs & Services → Credentials** → the OAuth 2.0 Client ID whose
-Client ID you just copied → **Authorized redirect URIs** → **ADD URI**:
-
-```
-https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
-```
-
-Keep the old project's URI there too until the old project is deleted, so a rollback still works.
-This is a **Supabase** endpoint, not an app route — Google returns to Supabase, and Supabase then
-returns to the app. Registering `http://localhost:3000/auth/callback` here instead is the classic
-error and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase code runs.
-
-Google propagation can take a few minutes; a mismatch error immediately after saving is worth one
-retry before you start debugging.
-
-### Step 4 — Site URL and the redirect allow-list
-
-New project → **Authentication → URL Configuration**:
+Then **Authentication → URL Configuration**:
 
 - **Site URL**: `http://localhost:3000` for now; flip it to the Vercel domain when one exists.
-- **Redirect URLs**: add `http://localhost:3000/auth/callback`, and
-  `https://<prod-domain>/auth/callback` once there is a prod domain.
+- **Redirect URLs**: add `http://localhost:3000/auth/callback`. Not used by the password flow
+  today, but it is what the confirmation link needs if you ever turn Confirm-email on *and* the
+  one-line code change in §8A.1 lands.
 
-`apps/web/src/lib/auth.ts:73` builds `redirectTo` as `` `${window.location.origin}/auth/callback` ``
-— computed live in the browser, from no env var — so whatever origin the tab is on must be
-covered.
+**The dev port is not pinned.** `apps/web/package.json` is `"dev": "next dev"` with no `-p`, while
+admin holds 3001. If 3000 is busy Next silently serves 3002 and every origin-derived URL follows
+the address bar. Check the port Next prints before you start.
 
-Two traps here, both verified in the source:
+### Step 2 — verify with a real signup, ending on `/home`
 
-- **A missed allow-list entry does not error.** GoTrue silently falls back to the **Site URL**. So
-  a wrong list looks like a *successful* sign-in that lands you on the marketing page with no
-  session — and the SQL in step 6 still reports success. This is why step 5 is the real gate.
-- **The dev port is not pinned.** `apps/web/package.json` is `"dev": "next dev"` with no `-p`,
-  while admin holds 3001. If 3000 is busy, Next silently serves 3002 and `redirectTo` follows the
-  address bar. Check the port Next prints before clicking the Google button.
+`/start` proves nothing on its own. `apps/web/src/app/auth/callback/route.ts:18` redirects there
+unconditionally, `apps/web/src/app/start/page.tsx` renders the wizard with no auth check, and a
+signed-out visitor and a signed-in-without-a-business user see a byte-identical page. The only
+surface that requires a session is `/home`: `apps/web/src/middleware.ts:34-36` bounces any `/home`
+request without a user, and `apps/web/src/app/home/layout.tsx:21` does it again server-side.
 
-### Step 5 — verify in the browser (this is the pass/fail gate)
-
-**Before clicking anything**, make sure no stale `public.users` row holds the address you are
-about to sign in with — see
-`docs/vault/defects/cli-created-user-blocks-that-email-from-ever-signing-up.md`. If one does, the
-sign-in fails with GoTrue's generic `Database error saving new user` and writes **nothing**, which
-is indistinguishable from "the provider is off".
+**Pre-flight** — make sure no stale `public.users` row holds the address you are about to use, or
+the signup fails with GoTrue's generic `Database error saving new user` and writes nothing
+(`docs/vault/defects/cli-created-user-blocks-that-email-from-ever-signing-up.md`):
 
 ```sql
 select id, email from public.users where email = '<the address you will use>';
 -- want: zero rows
 ```
 
-Then: `pnpm dev` → `http://localhost:3000/start` → **המשך עם Google** → pick the account.
+Then:
 
-Expected: Google → `/auth/callback?code=…` → the onboarding wizard at `/start`. Landing on
-`/start` is correct for a brand-new account and is **not** by itself proof — the callback route
-redirects there unconditionally (`apps/web/src/app/auth/callback/route.ts:18`), and it also
-discards the result of `exchangeCodeForSession` (`:15`), so a failed exchange looks identical.
-
-**The actual proof is a session.** Navigate to `http://localhost:3000/home`:
-
-- **Stays on `/home`** → signed in. OAuth works. `apps/web/src/middleware.ts:34-36` redirects any
-  request to `/home` without a user, so staying there cannot happen without a session.
-- **Bounces to `/start`** → no session. The identity may still exist in the database (see below);
-  the app-side half failed — allow-list, port, or the PKCE exchange.
+1. `pnpm dev`, confirm the port is **3000**, open `http://localhost:3000/start`.
+2. Walk the five wizard steps (product type → name + one-liner → at least one benefit → audience
+   → the signup step). The draft is mirrored to `localStorage` under `aiugc.onboarding.v1`.
+3. On the last step, **use the email + password form, not the Google button** (§8B: the Google
+   button still renders and will strand you). Submit.
+4. **With Confirm-email OFF** (§8A.1): `signUp` returns a session immediately, the wizard
+   auto-POSTs the draft to `/api/onboarding/complete`, and you land on **`/home`**. That is the
+   pass.
+   **With Confirm-email ON**: you get the Hebrew line "שלחנו מייל אישור. אשרו אותו ואז היכנסו דרך
+   מסך הכניסה." — confirm via the emailed link, then sign in at `http://localhost:3000/login`.
+5. **The gate:** navigate to `http://localhost:3000/home`.
+   - **Stays on `/home`** → a session exists. Email auth works.
+   - **Bounces to `/start`** → no session, regardless of what the database says.
+6. Sign out, then sign back in at `/login` with the same credentials and repeat step 5. Signup and
+   sign-in are different code paths (`signUp` vs `signInWithPassword`, `auth.ts:42` / `:56`); only
+   testing the first leaves the returning-customer path unproven.
 
 DevTools → Application → Cookies → `http://localhost:3000` should show
 `sb-hyaqydcmwbnbaiqqufow-auth-token` (possibly chunked `.0`/`.1`).
 
-### Step 6 — confirm what actually landed in the database
+### Step 3 — secondary confirmation in SQL
 
-New project's SQL editor, opened at the ref-bearing URL so there is no stale-tab risk:
-`https://supabase.com/dashboard/project/hyaqydcmwbnbaiqqufow/sql/new`.
+This confirms *what landed*, and only after step 2 has already passed. It is not the gate: GoTrue
+writes these rows before the app is involved, so they can all be present while the browser has no
+session at all.
+
+New project's SQL editor, opened at the ref-bearing URL so a stale tab cannot point at the old
+project: `https://supabase.com/dashboard/project/hyaqydcmwbnbaiqqufow/sql/new`.
 
 ```sql
-select u.id, u.email, i.provider, i.created_at, i.last_sign_in_at,
+select u.id, u.email, i.provider, u.email_confirmed_at,
+       i.created_at, i.last_sign_in_at,
        (pu.id is not null) as mirror_row_exists, pu.role
 from auth.users u
-join auth.identities i on i.user_id = u.id and i.provider = 'google'
+join auth.identities i on i.user_id = u.id
 left join public.users pu on pu.id = u.id
 where i.last_sign_in_at > now() - interval '5 minutes'
 order by i.last_sign_in_at desc;
 ```
 
-The `interval` is load-bearing: without it an *earlier* successful attempt keeps reporting success
-after you have changed a setting and broken it.
+The `interval` is load-bearing: without it an earlier success keeps reporting success after you
+have changed a setting and broken it. Note the wall-clock minute of the click before running it.
 
-- **One row, `mirror_row_exists = true`** → GoTrue and the `handle_new_user` mirror both worked.
-  Combined with step 5's `/home` result, OAuth is proven end to end.
+- **One row, `provider = 'email'`, `mirror_row_exists = true`** → GoTrue and the
+  `handle_new_user` mirror both worked.
 - **Zero rows** → nothing reached GoTrue. Disambiguate with
-  `select provider, count(*) from auth.identities group by 1;` and `select count(*) from auth.users;`
-  — all-zero means the provider toggle or the Google-side URI; a row you did not expect means you
-  are in the wrong project.
-- **Row present but step 5 bounced** → GoTrue succeeded and the app-side exchange did not. Look at
-  the allow-list and the dev port, not at Google.
+  `select provider, count(*) from auth.identities group by 1;` and
+  `select count(*) from auth.users;` — all-zero points at the Email provider still being off; a
+  row you did not expect means you are looking at the wrong project.
+- **Row present but step 2 bounced** → GoTrue succeeded and the app-side session did not.
 
-`auth.identities.provider = 'google'` is the only trustworthy discriminator here.
-`auth.users.raw_app_meta_data->>'provider'` records the **first** provider ever used, so if the
-address was signed up with email/password earlier it stays `'email'` after a genuine Google
-sign-in — that is account linking, not a failure. Likewise `role` will read `customer`: the
-trigger writes only `(id, email)` and lets the column default stand
-(`docs/vault/facts/auth-users-insert-trigger.md`), so an admin account still needs its
-`UPDATE public.users SET role='admin'`.
+`role` will read `customer`: the trigger writes only `(id, email)` and lets the column default
+stand (`docs/vault/facts/auth-users-insert-trigger.md`), so an admin account still needs its
+`UPDATE public.users SET role='admin'`. `aiugc business create --admin` will **not** do it for an
+existing account (`docs/vault/defects/admin-flag-is-a-noop-on-existing-accounts.md`).
 
-**Only after step 5 stays on `/home` and step 6 returns its row is the old project free to
-delete** (§10).
+### 8A.1 — Confirm email: on or off
+
+Both positions are defensible; this section is the trade-off, not a recommendation.
+
+**What the code does today.** `apps/web/src/lib/auth.ts:42` calls `signUp({ email, password })`
+with **no `emailRedirectTo`**. So with confirmation ON, Supabase's confirmation link returns the
+user to the **Site URL root**, and `apps/web/src/app/page.tsx` is a static marketing page that
+never reads `searchParams` — the only route that exchanges a code is `/auth/callback`, and nothing
+sends it there. The click therefore appears to do nothing: no session, no message, no error. The
+user is not stuck (the Hebrew copy at `auth.ts:46` already tells them to go and sign in at
+`/login`, and that works), but the confirmation click itself is a dead end. Making it land
+properly is a one-line change — add
+``emailRedirectTo: `${window.location.origin}/auth/callback` `` to that call — and needs no new
+route, because `/auth/callback` already handles a PKCE `code`.
+
+| | **Confirm email OFF** | **Confirm email ON** |
+| --- | --- | --- |
+| Signup UX | One step. Session immediately, wizard auto-posts the draft, lands on `/home`. | Two steps, split across an email client. Draft survives in `localStorage`; user must return and sign in. |
+| Code change needed | None. | One line (`emailRedirectTo`), or the confirmation click dead-ends. |
+| Email delivery is a dependency | No. Nothing is sent at signup. | **Yes** — signup is blocked on an email arriving. |
+| Address is proven real | No. Typos create accounts nobody can reach; anyone can sign up as anyone's address. | Yes. |
+| Password reset | Already depends on email whenever you build it. | Same. |
+
+**What "email delivery is a dependency" costs.** Supabase's built-in SMTP is explicitly a
+development convenience: it is rate-limited to a small number of messages per hour, it is shared
+infrastructure, and Supabase documents it as not for production use. The current cap is visible at
+**Authentication → Rate Limits** — read it there rather than trusting a number written down here,
+because it has been revised more than once. At founder-led onboarding volumes the built-in service
+may genuinely be enough; at launch volumes it is not.
+
+Custom SMTP is the fix, and the work is mostly DNS, not code:
+
+1. A transactional provider — Resend, Postmark, SendGrid, Mailgun, SES. All have free or near-free
+   tiers at this volume.
+2. A sending domain you control, plus **SPF** and **DKIM** records (and ideally **DMARC**). This is
+   the part that takes real time: DNS edits, propagation, and provider-side domain verification.
+   Some providers also gate production sending behind a short review.
+3. Paste host / port / username / password / sender address into **Authentication → SMTP Settings**
+   and re-check **Rate Limits**, which is separately configurable once custom SMTP is on.
+
+Realistically a couple of hours if the domain already exists and you control its DNS; a day or more
+if the domain is new or the provider wants review. None of it is application code.
+
+**The asymmetry worth noting:** turning confirmation OFF now and ON later costs nothing structural
+— existing accounts stay valid, and the `emailRedirectTo` line can land whenever. Turning it ON now
+means launch is blocked on the DNS work above.
+
+---
+
+## 8B. Google OAuth — DEFERRED, and how to stand it up from scratch
+
+**Status: deferred, founder decision 2026-08-26**
+(`docs/vault/decisions/0005-google-oauth-deferred.md`). Email is a complete signup path on its own,
+and Google requires a consent screen plus Google's own verification before external users can sign
+in. Revisit at launch.
+
+**It was never configured on the old project either**, so there is nothing to copy and nothing
+about the old project blocks this. Everything below is a from-scratch build.
+
+> **The button is still in the UI.** `apps/web/src/components/onboarding/steps/step-signup.tsx:114-125`
+> (`המשך עם Google`) and `apps/web/src/app/login/login-form.tsx:63-74` (`כניסה עם Google`) render
+> unconditionally — no env flag, no feature check — and both sit *above* the email form. With the
+> provider off, clicking one does **not** produce the Hebrew fallback at `auth.ts:78`:
+> `signInWithOAuth` makes no network call, it just runs `window.location.assign(...)`
+> (`@supabase/auth-js` `GoTrueClient.js`, `_handleProviderSignIn`), so the browser leaves the app,
+> Supabase rejects the unconfigured provider, and the user is returned to the Site URL root — the
+> marketing page — with error query params nothing reads. No message, no session, wizard draft
+> stranded in `localStorage`. Hiding or removing those two buttons is a separate decision.
+
+### What standing it up actually involves
+
+1. **Google Cloud project** — console.cloud.google.com, create or pick a project.
+2. **OAuth consent screen** (APIs & Services → OAuth consent screen):
+   - User type **External** (Internal only exists for Google Workspace orgs, and would restrict
+     sign-in to your own workspace).
+   - App name, support email, developer contact, app logo, and the links Google requires —
+     **privacy policy URL** and **terms of service URL** on a verified domain.
+   - **Authorized domains**: `supabase.co` (for the callback) plus your own domain.
+   - Scopes: the defaults (`email`, `profile`, `openid`) are all this app needs — they are
+     non-sensitive, which keeps verification comparatively light.
+3. **Publishing status.** While the app is in **Testing**, only addresses you list as test users
+   can sign in (capped at 100), and their sessions expire after 7 days. To let *any* Google
+   account sign in you must **Publish** the app, which submits it to Google for verification.
+   With only non-sensitive scopes this is usually quick, but it is Google's queue, not yours, and
+   it can ask for a demo video or domain-ownership proof. **This is the reason for the deferral:
+   external users cannot sign in until Google says so.**
+4. **OAuth client** (APIs & Services → Credentials → Create credentials → OAuth client ID):
+   - Application type **Web application**.
+   - **Authorized redirect URIs** → add exactly:
+
+     ```
+     https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
+     ```
+
+     This is a **Supabase** endpoint, not an app route: Google returns to Supabase, and Supabase
+     then returns to the app. Registering `http://localhost:3000/auth/callback` here is the
+     classic error and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase
+     code runs.
+   - Authorized JavaScript origins are not needed for this server-side flow.
+   - Save the **Client ID** and **Client Secret**.
+5. **Supabase** → Authentication → Providers → **Google** → Enable, paste Client ID and Client
+   Secret, Save. Leave **Skip nonce check** off unless something specifically demands it.
+6. **Supabase** → Authentication → URL Configuration → Redirect URLs must contain
+   `http://localhost:3000/auth/callback` and `https://<prod-domain>/auth/callback`.
+   `apps/web/src/lib/auth.ts:73` builds `redirectTo` as
+   `` `${window.location.origin}/auth/callback` `` — live from the browser, from no env var — so
+   every origin the app is served from needs an entry.
+
+### Verifying it, when the day comes
+
+Same shape as §8A step 2: the gate is the browser staying on `http://localhost:3000/home`, not
+the SQL. Two Google-specific traps:
+
+- **A missed redirect-allow-list entry does not error.** GoTrue silently falls back to the Site
+  URL, so a wrong list looks like a successful sign-in that lands on the marketing page with no
+  session — while the SQL still shows a `google` identity.
+- **`auth.identities.provider = 'google'` is the only trustworthy discriminator.**
+  `auth.users.raw_app_meta_data->>'provider'` records the *first* provider ever used, so an address
+  that signed up with email/password first stays `'email'` after a genuine Google sign-in. That is
+  account linking, not a failure.
 
 ---
 
@@ -453,23 +541,106 @@ pnpm dev
 The worker start is what exercises the transaction-pooler string with `prepare: false` — if you
 pasted the session-pooler URL into `DATABASE_URL`, this is where it shows.
 
-Then in the browser: sign up, create a business, upload one demo, and let it normalize. That
-exercises Auth → the `handle_new_user` trigger → `public.users` → `businesses` → a `raw` upload → a
-worker job → an `assets` write → a signed URL. A redirect loop back to `/start` is the §6A grant
-missing.
+Then in the browser: sign up **with email and password** (§8A), create a business, upload one demo,
+and let it normalize. That exercises Auth → the `handle_new_user` trigger → `public.users` →
+`businesses` → a `raw` upload → a worker job → an `assets` write → a signed URL. A redirect loop
+back to `/start` is the §6A grant missing.
+
+Two gates sit between a fresh account and the upload screen, neither fixable from the browser, so
+line them up first or the smoke test stops early:
+
+- **Credits.** `/home/a/new` shows `אין קרדיטים בחשבון` and renders nothing else when the balance
+  is 0, which is where every new account starts — nothing grants signup credits. Either
+  `grantCredits` from the admin console or set the owner's `users.role = 'admin'` (which bypasses
+  the check) before you start.
+- **A hook clip.** The demo upload is step 3 of the Service A wizard and is unreachable until a
+  hook clip is picked in step 1. `hook_clips` is empty on a rebuilt project and no migration seeds
+  it — add at least one via the CLI/admin bank commands, and make sure its file exists in storage.
+
+Uploading through the web app is deliberate here: it creates the `public.users` row from the auth
+uid via the trigger. `aiugc business create` invents a uuid instead, which permanently blocks that
+address from ever signing up
+(`docs/vault/defects/cli-created-user-blocks-that-email-from-ever-signing-up.md`). The CLI chain
+is still the right tool for a business that will never have a human sign in — use a throwaway
+address for it, never one a real person will later use.
 
 Finally re-run the §6A `curl` with the access token from your new session.
 
 ---
 
-## 10. Delete the old project
+## 10. Delete the old project — checklist
 
-Only after §9 passes. Until then the old project is the rollback: it is untouched and still running,
-so reverting means putting its values back in the six places from §8.
+The old project (`mtpmrqltldfwhziyyzdu`, ap-south-1) is a t4g.nano holding test data. Nothing is
+known to be left in it: no real users, no customer videos, no Google credentials (Google was never
+enabled on it — §8B), and no unmigrated config, since `0031` moved the last five hand-typed
+`app_config` rows into the repo (§7).
 
-Once the new project works, the old one is a t4g.nano holding test data and costing Pro compute.
-Delete it, and confirm the new project's compute reads **Micro** — that was the point of the whole
-exercise.
+Until you press delete it is still the rollback: it is untouched and running, so reverting means
+putting its values back in the five env files from §8.
 
-Afterwards: update `.env.example` if the connection-string shape changed, and record the rebuild in
-`docs/vault/phases/` with the ledger count and the `verify-migration-ledger.sql` result.
+### Confirm one last time, in the old project's dashboard
+
+Read-only looks. Do not change anything; nothing here needs a database connection.
+
+1. **You are in the right project.** The dashboard URL must contain `mtpmrqltldfwhziyyzdu` and the
+   region must read **ap-south-1**. The new one is `hyaqydcmwbnbaiqqufow` / eu-central-1. This is
+   the only step where a mistake is unrecoverable.
+2. **Storage** → each of the four buckets. Anything you would miss? The 2026-08-26 census is in
+   `docs/vault/facts/storage-census-2026-08-26.md` and recorded only test artifacts, largest object
+   135 MB. Download anything you want to keep **now**.
+3. **Authentication → Users.** Expect only test accounts. Any address here is one you will have to
+   re-register on the new project — there is no export.
+4. **Table editor** → spot-check `businesses`, `demos`, `video_renders`. All test rows.
+5. **Nothing points at it any more.** `grep -rl mtpmrqltldfwhziyyzdu --exclude-dir=node_modules
+   --exclude-dir=.git .` from the repo root should return only `.next` build artifacts and vault
+   notes that describe the history. If it names an `.env` file, stop and fix that first.
+6. **Vercel → the web project → Environment Variables.** If a deploy exists, its Supabase URL/key
+   must already be the new project's. A stale Vercel env is the one place a "working" local setup
+   hides a broken production one.
+7. **Hetzner worker box**, if it is running (`docs/07-worker-box.md`): its `.env` `DATABASE_URL`
+   must name the new project, and `sudo systemctl restart aiugc-worker` after any change.
+
+### Where the delete lives
+
+Old project → **Project Settings → General** → scroll to the bottom → **Danger Zone** →
+**Delete project**. It asks you to type the project name to confirm. There is no undo and no grace
+period.
+
+### What becomes permanently unrecoverable
+
+- **The Postgres database** — every table, row, and the `supabase_migrations` ledger. Point-in-time
+  recovery and any automated backups die with the project; they are not retained after deletion.
+- **Storage objects** in all four buckets. Not recoverable, not archived.
+- **`auth.users` and `auth.identities`** — every test account and its password hash. There is no
+  post-deletion export.
+- **The project ref and its hostnames.** `mtpmrqltldfwhziyyzdu.supabase.co`,
+  `db.mtpmrqltldfwhziyyzdu.supabase.co` and the pooler tenant stop resolving. Any URL you ever
+  pasted anywhere that names that ref is dead — including signed URLs and the `catalog` bucket's
+  public URLs.
+- **The rollback path for this whole rebuild.** After this, the new project is the only copy.
+
+Not lost: anything in the repo. The migrations, `0031`'s config seeds, the bucket DDL in §5 and the
+grants in §6A all reproduce a new project from scratch.
+
+### The billing consequence
+
+Two Pro projects on one org means paying the extra compute for both — roughly **$10/month** for the
+second instance. Deleting the old project is what takes the bill **back to $25/month**. It is the
+only step that does; nothing else in this document changes what you pay.
+
+Deletion takes effect immediately, so the charge stops accruing from that point (the current cycle
+is prorated).
+
+### Afterwards
+
+- Confirm the new project's compute reads **Micro** (Project Settings → Compute and Disk). That was
+  the point of the whole exercise — the old project was stuck on t4g.nano because it started on
+  Free and was upgraded.
+- Update `.env.example` if the connection-string shape changed. It did: the direct
+  `db.<ref>.supabase.co` host is IPv6-only from the founder's machine, so every `.env` now uses the
+  pooler host.
+- Record the rebuild in `docs/vault/phases/` with the ledger count and the
+  `verify-migration-ledger.sql` result.
+- Delete the stale Next.js builds — `apps/web/.next` and `apps/admin/.next` still have the old
+  project's URL and anon key inlined from a pre-flip build (`NEXT_PUBLIC_*` are baked in at build
+  time). `pnpm dev` regenerates them; a stale `next start` would not.
