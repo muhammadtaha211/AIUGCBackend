@@ -17,6 +17,13 @@
 -- Absent rows are not errors: getConfigValueOr (packages/core/src/appConfig.ts:18-29)
 -- returns the caller's fallback when a key is missing, which is why the drift
 -- was invisible.
+--
+-- SERVICE B KEYS ARE PROVISIONAL (founder, 2026-08-26 — docs/vault/decisions/
+-- 0004-service-b-config-is-provisional.md): Service B gets a full revamp once
+-- Service A is finished, so lipsync_motion_prompt, lipsync_resolution and
+-- auto_release_b are placeholders carried for rebuild reproducibility, not
+-- tuned values. The Service A keys that are live settings and do matter now:
+-- poll_deadline_seconds and words_per_second.
 
 -- ---------------------------------------------------------------------------
 -- 1. The four knobs that were live in production and seeded nowhere.
