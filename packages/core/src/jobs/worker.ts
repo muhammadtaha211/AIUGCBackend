@@ -32,7 +32,12 @@ export async function runJob(db: Db, job: Job, handlers: HandlerRegistry): Promi
   const log = logger.child({ jobId: job.id, jobType: job.type });
   const handler = handlers[job.type];
   if (!handler) {
-    await failPermanent(db, job.id, `no handler registered for job type "${job.type}"`);
+    try {
+      await failPermanent(db, job.id, `no handler registered for job type "${job.type}"`);
+    } catch (writeErr) {
+      // `err` key on purpose: pino only serializes Errors under that key.
+      log.error({ err: writeErr }, "recovery write failed — lease sweep will reclaim the job");
+    }
     log.error("no handler for job type");
     return;
   }
@@ -52,15 +57,27 @@ export async function runJob(db: Db, job: Job, handlers: HandlerRegistry): Promi
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    if (err instanceof PermanentError) {
-      await failPermanent(db, job.id, message);
-      log.warn({ err }, "job failed permanently");
-    } else if (err instanceof BudgetError) {
-      await parkForBudget(db, job.id, message, err.resumeAt);
-      log.warn({ resumeAt: err.resumeAt }, "job parked: budget cap");
-    } else {
-      await failTransient(db, job, message);
-      log.warn({ err, attempts: job.attempts + 1 }, "job failed transiently");
+    // The settle write can hit the same dead DB that failed the job. Swallow:
+    // the row stays `running` and the lease sweep reclaims it (consuming an
+    // attempt) — a delayed retry must not become a lane crash.
+    try {
+      if (err instanceof PermanentError) {
+        await failPermanent(db, job.id, message);
+        log.warn({ err }, "job failed permanently");
+      } else if (err instanceof BudgetError) {
+        await parkForBudget(db, job.id, message, err.resumeAt);
+        log.warn({ resumeAt: err.resumeAt }, "job parked: budget cap");
+      } else {
+        await failTransient(db, job, message);
+        log.warn({ err, attempts: job.attempts + 1 }, "job failed transiently");
+      }
+    } catch (writeErr) {
+      // writeErr as a string: pino only serializes Errors under the `err` key,
+      // which stays on the job failure — the context the founder needs first.
+      log.error(
+        { err, writeErr: writeErr instanceof Error ? writeErr.message : String(writeErr) },
+        "recovery write failed — lease sweep will reclaim the job",
+      );
     }
   }
 }
@@ -85,6 +102,7 @@ export interface WorkerLaneOptions {
 export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
   const pollIntervalMs = opts.pollIntervalMs ?? 2000;
   let lastLeaseSweep = 0;
+  let claimFailures = 0;
   for (;;) {
     if (opts.signal?.aborted) return;
     // Lane-level on purpose: a stuck job can only be healed from OUTSIDE the
@@ -101,7 +119,22 @@ export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
         logger.warn({ err }, "lease sweep failed — retrying next interval");
       }
     }
-    const job = await claim(db, { workerId: opts.workerId, types: opts.types });
+    // Same shape as the sweep guard, for the poll that runs every 2s forever:
+    // a fault on an in-flight claim (recycled pooler socket) killed the worker
+    // twice — docs/vault/defects/worker-exits-on-a-dropped-connection.md.
+    // Drain mode (`work --once`) still fails fast on a PERSISTENT fault: it
+    // promises to exit, so it must not warn-spin forever on a dead DB.
+    let job: Job | undefined;
+    try {
+      job = await claim(db, { workerId: opts.workerId, types: opts.types });
+      claimFailures = 0;
+    } catch (err) {
+      claimFailures += 1;
+      if (opts.drainAndExit && claimFailures >= DRAIN_CLAIM_FAILURE_LIMIT) throw err;
+      logger.warn({ err, workerId: opts.workerId }, "claim failed — retrying after poll interval");
+      await sleep(pollIntervalMs, opts.signal);
+      continue;
+    }
     if (!job) {
       if (opts.drainAndExit) return;
       await sleep(pollIntervalMs, opts.signal);
@@ -113,12 +146,19 @@ export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
 
 const LEASE_SWEEP_INTERVAL_MS = 60_000;
 
+// Three consecutive claim failures (~4s of retrying) before a draining lane
+// gives up and lets the error propagate: one pooler blip recovers, a wrong
+// DATABASE_URL exits non-zero instead of hanging the CLI.
+const DRAIN_CLAIM_FAILURE_LIMIT = 3;
+
 // analyze_demo is heavy on purpose: minutes of ffmpeg + batched vision calls
 // serialise behind Remotion renders rather than blocking Service B's audio
 // previews on the strictly-sequential light lane.
 export const HEAVY_JOB_TYPES = ["render_video", "lipsync", "analyze_demo"] as const;
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  // An already-aborted signal never fires "abort" — don't wait out the timer.
+  if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
     const t = setTimeout(resolve, ms);
     signal?.addEventListener(

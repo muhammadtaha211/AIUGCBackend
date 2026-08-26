@@ -1,12 +1,43 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "read packages/core/src/jobs/worker.ts:85-112 and jobs/queue.ts:53-80 and apps/worker/src/index.ts:56-59; DB checked for stuck jobs (read-only) — none found"
+verified: 2026-08-26
+method: "fix verified by pnpm --filter @aiugc/worker test (7/7, apps/worker/test/worker-resilience.test.ts) and pnpm --filter @aiugc/core test -- jobs (19/19); original crash-path reading 2026-08-23 stands below"
 source: code
 ---
 
 # A DB fault during the poll kills the worker permanently — and it has happened twice
+
+## FIXED 2026-08-26 — all four holes, in the commit that carries this note edit
+
+(The vault rule "a note changes in the same commit as the code" means this section cannot cite its
+own SHA — `git log -1 --follow` on this file is the provenance.)
+
+1. **The bare poll** — `claim()` in `runLane` now has the same guard shape as the sweep: log, sleep
+   one poll interval, continue. One founder-approved deviation from the original "log, sleep,
+   continue" spec: in drain mode (`aiugc work --once`) a **third consecutive** claim failure
+   rethrows (`DRAIN_CLAIM_FAILURE_LIMIT = 3`), so a pooler blip mid-drain recovers but a wrong
+   `DATABASE_URL` exits non-zero instead of hanging the CLI forever.
+2. **The recovery writes** — `runJob`'s catch block (`failPermanent`/`parkForBudget`/
+   `failTransient`) and the no-handler `failPermanent` are guarded. If the settle write hits the
+   same dead DB, the row stays `running` and the lease sweep reclaims it; the lane logs
+   "recovery write failed" and carries on. Consequence recorded separately:
+   [[settle-write-failure-retries-a-succeeded-job]].
+3. **One lane killing the other** — `apps/worker/src/lanes.ts` (`superviseLane`) restarts a lane
+   that exits abnormally, with one poll interval of abort-aware backoff; `main()`'s `Promise.all`
+   now runs supervisors. Clean exits (abort/drain) still return, so SIGINT/SIGTERM drain is
+   unchanged.
+4. **Silent death** — `unhandledRejection`/`uncaughtException` handlers in `apps/worker/src/index.ts`
+   log through pino before `exit(1)`. Safe without `pino.final` (removed in v7): pino 9.14.0's
+   `fatal()` calls `stream.flushSync()` before returning (`lib/levels.js`) even though the default
+   SonicBoom destination is async — verified in the installed package.
+
+Deliberately left as-is (founder, 2026-08-26 in chat): the boot-time `ensureDailyJobs`/
+`ensureReaperJob` awaits still fail fast — that becomes the _desired_ behaviour once the worker
+runs under systemd `Restart=always` (landing separately). The CLI's continuous `aiugc work` keeps
+its bare `Promise.all`; holes 1–2 protect it from within, but it has no supervisor.
+
+Everything below is the original 2026-08-23 analysis, kept as the record of the crash path.
 
 ## The crash path
 

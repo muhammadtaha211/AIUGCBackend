@@ -7,8 +7,23 @@ import {
   getEnv,
   HEAVY_JOB_TYPES,
   logger,
-  runLane,
 } from "@aiugc/core";
+import { superviseLane } from "./lanes";
+
+// A crash must leave a pino line, not a bare Node stack — the worker has no
+// supervisor or error reporting, so this log line is all the founder gets.
+// exit(1) straight after fatal() is safe even though pino's default
+// destination is async (SonicBoom sync:false): fatal() flushSync()es before
+// returning (pino levels.js) and pino's process-exit hook flushes again.
+// pino.final was removed in v7 for exactly this reason — do not "fix" this.
+process.on("unhandledRejection", (err) => {
+  logger.fatal({ err }, "unhandled rejection — exiting");
+  process.exit(1);
+});
+process.on("uncaughtException", (err) => {
+  logger.fatal({ err }, "uncaught exception — exiting");
+  process.exit(1);
+});
 
 /**
  * The single worker process. Two lanes so a minutes-long Remotion render or
@@ -36,13 +51,13 @@ async function main(): Promise<void> {
 
   logger.info({ workerId, dryRun: getEnv().DRY_RUN }, "worker started");
   await Promise.all([
-    runLane(db, {
+    superviseLane(db, {
       workerId: `${workerId}:heavy`,
       handlers,
       types: HEAVY_JOB_TYPES,
       signal: abort.signal,
     }),
-    runLane(db, {
+    superviseLane(db, {
       workerId: `${workerId}:light`,
       handlers,
       types: lightTypes,

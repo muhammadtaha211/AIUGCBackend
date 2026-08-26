@@ -1,20 +1,23 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "read apps/cli/package.json and apps/worker/package.json scripts; find apps/cli apps/worker -name '*.test.ts' returns nothing"
+verified: 2026-08-26
+method: "read apps/cli/package.json and apps/worker/package.json scripts; apps/worker/test/worker-resilience.test.ts holds 7 tests (pnpm --filter @aiugc/worker test); find apps/cli -name '*.test.ts' still returns nothing"
 source: code
 ---
 
-# The two processes that actually run the business have no tests
+# apps/cli has no tests; apps/worker got its first on 2026-08-26
 
-| package       | `test` script | test files |
-| ------------- | ------------- | ---------- |
-| `apps/cli`    | none          | 0          |
-| `apps/worker` | none          | 0          |
+| package       | `test` script | test files                               |
+| ------------- | ------------- | ---------------------------------------- |
+| `apps/cli`    | none          | 0                                        |
+| `apps/worker` | `vitest run`  | 1 (`worker-resilience.test.ts`, 7 tests) |
 
-Their `package.json` files declare only `typecheck` and a runner. The other four workspaces have
-both — 42 files, 624 tests ([[test-suite-inventory]]).
+The worker's tests came with the fix for [[worker-exits-on-a-dropped-connection]] and pin exactly
+the failure modes that note recorded: a rejected claim, a failed settle write, one lane dying, and
+shutdown during the supervisor's backoff. They reuse core's PGlite helper, so `pnpm -r test` picks
+them up with no new infrastructure. The rest of the worker's wiring (which lane claims which types
+in the real two-lane split) is still untested, and `apps/cli` is still at zero.
 
 This matters more than a coverage percentage would suggest, because of what these two are:
 `apps/cli` is the entrypoint the founder drives the whole pipeline from today, and `apps/worker` is
@@ -32,7 +35,8 @@ So the real gap is narrower than "untested": it is the glue. Specifically, nothi
 - that a CLI flag reaches the core function it names — the live example is
   [[admin-flag-is-a-noop-on-existing-accounts]], a flag that parses correctly, is passed correctly,
   and is then dropped one layer down, with no test anywhere to catch it
-- that the worker survives its own failure modes — see [[worker-exits-on-a-dropped-connection]]
+- ~~that the worker survives its own failure modes~~ — covered 2026-08-26 by
+  `worker-resilience.test.ts` ([[worker-exits-on-a-dropped-connection]])
 - that the two lanes claim the job types they are supposed to claim
 
 Every one of those is a wiring bug, which is exactly the class a shell with no tests cannot catch.
