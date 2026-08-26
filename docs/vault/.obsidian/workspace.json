@@ -208,6 +208,7 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "decisions/84KMb9EG",
     "decisions/0006-google-oauth-is-in-scope-for-launch.md",
     "decisions/seds4j0ln",
     "decisions/0005-google-oauth-deferred.md",
@@ -237,7 +238,6 @@
     "phases/8c-inventory-picker.md",
     "phases/8b-plan-editor.md",
     "phases/8a-wizard-shell-and-read-only-plan.md",
-    "facts/token-and-money-budgets.md",
     "defects/sedwSy6qV",
     "defects/sedOQZkvd",
     "defects/sed3Qaj59",

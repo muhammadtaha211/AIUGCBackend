@@ -38,10 +38,24 @@ skip**, made the same day 0005 was written.
 
 ## Scope facts established while deciding
 
+Corrected 2026-08-27 after checking what the code actually requests, which changes the
+sequencing materially:
+
 - The app requests **no custom OAuth scopes** — `auth.ts:71-74` passes `provider` and `redirectTo`
-  only, so it gets GoTrue's Google defaults (`email`, `profile`, `openid`). Non-sensitive, which
-  spares the security assessment but **not** the consent screen or verification.
-- `apps/web` has **no `/privacy` or `/terms` routes** and no privacy/terms copy anywhere. Producing
-  them is a writing task that blocks the consent screen, not a form to fill in.
+  only, so it gets Supabase's Google defaults: `openid`, `email`, `profile`. All three are
+  **non-sensitive**.
+- **There is therefore no verification review.** Review queues apply to sensitive and restricted
+  scopes (Gmail, Drive, Calendar, Contacts). Publishing this app moves it to production on click.
+  The earlier note in this file that verification meant "days, not minutes" was wrong.
+- **One trap:** uploading a custom app **logo** triggers Google's brand review even with
+  non-sensitive scopes. Leave it blank.
+- **Testing mode needs no domain, no privacy policy and no terms** — Google sign-in works against
+  `localhost` for up to 100 listed test users today. Those artefacts gate *publishing*, not use.
+- `apps/web` has **no `/privacy` or `/terms` routes** and no such copy anywhere. Writing them, plus
+  verifying `tavnit.ai` in Search Console, is what gates going public.
+- **A Vercel preview URL cannot serve as the authorized domain**: preview hostnames change per
+  deployment, and `vercel.app` is on the Public Suffix List. `tavnit.ai` must be live and verified.
+  So the chain is tavnit.ai -> deploy -> Search Console -> Publish, and **none of it blocks using
+  Google yourself.**
 
 Full procedure: `docs/08-supabase-project-rebuild.md` §8B.
