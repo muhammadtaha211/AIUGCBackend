@@ -1,12 +1,31 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "read every migration that writes daily_caps (0001, 0004, 0018, 0022, 0027 — the full set from grep -ln daily_caps supabase/migrations/), replayed them by hand, and compared to the live row read read-only"
+verified: 2026-08-26
+method: "edited 0027's literal to '1500000' (commit f9bb5a7) and read it back from the branch; reran the two pinned test files serially (account-budget.test.ts, demo-step-plans.test.ts) — 78/78 green, job log shows the cap firing at 'used 1500000 of 1500000'"
 source: code
 ---
 
 # A fresh environment comes up with a 500,000 LLM cap; production runs 1,500,000
+
+## FIXED 2026-08-26 (commit f9bb5a7 — 0027's literal edited in place)
+
+The founder chose the first fix shape, not the `0029` this note called "the honest one" — and said
+why: the live ledger already believes `0027` never ran ([[migration-ledger-stops-at-0007]]), so
+rewriting it carries none of the usual applied-migration hazard, and an `0029` would just restate a
+value `0027` now states. A comment above the literal records the 2026-08-21 hand-raise as the
+reason. `0027` was already in `PORTABLE_MIGRATIONS`, so nothing to add there.
+
+One claim below did not survive: "no test blocks it" was true of `migrations.test.ts` but
+incomplete — two other tests pinned the old ceiling and moved with the fix
+(`account-budget.test.ts` pins the cap as a constant; `demo-step-plans.test.ts` burns exactly the
+cap to prove the queued-job backstop). Both files rerun green, 78/78.
+
+Still open from this note: `per_account.llm_tokens` remains unasserted in `migrations.test.ts`, so
+the next hand-raise can still drift silently; and the fix-before-ledger-repair ordering is now
+satisfied — repairing the ledger no longer re-arms this defect.
+
+---
 
 ## The divergence, key by key
 
