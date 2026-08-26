@@ -115,9 +115,11 @@ The CLI is `apps/cli` and it is where the pipeline is driven today:
 ```
 pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI: demo, plan, copy, set, bank, qc, work, status, costs
 pnpm --filter @aiugc/worker dev        # the job loop (also `aiugc work --once` to drain and exit)
+
+npx -y supabase db push --db-url <session-pooler url>   # apply new migrations (see below)
 ```
 
-Still to come: `pnpm db:migrate` (migrations are applied by hand — see docs/01).
+Migrations: apply with `npx -y supabase db push --db-url <url>`, where `<url>` is `DATABASE_URL` from `.env` with `:6543/` swapped to `:5432/` (session pooler; no Supabase CLI is installed — npx fetches it). The ledger was repaired to 0000–0030 on 2026-08-26 (`scripts/verify-migration-ledger.sql` is the proof file). If a migration is ever applied by hand instead, immediately run `npx -y supabase migration repair --status applied <version>` with the same `--db-url` — otherwise the ledger drifts again and `db push` goes back to being unusable.
 
 ## When unsure
 
