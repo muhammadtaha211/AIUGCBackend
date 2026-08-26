@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { wizardGate } from "@/lib/wizard-gate";
+import { BalanceProvider } from "./balance-context";
 import { Sidebar } from "./sidebar";
 
 /**
@@ -34,13 +35,16 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
 
   return (
     <div className="theme-light flex h-dvh flex-col overflow-hidden bg-paper text-ink md:flex-row">
-      <Sidebar
-        businesses={businesses ?? []}
-        selectedId={selected?.id ?? null}
-        balance={balance}
-        email={user.email ?? ""}
-      />
-      <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      {/* Both the sidebar (reads) and the pages (the wizard's create/refund
+          paths write) live inside the provider — see balance-context.tsx. */}
+      <BalanceProvider initial={balance}>
+        <Sidebar
+          businesses={businesses ?? []}
+          selectedId={selected?.id ?? null}
+          email={user.email ?? ""}
+        />
+        <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      </BalanceProvider>
     </div>
   );
 }

@@ -8,14 +8,19 @@ source: db
 
 # No plan job on record has ever passed the validator on its first model call
 
+> **Amended 2026-08-25:** the ladder is now capped at `MAX_CORRECTIVE_CALLS = 2` — **up to three
+> model calls per pass**, and the per-round violations land in
+> `demo_step_plans.retry_violations` (0029), exactly the column the last section of this note asked
+> for. Everything below describes the two-call era it was measured in; the call-count inference
+> still holds for rows from that era, and the cost baseline becomes 2–3 calls (~46-70k tokens).
+
 ## Why the call count is the measurement
 
-`generateStepPlan` makes **at most two model calls, ever**. `callOnce`
+`generateStepPlan` made **at most two model calls, ever** (in the era measured here). `callOnce`
 (`packages/core/src/pipelines/demo-step-plans.ts:1035-1047`) is the only thing that calls Claude in
-this path, and it writes exactly one `usage_events` row per call. The flow is: call 1 →
+this path, and it writes exactly one `usage_events` row per call. The flow was: call 1 →
 `findPlanViolations` → if non-empty, **one** corrective re-request naming the violations → check
-again → `PermanentError`. There is no third call; the code comment at `:1057-1062` says so
-explicitly.
+again → `PermanentError`.
 
 So the number of `llm_tokens` rows carrying a job's id tells you what happened:
 
@@ -107,6 +112,8 @@ Two consequences:
 - The cheap fix, if these numbers should be re-derivable in future, is a `retry_violations jsonb`
   column on `demo_step_plans` written on both the success and failure paths. Not more log lines:
   the failure text is already logged and the success text is what is missing.
+  **Shipped 2026-08-25 as part of 0029** — every plan row from then on carries its full round
+  history, so this note's accidental measurement is no longer the only source.
 
 ## Re-measure with
 

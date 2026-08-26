@@ -471,6 +471,9 @@ export type StepPlanWire = {
   steps: PlanStepWire[];
   notes?: string;
   failReason?: string;
+  /** validator | quota | input | internal | transient — absent on rows from
+   *  before 0029, where the quota substring marker is the only signal. */
+  failKind?: string;
   approvedAt?: string;
   /** Plan job progress — attached by the GET while pending/planning (8d). */
   job?: JobProgressWire;
@@ -532,11 +535,10 @@ const PLAN_FAILED_GENERIC = "יצירת תוכנית הצעדים נכשלה —
  * the customer cannot raise their own cap — so the failure card drops its
  * retry button when it sees this.
  *
- * LOAD-BEARING COPY. The plan job stores this Hebrew verbatim as fail_reason
- * (packages/core/src/pipelines/demo-step-plans.ts, the AccountBudgetError
- * catch) and the route returns it as the 429 body (src/lib/api-errors.ts).
- * Rewording the quota lines without moving this marker puts the lying button
- * back; the test that pins the exact stored string is what goes red.
+ * LEGACY FALLBACK since 0029: rows written by the current job carry the
+ * structured fail_kind and never reach this substring. It stays only for
+ * failed rows from before the column existed (and the 429 route body, which
+ * carries no row at all).
  */
 const QUOTA_MARKER = "נסו שוב מחר";
 
@@ -545,21 +547,29 @@ const QUOTA_MARKER = "נסו שוב מחר";
  * Hebrew, but PermanentErrors without a customerMessage land as raw English
  * ("demo <id> not found") — that reads as a bug and leaks an id, so anything
  * without Hebrew letters shows the generic line with the raw string kept
- * behind a details toggle (RLS hides jobs.last_error entirely; this is one of
- * the few diagnostics that reaches the client at all).
+ * behind a details toggle. (jobs.last_error never reaches any route — nothing
+ * queries it, not an RLS matter — so this is one of the few diagnostics that
+ * reaches the client at all.)
+ *
+ * failKind (demo_step_plans.fail_kind, 0029) decides retryability when
+ * present; the QUOTA_MARKER substring is the pre-0029 fallback.
  */
-export function planFailureNotice(failReason?: string): {
+export function planFailureNotice(
+  failReason?: string,
+  failKind?: string,
+): {
   message: string;
   raw?: string;
   /** false = a daily quota refused it; offering "try again" here would lie. */
   retryable: boolean;
 } {
+  const quotaHit = failKind ? failKind === "quota" : (failReason?.includes(QUOTA_MARKER) ?? false);
   if (failReason && /[֐-׿]/.test(failReason)) {
-    return { message: failReason, retryable: !failReason.includes(QUOTA_MARKER) };
+    return { message: failReason, retryable: !quotaHit };
   }
   return failReason
-    ? { message: PLAN_FAILED_GENERIC, raw: failReason, retryable: true }
-    : { message: PLAN_FAILED_GENERIC, retryable: true };
+    ? { message: PLAN_FAILED_GENERIC, raw: failReason, retryable: !quotaHit }
+    : { message: PLAN_FAILED_GENERIC, retryable: !quotaHit };
 }
 
 /**
@@ -702,6 +712,47 @@ export function pickerPools(states: AnalysisStateWire[]): {
   return { quality, other };
 }
 
+/** One stored grouping, as the analysis GET serves it (0030). */
+export type InventorySectionWire = { title: string; stateIndexes: number[] };
+
+/** A rendered inventory section. `title: null` = the untitled flat grid —
+ *  both the no-grouping fallback and the whole pre-0030 world. */
+export type InventorySection = { title: string | null; states: AnalysisStateWire[] };
+
+/**
+ * Fold the stored groupings over the QUALITY pool (sections never touch the
+ * collapsed "פחות מתאימים" tier). Absent/empty groupings collapse to one
+ * untitled section holding today's exact flat grid — the fallback for old
+ * analyses, failed groupings and capped accounts. Quality states the
+ * grouping missed land in a trailing "עוד מסכים" bucket; indexes outside
+ * the quality pool (or claimed twice) are dropped, mirroring the server-side
+ * validator's rules on the client's stricter pool.
+ */
+export function inventorySections(
+  quality: AnalysisStateWire[],
+  sections?: InventorySectionWire[],
+): InventorySection[] {
+  if (!sections || sections.length === 0) return [{ title: null, states: quality }];
+  const byIndex = new Map(quality.map((state) => [state.index, state]));
+  const used = new Set<number>();
+  const out: InventorySection[] = [];
+  for (const section of sections) {
+    const states: AnalysisStateWire[] = [];
+    for (const index of section.stateIndexes) {
+      if (!byIndex.has(index) || used.has(index)) continue;
+      used.add(index);
+      states.push(byIndex.get(index)!);
+    }
+    states.sort((a, b) => a.timestampMs - b.timestampMs);
+    if (states.length > 0) out.push({ title: section.title, states });
+  }
+  const leftovers = quality.filter((state) => !used.has(state.index));
+  if (leftovers.length > 0) {
+    out.push({ title: out.length > 0 ? "עוד מסכים" : null, states: leftovers });
+  }
+  return out;
+}
+
 /** A plan step that exists only in the draft until the next save. The server
  *  assembles the real durationMs on PATCH; until then the card says so
  *  instead of showing a number that was never computed. */
@@ -729,6 +780,22 @@ export function insertDraftStep(
 export function fmtTimestamp(ms: number): string {
   const total = Math.round(ms / 1000);
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/** What an inventory state or a draft-added step previews for: the render
+ *  floor every unsqueezed step actually runs (MIN_STEP_MS, server-side in
+ *  demo-step-plans.ts — unimportable into a browser bundle, hence restated).
+ *  A fixed window on purpose: raw gaps between neighbouring states range
+ *  from ~400ms flashes to tens of seconds, neither of which previews what
+ *  picking the state buys. */
+export const PREVIEW_FALLBACK_MS = 3000;
+
+/** The preview window for a clip. A stored step plays its assembled window;
+ *  a draft-added step or an inventory state (durationMs 0/absent) plays the
+ *  fallback. No clamp against the video's end — the <video> element's own
+ *  `ended` event stops playback there. */
+export function clipWindow(startMs: number, durationMs: number): { startMs: number; endMs: number } {
+  return { startMs, endMs: startMs + (durationMs > 0 ? durationMs : PREVIEW_FALLBACK_MS) };
 }
 
 export type HookClip = {

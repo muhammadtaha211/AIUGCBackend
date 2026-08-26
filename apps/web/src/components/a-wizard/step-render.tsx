@@ -20,7 +20,9 @@ import {
   type PinnedPlan,
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { useBalance } from "@/app/home/balance-context";
 import { hasShortfall, shortfallLine, type QuoteView } from "@/lib/quote-ui";
+import type { AStepsCreateResponse } from "@/lib/service-a";
 import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
@@ -68,6 +70,9 @@ export function StepARender({
   /** The shortfall recheck's in-flight flag — its button disables while the
    *  fresh quote is loading, so one press means one GET. */
   const [rechecking, setRechecking] = useState(false);
+  /** The sidebar's number. The create and refund paths below push the
+   *  server-computed balance here — the moment of the spend, no refresh. */
+  const { setBalance } = useBalance();
 
   async function loadQuote() {
     setQuoteError(null);
@@ -90,7 +95,7 @@ export function StepARender({
   async function start() {
     setStarting(true);
     setCreateError(null);
-    const result = await postJson<{ renderId: string }>(
+    const result = await postJson<AStepsCreateResponse>(
       `/api/businesses/${businessId}/a-sets/steps`,
       {
         demoId,
@@ -111,6 +116,9 @@ export function StepARender({
         retryable: retryableCreateFailure(result.status),
       });
     }
+    // The debit just happened — the sidebar shows it the same moment the
+    // processing screen appears (null = admin bypass, card stays hidden).
+    setBalance(result.body.balance);
     setRender({ id: result.body.renderId, status: "queued" });
   }
 
@@ -124,6 +132,7 @@ export function StepARender({
     videoUrl?: string;
     failureReason?: string;
     refunded?: boolean;
+    balance?: number;
     job?: JobProgressWire;
   }>(
     inFlight,
@@ -131,6 +140,9 @@ export function StepARender({
     2_500,
     (body) => {
       if (!render) return;
+      // The refund's terminal tick carries the post-refund balance — the
+      // sidebar climbs back the moment the refund sentence appears.
+      if (body.refunded && body.balance !== undefined) setBalance(body.balance);
       setRender({
         ...render,
         status: body.status,

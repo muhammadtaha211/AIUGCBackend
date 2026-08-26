@@ -6,11 +6,12 @@ import { MAX_LABEL_CHARS, totalRuntimeMs } from "@aiugc/core/plan-format";
 import { fitFontSize, HOOK_FONT, STEP_LABEL_RECT } from "@aiugc/remotion/text-fit";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/icons";
+import { Play, Spinner } from "@/components/ui/icons";
 import {
   addWarning,
   analysisIndexBatches,
   analysisWaitView,
+  clipWindow,
   deleteWarning,
   draftBlockedReason,
   fmtTimestamp,
@@ -31,8 +32,9 @@ import {
   type StepPlanWire,
 } from "@/lib/service-a-ui";
 import { apiFetch, patchJson, postJson, useJobPoll, type ApiResult } from "@/lib/use-api";
+import { ClipVideo, useClipPlayer, type ClipPlayer, type ClipTarget } from "./clip-player";
 import { useHookLineMeasure } from "./placement-editor";
-import { StatePicker } from "./state-picker";
+import { InventoryPanel } from "./state-picker";
 
 type StepPlanProps = {
   demoId: string;
@@ -368,13 +370,14 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
     });
   }
 
-  const failure = plan?.status === "failed" ? planFailureNotice(plan.failReason) : null;
+  const failure =
+    plan?.status === "failed" ? planFailureNotice(plan.failReason, plan.failKind) : null;
 
   return (
     <div>
       <StepHeader
         title="תוכנית הצעדים"
-        sub="המערכת בוחרת מהסרטון שלכם את הצעדים שיופיעו במודעה, עם כיתוב לכל צעד."
+        sub="המערכת מזהה את המסכים בסרטון ומרכיבה מהם טיוטה — הצעדים הסופיים הם הבחירה שלכם."
         onBack={onBack}
       />
 
@@ -622,7 +625,19 @@ const STILL_WIDTH = 150;
  * as ServiceASteps mounts it: weight 800, ACTIVE_WORD_COLOR yellow
  * (packages/remotion/src/overlays.tsx), four-way dark outline.
  */
-function StepStill({ thumbUrl, label }: { thumbUrl?: string; label: string }) {
+function StepStill({
+  thumbUrl,
+  label,
+  clip,
+}: {
+  thumbUrl?: string;
+  label: string;
+  /** Absent = static still (no preview wired). Present, the still gains a
+   *  centered play control; tapping plays the step's window through the
+   *  editor's shared player and the icon returns when the clip ends. */
+  clip?: { player: ClipPlayer; target: ClipTarget };
+}) {
+  const playing = clip !== undefined && clip.player.active?.key === clip.target.key;
   const measure = useHookLineMeasure();
   const fontSize = useMemo(
     () =>
@@ -651,6 +666,9 @@ function StepStill({ thumbUrl, label }: { thumbUrl?: string; label: string }) {
       ) : (
         <span className="absolute inset-0 animate-pulse bg-ink/10" />
       )}
+      {/* DOM order is the z-order: video over the still, label over the
+          video (the preview shows what the render burns), control on top. */}
+      {playing && clip && <ClipVideo player={clip.player} />}
       <span
         className="absolute flex items-center justify-center overflow-hidden"
         style={{
@@ -670,6 +688,22 @@ function StepStill({ thumbUrl, label }: { thumbUrl?: string; label: string }) {
         {/* isolate, not plaintext — matches HookLine in the composition. */}
         <span style={{ unicodeBidi: "isolate" }}>{label}</span>
       </span>
+      {clip && (
+        <button
+          type="button"
+          aria-label={playing ? "עצירת התצוגה" : "צפייה בצעד"}
+          onClick={() => (playing ? clip.player.stop() : clip.player.play(clip.target))}
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          {/* While playing the whole still is the (invisible) stop target —
+              the icon "reappearing" when the clip ends is the affordance. */}
+          {!playing && (
+            <span className="flex size-11 items-center justify-center rounded-full bg-ink/60 text-white transition-colors hover:bg-ink/75">
+              <Play className="size-5 translate-x-[1px]" />
+            </span>
+          )}
+        </button>
+      )}
     </span>
   );
 }
@@ -720,8 +754,10 @@ function PlanEditor({
   onRetryCards: () => void;
   onFatal: (message: string) => void;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
   const approved = plan.approvedAt !== undefined;
+  /** One shared preview player for the whole editor — step cards AND the
+   *  inventory tiles below; playing anything stops whatever else played. */
+  const player = useClipPlayer(demoId);
   /** Approve's success swaps the approved block in during the click's own
    *  commit — and the add-a-step button unmounting above lifts the whole
    *  block ~50px, so no in-block geometry keeps controls out of the cursor
@@ -747,8 +783,21 @@ function PlanEditor({
   const totalMs = totalRuntimeMs(draft);
   return (
     <div className="mt-6">
+      {/* The reframe (founder, 2026-08-25): the draft is an OFFER, the
+          customer's own selection is the product of this step. Said before
+          the cards so a wrong draft reads as "edit me", not "bad service". */}
+      {!approved && (
+        <div className="rounded-xl border border-ink/[0.08] bg-white px-4 py-3">
+          <p className="text-sm font-medium text-ink">הרכבנו לכם טיוטה ראשונית</p>
+          <p className="mt-0.5 text-[13px] text-ink/60">
+            הטיוטה מורכבת מהמסכים שזיהינו בסרטון, והיא לא תמיד קולעת. עברו על כל צעד, צפו בו, מחקו
+            מה שלא מתאים — והוסיפו צעדים מתוך מאגר המסכים שלמטה.
+          </p>
+        </div>
+      )}
+
       {plan.notes && (
-        <div className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+        <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
           <p className="font-semibold">שימו לב</p>
           <p className="mt-0.5">{plan.notes}</p>
         </div>
@@ -778,7 +827,17 @@ function PlanEditor({
               key={step.sourceIndex}
               className="flex items-start gap-4 rounded-xl border border-ink/[0.08] bg-white p-3"
             >
-              <StepStill thumbUrl={state?.thumbUrl} label={step.label} />
+              <StepStill
+                thumbUrl={state?.thumbUrl}
+                label={step.label}
+                clip={{
+                  player,
+                  target: {
+                    key: `step:${step.sourceIndex}`,
+                    ...clipWindow(step.timestampMs, step.durationMs),
+                  },
+                }}
+              />
               <div className="min-w-0 flex-1">
                 {approved ? (
                   <p className="text-sm font-medium text-ink">
@@ -845,8 +904,8 @@ function PlanEditor({
                 {!approved && (
                   <Button
                     type="button"
-                    variant="ghost"
-                    className="mt-1.5 !h-8 !px-2 text-[13px]"
+                    variant="danger"
+                    className="mt-2 !h-8 !px-2.5 text-[13px]"
                     disabled={draft.length === 1 || actionBusy !== null}
                     onClick={() => onDelete(step.sourceIndex)}
                   >
@@ -859,30 +918,21 @@ function PlanEditor({
         })}
       </ol>
 
-      {/* Add-a-step lives HERE, on the editor, before the approve block —
-          the customer must see the option before signing off the plan.
-          Post-approve it comes back through the edit-a-copy fork. */}
-      {!approved &&
-        (pickerOpen ? (
-          <StatePicker
-            demoId={demoId}
-            inPlan={new Set(draft.map((step) => step.sourceIndex))}
-            addDisabled={actionBusy !== null}
-            onAdd={onAddStep}
-            onClose={() => setPickerOpen(false)}
-            onFatal={onFatal}
-          />
-        ) : (
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-3"
-            disabled={actionBusy !== null}
-            onClick={() => setPickerOpen(true)}
-          >
-            הוספת צעד
-          </Button>
-        ))}
+      {/* The inventory lives HERE, always open, on the editor before the
+          approve block — picking steps IS this screen's job (founder reframe,
+          2026-08-25: the old add-a-step button at the bottom read as an
+          afterthought and the draft as final). Post-approve it comes back
+          through the edit-a-copy fork. */}
+      {!approved && (
+        <InventoryPanel
+          demoId={demoId}
+          inPlan={new Set(draft.map((step) => step.sourceIndex))}
+          addDisabled={actionBusy !== null}
+          player={player}
+          onAdd={onAddStep}
+          onFatal={onFatal}
+        />
+      )}
 
       {/* Advice to add/trim steps is actionable only while editing — on the
           approved read-only view it would nag about controls that are not

@@ -9,7 +9,7 @@ import {
   generateVoScript,
 } from "./pipelines/copy";
 import { handleGenerateComposite } from "./pipelines/composites";
-import { handleAnalyzeDemo } from "./pipelines/demo-analysis";
+import { handleAnalyzeDemo, handleGroupAnalysisSections } from "./pipelines/demo-analysis";
 import { handlePlanDemoSteps } from "./pipelines/demo-step-plans";
 import { handleIngestDemo } from "./pipelines/demos";
 import { handleJanitor, handleReapDeadRenders } from "./pipelines/janitor";
@@ -68,6 +68,7 @@ export function buildHandlers(): HandlerRegistry {
   return {
     ingest_demo: handleIngestDemo,
     analyze_demo: handleAnalyzeDemo,
+    group_analysis_states: handleGroupAnalysisSections,
     plan_demo_steps: handlePlanDemoSteps,
     generate_copy: handleGenerateCopy,
     synth_tts: handleSynthTts,

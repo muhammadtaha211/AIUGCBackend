@@ -112,12 +112,17 @@ const MIN_STEP_MS = 3000;
 const MAX_STEP_MS = 4000;
 
 /** The steps' own on-screen length — the hook clip is NOT counted, it sits on
- *  top. With the bank's ~4s hook this lands the finished ad in the 20-25s
- *  band the founder asked for. At the 3s step floor only 6-7 step shapes fit
- *  the band; sparser recordings pass through the reachability escape below.
+ *  top. With the bank's ~4s hook this lands the finished ad at ~19-25s.
+ *  The floor is minSteps × the step floor ON PURPOSE (founder decision
+ *  2026-08-25, docs/vault/decisions/0002-runtime-band-floor-is-15s.md): every
+ *  unsqueezed step renders exactly the 3s floor, so a 16s floor made the
+ *  5-step minimum arithmetically unsatisfiable — every 5-step plan violated
+ *  the band, and the prompt was licensing exactly that shape. At 15s every
+ *  minSteps..maxSteps shape fits the band by construction; sparser recordings
+ *  still pass through the reachability escape below.
  *  Config `a_steps_runtime_min_ms` / `a_steps_runtime_max_ms` override
  *  (no seeded row: a missing key IS the default). */
-const MIN_RUNTIME_MS = 16_000;
+const MIN_RUNTIME_MS = 15_000;
 const MAX_RUNTIME_MS = 21_000;
 
 // MAX_LABEL_WORDS / MIN_LABEL_WORDS live in ../plan-format (imported above):
@@ -407,6 +412,11 @@ export function findPlanViolations(
      *  DEFAULT_STEP_MS is a number the video never shows. */
     runtime?: { durations: StepDurationConfig; minMs: number; maxMs: number };
   },
+  /** The customer's own note on what the footage shows (demos.description).
+   *  Its words are legal label words for the same reason questionnaire words
+   *  are — customer-authored claims, the demo_notes precedent — so the note
+   *  the upload step asks for genuinely widens what a caption may say. */
+  demoDescription?: string | null,
 ): string[] {
   const violations: string[] = [];
   if (steps.length === 0) {
@@ -417,7 +427,10 @@ export function findPlanViolations(
     violations.push(`the plan has ${steps.length} steps — the maximum is ${maxSteps}`);
   }
   const seen = new Set<number>();
-  const allowedQuestionnaire = expandToVariantSet(questionnaireWords(questionnaire));
+  const allowedQuestionnaire = expandToVariantSet([
+    ...questionnaireWords(questionnaire),
+    ...tokenizeWords(demoDescription ?? ""),
+  ]);
 
   steps.forEach((step, i) => {
     if (!Number.isInteger(step.sourceIndex) || !timeline[step.sourceIndex]) {
@@ -472,7 +485,7 @@ export function findPlanViolations(
       );
       if (!matches) {
         violations.push(
-          `step ${i}: label word "${word}" appears neither in state ${step.sourceIndex}'s visibleText nor in the questionnaire`,
+          `step ${i}: label word "${word}" appears neither in state ${step.sourceIndex}'s visibleText nor in the questionnaire or the customer's demo description`,
         );
       }
     }
@@ -711,6 +724,46 @@ export interface StepPlanDraft {
   unexplainedMoments: UnexplainedMoment[];
   notes: string | null;
   promptVersion: string;
+  /** Per model call, the violations found AFTER that call — last entry empty
+   *  on success, [] under DRY_RUN (no calls). Persisted on the plan row so
+   *  the per-rule fix rate is measurable (0029). */
+  retryViolations: string[][];
+}
+
+/** The customer-facing Hebrew for a validator failure, classified from the
+ *  FINAL round's violations. Deliberately the whole scope — no per-violation
+ *  translation layer: the two classes a customer can act on get actionable
+ *  lines, everything else keeps the generic one. */
+function violationCustomerMessage(finalRound: string[]): string {
+  if (finalRound.some((v) => v.includes("appears neither in state"))) {
+    // The fabrication class — the one the demo description directly widens.
+    return "לא הצלחנו לנסח כיתובים מהטקסט שמופיע בסרטון — הוסיפו תיאור קצר של מה רואים בסרטון ונסו שוב.";
+  }
+  if (finalRound.some((v) => v.includes("screens are never steps"))) {
+    return "התוכנית כללה מסכי טעינה או התחברות שלא נכנסים למודעה — נסו שוב, ואם זה חוזר צלמו קטע שמתמקד בשימוש במוצר עצמו.";
+  }
+  return "יצירת תוכנית הצעדים נכשלה — נסו שוב";
+}
+
+/**
+ * A model plan that still violates after every corrective call. Carries what
+ * the diagnostics columns need — the prompt version that failed and every
+ * round's violations — because the throw is the only channel between
+ * generateStepPlan and the handler that writes the row.
+ */
+export class PlanViolationError extends PermanentError {
+  readonly promptVersion: string;
+  readonly rounds: string[][];
+
+  constructor(opts: { promptVersion: string; rounds: string[][] }) {
+    const final = opts.rounds[opts.rounds.length - 1] ?? [];
+    super(`plan violates label rules after retry: ${final.join("; ")}`, {
+      customerMessage: violationCustomerMessage(final),
+      failKind: "validator",
+    });
+    this.promptVersion = opts.promptVersion;
+    this.rounds = opts.rounds;
+  }
 }
 
 export interface StepDurationConfig {
@@ -946,17 +999,26 @@ function dryRunPlan(
   };
 }
 
+/** Corrective calls after the first: 3 model calls total, ever — the hard cap
+ *  CLAUDE.md's no-uncapped-spend rule asks for. One was not enough: 15/15
+ *  first calls violate (docs/vault/facts/first-call-violation-rate.md — the
+ *  corrective call IS the mechanism), so a second-round miss was a permanent
+ *  failure on a path that is demonstrably nondeterministic. */
+const MAX_CORRECTIVE_CALLS = 2;
+
 /**
  * Run pass 2 over one timeline: prompt -> zod-validated selection ->
- * deterministic violation check -> ONE corrective re-request naming the
- * violations -> fail. Used by the job handler and by `aiugc plan regress`
- * (which is why it takes data, not row ids).
+ * deterministic violation check -> up to MAX_CORRECTIVE_CALLS corrective
+ * re-requests naming the violations -> fail. Used by the job handler and by
+ * `aiugc plan regress` (which is why it takes data, not row ids).
  */
 export async function generateStepPlan(
   db: Db,
   opts: {
     timeline: AnalysisState[];
     questionnaire: Questionnaire;
+    /** demos.description — reaches the prompt AND the label-word vocabulary. */
+    demoDescription?: string | null;
     businessId?: string;
     jobId?: string;
   },
@@ -1002,6 +1064,7 @@ export async function generateStepPlan(
       unexplainedMoments: canned.unexplainedMoments,
       notes: canned.notes,
       promptVersion: "plan_demo_steps@dry-run",
+      retryViolations: [],
     };
   }
 
@@ -1026,12 +1089,17 @@ export async function generateStepPlan(
     // v11+. Older prompt files never reference {{timing}} and are unaffected —
     // renderPrompt only substitutes what the template asks for.
     timing: planTimingMarkdown({ durations, runtime, minSteps, maxSteps }),
+    // v13+, same one-way compatibility as {{timing}}. The sentinel mirrors
+    // the vo_script pattern (copy.ts): the template always has SOMETHING to
+    // say where the description would go.
+    demo_description: opts.demoDescription?.trim() || "(אין — התבסס על השאלון והמסכים בלבד)",
   });
 
-  // A BudgetError from the second call parks the JOB, and the resume re-runs
+  // A BudgetError from a later call parks the JOB, and the resume re-runs
   // the first call. That re-pay is self-limiting — it only occurs when the
-  // rolling window freed enough for call 1 but not call 2, and every cycle
-  // spends toward the same cap that parks it — a bounded cost, not a loop.
+  // rolling window freed enough for the earlier calls but not the next, and
+  // every cycle spends toward the same cap that parks it — a bounded cost,
+  // not a loop.
   const callOnce = async (prompt: string): Promise<PlanOutput> => {
     await assertBudget(db, "llm_tokens");
     const { object, usage } = await generateObject({ prompt, schema: planOutputSchema });
@@ -1046,37 +1114,37 @@ export async function generateStepPlan(
     return object;
   };
 
-  let output = await callOnce(text);
-  let violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
-    minSteps,
-    notes: output.notes,
-    minStepMs: durations.minMs,
-    runtime,
-  });
-  if (violations.length > 0) {
-    // "Minimal edits" matters: a from-scratch replan routinely fixes the named
-    // violations while introducing brand-new ones (seen live: the retry swapped
-    // in a fresh 5-word label), and there is no third call. The previous plan
-    // is echoed back because each call is stateless — without it the model
-    // cannot see the plan it is told to minimally edit and reinvents it
-    // (seen live on a179f069: the retry dropped the success state the first
-    // call had correctly selected).
-    output = await callOnce(
-      `${text}\n\nYour previous plan was:\n${JSON.stringify(output, null, 2)}\n\nIt violated these rules:\n${violations
-        .map((v) => `- ${v}`)
-        .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`,
+  const validate = (output: PlanOutput): string[] =>
+    findPlanViolations(
+      output.steps,
+      opts.timeline,
+      opts.questionnaire,
+      maxSteps,
+      { minSteps, notes: output.notes, minStepMs: durations.minMs, runtime },
+      opts.demoDescription,
     );
-    violations = findPlanViolations(output.steps, opts.timeline, opts.questionnaire, maxSteps, {
-      minSteps,
-      notes: output.notes,
-      minStepMs: durations.minMs,
-      runtime,
-    });
-    if (violations.length > 0) {
-      throw new PermanentError(`plan violates label rules after retry: ${violations.join("; ")}`, {
-        customerMessage: "יצירת תוכנית הצעדים נכשלה — נסו שוב",
-      });
-    }
+
+  // "Minimal edits" matters: a from-scratch replan routinely fixes the named
+  // violations while introducing brand-new ones (seen live: the retry swapped
+  // in a fresh 5-word label). The previous plan is echoed back because each
+  // call is stateless — without it the model cannot see the plan it is told
+  // to minimally edit and reinvents it (seen live on a179f069: the retry
+  // dropped the success state the first call had correctly selected).
+  const correctivePrompt = (previous: PlanOutput, violations: string[]): string =>
+    `${text}\n\nYour previous plan was:\n${JSON.stringify(previous, null, 2)}\n\nIt violated these rules:\n${violations
+      .map((v) => `- ${v}`)
+      .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire, or the customer's demo description) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`;
+
+  let output = await callOnce(text);
+  let violations = validate(output);
+  const rounds: string[][] = [violations];
+  for (let corrective = 0; violations.length > 0 && corrective < MAX_CORRECTIVE_CALLS; corrective++) {
+    output = await callOnce(correctivePrompt(output, violations));
+    violations = validate(output);
+    rounds.push(violations);
+  }
+  if (violations.length > 0) {
+    throw new PlanViolationError({ promptVersion, rounds });
   }
 
   return {
@@ -1084,6 +1152,7 @@ export async function generateStepPlan(
     unexplainedMoments: output.unexplainedMoments,
     notes: output.notes,
     promptVersion,
+    retryViolations: rounds,
   };
 }
 
@@ -1115,7 +1184,7 @@ export async function getLatestStepPlan(db: Db, demoId: string): Promise<StepPla
  * approved plans that renders reference are never mutated by a regenerate.
  *
  * No spend guard here: CLI callers are the admin-bypassed founder. The Phase 7
- * web route MUST gate this behind assertAccountBudget — each request is 1-2
+ * web route MUST gate this behind assertAccountBudget — each request is 1-3
  * paid calls (same split as the hook-lines cap noted in docs/04).
  */
 export async function requestDemoPlan(
@@ -1169,7 +1238,7 @@ export async function requestDemoPlan(
 export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<JobResult> {
   const { planId } = job.payload as { planId: string };
   const plan = await getStepPlan(ctx.db, planId);
-  if (!plan) throw new PermanentError(`step plan ${planId} not found`);
+  if (!plan) throw new PermanentError(`step plan ${planId} not found`, { failKind: "internal" });
   if (plan.status === "ready") return { kind: "done" }; // retry after success
 
   const setPlan = async (fields: Partial<typeof demoStepPlans.$inferInsert>) => {
@@ -1189,14 +1258,16 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
     if (analysis?.status !== "ready" || !analysis.timeline) {
       throw new PermanentError(`analysis ${plan.analysisId} is not ready`, {
         customerMessage: "ניתוח הסרטון עדיין לא מוכן — נסו שוב עוד רגע",
+        failKind: "input",
       });
     }
     const demoRows = await ctx.db.select().from(demos).where(eq(demos.id, plan.demoId)).limit(1);
     const demo = demoRows[0];
-    if (!demo) throw new PermanentError(`demo ${plan.demoId} not found`);
+    if (!demo) throw new PermanentError(`demo ${plan.demoId} not found`, { failKind: "internal" });
     const questionnaire = await requireQuestionnaire(ctx.db, demo.businessId).catch((err) => {
       throw new PermanentError(err instanceof Error ? err.message : String(err), {
         customerMessage: "מלאו את שאלון העסק לפני יצירת התוכנית",
+        failKind: "input",
       });
     });
 
@@ -1207,6 +1278,7 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
       if (err instanceof AccountBudgetError) {
         throw new PermanentError(err.message, {
           customerMessage: "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר.",
+          failKind: "quota",
         });
       }
       throw err;
@@ -1218,6 +1290,7 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
     const draft = await generateStepPlan(ctx.db, {
       timeline,
       questionnaire,
+      demoDescription: demo.description,
       businessId: demo.businessId,
       jobId: job.id,
     });
@@ -1228,14 +1301,29 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
       unexplainedMoments: draft.unexplainedMoments,
       notes: draft.notes,
       promptVersion: draft.promptVersion,
+      retryViolations: draft.retryViolations,
       failReason: null,
+      failKind: null,
     });
     return { kind: "done" };
   } catch (err) {
     if (err instanceof PermanentError) {
-      await setPlan({ status: "failed", failReason: err.customerMessage ?? err.message });
+      await setPlan({
+        status: "failed",
+        failReason: err.customerMessage ?? err.message,
+        failKind: err.failKind ?? "internal",
+        // The version and the per-round violations are in hand only on the
+        // validator path — everything else fails before a prompt is rendered.
+        ...(err instanceof PlanViolationError
+          ? { promptVersion: err.promptVersion, retryViolations: err.rounds }
+          : {}),
+      });
     } else if (!(err instanceof BudgetError) && isLastAttempt(job)) {
-      await setPlan({ status: "failed", failReason: "יצירת התוכנית נכשלה — נסו שוב" });
+      await setPlan({
+        status: "failed",
+        failReason: "יצירת התוכנית נכשלה — נסו שוב",
+        failKind: "transient",
+      });
     }
     throw err;
   }
@@ -1348,6 +1436,9 @@ export async function approvePlan(db: Db, planId: string): Promise<StepPlan> {
 const fixtureSchema = z.object({
   questionnaire: questionnaireSchema,
   timeline: analysisTimelineSchema,
+  // demos.description as the live path would carry it — absent on every
+  // pre-0029 fixture, which is exactly the no-description case.
+  demoDescription: z.string().optional(),
   expected: z.object({
     // The live (real-key) selection. `dryRunSourceIndexes` overrides it under
     // DRY_RUN, where the deterministic keyless plan ignores the prompt's skip
@@ -1396,6 +1487,7 @@ export async function runPlanRegression(db: Db): Promise<PlanRegressionResult[]>
       const draft = await generateStepPlan(db, {
         timeline: fixture.timeline,
         questionnaire: fixture.questionnaire,
+        demoDescription: fixture.demoDescription,
       });
       const actual = draft.steps.map((s) => s.sourceIndex).sort((a, b) => a - b);
       const setMatch = JSON.stringify(actual) === JSON.stringify(expected);

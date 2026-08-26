@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { getImageProps } from "next/image";
 import { redirect } from "next/navigation";
@@ -26,8 +27,41 @@ const PRELOAD_COUNT = 3;
  * hints put the bytes in the HTTP cache before the user picks a service. The
  * srcset comes from getImageProps with the picker's exact geometry, so the
  * browser preloads the same optimizer URL the picker will request.
+ *
+ * Split so the most-clicked route gets a SHAPED skeleton: the segment-level
+ * /home/loading.tsx must stay shape-agnostic (it fronts every child nav),
+ * so the shell here is sync and the data-blocking body streams behind its
+ * own Suspense. Streamed redirects inside HomeContent still work.
  */
-export default async function HomePage() {
+export default function HomePage() {
+  return (
+    <Suspense fallback={<HomeSkeleton />}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <div className="relative isolate overflow-hidden px-6 pb-6 pt-10 sm:px-10">
+      <div className="mx-auto w-full max-w-4xl">
+        <div className="mx-auto h-9 w-72 max-w-full animate-pulse rounded-lg bg-ink/[0.06]" />
+        <div className="mx-auto mt-3 h-4 w-56 animate-pulse rounded-lg bg-ink/[0.06]" />
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
+          <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
+        </div>
+        <div className="mt-8 flex gap-3">
+          <div className="aspect-[9/16] w-24 animate-pulse rounded-xl bg-ink/[0.06]" />
+          <div className="aspect-[9/16] w-24 animate-pulse rounded-xl bg-ink/[0.06]" />
+          <div className="aspect-[9/16] w-24 animate-pulse rounded-xl bg-ink/[0.06]" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+async function HomeContent() {
   const supabase = await createServerSupabase();
   const {
     data: { user },

@@ -155,6 +155,7 @@ export function stepPlanResponse(plan: {
   unexplainedMoments: unknown;
   notes: string | null;
   failReason: string | null;
+  failKind: string | null;
   approvedAt: Date | null;
 }): {
   planId: string;
@@ -165,6 +166,7 @@ export function stepPlanResponse(plan: {
   unexplainedMoments: unknown;
   notes?: string;
   failReason?: string;
+  failKind?: string;
   approvedAt?: Date;
 } {
   return {
@@ -176,6 +178,7 @@ export function stepPlanResponse(plan: {
     unexplainedMoments: plan.unexplainedMoments ?? [],
     notes: plan.notes ?? undefined,
     failReason: plan.failReason ?? undefined,
+    failKind: plan.failKind ?? undefined,
     approvedAt: plan.approvedAt ?? undefined,
   };
 }
@@ -195,6 +198,11 @@ export const aRenderRequestSchema = z.object({
   /** The hook-studio placement; absent = the clip's default safe area. */
   textSafeArea: textSafeAreaSchema.optional(),
 });
+
+/** The steps-format create response. `balance` is the post-debit account
+ *  balance (null = admin bypass, never debited) — the wizard pushes it into
+ *  the sidebar's BalanceProvider the moment the render starts. */
+export type AStepsCreateResponse = { renderId: string; balance: number | null };
 
 /** Steps-format render (8e): a silent 1×1 set from an APPROVED plan, pinned
  *  by id. No audio, no persona — the format is silent by definition. */

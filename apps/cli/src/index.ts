@@ -20,6 +20,7 @@ import {
   createBusiness,
   createDemo,
   createSet,
+  enqueueMissingSections,
   ensureReaperJob,
   generateBenefitCaptions,
   generateBScript,
@@ -143,6 +144,16 @@ demo
       } else {
         console.log(`analysis queued (job ${result.jobId}) — run \`aiugc work --once\``);
       }
+    }),
+  );
+
+demo
+  .command("sections")
+  .description("queue task-section grouping for every ready analysis that has none (0030 backfill)")
+  .action(
+    run(async () => {
+      const queued = await enqueueMissingSections(getDb());
+      console.log(`${queued} grouping job(s) queued — run \`aiugc work --once\``);
     }),
   );
 

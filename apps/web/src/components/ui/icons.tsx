@@ -43,6 +43,24 @@ export function Spinner({ className = "size-4" }: IconProps) {
   );
 }
 
+/** Play triangle — points LEFT-to-right media direction is universal, so no
+ *  RTL mirroring (media controls keep LTR orientation everywhere). */
+export function Play({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}>
+      <path d="M5 3.2c0-.8.9-1.3 1.6-.9l7 4.3c.7.4.7 1.4 0 1.8l-7 4.3c-.7.4-1.6-.1-1.6-.9V3.2Z" />
+    </svg>
+  );
+}
+
+export function Stop({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}>
+      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+    </svg>
+  );
+}
+
 export function ChevronDown({ className = "size-4" }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  creditBalance,
   getDb,
   getJobProgress,
   getStorage,
@@ -29,6 +30,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       thumbUrl?: string;
       failureReason?: string;
       refunded?: boolean;
+      /** Post-refund account balance — present only alongside refunded:true.
+       *  The wizard pushes it into the sidebar's BalanceProvider on the
+       *  terminal poll tick. Server-computed, never client arithmetic. */
+      balance?: number;
       /** Render job progress (8d pattern) — queue position, elapsed, the
        *  renderMedia percent, and the heartbeat that tells "still working"
        *  from "nothing is processing this". */
@@ -57,8 +62,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       // failed before that invariant existed.
       body.failureReason = render.error ?? "יצירת הסרטון נכשלה — נסו שוב.";
       // refunded_at is written only in the same transaction as the refund row
-      // (failRenderAndRefund) — the wizard's refund sentence hangs off this.
+      // (failRenderAndRefund) — the wizard's refund sentence hangs off this,
+      // so the balance below is final the first time it is served. The poll
+      // stops on this terminal tick, so the SUM runs at most a couple times.
       body.refunded = render.refundedAt !== null;
+      if (body.refunded) body.balance = await creditBalance(db, auth.userId);
     }
     return NextResponse.json(body);
   } catch (err) {

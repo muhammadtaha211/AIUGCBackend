@@ -1,12 +1,26 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "grep -rn 'נסו שוב מחר' over the tree; read apps/web/src/lib/service-a-ui.ts:535-556 and apps/web/test/service-a-ui.test.ts:233-252"
+verified: 2026-08-25
+method: "grep -rn 'נסו שוב מחר' over the tree; read apps/web/src/lib/service-a-ui.ts:535-556 and apps/web/test/service-a-ui.test.ts:233-252; fix verified by the failKind cases in apps/web/test/service-a-ui.test.ts"
 source: code
 ---
 
 # The test that is supposed to stop the "lying retry button" cannot
+
+## FIXED for plan rows 2026-08-25 — option 2 shipped
+
+`demo_step_plans.fail_kind` (0029) carries the distinction structurally: the plan job writes
+`quota | validator | input | internal | transient`, `planFailureNotice` branches on the kind when
+present, and the wording of `fail_reason` decides nothing on any row written since. The substring
+marker survives only as the fallback for the nine pre-0029 failed rows (whose stored Hebrew is
+immutable, so the marker cannot drift out from under THEM), and for the 429 route body which
+carries no row. The two "the test protects this" comments are rewritten to say exactly that.
+
+Still open: the render/TTS/playback quota lines (`renders.ts`, `api-errors.ts`) still ride the
+substring — unchanged blast radius, see below.
+
+---
 
 ## The mechanism
 

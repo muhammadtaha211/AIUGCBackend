@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  analysisSectionsSchema,
   analysisTimelineSchema,
   getDb,
   getJobProgress,
@@ -67,6 +68,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       stateCount?: number;
       states?: unknown[];
       total?: number;
+      /** Task-level Hebrew groupings (0030). Absent = ungrouped (older
+       *  analyses, failed/refused grouping) — the picker renders flat. */
+      sections?: { title: string; stateIndexes: number[] }[];
     } = { analysisId: analysis.id, status: analysis.status };
     if (analysis.failReason) body.failReason = analysis.failReason;
     if (isAnalysisWorkingStatus(analysis.status)) body.job = await analysisJob();
@@ -79,6 +83,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const timeline = analysisTimelineSchema.parse(analysis.timeline);
     body.stateCount = timeline.length;
     body.total = timeline.length;
+
+    // Malformed/legacy sections are simply omitted — the flat-grid fallback,
+    // never an error.
+    const sections = analysisSectionsSchema.safeParse(analysis.sections);
+    if (sections.success && sections.data.length > 0) body.sections = sections.data;
 
     // `index` is the absolute timeline position — it IS the sourceIndex the
     // plan routes speak — and survives paging. thumbPath stays server-side.

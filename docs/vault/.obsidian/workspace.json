@@ -210,6 +210,9 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "facts/live-regress-2026-08-25.md",
+    "decisions/0003-sections-are-a-model-call.md",
+    "decisions/0002-runtime-band-floor-is-15s.md",
     "falsified/plan-format-re-export-has-server-callers.md",
     "falsified/plan-format-re-export-has-server-callers.md.tmp.7908.58f95fd7e8b7",
     "phases/8d-demo-step-rework.md",
@@ -242,9 +245,6 @@
     "falsified/sedxnU5qd",
     "falsified/sed3WrwPR",
     "facts/sedq19FCE",
-    "facts/sedahKiHB",
-    "facts/remotion-temp-leak-filled-the-disk.md",
-    "CONVENTIONS.md",
-    "README.md"
+    "facts/sedahKiHB"
   ]
 }

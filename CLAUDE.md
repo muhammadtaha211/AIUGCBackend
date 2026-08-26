@@ -75,6 +75,7 @@ Invoke the `/karpathy-guidelines` skill at the beginning of every coding task an
 - Hebrew/RTL: use CSS logical properties (`ms-`/`me-`, `text-start`), isolate LTR islands (URLs, numbers) with bidi isolation, test any text-touching UI with real Hebrew strings, not lorem ipsum.
 - Secrets only via env vars; never commit keys, never log full prompts/scripts containing customer data at info level.
 - Don't add spend: no code path that calls a paid API in a loop without an explicit cap.
+- Don't touch production schema: never run `supabase db push`, `supabase migration repair`, or any DDL against production — the ledger stops at `0007` and `0008` fails without `IF NOT EXISTS`, and that failure is currently the only thing preventing a push from replaying `0008`–`0028` and resetting `per_account.llm_tokens` from 1,500,000 to 500,000. Read `docs/vault/defects/migration-ledger-stops-at-0007.md` and `docs/vault/defects/migration-0027-still-seeds-the-old-llm-cap.md` before touching anything under `supabase/`.
 
 ### 3. End of task — mandatory protocol
 

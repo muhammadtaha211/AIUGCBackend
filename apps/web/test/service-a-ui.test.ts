@@ -17,6 +17,7 @@ import {
   fmtElapsedHe,
   ingestPhaseView,
   ingestStuckView,
+  clipWindow,
   draftBlockedReason,
   endingForRemainder,
   endingSentence,
@@ -26,6 +27,7 @@ import {
   identityFromSearch,
   identitySearch,
   insertDraftStep,
+  inventorySections,
   isSkippedScreenKind,
   isActiveARenderStatus,
   isActivePlanStatus,
@@ -215,6 +217,14 @@ describe("plan surface helpers", () => {
     expect(analysisIndexBatches([])).toEqual([]);
   });
 
+  it("clipWindow: stored duration plays as-is, zero falls back to the render floor", () => {
+    // A saved step previews exactly its assembled window; a draft-added step
+    // or raw inventory state (durationMs 0) previews the 3s floor every
+    // unsqueezed step actually renders.
+    expect(clipWindow(12_000, 3400)).toEqual({ startMs: 12_000, endMs: 15_400 });
+    expect(clipWindow(9000, 0)).toEqual({ startMs: 9000, endMs: 12_000 });
+  });
+
   it("Hebrew failReason passes through untouched, with no raw leftover", () => {
     const notice = planFailureNotice("יצירת התוכנית נכשלה — נסו שוב");
     expect(notice.message).toBe("יצירת התוכנית נכשלה — נסו שוב");
@@ -255,6 +265,23 @@ describe("plan surface helpers", () => {
     expect(planFailureNotice("יצירת תוכנית הצעדים נכשלה — נסו שוב").retryable).toBe(true);
     expect(planFailureNotice("demo 9553ea19 not found").retryable).toBe(true);
     expect(planFailureNotice(undefined).retryable).toBe(true);
+  });
+
+  /**
+   * fail_kind (0029) is the structured signal; the Hebrew substring above is
+   * only the fallback for rows from before the column existed. With a kind
+   * present the wording of fail_reason decides NOTHING — the reworded-quota
+   * hazard the substring guard could never actually protect against
+   * (docs/vault/defects/quota-marker-test-does-not-protect-it.md).
+   */
+  it("failKind decides retryability over the wording when present", () => {
+    // A reworded quota line with the marker gone: kind still kills the button.
+    expect(planFailureNotice("חרגתם מהמכסה היומית.", "quota").retryable).toBe(false);
+    // A validator line that happens to contain the marker: kind keeps it.
+    expect(planFailureNotice("משהו נכשל — נסו שוב מחר אולי", "validator").retryable).toBe(true);
+    expect(planFailureNotice("יצירת תוכנית הצעדים נכשלה — נסו שוב", "transient").retryable).toBe(
+      true,
+    );
   });
 
   it("no failReason at all still yields the Hebrew generic", () => {
@@ -722,6 +749,34 @@ describe("inventory picker (8c)", () => {
     const { quality, other } = pickerPools([wire(0), wire(1), wire(2)]);
     expect(quality).toHaveLength(3);
     expect(other).toHaveLength(0);
+  });
+
+  describe("inventorySections (0030)", () => {
+    const quality = [wire(0), wire(2), wire(5), wire(7)];
+
+    it("no grouping collapses to one untitled section — exactly the flat grid", () => {
+      expect(inventorySections(quality)).toEqual([{ title: null, states: quality }]);
+      expect(inventorySections(quality, [])).toEqual([{ title: null, states: quality }]);
+    });
+
+    it("groups the quality pool, buckets leftovers, drops junk indexes", () => {
+      const sections = inventorySections(quality, [
+        // 3 is not in the quality pool (grouped server-side over a wider
+        // predicate era, say) — dropped; 0 claimed twice — second claim
+        // dropped; order inside a section re-sorts chronologically.
+        { title: "פרסום פוסט", stateIndexes: [2, 0, 3] },
+        { title: "מעקב", stateIndexes: [5, 0] },
+      ]);
+      expect(sections.map((s) => s.title)).toEqual(["פרסום פוסט", "מעקב", "עוד מסכים"]);
+      expect(sections[0]!.states.map((s) => s.index)).toEqual([0, 2]);
+      expect(sections[1]!.states.map((s) => s.index)).toEqual([5]);
+      expect(sections[2]!.states.map((s) => s.index)).toEqual([7]);
+    });
+
+    it("a grouping that matches nothing in the pool degrades to the flat grid", () => {
+      const sections = inventorySections(quality, [{ title: "ריקה", stateIndexes: [99] }]);
+      expect(sections).toEqual([{ title: null, states: quality }]);
+    });
   });
 
   describe("insertDraftStep (add-a-step)", () => {

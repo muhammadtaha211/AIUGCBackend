@@ -425,6 +425,29 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     ).toEqual([]);
   });
 
+  it("demo-description words are allowed label words — the upload note widens the vocabulary", () => {
+    // "קופון" is on no screen and in no questionnaire field; only the
+    // customer's own note carries it — the same customer-authored-claims
+    // principle as demo_notes, wired per-demo instead of per-business.
+    const steps = [{ sourceIndex: 0, label: "קופון הנחה" }];
+    expect(
+      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8, undefined, "מזינים קופון הנחה בקופה"),
+    ).toEqual([]);
+    // Absent everywhere -> still a violation. The description weakens the
+    // rule by exactly its own words, nothing more.
+    expect(
+      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8).some((v) =>
+        v.includes("appears neither"),
+      ),
+    ).toBe(true);
+    // Blank and null are the no-description case, not a wildcard.
+    expect(
+      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8, undefined, "   ").some((v) =>
+        v.includes("appears neither"),
+      ),
+    ).toBe(true);
+  });
+
   it("shape rules: model plans must end on the result state and explain under-min counts", () => {
     // Ends mid-journey while a selectable result state exists -> violation.
     expect(
@@ -1039,10 +1062,10 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
   });
 
   it("the floor's escape ignores states after the success — post-success filming cannot certify an unreachable floor", () => {
-    // Success at 12s of a 21s recording, customer kept filming after it (the
+    // Success at 9s of a 21s recording, customer kept filming after it (the
     // normal case, per the last-step rule's own comment). An ending-compliant
-    // plan tops out at 5 steps x 3000ms = 15000ms; the states at 15/18/21s can
-    // never be steps, so counting their coverage (>= the 16s floor) would
+    // plan tops out at 4 steps x 3000ms = 12000ms; the states at 12/15/18/21s
+    // can never be steps, so counting their coverage (>= the 15s floor) would
     // order the model to add pre-ending states that do not exist, burn the one
     // retry, and fail the plan permanently. Bounded at the ending, the escape
     // forgives the shortfall — shipped at the 3s-floor change, when the raised
@@ -1052,18 +1075,18 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
       state({
         timestampMs: t,
         visibleText: [`מסך ${i}`],
-        actionType: i === 4 ? "result" : "tap",
+        actionType: i === 3 ? "result" : "tap",
       }),
     );
-    const plan = [0, 1, 2, 3, 4].map((i) => ({ sourceIndex: i, label: `מסך ${i}` }));
+    const plan = [0, 1, 2, 3].map((i) => ({ sourceIndex: i, label: `מסך ${i}` }));
     const floorEra = { byActionType: {}, minMs: 3000, maxMs: 4000 };
-    expect(totalRuntimeMs(assembleSteps(plan, grid, floorEra))).toBe(15_000);
+    expect(totalRuntimeMs(assembleSteps(plan, grid, floorEra))).toBe(12_000);
     expect(
       findPlanViolations(plan, grid, QUESTIONNAIRE, 7, {
-        minSteps: 5,
+        minSteps: 4,
         notes: null,
         minStepMs: 3000,
-        runtime: { durations: floorEra, minMs: 16_000, maxMs: 21_000 },
+        runtime: { durations: floorEra, minMs: 15_000, maxMs: 21_000 },
       }),
     ).toEqual([]);
   });
@@ -1147,7 +1170,11 @@ describe("a caption must outlast its own read time", () => {
 describe("the prompt's timing block is generated from the code, not restated", () => {
   // The production defaults, spelled out rather than imported: a test that
   // reads the same constants the generator reads cannot catch either moving.
-  // assembleSteps falls back to exactly these when byActionType is empty.
+  // This describe pinned the pre-b60b5b6 era (1400ms floor, 11-16s band,
+  // 8-step cap) long after production moved, which is how the band/floor
+  // contradiction shipped unnoticed — these literals must be the SHIPPED
+  // config, and the band-coherence describe below is what checks they can
+  // coexist.
   const DURATIONS = {
     byActionType: {
       navigate: 1800,
@@ -1158,15 +1185,15 @@ describe("the prompt's timing block is generated from the code, not restated", (
       result: 2800,
       idle: 1600,
     },
-    minMs: 1400,
+    minMs: 3000,
     maxMs: 4000,
   };
-  const BAND = { minMs: 11_000, maxMs: 16_000 };
+  const BAND = { minMs: 15_000, maxMs: 21_000 };
   const block = planTimingMarkdown({
     durations: DURATIONS,
     runtime: BAND,
     minSteps: 5,
-    maxSteps: 8,
+    maxSteps: 7,
   });
   const label = (words: number) => Array.from({ length: words }, () => "אחת").join(" ");
 
@@ -1187,7 +1214,12 @@ describe("the prompt's timing block is generated from the code, not restated", (
       timeline,
       QUESTIONNAIRE,
       8,
-      { minSteps: 1, notes: null, minStepMs: 1400, runtime: { durations: DURATIONS, ...BAND } },
+      {
+        minSteps: 1,
+        notes: null,
+        minStepMs: DURATIONS.minMs,
+        runtime: { durations: DURATIONS, ...BAND },
+      },
     ).filter((v) => v.includes("but needs"));
   };
 
@@ -1213,23 +1245,24 @@ describe("the prompt's timing block is generated from the code, not restated", (
     }
   });
 
-  it("names the gap below which no pair is selectable, not a rounder number", () => {
+  it("names the gap below which no pair is selectable — the step floor, which outruns every read time", () => {
+    // The two rules share this boundary and the larger wins. At the shipped
+    // a_step_ms_min (3000) the floor binds — every legal caption reads inside
+    // it — so a block that only ever divides readTimeMs would understate the
+    // gap by almost half.
     const shortest = readRows[0]!;
     expect(shortest.ms).toBe(1600);
-    expect(block).toContain(`Under a ${(shortest.ms / 1000).toFixed(1)}s gap`);
+    expect(block).toContain("Under a 3.0s gap");
   });
 
-  it("takes the min-gap rule into account when a raised floor outruns the read time", () => {
-    // The two rules share this boundary and the larger wins. At the shipped
-    // a_step_ms_min (1400) the read time binds; raise it and it does not, and
-    // a block that only ever divides readTimeMs understates the gap.
-    const raised = planTimingMarkdown({
-      durations: { ...DURATIONS, minMs: 2600 },
+  it("the read time binds again when a config row drops the floor under it", () => {
+    const dropped = planTimingMarkdown({
+      durations: { ...DURATIONS, minMs: 1400 },
       runtime: BAND,
       minSteps: 5,
-      maxSteps: 8,
+      maxSteps: 7,
     });
-    expect(raised).toContain("Under a 2.6s gap");
+    expect(dropped).toContain("Under a 1.6s gap");
   });
 
   it("stops offering caption lengths a configured ceiling could never grant", () => {
@@ -1239,7 +1272,7 @@ describe("the prompt's timing block is generated from the code, not restated", (
       durations: { ...DURATIONS, maxMs: 2000 },
       runtime: BAND,
       minSteps: 5,
-      maxSteps: 8,
+      maxSteps: 7,
     });
     const rows = (text: string) =>
       [...text.matchAll(/^\| (\d+) words \| ([\d.]+)s \|$/gm)].map((m) => Number(m[1]));
@@ -1251,7 +1284,7 @@ describe("the prompt's timing block is generated from the code, not restated", (
           durations: { ...DURATIONS, minMs: 400, maxMs: 800 },
           runtime: BAND,
           minSteps: 5,
-          maxSteps: 8,
+          maxSteps: 7,
         }),
       ),
     ).toEqual([3]);
@@ -1264,7 +1297,7 @@ describe("the prompt's timing block is generated from the code, not restated", (
     // must sit exactly on it, and nothing may fall below it.
     const kinds = ["tap", "navigate", "select", "type", "scroll", "idle"] as const;
     const rows = [...block.matchAll(/^\| (\d+) \| (.+) \|$/gm)];
-    expect(rows.map((m) => Number(m[1]))).toEqual([5, 6, 7, 8]);
+    expect(rows.map((m) => Number(m[1]))).toEqual([5, 6, 7]);
     for (const match of rows) {
       const stepCount = Number(match[1]);
       const cells = match[2]!.split(" | ");
@@ -1299,10 +1332,10 @@ describe("the prompt's timing block is generated from the code, not restated", (
   });
 
   it("prints no per-shape verdict, because the shape alone cannot decide one", () => {
-    // A `scroll`-heavy 5x3-word plan runs 11.6s and passes where the floor
-    // (9.2s) is under the band; an 8x3-word one runs 18.2s and is too long
-    // where the floor (14.0s) is inside it. Any verdict printed per cell is
-    // wrong in one of those two directions.
+    // At the shipped 3s floor every unsqueezed step clamps to the floor and
+    // the cells collapse to n x 3.0s — but a config row raising a kind past
+    // the floor un-collapses them, and then a per-cell verdict is wrong in
+    // one direction or the other, exactly as the generator's comment argues.
     expect(block).not.toContain("too SHORT");
     expect(block).not.toContain("passes");
     expect(block).toContain("this is the LEAST each shape can run");
@@ -1321,8 +1354,11 @@ describe("the prompt's timing block is generated from the code, not restated", (
       questionnaire: "{}",
       timeline: "[]",
       min: 5,
-      max: 8,
+      max: 7,
       timing: block,
+      // v13+ — same one-way compatibility as {{timing}}: extra vars are
+      // ignored by older templates, absent ones throw on the latest.
+      demo_description: "(אין)",
     });
     expect(promptVersion).toBe(`plan_demo_steps@v${version}`);
     expect(text).toContain(block);
@@ -1453,10 +1489,12 @@ describe("step durations (the window model)", () => {
 
   it("with no app_config rows the runtime band is the code constants", async () => {
     // Every band in this file is a literal passed straight to
-    // findPlanViolations, so without this the shipped 16-21s band was the one
+    // findPlanViolations, so without this the shipped 15-21s band was the one
     // duration default no test pinned: MIN_RUNTIME_MS could be edited to any
-    // value and the suite stayed green.
-    expect(await stepRuntimeBand(db)).toEqual({ minMs: 16_000, maxMs: 21_000 });
+    // value and the suite stayed green. 15s exactly: the floor must equal
+    // A_STEPS_MIN_DEFAULT x the 3s step floor or the minimum shape cannot
+    // exist (the b60b5b6 regression, fixed 2026-08-25).
+    expect(await stepRuntimeBand(db)).toEqual({ minMs: 15_000, maxMs: 21_000 });
 
     await db.insert(dbSchema.appConfig).values([
       { key: "a_steps_runtime_min_ms", value: 9000 },
@@ -1476,7 +1514,7 @@ describe("step durations (the window model)", () => {
       .where(
         sql`${dbSchema.appConfig.key} in ('a_steps_runtime_min_ms', 'a_steps_runtime_max_ms')`,
       );
-    expect(await stepRuntimeBand(db)).toEqual({ minMs: 16_000, maxMs: 21_000 });
+    expect(await stepRuntimeBand(db)).toEqual({ minMs: 15_000, maxMs: 21_000 });
   });
 
   it("readTimeMs grows with the label — a 6-word label outlasts a 2-word one", () => {
@@ -1684,6 +1722,51 @@ describe("step durations (the window model)", () => {
         { minSteps: 1, notes: null, minStepMs: 1400 },
       ),
     ).toEqual([]);
+  });
+});
+
+/**
+ * The one arithmetic the constants must satisfy together: every shape between
+ * the step minimum and maximum, assembled at production durations, lands
+ * inside the production band. b60b5b6 broke exactly this — it raised the band
+ * floor to 16s while every unsqueezed step clamps to the 3s floor, so the
+ * 5-step minimum totalled 15s and could never validate; the prompt licensed a
+ * shape the validator always rejected, and the live 4-failures-in-a-row
+ * followed. Values re-read through the config path, expectations spelled out:
+ * a test that recomputes from the constants cannot catch them moving apart.
+ */
+describe("band coherence — every legal shape fits the shipped band", () => {
+  it("5 through 7 well-spaced steps validate with zero violations", async () => {
+    const durations = await stepDurations(db);
+    const band = await stepRuntimeBand(db);
+    expect(durations.minMs).toBe(3000);
+    expect(band).toEqual({ minMs: 15_000, maxMs: 21_000 });
+    const { A_STEPS_MIN_DEFAULT, A_STEPS_MAX_DEFAULT } = await import("../src/plan-format");
+    expect(A_STEPS_MIN_DEFAULT).toBe(5);
+    expect(A_STEPS_MAX_DEFAULT).toBe(7);
+
+    for (let n = A_STEPS_MIN_DEFAULT; n <= A_STEPS_MAX_DEFAULT; n++) {
+      // States 10s apart: nothing is squeezed by a neighbour, so every step
+      // renders exactly the 3s floor and the total is the LEAST this shape
+      // can run — the number that has to clear the band floor.
+      const timeline: AnalysisState[] = Array.from({ length: n }, (_, i) =>
+        state({
+          timestampMs: i * 10_000,
+          visibleText: [`מסך ${i}`],
+          actionType: i === n - 1 ? "result" : "tap",
+        }),
+      );
+      const steps = timeline.map((_, i) => ({ sourceIndex: i, label: `מסך ${i}` }));
+      expect(totalRuntimeMs(assembleSteps(steps, timeline, durations))).toBe(n * 3000);
+      expect(
+        findPlanViolations(steps, timeline, QUESTIONNAIRE, A_STEPS_MAX_DEFAULT, {
+          minSteps: A_STEPS_MIN_DEFAULT,
+          notes: null,
+          minStepMs: durations.minMs,
+          runtime: { durations, ...band },
+        }),
+      ).toEqual([]);
+    }
   });
 });
 

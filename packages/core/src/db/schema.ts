@@ -173,6 +173,12 @@ export const demoAnalyses = pgTable(
     timeline: jsonb("timeline"),
     stateCount: integer("state_count"),
     promptVersion: text("prompt_version"),
+    // Task-level Hebrew groupings of the timeline for the inventory UI:
+    // { title, stateIndexes[] }[] from the group_analysis_states job. NULL =
+    // not grouped (pre-0030, model failure, budget refusal) — the UI falls
+    // back to the flat grid; a grouping is a nicety, never a gate. (0030)
+    sections: jsonb("sections"),
+    sectionsPromptVersion: text("sections_prompt_version"),
     // Customer-facing Hebrew when rejected (e.g. refilm with less glare).
     failReason: text("fail_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -214,6 +220,15 @@ export const demoStepPlans = pgTable(
     // The hard gate: createSet refuses steps-format renders without it.
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     failReason: text("fail_reason"),
+    // Structured failure class: validator | quota | input | internal |
+    // transient. What the UI branches on instead of substring-matching the
+    // Hebrew failReason; NULL on rows from before 0029. (0029)
+    failKind: text("fail_kind"),
+    // string[][] — per model call, the violations findPlanViolations returned
+    // AFTER that call (last entry empty on success). Written on success AND
+    // failure: the per-rule/per-version failure rate is computed from this.
+    // (0029)
+    retryViolations: jsonb("retry_violations"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
