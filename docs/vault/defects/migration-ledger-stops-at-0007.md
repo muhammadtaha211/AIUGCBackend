@@ -8,6 +8,25 @@ source: db
 
 # `supabase db push` can never work against production again
 
+## FIXED 2026-08-26 (proof-then-repair, exactly the shape this note asked for)
+
+Every unrecorded migration was proven applied before being marked so:
+`scripts/verify-migration-ledger.sql` (one read-only UNION ALL, one boolean per
+migration — column/table/index/policy/enum existence for DDL, key/value in the
+live row for the `app_config` UPDATEs, self-verifying data predicates for
+`0020`/`0028`) returned true 23 of 23 against production, twice — once by the
+founder in the SQL editor, once via tsx. Then
+`npx supabase migration repair --db-url <session pooler> --status applied`
+ran in two phases (`0008`-`0028`, then `0029`-`0030` after their own proof).
+Read-back: 31 rows, `0000`-`0030`, names correct; `supabase migration list`
+shows local and remote in full agreement. `supabase db push` is usable again.
+
+One consequence worth naming: the argument that made `0027`'s in-place rewrite
+hazard-free ([[migration-0027-still-seeds-the-old-llm-cap]] — "the ledger
+already believes it never ran") is now dead. The ledger records `0000`-`0030`
+as applied, so retro-editing any of them carries the standard applied-migration
+hazard; schema changes need new files from here on.
+
 ## The ledger has 8 of 29
 
 ```

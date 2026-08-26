@@ -2,15 +2,16 @@
 --
 -- Proof pass for docs/vault/defects/migration-ledger-stops-at-0007.md:
 -- supabase_migrations.schema_migrations records 0000-0007, but migrations
--- 0008-0028 were applied to production by hand. Before repairing the ledger,
--- each of the 21 unrecorded migrations must be shown to have actually landed —
--- marking an unapplied migration as applied is the one way to turn this
--- annoyance into data loss.
+-- 0008-0030 were applied to production by hand (0029/0030 via
+-- packages/core/.work/apply-0029-0030.ts on 2026-08-25). Before repairing
+-- the ledger, each of the 23 unrecorded migrations must be shown to have
+-- actually landed — marking an unapplied migration as applied is the one way
+-- to turn this annoyance into data loss.
 --
 -- STRICTLY READ-ONLY: one SELECT over system catalogs and existing rows.
 -- Written as a single UNION ALL statement on purpose — the Supabase SQL
--- editor shows only the last statement's result, so 21 separate SELECTs
--- would display one row. Run the whole file; expect 21 rows, applied = true.
+-- editor shows only the last statement's result, so 23 separate SELECTs
+-- would display one row. Run the whole file; expect 23 rows, applied = true.
 --
 -- Any FALSE row: STOP. Do not include that migration in the repair command;
 -- investigate first (each check's comment says what a false can also mean).
@@ -289,15 +290,38 @@ SELECT '0028',
        WHERE (id::text LIKE '4a682b35%' OR id::text LIKE '208695ff%')
          AND status::text = 'ready') = 2
 
+UNION ALL
+
+-- 0029: demo_step_plans gains fail_kind + retry_violations. Both asserted;
+-- two ADD COLUMN IF NOT EXISTS statements, no data movement.
+SELECT '0029', (
+  SELECT count(*) FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'demo_step_plans'
+    AND column_name IN ('fail_kind', 'retry_violations')
+) = 2
+
+UNION ALL
+
+-- 0030: demo_analyses gains sections + sections_prompt_version. Same shape.
+SELECT '0030', (
+  SELECT count(*) FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'demo_analyses'
+    AND column_name IN ('sections', 'sections_prompt_version')
+) = 2
+
 ORDER BY migration;
 
 -- ---------------------------------------------------------------------------
 -- REPAIR (do NOT run until every row above reads true — remove any false
 -- migration from the list and investigate it first):
 --
---   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028
+--   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 0030
 --
--- Scope note: 0029 and 0030 exist on feat/service-a-steps and are NOT covered
--- here — this file proves exactly the 0008-0028 range the defect records.
--- 0029 is known applied (2026-08-25); the same proof exercise is owed for
--- both before extending the repair to them.
+-- EXECUTED 2026-08-26: all 23 checks read true against production (twice —
+-- founder run in the SQL editor, then a tsx run of this file), and the repair
+-- ran in two phases (0008-0028, then 0029-0030) via
+-- `npx supabase migration repair --db-url <session pooler>`. Ledger
+-- read-back: 31 rows, 0000-0030, names correct; `supabase migration list`
+-- shows local and remote in full agreement. This file stays useful for
+-- verifying any OTHER environment (staging, a rebuilt DB) before repairing
+-- its ledger the same way.
