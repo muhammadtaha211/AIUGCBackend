@@ -21,9 +21,10 @@ incomplete — two other tests pinned the old ceiling and moved with the fix
 (`account-budget.test.ts` pins the cap as a constant; `demo-step-plans.test.ts` burns exactly the
 cap to prove the queued-job backstop). Both files rerun green, 78/78.
 
-Still open from this note: `per_account.llm_tokens` remains unasserted in `migrations.test.ts`, so
-the next hand-raise can still drift silently; and the fix-before-ledger-repair ordering is now
-satisfied — repairing the ledger no longer re-arms this defect.
+Nothing left open: `migrations.test.ts` now pins `per_account.llm_tokens: 1_500_000` in the caps
+assertion (landed with this note's update), so the next hand-raise turns the suite red instead of
+drifting silently; and the fix-before-ledger-repair ordering is satisfied — repairing the ledger no
+longer re-arms this defect.
 
 ---
 
