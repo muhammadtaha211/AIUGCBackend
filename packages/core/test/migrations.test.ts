@@ -20,9 +20,11 @@ describe("migrations", () => {
     expect(caps[0]?.value).toMatchObject({ tts_chars: expect.any(Number) });
     // 0022: account-first GPU caps — the platform value is a runaway backstop
     // recorded in a migration, never a hand UPDATE.
+    // 0027: the llm cap is pinned exactly, so the next hand-raise in the SQL
+    // editor cannot drift from the migrations silently.
     expect(caps[0]?.value).toMatchObject({
       gpu_seconds: 7_200,
-      per_account: { tts_chars: 25_000, gpu_seconds: 2_000 },
+      per_account: { tts_chars: 25_000, gpu_seconds: 2_000, llm_tokens: 1_500_000 },
     });
 
     await pg.close();

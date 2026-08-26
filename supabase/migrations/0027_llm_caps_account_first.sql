@@ -17,7 +17,10 @@
 --
 -- dailyCapsSchema (packages/core/src/config.ts) is a CLOSED zod object, so
 -- the key and the schema must land together or every read throws.
+-- 1500000, not the 500000 the sizing above derives: prod was raised by hand
+-- on 2026-08-21, and this literal was edited after the fact to match, so a
+-- fresh environment comes up agreeing with production.
 UPDATE "app_config"
-SET "value" = jsonb_set("value", '{per_account,llm_tokens}', '500000'),
+SET "value" = jsonb_set("value", '{per_account,llm_tokens}', '1500000'),
     "updated_at" = now()
 WHERE "key" = 'daily_caps';

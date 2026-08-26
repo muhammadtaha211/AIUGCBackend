@@ -260,7 +260,7 @@ describe("plan_demo_steps (dry-run chain)", () => {
     await recordUsage(db, {
       provider: "anthropic",
       kind: "llm_tokens",
-      quantity: 500_000,
+      quantity: 1_500_000,
       businessId: customer.id,
     });
 
