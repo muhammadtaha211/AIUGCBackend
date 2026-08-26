@@ -163,6 +163,11 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- 0020: DATA-ONLY MIGRATION — it has no structural footprint at all, so there
 -- is nothing a fresh database can assert. NULL, not true: a true here would be
 -- an assertion this file cannot make. The proof lives in the 'data' row below.
+-- A NULL on this row is therefore the CORRECT result on every database — the
+-- expected structural read-out is 22 true plus this one NULL, and a NULL here
+-- is not a failed check and needs no investigation. Only the 0020 'data' row
+-- (meaningful on the old production database alone) can say whether the
+-- backfill actually ran.
 ('0020', 'structural', NULL::boolean,
   'data-only backfill — no DDL, nothing structural to assert'),
 
