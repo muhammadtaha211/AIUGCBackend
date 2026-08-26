@@ -208,6 +208,8 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "decisions/0006-google-oauth-is-in-scope-for-launch.md",
+    "decisions/seds4j0ln",
     "decisions/0005-google-oauth-deferred.md",
     "facts/supabase-link-state-removed.md",
     "defects/cli-created-user-blocks-that-email-from-ever-signing-up.md",
@@ -237,12 +239,10 @@
     "phases/8a-wizard-shell-and-read-only-plan.md",
     "facts/token-and-money-budgets.md",
     "defects/sedwSy6qV",
-    "defects/character-guard-covers-only-generated-hook-lines.md",
     "defects/sedOQZkvd",
     "defects/sed3Qaj59",
     "falsified/sedxnU5qd",
     "falsified/sed3WrwPR",
-    "facts/sedq19FCE",
-    "facts/sedahKiHB"
+    "facts/sedq19FCE"
   ]
 }

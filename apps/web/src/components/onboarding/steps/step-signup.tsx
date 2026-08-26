@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Check, GoogleG } from "@/components/ui/icons";
-import { signUp, signUpWithGoogle } from "@/lib/auth";
+import { GOOGLE_SIGN_IN_ENABLED, signUp, signUpWithGoogle } from "@/lib/auth";
 import { StepHeader } from "./step-chrome";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -111,24 +111,30 @@ export function StepSignup({
           </p>
         )}
 
-        <Button
-          type="button"
-          variant="secondary"
-          size="lg"
-          className="w-full"
-          onClick={handleGoogle}
-          loading={submitting === "google"}
-          disabled={submitting === "email"}
-        >
-          {submitting !== "google" && <GoogleG />}
-          המשך עם Google
-        </Button>
+        {/* Button and divider together: a divider with nothing above it reads
+            as a broken layout, not as "email only". */}
+        {GOOGLE_SIGN_IN_ENABLED && (
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="w-full"
+              onClick={handleGoogle}
+              loading={submitting === "google"}
+              disabled={submitting === "email"}
+            >
+              {submitting !== "google" && <GoogleG />}
+              המשך עם Google
+            </Button>
 
-        <div className="my-5 flex items-center gap-3 text-xs text-gray-500 light:text-ink/60">
-          <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
-          או
-          <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
-        </div>
+            <div className="my-5 flex items-center gap-3 text-xs text-gray-500 light:text-ink/60">
+              <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
+              או
+              <span className="h-px flex-1 bg-white/10 light:bg-ink/10" />
+            </div>
+          </>
+        )}
 
         <div className="space-y-5">
           <TextField

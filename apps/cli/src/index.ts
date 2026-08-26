@@ -94,12 +94,18 @@ business
   .requiredOption("--name <name>")
   .requiredOption("--email <email>", "owner email")
   .option("--admin", "owner is the founder (bypasses credits + watermark)")
+  .option(
+    "--no-signin",
+    "the owner will never sign in (samples, DFY, cold outreach) — allows an address with no Supabase Auth account",
+  )
   .action(
-    run(async (opts: { name: string; email: string; admin?: boolean }) => {
+    run(async (opts: { name: string; email: string; admin?: boolean; signin?: boolean }) => {
       const row = await createBusiness(getDb(), {
         ownerEmail: opts.email,
         name: opts.name,
         ownerRole: opts.admin ? "admin" : "customer",
+        // commander maps --no-signin to signin:false; absent means true.
+        allowWithoutAuthAccount: opts.signin === false,
       });
       console.log(`business created: ${row.id}`);
     }),
@@ -140,7 +146,9 @@ demo
       if (result.kind === "already_ready") {
         console.log("analysis already ready — `aiugc demo timeline` to see it");
       } else if (result.kind === "in_flight") {
-        console.log(`analysis already queued/running (job ${result.jobId}) — \`aiugc work\` runs it`);
+        console.log(
+          `analysis already queued/running (job ${result.jobId}) — \`aiugc work\` runs it`,
+        );
       } else {
         console.log(`analysis queued (job ${result.jobId}) — run \`aiugc work --once\``);
       }
@@ -211,7 +219,9 @@ plan
       }
       const approved = row.approvedAt ? ` approved ${row.approvedAt.toISOString()}` : "";
       const reason = row.failReason ? ` — ${row.failReason}` : "";
-      console.log(`plan ${row.id}: ${row.status}${approved}${reason} (${row.promptVersion ?? "-"})`);
+      console.log(
+        `plan ${row.id}: ${row.status}${approved}${reason} (${row.promptVersion ?? "-"})`,
+      );
       if (row.steps) {
         const steps = planStepsSchema.parse(row.steps);
         const total = steps.reduce((ms, s) => ms + s.durationMs, 0);
@@ -226,7 +236,9 @@ plan
       }
       if (row.unexplainedMoments) {
         for (const m of unexplainedMomentsSchema.parse(row.unexplainedMoments)) {
-          console.log(`  ? ${(m.timestampMs / 1000).toFixed(1)}s ${m.whatISaw} — ${m.whyItMightMatter}`);
+          console.log(
+            `  ? ${(m.timestampMs / 1000).toFixed(1)}s ${m.whatISaw} — ${m.whyItMightMatter}`,
+          );
         }
       }
       if (row.notes) console.log(`  note: ${row.notes}`);
@@ -554,7 +566,10 @@ set
   .requiredOption("--demo <id>")
   .requiredOption("--hooks <ids>", "comma-separated hook clip ids")
   .requiredOption("--hook-lines <ids>", "comma-separated hook line script ids")
-  .option("--step-plan <planId>", "steps format: the APPROVED step plan (silent — no captions/audio)")
+  .option(
+    "--step-plan <planId>",
+    "steps format: the APPROVED step plan (silent — no captions/audio)",
+  )
   .option("--captions <scriptId>", "benefit captions script (full format, silent mode)")
   .option("--audio <audioRenderId>", "approved audio render (full format, voiced mode)")
   .option(

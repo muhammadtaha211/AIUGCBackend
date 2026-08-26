@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { createBusiness, getDb, questionnaireSchema, schema, setQuestionnaire } from "@aiugc/core";
+import {
+  createBusiness,
+  getDb,
+  normalizeEmail,
+  questionnaireSchema,
+  schema,
+  setQuestionnaire,
+} from "@aiugc/core";
 import { draftToQuestionnairePayload, emptyDraft, type OnboardingDraft } from "@/lib/onboarding";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -53,7 +60,10 @@ export async function POST(request: Request) {
     // every subsequent RLS read return nothing.
     const byId = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
     if (!byId[0]) {
-      await db.insert(users).values({ id: user.id, email: user.email });
+      // Normalised on the way in: users_email_unique is case-sensitive, so an
+      // unnormalised write here could sit alongside a differently-cased row for
+      // the same person (see normalizeEmail in core).
+      await db.insert(users).values({ id: user.id, email: normalizeEmail(user.email) });
     }
 
     // Idempotent: an existing account signing in mid-wizard keeps its business.

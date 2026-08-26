@@ -9,6 +9,21 @@ import { createClient } from "./supabase/client";
 
 export type AuthResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * The single switch for Google sign-in in the UI. Both entry points read it —
+ * the signup wizard's last step and the login form — and each hides its Google
+ * button *and* the "או" divider above the email form when it is false.
+ *
+ * Flip to false if Google's verification review comes back badly. That is the
+ * whole point of it being one constant: with the provider off in Supabase the
+ * buttons do not fail gracefully. `signInWithOAuth` makes no network call — it
+ * runs `window.location.assign(...)` — so the browser leaves the app, Supabase
+ * rejects the unconfigured provider, and the user is dropped back on the
+ * marketing page with no message and their wizard draft stranded in
+ * localStorage. The Hebrew fallback below never gets a chance to render.
+ */
+export const GOOGLE_SIGN_IN_ENABLED = true;
+
 const GENERIC_ERROR = "משהו השתבש. נסו שוב בעוד רגע.";
 
 /** Map Supabase auth error codes to inline Hebrew messages. */
@@ -39,7 +54,16 @@ function hebrewAuthError(error: unknown): string {
 
 export async function signUp(email: string, password: string): Promise<AuthResult> {
   try {
-    const { data, error } = await createClient().auth.signUp({ email, password });
+    const { data, error } = await createClient().auth.signUp({
+      email,
+      password,
+      // Without this the confirmation link returns to the Site URL root, and
+      // `/` is a static marketing page that never reads searchParams — so the
+      // click silently does nothing. /auth/callback already exchanges the PKCE
+      // code. Confirm-email is OFF for launch, so this is latent today and
+      // deliberately correct for the day it is turned on.
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    });
     if (error) return { ok: false, error: hebrewAuthError(error) };
     if (!data.session) {
       // Email confirmation is enabled in the dashboard — no session yet.

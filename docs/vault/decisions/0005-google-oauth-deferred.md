@@ -1,12 +1,19 @@
 ---
 type: decision
-status: verified
+status: superseded
 verified: 2026-08-26
 method: "founder decision stated in chat, 2026-08-26 session, while planning the new project's auth pass"
 source: founder
 ---
 
 # Google OAuth is deferred; Email is the only provider for launch
+
+> **SUPERSEDED 2026-08-26 by [[0006-google-oauth-is-in-scope-for-launch]]**, the same day and the
+> same session. The founder reversed it: "Google: I want it working, not deferred." Kept verbatim
+> because the *reasoning* below is still the live constraint — the consent screen, the missing
+> privacy/terms pages and Google's verification queue did not go away, they became work to do
+> rather than a reason to skip. The "known consequence" section is also now resolved: the buttons
+> are gated behind `GOOGLE_SIGN_IN_ENABLED`.
 
 Launch ships with **email + password only**. Google sign-in is not configured on the new project
 and will not be before launch.

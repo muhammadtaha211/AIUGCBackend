@@ -454,79 +454,189 @@ means launch is blocked on the DNS work above.
 
 ---
 
-## 8B. Google OAuth — DEFERRED, and how to stand it up from scratch
 
-**Status: deferred, founder decision 2026-08-26**
-(`docs/vault/decisions/0005-google-oauth-deferred.md`). Email is a complete signup path on its own,
-and Google requires a consent screen plus Google's own verification before external users can sign
-in. Revisit at launch.
+## 8B. Google OAuth — full setup
 
-**It was never configured on the old project either**, so there is nothing to copy and nothing
-about the old project blocks this. Everything below is a from-scratch build.
+**Status: in scope for launch** (founder decision 2026-08-26 reversed the earlier deferral —
+`docs/vault/decisions/0005-google-oauth-deferred.md`). Email stays the guaranteed path; Google is
+the preferred one once Google's review clears.
 
-> **The button is still in the UI.** `apps/web/src/components/onboarding/steps/step-signup.tsx:114-125`
-> (`המשך עם Google`) and `apps/web/src/app/login/login-form.tsx:63-74` (`כניסה עם Google`) render
-> unconditionally — no env flag, no feature check — and both sit *above* the email form. With the
-> provider off, clicking one does **not** produce the Hebrew fallback at `auth.ts:78`:
-> `signInWithOAuth` makes no network call, it just runs `window.location.assign(...)`
-> (`@supabase/auth-js` `GoTrueClient.js`, `_handleProviderSignIn`), so the browser leaves the app,
-> Supabase rejects the unconfigured provider, and the user is returned to the Site URL root — the
-> marketing page — with error query params nothing reads. No message, no session, wizard draft
-> stranded in `localStorage`. Hiding or removing those two buttons is a separate decision.
+It was **never configured on the old project**, so there is nothing to copy and nothing about the
+old project blocks this. Everything below is a from-scratch build.
 
-### What standing it up actually involves
+Two things to know before starting, because they set the schedule:
 
-1. **Google Cloud project** — console.cloud.google.com, create or pick a project.
-2. **OAuth consent screen** (APIs & Services → OAuth consent screen):
-   - User type **External** (Internal only exists for Google Workspace orgs, and would restrict
-     sign-in to your own workspace).
-   - App name, support email, developer contact, app logo, and the links Google requires —
-     **privacy policy URL** and **terms of service URL** on a verified domain.
-   - **Authorized domains**: `supabase.co` (for the callback) plus your own domain.
-   - Scopes: the defaults (`email`, `profile`, `openid`) are all this app needs — they are
-     non-sensitive, which keeps verification comparatively light.
-3. **Publishing status.** While the app is in **Testing**, only addresses you list as test users
-   can sign in (capped at 100), and their sessions expire after 7 days. To let *any* Google
-   account sign in you must **Publish** the app, which submits it to Google for verification.
-   With only non-sensitive scopes this is usually quick, but it is Google's queue, not yours, and
-   it can ask for a demo video or domain-ownership proof. **This is the reason for the deferral:
-   external users cannot sign in until Google says so.**
-4. **OAuth client** (APIs & Services → Credentials → Create credentials → OAuth client ID):
-   - Application type **Web application**.
-   - **Authorized redirect URIs** → add exactly:
+- **The app requests no custom scopes.** `apps/web/src/lib/auth.ts:71-74` calls `signInWithOAuth`
+  with `provider` and `redirectTo` only — no `scopes` key — so it gets GoTrue's Google defaults
+  (`email`, `profile`, `openid`). Those are **non-sensitive**. See "What verification asks of you"
+  below for what that does and does not spare you.
+- **The kill switch is `GOOGLE_SIGN_IN_ENABLED`** in `apps/web/src/lib/auth.ts`. Set it to `false`
+  and both Google buttons disappear, along with the "או" divider above the email form. Flip it if
+  review comes back badly; the email path is unaffected.
 
-     ```
-     https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
-     ```
+### Step 1 — Google Cloud project
 
-     This is a **Supabase** endpoint, not an app route: Google returns to Supabase, and Supabase
-     then returns to the app. Registering `http://localhost:3000/auth/callback` here is the
-     classic error and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase
-     code runs.
-   - Authorized JavaScript origins are not needed for this server-side flow.
-   - Save the **Client ID** and **Client Secret**.
-5. **Supabase** → Authentication → Providers → **Google** → Enable, paste Client ID and Client
-   Secret, Save. Leave **Skip nonce check** off unless something specifically demands it.
-6. **Supabase** → Authentication → URL Configuration → Redirect URLs must contain
-   `http://localhost:3000/auth/callback` and `https://<prod-domain>/auth/callback`.
-   `apps/web/src/lib/auth.ts:73` builds `redirectTo` as
-   `` `${window.location.origin}/auth/callback` `` — live from the browser, from no env var — so
-   every origin the app is served from needs an entry.
+console.cloud.google.com → create a project (or reuse one). Everything below lives inside it.
 
-### Verifying it, when the day comes
+### Step 2 — OAuth consent screen
 
-Same shape as §8A step 2: the gate is the browser staying on `http://localhost:3000/home`, not
-the SQL. Two Google-specific traps:
+**APIs & Services → OAuth consent screen.**
 
-- **A missed redirect-allow-list entry does not error.** GoTrue silently falls back to the Site
-  URL, so a wrong list looks like a successful sign-in that lands on the marketing page with no
-  session — while the SQL still shows a `google` identity.
-- **`auth.identities.provider = 'google'` is the only trustworthy discriminator.**
-  `auth.users.raw_app_meta_data->>'provider'` records the *first* provider ever used, so an address
-  that signed up with email/password first stays `'email'` after a genuine Google sign-in. That is
-  account linking, not a failure.
+- **User type: External.** Internal only exists for Google Workspace organisations and would limit
+  sign-in to your own workspace.
+- App name, user support email, developer contact email. The app name is what the customer reads
+  on the Google account-picker screen — use the product name they expect, not a project codename.
+- **App logo** (optional, but an app with a logo looks like a product and is worth the two minutes).
+- **App domain**, **privacy policy URL**, **terms of service URL** — see "What verification asks of
+  you"; these must be live pages on a domain you have verified.
+- **Authorized domains**: your own domain, plus `supabase.co` (the callback lives there).
+- **Scopes**: add nothing. The defaults are what the app uses.
+
+### Step 3 — OAuth client
+
+**APIs & Services → Credentials → Create credentials → OAuth client ID.**
+
+- Application type: **Web application**.
+- **Authorized redirect URIs** → add exactly:
+
+  ```
+  https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
+  ```
+
+  This is a **Supabase** endpoint, not an app route. Google returns to Supabase, and Supabase then
+  returns to the app at `/auth/callback`. Putting `http://localhost:3000/auth/callback` here is the
+  classic mistake and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase code
+  runs.
+- **Authorized JavaScript origins**: leave empty. This is a server-side code flow; it does not need
+  them.
+- Save the **Client ID** and **Client Secret**. Treat the secret like any other credential — it goes
+  into the Supabase dashboard and nowhere else, never into the repo or a shell command.
+
+Google can take a few minutes to propagate a new redirect URI. A `redirect_uri_mismatch` immediately
+after saving is worth one retry before you start debugging.
+
+### Step 4 — Supabase provider
+
+New project → **Authentication → Providers → Google**. Confirm the browser URL contains
+`hyaqydcmwbnbaiqqufow` first.
+
+| Field                          | Value                                              |
+| ------------------------------ | -------------------------------------------------- |
+| **Enable Sign in with Google** | on                                                 |
+| **Client ID**                  | from step 3 (ends `.apps.googleusercontent.com`)   |
+| **Client Secret**              | from step 3                                        |
+| **Skip nonce check**           | leave off                                          |
+| **Authorized Client IDs**      | leave empty                                        |
+
+The same screen displays the callback URL — confirm it matches what you registered in step 3
+character for character.
+
+### Step 5 — redirect allow-list
+
+**Authentication → URL Configuration**:
+
+- **Site URL**: `http://localhost:3000` now; the Vercel domain when there is one.
+- **Redirect URLs**: `http://localhost:3000/auth/callback`, plus
+  `https://<prod-domain>/auth/callback` once it exists.
+
+`apps/web/src/lib/auth.ts:73` builds `redirectTo` as `` `${window.location.origin}/auth/callback` ``
+— computed live in the browser from no env var — so every origin the app is served from needs its
+own entry.
+
+**A missed allow-list entry does not error.** GoTrue silently falls back to the Site URL, so a wrong
+list looks like a *successful* sign-in that lands on the marketing page with no session, while the
+SQL still shows a `google` identity. This is why the browser check below is the gate.
+
+### Step 6 — test users, while the app is unverified
+
+**OAuth consent screen → Audience → Test users → Add users.**
+
+While publishing status is **Testing**, only addresses on this list can sign in — everyone else is
+refused at Google's own screen, before Supabase is involved. The list holds up to **100** addresses
+and their refresh tokens expire after **7 days**, so a test account needs re-authenticating weekly.
+
+Add your own address and any address you plan to demo with. This is the state to run the §8A-style
+verification in.
+
+### Step 7 — publish and submit for verification
+
+**OAuth consent screen → Publishing status → Publish app.**
+
+With only non-sensitive scopes this is normally quick and may require nothing beyond the consent
+screen being complete and the domain verified — but it is Google's queue, not yours, and Google can
+still come back asking for the app's homepage to explain the product, or for proof you control the
+domain. Budget days, not minutes, and do not schedule a launch that assumes same-day approval.
+
+### Verifying it — same gate as §8A
+
+Pre-flight the `public.users` check from §8A step 2 first, then: `pnpm dev` → confirm port **3000** →
+`http://localhost:3000/start` → **המשך עם Google** → pick the account.
+
+**The gate is the browser staying on `http://localhost:3000/home`.** Landing back on `/start` proves
+nothing: `apps/web/src/app/auth/callback/route.ts:18` redirects there unconditionally and discards
+the result of `exchangeCodeForSession` at `:15`, so a failed exchange looks identical to a successful
+one. Only `/home` requires a session (`apps/web/src/middleware.ts:34-36`).
+
+Then the secondary SQL confirmation, time-anchored as in §8A step 3, with one Google-specific rule:
+
+```sql
+select u.email, i.provider, i.last_sign_in_at, (pu.id is not null) as mirror_row_exists
+from auth.users u
+join auth.identities i on i.user_id = u.id and i.provider = 'google'
+left join public.users pu on pu.id = u.id
+where i.last_sign_in_at > now() - interval '5 minutes';
+```
+
+`auth.identities.provider = 'google'` is the only trustworthy discriminator.
+`auth.users.raw_app_meta_data->>'provider'` records the **first** provider ever used, so an address
+that signed up with email/password first will still read `'email'` after a genuine Google sign-in.
+That is account linking, not a failure.
+
+### What verification asks of you
+
+**Non-sensitive scopes do not exempt you from the consent screen or from verification** — they exempt
+you from the expensive parts of it: no third-party security assessment, no annual re-assessment, no
+restricted-scope review. `email`, `profile` and `openid` are the baseline sign-in scopes and are the
+lightest case there is. What is still required:
+
+| Requirement                                                 | Status in this repo today                                                                                                                                              |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Privacy policy URL**, publicly reachable                  | **Does not exist.** There is no `/privacy` route in `apps/web/src/app`, and no match for "privacy" or "מדיניות פרטיות" anywhere in `apps/web/src`.                     |
+| **Terms of service URL**, publicly reachable                | **Does not exist.** No `/terms` route, no match for "terms" or "תנאי שימוש".                                                                                           |
+| **Domain verification** for the app domain (`tavnit.ai`)    | Not done. Google Search Console verification via a DNS TXT record or an HTML file; the domain must then be listed under Authorized domains.                             |
+| A homepage that explains what the app does                  | The marketing page at `/` exists.                                                                                                                                      |
+
+**So this is a writing task before it is a form task.** Both documents have to be written, hosted at
+stable URLs on the verified domain, and reachable without signing in — two new routes under
+`apps/web/src/app/` and the policy text itself. The consent-screen form is fifteen minutes once
+those URLs resolve; producing them is the actual work. They also have to be honest about what the
+app collects, which for this product is: email address and Google profile name, the questionnaire,
+uploaded video, and generated output.
+
+### What your first customer sees if they sign in before verification clears
+
+It depends entirely on whether their address is on the test-user list from step 6.
+
+**On the list:** they pick their Google account and then see Google's **unverified app**
+interstitial — a screen headed roughly "Google hasn't verified this app", naming the app and its
+developer email, with the safe path ("Go back to safety") as the prominent button. Continuing
+requires clicking a small **Advanced** link and then a "Go to <app> (unsafe)" link underneath. It is
+deliberately designed to look like a security warning, because it is one. A customer who has not
+been warned will almost always back out — and from your side that is indistinguishable from the
+sign-in simply not working.
+
+**Not on the list — the normal case for a real customer:** they never reach the warning. Google
+stops them at the account chooser with an **access denied / "app is currently being tested"** error
+and bounces them back with `error=access_denied`. The app does not read those params: `/auth/callback`
+gets no `code`, redirects to `/start` anyway, and they land on the wizard with no session and no
+explanation. **Silent failure.**
+
+That is the operational reason to keep `GOOGLE_SIGN_IN_ENABLED = false` until publishing status reads
+**In production** — an email-only signup screen is a complete product; a Google button that strands
+people is not.
 
 ---
+
 
 ## 9. Smoke test
 
