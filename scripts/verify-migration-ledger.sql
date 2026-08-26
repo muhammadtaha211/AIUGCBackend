@@ -331,3 +331,10 @@ ORDER BY migration, layer DESC;
 -- tables (usage_events 0 rows, demo_analyses 0 rows), while 0028's structural
 -- half read true. No migration failed. Every structural assertion passed, which
 -- is the result that matters: the sequence replays cleanly from nothing.
+--
+-- 2026-08-26 (later the same day), NEW project, after `db push` applied 0031:
+-- ledger 32 rows 0000-0031 with no gaps. This split file, structural layer:
+-- 22 true + the expected 0020 NULL. Data rows: 0020 false, 0028 false, 0021
+-- vacuously true — all three exactly as their notes predict on a rebuilt
+-- database. app_config held 12 rows with poll_deadline_seconds=900,
+-- auto_release_b=true, words_per_second.default=2.1, and no tts_stability row.
