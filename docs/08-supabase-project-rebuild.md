@@ -293,10 +293,13 @@ it is on), set the Site URL, and set the redirect allow-list.
 `apps/web/src/lib/auth.ts:71` calls `signInWithOAuth`, so any OAuth provider you had configured
 needs re-adding with new callback URLs — see §8A.
 
-> **Do the auth pass in the dashboard only.** `supabase/.temp/project-ref` still contains the OLD
-> ref (`mtpmrqltldfwhziyyzdu`), so any `npx supabase …` command that resolves the linked project
-> instead of taking an explicit `--db-url` targets the project CLAUDE.md's migration gate puts
-> off-limits.
+> **Always pass `--db-url`.** `supabase/.temp/` used to hold link state pointing at the OLD project
+> (`project-ref`, `linked-project.json` and `pooler-url` all named `mtpmrqltldfwhziyyzdu`), so any
+> `npx supabase …` command that resolved the linked project silently targeted the project
+> CLAUDE.md's migration gate puts off-limits. **Removed 2026-08-26** — the directory is gitignored
+> local CLI state and `supabase link` regenerates it. An unqualified command now fails loudly with
+> `LegacyProjectNotLinkedError: Cannot find project ref`, which is the intended behaviour: there is
+> no reason to re-link while every documented command takes an explicit `--db-url`.
 
 ---
 

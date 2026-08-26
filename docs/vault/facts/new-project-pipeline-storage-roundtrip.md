@@ -31,8 +31,15 @@ the §6A grants (SELECT on `businesses`/`users` to `authenticated`). The project
 limit (§5, dashboard-only) was still at its 50 MB default at the time of this test — the 1.7 MB
 fixture never touched it, so that ceiling remains unverified.
 
-The smoke rows (`Storage Smoke` business, demo `05f33a68-…`, 13 objects) were deliberately left
-in place as the record of this run.
+**The smoke rows were deleted the same day** (`packages/core/.work/purge-smoke-test.ts`, founder
+approved after reviewing the manifest): 10 rows across `demo_analyses`/`demos`/`businesses`/
+`users`/`jobs` and all 13 storage objects. Verified after: the only non-empty public tables are
+`app_config` (12) and `plans` (3), both migration-seeded; `storage.objects` 0 with all four buckets
+intact; `auth.users` 0. This note is the record of the run — the rows are not.
+
+They were removed rather than kept because the `users` row held the founder's own address and
+would have blocked his first Google sign-in outright
+([[../defects/cli-created-user-blocks-that-email-from-ever-signing-up]]).
 
 Related: [[new-project-region-eu-central-1]], [[storage-census-2026-08-26]] (the old project's
 inventory this rebuild replaces).

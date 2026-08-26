@@ -41,6 +41,40 @@ begin; insert into public.users (id, email)
 
 Both rolled back; `public.users` was unchanged (1 row before and after).
 
+## The same root cause has a second, quieter face
+
+`users_email_unique` is a plain btree on `email`, so it is **case-sensitive**, and `ensureUser`
+(`packages/core/src/pipelines/businesses.ts:37`) looks up with `where email = $1` — also exact.
+Measured, both rolled back:
+
+```
+insert 'Founder@Example.com'; insert 'founder@example.com';  -- BOTH SUCCEED, 2 rows
+select count(*) from public.users where email = 'founder@example.com';  -- 0, given only the mixed-case row
+```
+
+So whether this defect is loud or silent depends purely on letter case:
+
+| CLI wrote            | Person signs in as   | Outcome                                                            |
+| -------------------- | -------------------- | ------------------------------------------------------------------ |
+| `founder@x.com`      | `founder@x.com`      | **Loud** — trigger raises, `auth.users` insert rolls back, no login |
+| `Founder@X.com`      | `founder@x.com`      | **Silent** — no conflict; two rows for one person                   |
+
+The silent case is worse. Signup succeeds, but `businesses.owner_user_id` still points at the
+CLI's invented uuid while `auth.uid()` is the new one, so `businesses_select_own`
+(`owner_user_id = auth.uid()`) matches nothing: the customer signs in, sees no business, and is
+returned to the onboarding wizard forever with no error anywhere. This is precisely the failure
+`apps/web/src/app/api/onboarding/complete/route.ts:50-53` warns about in a comment — "an email
+match with a different id would make every subsequent RLS read return nothing" — which that route
+avoids by anchoring on `users.id = auth.uid()` rather than on email.
+
+## Does it bite in the other direction?
+
+**Auth user first, CLI second: safe when the casing matches, silently broken when it does not.**
+`ensureUser` selects by email before inserting, so an existing mirror row (id = auth uid) is found
+and reused — the business gets the correct owner. But an exact-match miss on casing falls through
+to the same `INSERT`, producing the silent two-row state above. There is no loud variant in this
+direction, which makes it the easier one to ship without noticing.
+
 ## Blast radius
 
 Any email that was handed to `aiugc business create` before its owner ever signed up. On the new
@@ -50,11 +84,12 @@ real Google sign-in* fail, and looked like an OAuth misconfiguration rather than
 
 ## Not fixed
 
-Removing the offending row unblocks the address. As of this note the smoke row **still exists** on
-the new project and removal is queued pending the founder's go-ahead
-(`packages/core/.work/purge-smoke-test.ts`) — so the hazard is live right now, and the first
-Google sign-in on `hamodetaha.ht@gmail.com` will fail until that row is gone. The
-underlying defect stands either way: the trigger cannot express "same person, different uuid" with
+Removing the offending row unblocks the address. The smoke row **was deleted on 2026-08-26**
+(`packages/core/.work/purge-smoke-test.ts`), and the fix was confirmed by replaying the trigger's
+statement for that address afterwards — it now inserts instead of raising. So no address is
+currently blocked on the new project.
+
+The underlying defect stands: the trigger cannot express "same person, different uuid" with
 `ON CONFLICT (id)` while `email` is independently unique. A real fix is a migration and a
 decision — candidates, none chosen:
 
