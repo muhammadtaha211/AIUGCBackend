@@ -75,6 +75,14 @@ beforeAll(async () => {
   setStorage(ts.storage);
   storageRoot = ts.root;
   cleanupStorage = ts.cleanup;
+  // This file walks the founder workflow THROUGH the QC gate, so it needs the
+  // gate on. 0031 seeds auto_release_b=true (the standing instruction, CLAUDE.md
+  // decision #8), and decision #8 keeps the gate in the tree so its off-position
+  // keeps working — which is what the Service B steps below exercise.
+  await db
+    .update(dbSchema.appConfig)
+    .set({ value: false })
+    .where(sql`${dbSchema.appConfig.key} = 'auto_release_b'`);
 });
 
 afterAll(async () => {

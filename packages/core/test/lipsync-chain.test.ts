@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
@@ -144,14 +144,22 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     businessId = business.id;
   });
 
-  afterEach(async () => {
-    setLipsyncProvider(undefined);
-    // Restore every app_config row a test touches, so no test depends on
-    // which tests ran before it.
+  beforeEach(async () => {
+    // This file's baseline is the QC gate ON. Since 0031 the seeded value is
+    // true (it encodes the standing founder instruction, CLAUDE.md decision #8),
+    // so the gate has to be asked for — decision #8 keeps the machinery in the
+    // tree precisely so its off-position stays working, and these are the tests
+    // that prove it. The one test that wants auto-release sets true itself.
     await db
       .update(dbSchema.appConfig)
       .set({ value: false })
       .where(sql`${dbSchema.appConfig.key} = 'auto_release_b'`);
+  });
+
+  afterEach(async () => {
+    setLipsyncProvider(undefined);
+    // Restore every app_config row a test touches, so no test depends on
+    // which tests ran before it. auto_release_b is owned by beforeEach above.
     // Opt-in knobs: absent is the default state, so restore means delete.
     await db
       .delete(dbSchema.appConfig)
@@ -181,7 +189,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
       .where(sql`${dbSchema.jobs.type} = 'upscale'`);
     expect(upscaleJobs).toHaveLength(0);
 
-    // Service B still lands in the founder QC queue by default.
+    // With auto_release_b off, Service B lands in the founder QC queue.
     expect((await renderRow(renderId)).status).toBe("qc_pending");
   });
 

@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
@@ -186,11 +187,18 @@ describe("lipsyncResolution", () => {
   });
 
   it("defaults to 1080p when the app_config row is absent", async () => {
+    // 0031 seeds lipsync_resolution="1080p", which is also the code default — so
+    // without this delete the test passes without ever taking the absent path.
+    await db.delete(appConfig).where(eq(appConfig.key, "lipsync_resolution"));
     expect(await lipsyncResolution(db)).toBe("1080p");
   });
 
   it("reads the row when it exists (dropping to 720p is one INSERT, no deploy)", async () => {
-    await db.insert(appConfig).values({ key: "lipsync_resolution", value: "720p" });
+    // Upsert, not insert: 0031 seeds this key, so a plain insert duplicate-keys.
+    await db
+      .insert(appConfig)
+      .values({ key: "lipsync_resolution", value: "720p" })
+      .onConflictDoUpdate({ target: appConfig.key, set: { value: "720p" } });
     expect(await lipsyncResolution(db)).toBe("720p");
   });
 });

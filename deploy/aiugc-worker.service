@@ -1,0 +1,33 @@
+# AIUGC job worker — install per docs/07-worker-box.md §10:
+#   sudo cp deploy/aiugc-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now aiugc-worker
+# Paths assume the runbook's layout (user aiugc, repo at /home/aiugc/AIUGCBackend).
+
+[Unit]
+Description=AIUGC job worker — two lanes (heavy renders, light everything else)
+Documentation=file:///home/aiugc/AIUGCBackend/docs/07-worker-box.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=aiugc
+WorkingDirectory=/home/aiugc/AIUGCBackend/apps/worker
+EnvironmentFile=/home/aiugc/AIUGCBackend/apps/worker/.env
+ExecStart=/usr/bin/pnpm start
+
+# The worker's boot awaits ensureDailyJobs/ensureReaperJob with NO guard, on
+# purpose: a DB fault at startup exits(1) fast and loud. Restart=always is what
+# makes that fail-fast correct — a bad boot becomes a 5s retry loop instead of
+# a dead worker nobody notices. Do not "fix" the fail-fast in code, and do not
+# remove Restart here; the two are one design. (See the FIXED section of
+# docs/vault/defects/worker-exits-on-a-dropped-connection.md.)
+Restart=always
+RestartSec=5
+
+# pino writes JSON lines to stdout; journald keeps them greppable:
+#   journalctl -u aiugc-worker -o cat | grep '"claim failed'
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

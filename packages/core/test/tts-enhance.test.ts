@@ -155,13 +155,21 @@ describe("synth_tts with audio tags (dry-run, real DB + jobs)", () => {
   });
 
   it("tts_enhance absent: the sent text is the script, byte for byte", async () => {
+    // 0031 seeds tts_enhance=false, so absence is arranged rather than assumed —
+    // otherwise this passes on the seeded false and never exercises the no-row path.
+    await db.delete(dbSchema.appConfig).where(sql`${dbSchema.appConfig.key} = 'tts_enhance'`);
+
     const row = await synth();
     expect(row.status).toBe("ready");
     expect(row.renderedText).toBe(SCRIPT);
   });
 
   it("tts_enhance on: tags reach the TTS text and never reach the captions", async () => {
-    await db.insert(dbSchema.appConfig).values({ key: "tts_enhance", value: true });
+    // Upsert, not insert: 0031 seeds the row, and the preceding test deletes it.
+    await db
+      .insert(dbSchema.appConfig)
+      .values({ key: "tts_enhance", value: true })
+      .onConflictDoUpdate({ target: dbSchema.appConfig.key, set: { value: true } });
 
     const row = await synth();
     expect(row.status).toBe("ready");
