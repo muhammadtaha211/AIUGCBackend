@@ -50,8 +50,11 @@ real Google sign-in* fail, and looked like an OAuth misconfiguration rather than
 
 ## Not fixed
 
-Removing the offending row unblocks the address, and that is what was done for the smoke row. The
-underlying defect stands: the trigger cannot express "same person, different uuid" with
+Removing the offending row unblocks the address. As of this note the smoke row **still exists** on
+the new project and removal is queued pending the founder's go-ahead
+(`packages/core/.work/purge-smoke-test.ts`) — so the hazard is live right now, and the first
+Google sign-in on `hamodetaha.ht@gmail.com` will fail until that row is gone. The
+underlying defect stands either way: the trigger cannot express "same person, different uuid" with
 `ON CONFLICT (id)` while `email` is independently unique. A real fix is a migration and a
 decision — candidates, none chosen:
 

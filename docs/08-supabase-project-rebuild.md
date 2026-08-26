@@ -272,9 +272,16 @@ Five local files: `.env`, `apps/cli/.env`, `apps/worker/.env`, `apps/web/.env.lo
 - `DATABASE_URL` → **transaction pooler, 6543** (§2)
 - `SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` → `https://<NEW_REF>.supabase.co`
 - `SUPABASE_SERVICE_ROLE_KEY` → the service-role / secret key
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` → the anon / publishable key.
-  `apps/web/src/lib/supabase/client.ts:16` accepts either that name or
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY`; this repo uses the publishable one everywhere.
+- the anon / publishable key. **Corrected 2026-08-26:** this section used to say the repo "uses
+  the publishable one everywhere". It does not — all five env files define
+  **`NEXT_PUBLIC_SUPABASE_ANON_KEY`** and none defines `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+  while `apps/web/src/lib/supabase/client.ts:16-17` resolves
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY ?? NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — **`ANON` wins when
+  both are set.** So *replace the value of the existing `ANON` line*; adding a `PUBLISHABLE` line
+  beside a stale `ANON` line sends the old project's key to the new project's URL, and every auth
+  call 401s with `Invalid API key` before any redirect is computed. `apps/web/src/lib/auth.ts:75-79`
+  flattens that into the Hebrew "ההתחברות עם Google לא זמינה כרגע", which reads exactly like a
+  provider that was never switched on.
 
 Then Vercel → Environment Variables for the web project, same values, and redeploy. If the Hetzner
 box is running, update its `.env` and `sudo systemctl restart aiugc-worker` (keep
@@ -284,7 +291,149 @@ Auth settings do not come from the database. On the new project: enable the **Em
 (it was disabled by default on the old one and signups fail with `email_provider_disabled` until
 it is on), set the Site URL, and set the redirect allow-list.
 `apps/web/src/lib/auth.ts:71` calls `signInWithOAuth`, so any OAuth provider you had configured
-needs re-adding with new callback URLs.
+needs re-adding with new callback URLs — see §8A.
+
+> **Do the auth pass in the dashboard only.** `supabase/.temp/project-ref` still contains the OLD
+> ref (`mtpmrqltldfwhziyyzdu`), so any `npx supabase …` command that resolves the linked project
+> instead of taking an explicit `--db-url` targets the project CLAUDE.md's migration gate puts
+> off-limits.
+
+---
+
+## 8A. Google OAuth — the last thing holding the old project open
+
+Google is the only provider configured. Nothing about it lives in the database or in any
+migration: it is entirely GoTrue tenant config, which is why the rebuild did not carry it.
+
+### Step 1 — copy two values out of the old project
+
+Old project → **Authentication → Providers → Google**. Copy:
+
+| Field             | Notes                                                             |
+| ----------------- | ----------------------------------------------------------------- |
+| **Client ID**     | ends `.apps.googleusercontent.com`                                |
+| **Client Secret** | usually starts `GOCSPX-`                                          |
+
+Also note whether **Skip nonce check** is on and whether **Authorized Client IDs** has anything
+in it — if either is set, mirror it. Both are normally untouched.
+
+### Step 2 — paste them into the new project
+
+New project → **Authentication → Providers → Google** → toggle **Enable**, paste both values,
+Save. Confirm the browser URL contains `hyaqydcmwbnbaiqqufow`; if it shows any other ref you are
+editing the old project.
+
+That screen also displays its own callback URL. It should read exactly:
+
+```
+https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
+```
+
+### Step 3 — add that callback URL in Google Cloud Console
+
+console.cloud.google.com → **APIs & Services → Credentials** → the OAuth 2.0 Client ID whose
+Client ID you just copied → **Authorized redirect URIs** → **ADD URI**:
+
+```
+https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
+```
+
+Keep the old project's URI there too until the old project is deleted, so a rollback still works.
+This is a **Supabase** endpoint, not an app route — Google returns to Supabase, and Supabase then
+returns to the app. Registering `http://localhost:3000/auth/callback` here instead is the classic
+error and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase code runs.
+
+Google propagation can take a few minutes; a mismatch error immediately after saving is worth one
+retry before you start debugging.
+
+### Step 4 — Site URL and the redirect allow-list
+
+New project → **Authentication → URL Configuration**:
+
+- **Site URL**: `http://localhost:3000` for now; flip it to the Vercel domain when one exists.
+- **Redirect URLs**: add `http://localhost:3000/auth/callback`, and
+  `https://<prod-domain>/auth/callback` once there is a prod domain.
+
+`apps/web/src/lib/auth.ts:73` builds `redirectTo` as `` `${window.location.origin}/auth/callback` ``
+— computed live in the browser, from no env var — so whatever origin the tab is on must be
+covered.
+
+Two traps here, both verified in the source:
+
+- **A missed allow-list entry does not error.** GoTrue silently falls back to the **Site URL**. So
+  a wrong list looks like a *successful* sign-in that lands you on the marketing page with no
+  session — and the SQL in step 6 still reports success. This is why step 5 is the real gate.
+- **The dev port is not pinned.** `apps/web/package.json` is `"dev": "next dev"` with no `-p`,
+  while admin holds 3001. If 3000 is busy, Next silently serves 3002 and `redirectTo` follows the
+  address bar. Check the port Next prints before clicking the Google button.
+
+### Step 5 — verify in the browser (this is the pass/fail gate)
+
+**Before clicking anything**, make sure no stale `public.users` row holds the address you are
+about to sign in with — see
+`docs/vault/defects/cli-created-user-blocks-that-email-from-ever-signing-up.md`. If one does, the
+sign-in fails with GoTrue's generic `Database error saving new user` and writes **nothing**, which
+is indistinguishable from "the provider is off".
+
+```sql
+select id, email from public.users where email = '<the address you will use>';
+-- want: zero rows
+```
+
+Then: `pnpm dev` → `http://localhost:3000/start` → **המשך עם Google** → pick the account.
+
+Expected: Google → `/auth/callback?code=…` → the onboarding wizard at `/start`. Landing on
+`/start` is correct for a brand-new account and is **not** by itself proof — the callback route
+redirects there unconditionally (`apps/web/src/app/auth/callback/route.ts:18`), and it also
+discards the result of `exchangeCodeForSession` (`:15`), so a failed exchange looks identical.
+
+**The actual proof is a session.** Navigate to `http://localhost:3000/home`:
+
+- **Stays on `/home`** → signed in. OAuth works. `apps/web/src/middleware.ts:34-36` redirects any
+  request to `/home` without a user, so staying there cannot happen without a session.
+- **Bounces to `/start`** → no session. The identity may still exist in the database (see below);
+  the app-side half failed — allow-list, port, or the PKCE exchange.
+
+DevTools → Application → Cookies → `http://localhost:3000` should show
+`sb-hyaqydcmwbnbaiqqufow-auth-token` (possibly chunked `.0`/`.1`).
+
+### Step 6 — confirm what actually landed in the database
+
+New project's SQL editor, opened at the ref-bearing URL so there is no stale-tab risk:
+`https://supabase.com/dashboard/project/hyaqydcmwbnbaiqqufow/sql/new`.
+
+```sql
+select u.id, u.email, i.provider, i.created_at, i.last_sign_in_at,
+       (pu.id is not null) as mirror_row_exists, pu.role
+from auth.users u
+join auth.identities i on i.user_id = u.id and i.provider = 'google'
+left join public.users pu on pu.id = u.id
+where i.last_sign_in_at > now() - interval '5 minutes'
+order by i.last_sign_in_at desc;
+```
+
+The `interval` is load-bearing: without it an *earlier* successful attempt keeps reporting success
+after you have changed a setting and broken it.
+
+- **One row, `mirror_row_exists = true`** → GoTrue and the `handle_new_user` mirror both worked.
+  Combined with step 5's `/home` result, OAuth is proven end to end.
+- **Zero rows** → nothing reached GoTrue. Disambiguate with
+  `select provider, count(*) from auth.identities group by 1;` and `select count(*) from auth.users;`
+  — all-zero means the provider toggle or the Google-side URI; a row you did not expect means you
+  are in the wrong project.
+- **Row present but step 5 bounced** → GoTrue succeeded and the app-side exchange did not. Look at
+  the allow-list and the dev port, not at Google.
+
+`auth.identities.provider = 'google'` is the only trustworthy discriminator here.
+`auth.users.raw_app_meta_data->>'provider'` records the **first** provider ever used, so if the
+address was signed up with email/password earlier it stays `'email'` after a genuine Google
+sign-in — that is account linking, not a failure. Likewise `role` will read `customer`: the
+trigger writes only `(id, email)` and lets the column default stand
+(`docs/vault/facts/auth-users-insert-trigger.md`), so an admin account still needs its
+`UPDATE public.users SET role='admin'`.
+
+**Only after step 5 stays on `/home` and step 6 returns its row is the old project free to
+delete** (§10).
 
 ---
 
