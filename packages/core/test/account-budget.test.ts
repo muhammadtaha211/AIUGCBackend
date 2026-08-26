@@ -136,8 +136,8 @@ describe("per-account TTS cap", { timeout: 60_000 }, () => {
 });
 
 describe("per-account LLM cap (0027 — account-first)", { timeout: 60_000 }, () => {
-  /** The shipped per-account cap (0027): 25% of the platform cap, like TTS. */
-  const PER_ACCOUNT_LLM_TOKENS = 500_000;
+  /** The shipped per-account cap (0027, retro-edited to the 2026-08-21 prod hand-raise). */
+  const PER_ACCOUNT_LLM_TOKENS = 1_500_000;
 
   async function burnLlm(db: Db, businessId: string, tokens: number) {
     await recordUsage(db, {
