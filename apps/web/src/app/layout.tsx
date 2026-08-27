@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Heebo, Secular_One } from "next/font/google";
+import { NavProgress } from "@/components/nav-progress";
 import "./globals.css";
 
 const heebo = Heebo({ subsets: ["hebrew", "latin"], variable: "--font-heebo" });
@@ -17,7 +18,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="he" dir="rtl" className={`${heebo.variable} ${secularOne.variable}`}>
-      <body className="font-sans text-gray-100 antialiased">{children}</body>
+      <body className="font-sans text-gray-100 antialiased">
+        <NavProgress />
+        {children}
+      </body>
     </html>
   );
 }

@@ -312,8 +312,8 @@ export function InventoryPanel({
             <div className="mt-4">
               <Button
                 type="button"
-                variant="ghost"
-                className="!h-8 !px-2 text-[13px]"
+                variant="secondary"
+                className="!h-8 !px-2.5 text-[13px]"
                 onClick={() => {
                   const opening = !otherOpen;
                   setOtherOpen(opening);

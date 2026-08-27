@@ -226,21 +226,27 @@ export function UploadHook({
               <span dir="ltr" className="text-end text-xs text-gray-400">
                 {(prepared.durationMs / 1000).toFixed(1)}s
               </span>
-              <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
-                דמות
-                <select
-                  value={personaId}
-                  onChange={(event) => setPersonaId(event.target.value)}
-                  className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-                >
-                  <option value="">ללא דמות (כללי)</option>
-                  {personas.map((persona) => (
-                    <option key={persona.id} value={persona.id}>
-                      {persona.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* Persona assignment only in the duplicate-to-persona flow: the
+                  wizard lists generic clips (persona_id IS NULL) only, so a
+                  persona picked on a fresh upload silently hides the clip from
+                  every customer. The per-clip dropdown below still reassigns. */}
+              {prefill && (
+                <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
+                  דמות
+                  <select
+                    value={personaId}
+                    onChange={(event) => setPersonaId(event.target.value)}
+                    className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  >
+                    <option value="">ללא דמות (כללי)</option>
+                    {personas.map((persona) => (
+                      <option key={persona.id} value={persona.id}>
+                        {persona.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <TextField
                 label="אנרגיה"
                 value={tags.energy}

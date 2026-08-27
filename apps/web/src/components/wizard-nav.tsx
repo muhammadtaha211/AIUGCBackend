@@ -10,6 +10,10 @@ type WizardNavProps = {
   onJump: (index: number) => void;
   /** True once the render is enqueued: the choices are paid for, no more jumping. */
   locked?: boolean;
+  /** False when a parent wrapper owns the pinning (the A wizard pins nav +
+   *  structure strip together) — a nested sticky would re-pin over the strip
+   *  when the row bottom pushes the wrapper up at the end of scroll. */
+  sticky?: boolean;
 };
 
 /**
@@ -20,9 +24,9 @@ type WizardNavProps = {
  * bar, because a seven-row rail would push the step itself below the fold.
  * The discs reuse the render timeline's visual language (lime = done/current).
  */
-export function WizardNav({ labels, current, onJump, locked = false }: WizardNavProps) {
+export function WizardNav({ labels, current, onJump, locked = false, sticky = true }: WizardNavProps) {
   return (
-    <nav aria-label="שלבי היצירה" className="lg:sticky lg:top-8">
+    <nav aria-label="שלבי היצירה" className={sticky ? "lg:sticky lg:top-8" : undefined}>
       {/* Mobile */}
       <div className="lg:hidden">
         <div className="flex items-baseline justify-between gap-3 text-sm">

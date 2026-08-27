@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
@@ -59,6 +60,7 @@ type AWizardProps = {
  * state can support (see clampRestoredStep).
  */
 export function AWizard({ businessId, businessName }: AWizardProps) {
+  const router = useRouter();
   const steps = aWizardSteps("steps");
   const [stepIndex, setStepIndex] = useState(0);
   /** 403 from any call: the business/resource is gone for this session. */
@@ -72,6 +74,10 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
   const [hook, setHook] = useState<HookClip | null>(null);
   /** All ten frames from one generation; null = not generated yet. */
   const [hookBatch, setHookBatch] = useState<HookBatch | null>(null);
+  /** True while a hook-line generation POST is in flight. Lives here (not in
+   *  the studio) because the studio unmounts on back-nav while the paid call
+   *  is pending — a remount must see the flight, not start a second one. */
+  const hookGenInFlight = useRef(false);
   /** Which interleaved five are on screen. The first reroll flips this for free. */
   const [hookHalf, setHookHalf] = useState<0 | 1>(0);
   /** Every line written this session, most recent first — sent as `avoid`. */
@@ -151,7 +157,14 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
    *  session-local and gone, so hookStudio falls through to the gallery. */
   const backTarget = (index: number): number =>
     steps[index] === "hookStudio" && !hook ? steps.indexOf("hook") : index;
-  const goBack = () => setStepIndex((index) => backTarget(Math.max(0, index - 1)));
+  const goBack = () => {
+    // On the first step there is nothing earlier in the wizard — back exits home.
+    if (stepIndex === 0) {
+      router.push("/home");
+      return;
+    }
+    setStepIndex((index) => backTarget(Math.max(0, index - 1)));
+  };
   const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
   /** Rail jump — backwards only; state survives exactly like repeated goBack. */
   const jumpTo = (index: number) => {
@@ -207,8 +220,10 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
       <div className="mt-4 lg:grid lg:grid-cols-[10.5rem_1fr] lg:items-start lg:gap-8">
         {/* On desktop the structure strip lives in the rail, under the step
             list — the step card gets the full viewport height, so the flow
-            fits without scrolling. Below lg it stays above the card. */}
-        <div>
+            fits without scrolling. Below lg it stays above the card.
+            The WRAPPER is sticky (not just the nav inside it) so the strip
+            pins together with the step list instead of scrolling into it. */}
+        <div className="lg:sticky lg:top-8">
           <WizardNav
             labels={steps.map((each) => STEP_TITLES[each])}
             current={stepIndex}
@@ -217,6 +232,8 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
             // paid for — no more rail-jumping back to change them (the failed
             // screen's retry clears aRender and unlocks).
             locked={aRender !== null}
+            // The wrapper above owns the pinning here.
+            sticky={false}
           />
           <div className="hidden lg:mt-8 lg:block">
             <StructureStrip hook={hook} demo={demo} />
@@ -252,6 +269,7 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
                   hook={hook}
                   hookBatch={hookBatch}
                   setHookBatch={setHookBatch}
+                  hookGenInFlight={hookGenInFlight}
                   hookHalf={hookHalf}
                   setHookHalf={setHookHalf}
                   hookAvoid={hookAvoid}

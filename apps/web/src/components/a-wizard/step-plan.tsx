@@ -787,9 +787,9 @@ function PlanEditor({
           customer's own selection is the product of this step. Said before
           the cards so a wrong draft reads as "edit me", not "bad service". */}
       {!approved && (
-        <div className="rounded-xl border border-ink/[0.08] bg-white px-4 py-3">
-          <p className="text-sm font-medium text-ink">הרכבנו לכם טיוטה ראשונית</p>
-          <p className="mt-0.5 text-[13px] text-ink/60">
+        <div className="rounded-xl border border-accent bg-accent/15 px-4 py-3 ring-1 ring-accent">
+          <p className="text-[15px] font-semibold text-ink">הרכבנו לכם טיוטה ראשונית</p>
+          <p className="mt-0.5 text-[13px] text-ink/80">
             הטיוטה מורכבת מהמסכים שזיהינו בסרטון, והיא לא תמיד קולעת. עברו על כל צעד, צפו בו, מחקו
             מה שלא מתאים — והוסיפו צעדים מתוך מאגר המסכים שלמטה.
           </p>

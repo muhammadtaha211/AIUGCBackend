@@ -29,6 +29,9 @@ type StepHookStudioProps = {
   hook: HookClip;
   hookBatch: HookBatch | null;
   setHookBatch: (value: HookBatch | null) => void;
+  /** Parent-owned in-flight gate for the paid generation POST — survives this
+   *  component unmounting (back-nav) and StrictMode's doubled mount effect. */
+  hookGenInFlight: { current: boolean };
   hookHalf: 0 | 1;
   setHookHalf: (value: 0 | 1) => void;
   hookAvoid: string[];
@@ -61,6 +64,7 @@ export function StepHookStudio({
   hook,
   hookBatch,
   setHookBatch,
+  hookGenInFlight,
   hookHalf,
   setHookHalf,
   hookAvoid,
@@ -94,12 +98,18 @@ export function StepHookStudio({
       : null;
 
   async function generateOptions() {
+    // One paid POST at a time. The gate lives in the parent, so a StrictMode
+    // re-run of the mount effect — or a real unmount/remount while the call
+    // is pending — sees the flight instead of starting a second one.
+    if (hookGenInFlight.current) return;
+    hookGenInFlight.current = true;
     setError(null);
     setBusy("options");
     const result = await postJson<{ options: HookLineOption[] }>(
       `/api/businesses/${businessId}/hook-lines`,
       { ...(personaId ? { personaId } : {}), avoid: hookAvoid },
     );
+    hookGenInFlight.current = false;
     setBusy(null);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
@@ -125,7 +135,8 @@ export function StepHookStudio({
   // questionnaire and the speaker's gender, never from the demo or the clip).
   useEffect(() => {
     if (hookBatch === null) void generateOptions();
-    // generateOptions reads only stable props; hookBatch gates the one-shot.
+    // generateOptions reads only stable props; hookBatch + the parent's
+    // in-flight gate make the one-shot safe to double-invoke.
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectOption(option: HookLineOption) {
