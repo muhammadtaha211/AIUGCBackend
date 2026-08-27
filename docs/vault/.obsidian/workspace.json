@@ -208,6 +208,8 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "state-of-play (1).md",
+    "state-of-play.md",
     "defects/auth-round-trips-that-miss-the-callback-die-silently.md",
     "decisions/84KMb9EG",
     "decisions/0006-google-oauth-is-in-scope-for-launch.md",
@@ -237,8 +239,6 @@
     "phases/8e-render-step.md",
     "phases/8e-render-step.md.tmp.7908.e575ed3b6bfa",
     "phases/8c-inventory-picker.md",
-    "phases/8b-plan-editor.md",
-    "phases/8a-wizard-shell-and-read-only-plan.md",
     "defects/sedwSy6qV",
     "defects/sedOQZkvd",
     "defects/sed3Qaj59",
