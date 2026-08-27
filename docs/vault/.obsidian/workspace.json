@@ -208,6 +208,7 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "state-of-play (1).md",
     "defects/admin-hook-upload-persona-footgun.md",
     "defects/hook-studio-double-paid-generation.md",
     "defects/a-wizard-rail-clips-on-short-lg-viewports.md",
@@ -218,7 +219,6 @@
     "defects/render-concurrency-hardcoded-above-core-count.md",
     "defects/render-concurrency-hardcoded-above-core-count.md.tmp.23832.20fb6ddda032",
     "facts/box-render-timing.md",
-    "state-of-play (1).md",
     "state-of-play.md",
     "defects/auth-round-trips-that-miss-the-callback-die-silently.md",
     "decisions/84KMb9EG",
