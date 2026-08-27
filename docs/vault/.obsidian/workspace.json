@@ -208,6 +208,7 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "defects/auth-round-trips-that-miss-the-callback-die-silently.md",
     "decisions/84KMb9EG",
     "decisions/0006-google-oauth-is-in-scope-for-launch.md",
     "decisions/seds4j0ln",
@@ -242,7 +243,6 @@
     "defects/sedOQZkvd",
     "defects/sed3Qaj59",
     "falsified/sedxnU5qd",
-    "falsified/sed3WrwPR",
-    "facts/sedq19FCE"
+    "falsified/sed3WrwPR"
   ]
 }

@@ -324,7 +324,19 @@ Then **Authentication → URL Configuration**:
 - **Site URL**: `http://localhost:3000` for now; flip it to the Vercel domain when one exists.
 - **Redirect URLs**: add `http://localhost:3000/auth/callback`. Not used by the password flow
   today, but it is what the confirmation link needs if you ever turn Confirm-email on *and* the
-  one-line code change in §8A.1 lands.
+  one-line code change in §8A.1 lands. Also add `http://localhost:3000/auth/recovery` — the
+  password-recovery flow (added 2026-08-27) sends its email link back through it, and without the
+  entry GoTrue silently delivers the link to the Site URL root, where nothing reads it.
+- **Emails → Reset Password template** (recommended): replace the default link with
+  `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`. The default
+  `{{ .ConfirmationURL }}` points at GoTrue's verify endpoint, which spends the one-time token on a
+  **bare GET** — mail-security link scanners on business mailboxes (Microsoft Safe Links,
+  Proofpoint/Mimecast class) issue exactly that GET before the user ever clicks, so recovery fails
+  with `otp_expired` on the first real click, invisibly and repeatably, for exactly the
+  `name@business.co.il` audience. The token_hash form spends the token only on submit (scanners
+  follow links, they don't submit forms) and also removes the same-browser PKCE constraint. Both
+  paths are live in the code: `/auth/recovery` serves default-template links,
+  `/reset-password?token_hash=…` serves this template.
 
 **The dev port is not pinned.** `apps/web/package.json` is `"dev": "next dev"` with no `-p`, while
 admin holds 3001. If 3000 is busy Next silently serves 3002 and every origin-derived URL follows
@@ -581,8 +593,9 @@ character for character.
 **Authentication → URL Configuration**:
 
 - **Site URL**: `http://localhost:3000` now; the Vercel/production domain when there is one.
-- **Redirect URLs**: `http://localhost:3000/auth/callback`, plus
-  `https://<prod-domain>/auth/callback` once it exists.
+- **Redirect URLs**: `http://localhost:3000/auth/callback` and
+  `http://localhost:3000/auth/recovery` (password recovery), plus the same two on
+  `https://<prod-domain>` once it exists.
 
 `apps/web/src/lib/auth.ts:73` builds `redirectTo` as `` `${window.location.origin}/auth/callback` ``
 — computed live in the browser from no env var — so every origin the app is served from needs its

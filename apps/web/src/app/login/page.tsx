@@ -35,6 +35,15 @@ export default function LoginPage() {
             <p className="mt-2 text-[15px] text-ink/65">ממשיכים מאיפה שהפסקתם.</p>
 
             <LoginForm />
+
+            <p className="mt-4 text-sm">
+              <Link
+                href="/forgot-password"
+                className="text-ink/60 underline decoration-ink/30 underline-offset-4 hover:text-ink"
+              >
+                שכחתם את הסיסמה?
+              </Link>
+            </p>
           </div>
 
           <p className="mt-4 text-center text-sm text-ink/60">

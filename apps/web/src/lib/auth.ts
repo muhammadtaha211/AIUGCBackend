@@ -42,6 +42,10 @@ function hebrewAuthError(error: unknown): string {
       return "יותר מדי ניסיונות — חכו רגע ונסו שוב.";
     case "weak_password":
       return "הסיסמה חלשה מדי — נסו סיסמה ארוכה יותר.";
+    case "same_password":
+      return "הסיסמה החדשה זהה לנוכחית — בחרו סיסמה אחרת.";
+    case "otp_expired":
+      return "הקישור פג תוקף או שכבר נעשה בו שימוש — בקשו קישור חדש.";
     case "validation_failed":
       return "כתובת המייל לא נראית תקינה.";
     case "email_provider_disabled":
@@ -78,6 +82,57 @@ export async function signUp(email: string, password: string): Promise<AuthResul
 export async function signIn(email: string, password: string): Promise<AuthResult> {
   try {
     const { error } = await createClient().auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: hebrewAuthError(error) };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Sends the password-recovery email. The link returns through /auth/recovery
+ * (its own allow-list entry — a query-carrying redirect can silently fall back
+ * to the Site URL), which exchanges the code and continues to /reset-password.
+ * Supabase never reveals whether the address exists: success means "sent if it
+ * exists", and the form copy says exactly that.
+ */
+export async function requestPasswordReset(email: string): Promise<AuthResult> {
+  try {
+    const { error } = await createClient().auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/recovery`,
+    });
+    if (error) return { ok: false, error: hebrewAuthError(error) };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Verifies a recovery token carried by the email itself (the token_hash
+ * template variant — docs/08 §1). The token is one-time and is spent HERE, on
+ * the user's submit — which is the point: the default template's link spends
+ * it on a bare GET of GoTrue's verify endpoint, and mail-security scanners on
+ * business mailboxes issue exactly that GET before the user ever clicks.
+ * On success the browser holds a session; updatePassword completes the reset.
+ */
+export async function verifyRecoveryToken(tokenHash: string): Promise<AuthResult> {
+  try {
+    const { error } = await createClient().auth.verifyOtp({
+      type: "recovery",
+      token_hash: tokenHash,
+    });
+    if (error) return { ok: false, error: hebrewAuthError(error) };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+/** Sets a new password on the current session (recovery or regular). */
+export async function updatePassword(password: string): Promise<AuthResult> {
+  try {
+    const { error } = await createClient().auth.updateUser({ password });
     if (error) return { ok: false, error: hebrewAuthError(error) };
     return { ok: true };
   } catch {
