@@ -208,6 +208,13 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "defects/remotion-temp-dirs-are-never-cleaned-up.md.tmp.23832.bd74fc369bef",
+    "decisions/0008-github-pat-over-deploy-key.md",
+    "decisions/0008-github-pat-over-deploy-key.md.tmp.23832.7ec17748b6b1",
+    "decisions/0007-worker-box-instance.md",
+    "defects/render-concurrency-hardcoded-above-core-count.md",
+    "defects/render-concurrency-hardcoded-above-core-count.md.tmp.23832.20fb6ddda032",
+    "facts/box-render-timing.md",
     "state-of-play (1).md",
     "state-of-play.md",
     "defects/auth-round-trips-that-miss-the-callback-die-silently.md",
@@ -231,18 +238,11 @@
     "facts/timeline-fixtures.md",
     "phases/8d-demo-step-rework.md",
     "facts/live-regress-2026-08-25.md",
-    "decisions/0003-sections-are-a-model-call.md",
-    "decisions/0002-runtime-band-floor-is-15s.md",
-    "falsified/plan-format-re-export-has-server-callers.md",
     "falsified/plan-format-re-export-has-server-callers.md.tmp.7908.58f95fd7e8b7",
     "phases/8c-inventory-picker.md.tmp.7908.72d14fe6e1c1",
-    "phases/8e-render-step.md",
     "phases/8e-render-step.md.tmp.7908.e575ed3b6bfa",
-    "phases/8c-inventory-picker.md",
     "defects/sedwSy6qV",
     "defects/sedOQZkvd",
-    "defects/sed3Qaj59",
-    "falsified/sedxnU5qd",
-    "falsified/sed3WrwPR"
+    "defects/sed3Qaj59"
   ]
 }

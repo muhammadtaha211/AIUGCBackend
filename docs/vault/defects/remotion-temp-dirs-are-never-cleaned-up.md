@@ -93,3 +93,20 @@ The leak is proven from code and from the controlled 0-to-1 measurement. **That 
 disk-full incident is not proven.** 3.13 GB of `remotion-*` was the largest single contributor to a
 `%TEMP%` holding 4.59 GB, on a drive with 232 GB used. It is a sufficient explanation for the last
 few hundred megabytes, not a demonstrated cause of the whole shortfall.
+
+## As of 2026-08-27 the workaround has to be carried on a second machine
+
+`docs/07-worker-box.md` §9 gives the Hetzner box its own mitigation — a `@daily` cron running
+`find /tmp -maxdepth 1 -name 'remotion-*' -user aiugc -mmin +720 -exec rm -rf {} +` — because the
+desktop's version of it ("the founder notices and clears space") does not transfer to a headless VPS
+nobody logs into. The runbook sizes the exposure there at weeks rather than days, and the failure
+mode is the ungraceful one described above: `ENOSPC` presenting as renders that started failing.
+
+So anywhere that runbook is followed there are now **two machines carrying a workaround for a
+one-line code fix**, in two dialects — `%TEMP%\remotion-*` cleared by hand on Windows,
+`/tmp/remotion-*` cleared by cron on Linux — and the box's half lives in a runbook rather than in
+the repo, invisible to anyone reading `render.ts`. Each further machine repeats the tax. The
+`outDir` change in **Fix shape** above retires both at once.
+
+Nothing about the defect itself was re-measured for this section; the `verified` date stands at
+2026-08-23.

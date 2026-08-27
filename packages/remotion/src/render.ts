@@ -1,7 +1,7 @@
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition, type FfmpegOverrideFn } from "@remotion/renderer";
 import { existsSync, mkdirSync } from "node:fs";
-import { freemem } from "node:os";
+import { cpus, freemem } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveLocalFiles } from "./serve-files";
@@ -139,17 +139,39 @@ const OFFTHREAD_VIDEO_CACHE_BYTES = 512 * 1024 * 1024;
 /**
  * Browser tabs rendering frames in parallel. Remotion's default is half the
  * machine's threads — ambient, like the cache default above, so the same
- * render runs at different speeds depending on the box. Pinned for the
- * founder's 8-thread worker box: tabs only shard frame ranges (bit-identical
- * output), and the two spare threads keep the encoder pipe and the offthread
- * compositor fed. The tab count does not split the frame cache above — that
- * budget belongs to the compositor's decode threads, not the tabs.
+ * render runs at different speeds depending on the box. So pin it: tabs only
+ * shard frame ranges (bit-identical output), and the tab count does not split
+ * the frame cache above — that budget belongs to the compositor's decode
+ * threads, not the tabs.
  *
- * Measured 2026-08-23, render:sample:a back-to-back on the (busy) founder
- * box: default (4 tabs) 174s -> 6 tabs 87s; output probed clean
- * (1080x1920 h264, expected duration).
+ * DERIVED from the host, not a literal, because Remotion hard-caps concurrency
+ * at the core count and throws above it:
+ *
+ *   Error: Maximum for --concurrency is 4 (number of cores on this system)
+ *
+ * So a hardcoded 6 does not merely run sub-optimally on a smaller machine, it
+ * fails the render outright — all three entrypoints in this file plus
+ * frame-delivery.test.ts, which renders for real. The formula reproduces both
+ * configurations that have actually been measured, exactly: 6 tabs on the
+ * 8-thread founder desktop, 4 tabs on the 4-core box.
+ *
+ * Measured, render:sample:a both times:
+ *   2026-08-23, founder's 8-thread desktop, busy, back-to-back:
+ *     default (4 tabs) 174s -> 6 tabs 87s; output probed clean
+ *     (1080x1920 h264, expected duration).
+ *   2026-08-27, Hetzner CPX32 (4 vCPU, 8GB, Ubuntu 24.04), quiet, warm —
+ *     Chrome Headless Shell already downloaded: 4 tabs, "in 45s" for 17s of
+ *     output. That is the script's own number; wall clock for the whole
+ *     command was not captured.
+ *
+ * The 6 was originally chosen to leave ~2 threads spare to feed the encoder
+ * pipe and the offthread compositor. Treat that as UNVERIFIED below 8 threads:
+ * on the 4-core box the formula leaves zero spare and the render still came in
+ * at 45s. Concurrency 2 there has never been run, so whether the headroom
+ * argument buys anything on a small host is open, not settled — do not lower
+ * the cap on its authority without measuring.
  */
-const RENDER_CONCURRENCY = 6;
+const RENDER_CONCURRENCY = Math.min(6, cpus().length);
 
 const ENTRY_POINT = fileURLToPath(new URL("./index.ts", import.meta.url));
 

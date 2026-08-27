@@ -112,17 +112,25 @@ sudo corepack enable
 pnpm --version
 ```
 
-The first run may ask `? Do you want to continue? [Y/n]` (corepack downloading the exact pnpm the
-repo pins) — type `y`. **Works:** it prints `9.15.9`. Do not skip this step: answering that prompt
-now means it can never hang the systemd service later. Also check `which pnpm` prints
-`/usr/bin/pnpm` — if it prints something else, that path must replace `ExecStart`'s in §10's unit.
+**Works:** it prints a version — but corepack's own bundled default (`11.24.0` when this was
+written), **not** the repo's pinned `9.15.9`, and no download prompt appears. Nothing pins pnpm
+here yet: the pin is `packageManager` in the repo's `package.json`, which does not exist on this
+box until §6 clones it. All this step proves is that corepack put a `pnpm` shim on PATH — §6 is
+where the pinned version actually downloads and its prompt gets answered. Also check `which pnpm`
+prints `/usr/bin/pnpm` — if it prints something else, that path must replace `ExecStart`'s in §10's
+unit.
 
 ## 6. Clone the repo
 
 The repo is private, and the box authenticates with a **fine-grained personal access token** —
 create it on Windows first: github.com → your avatar → Settings → Developer settings →
-Fine-grained tokens → Generate new token. Repository access: _Only select repositories_ →
-`AIUGCBackend`. Permissions: _Contents: Read-only_. Copy the token (`github_pat_…`).
+Fine-grained tokens → Generate new token. Set **Expiration: No expiration** — an expiry fails
+silently and late: months from now `git pull` in §11 starts erroring, the restart after it happily
+runs the checkout that is already there, and the box serves stale code with a green
+`systemctl status`. Repository access: _Only select repositories_ → `AIUGCBackend`. Permissions:
+_Contents: Read-only_. Copy the token (`github_pat_…`), and write down wherever you keep account
+records that this token exists and that the worker box depends on it — nothing on the box will ever
+remind you, and GitHub is the only place it can be revoked.
 
 On the box:
 
@@ -139,7 +147,19 @@ GitHub any time), so `git pull` never asks again.
 cd ~/AIUGCBackend && pnpm install
 ```
 
-**Works:** a few minutes of progress bars ending without red `ERR_` lines.
+This is the first pnpm command run with the repo's `packageManager` pin in scope, so corepack may
+ask `? Do you want to continue? [Y/n]` here (it is downloading the exact pnpm the repo pins) — type
+`y`. Do not skip it: §10's service runs `/usr/bin/pnpm start` from inside this repo, so answering
+that prompt now, by hand, is what stops it hanging the systemd unit later.
+
+**Works:** a few minutes of progress bars ending without red `ERR_` lines. Then confirm the pin
+took:
+
+```
+cd ~/AIUGCBackend && pnpm --version
+```
+
+**Works:** prints `9.15.9` — the repo's pin, not §5's corepack default — with no prompt.
 
 ## 7. The box's `.env`
 
@@ -285,7 +305,9 @@ That is the entire deploy pipeline, per decision #10.
 3. **A real Hebrew render, on the box:** `cd ~/AIUGCBackend && pnpm --filter @aiugc/remotion render:sample:a`
    — the first run downloads Chrome Headless Shell (one-time, ~150 MB), generates fixtures via
    ffmpeg, then renders. **Works:** it ends with `wrote …/packages/remotion/out/sample-a.mp4 in Ns`
-   (expect a few minutes on a small instance).
+   — measured 2026-08-27 on a CPX32 (4 vCPU): **45s**, on a warm run, i.e. one where the Chrome
+   Headless Shell download had already happened. Add that one-time ~150 MB download to the first
+   run.
 4. **Pull it back and watch it** (on Windows, PowerShell):
    `scp aiugc@<SERVER_IP>:AIUGCBackend/packages/remotion/out/sample-a.mp4 "$env:USERPROFILE\Desktop\box-sample.mp4"`
    then open it from the Desktop.
