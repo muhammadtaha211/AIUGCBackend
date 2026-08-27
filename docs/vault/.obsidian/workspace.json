@@ -208,6 +208,9 @@
   },
   "active": "5dbb0175cb025564",
   "lastOpenFiles": [
+    "defects/admin-hook-upload-persona-footgun.md",
+    "defects/hook-studio-double-paid-generation.md",
+    "defects/a-wizard-rail-clips-on-short-lg-viewports.md",
     "defects/remotion-temp-dirs-are-never-cleaned-up.md.tmp.23832.bd74fc369bef",
     "decisions/0008-github-pat-over-deploy-key.md",
     "decisions/0008-github-pat-over-deploy-key.md.tmp.23832.7ec17748b6b1",
@@ -236,13 +239,10 @@
     "facts/worker-death-tally-2026-08-20-to-25.md",
     "defects/settle-write-failure-retries-a-succeeded-job.md",
     "facts/timeline-fixtures.md",
-    "phases/8d-demo-step-rework.md",
-    "facts/live-regress-2026-08-25.md",
     "falsified/plan-format-re-export-has-server-callers.md.tmp.7908.58f95fd7e8b7",
     "phases/8c-inventory-picker.md.tmp.7908.72d14fe6e1c1",
     "phases/8e-render-step.md.tmp.7908.e575ed3b6bfa",
     "defects/sedwSy6qV",
-    "defects/sedOQZkvd",
-    "defects/sed3Qaj59"
+    "defects/sedOQZkvd"
   ]
 }
