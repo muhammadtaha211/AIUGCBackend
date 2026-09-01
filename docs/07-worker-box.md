@@ -219,16 +219,26 @@ _errors loudly_ and retries as transient (`packages/core/src/providers/remotion.
 fetches" in its transient list) — it does not silently ship tofu. The acceptance test in §12 still
 ends with a human watching real Hebrew, because that is the only proof that closes the loop.
 
-## 9. The disk — the leak is real and unmitigated; the box gets a cron
+## 9. The disk — bundle leak fixed in code; the cron stays as a backstop
 
-`docs/vault/defects/remotion-temp-dirs-are-never-cleaned-up.md` is still open (no code fix as of
-2026-08-26): **every render and every remotion test run leaves a 30–160 MB directory in the temp
-dir that nothing deletes.** On the desktop that filled a desktop-sized drive
-(`docs/vault/facts/remotion-temp-leak-filled-the-disk.md`); on a 40–80 GB VPS it is weeks at target
-volume (300 renders/mo × ~100 MB ≈ 30 GB/mo), and a full disk stops renders with no obvious cause
-— so the desktop mitigation ("founder notices and clears space") is **not sufficient here**.
+The webpack-bundle leak this section used to mitigate is fixed in code (2026-09-01):
+`packages/remotion/src/render.ts` passes a fixed, repo-owned `outDir`, so the bundle lives at
+`/home/aiugc/AIUGCBackend/.work/remotion-bundle` — one directory, overwritten in place, never in
+`/tmp` — and `getBundle()` re-bundles if the directory vanishes instead of failing every render
+until restart (`docs/vault/defects/remotion-temp-dirs-are-never-cleaned-up.md`).
 
-Until the code fix lands, the box cleans up on a timer. On Linux the dirs land in `/tmp`:
+That last clause is not hypothetical: **the first version of this section's cron caused an
+outage.** The worker runs for weeks (§10), the bundle was created once per process under `/tmp`,
+and the cron deleted any `remotion-*` dir older than 12 hours — so once the worker outlived its
+own bundle, every Service A render failed with "Tried to serve the Webpack bundle on a HTTP
+server, but the file …/index.html does not exist" until the service was restarted. Full mechanism:
+`docs/vault/defects/tmp-cron-deletes-live-worker-bundle.md`. Never point a janitor at a directory
+a long-lived process is still serving from.
+
+What still lands in `/tmp`: `remotion-v4.0.499-assets*` dirs. The renderer tears those down on the
+happy path; the shells left behind are failed or interrupted cleanups — small and slow, but on a
+box nobody logs into they still deserve a janitor. The cron stays for those, and the live bundle
+is no longer in its blast radius:
 
 ```
 crontab -e
@@ -240,9 +250,9 @@ crontab -e
 @daily find /tmp -maxdepth 1 -name 'remotion-*' -user aiugc -mmin +720 -exec rm -rf {} +
 ```
 
-Deletes remotion temp dirs older than 12 hours, daily — an in-flight render's dir is always
-younger. **Works:** `crontab -l` shows the line. The disk check to glance at weekly (and whenever
-renders start failing mysteriously):
+Deletes leftover remotion temp dirs older than 12 hours, daily — an in-flight render's dir is
+always younger, and the worker's bundle no longer lives here. **Works:** `crontab -l` shows the
+line. The disk check to glance at weekly (and whenever renders start failing mysteriously):
 
 ```
 df -h / && ls -d /tmp/remotion-* 2>/dev/null | wc -l

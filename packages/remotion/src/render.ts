@@ -175,14 +175,39 @@ const RENDER_CONCURRENCY = Math.min(6, cpus().length);
 
 const ENTRY_POINT = fileURLToPath(new URL("./index.ts", import.meta.url));
 
+/**
+ * Repo-owned, FIXED bundle location — never os.tmpdir(). Without an outDir,
+ * @remotion/bundler mkdtemps a fresh /tmp/remotion-webpack-bundle-* per
+ * process: nothing deleted them (one leaked dir per process lifetime,
+ * docs/vault/defects/remotion-temp-dirs-are-never-cleaned-up.md), and the
+ * worker box's /tmp cron deleted them under a live worker older than 12h,
+ * failing every render until restart
+ * (docs/vault/defects/tmp-cron-deletes-live-worker-bundle.md). A stable path
+ * fixes both: each process overwrites the same directory (bundler mkdir -p's
+ * it; chunk filenames are stable ids, so overwrite is in place), and no temp
+ * janitor touches the repo's .work dir.
+ */
+const BUNDLE_OUT_DIR = fileURLToPath(new URL("../../../.work/remotion-bundle", import.meta.url));
+
 let bundlePromise: Promise<string> | undefined;
 
 /** Bundle once per process — webpack is the slow part, renders are not. */
-export function getBundle(): Promise<string> {
-  bundlePromise ??= bundle({ entryPoint: ENTRY_POINT }).catch((err: unknown) => {
-    bundlePromise = undefined; // a long-lived worker must be able to retry
-    throw err;
-  });
+export async function getBundle(): Promise<string> {
+  const memoized = bundlePromise;
+  if (memoized) {
+    const dir = await memoized;
+    if (existsSync(path.join(dir, "index.html"))) return dir;
+    // The bundle was deleted out from under us (temp janitor, manual
+    // cleanup): re-bundle and heal instead of failing every render until the
+    // process restarts. Guarded so concurrent noticers trigger one re-bundle.
+    if (bundlePromise === memoized) bundlePromise = undefined;
+  }
+  bundlePromise ??= bundle({ entryPoint: ENTRY_POINT, outDir: BUNDLE_OUT_DIR }).catch(
+    (err: unknown) => {
+      bundlePromise = undefined; // a long-lived worker must be able to retry
+      throw err;
+    },
+  );
   return bundlePromise;
 }
 

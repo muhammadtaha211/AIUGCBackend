@@ -1,12 +1,36 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "controlled before/after: %TEMP%\remotion-* counted at 0 directories after the founder cleared space, then 1 directory (29.7 MB, timestamped 07:23:24) after a single `pnpm --filter @aiugc/remotion test`"
+verified: 2026-09-01
+method: "fix verified: bundle() now gets outDir <repo>/.work/remotion-bundle (render.ts); frame-delivery.test.ts green with the bundle at the new location and zero new %TEMP%\\remotion-webpack-bundle-* dirs created during the run; bundle-heal.test.ts pins outDir + re-bundle-on-deletion. Original leak measurement (2026-08-23) preserved below"
 source: code
 ---
 
 # Every Remotion run leaves a temp directory behind, and nothing ever removes them
+
+## FIXED 2026-09-01 (webpack-bundle family — the one this note is about)
+
+The **Fix shape** below landed, both halves: `bundle()` gets a repo-owned
+`outDir` (`<repo>/.work/remotion-bundle`), so every process overwrites the same directory and the
+one-dir-per-process accumulation stops; and `getBundle()` re-bundles when the memoized directory
+no longer exists on disk, because the cron mitigation this note's 2026-08-27 section describes
+turned out to *delete the live worker's bundle* and kill every render until restart — that
+incident is its own note, [[tmp-cron-deletes-live-worker-bundle]]. Pinned by
+`packages/remotion/test/bundle-heal.test.ts`; `frame-delivery.test.ts` rendered for real from the
+new location, leaving nothing in `%TEMP%`.
+
+The concurrency question Fix shape raised was checked and accepted rather than engineered around:
+the box runs one worker process; on the desktop two processes bundling at once write the same
+filenames with the same content for a few seconds, worst case one transient render failure that
+retries. Chunk filenames are stable numeric ids (verified in a real bundle dir), so overwrite is
+in place and re-bundles do not accumulate stale chunks.
+
+**Still open, deliberately:** the `remotion-v4.0.499-assets*` family — happy-path cleanup with
+failed/interrupted shells left behind — is untouched, small, and covered on the box by the §9
+cron, which stays. The two-machines-carrying-a-workaround tax below is retired for bundles;
+the assets shells are all the cron has left to catch.
+
+---
 
 ## The evidence is a controlled experiment
 
