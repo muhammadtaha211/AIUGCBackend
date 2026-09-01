@@ -365,10 +365,14 @@ export async function getJobProgress(
       opts.aheadOfTypes.map((t) => sql`${t}`),
       sql`, `,
     )}]::text[]`;
+    // toISOString, not the Date: raw-sql params skip drizzle's column mappers,
+    // and drizzle disables postgres-js's own Date serializer — a Date here
+    // reaches the wire encoder unserialized and throws ERR_INVALID_ARG_TYPE.
+    // PGlite (tests) serializes Dates fine, so only production sees the throw.
     const result = await db.execute(sql`
       select
         count(*) filter (
-          where status = 'queued' and run_at < ${job.runAt} and id <> ${job.id}
+          where status = 'queued' and run_at < ${job.runAt.toISOString()} and id <> ${job.id}
         )
         + count(*) filter (where status = 'running') as n
       from jobs where type = any(${laneTypes})

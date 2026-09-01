@@ -185,6 +185,16 @@ export async function requireRender(
  */
 export function coreErrorResponse(err: unknown): NextResponse {
   const { status, error, mapped } = coreErrorMapping(err);
-  if (!mapped) console.error("api route failed", err);
+  if (!mapped) {
+    // Stack and cause go into the message string itself: the deployed log
+    // surface rendered the bare error object without its stack, which left a
+    // driver-level TypeError untraceable to a call site.
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    const cause =
+      err instanceof Error && err.cause !== undefined
+        ? `\ncaused by: ${err.cause instanceof Error ? (err.cause.stack ?? err.cause.message) : String(err.cause)}`
+        : "";
+    console.error(`api route failed: ${detail}${cause}`, err);
+  }
   return jsonError(status, error);
 }

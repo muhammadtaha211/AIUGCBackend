@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { createTestDb } from "./helpers/pglite";
 import { jobs } from "../src/db/schema";
 import { PermanentError } from "../src/jobs/errors";
@@ -390,6 +391,36 @@ describe("job progress", () => {
     expect(progress.ahead).toBe(3);
     // No reaper row, but r:running's fresh lock proves a worker.
     expect(progress.heartbeat).toBe("alive");
+
+    await pg.close();
+  });
+
+  it("getJobProgress hands db.execute no raw Date params (postgres-js can't serialize them)", async () => {
+    const { db, pg } = await createTestDb();
+    await enqueue(db, { type: "render_video", idempotencyKey: "r:queued" });
+
+    // The production driver throws ERR_INVALID_ARG_TYPE when a Date reaches a
+    // raw-sql param: raw params skip drizzle's column mappers, and drizzle
+    // replaces postgres-js's own Date serializer with an identity fn. PGlite
+    // serializes Dates fine, so this harness can't observe the throw — pin
+    // the invariant on the params themselves.
+    const rawParams: unknown[] = [];
+    const realExecute = db.execute.bind(db);
+    db.execute = ((query: Parameters<typeof db.execute>[0]) => {
+      if (typeof query !== "string") {
+        rawParams.push(...new PgDialect().sqlToQuery(query.getSQL()).params);
+      }
+      return realExecute(query);
+    }) as typeof db.execute;
+
+    const progress = await getJobProgress(db, {
+      idempotencyKey: "r:queued",
+      aheadOfTypes: ["render_video", "lipsync", "analyze_demo"],
+    });
+
+    expect(progress.state).toBe("queued");
+    expect(rawParams.length).toBeGreaterThan(0);
+    expect(rawParams.filter((p) => p instanceof Date)).toEqual([]);
 
     await pg.close();
   });

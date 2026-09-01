@@ -110,3 +110,9 @@ the repo, invisible to anyone reading `render.ts`. Each further machine repeats 
 
 Nothing about the defect itself was re-measured for this section; the `verified` date stands at
 2026-08-23.
+
+## As of 2026-09-01 the box's cron and the memoised bundle collided
+
+The predicted interaction happened: the §9 cron aged the **live worker's own** bundle directory
+into deletion, and every render since 2026-08-28 died on the missing path. Evidence and mechanism
+in [[tmp-cron-deletes-live-worker-bundle]].

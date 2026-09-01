@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-08-31
+updated: 2026-09-01
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -17,100 +17,146 @@ decisions made in conversation, and the ordered queue.
 
 ## Where things stand
 
-The Supabase rebuild is complete, the old project is deleted, and **the worker box is
-live**. It has processed a real customer render end to end through the wizard — demo
-through to a finished MP4, claimed by `hetzner:heavy` with the desktop worker stopped,
-quality confirmed by eye. `jobs.locked_by` now holds a value that is neither `local:*`
-nor `cli:*` for the first time.
+**The product has a front door.** `apps/web` is deployed to Vercel and survived a founder
+smoke test on every path tried — except hook-line generation, which ENOENT'd on the
+prompts directory. That bug is root-caused and fixed in `4f85ae9` (committed by the
+founder 2026-09-01, pushed; working tree clean): computed-path file reads are invisible
+to Vercel's tracer, so `prompts/` was never packaged. The fix is config-only —
+`outputFileTracingRoot` + `outputFileTracingIncludes` in `apps/web/next.config.ts`;
+`packages/core/src/paths.ts` untouched. Full story, route audit, and residual hazards:
+[[computed-path-reads-are-invisible-to-vercel-tracing]]. **The fix is proven against
+Windows build traces only. Vercel builds on Linux, so the deployed hook-lines route is
+the outstanding proof — queue item 1.**
 
-The pipeline no longer depends on the founder's desktop being awake. What it still
-depends on is the founder, because **nothing is deployed**: `apps/web` and `apps/admin`
-exist only on localhost and `tavnit.ai` does not resolve. The machine that does the work
-is ready; the product has no front door.
+`apps/admin` is also deployed and publicly reachable on its vercel.app URL, gated only
+by `requireAdmin` (the basic-auth second wall is believed unset — queue item 3).
+
+`tavnit.ai` **is owned** — the earlier ambiguity is settled. Whether it is attached in
+Vercel and DNS-pointed is unconfirmed; the domain may or may not resolve.
+
+The worker box is live and has processed a real customer render end to end
+(`hetzner:heavy`, quality confirmed by eye). The pipeline does not depend on the
+founder's desktop being awake.
+
+Also in `4f85ae9`: unmapped route errors now log `"api route failed"` — the old
+`"service B route failed"` label fired for Service A routes too (it's the shared
+`coreErrorResponse`).
 
 ## External state — not in the repo
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro plan, Micro
-compute. Migrations 0000–0031 applied, ledger 32 rows, no gaps, no repair. Auth: Email
-provider on, "Confirm email" OFF. Google enabled. Redirect allowlist includes
-`http://localhost:3000/auth/callback`. **The old project is deleted** — org is back to
-$25/month.
+compute. Migrations 0000–0031 applied, ledger clean. Auth: Email provider on, "Confirm
+email" OFF, Google enabled. **Site URL is now `https://tavnit.ai`** and
+`https://tavnit.ai/auth/callback` was added to the redirect allowlist; the localhost
+entry was kept (verified by founder 2026-09-01). The old project is deleted — org back
+to $25/month.
 
-**Hetzner.** New account, one project, one server `tavnit-worker`. CPX32 (4 shared AMD
-vCPU, 8 GB, 160 GB NVMe, 20 TB traffic), Nuremberg, Ubuntu 24.04. ~$41/month plus ~$0.72
-for the primary IPv4, which bills whether or not it is attached to a server. Reasoning,
-options rejected, and the rescale rules are in [[0007-worker-box-instance]]. **A
+**Vercel.** An `apps/web` project exists off this monorepo: Root Directory `apps/web`,
+Next.js preset, no build/output/install overrides (defaults are correct — core ships as
+TS source via `transpilePackages`), function region `fra1`, `ANTHROPIC_API_KEY` added.
+First deploy succeeded to its `*.vercel.app` URL (all verified by founder 2026-09-01).
+Still useful: `NEXT_PUBLIC_*` variables must be type Config, not Secret — Vercel blocks
+Secret on public-prefixed names. **Unverified:** whether `SUPABASE_SERVICE_ROLE_KEY` is
+in the web project's env (see open decisions), and whether the pre-existing admin
+project has `fra1` set.
+
+**Hetzner.** One server `tavnit-worker`, CPX32 (4 shared AMD vCPU, 8 GB, 160 GB NVMe),
+Nuremberg, Ubuntu 24.04. ~$41/month plus ~$0.72 for the primary IPv4, which bills
+whether or not attached. Reasoning and rescale rules: [[0007-worker-box-instance]]. **A
 powered-off server still bills in full — only deletion stops the meter.**
 
-**The box itself.** `aiugc-worker.service` enabled, `Restart=always`, `WORKER_ID=hetzner`.
-`ufw` active, OpenSSH only. SSH is key-only from the founder's Windows desktop and no
-second key pair exists, so losing that key means a console root reset. Logs:
-`journalctl -u aiugc-worker -o cat`. Deploys are the whole of `docs/07-worker-box.md` §11
-— `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`.
+**The box itself.** `aiugc-worker.service` enabled, `Restart=always`,
+`WORKER_ID=hetzner`. `ufw` active, OpenSSH only. SSH is key-only from the founder's
+Windows desktop and no second key pair exists — losing that key means a console root
+reset. Logs: `journalctl -u aiugc-worker -o cat`. Deploys: `docs/07-worker-box.md` §11.
 The §9 cron for the remotion temp-dir leak is installed.
 
-**GitHub.** A fine-grained PAT with **no expiration**, scoped to `AIUGCBackend`, Contents:
-read-only, stored in plaintext at `~/.git-credentials` on the box. Nothing on the box will
-ever remind anyone it exists; GitHub is the only place it can be revoked (Settings →
-Developer settings → Fine-grained tokens). The deploy-key alternative was considered and
-dropped — [[0008-github-pat-over-deploy-key]].
+**GitHub.** A fine-grained PAT with **no expiration**, scoped to `AIUGCBackend`,
+Contents: read-only, plaintext in `~/.git-credentials` on the box. Nothing will ever
+remind anyone it exists; revocable only at GitHub (Settings → Developer settings →
+Fine-grained tokens). Deploy-key alternative rejected: [[0008-github-pat-over-deploy-key]].
 
-**The desktop worker must stay stopped.** Both workers can safely claim from the same
-queue — `SKIP LOCKED` handles it — but the desktop's `.env` carries `DRY_RUN=1` and the
-box's deliberately does not. A desktop worker claiming a real customer job reports success
-and writes placeholder files. Start it only deliberately.
+**The desktop worker must stay stopped.** Both workers can safely claim from one queue
+(`SKIP LOCKED`), but the desktop's `.env` carries `DRY_RUN=1` and the box's deliberately
+does not. A desktop worker claiming a real customer job reports success and writes
+placeholder files. Start it only deliberately.
 
-**Google OAuth is in Testing mode.** Works for accounts on the test-user list only. Scopes
-are `openid`, `email`, `profile` — all non-sensitive, so publishing is a form, not a
-review. Publishing requires `tavnit.ai` live plus `/privacy` and `/terms` routes, which do
-not exist. Do NOT upload a custom app logo: it triggers Google's brand review even with
+**Google OAuth is in Testing mode.** Works for test-list accounts only. Scopes
+`openid`/`email`/`profile` — all non-sensitive, so publishing is a form, not a review.
+Publishing requires `tavnit.ai` live plus `/privacy` and `/terms` routes, which do not
+exist. Do NOT upload a custom app logo: it triggers Google's brand review even with
 non-sensitive scopes.
 
-**Vercel.** Env vars set. `NEXT_PUBLIC_*` variables must be type Config, not Secret —
-Vercel blocks Secret on public-prefixed names, correctly, since they're inlined into the
-browser bundle regardless of label. Function region still needs setting to `fra1`.
+## Decisions made in conversation — not yet in the repo
+
+A new session cannot recover these from the tree. Each names where it should live.
+
+1. **`GOOGLE_SIGN_IN_ENABLED` stays `true`.** The planned flip to `false` for the
+   public-domain window is cancelled. Founder's reasoning: the site will not be
+   advertised at all until Google sign-in works properly. The consequence matters more
+   than the switch — **queue item 2 is now a hard gate on ANY traffic, not just Google
+   users.** The constant is already `true` in `apps/web/src/lib/auth.ts:25`, so no code
+   change — the decision is that it does not move. Should live: `decisions/`, as an
+   amendment to [[0006-google-oauth-is-in-scope-for-launch]] (or a new numbered note).
+   When written, it must also reconcile `docs/08-supabase-project-rebuild.md` §8B
+   (~line 685), which still advises keeping the flag `false` for any public window —
+   that recommendation is now overridden.
+2. **Where `apps/admin` lives — proposed `admin.tavnit.ai`, never decided.** Admin is
+   deployed and publicly reachable on its vercel.app URL today. Should live:
+   `decisions/` when settled.
 
 ## The queue
 
-1. **Deploy `apps/web` and `apps/admin` to Vercel, point `tavnit.ai`.** Add
-   `https://tavnit.ai` to Supabase Site URL + redirects, and as an authorized origin in
-   Google Console. Set the function region to `fra1` while in there. First because
-   everything below either depends on it or is housekeeping.
-2. **Write `/privacy` and `/terms`, then publish the Google OAuth app.** Depends on 1 —
-   Google needs the live domain. Until publishing status reads *In production*, any
-   address not on the test-user list is refused at the account chooser and returned with
-   `error=access_denied`, which this app does not read: the user lands back on `/start`
-   with no session and no message.
-3. **2026-09-03 — count the drops.**
-   `journalctl -u aiugc-worker -o cat | grep -c '"claim failed'`. That number, not the
-   desktop's ~2/day, decides whether `DATABASE_URL` moves off port 6543.
-   `docs/07-worker-box.md` deliberately leaves this open pending a week of datacenter
-   uptime. The clock started 2026-08-27. Do not change the port before then.
-4. **Take one Hetzner snapshot.** §12 has passed against committed code; capture a
+1. **Prove the tracing fix on the deployed route, then finish the domain.** Redeploy
+   `apps/web` (picks up `4f85ae9`) and hit hook-line generation on the deployment — the
+   fix is verified against Windows build traces only, and Vercel builds on Linux. Then
+   confirm `tavnit.ai` is actually attached in Vercel and DNS pointed (instructions were
+   given 2026-09-01; completion unconfirmed). In Google Console, touch **nothing** yet —
+   see the newest correction below: origins stay empty; the domain goes under
+   *Authorized domains* at publish (queue item 2).
+2. **Write `/privacy` and `/terms`, then publish the Google OAuth app** — adding
+   `tavnit.ai` under **Authorized domains** (docs/08 §8B step 7). Hard gate on ANY
+   traffic per decision 1. Until publishing status reads *In production*, any address
+   not on the test-user list is refused at the account chooser with
+   `error=access_denied`, which this app does not read: the user lands on `/start` with
+   no session and no message.
+3. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
+   Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
+   production-recommended; believed unset) and verify `fra1` there while in the
+   dashboard. Cheap, and admin is publicly reachable today behind `requireAdmin` alone.
+4. **2026-09-03 — count the drops.** `journalctl -u aiugc-worker -o cat | grep -c
+   '"claim failed'`. That number decides whether `DATABASE_URL` moves off port 6543.
+   Clock started 2026-08-27; fires on its date regardless of queue position. Do not
+   change the port before then.
+5. **Take one Hetzner snapshot.** §12 has passed against committed code; capture a
    known-good image before the box drifts. One-off, not the +20%/month backup plan.
-5. **Correct `docs/02-jobs.md`.** "Hetzner CPX41-class, ~€30/mo flat" predates Hetzner's
-   15 June 2026 price rise and now understates by roughly half. Still wrong in the file as
-   of this writing. One line, but other sizing was derived from it.
-6. **Delete `docs/vault/state-of-play (1).md`.** A duplicate of this file, visible in
-   `.obsidian/workspace.json`'s recent files. A second copy of the handover is the exact
-   drift this vault exists to prevent.
+6. **Correct `docs/02-jobs.md:111`.** "Hetzner CPX41-class, ~€30/mo flat" predates the
+   June 2026 price rise and understates by roughly half. Verified still wrong
+   2026-09-01. One line, but other sizing was derived from it.
 
 ## Open decisions
 
-- **`DATABASE_URL` port 6543.** Deliberately undecided in `docs/07-worker-box.md`. Queue
-  item 3 produces the number that settles it.
-- **Content policy.** Nothing reviews customer copy before an MP4 exists — see
+- **Service-role key in `apps/web`.** Root `.env.example` (line 9) says to copy the
+  public keys plus `DATABASE_URL` into `apps/web/.env.local` and "never the service role
+  key" — but the wizard signs storage URLs server-side (analysis thumbs, twelve per
+  page), and the dev machine's `apps/web/.env.local` **does** contain
+  `SUPABASE_SERVICE_ROLE_KEY` (variable names checked 2026-09-01, values not read). The
+  comment is stale against how web actually runs locally. Open: whether the Vercel web
+  env has the key — if any smoke-tested page rendered signed thumbnails, it must. Do
+  not fix the `.env.example` comment until it's decided which way is intended.
+- **`DATABASE_URL` port 6543.** Deliberately undecided in `docs/07-worker-box.md`;
+  queue item 4 produces the number that settles it.
+- **Content policy.** Nothing reviews customer copy before an MP4 exists —
   `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is the
-  only user; a decision is needed before strangers, i.e. before queue item 2 lands.
+  only user; needed before strangers, i.e. before queue item 2 lands.
 - **`daily_caps` for stranger traffic.** An `app_config` UPDATE, not a deploy.
-- **Sentry DSN.** Wired in the worker, unset. `status='dead'` is the alert condition. Now
-  more valuable than it was: the worker runs on a machine nobody is looking at.
-- **The `users`/`auth.users` casing gap.** `ensureUser` is guarded and the CLI can no
-  longer invent identities, but confirm the casing fix closed the silent variant for every
-  writer, not just the CLI.
-- **The remotion temp-dir leak has a manual cron on two machines now.** That is the point
-  at which a workaround stops being a stopgap and becomes the design. Fix in code or
-  accept it explicitly — see `defects/remotion-temp-dirs-are-never-cleaned-up.md`.
+- **Sentry DSN.** Wired in the worker, unset. `status='dead'` is the alert condition,
+  and the worker runs on a machine nobody is looking at.
+- **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing
+  fix closed the silent variant for every writer, not just the CLI.
+- **The remotion temp-dir leak has a manual cron on two machines.** A workaround on two
+  machines is becoming the design. Fix in code or accept explicitly —
+  `defects/remotion-temp-dirs-are-never-cleaned-up.md`.
 
 ## Service B
 
@@ -123,57 +169,54 @@ keys that matter.
 
 Neither blocks anything; both get more expensive to recover later.
 
-- **The wizard render's duration was never captured.** Still recoverable from that `jobs`
-  row's `started_at`/`finished_at`. It is the first real customer-path render on the box
-  and the only figure that speaks to `docs/02-jobs.md`'s 2–6 minute sizing. The 45s in
-  [[box-render-timing]] is a 17s fixture and explicitly does not extrapolate.
+- **The wizard render's duration was never captured.** Recoverable from that `jobs`
+  row's `started_at`/`finished_at`. It is the only figure that speaks to
+  `docs/02-jobs.md`'s 2–6 minute sizing; the 45s in [[box-render-timing]] is a 17s
+  fixture and explicitly does not extrapolate.
 - **No cold render has been measured on the box** — one including the ~92 MB Chrome
-  Headless Shell download and the ffmpeg fixture encode. Matters only if the box is ever
-  rebuilt from scratch rather than from the snapshot in queue item 4.
+  Headless Shell download. Matters only if the box is rebuilt from scratch rather than
+  from the queue-item-5 snapshot.
 
 ## Corrections worth not repeating
 
 Recorded because each cost real time, and each came from asserting rather than checking.
 
+- **"Add `tavnit.ai` as an authorized origin in Google Console" — wrong field, wrong
+  time.** This file's own previous queue item 1 said it. `docs/08` §8B step 3 is
+  explicit that *Authorized JavaScript origins* stays **empty** (server-side code flow);
+  the field that needs `tavnit.ai` is *Authorized **domains***, at step 7, at publish,
+  alongside the privacy and terms URLs. Pasting into origins is a box that does nothing.
 - **An acceptance gate passed against code that existed nowhere but that box.**
-  `docs/07-worker-box.md` §12 step 3 was first cleared with an uncommitted `sed` edit to
-  `RENDER_CONCURRENCY`. Caught only by running `git status` afterwards. When a gate
-  passes, confirm the tree is clean before believing the result.
+  `docs/07-worker-box.md` §12 step 3 was first cleared with an uncommitted `sed` edit.
+  When a gate passes, confirm the tree is clean before believing the result.
 - **A number reported without its conditions gets attached to the wrong ones.** The 45s
-  render figure was assumed to have come from concurrency 2, because that was the first
-  value suggested; it was actually 4. It nearly went into a code comment and a vault fact
-  note as measured. Record the conditions in the same breath as the number.
+  render figure was assumed to come from concurrency 2; it was 4. Record the conditions
+  in the same breath as the number.
 - **A constant tuned on the founder's hardware silently became a system requirement.**
-  `RENDER_CONCURRENCY = 6` hardcoded "at least 6 cores" into every render path and every
-  render test. It survived because no non-desktop machine had ever run a render. See
-  [[render-concurrency-hardcoded-above-core-count]].
-- **`docs/07-worker-box.md` §5's `pnpm --version` check could not do what it claimed.**
-  §5 precedes the clone, so no `packageManager` field was in scope and corepack printed
-  its own default — 11.24.0 observed, not the documented 9.15.9. The check has moved to
-  §6, after `pnpm install`, where it can actually prove the pin.
-- **§12 step 3's "expect a few minutes on a small instance" was wrong several times over.**
-  Measured 45s. Corrected in the file.
-- The worker box was assumed to exist because `docs/00-overview.md` describes one. It
-  lists "(Railway/Fly/Hetzner)" — a choice written down and never closed. Docs describing
-  a plan read identically to docs describing reality.
-- `words_per_second`: old project 2.1 (calibration output), migration seed 2.2 (a guess,
-  per `calibrate.ts:9`). 2.1 is correct.
+  `RENDER_CONCURRENCY = 6` — see [[render-concurrency-hardcoded-above-core-count]].
+- **`docs/07-worker-box.md` §5's `pnpm --version` check could not do what it claimed** —
+  it preceded the clone, so no `packageManager` was in scope. Moved to §6.
+- **§12 step 3's "expect a few minutes on a small instance" was wrong several times
+  over.** Measured 45s. Corrected in the file.
+- The worker box was assumed to exist because `docs/00-overview.md` describes one. Docs
+  describing a plan read identically to docs describing reality.
+- `words_per_second`: old project 2.1 (calibration output), migration seed 2.2 (a
+  guess). 2.1 is correct.
 - There are **31** migrations, 0000–0030, plus 0031. Not 29.
-- `scripts/verify-migration-ledger.sql` cannot fully pass on a fresh database — two checks
-  assert specific old-project row IDs. Structural layer: 22 true and one NULL for 0020.
-  The NULL is correct, not a failure.
-- `/start` proves nothing about auth. `route.ts:18` redirects there unconditionally and
-  `:15` discards the result of `exchangeCodeForSession`. `/home` is the only real gate,
-  because `middleware.ts:34-36` bounces it without a session.
-- A credential was echoed in session output three times. The CLAUDE.md rule now covers it:
-  verify by connecting, report the outcome, never the value.
-- The a-sets route "is deployed" was wrong — the route shipped nowhere; nothing is deployed
-  and `tavnit.ai` does not resolve. (Both routes deleted 2026-08-31; git keeps them.)
-- 269f2ce removed the CALLERS from `step-render.tsx`; it never touched the route files. The
-  no-caller claim was right in substance, wrong in mechanism.
-- "Billing is unwired, so account caps are the only bound" was backwards. The credit balance
-  is the bound and the caps are the backstop — and the bound is tighter because billing is
-  unwired, not looser. See [[no-self-serve-credit-grant-path]].
+- `scripts/verify-migration-ledger.sql` cannot fully pass on a fresh database — two
+  checks assert old-project row IDs. Structural layer: 22 true and one NULL for 0020;
+  the NULL is correct.
+- `/start` proves nothing about auth — it redirects unconditionally and discards
+  `exchangeCodeForSession`'s result. `/home` is the only real gate.
+- A credential was echoed in session output three times. The CLAUDE.md rule now covers
+  it: verify by connecting, report the outcome, never the value.
+- The a-sets route "is deployed" was wrong — at the time nothing was deployed at all.
+  (Both routes deleted 2026-08-31; git keeps them.)
+- 269f2ce removed the CALLERS from `step-render.tsx`, not the route files. Right in
+  substance, wrong in mechanism.
+- "Billing is unwired, so account caps are the only bound" was backwards — the credit
+  balance is the bound and it is *tighter* because billing is unwired. See
+  [[no-self-serve-credit-grant-path]].
 
 ---
 
