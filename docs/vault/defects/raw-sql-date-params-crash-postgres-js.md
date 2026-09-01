@@ -55,8 +55,12 @@ it wraps `db.execute` and asserts no param is `instanceof Date`
 
 The throw is deterministic but only reachable while the poll catches the job row
 still `queued` (the ahead query runs only then, and only when the caller passes
-`aheadOfTypes` — the render poll and the analysis poll both do). Locally the
-worker claims jobs near-instantly, so polls always landed after the claim; on the
+`aheadOfTypes` — the render poll and the analysis poll both do). Why it never
+appeared locally is **plausible but unconfirmed** (corrected 2026-09-01): the
+"local worker claims jobs near-instantly, so polls landed after the claim"
+explanation was asserted, not measured — the desktop worker was only up briefly
+around 2026-08-27 and no local wizard run has been deliberately tested against
+it since, so the explanation holds at most for that narrow window. On the
 deployed setup the wizard's first poll always landed inside the queued window —
 and each retry backoff reopened it.
 

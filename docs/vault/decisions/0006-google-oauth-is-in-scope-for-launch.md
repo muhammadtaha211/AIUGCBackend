@@ -59,3 +59,13 @@ sequencing materially:
   Google yourself.**
 
 Full procedure: `docs/08-supabase-project-rebuild.md` §8B.
+
+## Amendment 2026-09-01 — the kill switch stays `true` through the public-domain window
+
+The planned flip of `GOOGLE_SIGN_IN_ENABLED` to `false` for the window between `tavnit.ai` going
+live and the OAuth app publishing is **cancelled** (founder, in chat, 2026-09-01). Reasoning: the
+site will not be advertised at all until Google sign-in works properly — so hiding the broken
+button buys nothing, and the real consequence is that **publishing the OAuth app is now a hard
+gate on ANY traffic**, not just on Google users. This overrides `docs/08-supabase-project-rebuild.md`
+§8B's recommendation to keep the flag `false` for any public window. The constant is already
+`true` in `apps/web/src/lib/auth.ts`; no code change — the decision is that it does not move.
