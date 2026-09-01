@@ -183,22 +183,6 @@ export function stepPlanResponse(plan: {
   };
 }
 
-export const aPreviewRequestSchema = z.object({
-  demoId: z.string().uuid(),
-  audioId: z.string().uuid(),
-  hookClipId: z.string().uuid(),
-});
-
-export const aRenderRequestSchema = z.object({
-  demoId: z.string().uuid(),
-  hookClipId: z.string().uuid(),
-  hookLineScriptId: z.string().uuid(),
-  audioId: z.string().uuid(),
-  personaId: z.string().uuid(),
-  /** The hook-studio placement; absent = the clip's default safe area. */
-  textSafeArea: textSafeAreaSchema.optional(),
-});
-
 /** The steps-format create response. `balance` is the post-debit account
  *  balance (null = admin bypass, never debited) — the wizard pushes it into
  *  the sidebar's BalanceProvider the moment the render starts. */

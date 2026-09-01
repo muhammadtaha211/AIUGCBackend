@@ -74,10 +74,10 @@ the stated goal.
 ## Fix shape
 
 One call, at one choke point. `createSet` (`packages/core/src/pipelines/sets.ts:137`) is the single
-function **both** web entry points funnel through —
-`apps/web/src/app/api/businesses/[businessId]/a-sets/route.ts:65` and
-`.../a-sets/steps/route.ts:75` — as well as the CLI. A `contentPolicyCheck` call placed among its
-existing hard gates covers every path at once.
+function the web entry point funnels through —
+`apps/web/src/app/api/businesses/[businessId]/a-sets/steps/route.ts:82` (the orphaned voiced route
+that also called it was deleted 2026-08-31) — as well as the CLI. A `contentPolicyCheck` call
+placed among its existing hard gates covers every path at once.
 
 Everything else is already built: the function, its prompt, its zod output, its event kind, and the
 package-root export at `packages/core/src/index.ts:17`. Only the call site is missing.

@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-08-27
+updated: 2026-08-31
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -99,10 +99,6 @@ browser bundle regardless of label. Function region still needs setting to `fra1
 
 - **`DATABASE_URL` port 6543.** Deliberately undecided in `docs/07-worker-box.md`. Queue
   item 3 produces the number that settles it.
-- **The orphaned `a-sets` route.** `POST /api/businesses/[businessId]/a-sets` is deployed,
-  authenticated, has no caller since 269f2ce, and debits credits. Billing is unwired, so
-  account caps are the only bound. Investigate before the domain is public — queue item 1
-  makes that imminent.
 - **Content policy.** Nothing reviews customer copy before an MP4 exists — see
   `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is the
   only user; a decision is needed before strangers, i.e. before queue item 2 lands.
@@ -171,6 +167,13 @@ Recorded because each cost real time, and each came from asserting rather than c
   because `middleware.ts:34-36` bounces it without a session.
 - A credential was echoed in session output three times. The CLAUDE.md rule now covers it:
   verify by connecting, report the outcome, never the value.
+- The a-sets route "is deployed" was wrong — the route shipped nowhere; nothing is deployed
+  and `tavnit.ai` does not resolve. (Both routes deleted 2026-08-31; git keeps them.)
+- 269f2ce removed the CALLERS from `step-render.tsx`; it never touched the route files. The
+  no-caller claim was right in substance, wrong in mechanism.
+- "Billing is unwired, so account caps are the only bound" was backwards. The credit balance
+  is the bound and the caps are the backstop — and the bound is tighter because billing is
+  unwired, not looser. See [[no-self-serve-credit-grant-path]].
 
 ---
 

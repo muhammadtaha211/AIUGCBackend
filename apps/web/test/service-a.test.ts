@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  aRenderRequestSchema,
   aStepsRenderRequestSchema,
   demoDescriptionRequestSchema,
   demoFileError,
@@ -77,36 +76,6 @@ describe("request schemas", () => {
         personaId: UUID,
         selectedAdvantages: [],
       }).success,
-    ).toBe(false);
-  });
-
-  it("a-set render body wants every reference as a uuid", () => {
-    const body = {
-      demoId: UUID,
-      hookClipId: UUID,
-      hookLineScriptId: UUID,
-      audioId: UUID,
-      personaId: UUID,
-    };
-    expect(aRenderRequestSchema.safeParse(body).success).toBe(true);
-    expect(aRenderRequestSchema.safeParse({ ...body, personaId: undefined }).success).toBe(false);
-  });
-
-  it("a-set render body: the hook-studio rect is optional but frame-bounded", () => {
-    const body = {
-      demoId: UUID,
-      hookClipId: UUID,
-      hookLineScriptId: UUID,
-      audioId: UUID,
-      personaId: UUID,
-    };
-    expect(
-      aRenderRequestSchema.safeParse({ ...body, textSafeArea: { x: 40, y: 900, w: 1000, h: 300 } })
-        .success,
-    ).toBe(true);
-    expect(
-      aRenderRequestSchema.safeParse({ ...body, textSafeArea: { x: 400, y: 0, w: 900, h: 500 } })
-        .success,
     ).toBe(false);
   });
 
