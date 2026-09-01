@@ -185,6 +185,6 @@ export async function requireRender(
  */
 export function coreErrorResponse(err: unknown): NextResponse {
   const { status, error, mapped } = coreErrorMapping(err);
-  if (!mapped) console.error("service B route failed", err);
+  if (!mapped) console.error("api route failed", err);
   return jsonError(status, error);
 }
