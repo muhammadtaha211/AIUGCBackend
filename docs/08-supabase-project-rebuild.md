@@ -654,14 +654,14 @@ Everything here waits on the domain. Nothing above does.
 
 ### What still has to be written
 
-Not a form-filling problem — these two pages do not exist in the repo at all:
+The two pages were written 2026-09-02 from a repo fact sheet and are awaiting lawyer review:
 
-| Requirement                    | Status today                                                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `/privacy` route               | **Does not exist.** No route under `apps/web/src/app`, and no match for "privacy" or "מדיניות פרטיות" in `apps/web/src`. |
-| `/terms` route                 | **Does not exist.** No route, no match for "terms" or "תנאי שימוש".                                                 |
-| Home page explaining the app   | The marketing page at `/` exists.                                                                                   |
-| `tavnit.ai` Search Console     | Not verified.                                                                                                       |
+| Requirement                  | Status today                                                                                                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/privacy` route             | **Exists** — `apps/web/src/app/(legal)/privacy/page.tsx`, static, linked from the landing footer and the signup/login consent lines. Carries `[LAWYER: …]` markers until legal review removes them. |
+| `/terms` route               | **Exists** — `apps/web/src/app/(legal)/terms/page.tsx`, same status.                                                                                                                                |
+| Home page explaining the app | The marketing page at `/` exists.                                                                                                                                                                   |
+| `tavnit.ai` Search Console   | Not verified.                                                                                                                                                                                       |
 
 The privacy policy has to be honest about what this product collects: email address and Google
 profile name, the questionnaire, the uploaded video, and the generated output. Terms is optional

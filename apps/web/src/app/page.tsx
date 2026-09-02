@@ -1,5 +1,5 @@
-import Link from "next/link";
-import { Brand } from "@/components/brand";
+import { SiteFooter } from "@/components/landing/site-footer";
+import { SiteHeader } from "@/components/landing/site-header";
 import { WhatChooser } from "@/components/landing/what-chooser";
 
 /**
@@ -50,45 +50,6 @@ function AdFrame({
         </p>
       )}
     </div>
-  );
-}
-
-/* ---------- header ---------- */
-
-const NAV_LINK =
-  "text-sm font-medium text-ink/60 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink";
-
-function SiteHeader() {
-  return (
-    <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-paper/85 backdrop-blur-md">
-      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
-        <Link
-          href="/"
-          className="focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink"
-        >
-          <Brand />
-        </Link>
-
-        <nav
-          aria-label="ניווט ראשי"
-          className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-8 md:flex"
-        >
-          <a href="#features" className={NAV_LINK}>
-            יכולות
-          </a>
-          <a href="#how" className={NAV_LINK}>
-            איך זה עובד
-          </a>
-        </nav>
-
-        <Link
-          href="/login"
-          className="flex h-11 items-center rounded-lg bg-ink px-4 text-sm font-semibold text-paper transition-colors duration-150 hover:bg-ink/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:h-9"
-        >
-          התחברות
-        </Link>
-      </div>
-    </header>
   );
 }
 
@@ -399,58 +360,6 @@ function ClosingCta() {
         </div>
       </div>
     </section>
-  );
-}
-
-/* ---------- footer ---------- */
-
-function SiteFooter() {
-  return (
-    <footer className="border-t border-ink/[0.06] bg-white">
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:grid-cols-[2fr_1fr_1fr] sm:px-8">
-        <div>
-          <Brand />
-          <p className="mt-3 max-w-xs text-sm leading-relaxed text-ink/60">
-            מודעות וידאו בעברית לעסקים ישראליים. מסרטון אחד מהטלפון לחבילת מודעות מוכנה לפרסום.
-          </p>
-        </div>
-        <nav aria-label="קישורי מוצר">
-          <p className="text-sm font-bold text-ink">מוצר</p>
-          <ul className="mt-2 space-y-1 text-sm text-ink/60">
-            <li>
-              <a href="#features" className="inline-block py-1.5 transition-colors hover:text-ink">
-                יכולות
-              </a>
-            </li>
-            <li>
-              <a href="#how" className="inline-block py-1.5 transition-colors hover:text-ink">
-                איך זה עובד
-              </a>
-            </li>
-          </ul>
-        </nav>
-        <nav aria-label="קישורי חשבון">
-          <p className="text-sm font-bold text-ink">חשבון</p>
-          <ul className="mt-2 space-y-1 text-sm text-ink/60">
-            <li>
-              <Link href="/start" className="inline-block py-1.5 transition-colors hover:text-ink">
-                יצירת חשבון
-              </Link>
-            </li>
-            <li>
-              <Link href="/login" className="inline-block py-1.5 transition-colors hover:text-ink">
-                התחברות
-              </Link>
-            </li>
-          </ul>
-        </nav>
-      </div>
-      <div className="border-t border-ink/[0.06]">
-        <p className="mx-auto max-w-6xl px-5 py-5 text-sm text-ink/45 sm:px-8">
-          © תבנית <span dir="ltr">2026</span>. כל הזכויות שמורות.
-        </p>
-      </div>
-    </footer>
   );
 }
 

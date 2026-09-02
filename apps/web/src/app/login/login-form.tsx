@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
@@ -60,6 +61,29 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} noValidate className="mt-6">
+      {/* Above both buttons, so the line covers Google and email alike. */}
+      <p className="mb-4 text-sm text-gray-400 light:text-ink/60">
+        הכניסה מהווה הסכמה ל
+        <Link
+          href="/terms"
+          target="_blank"
+          rel="noopener"
+          className="font-medium text-white underline decoration-white/30 underline-offset-4 light:text-ink light:decoration-ink/30"
+        >
+          תנאי השימוש
+        </Link>{" "}
+        ול
+        <Link
+          href="/privacy"
+          target="_blank"
+          rel="noopener"
+          className="font-medium text-white underline decoration-white/30 underline-offset-4 light:text-ink light:decoration-ink/30"
+        >
+          מדיניות הפרטיות
+        </Link>
+        .
+      </p>
+
       {/* Button and divider together: a divider with nothing above it reads
           as a broken layout, not as "email only". */}
       {GOOGLE_SIGN_IN_ENABLED && (
