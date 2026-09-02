@@ -5,6 +5,7 @@ import Link from "next/link";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
+import { RenderProgress } from "@/components/ui/progress-bar";
 import {
   A_RENDER_STAGES,
   aRenderStageIndex,
@@ -382,6 +383,25 @@ export function StepARender({
           );
         })}
       </ol>
+
+      {/* The bar carries the number now. Its caption is what keeps the number
+          honest: the fraction is renderMedia's frame loop only, so "of the
+          frames" is the claim, not "of the video". */}
+      <div className="mt-7">
+        {wait.bar.percent !== undefined && (
+          <div className="flex items-baseline justify-between gap-3 text-[13px]">
+            <span className="text-ink/60">מהפריימים מוכנים</span>
+            <span dir="ltr" className="font-medium tabular-nums text-ink">
+              {wait.bar.percent}%
+            </span>
+          </div>
+        )}
+        <RenderProgress
+          bar={wait.bar}
+          label="התקדמות יצירת הסרטון"
+          className={wait.bar.percent !== undefined ? "mt-2" : ""}
+        />
+      </div>
 
       {wait.kind === "stuck" ? (
         <p

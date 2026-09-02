@@ -1029,9 +1029,9 @@ describe("the demo step rework (8d)", () => {
     });
 
     it("elapsed rides only a RUNNING job payload, whole minutes", () => {
-      expect(ingestPhaseView("normalizing", job({ state: "running", elapsedMs: 2 * 60_000 }))).toEqual(
-        { line: "מכינים את הסרטון…", sub: "רץ כבר 2 דקות." },
-      );
+      expect(
+        ingestPhaseView("normalizing", job({ state: "running", elapsedMs: 2 * 60_000 })),
+      ).toEqual({ line: "מכינים את הסרטון…", sub: "רץ כבר 2 דקות." });
       expect(ingestPhaseView("normalizing", job({ elapsedMs: 2 * 60_000 })).sub).toBeUndefined();
       expect(ingestPhaseView("probing", job({ state: "running" })).sub).toBeUndefined();
     });
@@ -1101,42 +1101,103 @@ describe("the demo step rework (8d)", () => {
       ...over,
     });
 
+    /** The bar every "still moving, nothing measurable" case must produce. */
+    const MOVING = { paused: false };
+
     it("queued: position when known, silence when unknown", () => {
       expect(renderWaitView("queued", job({ ahead: 2 }))).toEqual({
         kind: "waiting",
         sub: "לפני הסרטון שלכם יש עוד 2 עבודות בתור.",
+        bar: MOVING,
       });
       expect(renderWaitView("queued", job({ ahead: 1 }))).toEqual({
         kind: "waiting",
         sub: "לפני הסרטון שלכם יש עוד עבודה אחת בתור.",
+        bar: MOVING,
       });
       expect(renderWaitView("queued", job({ ahead: 0 }))).toEqual({
         kind: "waiting",
         sub: "העיבוד יתחיל בקרוב.",
+        bar: MOVING,
       });
-      expect(renderWaitView("queued", job({}))).toEqual({ kind: "waiting" });
-      expect(renderWaitView("queued", undefined)).toEqual({ kind: "waiting" });
+      expect(renderWaitView("queued", job({}))).toEqual({ kind: "waiting", bar: MOVING });
+      expect(renderWaitView("queued", undefined)).toEqual({ kind: "waiting", bar: MOVING });
     });
 
     it("a backoff-parked render job reads as paused — resumeAtMs beats ahead", () => {
       expect(renderWaitView("queued", job({ ahead: 0, resumeAtMs: 4_000_000_000_000 }))).toEqual({
         kind: "waiting",
         sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות.",
+        // Parked: the bar must not animate under a line that says so.
+        bar: { paused: true },
       });
     });
 
-    it("rendering: whole-percent frames + elapsed; percent never invented", () => {
+    it("rendering: the percent goes to the bar, the sentence keeps elapsed", () => {
       expect(
         renderWaitView("rendering", job({ state: "running", progress: 0.437, elapsedMs: 60_000 })),
-      ).toEqual({ kind: "waiting", sub: "43% מהפריימים מוכנים — רץ כבר דקה." });
+      ).toEqual({ kind: "waiting", sub: "רץ כבר דקה.", bar: { percent: 43, paused: false } });
       expect(renderWaitView("rendering", job({ state: "running", progress: 0.437 }))).toEqual({
         kind: "waiting",
-        sub: "43% מהפריימים מוכנים.",
+        bar: { percent: 43, paused: false },
       });
       expect(renderWaitView("rendering", job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual(
-        { kind: "waiting", sub: "רץ כבר 3 דקות." },
+        { kind: "waiting", sub: "רץ כבר 3 דקות.", bar: MOVING },
       );
-      expect(renderWaitView("rendering", undefined)).toEqual({ kind: "waiting" });
+      expect(renderWaitView("rendering", undefined)).toEqual({ kind: "waiting", bar: MOVING });
+    });
+
+    it("percent is never invented and never latched — a cleared checkpoint drops it", () => {
+      // handleRenderVideo clears jobs.state at the top of every attempt, so a
+      // retry serves state:"running" with no fraction. The bar must fall back
+      // to indeterminate rather than hold the dead attempt's 95%.
+      const at95 = renderWaitView("rendering", job({ state: "running", progress: 0.95 }));
+      expect(at95.bar.percent).toBe(95);
+      expect(renderWaitView("rendering", job({ state: "running" })).bar.percent).toBeUndefined();
+      // Nothing outside the running frame loop may carry a percent.
+      expect(renderWaitView("queued", job({ progress: 0.5 })).bar.percent).toBeUndefined();
+    });
+
+    it("a parked retry is paused even after the ROW moved to rendering", () => {
+      // handleRenderVideo flips the row to "rendering" before the attempt and
+      // failTransient re-queues the job without touching the row, so a parked
+      // retry arrives as status "rendering" + state "queued" + resumeAtMs.
+      // Gated on the row instead of the job, this pair animated a bar and a
+      // "generating now" chip over a job nothing was touching.
+      expect(
+        renderWaitView(
+          "rendering",
+          job({ state: "queued", resumeAtMs: 4_000_000_000_000, heartbeat: "alive" }),
+        ),
+      ).toEqual({
+        kind: "waiting",
+        sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות.",
+        bar: { paused: true },
+      });
+    });
+
+    it("a missing job with no live worker is paused, not working", () => {
+      // No job under this key AND nothing known to be alive: there is nothing
+      // to justify animating. A live worker is the one thing that makes
+      // "working" defensible without a job row (the render's real job may be
+      // the lipsync one).
+      expect(renderWaitView("queued", job({ state: "missing", heartbeat: "stale" })).bar).toEqual({
+        paused: true,
+      });
+      expect(renderWaitView("queued", job({ state: "missing", heartbeat: "unknown" })).bar).toEqual(
+        {
+          paused: true,
+        },
+      );
+      expect(renderWaitView("queued", job({ state: "missing", heartbeat: "alive" })).bar).toEqual({
+        paused: false,
+      });
+    });
+
+    it("stuck freezes the bar", () => {
+      expect(
+        renderWaitView("rendering", job({ state: "running", heartbeat: "stale" })).bar,
+      ).toEqual({ paused: true });
     });
 
     it("a stale heartbeat over live work reads as stuck; unknown does NOT", () => {

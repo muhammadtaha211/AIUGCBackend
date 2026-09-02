@@ -42,6 +42,49 @@ export function isActiveRenderStatus(status: string): boolean {
 }
 
 /**
+ * The one in-flight render the dashboard describes — and the only row the
+ * list route pays for job progress on.
+ *
+ * The heavy lane is strictly sequential (HEAVY_JOB_TYPES on one worker lane),
+ * so at most one render is ever `rendering`: that one is the head, and the
+ * only one that can have a real percent. With none rendering, the OLDEST
+ * queued row is next in line and is the honest thing to describe — a CLI grid
+ * can leave a dozen rows queued behind it, and "the newest" would point at
+ * the one that starts last.
+ *
+ * Takes `createdAt` as string or Date so the route (Date rows) and the strip
+ * (JSON strings) can share the rule instead of drifting apart.
+ */
+export function pickActiveHead<T extends { status: string; createdAt: string | Date }>(
+  renders: T[],
+): T | undefined {
+  const active = renders.filter((render) => isActiveRenderStatus(render.status));
+  const rendering = active.find((render) => render.status === "rendering");
+  if (rendering) return rendering;
+  return active.reduce<T | undefined>(
+    (oldest, render) =>
+      oldest === undefined || new Date(render.createdAt) < new Date(oldest.createdAt)
+        ? render
+        : oldest,
+    undefined,
+  );
+}
+
+/**
+ * The dashboard's live chip. Counts every in-flight render, not just the head.
+ *
+ * `paused` is not decoration: when the head job is parked or nothing is
+ * claiming it, "we're making it right now" is false, and it would contradict
+ * the frozen bar and the amber line directly underneath.
+ */
+export function generatingLine(activeCount: number, paused: boolean): string {
+  if (paused) {
+    return activeCount > 1 ? `${activeCount} סרטונים ממתינים` : "יצירת הסרטון ממתינה";
+  }
+  return activeCount > 1 ? `${activeCount} סרטונים בתהליך` : "יוצרים סרטון עכשיו";
+}
+
+/**
  * The wizard's status timeline: which stage the render is at. failed/rejected
  * return -1 — they are handled as error states, not timeline positions.
  */

@@ -4,10 +4,12 @@ import {
   clientPhotoError,
   countWords,
   failedRenderNotice,
+  generatingLine,
   isActiveRenderStatus,
   MAX_PHOTO_BYTES,
   needsScriptAdoption,
   needsTextSave,
+  pickActiveHead,
   pickSelectedBusiness,
   RENDER_STATUS_LABELS,
   renderRequestBody,
@@ -116,6 +118,61 @@ describe("render status -> Hebrew", () => {
     expect(renderStageIndex("released")).toBe(3);
     expect(renderStageIndex("failed")).toBe(-1);
     expect(renderStageIndex("rejected")).toBe(-1);
+  });
+});
+
+describe("pickActiveHead — the one in-flight render the dashboard describes", () => {
+  const row = (id: string, status: string, createdAt: string) => ({ id, status, createdAt });
+
+  it("prefers the render actually rendering — the heavy lane only runs one", () => {
+    const rows = [
+      row("new", "queued", "2026-09-02T10:00:00Z"),
+      row("busy", "rendering", "2026-09-02T09:00:00Z"),
+      row("old", "queued", "2026-09-02T08:00:00Z"),
+    ];
+    expect(pickActiveHead(rows)?.id).toBe("busy");
+  });
+
+  it("with none rendering, the OLDEST queued row is next in line", () => {
+    const rows = [
+      row("new", "queued", "2026-09-02T10:00:00Z"),
+      row("old", "queued", "2026-09-02T08:00:00Z"),
+    ];
+    expect(pickActiveHead(rows)?.id).toBe("old");
+  });
+
+  it("ignores finished rows, and is undefined when nothing is in flight", () => {
+    expect(
+      pickActiveHead([
+        row("done", "released", "2026-09-02T10:00:00Z"),
+        row("gone", "failed", "2026-09-02T09:00:00Z"),
+      ]),
+    ).toBeUndefined();
+    expect(pickActiveHead([])).toBeUndefined();
+  });
+
+  it("takes Date rows too — the route and the strip share one rule", () => {
+    const rows = [
+      { id: "new", status: "queued", createdAt: new Date("2026-09-02T10:00:00Z") },
+      { id: "old", status: "queued", createdAt: new Date("2026-09-02T08:00:00Z") },
+    ];
+    expect(pickActiveHead(rows)?.id).toBe("old");
+  });
+
+  it("qc_pending counts as in flight (it is what auto_release_b bypasses)", () => {
+    expect(pickActiveHead([row("qc", "qc_pending", "2026-09-02T10:00:00Z")])?.id).toBe("qc");
+  });
+});
+
+describe("generatingLine", () => {
+  it("names one render in the singular and many with the count", () => {
+    expect(generatingLine(1, false)).toBe("יוצרים סרטון עכשיו");
+    expect(generatingLine(4, false)).toBe("4 סרטונים בתהליך");
+  });
+
+  it("stops claiming live work when the job is parked or unclaimed", () => {
+    expect(generatingLine(1, true)).toBe("יצירת הסרטון ממתינה");
+    expect(generatingLine(4, true)).toBe("4 סרטונים ממתינים");
   });
 });
 

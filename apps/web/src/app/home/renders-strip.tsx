@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/icons";
-import { isActiveRenderStatus, renderStatusLabel } from "@/lib/service-b-ui";
+import { RenderProgress } from "@/components/ui/progress-bar";
+import { renderWaitView, type JobProgressWire } from "@/lib/service-a-ui";
+import {
+  generatingLine,
+  isActiveRenderStatus,
+  pickActiveHead,
+  renderStatusLabel,
+} from "@/lib/service-b-ui";
 import { apiFetch, usePolling } from "@/lib/use-api";
 
 type StripRender = {
@@ -12,7 +19,17 @@ type StripRender = {
   thumbUrl?: string;
   /** Failed renders only; true when the credits were actually returned. */
   refunded?: boolean;
+  /** Present on the head in-flight render only — see pickActiveHead. */
+  job?: JobProgressWire;
 };
+
+/**
+ * Fast enough for a percent that visibly moves (a render is minutes, and the
+ * frame fraction is checkpointed at most every 2s), slow enough that the
+ * route's per-row signed-URL loop is not hammered. Only runs while something
+ * is actually in flight.
+ */
+const ACTIVE_POLL_MS = 5_000;
 
 const CHIP_COLORS: Record<string, string> = {
   released: "bg-accent/30 text-ink",
@@ -29,10 +46,25 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
+/** The live chip's dot. It breathes only while something is actually being
+ *  worked on — a pulse over a parked job would say the opposite of the line. */
+function LiveDot({ paused }: { paused: boolean }) {
+  if (paused) {
+    return <span aria-hidden className="size-2 shrink-0 rounded-full bg-ink/25" />;
+  }
+  return (
+    <span aria-hidden className="relative grid size-2 shrink-0 place-items-center">
+      <span className="live-ring absolute inset-0 hidden rounded-full bg-accent motion-safe:block" />
+      <span className="relative size-2 rounded-full bg-accent-deep" />
+    </span>
+  );
+}
+
 /**
- * Recent Service B renders for the selected business, newest first. Polls
- * every 10s while any render is still moving and refetches on window focus —
- * signed thumb URLs expire, so we always render the latest response.
+ * Recent renders for the selected business (both services — the list is not
+ * filtered by service), newest first. Polls while any render is still moving
+ * and refetches on window focus — signed thumb URLs expire, so we always
+ * render the latest response.
  */
 export function RendersStrip({ businessId }: { businessId: string }) {
   const [renders, setRenders] = useState<StripRender[] | null>(null);
@@ -62,10 +94,18 @@ export function RendersStrip({ businessId }: { businessId: string }) {
     return () => window.removeEventListener("focus", onFocus);
   }, [refetch]);
 
-  const hasActive = renders?.some((render) => isActiveRenderStatus(render.status)) ?? false;
-  usePolling(hasActive, 10_000, () => {
+  const activeCount = renders?.filter((render) => isActiveRenderStatus(render.status)).length ?? 0;
+  usePolling(activeCount > 0, ACTIVE_POLL_MS, () => {
     void refetch();
   });
+
+  // The render the indicator describes, and the only one the route sends job
+  // progress for. Undefined = nothing in flight, so no indicator at all.
+  const head = pickActiveHead(renders ?? []);
+  const wait = head ? renderWaitView(head.status, head.job) : null;
+  // The lane is sequential, so a parked or unclaimed head means nothing behind
+  // it is moving either — every tile stops sweeping, not just the head's.
+  const sweeping = wait !== null && !wait.bar.paused;
 
   /** Fetch a fresh signed video URL on every open — never reuse a stale one. */
   async function play(renderId: string) {
@@ -83,7 +123,44 @@ export function RendersStrip({ businessId }: { businessId: string }) {
 
   return (
     <section className="mt-8">
-      <h2 className="text-sm font-semibold text-ink">סרטונים אחרונים</h2>
+      {/* The indicator rides the heading row and the bar sits directly under
+          it, so a render in flight costs the dashboard ~14px rather than a
+          banner's ~80 — this pane is meant to fit a laptop without scrolling. */}
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-ink">סרטונים אחרונים</h2>
+        {wait && (
+          <span className="flex items-center gap-2 text-[13px] font-medium text-ink/70">
+            <LiveDot paused={wait.bar.paused} />
+            {generatingLine(activeCount, wait.bar.paused)}
+            {wait.bar.percent !== undefined && (
+              <>
+                <span aria-hidden className="text-ink/30">
+                  ·
+                </span>
+                <span dir="ltr" className="tabular-nums text-ink">
+                  {wait.bar.percent}%
+                </span>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+
+      {wait && (
+        <>
+          <RenderProgress bar={wait.bar} label="התקדמות יצירת הסרטון" className="mt-2.5" />
+          {/* Only the stuck line earns extra height here — the queue-position
+              and elapsed lines live in the wizard, which has room for them. */}
+          {wait.kind === "stuck" && (
+            <p
+              role="alert"
+              className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900"
+            >
+              {wait.line}
+            </p>
+          )}
+        </>
+      )}
 
       {error && (
         <div className="mt-3">
@@ -116,8 +193,13 @@ export function RendersStrip({ businessId }: { businessId: string }) {
         <ul className="mt-3 flex gap-3 overflow-x-auto pb-2">
           {renders.map((render) => {
             const released = render.status === "released";
+            const working = isActiveRenderStatus(render.status);
             const thumb = (
-              <span className="relative block aspect-[9/16] w-full overflow-hidden rounded-lg border border-ink/10 bg-ink/[0.04]">
+              <span
+                className={`relative block aspect-[9/16] w-full overflow-hidden rounded-lg border bg-ink/[0.04] ${
+                  working ? "border-accent" : "border-ink/10"
+                }`}
+              >
                 {render.thumbUrl ? (
                   // Signed, short-lived URL — next/image optimization would break it.
                   <img src={render.thumbUrl} alt="" className="size-full object-cover" />
@@ -125,6 +207,15 @@ export function RendersStrip({ businessId }: { businessId: string }) {
                   <span className="flex size-full items-center justify-center px-2 text-center text-xs text-ink/55">
                     {renderStatusLabel(render.status)}
                   </span>
+                )}
+                {/* The empty tile is where the video will appear — sweeping it
+                    says "this one, right now". w-1/3 at the start edge is what
+                    the `sweep` keyframe is measured against (globals.css). */}
+                {working && sweeping && (
+                  <span
+                    aria-hidden
+                    className="sweep absolute inset-y-0 start-0 hidden w-1/3 bg-gradient-to-l from-transparent via-accent/40 to-transparent motion-safe:block"
+                  />
                 )}
               </span>
             );

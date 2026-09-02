@@ -794,7 +794,10 @@ export const PREVIEW_FALLBACK_MS = 3000;
  *  a draft-added step or an inventory state (durationMs 0/absent) plays the
  *  fallback. No clamp against the video's end — the <video> element's own
  *  `ended` event stops playback there. */
-export function clipWindow(startMs: number, durationMs: number): { startMs: number; endMs: number } {
+export function clipWindow(
+  startMs: number,
+  durationMs: number,
+): { startMs: number; endMs: number } {
   return { startMs, endMs: startMs + (durationMs > 0 ? durationMs : PREVIEW_FALLBACK_MS) };
 }
 
@@ -1101,28 +1104,67 @@ export function isActiveARenderStatus(status: string): boolean {
   return status === "queued" || status === "rendering" || status === "qc_pending";
 }
 
-export type RenderWaitView = { kind: "waiting"; sub?: string } | { kind: "stuck"; line: string };
+/**
+ * How the progress bar renders, derived from the SAME payload as the line
+ * beside it so the two can never disagree — a bar animating under a line that
+ * says nothing is progressing is the same contradiction the timeline discs
+ * already avoid.
+ */
+export type RenderBarView = {
+  /**
+   * Whole percent, 0-100. Present ONLY while renderMedia's frame loop is
+   * reporting, so it must never be latched: a retry clears the checkpoint
+   * (renders.ts's `ctx.checkpoint({})` at the top of every attempt) and the
+   * bar has to fall back to indeterminate rather than hold a stale 95%.
+   */
+  percent?: number;
+  /** Nothing is known to be moving — parked, or no worker claiming. The bar
+   *  freezes; motion here would contradict the line. */
+  paused: boolean;
+};
+
+export type RenderWaitView =
+  | { kind: "waiting"; sub?: string; bar: RenderBarView }
+  | { kind: "stuck"; line: string; bar: RenderBarView };
 
 /**
- * The line under the render-stage timeline (8d payload from the renders GET).
+ * The line under the render-stage timeline (8d payload from the renders GET),
+ * plus the progress bar's state.
+ *
  * Queue position while queued (the heavy lane can hold a whole demo analysis
- * ahead of this render); percent + elapsed while rendering — the percent is
- * renderMedia's frame loop only, so elapsed keeps running through the
- * bundling before it and the upload after it; amber stuck line when no
- * worker is claiming. No "failed" kind: a dead render job always lands the
- * render row itself on "failed" (failRenderOnTerminal), which the step's
- * existing failure card owns.
+ * ahead of this render); elapsed while rendering, with the percent handed to
+ * the bar rather than to the sentence — the percent is renderMedia's frame
+ * loop only, so elapsed keeps running through the bundling before it and the
+ * upload after it, and the bar's caption is what says "frames". Amber stuck
+ * line when no worker is claiming. No "failed" kind: a dead render job always
+ * lands the render row itself on "failed" (failRenderOnTerminal), which the
+ * step's existing failure card owns.
  */
 export function renderWaitView(status: string, job?: JobProgressWire): RenderWaitView {
   if (job && job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
-    return { kind: "stuck", line: stuckLine("עיבוד") };
+    return { kind: "stuck", line: stuckLine("עיבוד"), bar: { paused: true } };
+  }
+  // A backoff-delayed job is PAUSED, not next in line — "starts soon" over a
+  // minutes-long park is a lie (same ruling as the other wait views). Keyed on
+  // the JOB, not the render row, and hoisted above the status branches
+  // deliberately: handleRenderVideo flips the row to "rendering" before the
+  // attempt and failTransient re-queues the job without touching the row, so a
+  // parked retry arrives as status "rendering" + state "queued". Gated on the
+  // row (as it used to be) that pair fell through to a moving bar.
+  if (job?.state === "queued" && job.resumeAtMs !== undefined) {
+    return {
+      kind: "waiting",
+      sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות.",
+      bar: { paused: true },
+    };
+  }
+  // No job row under this key AND no worker known to be alive. Nothing here
+  // justifies animating "we're working on it" — the row may be purged, or the
+  // live job may be the lipsync one, but neither is something we can claim.
+  if (job?.state === "missing" && job.heartbeat !== "alive") {
+    return { kind: "waiting", bar: { paused: true } };
   }
   if (status === "queued" && job?.state === "queued") {
-    // A backoff-delayed job is PAUSED, not next in line — "starts soon" over
-    // a minutes-long park is a lie (same ruling as the other wait views).
-    if (job.resumeAtMs !== undefined) {
-      return { kind: "waiting", sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות." };
-    }
     const sub =
       job.ahead === undefined
         ? undefined
@@ -1131,18 +1173,17 @@ export function renderWaitView(status: string, job?: JobProgressWire): RenderWai
           : job.ahead > 1
             ? `לפני הסרטון שלכם יש עוד ${job.ahead} עבודות בתור.`
             : "העיבוד יתחיל בקרוב.";
-    return { kind: "waiting", ...(sub ? { sub } : {}) };
+    return { kind: "waiting", ...(sub ? { sub } : {}), bar: { paused: false } };
   }
   if (status === "rendering" && job?.state === "running") {
     const pct = job.progress !== undefined ? Math.floor(job.progress * 100) : undefined;
     const elapsed = job.elapsedMs !== undefined ? fmtElapsedHe(job.elapsedMs) : undefined;
-    const sub =
-      pct !== undefined
-        ? `${pct}% מהפריימים מוכנים${elapsed ? ` — רץ כבר ${elapsed}` : ""}.`
-        : elapsed
-          ? `רץ כבר ${elapsed}.`
-          : undefined;
-    return { kind: "waiting", ...(sub ? { sub } : {}) };
+    const sub = elapsed ? `רץ כבר ${elapsed}.` : undefined;
+    return {
+      kind: "waiting",
+      ...(sub ? { sub } : {}),
+      bar: { ...(pct !== undefined ? { percent: pct } : {}), paused: false },
+    };
   }
-  return { kind: "waiting" };
+  return { kind: "waiting", bar: { paused: false } };
 }

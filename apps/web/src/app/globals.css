@@ -83,3 +83,49 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Work is happening, its size is unknown: a segment travels the track in the
+ * reading direction. Used by the render progress bar when no frame fraction
+ * exists yet (queue, bundling, upload) and by the generating tile in the
+ * dashboard strip.
+ *
+ * The animated element must be w-1/3 of its overflow-hidden track and pinned
+ * to its start edge — the keyframe's percentages are its own width, so a
+ * different width sweeps the wrong distance.
+ *
+ * The no-preference gate is load-bearing: the reduce block above only zeroes
+ * animation-duration, which turns an infinite loop into a strobe rather than
+ * stopping it. Ungated, this would flicker for exactly the people who asked
+ * for less motion; gated, they get the segment sitting still at the start.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes sweep {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(-320%);
+    }
+  }
+
+  .sweep {
+    animation: sweep 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* The live dot's expanding halo — same gate, same reason. */
+  @keyframes live-ring {
+    from {
+      transform: scale(1);
+      opacity: 0.5;
+    }
+    to {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+
+  .live-ring {
+    animation: live-ring 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+}

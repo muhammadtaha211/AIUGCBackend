@@ -43,7 +43,23 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
           selectedId={selected?.id ?? null}
           email={user.email ?? ""}
         />
-        <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+        {/*
+         * Everything in the content pane renders 5% smaller so the dashboard
+         * fits a laptop viewport instead of overflowing it by a hair. CSS zoom
+         * (not transform: scale) because zoom re-runs layout: the pane still
+         * fills the flex row and the scrollport still works. The sidebar is
+         * outside it and keeps full size.
+         *
+         * Safe today because nothing under here mixes coordinate spaces —
+         * the hook placement editor works in ratios of getBoundingClientRect,
+         * which is zoomed on both sides (placement-editor.tsx toFrame). Any
+         * FUTURE pointer math that divides a client-space coordinate by an
+         * element-space one (offsetX / clientWidth, canvas sizing) will be off
+         * by exactly this factor.
+         */}
+        <main className="min-w-0 flex-1 overflow-y-auto" style={{ zoom: 0.95 }}>
+          {children}
+        </main>
       </BalanceProvider>
     </div>
   );
