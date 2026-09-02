@@ -242,8 +242,10 @@ export const hookClips = pgTable("hook_clips", {
   tags: jsonb("tags").notNull().default({}),
   // {x, y, w, h} in 1080x1920 space where the burned hook line may be placed.
   textSafeArea: jsonb("text_safe_area").notNull(),
-  // Persona-swapped clips (founder-generated offline, uploaded via admin).
-  // NULL = generic/original performer, shown to everyone.
+  // The persona whose column of the hook matrix this clip sits in (swapped
+  // offline by the founder, uploaded via admin). The wizard lists one
+  // persona's clips at a time; NULL = a generic source performer, listed to
+  // no customer (decision 0012).
   personaId: uuid("persona_id").references(() => personas.id),
   // Lineage: the clip this one was swapped from (self-FK in the 0013 migration).
   sourceClipId: uuid("source_clip_id"),

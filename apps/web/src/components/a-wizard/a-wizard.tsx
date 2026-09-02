@@ -14,6 +14,7 @@ import {
   pinnedPlanFrom,
   renderCompositionKey,
   restoredDemo,
+  sameSpeakerGender,
   shouldSyncIdentity,
   type AWizardStep,
   type DemoState,
@@ -23,8 +24,9 @@ import {
   type PinnedPlan,
   type StepPlanWire,
 } from "@/lib/service-a-ui";
-import type { RenderState } from "@/lib/service-b-ui";
+import type { Persona, RenderState } from "@/lib/service-b-ui";
 import { apiFetch } from "@/lib/use-api";
+import { StepPersona } from "@/components/b-wizard/step-persona";
 import { StepDemo } from "./step-demo";
 import { StepHook } from "./step-hook";
 import { StepHookStudio } from "./step-hook-studio";
@@ -42,24 +44,35 @@ const STEP_TITLES: Record<AWizardStep, string> = {
   render: "יצירת הסרטון",
 };
 
+/** The persona step's header for A: the choice picks a column of the hook
+ *  matrix, not a presenter — B's default copy would promise a face on screen. */
+const A_PERSONA_COPY = {
+  title: "בחרו את הדמות של הפתיח",
+  sub: "לכל דמות יש קליפי פתיחה משלה. בוחרים דמות, ואחר כך את הקליפ שיפתח את הסרטון.",
+};
+
 type AWizardProps = {
   businessId: string;
   businessName: string;
+  /** Catalog server-rendered by the page shell (hook-matrix personas only) —
+   *  undefined falls back to the mount fetch (and its retry UI). */
+  initialCatalog?: Persona[];
 };
 
 /**
- * The Service A wizard — steps format: hook gallery -> hook studio (line +
- * placement) -> demo upload -> step plan (read-only for now) -> render (lands
- * in a later phase). Silent by design, no persona: the steps render path
- * consumes none, hook lines default to feminine first person and stay freely
- * editable in the studio. Voiced/full stays CLI-only on purpose.
+ * The Service A wizard — steps format: persona -> hook gallery (that
+ * persona's clips only) -> hook studio (line + placement) -> demo upload ->
+ * step plan -> render. Persona-first because the hook bank is a persona ×
+ * clip matrix: the persona scopes the gallery and speaks the hook lines in
+ * first person, and that is all — the steps render path consumes no persona,
+ * and the format stays silent. Voiced/full stays CLI-only on purpose.
  *
  * Durable identity: demo id + step index live in the URL (?demo=&step=, via
- * history.replaceState) and survive reload; everything else is deliberately
- * session-local — a reload clamps back to the furthest step the surviving
- * state can support (see clampRestoredStep).
+ * history.replaceState) and survive reload; everything else — persona and
+ * hook included — is deliberately session-local, so a reload clamps back to
+ * the furthest step the surviving state can support (see clampRestoredStep).
  */
-export function AWizard({ businessId, businessName }: AWizardProps) {
+export function AWizard({ businessId, businessName, initialCatalog }: AWizardProps) {
   const router = useRouter();
   const steps = aWizardSteps("steps");
   const [stepIndex, setStepIndex] = useState(0);
@@ -71,13 +84,19 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
    *  its ?demo= so a reload can retry; see shouldSyncIdentity. */
   const [restoreFailed, setRestoreFailed] = useState(false);
 
+  /** The persona catalog, cached here so re-entering the step skips the fetch. */
+  const [personaCatalog, setPersonaCatalog] = useState<Persona[] | null>(initialCatalog ?? null);
+  const [persona, setPersona] = useState<Persona | null>(null);
   const [hook, setHook] = useState<HookClip | null>(null);
   /** All ten frames from one generation; null = not generated yet. */
   const [hookBatch, setHookBatch] = useState<HookBatch | null>(null);
-  /** True while a hook-line generation POST is in flight. Lives here (not in
-   *  the studio) because the studio unmounts on back-nav while the paid call
-   *  is pending — a remount must see the flight, not start a second one. */
-  const hookGenInFlight = useRef(false);
+  /** The hook-line generation POST in flight (a token the studio mints per
+   *  call), or null. Lives here (not in the studio) because the studio
+   *  unmounts on back-nav while the paid call is pending — a remount must see
+   *  the flight, not start a second one. A token rather than a boolean so a
+   *  cross-gender persona swap can orphan the flight: its result is dropped
+   *  unless it is still the token held here (see selectPersona). */
+  const hookGen = useRef<object | null>(null);
   /** Which interleaved five are on screen. The first reroll flips this for free. */
   const [hookHalf, setHookHalf] = useState<0 | 1>(0);
   /** Every line written this session, most recent first — sent as `avoid`. */
@@ -153,10 +172,16 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
     );
   }, [restoring, restoreFailed, demo?.id, stepIndex]);
 
-  /** Backwards moves land on a satisfiable step: after a reload the hook is
-   *  session-local and gone, so hookStudio falls through to the gallery. */
-  const backTarget = (index: number): number =>
-    steps[index] === "hookStudio" && !hook ? steps.indexOf("hook") : index;
+  /** Backwards moves land on a satisfiable step: hookStudio needs the hook and
+   *  the gallery needs the persona — both session-local and gone after a
+   *  reload — so each falls through to the nearest step that can render.
+   *  The persona step always can. */
+  const backTarget = (index: number): number => {
+    let i = index;
+    if (steps[i] === "hookStudio" && !hook) i = steps.indexOf("hook");
+    if (steps[i] === "hook" && !persona) i = steps.indexOf("persona");
+    return i;
+  };
   const goBack = () => {
     // On the first step there is nothing earlier in the wizard — back exits home.
     if (stepIndex === 0) {
@@ -170,6 +195,29 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
   const jumpTo = (index: number) => {
     if (index < stepIndex) setStepIndex(backTarget(index));
   };
+
+  /** A different persona empties the gallery: the held clip is the previous
+   *  persona's column of the matrix, so it cannot survive the swap, and its
+   *  placement rect goes with it. The generated lines survive a same-gender
+   *  swap — Hebrew first person is gendered, so only a cross-gender swap turns
+   *  them into the previous speaker's words. hookAvoid stays either way: it
+   *  remembers what was already written, not who said it. */
+  function selectPersona(next: Persona) {
+    if (persona && persona.id !== next.id) {
+      setHook(null);
+      setRect(null);
+      if (!sameSpeakerGender(persona.gender, next.gender)) {
+        setHookBatch(null);
+        setHookLine(null);
+        setHookHalf(0);
+        // A generation still pending is the previous speaker's: orphan it so
+        // its lines never land in the new speaker's batch, and free the gate
+        // so the studio's remount writes fresh ones.
+        hookGen.current = null;
+      }
+    }
+    setPersona(next);
+  }
 
   /** A different clip re-seeds the placement editor from ITS default rect. */
   function selectHook(next: HookClip) {
@@ -253,8 +301,22 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
                 </div>
               )}
 
-              {!restoring && step === "hook" && (
+              {!restoring && step === "persona" && (
+                <StepPersona
+                  catalog={personaCatalog}
+                  setCatalog={setPersonaCatalog}
+                  selected={persona}
+                  onSelect={selectPersona}
+                  onContinue={goNext}
+                  onFatal={setFatal}
+                  copy={A_PERSONA_COPY}
+                  catalogUrl="/api/personas?withHookClips=1"
+                />
+              )}
+
+              {!restoring && step === "hook" && persona && (
                 <StepHook
+                  personaId={persona.id}
                   selected={hook}
                   onSelect={selectHook}
                   onBack={goBack}
@@ -263,13 +325,14 @@ export function AWizard({ businessId, businessName }: AWizardProps) {
                 />
               )}
 
-              {!restoring && step === "hookStudio" && hook && (
+              {!restoring && step === "hookStudio" && hook && persona && (
                 <StepHookStudio
                   businessId={businessId}
+                  personaId={persona.id}
                   hook={hook}
                   hookBatch={hookBatch}
                   setHookBatch={setHookBatch}
-                  hookGenInFlight={hookGenInFlight}
+                  hookGen={hookGen}
                   hookHalf={hookHalf}
                   setHookHalf={setHookHalf}
                   hookAvoid={hookAvoid}

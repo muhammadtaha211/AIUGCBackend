@@ -4,12 +4,14 @@ import { getDb, getStorage, schema } from "@aiugc/core";
 import { adminSession, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 import { isUuid } from "@/lib/admin";
 import { CopyId } from "../copy-id";
+import { EditPersonaForm } from "./edit-persona-form";
 import { ImageCard } from "./image-card";
 import { UploadImage } from "./upload-image";
 
 /**
- * One persona: every reference image (retired ones grayed, never hidden — they
- * can be un-retired), with the per-image actions and the crop-and-upload form.
+ * One persona: its editable details (name, voice, gender), then every
+ * reference image (retired ones grayed, never hidden — they can be
+ * un-retired), with the per-image actions and the crop-and-upload form.
  */
 export default async function AdminPersonaDetailPage({
   params,
@@ -55,13 +57,18 @@ export default async function AdminPersonaDetailPage({
     <div>
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h1 className="text-xl font-semibold tracking-tight text-white">{persona.name}</h1>
-        <span className="text-sm text-gray-400">
-          {persona.gender === "female" ? "נקבה" : persona.gender === "male" ? "זכר" : "ללא מגדר"}
-        </span>
-        <span className="font-mono text-xs text-gray-400" dir="ltr">
-          {persona.voiceId}
-        </span>
         <CopyId id={persona.id} />
+      </div>
+
+      <div className="mt-6">
+        <EditPersonaForm
+          persona={{
+            id: persona.id,
+            name: persona.name,
+            voiceId: persona.voiceId,
+            gender: persona.gender as "female" | "male" | null,
+          }}
+        />
       </div>
 
       <div className="mt-6">

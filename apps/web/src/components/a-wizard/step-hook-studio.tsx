@@ -23,15 +23,17 @@ import { PlacementEditor, fittedFontSize, useHookLineMeasure } from "./placement
 type StepHookStudioProps = {
   businessId: string;
   /** The speaker — hook lines are written in this persona's first person.
-   *  Absent (the steps wizard has no persona): core's documented default
-   *  writes feminine first person, and the line stays freely editable here. */
-  personaId?: string;
+   *  The wizard always holds one by the time this step mounts (persona-first
+   *  flow); the line stays freely editable here. */
+  personaId: string;
   hook: HookClip;
   hookBatch: HookBatch | null;
   setHookBatch: (value: HookBatch | null) => void;
-  /** Parent-owned in-flight gate for the paid generation POST — survives this
-   *  component unmounting (back-nav) and StrictMode's doubled mount effect. */
-  hookGenInFlight: { current: boolean };
+  /** Parent-owned gate for the paid generation POST: the token of the flight
+   *  in progress, or null. Survives this component unmounting (back-nav) and
+   *  StrictMode's doubled mount effect; the parent nulls it on a cross-gender
+   *  persona swap, which orphans the flight so its result is dropped. */
+  hookGen: { current: object | null };
   hookHalf: 0 | 1;
   setHookHalf: (value: 0 | 1) => void;
   hookAvoid: string[];
@@ -64,7 +66,7 @@ export function StepHookStudio({
   hook,
   hookBatch,
   setHookBatch,
-  hookGenInFlight,
+  hookGen,
   hookHalf,
   setHookHalf,
   hookAvoid,
@@ -101,15 +103,20 @@ export function StepHookStudio({
     // One paid POST at a time. The gate lives in the parent, so a StrictMode
     // re-run of the mount effect — or a real unmount/remount while the call
     // is pending — sees the flight instead of starting a second one.
-    if (hookGenInFlight.current) return;
-    hookGenInFlight.current = true;
+    if (hookGen.current) return;
+    const flight = {};
+    hookGen.current = flight;
     setError(null);
     setBusy("options");
     const result = await postJson<{ options: HookLineOption[] }>(
       `/api/businesses/${businessId}/hook-lines`,
-      { ...(personaId ? { personaId } : {}), avoid: hookAvoid },
+      { personaId, avoid: hookAvoid },
     );
-    hookGenInFlight.current = false;
+    // A cross-gender persona swap while this was pending orphaned the flight
+    // (and may have started another): these lines are the previous speaker's
+    // first person, so they never reach the batch.
+    if (hookGen.current !== flight) return;
+    hookGen.current = null;
     setBusy(null);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);

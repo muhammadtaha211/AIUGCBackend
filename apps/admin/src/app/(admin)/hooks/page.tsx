@@ -7,8 +7,8 @@ import { HooksManager } from "./hooks-manager";
 /**
  * Hook-clip bank: every clip (inactive ones grayed, never hidden — active=false
  * is the retire mechanism and rows are never deleted), with the upload flow and
- * per-clip actions. The Service A wizard picker shows only active clips, and
- * only the chosen persona's swapped clips + the generic (no-persona) ones.
+ * per-clip actions. The Service A wizard picker shows only active clips of the
+ * persona the customer chose; a clip with no persona is shown to nobody.
  */
 export default async function AdminHooksPage() {
   const db = getDb();

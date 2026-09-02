@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { getDb, getStorage, schema } from "@aiugc/core";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { coreErrorResponse, requireUser, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
@@ -8,10 +8,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * The hook-clip bank for the picker: active clips with a signed, playable
- * preview URL. The bank is founder-curated and global (no per-business rows).
- * ?personaId= filters to that persona's swapped clips + the generic ones
- * (persona_id IS NULL); without it only generic clips are returned. The clip's
- * default safe area rides along to seed the wizard's placement editor.
+ * preview URL. The bank is founder-curated and global (no per-business rows),
+ * and it is a persona × clip MATRIX — every clip belongs to one persona, and
+ * the wizard shows one persona's column at a time. ?personaId= returns
+ * exactly that column: only rows whose persona_id is that persona, never the
+ * generic (persona_id IS NULL) source performers, which are the founder's
+ * swap inputs and not something a customer picks.
+ *
+ * Without ?personaId= the generic rows come back alone. That is the legacy,
+ * CLI-shaped bank listing — no shipped customer flow requests it any more.
+ * The clip's default safe area rides along to seed the wizard's placement
+ * editor.
  */
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -35,7 +42,7 @@ export async function GET(request: Request) {
         and(
           eq(schema.hookClips.active, true),
           personaId && UUID_RE.test(personaId)
-            ? or(generic, eq(schema.hookClips.personaId, personaId))
+            ? eq(schema.hookClips.personaId, personaId)
             : generic,
         ),
       )

@@ -21,11 +21,19 @@ type StepPersonaProps = {
   onFatal: (message: string) => void;
   /**
    * Header copy variant. Default = Service B, where the persona IS the video.
-   * Service A overrides it: there the choice sets the narration voice, and the
-   * face appears only when the VO outlasts the demo — the default copy would
-   * promise a presenter the customer may never see.
+   * Service A overrides it: there the persona scopes the hook gallery (one
+   * column of the persona × clip matrix) and speaks the hook lines — no
+   * presenter is rendered, so B's copy would promise a face the customer
+   * never sees.
    */
   copy?: { title: string; sub: string };
+  /**
+   * Where the mount/retry fetch goes. Default = the whole catalog (Service B,
+   * where any persona can present). Service A passes the hook-matrix filter
+   * (?withHookClips=1) so the retry lists the same personas the server shell
+   * preloaded — never one whose gallery would come back empty.
+   */
+  catalogUrl?: string;
 };
 
 const B_COPY = {
@@ -42,6 +50,7 @@ export function StepPersona({
   onContinue,
   onFatal,
   copy = B_COPY,
+  catalogUrl = "/api/personas",
 }: StepPersonaProps) {
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +58,7 @@ export function StepPersona({
   async function load() {
     setError(null);
     setCatalog(null);
-    const result = await apiFetch<{ personas: Persona[] }>("/api/personas");
+    const result = await apiFetch<{ personas: Persona[] }>(catalogUrl);
     if (result.ok) setCatalog(result.body.personas);
     else if (result.status === 403 || result.status === 404) onFatal(result.error);
     else setError(result.error);

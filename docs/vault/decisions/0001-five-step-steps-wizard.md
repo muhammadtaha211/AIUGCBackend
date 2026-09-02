@@ -1,12 +1,15 @@
 ---
 type: decision
-status: verified
+status: superseded
 verified: 2026-08-21
 method: "founder edited a hook line in the browser; bank clip count read from DB"
 source: founder
 ---
 
 # 0001 — The steps-format wizard is five steps, not six
+
+**Superseded 2026-09-02 by [[0012-persona-first-steps-wizard]]** — the founder reintroduced the
+persona step and made the hook bank a strict persona × clip matrix. Kept verbatim below.
 
 `aWizardSteps("steps")` -> `hook -> hookStudio -> demo -> plan -> render`. No persona step.
 `aWizardSteps("full")` still returns the seven-step voiced path, unchanged.

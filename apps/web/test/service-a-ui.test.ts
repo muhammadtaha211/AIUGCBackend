@@ -63,8 +63,17 @@ import {
 } from "../src/lib/service-a-ui";
 
 describe("wizard steps (format-aware, mirrors B's wizardSteps)", () => {
-  it("steps format: five steps, no persona, no script, no audio", () => {
-    expect(aWizardSteps("steps")).toEqual(["hook", "hookStudio", "demo", "plan", "render"]);
+  it("steps format: six steps, persona-first, no script, no audio", () => {
+    // The persona comes before the gallery because the hook bank is a
+    // persona × clip matrix — the gallery is one persona's column.
+    expect(aWizardSteps("steps")).toEqual([
+      "persona",
+      "hook",
+      "hookStudio",
+      "demo",
+      "plan",
+      "render",
+    ]);
   });
 
   it("full format keeps the voiced seven-step path (CLI-only today)", () => {
@@ -103,12 +112,11 @@ describe("durable identity (?demo=&step=)", () => {
 
   it("clamps a restored step to what the surviving state can support", () => {
     const ready = { status: "ready" };
-    // With a READY demo the plan step is restorable; render (index 4) is not in 8a.
-    expect(clampRestoredStep(4, STEPS, ready)).toBe(STEPS.indexOf("plan"));
-    expect(clampRestoredStep(3, STEPS, ready)).toBe(3);
-    // Without a demo nothing past the gallery is — the hook is session-local.
-    expect(clampRestoredStep(3, STEPS, null)).toBe(0);
-    expect(clampRestoredStep(1, STEPS, null)).toBe(0);
+    // With a READY demo the plan step is restorable; render never is — it is
+    // reachable only through continue, with the pinned plan in hand.
+    expect(clampRestoredStep(STEPS.indexOf("render"), STEPS, ready)).toBe(STEPS.indexOf("plan"));
+    expect(clampRestoredStep(STEPS.indexOf("plan"), STEPS, ready)).toBe(STEPS.indexOf("plan"));
+    expect(clampRestoredStep(STEPS.indexOf("demo"), STEPS, ready)).toBe(STEPS.indexOf("demo"));
   });
 
   /**
@@ -118,17 +126,33 @@ describe("durable identity (?demo=&step=)", () => {
    */
   it("routes a not-ready demo to the demo step, not the plan step", () => {
     for (const status of ["uploaded", "probing", "normalizing"]) {
-      expect(clampRestoredStep(3, STEPS, { status })).toBe(STEPS.indexOf("demo"));
+      expect(clampRestoredStep(STEPS.indexOf("plan"), STEPS, { status })).toBe(
+        STEPS.indexOf("demo"),
+      );
     }
   });
 
   /**
-   * hookStudio needs the session-local hook, which no reload can restore —
-   * ?step=1 must land on the gallery, not on a step card that renders nothing
-   * (below lg the rail has no jump buttons, so a blank card is a dead end).
+   * The gallery needs the session-local persona (it lists that persona's
+   * column of the hook matrix) and hookStudio needs the session-local hook —
+   * no reload can restore either, so ?step=1 and ?step=2 must land on the
+   * persona step, not on a step card that renders nothing (below lg the rail
+   * has no jump buttons, so a blank card is a dead end).
    */
-  it("reroutes a restored hookStudio index to the hook gallery", () => {
-    expect(clampRestoredStep(1, STEPS, { status: "ready" })).toBe(STEPS.indexOf("hook"));
+  it("reroutes a restored hook or hookStudio index to the persona step", () => {
+    const ready = { status: "ready" };
+    expect(STEPS.indexOf("hook")).toBe(1);
+    expect(STEPS.indexOf("hookStudio")).toBe(2);
+    expect(clampRestoredStep(1, STEPS, ready)).toBe(STEPS.indexOf("persona"));
+    expect(clampRestoredStep(2, STEPS, ready)).toBe(STEPS.indexOf("persona"));
+  });
+
+  it("without a demo everything clamps to the persona step", () => {
+    // Persona and hook are both session-local: with no demo either, nothing
+    // past the first step has any state to stand on.
+    for (let index = 0; index < STEPS.length; index += 1) {
+      expect(clampRestoredStep(index, STEPS, null)).toBe(STEPS.indexOf("persona"));
+    }
   });
 
   /**

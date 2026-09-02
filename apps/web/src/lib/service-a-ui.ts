@@ -30,15 +30,18 @@ export type AWizardFormat = "steps" | "full";
 
 /**
  * Format-aware, mirroring B's wizardSteps(category). "steps" is the web
- * wizard: silent format, no persona (the render path consumes none, hook lines
- * default to feminine first person and stay freely editable in the hook
- * studio), no script, no audio. "full" is the voiced seven-step path — today
- * CLI-only; the shape stays here so the two formats are one decision apart,
- * not two files apart.
+ * wizard, persona-first: the hook bank is a persona × clip matrix — every
+ * clip belongs to one persona, and the gallery shows only the chosen
+ * persona's clips — so the character is picked before the clip. The render
+ * path still consumes no persona (it only scopes the gallery and is the
+ * first-person speaker of the hook lines, which stay freely editable in the
+ * hook studio); silent format, no script, no audio. "full" is the voiced
+ * seven-step path — today CLI-only; the shape stays here so the two formats
+ * are one decision apart, not two files apart.
  */
 export function aWizardSteps(format: AWizardFormat): AWizardStep[] {
   return format === "steps"
-    ? ["hook", "hookStudio", "demo", "plan", "render"]
+    ? ["persona", "hook", "hookStudio", "demo", "plan", "render"]
     : ["persona", "hook", "hookStudio", "demo", "script", "audio", "render"];
 }
 
@@ -348,7 +351,7 @@ export type DemoSummary = {
 
 /**
  * Only demo id + step index survive a reload — the rest of the wizard state
- * (hook, hook line, rect) is deliberately session-local. Carried as query
+ * (persona, hook, hook line, rect) is deliberately session-local. Carried as query
  * params on the static route via history.replaceState: resumable links and
  * browser reload without touching routing, and it survives the sidebar's
  * router.refresh() on a business switch (which is exactly why the restore
@@ -381,19 +384,25 @@ export function identitySearch(demoId: string | null, step: number): string {
  * The step a reload can land on. Two rules, both learned the hard way:
  * the plan step needs a READY demo (a mid-ingest demo lands on the demo step,
  * whose own UI handles ingest polling and rejection — the plan step would
- * promise an analysis that may never come), and hookStudio can never be
- * restored (the chosen hook is session-local), so an index pointing at it
- * reroutes to the gallery instead of rendering an empty card.
+ * promise an analysis that may never come), and neither the hook gallery nor
+ * hookStudio can ever be restored (persona and hook are both session-local,
+ * and the gallery is one persona's column of the matrix — without the
+ * persona there is nothing to list), so an index landing on either reroutes
+ * to the persona step instead of rendering an empty card. No demo at all
+ * means the persona step, full stop.
  */
 export function clampRestoredStep(
   step: number,
   steps: AWizardStep[],
   demo: Pick<DemoState, "status"> | null,
 ): number {
-  const target = demo === null ? "hook" : demo.status === "ready" ? "plan" : "demo";
+  const target = demo === null ? "persona" : demo.status === "ready" ? "plan" : "demo";
   const max = steps.indexOf(target);
   const clamped = Math.max(0, Math.min(step, max === -1 ? 0 : max));
-  return steps[clamped] === "hookStudio" ? Math.max(0, steps.indexOf("hook")) : clamped;
+  const landed = steps[clamped];
+  return landed === "hook" || landed === "hookStudio"
+    ? Math.max(0, steps.indexOf("persona"))
+    : clamped;
 }
 
 /**
@@ -807,7 +816,9 @@ export type HookClip = {
   previewUrl: string;
   /** The clip's default safe area — seeds the hook studio's placement editor. */
   textSafeArea: SafeRect;
-  /** Set on persona-swapped clips; absent = generic (shown to everyone). */
+  /** Set on persona-swapped clips — every clip the wizard's gallery shows.
+   *  Absent = a generic source clip, returned only by the legacy persona-less
+   *  listing (no customer path). */
   personaId?: string;
 };
 

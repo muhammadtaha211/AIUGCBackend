@@ -8,7 +8,7 @@ import { hookPatchSchema } from "@/lib/hooks";
 /**
  * One clip action per PATCH: active toggle (retire mechanism — variant params
  * reference clip ids, so rows are never deleted), safe-area update, or persona
- * (re)assignment (null = back to generic).
+ * (re)assignment (null unassigns it — out of every gallery until reassigned).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

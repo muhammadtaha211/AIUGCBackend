@@ -27,3 +27,12 @@ were no hooks.
 Related standing gap, not a defect: persona-assigned hook clips are unreachable in every
 shipped flow today (nothing passes `personaId` to the hook picker) — they are machinery for
 a future persona-aware flow.
+
+## Reversed 2026-09-02 — [[../decisions/0012-persona-first-steps-wizard]]
+
+The wizard predicate flipped. `GET /api/hooks?personaId=` now returns **only** that persona's
+clips and generic (`persona_id IS NULL`) clips are shown to nobody, so the invisible clip is
+the one _without_ a persona. The fresh-upload form shows the persona dropdown again and refuses
+to register a clip without one; the card flags active unassigned clips. The clip cleared to
+generic above (`a165cc7c…`, now inactive) and the active generic clip `465f73c1…` are both
+unreachable until the founder assigns them in `/hooks`.

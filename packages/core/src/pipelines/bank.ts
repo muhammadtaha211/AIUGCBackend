@@ -145,6 +145,28 @@ export async function addPersona(
   return inserted[0]!;
 }
 
+/**
+ * Edit a persona's name, pinned voice or gender — only the fields given are
+ * written: the admin edit form PATCHes a partial body, so an untouched voice
+ * id is never rewritten.
+ */
+export async function updatePersona(
+  db: Db,
+  personaId: string,
+  patch: { name?: string; voiceId?: string; gender?: "female" | "male" },
+) {
+  const rows = await db.select().from(personas).where(eq(personas.id, personaId)).limit(1);
+  const persona = rows[0];
+  if (!persona) throw new Error(`persona ${personaId} not found`);
+  const set: typeof patch = {};
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.voiceId !== undefined) set.voiceId = patch.voiceId;
+  if (patch.gender !== undefined) set.gender = patch.gender;
+  if (Object.keys(set).length === 0) return persona;
+  const updated = await db.update(personas).set(set).where(eq(personas.id, personaId)).returning();
+  return updated[0]!;
+}
+
 /** Catalog copies serve for a year — keys are content-addressed, so changed
  *  bytes are a new URL and stale caches can never show the wrong image. */
 const CATALOG_CACHE_SECONDS = "31536000";
@@ -155,21 +177,29 @@ function catalogFilename(bytes: Buffer, extension: string): string {
 }
 
 /**
- * Best-effort blur placeholder for the pickers (~8px WebP data URL). null when
- * ffmpeg is missing or the bytes don't decode — a cosmetic placeholder must
- * never fail an upload, and the pickers render fine without one.
+ * Best-effort blur placeholder for the pickers (~8px WebP data URL). The
+ * scratch mkdir/write sit inside the try with ffmpeg because a cosmetic
+ * placeholder must never fail an upload — on Vercel the work dir is read-only
+ * and there is no ffmpeg (that stranded two rows at "pending" on 2026-09-02);
+ * a null blur is backfilled by `aiugc persona sync-catalog`.
  */
 async function tryBlurPlaceholder(bytes: Buffer, id: string, extension: string) {
-  const dir = path.join(WORK_DIR, "persona-blur");
-  mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${id}${extension}`);
-  writeFileSync(file, bytes);
+  const file = path.join(WORK_DIR, "persona-blur", `${id}${extension}`);
   try {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, bytes);
     return await blurPlaceholder(file);
   } catch {
     return null;
   } finally {
-    rmSync(file, { force: true });
+    // Best-effort too: `force` only forgives a missing file, and on POSIX a
+    // scratch path under a regular file lstat's as ENOTDIR — a throw here
+    // would override the catch's null and fail the upload after all.
+    try {
+      rmSync(file, { force: true });
+    } catch {
+      /* scratch cleanup must never fail the upload either */
+    }
   }
 }
 

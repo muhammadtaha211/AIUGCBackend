@@ -17,7 +17,10 @@ replaced the option set the founder was reading (the reported symptom), and `set
 half-filled the 20-slot avoid list with lines the customer never saw.
 
 **Fix:** an in-flight gate (`hookGenInFlight` ref) owned by `AWizard` and checked inside
-`generateOptions`. Parent-owned on purpose — an instance-local ref was tried first and the
+`generateOptions`. _(Renamed 2026-09-02 to `hookGen`, a per-flight token instead of a boolean:
+the persona-first wizard ([[../decisions/0012-persona-first-steps-wizard]]) nulls it on a
+cross-gender persona swap so a pending generation's lines — the previous speaker's first
+person — are dropped instead of landing in the new speaker's batch. Same owner, same lifetime.)_ Parent-owned on purpose — an instance-local ref was tried first and the
 adversarial review killed it: backing out of the studio and re-entering during the pending
 call remounts the component with a fresh ref and double-spends anyway. The gate's lifetime
 now matches the state it protects. Reroll and retry-after-error call `generateOptions`

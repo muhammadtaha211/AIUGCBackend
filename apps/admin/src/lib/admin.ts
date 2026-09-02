@@ -32,6 +32,17 @@ export const createPersonaSchema = z.object({
   gender: z.enum(["female", "male"]),
 });
 
+/** One PATCH per persona edit: any subset of name, voice id, gender. */
+export const personaPatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    voiceId: z.string().trim().min(1).max(120).optional(),
+    gender: z.enum(["female", "male"]).optional(),
+  })
+  .refine((patch) => Object.values(patch).some((value) => value !== undefined), {
+    message: "empty patch",
+  });
+
 export const grantSchema = z.object({
   userId: z.string().uuid(),
   credits: z.number().int().positive(),

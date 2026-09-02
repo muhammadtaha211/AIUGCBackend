@@ -714,9 +714,13 @@ line them up first or the smoke test stops early:
   is 0, which is where every new account starts — nothing grants signup credits. Either
   `grantCredits` from the admin console or set the owner's `users.role = 'admin'` (which bypasses
   the check) before you start.
-- **A hook clip.** The demo upload is step 3 of the Service A wizard and is unreachable until a
-  hook clip is picked in step 1. `hook_clips` is empty on a rebuilt project and no migration seeds
-  it — add at least one via the CLI/admin bank commands, and make sure its file exists in storage.
+- **A persona with an image and a hook clip.** The demo upload is step 4 of the Service A wizard
+  and is unreachable until a persona is picked in step 1 and one of _its_ clips in step 2
+  (`docs/vault/decisions/0012-persona-first-steps-wizard.md`: the gallery is one persona's column
+  of the hook matrix, so a clip with `persona_id NULL` unblocks nothing). `personas`, `persona_images`
+  and `hook_clips` are all empty on a rebuilt project and no migration seeds them — add a persona
+  with at least one reference image and one active clip assigned to it via the admin console, and
+  make sure the files exist in storage.
 
 Uploading through the web app is deliberate here: it creates the `public.users` row from the auth
 uid via the trigger. `aiugc business create` invents a uuid instead, which permanently blocks that

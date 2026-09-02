@@ -116,6 +116,9 @@ export function UploadHook({
 
   async function upload() {
     if (!prepared) return;
+    // A clip with no persona is unreachable (see the select below), so refuse
+    // before spending an upload on it.
+    if (personaId === "") return setError("בחרו דמות — פתיח בלי דמות לא מוצג לאף לקוח.");
     setBusy(true);
     setError(null);
 
@@ -226,27 +229,25 @@ export function UploadHook({
               <span dir="ltr" className="text-end text-xs text-gray-400">
                 {(prepared.durationMs / 1000).toFixed(1)}s
               </span>
-              {/* Persona assignment only in the duplicate-to-persona flow: the
-                  wizard lists generic clips (persona_id IS NULL) only, so a
-                  persona picked on a fresh upload silently hides the clip from
-                  every customer. The per-clip dropdown below still reassigns. */}
-              {prefill && (
-                <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
-                  דמות
-                  <select
-                    value={personaId}
-                    onChange={(event) => setPersonaId(event.target.value)}
-                    className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
-                  >
-                    <option value="">ללא דמות (כללי)</option>
-                    {personas.map((persona) => (
-                      <option key={persona.id} value={persona.id}>
-                        {persona.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
+              {/* Persona is required on every upload: the wizard lists only the
+                  chosen persona's clips, so a clip registered without one is
+                  unreachable by any customer. The per-clip select on the card
+                  can still reassign it later. */}
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
+                דמות
+                <select
+                  value={personaId}
+                  onChange={(event) => setPersonaId(event.target.value)}
+                  className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                >
+                  <option value="">בחרו דמות…</option>
+                  {personas.map((persona) => (
+                    <option key={persona.id} value={persona.id}>
+                      {persona.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <TextField
                 label="אנרגיה"
                 value={tags.energy}

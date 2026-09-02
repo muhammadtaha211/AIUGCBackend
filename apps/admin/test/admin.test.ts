@@ -10,6 +10,7 @@ import {
   grantSchema,
   imageDimensions,
   imagePatchSchema,
+  personaPatchSchema,
   referenceImageError,
   roleChangeSchema,
 } from "../src/lib/admin";
@@ -89,6 +90,21 @@ describe("request body schemas", () => {
     expect(roleChangeSchema.safeParse({ role: "admin" }).success).toBe(true);
     expect(roleChangeSchema.safeParse({ role: "customer" }).success).toBe(true);
     expect(roleChangeSchema.safeParse({ role: "owner" }).success).toBe(false);
+  });
+});
+
+describe("personaPatchSchema (edit form body)", () => {
+  it("accepts a partial patch and trims it", () => {
+    const nameOnly = personaPatchSchema.safeParse({ name: "  דנה " });
+    expect(nameOnly.success && nameOnly.data).toEqual({ name: "דנה" });
+    expect(personaPatchSchema.safeParse({ voiceId: "voice_2", gender: "male" }).success).toBe(true);
+  });
+
+  it("rejects an empty patch, an unknown gender, and an empty name", () => {
+    expect(personaPatchSchema.safeParse({}).success).toBe(false);
+    expect(personaPatchSchema.safeParse({ gender: "other" }).success).toBe(false);
+    expect(personaPatchSchema.safeParse({ name: "" }).success).toBe(false);
+    expect(personaPatchSchema.safeParse({ name: "   " }).success).toBe(false);
   });
 });
 

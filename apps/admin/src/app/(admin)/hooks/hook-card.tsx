@@ -14,7 +14,7 @@ export type HookClipCard = {
   tags: Record<string, string>;
   textSafeArea: SafeRect;
   active: boolean;
-  /** Persona-swapped clip; absent = generic (shown to everyone). */
+  /** Persona this clip belongs to; absent = shown to nobody (the wizard lists per persona). */
   personaId?: string;
   personaName?: string;
   sourceClipId?: string;
@@ -178,7 +178,7 @@ export function HookCard({ clip, personas, onDuplicate }: HookCardProps) {
               className="h-7 w-full rounded border border-white/10 bg-white/5 px-1 text-[11px] text-gray-300 focus:border-accent focus:outline-none"
               aria-label="דמות"
             >
-              <option value="">ללא דמות (כללי)</option>
+              <option value="">ללא דמות (לא מוצג ללקוחות)</option>
               {personas.map((persona) => (
                 <option key={persona.id} value={persona.id}>
                   {persona.name}
@@ -203,6 +203,9 @@ export function HookCard({ clip, personas, onDuplicate }: HookCardProps) {
                 </option>
               ))}
             </select>
+            {clip.active && !clip.personaId && (
+              <p className="text-[11px] text-amber-300">לא משויך לדמות — לא מוצג ללקוחות</p>
+            )}
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,6 +19,7 @@ import {
   setDefaultPersonaImage,
   setPersonaImageRetired,
   syncPersonaImageCatalog,
+  updatePersona,
 } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { createComposite } from "../src/pipelines/composites";
@@ -411,6 +413,45 @@ describe("persona images (placeholder rows, upload cleanup)", () => {
         .where(sql`${dbSchema.personaImages.id} = ${extra.id}`)
     )[0]!;
     expect(row.retired).toBe(false);
+  });
+
+  it("updatePersona changes only the provided fields and rejects an unknown id", async () => {
+    const persona = await addPersona(db, { name: "עדי", voiceId: "voice_adi", gender: "female" });
+    const updated = await updatePersona(db, persona.id, {
+      name: "עדי כהן",
+      voiceId: "voice_adi_2",
+      gender: "male",
+    });
+    expect(updated).toMatchObject({
+      id: persona.id,
+      name: "עדי כהן",
+      voiceId: "voice_adi_2",
+      gender: "male",
+    });
+    let row = (
+      await db
+        .select()
+        .from(dbSchema.personas)
+        .where(sql`${dbSchema.personas.id} = ${persona.id}`)
+    )[0]!;
+    expect(row).toMatchObject({ name: "עדי כהן", voiceId: "voice_adi_2", gender: "male" });
+
+    // A partial patch leaves every other field alone.
+    const renamed = await updatePersona(db, persona.id, { name: "עדי לוי" });
+    expect(renamed.name).toBe("עדי לוי");
+    expect(renamed.voiceId).toBe("voice_adi_2");
+    expect(renamed.gender).toBe("male");
+    expect(renamed.active).toBe(true);
+    row = (
+      await db
+        .select()
+        .from(dbSchema.personas)
+        .where(sql`${dbSchema.personas.id} = ${persona.id}`)
+    )[0]!;
+    expect(row.voiceId).toBe("voice_adi_2");
+    expect(row.gender).toBe("male");
+
+    await expect(updatePersona(db, randomUUID(), { name: "x" })).rejects.toThrow(/not found/);
   });
 
   it("the missing-object message keeps the storage path out of the user text", () => {

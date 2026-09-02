@@ -99,7 +99,8 @@ export const registerHookSchema = z.object({
   height: z.number().int().positive(),
   textSafeArea: textSafeAreaSchema,
   tags: hookTagsSchema.default({}),
-  /** Persona-swapped clip: shown only in that persona's gallery. Absent = generic. */
+  /** Persona this clip belongs to — the wizard lists one persona's clips; a
+   *  clip without one is shown to nobody. */
   personaId: z.string().uuid().optional(),
   /** Lineage: the clip this swap was generated from ("שכפול לדמות"). */
   sourceClipId: z.string().uuid().optional(),
@@ -110,7 +111,7 @@ export const hookPatchSchema = z
   .object({
     active: z.boolean().optional(),
     textSafeArea: textSafeAreaSchema.optional(),
-    /** null clears the assignment back to generic (shown to everyone). */
+    /** null unassigns the clip (drops it out of every gallery until reassigned). */
     personaId: z.string().uuid().nullable().optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined), {

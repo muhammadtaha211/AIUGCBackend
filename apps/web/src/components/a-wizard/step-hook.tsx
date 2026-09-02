@@ -8,9 +8,10 @@ import type { HookClip } from "@/lib/service-a-ui";
 import { apiFetch } from "@/lib/use-api";
 
 type StepHookProps = {
-  /** Set = filter to this persona's swapped clips + the generic ones; absent
-   *  (the steps wizard has no persona) = the generic bank only. */
-  personaId?: string;
+  /** The gallery is one persona's column of the hook matrix: every clip
+   *  belongs to one persona, and only the chosen persona's clips are listed —
+   *  never the generic (persona-less) source clips. */
+  personaId: string;
   selected: HookClip | null;
   onSelect: (hook: HookClip) => void;
   onBack: () => void;
@@ -34,7 +35,7 @@ export function StepHook({
     setError(null);
     setHooks(null);
     const result = await apiFetch<{ hooks: HookClip[] }>(
-      personaId ? `/api/hooks?personaId=${encodeURIComponent(personaId)}` : "/api/hooks",
+      `/api/hooks?personaId=${encodeURIComponent(personaId)}`,
     );
     if (result.ok) setHooks(result.body.hooks);
     else if (result.status === 403 || result.status === 404) onFatal(result.error);
@@ -73,7 +74,7 @@ export function StepHook({
 
       {hooks !== null && hooks.length === 0 && (
         <p className="mt-6 rounded-xl border border-dashed border-ink/15 bg-ink/[0.04] px-6 py-10 text-center text-sm text-ink/60">
-          אין כרגע פתיחים זמינים, אנחנו מוסיפים חדשים ממש בקרוב. נסו שוב מאוחר יותר.
+          לדמות הזאת אין כרגע קליפי פתיחה — בחרו דמות אחרת או נסו שוב מאוחר יותר.
         </p>
       )}
 
