@@ -302,6 +302,24 @@ cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-wo
 
 That is the entire deploy pipeline, per decision #10.
 
+**Then verify the artifact, not the symptom:**
+
+```
+cd ~/AIUGCBackend && git log -1 --oneline && systemctl is-active aiugc-worker
+```
+
+The commit must be the one you meant to ship. This step is not ceremony — on 2026-09-01 a
+deploy was believed done because a render succeeded afterwards, and it had not happened:
+the box was on the merge's other parent, and the render only worked because restarting the
+OLD code rebuilt a bundle the cron later deleted again. Renders died for another day.
+A succeeding render is NOT evidence a deploy landed; a restart alone produces one. Full
+autopsy: `docs/vault/falsified/bundle-fix-reached-the-worker-box.md`.
+
+When a render still fails after a deploy, the customer-facing message is deliberately
+vague and Vercel logs hold nothing — all render work is here. The real reason is on
+`jobs.last_error`; `packages/core/.work/diag-failed-render.ts` (gitignored, read-only,
+session pooler) prints it alongside the job's attempt count and the worker heartbeat.
+
 ## 12. Acceptance test — the gate before the box touches a customer
 
 1. **The service is alive:** `systemctl status aiugc-worker` → `Active: active (running)`, and

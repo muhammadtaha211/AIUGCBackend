@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/icons";
-import { RenderProgress } from "@/components/ui/progress-bar";
 import { renderWaitView, type JobProgressWire } from "@/lib/service-a-ui";
 import {
   generatingLine,
@@ -123,9 +122,10 @@ export function RendersStrip({ businessId }: { businessId: string }) {
 
   return (
     <section className="mt-8">
-      {/* The indicator rides the heading row and the bar sits directly under
-          it, so a render in flight costs the dashboard ~14px rather than a
-          banner's ~80 — this pane is meant to fit a laptop without scrolling. */}
+      {/* The whole indicator costs the dashboard ZERO height: the live chip
+          rides the heading row and the percent goes inside the placeholder
+          tile the render already occupies. This pane is meant to fit a laptop
+          without scrolling, and the wizard is where a full bar belongs. */}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-ink">סרטונים אחרונים</h2>
         {wait && (
@@ -136,25 +136,16 @@ export function RendersStrip({ businessId }: { businessId: string }) {
         )}
       </div>
 
-      {wait && (
-        <>
-          <RenderProgress
-            bar={wait.bar}
-            label="התקדמות יצירת הסרטון"
-            stepMs={ACTIVE_POLL_MS}
-            className="mt-2.5"
-          />
-          {/* Only the stuck line earns extra height here — the queue-position
-              and elapsed lines live in the wizard, which has room for them. */}
-          {wait.kind === "stuck" && (
-            <p
-              role="alert"
-              className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900"
-            >
-              {wait.line}
-            </p>
-          )}
-        </>
+      {/* The only wait copy that earns height here — nothing is claiming the
+          job, so the tiles have stopped shimmering and something has to say
+          why. The queue-position and elapsed lines stay in the wizard. */}
+      {wait?.kind === "stuck" && (
+        <p
+          role="alert"
+          className="mt-2.5 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900"
+        >
+          {wait.line}
+        </p>
       )}
 
       {error && (
@@ -189,6 +180,10 @@ export function RendersStrip({ businessId }: { businessId: string }) {
           {renders.map((render) => {
             const released = render.status === "released";
             const working = isActiveRenderStatus(render.status);
+            // Only the head render carries job progress (see pickActiveHead),
+            // so it is the only tile that can show a real number. The rest are
+            // queued behind it and keep their status word.
+            const percent = render.id === head?.id ? wait?.bar.percent : undefined;
             const thumb = (
               <span
                 className={`relative block aspect-[9/16] w-full overflow-hidden rounded-lg border bg-ink/[0.04] ${
@@ -199,8 +194,18 @@ export function RendersStrip({ businessId }: { businessId: string }) {
                   // Signed, short-lived URL — next/image optimization would break it.
                   <img src={render.thumbUrl} alt="" className="size-full object-cover" />
                 ) : (
-                  <span className="flex size-full items-center justify-center px-2 text-center text-xs text-ink/55">
-                    {renderStatusLabel(render.status)}
+                  // `relative` lifts it above the shimmer, which is absolutely
+                  // positioned and would otherwise wash over the number.
+                  <span className="relative flex size-full items-center justify-center px-2 text-center">
+                    {percent !== undefined ? (
+                      <span dir="ltr" className="text-lg font-bold tabular-nums text-ink">
+                        {percent}%
+                      </span>
+                    ) : (
+                      <span className="text-xs text-ink/55">
+                        {renderStatusLabel(render.status)}
+                      </span>
+                    )}
                   </span>
                 )}
                 {/* The empty tile is where the video will appear — sweeping it

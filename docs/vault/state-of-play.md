@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-01
+updated: 2026-09-02
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -26,16 +26,40 @@ a full run to MP4 necessarily exercised hook-line generation (inference from "fu
 the route was not hit in isolation). Full story of that bug:
 [[computed-path-reads-are-invisible-to-vercel-tracing]].
 
-The night also surfaced and closed an outage: **every box render since 2026-08-27 was
-dead** — the §9 `/tmp` cron was deleting the live worker's memoized webpack bundle
-([[tmp-cron-deletes-live-worker-bundle]], now cause-verified via `crontab -l` and FIXED:
-repo-owned `outDir` + re-bundle heal in `packages/remotion/src/render.ts`, commit
-`9543cc3`). The fix was deployed to the box (§11 run), the worker restarted, and the
-successful wizard render above is the end-to-end proof. It surfaced only because the
-founder happened to run a wizard test at 4am — that is the Sentry argument (queue item 5).
+The night also surfaced an outage that was **not** closed that night, though this file
+said it was: **every box render since 2026-08-27 was dead** — the §9 `/tmp` cron was
+deleting the live worker's memoized webpack bundle ([[tmp-cron-deletes-live-worker-bundle]],
+cause-verified via `crontab -l`; fixed in the repo by a repo-owned `outDir` + re-bundle
+heal, commit `9543cc3`).
+
+**Corrected 2026-09-02: the fix did not reach the box on 09-01.** A fourth render died the
+same death on 09-02 with a fresh `/tmp` bundle path, which `9543cc3` cannot produce. The
+box was sitting at `48584e7` — the merge's _other_ parent, which does not contain the fix
+— and the 09-01 "proof" render succeeded only because the restart made the OLD code
+mkdtemp a fresh `/tmp` bundle, which the cron then ate ~19h later. Full autopsy:
+[[bundle-fix-reached-the-worker-box]]. **A real §11 deploy ran 2026-09-02** (`48584e7 →
+af158cb`, `packages/remotion/src/render.ts` +35 and `bundle-heal.test.ts` created — those
+files arriving is itself the proof the box never had them), worker restarted and claiming.
+Still unproven at the time of writing: no render has run since.
+
+The rule this cost two incidents to learn: **verify the deployed artifact, not the
+symptom.** `git log -1 --oneline` on the box, not "a render worked afterwards" — a restart
+alone produces that. §11 now carries the check.
+
+All four deaths surfaced only because the founder happened to be running a wizard test —
+that is the Sentry argument (queue item 5), now with four data points instead of two.
 
 `apps/admin` is also deployed and publicly reachable on its vercel.app URL, gated only
 by `requireAdmin` (the basic-auth second wall is believed unset — queue item 2).
+
+**Render progress is now visible to the customer** (2026-09-02). The A wizard's render
+step has a real bar with the percentage on it; `/home` shows a live chip plus the percent
+inside the in-flight tile, and deliberately no bar. Shape and the three rounds that
+produced it: [[0010-where-render-progress-is-shown]]. The retry-backoff copy that used to
+appear mid-render is gone on purpose: [[0009-retry-backoff-is-invisible-to-the-customer]].
+The `/home` content pane also renders at `zoom: 0.95` so the dashboard fits a laptop
+without scrolling — whether 0.95 is the right constant is still unmeasured against the
+founder's own viewport.
 
 The worker box is live; the pipeline does not depend on the founder's desktop being awake.
 
@@ -61,8 +85,10 @@ whether or not attached. Reasoning and rescale rules: [[0007-worker-box-instance
 powered-off server still bills in full — only deletion stops the meter.**
 
 **The box itself.** `aiugc-worker.service` enabled, `Restart=always`,
-`WORKER_ID=hetzner`. A §11 deploy ran 2026-09-01 (picked up the bundle fix), worker
-restarted and active, rendering verified end to end. `ufw` active, OpenSSH only. SSH is
+`WORKER_ID=hetzner`. At `af158cb` after the 2026-09-02 §11 deploy — the one that actually
+carried the bundle fix; the 09-01 deploy did not (see above). Worker restarted and
+claiming (reaper heartbeat 24s old when checked). Rendering NOT yet re-verified on this
+build. `ufw` active, OpenSSH only. SSH is
 key-only from the founder's Windows desktop and no second key pair exists — losing that
 key means a console root reset. Logs: `journalctl -u aiugc-worker -o cat`. Deploys:
 `docs/07-worker-box.md` §11. The §9 cron is **verified** via `crontab -l` (exact line in
@@ -108,10 +134,10 @@ even with non-sensitive scopes.
 ## The queue
 
 1. **Write `/privacy` and `/terms`, then publish the Google OAuth app** — adding
-   `tavnit.ai` under **Authorized domains** (docs/08 §8B step 7; *Authorized JavaScript
-   origins* stays **empty** — see corrections). Hard gate on ANY traffic per the 0006
+   `tavnit.ai` under **Authorized domains** (docs/08 §8B step 7; _Authorized JavaScript
+   origins_ stays **empty** — see corrections). Hard gate on ANY traffic per the 0006
    amendment: the site will not be advertised until Google sign-in works, and until
-   publishing status reads *In production*, any address not on the test-user list is
+   publishing status reads _In production_, any address not on the test-user list is
    refused at the account chooser with `error=access_denied`, which this app does not
    read — the user lands on `/start` with no session and no message.
 2. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
@@ -122,18 +148,23 @@ even with non-sensitive scopes.
    run briefly alongside the box around 2026-08-27. Any job it claimed reported SUCCESS
    while writing placeholder files. One query settles it:
    `select id, type, status, locked_by, finished_at from jobs where locked_by like
-   'local:%' order by finished_at desc;` — anything dated after the box went live is
+'local:%' order by finished_at desc;` — anything dated after the box went live is
    stub output wearing a success status. An open check, not a known problem.
 4. **2026-09-03 — count the drops.** `journalctl -u aiugc-worker -o cat | grep -c
-   '"claim failed'`. That number decides whether `DATABASE_URL` moves off port 6543.
+'"claim failed'`. That number decides whether `DATABASE_URL` moves off port 6543.
    Clock started 2026-08-27; fires on its date regardless of queue position. Do not
    change the port before then.
-5. **Sentry DSN on the worker.** Moved out of "someday": a job went dead five times on
-   08-28 and again on 09-01, and both surfaced only because the founder happened to run
-   a wizard test at 4am. `status='dead'` is the alert condition, the DSN is wired and
-   unset, and the worker runs on a machine nobody is looking at.
-6. **Take one Hetzner snapshot.** The box now carries the bundle fix and a verified
-   render path — capture a known-good image before it drifts. One-off, not the
+5. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
+   08-28, 09-01 and again on 09-02, and every one surfaced only because the founder
+   happened to be running a wizard test. `status='dead'` is the alert condition, the DSN
+   is wired and unset, and the worker runs on a machine nobody is looking at. The
+   founder also had no route to the diagnosis — Vercel logs show nothing (all render
+   work is on the box) and the real cause lives in `jobs.last_error`. Read it with
+   `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only);
+   box logs are `journalctl -u aiugc-worker -o cat`.
+6. **Take one Hetzner snapshot** — after one render proves `af158cb` works. The box
+   now carries the bundle fix; capture a known-good image once the render path is
+   re-verified, not before. One-off, not the
    +20%/month backup plan.
 7. **Correct `docs/02-jobs.md:111`.** "Hetzner CPX41-class, ~€30/mo flat" predates the
    June 2026 price rise and understates by roughly half. Verified still wrong
@@ -190,8 +221,8 @@ Recorded because each cost real time, and each came from asserting rather than c
   not state it as fact, and do not invent an alternative.
 - **"Add `tavnit.ai` as an authorized origin in Google Console" — wrong field, wrong
   time.** This file's own previous queue said it. `docs/08` §8B step 3 is explicit that
-  *Authorized JavaScript origins* stays **empty** (server-side code flow); the field
-  that needs `tavnit.ai` is *Authorized **domains***, at step 7, at publish, alongside
+  _Authorized JavaScript origins_ stays **empty** (server-side code flow); the field
+  that needs `tavnit.ai` is _Authorized **domains**_, at step 7, at publish, alongside
   the privacy and terms URLs. Pasting into origins is a box that does nothing.
 - **An acceptance gate passed against code that existed nowhere but that box.**
   `docs/07-worker-box.md` §12 step 3 was first cleared with an uncommitted `sed` edit.
@@ -222,7 +253,7 @@ Recorded because each cost real time, and each came from asserting rather than c
 - 269f2ce removed the CALLERS from `step-render.tsx`, not the route files. Right in
   substance, wrong in mechanism.
 - "Billing is unwired, so account caps are the only bound" was backwards — the credit
-  balance is the bound and it is *tighter* because billing is unwired. See
+  balance is the bound and it is _tighter_ because billing is unwired. See
   [[no-self-serve-credit-grant-path]].
 
 ---
