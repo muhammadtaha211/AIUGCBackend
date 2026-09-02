@@ -8,23 +8,51 @@ source: db + box crontab
 
 # The box's /tmp cron deletes the live worker's webpack bundle; every render then fails until restart
 
-## REOPENED 2026-09-02 — fixed in the repo, NOT running on the box
+## CLOSED 2026-09-02 — verified on the box, mechanism eliminated
 
-Render `bb8a3c51-610c-4687-8e1f-abbcf296158d` (created 2026-09-02T01:57:36Z) died 5/5 with the
-identical error and a **`/tmp`** bundle path (`/tmp/remotion-webpack-bundle-0iONhy`). Code carrying
-`9543cc3` cannot produce that path, and its heal would have rescued attempt 2 of 5 — so the box is
-running pre-fix code. The "deployed the same night" claim below is disproved and recorded in
-[[bundle-fix-reached-the-worker-box]]; the 2026-09-01 04:41 success it rested on is fully explained
-by the worker restart alone, which is the same temporary remedy this defect always had.
+```
+$ ls -d ~/AIUGCBackend/.work/remotion-bundle; ls -d /tmp/remotion-webpack-bundle-* 2>/dev/null | wc -l
+/home/aiugc/AIUGCBackend/.work/remotion-bundle
+0
+```
 
-**The remedy is unchanged and unrun:** `cd ~/AIUGCBackend && git pull && pnpm install && sudo
-systemctl restart aiugc-worker` (docs/07-worker-box.md §11), then verify the ARTIFACT rather than
-the symptom — `git log -1 --oneline` on the box shows `9543cc3` or later, and
-`ls -d ~/AIUGCBackend/.work/remotion-bundle` exists after the next render. Note that
-`docs/07-worker-box.md` §9 currently describes the fixed behaviour as present tense; it is
-describing the repo, not the box.
+That is decisive, and it is decisive for a reason worth spelling out: the three renders that
+had just run (02:36–03:02, [[service-a-render-wall-clock-on-the-box]]) were under three hours
+old, and `@remotion/bundler` never deletes its own temp dirs. Had the running process been
+bundling into `os.tmpdir()`, that directory would still have been sitting there — well under
+the cron's 12h threshold — and the count would have been at least 1. It is 0, and the
+repo-owned path exists. **The live worker is serving from `<repo>/.work/remotion-bundle`.**
 
-## The code fix, 2026-09-01 (in the repo, unverified in production)
+The cron (`find /tmp -maxdepth 1 -name 'remotion-*' …`) only ever touches `/tmp`. With the
+bundle outside `/tmp`, the causal chain is broken at the link that mattered: the janitor can
+no longer reach the thing a long-lived process is serving from. `getBundle()`'s re-bundle heal
+remains as a backstop for anything else that deletes it.
+
+Not observed, and now a formality rather than a risk: a render succeeding more than 12h past
+the restart, i.e. on the far side of a cron run. The mechanism is gone; that observation would
+only be the calendar agreeing.
+
+## The two-day detour, kept because it is the lesson
+
+**2026-09-01 — closed on bad evidence.** The fix was committed (`9543cc3`) and this note was
+marked FIXED the same night, on the strength of a render succeeding afterwards. It had not
+been deployed. Full autopsy: [[bundle-fix-reached-the-worker-box]].
+
+**2026-09-02 — reopened by a fourth death.** Render `bb8a3c51-610c-4687-8e1f-abbcf296158d`
+died 5/5 with a **`/tmp`** bundle path (`…-0iONhy`). Code carrying `9543cc3` cannot produce
+that path, and its heal would have rescued attempt 2 of 5 — so the box was provably running
+pre-fix code. It was sitting at `48584e7`, the merge's other parent.
+
+**2026-09-02 — actually deployed.** `48584e7 → af158cb`; the pull's own diff carried
+`packages/remotion/src/render.ts` (+35) and created `packages/remotion/test/bundle-heal.test.ts`,
+which is itself the proof the box had never had them.
+
+The rule, now in `docs/07-worker-box.md` §11: **a succeeding render is not evidence a deploy
+landed** — a restart alone produces one, because the old code rebuilds a fresh `/tmp` bundle
+that survives until the next midnight-plus-12h. Verify the artifact (`git log -1 --oneline`),
+or verify the mechanism (the `ls` above). Never the symptom.
+
+## The code fix, 2026-09-01 (deployed and verified on the box 2026-09-02)
 
 `packages/remotion/src/render.ts` now passes a fixed, repo-owned `outDir` to `bundle()` —
 `<repo>/.work/remotion-bundle` — so the bundle never lives in `os.tmpdir()` and no temp janitor

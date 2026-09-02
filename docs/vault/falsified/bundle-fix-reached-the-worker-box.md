@@ -52,6 +52,21 @@ four-day-old `7LrUmX`) shows a restart is what happened.
 The 2026-09-02 failure is the same clock as before: bundle born ~04:41 on 09-01, midnight cron on
 09-02 finds it ~19h old, deletes it, the 01:57 render dies.
 
+## When it did become true
+
+2026-09-02, one day later: a real §11 deploy (`48584e7 → af158cb`), and then the check that
+should have been run the first time —
+
+```
+$ ls -d ~/AIUGCBackend/.work/remotion-bundle; ls -d /tmp/remotion-webpack-bundle-* 2>/dev/null | wc -l
+/home/aiugc/AIUGCBackend/.work/remotion-bundle
+0
+```
+
+Note what that check does and the original did not: it observes the **mechanism** (where the
+bundle physically is) rather than the **symptom** (a render working). See
+[[tmp-cron-deletes-live-worker-bundle]] for the closing evidence.
+
 ## The rule this is the second instance of
 
 A deploy is not verified by the system working afterwards. **Verify the deployed artifact, not the

@@ -39,8 +39,8 @@ box was sitting at `48584e7` — the merge's _other_ parent, which does not cont
 mkdtemp a fresh `/tmp` bundle, which the cron then ate ~19h later. Full autopsy:
 [[bundle-fix-reached-the-worker-box]]. **A real §11 deploy ran 2026-09-02** (`48584e7 →
 af158cb`, `packages/remotion/src/render.ts` +35 and `bundle-heal.test.ts` created — those
-files arriving is itself the proof the box never had them), worker restarted and claiming.
-Still unproven at the time of writing: no render has run since.
+files arriving is itself the proof the box never had them), worker restarted, three renders
+released, and the bundle verified living outside `/tmp`. **Closed.**
 
 The rule this cost two incidents to learn: **verify the deployed artifact, not the
 symptom.** `git log -1 --oneline` on the box, not "a render worked afterwards" — a restart
@@ -57,9 +57,10 @@ step has a real bar with the percentage on it; `/home` shows a live chip plus th
 inside the in-flight tile, and deliberately no bar. Shape and the three rounds that
 produced it: [[0010-where-render-progress-is-shown]]. The retry-backoff copy that used to
 appear mid-render is gone on purpose: [[0009-retry-backoff-is-invisible-to-the-customer]].
-The `/home` content pane also renders at `zoom: 0.95` so the dashboard fits a laptop
-without scrolling — whether 0.95 is the right constant is still unmeasured against the
-founder's own viewport.
+The `/home` content pane also renders at `zoom: 0.95`
+([[0011-dashboard-content-renders-at-95-percent]] — including the coordinate-space hazard
+that creates for any future pointer math under `/home`). Whether 0.95 is the right constant
+is still unmeasured against the founder's own viewport.
 
 The worker box is live; the pipeline does not depend on the founder's desktop being awake.
 
@@ -87,8 +88,12 @@ powered-off server still bills in full — only deletion stops the meter.**
 **The box itself.** `aiugc-worker.service` enabled, `Restart=always`,
 `WORKER_ID=hetzner`. At `af158cb` after the 2026-09-02 §11 deploy — the one that actually
 carried the bundle fix; the 09-01 deploy did not (see above). Worker restarted and
-claiming (reaper heartbeat 24s old when checked). Rendering NOT yet re-verified on this
-build. `ufw` active, OpenSSH only. SSH is
+claiming. **Rendering re-verified on this build:** three live wizard renders released
+2026-09-02 between 02:36 and 03:02, 0 retries each, ~65s
+([[service-a-render-wall-clock-on-the-box]]). **The bundle outage is closed** — verified on
+the box the same night by where the bundle physically is, not by a render succeeding:
+`.work/remotion-bundle` exists and `/tmp/remotion-webpack-bundle-*` is empty, so the §9
+cron cannot reach it ([[tmp-cron-deletes-live-worker-bundle]]). `ufw` active, OpenSSH only. SSH is
 key-only from the founder's Windows desktop and no second key pair exists — losing that
 key means a console root reset. Logs: `journalctl -u aiugc-worker -o cat`. Deploys:
 `docs/07-worker-box.md` §11. The §9 cron is **verified** via `crontab -l` (exact line in
@@ -162,13 +167,15 @@ even with non-sensitive scopes.
    work is on the box) and the real cause lives in `jobs.last_error`. Read it with
    `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only);
    box logs are `journalctl -u aiugc-worker -o cat`.
-6. **Take one Hetzner snapshot** — after one render proves `af158cb` works. The box
-   now carries the bundle fix; capture a known-good image once the render path is
-   re-verified, not before. One-off, not the
+6. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
+   verified, and the bundle is confirmed outside `/tmp`. This is the known-good image —
+   capture it before the box drifts. One-off, not the +20%/month backup plan. One-off, not the
    +20%/month backup plan.
-7. **Correct `docs/02-jobs.md:111`.** "Hetzner CPX41-class, ~€30/mo flat" predates the
-   June 2026 price rise and understates by roughly half. Verified still wrong
-   2026-09-01. One line, but other sizing was derived from it.
+7. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
+   CPX41-class, ~€30/mo flat" predates the June 2026 price rise and understates by
+   roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
+   against three measured renders (verified 2026-09-02,
+   [[service-a-render-wall-clock-on-the-box]]). Other sizing was derived from both.
 
 ## Open decisions
 
@@ -200,11 +207,10 @@ keys that matter.
 
 Neither blocks anything; both get more expensive to recover later.
 
-- **The wizard render's duration was never captured — but is now sitting in a row.**
-  Tonight's successful render (2026-09-01, live wizard run) has
-  `started_at`/`finished_at` on its `jobs` row, and it is a warm render on the verified
-  path. It is the only figure that speaks to `docs/02-jobs.md`'s 2–6 minute sizing; the
-  45s in [[box-render-timing]] is a 17s fixture and explicitly does not extrapolate.
+- ~~The wizard render's duration~~ — **taken 2026-09-02**, three live renders, mean 66.1s:
+  [[service-a-render-wall-clock-on-the-box]]. It shows `docs/02-jobs.md:111`'s "~2–6 min
+  per video" to be 2–5× too slow, so that line and its stale box price are now one fix
+  (queue item 7).
 - **No cold render has been measured on the box** — one including the ~92 MB Chrome
   Headless Shell download. Matters only if the box is rebuilt from scratch rather than
   from the queue-item-6 snapshot.
