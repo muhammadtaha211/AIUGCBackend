@@ -27,6 +27,10 @@ import type { AStepsCreateResponse } from "@/lib/service-a";
 import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
+/** The render poll, and the interval the progress bar glides over — one
+ *  constant so the fill can never drift out of step with the samples. */
+const RENDER_POLL_MS = 2_500;
+
 type StepARenderProps = {
   businessId: string;
   demoId: string;
@@ -138,7 +142,7 @@ export function StepARender({
   }>(
     inFlight,
     `/api/renders/${render?.id}`,
-    2_500,
+    RENDER_POLL_MS,
     (body) => {
       if (!render) return;
       // The refund's terminal tick carries the post-refund balance — the
@@ -384,23 +388,14 @@ export function StepARender({
         })}
       </ol>
 
-      {/* The bar carries the number now. Its caption is what keeps the number
+      {/* The bar carries the number. The caption is what keeps that number
           honest: the fraction is renderMedia's frame loop only, so "of the
           frames" is the claim, not "of the video". */}
       <div className="mt-7">
         {wait.bar.percent !== undefined && (
-          <div className="flex items-baseline justify-between gap-3 text-[13px]">
-            <span className="text-ink/60">מהפריימים מוכנים</span>
-            <span dir="ltr" className="font-medium tabular-nums text-ink">
-              {wait.bar.percent}%
-            </span>
-          </div>
+          <p className="mb-2 text-center text-[13px] text-ink/60">מרנדרים את הפריימים</p>
         )}
-        <RenderProgress
-          bar={wait.bar}
-          label="התקדמות יצירת הסרטון"
-          className={wait.bar.percent !== undefined ? "mt-2" : ""}
-        />
+        <RenderProgress bar={wait.bar} label="התקדמות יצירת הסרטון" stepMs={RENDER_POLL_MS} />
       </div>
 
       {wait.kind === "stuck" ? (

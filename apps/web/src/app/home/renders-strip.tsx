@@ -132,23 +132,18 @@ export function RendersStrip({ businessId }: { businessId: string }) {
           <span className="flex items-center gap-2 text-[13px] font-medium text-ink/70">
             <LiveDot paused={wait.bar.paused} />
             {generatingLine(activeCount, wait.bar.paused)}
-            {wait.bar.percent !== undefined && (
-              <>
-                <span aria-hidden className="text-ink/30">
-                  ·
-                </span>
-                <span dir="ltr" className="tabular-nums text-ink">
-                  {wait.bar.percent}%
-                </span>
-              </>
-            )}
           </span>
         )}
       </div>
 
       {wait && (
         <>
-          <RenderProgress bar={wait.bar} label="התקדמות יצירת הסרטון" className="mt-2.5" />
+          <RenderProgress
+            bar={wait.bar}
+            label="התקדמות יצירת הסרטון"
+            stepMs={ACTIVE_POLL_MS}
+            className="mt-2.5"
+          />
           {/* Only the stuck line earns extra height here — the queue-position
               and elapsed lines live in the wizard, which has room for them. */}
           {wait.kind === "stuck" && (

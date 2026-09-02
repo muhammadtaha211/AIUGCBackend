@@ -1124,12 +1124,14 @@ describe("the demo step rework (8d)", () => {
       expect(renderWaitView("queued", undefined)).toEqual({ kind: "waiting", bar: MOVING });
     });
 
-    it("a backoff-parked render job reads as paused — resumeAtMs beats ahead", () => {
+    it("a backoff-parked render says nothing and keeps the bar running", () => {
+      // The retry resumes on its own within minutes, so the customer is told
+      // nothing at all — no queue position (it is not in line), no "paused"
+      // sentence (founder call 2026-09-02: it read like a fault and flickered
+      // as the job hopped queued<->running).
       expect(renderWaitView("queued", job({ ahead: 0, resumeAtMs: 4_000_000_000_000 }))).toEqual({
         kind: "waiting",
-        sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות.",
-        // Parked: the bar must not animate under a line that says so.
-        bar: { paused: true },
+        bar: { paused: false },
       });
     });
 
@@ -1158,22 +1160,18 @@ describe("the demo step rework (8d)", () => {
       expect(renderWaitView("queued", job({ progress: 0.5 })).bar.percent).toBeUndefined();
     });
 
-    it("a parked retry is paused even after the ROW moved to rendering", () => {
+    it("a parked retry after the ROW moved to rendering shows no queue position", () => {
       // handleRenderVideo flips the row to "rendering" before the attempt and
       // failTransient re-queues the job without touching the row, so a parked
       // retry arrives as status "rendering" + state "queued" + resumeAtMs.
-      // Gated on the row instead of the job, this pair animated a bar and a
-      // "generating now" chip over a job nothing was touching.
+      // Keyed on the job, so it never falls through to the queue-position
+      // branch and promises a place in a line it is not standing in.
       expect(
         renderWaitView(
           "rendering",
           job({ state: "queued", resumeAtMs: 4_000_000_000_000, heartbeat: "alive" }),
         ),
-      ).toEqual({
-        kind: "waiting",
-        sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות.",
-        bar: { paused: true },
-      });
+      ).toEqual({ kind: "waiting", bar: { paused: false } });
     });
 
     it("a missing job with no live worker is paused, not working", () => {

@@ -6,22 +6,32 @@ import type { RenderBarView } from "@/lib/service-a-ui";
 type RenderProgressProps = {
   /** From renderWaitView — the bar and the Hebrew line share one view model. */
   bar: RenderBarView;
-  /** Accessible name; the visible caption is the caller's (it differs per surface). */
+  /** Accessible name. */
   label: string;
+  /**
+   * The caller's poll interval. The fill glides over exactly this long, so the
+   * bar is still moving when the next sample lands instead of jumping and
+   * sitting still — the frame fraction is checkpointed roughly a percent at a
+   * time, which unsmoothed looks like a stutter, not a render.
+   */
+  stepMs?: number;
   className?: string;
 };
 
 /**
- * The render progress track. Three states, all read off renderWaitView's bar:
+ * The render progress bar. Three states, all read off renderWaitView's bar:
  *
- *   percent present -> determinate fill
+ *   percent present -> the fill grows to it, with the number on the bar
  *   no percent      -> a full-width accent wash with a band sweeping across
  *                      it. Work is happening and its size is genuinely
  *                      unknown — no fraction exists during the queue, the
  *                      bundle or the upload, and inventing one is the lie
  *                      this whole surface is built to avoid.
- *   paused          -> an empty track. Nothing is claiming the job, so the
- *                      bar shows nothing rather than something.
+ *   paused          -> the wash without the sweep. This state now means only
+ *                      one thing: nothing is claiming the job, and the caller
+ *                      is saying so in an amber line. Motion here would
+ *                      contradict it. A backoff park is NOT paused — it
+ *                      resumes on its own, so the bar keeps running.
  *
  * The wash is why the indeterminate state is a WASH and not a stub: a static
  * one-third segment at the start edge reads as "33% done", which is exactly
@@ -34,7 +44,12 @@ type RenderProgressProps = {
  * nav-progress.tsx is deliberately NOT the precedent — that one is fixed
  * chrome with a faked value and a physical left-0.
  */
-export function RenderProgress({ bar, label, className = "" }: RenderProgressProps) {
+export function RenderProgress({
+  bar,
+  label,
+  stepMs = 2_500,
+  className = "",
+}: RenderProgressProps) {
   const determinate = bar.percent !== undefined;
   // Starts at 0 and fills on the next frame, so the first appearance animates
   // too (same trick as the onboarding header).
@@ -44,7 +59,6 @@ export function RenderProgress({ bar, label, className = "" }: RenderProgressPro
     return () => cancelAnimationFrame(frame);
   }, [bar.percent]);
 
-  const working = !determinate && !bar.paused;
   return (
     <div
       role="progressbar"
@@ -54,21 +68,33 @@ export function RenderProgress({ bar, label, className = "" }: RenderProgressPro
       {...(determinate
         ? { "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": bar.percent }
         : {})}
-      className={`relative h-1.5 overflow-hidden rounded-full ${working ? "bg-accent/25" : "bg-ink/10"} ${className}`}
+      className={`relative h-7 overflow-hidden rounded-full ${determinate ? "bg-ink/10" : "bg-accent/25"} ${className}`}
     >
       {determinate && (
         <div
-          className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
-          style={{ width: `${width}%` }}
+          className="h-full rounded-full bg-accent"
+          // Linear, and exactly one poll long: eased or shorter and the bar
+          // visibly stops between samples.
+          style={{ width: `${width}%`, transition: `width ${stepMs}ms linear` }}
         />
       )}
-      {working && (
+      {!determinate && !bar.paused && (
         // w-1/3 pinned to the start edge is what the `sweep` keyframe is
         // measured against — see globals.css.
         <div
           aria-hidden
-          className="sweep absolute inset-y-0 start-0 hidden w-1/3 rounded-full bg-accent motion-safe:block"
+          className="sweep absolute inset-y-0 start-0 hidden w-1/3 bg-accent motion-safe:block"
         />
+      )}
+      {determinate && (
+        // On the bar, centred, so it is legible over both the lime fill and
+        // the empty track — ink reads on both, no per-side colour swap.
+        <span
+          dir="ltr"
+          className="absolute inset-0 grid place-items-center text-[13px] font-semibold tabular-nums text-ink"
+        >
+          {bar.percent}%
+        </span>
       )}
     </div>
   );

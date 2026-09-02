@@ -1118,8 +1118,16 @@ export type RenderBarView = {
    * bar has to fall back to indeterminate rather than hold a stale 95%.
    */
   percent?: number;
-  /** Nothing is known to be moving — parked, or no worker claiming. The bar
-   *  freezes; motion here would contradict the line. */
+  /**
+   * No worker is claiming this job at all (stale heartbeat, or no job row and
+   * nothing alive). The caller says so in words; the bar keeps its wash but
+   * stops sweeping, so motion never contradicts an amber "nothing is moving".
+   *
+   * A backoff park is deliberately NOT paused: it resumes on its own within
+   * minutes, so from the customer's side the video is still being made, and
+   * the retry machinery is ours to worry about rather than theirs to read
+   * about (founder call, 2026-09-02).
+   */
   paused: boolean;
 };
 
@@ -1144,19 +1152,21 @@ export function renderWaitView(status: string, job?: JobProgressWire): RenderWai
   if (job && job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
     return { kind: "stuck", line: stuckLine("עיבוד"), bar: { paused: true } };
   }
-  // A backoff-delayed job is PAUSED, not next in line — "starts soon" over a
-  // minutes-long park is a lie (same ruling as the other wait views). Keyed on
-  // the JOB, not the render row, and hoisted above the status branches
-  // deliberately: handleRenderVideo flips the row to "rendering" before the
-  // attempt and failTransient re-queues the job without touching the row, so a
-  // parked retry arrives as status "rendering" + state "queued". Gated on the
-  // row (as it used to be) that pair fell through to a moving bar.
+  // A backoff-parked job says NOTHING to the customer. It resumes by itself in
+  // seconds to minutes, so the video is still being made; surfacing the retry
+  // as "paused, will resume automatically" turned a normal self-healing hiccup
+  // into something that reads like a fault, and it flickered on and off as the
+  // job hopped queued<->running (founder call 2026-09-02, after watching it
+  // alternate for a whole render). The bar keeps running. The honest signals
+  // are kept elsewhere: the amber line above when nothing is claiming the job
+  // at all, and the failure card when the retries actually run out.
+  //
+  // Keyed on the JOB, not the render row: handleRenderVideo flips the row to
+  // "rendering" before the attempt and failTransient re-queues the job without
+  // touching it, so a parked retry arrives as status "rendering" + state
+  // "queued" and must not fall through to the queue-position branch.
   if (job?.state === "queued" && job.resumeAtMs !== undefined) {
-    return {
-      kind: "waiting",
-      sub: "העיבוד מושהה כרגע ויתחדש אוטומטית בעוד כמה דקות.",
-      bar: { paused: true },
-    };
+    return { kind: "waiting", bar: { paused: false } };
   }
   // No job row under this key AND no worker known to be alive. Nothing here
   // justifies animating "we're working on it" — the row may be purged, or the
