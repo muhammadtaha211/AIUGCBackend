@@ -39,10 +39,13 @@ type RenderProgressProps = {
  * misread, and it is also what someone with prefers-reduced-motion sees —
  * `motion-safe` drops the band entirely rather than freezing it mid-track.
  *
- * Fill direction follows the app's other in-flow bars (WizardNav's mobile bar,
- * the onboarding header): it grows from the RTL start edge, on the right.
- * nav-progress.tsx is deliberately NOT the precedent — that one is fixed
- * chrome with a faked value and a physical left-0.
+ * The fill grows LEFT to right, physically, even though the app is dir="rtl" —
+ * founder call, 2026-09-02, and the same ruling already recorded on
+ * nav-progress.tsx. Progress reads as a left-to-right axis whatever the
+ * language, the way a-wizard's StructureStrip forces dir="ltr" on its
+ * timeline. Hence the physical `left-0` anchors below: logical `start-0` would
+ * flip the whole thing back. WizardNav's mobile bar and the onboarding header
+ * still fill from the RTL start — those are step counters, not this.
  */
 export function RenderProgress({
   bar,
@@ -72,18 +75,18 @@ export function RenderProgress({
     >
       {determinate && (
         <div
-          className="h-full rounded-full bg-accent"
+          className="absolute inset-y-0 left-0 rounded-full bg-accent"
           // Linear, and exactly one poll long: eased or shorter and the bar
           // visibly stops between samples.
           style={{ width: `${width}%`, transition: `width ${stepMs}ms linear` }}
         />
       )}
       {!determinate && !bar.paused && (
-        // w-1/3 pinned to the start edge is what the `sweep` keyframe is
-        // measured against — see globals.css.
+        // w-1/3 pinned to the PHYSICAL left edge is what the `sweep` keyframe
+        // is measured against — see globals.css.
         <div
           aria-hidden
-          className="sweep absolute inset-y-0 start-0 hidden w-1/3 bg-accent motion-safe:block"
+          className="sweep absolute inset-y-0 left-0 hidden w-1/3 bg-accent motion-safe:block"
         />
       )}
       {determinate && (

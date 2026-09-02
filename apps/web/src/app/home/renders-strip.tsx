@@ -204,12 +204,13 @@ export function RendersStrip({ businessId }: { businessId: string }) {
                   </span>
                 )}
                 {/* The empty tile is where the video will appear — sweeping it
-                    says "this one, right now". w-1/3 at the start edge is what
-                    the `sweep` keyframe is measured against (globals.css). */}
+                    says "this one, right now". w-1/3 at the PHYSICAL left edge
+                    is what the `sweep` keyframe is measured against, and it
+                    travels left-to-right with the progress bar (globals.css). */}
                 {working && sweeping && (
                   <span
                     aria-hidden
-                    className="sweep absolute inset-y-0 start-0 hidden w-1/3 bg-gradient-to-l from-transparent via-accent/40 to-transparent motion-safe:block"
+                    className="sweep absolute inset-y-0 left-0 hidden w-1/3 bg-gradient-to-r from-transparent via-accent/40 to-transparent motion-safe:block"
                   />
                 )}
               </span>
