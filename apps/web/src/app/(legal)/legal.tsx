@@ -1,24 +1,10 @@
 /**
  * Small building blocks shared by the two legal pages. Server-only, no state.
- *
- * `Lawyer` renders an inline review marker. The markers ship visibly on purpose:
- * the founder's lawyer reads the live page and removes each one as it is settled.
  */
 
 /** An LTR island inside RTL prose: emails, URLs, English names, numbers. */
 export function Ltr({ children }: { children: React.ReactNode }) {
   return <span dir="ltr">{children}</span>;
-}
-
-export function Lawyer({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      dir="ltr"
-      className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[12px] leading-none text-amber-900"
-    >
-      [LAWYER: {children}]
-    </span>
-  );
 }
 
 export function LegalTitle({ title, updated }: { title: string; updated: string }) {
@@ -65,4 +51,4 @@ export function Numbered({ children }: { children: React.ReactNode }) {
 }
 
 export const CONTACT_EMAIL = "tavnit.support@gmail.com";
-export const UPDATED = "02.09.2026";
+export const UPDATED = "03.09.2026";

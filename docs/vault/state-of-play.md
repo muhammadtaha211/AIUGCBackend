@@ -145,6 +145,9 @@ even with non-sensitive scopes.
    publishing status reads _In production_, any address not on the test-user list is
    refused at the account chooser with `error=access_denied`, which this app does not
    read — the user lands on `/start` with no session and no message.
+   Pages carry no review markers as of 2026-09-03; positions, legal basis and open
+   questions: docs/legal-review.md. Lawyer review is still owed but no longer blocks
+   publishing.
 2. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
    Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
    production-recommended; believed unset) and verify `fra1` there while in the

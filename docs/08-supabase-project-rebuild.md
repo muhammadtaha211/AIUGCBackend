@@ -654,11 +654,12 @@ Everything here waits on the domain. Nothing above does.
 
 ### What still has to be written
 
-The two pages were written 2026-09-02 from a repo fact sheet and are awaiting lawyer review:
+The two pages were written 2026-09-02 from a repo fact sheet and take founder-chosen,
+statute-checked positions pending lawyer review (see docs/legal-review.md):
 
 | Requirement                  | Status today                                                                                                                                                                                        |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/privacy` route             | **Exists** — `apps/web/src/app/(legal)/privacy/page.tsx`, static, linked from the landing footer and the signup/login consent lines. Carries `[LAWYER: …]` markers until legal review removes them. |
+| `/privacy` route             | **Exists** — `apps/web/src/app/(legal)/privacy/page.tsx`, static, linked from the landing footer and the signup/login consent lines. Markers resolved 2026-09-03; positions and open questions for counsel in docs/legal-review.md. |
 | `/terms` route               | **Exists** — `apps/web/src/app/(legal)/terms/page.tsx`, same status.                                                                                                                                |
 | Home page explaining the app | The marketing page at `/` exists.                                                                                                                                                                   |
 | `tavnit.ai` Search Console   | Not verified.                                                                                                                                                                                       |

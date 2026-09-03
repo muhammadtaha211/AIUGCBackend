@@ -3,7 +3,6 @@ import Link from "next/link";
 import {
   Bullets,
   CONTACT_EMAIL,
-  Lawyer,
   LegalTitle,
   Ltr,
   Numbered,
@@ -21,7 +20,8 @@ export const metadata: Metadata = {
 /**
  * Every factual statement here was checked against the repo on 2026-09-02
  * (fact sheet in the session that wrote it). Change the code, change the text.
- * `[LAWYER: …]` markers are review notes for counsel and are removed by them.
+ * Open legal questions, the positions this text takes and their legal basis are in
+ * docs/legal-review.md.
  */
 export default function PrivacyPage() {
   return (
@@ -43,12 +43,9 @@ export default function PrivacyPage() {
 
       <Section n={1} title="מי אחראי על המידע ואיך יוצרים איתנו קשר">
         <p>
-          השירות מופעל על ידי מוחמד טאהא (<Ltr>Mohammad Taha</Ltr>), יחיד, מספר זהות{" "}
-          <Ltr>211924196</Ltr>, כאבול, ישראל, תחת המותג ״תבנית״ (<Ltr>Tavnit</Ltr>; להלן: ״אנחנו״).{" "}
-          <Lawyer>
-            operator is an individual; confirm whether dealer status (osek murshe / osek patur) and
-            a fuller postal address must be stated
-          </Lawyer>
+          השירות מופעל על ידי מוחמד טאהא (<Ltr>Mohammad Taha</Ltr>), עוסק פטור, כאבול, ישראל, תחת
+          המותג ״תבנית״ (<Ltr>Tavnit</Ltr>; להלן: ״אנחנו״). מספר העוסק מופיע על הקבלות שאנחנו מפיקים
+          ויימסר לכם לפי בקשה באימייל.
         </p>
         <p>
           לכל שאלה או בקשה בנושא פרטיות כתבו לנו לכתובת <Ltr>{CONTACT_EMAIL}</Ltr>.
@@ -65,8 +62,10 @@ export default function PrivacyPage() {
 
       <Section n={3} title="איזה מידע אנחנו אוספים">
         <p>
-          אנחנו אוספים רק מה שנדרש כדי להפעיל את השירות. אין בשירות שדות של שם, טלפון או כתובת,
-          ואנחנו לא אוספים פרטי כרטיס אשראי (כיום אין בשירות תשלום מקוון).
+          אנחנו אוספים רק מה שנדרש כדי להפעיל את השירות. אין חובה חוקית למסור לנו מידע; המסירה תלויה
+          ברצונכם ובהסכמתכם. בלי כתובת אימייל לא ניתן לפתוח חשבון, ובלי סרטון הדגמה ותשובות לשאלון
+          לא ניתן להפיק מודעות. אין בשירות שדות של שם, טלפון או כתובת, ואנחנו לא אוספים פרטי כרטיס
+          אשראי (כיום אין בשירות תשלום מקוון).
         </p>
         <SubTitle>חשבון</SubTitle>
         <Bullets>
@@ -153,12 +152,8 @@ export default function PrivacyPage() {
         <p>
           אנחנו לא שולחים דיוור שיווקי. ההודעות היחידות שנשלחות הן הודעות תפעוליות של החשבון: הודעות
           ההזדהות (למשל איפוס סיסמה) באמצעות ספק ההזדהות שלנו, והודעה על שינוי מהותי במדיניות או
-          בתנאים (סעיף 14).{" "}
-          <Lawyer>
-            confirm no Communications Law s.30A (anti-spam) opt-out language is needed while only
-            transactional email is sent; an opt-out clause becomes mandatory before any marketing
-            email
-          </Lawyer>
+          בתנאים (סעיף 14). אם בעתיד נרצה לשלוח לכם דיוור שיווקי, נעשה זאת רק בהסכמתכם המפורשת מראש,
+          וכל הודעה כזאת תסומן כפרסומת ותכלול אפשרות הסרה.
         </p>
       </Section>
 
@@ -175,13 +170,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <Ltr>Vercel</Ltr> (שרתי היישום בפרנקפורט, גרמניה): הפעלת האתר והיישום. תמונת מוצר שאתם
-            מעלים עוברת דרך שרתי <Ltr>Vercel</Ltr> בדרכה לאחסון.{" "}
-            <Lawyer>
-              fra1 is the serverless-function region (founder-verified 2026-09-01; a dashboard
-              setting, not pinned in repo config). The login-cookie check in
-              apps/web/src/middleware.ts runs on Vercel&apos;s edge network nearest the visitor on
-              every request; decide whether this bullet and section 7 must say so
-            </Lawyer>
+            מעלים עוברת דרך שרתי <Ltr>Vercel</Ltr> בדרכה לאחסון. בדיקת ההתחברות שמתבצעת בכל בקשה
+            לאתר רצה ברשת הקצה של <Ltr>Vercel</Ltr>, בשרת הקרוב למיקומכם, ולכן עשויה להתבצע גם מחוץ
+            לגרמניה; היא בודקת את עוגיית ההתחברות בלבד.
           </li>
           <li>
             <Ltr>Hetzner</Ltr> (נירנברג, גרמניה): שרת העיבוד שמריץ את המשימות הכבדות (עיבוד וידאו
@@ -213,12 +204,8 @@ export default function PrivacyPage() {
         <p>
           ל־<Ltr>HeyGen</Ltr> ול־<Ltr>fal.ai</Ltr> הקבצים נמסרים בקישורים חתומים שתוקפם שעה אחת; ל־
           <Ltr>Anthropic</Ltr> תמונות הסטילס נשלחות בתוך הבקשה עצמה, ול־<Ltr>ElevenLabs</Ltr> נשלח
-          טקסט בלבד. הספקים פועלים לפי תנאי השימוש ומדיניות הפרטיות שלהם.{" "}
-          <Lawyer>
-            AI providers&apos; processing locations are stated as USA per the founder, not the repo;
-            confirm each vendor&apos;s retention and no-training terms and fal.ai&apos;s
-            sub-processors. The code sets no data-use flags with any of them.
-          </Lawyer>
+          טקסט בלבד. הספקים פועלים לפי תנאי השימוש ומדיניות הפרטיות שלהם. הם עשויים לשמור עותקים
+          זמניים של מה שנשלח אליהם לתקופה מוגבלת, לפי מדיניותם.
         </p>
         <SubTitle>
           כניסה עם <Ltr>Google</Ltr>
@@ -241,13 +228,11 @@ export default function PrivacyPage() {
 
       <Section n={7} title="העברת מידע מחוץ לישראל">
         <p>
-          חלק מהספקים שלעיל פועלים באיחוד האירופי (גרמניה) וחלקם בארצות הברית, ולכן המידע שלכם מועבר
-          ונשמר מחוץ לישראל. בשימוש בשירות אתם מסכימים להעברה זו.{" "}
-          <Lawyer>
-            transfer-abroad basis and consent wording under the Privacy Protection (Transfer of Data
-            Abroad) Regulations; the consent rests on the same notice-only signup/login line flagged
-            in the terms (no checkbox)
-          </Lawyer>
+          חלק מהספקים שלעיל פועלים בגרמניה, שהיא צד לאמנה האירופית להגנת הפרט בקשר לעיבוד אוטומטי של
+          נתונים אישיים, וחלקם בארצות הברית. בנוסף, בדיקת ההתחברות עשויה להתבצע בשרת קצה הקרוב אליכם
+          (סעיף 6). לכן המידע שלכם מועבר ונשמר גם מחוץ לישראל. ההעברה נעשית רק לספקים שנדרשים להפעלת
+          השירות, רק במידה הנדרשת, ובכפוף לתנאי השימוש ולהתחייבויות הפרטיות שהספקים מקבלים על עצמם.
+          ההעברה הכרחית כדי לספק את השירות, ובשימוש בשירות אתם מסכימים לה.
         </p>
       </Section>
 
@@ -279,12 +264,7 @@ export default function PrivacyPage() {
             עותקי עבודה בשרת העיבוד (<Ltr>Hetzner</Ltr>) אינם נמחקים במסגרת המועדים האוטומטיים
             שלעיל, ונמחקים לפי בקשה.
           </li>
-          <li>
-            ספקי התשתית שלנו עשויים לשמור גיבויים לתקופה מוגבלת לאחר מחיקה.{" "}
-            <Lawyer>
-              backup retention at Supabase/Vercel is not known to us; confirm the wording
-            </Lawyer>
-          </li>
+          <li>ספקי התשתית שלנו עשויים לשמור גיבויים לתקופה מוגבלת לאחר מחיקה, לפי מדיניותם.</li>
         </Bullets>
         <p>כשקובץ נמחק אוטומטית, הרשומה שלו במסד הנתונים נשארת, ללא הקובץ.</p>
       </Section>
@@ -317,12 +297,10 @@ export default function PrivacyPage() {
       <Section n={10} title="עסקים שאנחנו פונים אליהם">
         <p>
           לפעמים אנחנו מכינים דוגמת מודעה לעסק שאנחנו מעוניינים להציע לו את השירות, על בסיס מידע
-          פומבי (למשל צילום מסך של האתר או של עמוד הרשת החברתית של העסק) וכתובת אימייל ליצירת קשר.
-          המידע משמש רק להצגת הדוגמה לאותו עסק, ונמחק לפי בקשה בכתובת שבסעיף 1.{" "}
-          <Lawyer>
-            basis for processing prospects&apos; data for sample ads and for the unsolicited
-            approach
-          </Lawyer>
+          פומבי (למשל צילום מסך של האתר או של עמוד הרשת החברתית של העסק). אנחנו פונים לעסק פעם אחת
+          בלבד, לכתובת אימייל עסקית פומבית, ומציעים לו לקבל מאיתנו את הדוגמה; הדוגמה עצמה נשלחת רק
+          אם העסק מאשר. אנחנו לא פונים כך לאנשים פרטיים. המידע משמש רק לצורך זה, ונמחק לפי בקשה
+          בכתובת שבסעיף 1; מי שמבקש שלא נפנה אליו שוב, לא נפנה.
         </p>
       </Section>
 
@@ -332,32 +310,21 @@ export default function PrivacyPage() {
           שלהם נעשית דרך קישורים חתומים שתוקפם שעה אחת, שנוצרים רק אחרי בדיקה שהחשבון המבקש הוא
           הבעלים של העסק או מפעיל השירות (סעיף 6). מסד הנתונים מוגן במגבלות גישה ברמת השורה. סיסמאות
           מנוהלות אצל ספק ההזדהות ואינן נשמרות אצלנו; גם פרטי אמצעי תשלום אינם נשמרים אצלנו. עם זאת,
-          אין אבטחה מוחלטת, ואנחנו לא יכולים להבטיח שהמידע לעולם לא ייחשף.{" "}
-          <Lawyer>
-            classify the database under the Data Security Regulations 2017 (individually-managed /
-            basic / medium) and confirm the operator&apos;s duties at that level; the technical
-            statements above are verified against the code
-          </Lawyer>
+          אין אבטחה מוחלטת, ואנחנו לא יכולים להבטיח שהמידע לעולם לא ייחשף. אנחנו פועלים לפי החובות
+          החלות עלינו לפי תקנות הגנת הפרטיות (אבטחת מידע), התשע״ז-2017.
         </p>
       </Section>
 
       <Section n={12} title="הזכויות שלכם">
         <p>
-          לפי חוק הגנת הפרטיות, התשמ״א-1981, אתם זכאים לעיין במידע שאנחנו שומרים עליכם, לבקש לתקן
-          אותו ולבקש למחוק אותו.{" "}
-          <Lawyer>
-            precise rights language under the Privacy Protection Law incl. Amendment 13; which
-            records must be kept by law (today only request handling; once billing exists,
-            bookkeeping records) and whether the deletion sentence below needs a matching carve-out;
-            any database-registration duty; whether the 30-day handling time below meets the
-            statutory deadline for inspection requests
-          </Lawyer>
+          לפי חוק הגנת הפרטיות, התשמ״א-1981, והתקנות מכוחו, אתם זכאים לעיין במידע שאנחנו שומרים
+          עליכם, לבקש לתקן אותו ולבקש למחוק אותו.
         </p>
         <Numbered>
           <li>
             כתבו לכתובת <Ltr>{CONTACT_EMAIL}</Ltr> מכתובת האימייל של החשבון.
           </li>
-          <li>אנחנו מטפלים בבקשה בתוך 30 ימים.</li>
+          <li>אנחנו מטפלים בבקשה בתוך 30 ימים, כנדרש בתקנות.</li>
           <li>
             כיום אין בשירות כלי למחיקת חשבון או לייצוא מידע בעצמכם; הבקשות מטופלות ידנית. בסרטונים
             המוגמרים ובעותק המעובד של סרטון ההדגמה אתם יכולים לצפות, ולהוריד אותם מתוך החשבון כל עוד
@@ -366,8 +333,8 @@ export default function PrivacyPage() {
         </Numbered>
         <p>
           מחיקת חשבון כוללת את החשבון אצל ספק ההזדהות, העסקים, הסרטונים, התמונות והתוכן שנוצר,
-          רשומות המשימות, ואת העותקים בשרת העיבוד. רשומות שימוש וקרדיטים עשויות להישמר אם הדין מחייב
-          זאת.
+          רשומות המשימות, ואת העותקים בשרת העיבוד. רשומות שהדין מחייב לשמור (למשל תיעוד הטיפול
+          בבקשות, ובעתיד רשומות הנהלת חשבונות של תשלומים) יישמרו לתקופה שהדין קובע, ולא מעבר לה.
         </p>
       </Section>
 

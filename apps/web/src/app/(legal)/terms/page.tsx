@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bullets, CONTACT_EMAIL, Lawyer, LegalTitle, Ltr, Section, UPDATED } from "../legal";
+import { Bullets, CONTACT_EMAIL, LegalTitle, Ltr, Section, UPDATED } from "../legal";
 
 export const metadata: Metadata = {
   title: "תנאי שימוש | תבנית",
@@ -11,7 +11,8 @@ export const metadata: Metadata = {
 /**
  * Every factual statement here was checked against the repo on 2026-09-02
  * (fact sheet in the session that wrote it). Change the code, change the text.
- * `[LAWYER: …]` markers are review notes for counsel and are removed by them.
+ * Open legal questions, the positions this text takes and their legal basis are in
+ * docs/legal-review.md.
  */
 export default function TermsPage() {
   return (
@@ -21,11 +22,6 @@ export default function TermsPage() {
       <p className="mt-6 text-[15px] leading-relaxed text-ink/80">
         ברוכים הבאים לתבנית. התנאים האלה הם הסכם ביניכם לבין מפעיל השירות, וחלים על השימוש באתר{" "}
         <Ltr>tavnit.ai</Ltr> ובשירות. קראו אותם: יצירת חשבון או שימוש בשירות מהווים הסכמה להם.{" "}
-        <Lawyer>
-          acceptance by use, no clickwrap: signup and login each show a one-line notice with links
-          above the Google/email buttons, no checkbox and no acceptance record; confirm this forms
-          the contract or require a checkbox
-        </Lawyer>{" "}
         <Link
           href="/privacy"
           className="underline decoration-ink/30 underline-offset-4 hover:text-ink"
@@ -37,21 +33,15 @@ export default function TermsPage() {
 
       <Section n={1} title="הצדדים וקבלת התנאים">
         <p>
-          השירות מופעל על ידי מוחמד טאהא (<Ltr>Mohammad Taha</Ltr>), יחיד, מספר זהות{" "}
-          <Ltr>211924196</Ltr>, כאבול, ישראל, תחת המותג ״תבנית״ (<Ltr>Tavnit</Ltr>; להלן: ״אנחנו״).{" "}
-          <Lawyer>
-            operator is an individual; confirm whether dealer status (osek murshe / osek patur) and
-            a fuller postal address must be stated
-          </Lawyer>
+          השירות מופעל על ידי מוחמד טאהא (<Ltr>Mohammad Taha</Ltr>), עוסק פטור, כאבול, ישראל, תחת
+          המותג ״תבנית״ (<Ltr>Tavnit</Ltr>; להלן: ״אנחנו״). מספר העוסק מופיע על הקבלות שאנחנו מפיקים
+          ויימסר לכם לפי בקשה באימייל.
         </p>
         <p>
-          התנאים חלים על כל מי שמשתמש בשירות, כולל מי שנכנס באמצעות <Ltr>Google</Ltr>. בהרשמה אתם
-          מאשרים שאתם בני 18 לפחות, שאתם פועלים בשם עסק או כמפרסמים, ושיש לכם סמכות לחייב את העסק
-          שבשמו אתם פועלים. השירות מיועד לעסקים בלבד.{" "}
-          <Lawyer>
-            Israeli consumer-protection rules on continuing transactions (iska mitmashechet) may
-            reach small businesses and sole traders; confirm the B2B-only framing
-          </Lawyer>
+          התנאים חלים על כל מי שמשתמש בשירות, כולל מי שנכנס באמצעות <Ltr>Google</Ltr>. השירות מיועד
+          לעסקים ולמפרסמים בלבד, ולמשתמשים בני 18 ומעלה שמוסמכים לחייב את העסק שבשמו הם פועלים. אם
+          אינכם עומדים בתנאים אלה, אל תירשמו ואל תשתמשו בשירות. אם על אף זאת חלות עליכם הוראות
+          מחייבות של חוק הגנת הצרכן, התשמ״א-1981, הן יחולו ויגברו על כל הוראה סותרת בתנאים אלה.
         </p>
       </Section>
 
@@ -119,8 +109,7 @@ export default function TermsPage() {
           <li>
             אתם אחראים לעמידה בכללי הפלטפורמות שבהן תפרסמו (למשל <Ltr>Meta</Ltr>, <Ltr>TikTok</Ltr>,{" "}
             <Ltr>Google</Ltr>), כולל כל חובת גילוי לגבי תוכן שנוצר בבינה מלאכותית שהפלטפורמות או
-            הדין דורשים.{" "}
-            <Lawyer>verify current AI-disclosure requirements for advertising in Israel</Lawyer>
+            הדין דורשים.
           </li>
           <li>
             מוזיקה או צליל שתוסיפו למודעה לאחר ההורדה (למשל מספריית הפלטפורמה) הם באחריותכם. המודעות
@@ -136,26 +125,17 @@ export default function TermsPage() {
       <Section n={5} title="בעלות ורישיונות">
         <Bullets>
           <li>
-            המודעות המוגמרות שנוצרו עבור העסק שלכם שייכות לכם, ואתם רשאים לפרסם אותן בכל ערוץ לצורכי
-            העסק.{" "}
-            <Lawyer>
-              the finished ads are AI-generated output; confirm whether &quot;belong to you&quot;
-              should read as assignment of whatever rights exist under Israeli law
-            </Lawyer>
+            המודעות המוגמרות שנוצרו עבור העסק שלכם הן שלכם: ככל שקיימות בהן זכויות יוצרים או זכויות
+            אחרות, אנחנו מעבירים לכם אותן עם השלמת ההפקה ולא נטען לזכות כלשהי בהן. אתם רשאים לפרסם
+            אותן בכל ערוץ לצורכי העסק, בכפוף לרישיון המוגבל על הרכיבים שלנו שמשולבים בהן (הסעיף
+            הבא).
           </li>
           <li>
             קליפי הפתיחה, דמויות ה־<Ltr>AI</Ltr>, הקולות, התבניות, מבני התסריטים והתוכנה שמפעילה את
-            השירות הם שלנו (או של מי שהעניק לנו רישיון). אתם מקבלים רישיון להשתמש בהם רק כפי שהם
-            משולבים במודעות שנוצרו עבורכם. אסור לחלץ אותם מהמודעה, להשתמש בהם בנפרד, לשכפל דמות או
-            קול, או להשתמש בהם לאימון מודלים.{" "}
-            <Lawyer>
-              everything listed as ours is AI-generated on third-party services: hook clips on
-              Seedance (offline), persona images and product composites via fal.ai, voices are
-              ElevenLabs voices (library or custom is not recorded; founder to state), and the
-              Service B script structures are founder-written skeletons whose provenance is not
-              recorded. Confirm what &quot;ours / licensed to us&quot; can honestly assert for each,
-              given the open copyrightability of AI output under Israeli law
-            </Lawyer>
+            השירות מוחזקים על ידינו או ברישיון שניתן לנו, וככל שקיימות בהם זכויות, הן שלנו או של מי
+            שהעניק לנו את הרישיון. אתם מקבלים רישיון להשתמש בהם רק כפי שהם משולבים במודעות שנוצרו
+            עבורכם. אסור לחלץ אותם מהמודעה, להשתמש בהם בנפרד, לשכפל דמות או קול, או להשתמש בהם
+            לאימון מודלים.
           </li>
           <li>
             אנחנו לא מאמנים מודלים על התוכן שלכם ולא מציגים אותו כדוגמה בלי הסכמה מפורשת ונפרדת
@@ -175,11 +155,7 @@ export default function TermsPage() {
         <Bullets>
           <li>
             הדמויות בקליפי הפתיחה ובמודעות עם דמות <Ltr>AI</Ltr> הן דמויות סינתטיות שנוצרו בבינה
-            מלאכותית. הן אינן אנשים אמיתיים ואינן לקוחות שלכם.{" "}
-            <Lawyer>
-              AI-generated faces can resemble real people; confirm the &quot;not real people&quot;
-              representation and any likeness / right-of-publicity exposure for the persona bank
-            </Lawyer>
+            מלאכותית. הן אינן אנשים אמיתיים ואינן לקוחות שלכם. כל דמיון לאדם אמיתי הוא מקרי.
           </li>
           <li>
             אסור להציג דמות כזאת כלקוח אמיתי, כעדות אמיתית, כאדם ספציפי או כמי שהשתמש במוצר בפועל.
@@ -205,20 +181,12 @@ export default function TermsPage() {
           <li>שמהווה תעמולה פוליטית.</li>
         </Bullets>
         <p>
-          <Lawyer>confirm and adjust the prohibited categories for Israeli advertising law</Lawyer>
-        </p>
-        <p>
-          אנחנו לא בודקים תוכן לפני ההפקה, לא את מה שאתם מזינים ולא את מה שנוצר, ואין לנו חובה לעשות
-          זאת. הבדיקות היחידות שמתבצעות אוטומטית הן טכניות: סוג הקובץ, גודלו, אורכו וכיוונו, אורך
-          הטקסטים, ובדיקה אוטומטית של איכות הצילום (האם המסך המצולם יציב וקריא) שעלולה לדחות סרטון
-          ולבקש מכם לצלם אותו מחדש. אף אחת מהן אינה בודקת את התוכן עצמו. עם זאת, אנחנו רשאים לסרב
-          להפיק, להסיר או לחסום תוכן שמפר תנאים אלה, ולהשעות חשבון בגינו, בכל עת ולפי שיקול דעתנו.{" "}
-          <Lawyer>
-            &quot;no duty to pre-screen&quot; is a legal position, not a fact: the service generates
-            the ad copy itself (Claude writes hook lines, captions and scripts), so confirm exposure
-            as author/publisher rather than host under defamation, consumer-protection and IP law,
-            and whether the sentence should stay
-          </Lawyer>
+          אנחנו לא בודקים תוכן לפני ההפקה, לא את מה שאתם מזינים ולא את מה שנוצר. הבדיקות היחידות
+          שמתבצעות אוטומטית הן טכניות: סוג הקובץ, גודלו, אורכו וכיוונו, אורך הטקסטים, ובדיקה
+          אוטומטית של איכות הצילום (האם המסך המצולם יציב וקריא) שעלולה לדחות סרטון ולבקש מכם לצלם
+          אותו מחדש. אף אחת מהן אינה בודקת את התוכן עצמו. עם זאת, אנחנו רשאים לסרב להפיק, להסיר או
+          לחסום תוכן שמפר תנאים אלה, ולהשעות חשבון בגינו, בכל עת ולפי שיקול דעתנו. האחריות לבדוק את
+          המודעה לפני פרסומה, כולל הטקסטים שנוצרו בשירות, היא שלכם (סעיף 10).
         </p>
       </Section>
 
@@ -242,15 +210,17 @@ export default function TermsPage() {
             הקרדיטים מוחזרים כמו בכל הפקה שנכשלה. אנחנו רשאים לשנות את המכסות.
           </li>
           <li>
-            אנחנו רשאים לשנות את המחיר בקרדיטים של סרטון בכל עת. המחיר שינוכה הוא המחיר התקף במועד
-            האישור.
+            אנחנו רשאים לשנות את המחיר בקרדיטים של סרטון. על העלאת מחיר נודיע באימייל לחשבון לפחות
+            14 ימים מראש, ומי שיש לו מנוי בתשלום יוכל לבטל אותו לפני שההעלאה תיכנס לתוקף. המחיר
+            שינוכה הוא המחיר התקף במועד האישור, כפי שהוא מוצג לכם לפני האישור.
           </li>
           <li>
             כשתתאפשר רכישה מקוונת, יחולו התנאים הבאים:
             <Bullets>
               <li>
-                מנוי חודשי שכולל מכסת קרדיטים. המחירים יוצגו באתר לפני הרכישה, ושם יצוין אם הם
-                כוללים מע״מ. <Lawyer>VAT presentation of prices</Lawyer>
+                מנוי חודשי שכולל מכסת קרדיטים. המחירים שיוצגו באתר לפני הרכישה הם המחירים הסופיים
+                לתשלום, כולל מס ככל שחל. כיום אנחנו עוסק פטור ולכן לא מתווסף מע״מ; אם מעמדנו ישתנה,
+                המחירים המוצגים יעודכנו בהתאם.
               </li>
               <li>קרדיטים של המנוי אינם נצברים: מה שלא נוצל עד סוף תקופת החיוב פוקע.</li>
               <li>
@@ -258,34 +228,23 @@ export default function TermsPage() {
                 עד אז ניתן להמשיך להשתמש בקרדיטים.
               </li>
               <li>
-                שינוי במחיר המנוי או במכסת הקרדיטים שלו יחול מתקופת החיוב הבאה, לאחר הודעה.{" "}
-                <Lawyer>
-                  unilateral price/quota change: Standard Contracts Law s.4(4) presumption (reaches
-                  business customers too); set a minimum notice length and form, and state the right
-                  to cancel without penalty before the change applies
-                </Lawyer>
+                שינוי במחיר המנוי או במכסת הקרדיטים שלו יחול רק מתקופת החיוב הבאה, ולאחר הודעה
+                באימייל לחשבון לפחות 30 ימים מראש. אם אינכם מסכימים לשינוי, תוכלו לבטל את המנוי ללא
+                קנס לפני שהשינוי ייכנס לתוקף.
               </li>
               <li>אם חיוב נכשל, נשוב וננסה לחייב, ואם התשלום לא יוסדר, המנוי יושעה.</li>
               <li>
-                התשלום נעשה דרך ספק סליקה ישראלי. פרטי כרטיס האשראי נמסרים לספק הסליקה ואינם נשמרים
-                אצלנו. חשבונית או קבלה, כנדרש לפי דין, תופק ותישלח לכתובת האימייל של החשבון.{" "}
-                <Lawyer>
-                  this sub-list describes the planned hosted-page design (docs/05-billing.md); no
-                  gateway or invoicing integration is built and the vendor is unconfirmed. Confirm
-                  &quot;card details are not held by us&quot; may be promised before the vendor is
-                  chosen, and align the document type (tax invoice / receipt) with the dealer-status
-                  answer in section 1
-                </Lawyer>
+                התשלום נעשה דרך ספק סליקה ישראלי. פרטי אמצעי התשלום יימסרו ישירות לספק הסליקה ולא
+                יישמרו אצלנו. קבלה, ולפי הצורך חשבונית עסקה, יופקו כנדרש לפי דין ויישלחו לכתובת
+                האימייל של החשבון.
               </li>
             </Bullets>
           </li>
           <li>
-            החזרים: אם הפקת סרטון נכשלה, הקרדיטים שחויבו מוחזרים לחשבון אוטומטית. הקרדיטים אינם
-            ניתנים להמרה לכסף, ואנחנו לא מחזירים תשלומים אלא כנדרש לפי דין.{" "}
-            <Lawyer>
-              money refunds, refund of unused credits on termination, and auto-renewal/cancellation
-              rules under the Consumer Protection Law
-            </Lawyer>
+            החזרים: אם הפקת סרטון נכשלה, הקרדיטים שחויבו מוחזרים לחשבון אוטומטית. קרדיטים אינם
+            ניתנים להמרה לכסף. החזר כספי יינתן כשהדין מחייב זאת, וכן אם לא יכולתם להשתמש בשירות בגלל
+            תקלה מתמשכת אצלנו שלא תוקנה בתוך זמן סביר. הוראות חוק הגנת הצרכן לגבי ביטול עסקה, ככל
+            שהן חלות עליכם, גוברות על האמור.
           </li>
           <li>
             הסרטונים המוגמרים זמינים להורדה עד 90 ימים ממועד השחרור, כלומר מהרגע שהסרטון הפך זמין
@@ -309,19 +268,17 @@ export default function TermsPage() {
           </li>
           <li>
             הפקה עשויה להתעכב או להיכשל, בין השאר אם ספק חיצוני מסרב לבצע אותה או אם השירות הגיע
-            לתקרת הקיבולת שלו. אם ההפקה נכשלה, הקרדיטים מוחזרים (סעיף 8), וזה הסעד היחיד.{" "}
-            <Lawyer>
-              As-Is / no-SLA and credits-as-sole-remedy are exemption and remedy-limiting terms
-              presumed unduly disadvantageous under the Standard Contracts Law 1982 s.4(1) and
-              s.4(6), which reaches business customers too; the savings clause in section 12 does
-              not textually cover this section
-            </Lawyer>
+            לתקרת הקיבולת שלו. אם ההפקה נכשלה, הקרדיטים מוחזרים (סעיף 8). מעבר לכך, האחריות שלנו
+            כפופה לסעיף 12.
           </li>
           <li>תוכן שנוצר בבינה מלאכותית עלול להיות לא מדויק או לא מתאים. בדקו אותו לפני פרסום.</li>
           <li>
             אנחנו לא מבטיחים תוצאות עסקיות, ביצועים של מודעות, או שהפלטפורמות יאשרו את המודעות שלכם.
           </li>
-          <li>אנחנו רשאים לשנות, להוסיף או להפסיק תכונות בשירות.</li>
+          <li>
+            אנחנו רשאים לשנות, להוסיף או להפסיק תכונות בשירות. על הפסקה של תכונה מהותית נודיע מראש
+            בזמן סביר.
+          </li>
         </Bullets>
       </Section>
 
@@ -329,24 +286,17 @@ export default function TermsPage() {
         <Bullets>
           <li>
             אנחנו רשאים להשעות או לסגור חשבון אם הופרו התנאים, אם הדבר נדרש לפי דין, או אם השימוש
-            מסכן את השירות או את משתמשיו. ככל שאפשר, נודיע לכם.{" "}
-            <Lawyer>
-              suspension/closure at our discretion with best-effort notice (also section 3 refusal
-              and section 7 discretionary removal): Standard Contracts Law s.4(2) presumption
-              reaches B2B uniform contracts; confirm wording and whether a notice/cure period is
-              required
-            </Lawyer>
+            מסכן את השירות או את משתמשיו. אם ההפרה ניתנת לתיקון, נודיע לכם באימייל ונאפשר לכם 7 ימים
+            לתקן אותה לפני הסגירה, אלא אם נדרש לפעול מיד לפי דין או כדי להגן על השירות או על
+            משתמשיו. בכל מקרה נודיע לכם על ההשעיה או הסגירה ועל הסיבה לה.
           </li>
           <li>
             אתם רשאים להפסיק להשתמש בשירות בכל עת ולבקש למחוק את החשבון (ראו מדיניות הפרטיות).
           </li>
           <li>
-            עם סגירת החשבון, התוכן והמודעות שלא הורדתם יימחקו לפי מדיניות הפרטיות, וכל הקרדיטים שלא
-            נוצלו, כולל קרדיטים שנטענו ידנית, יפקעו. הקרדיטים אינם ניתנים להמרה לכסף (סעיף 8).{" "}
-            <Lawyer>
-              expiry of unused credits on closure, including manually loaded or prepaid ones; same
-              question as the section 8 refund marker
-            </Lawyer>
+            עם סגירת החשבון, התוכן והמודעות שלא הורדתם יימחקו לפי מדיניות הפרטיות. קרדיטים שלא נוצלו
+            יפקעו. אם אנחנו סגרנו את החשבון שלא בגלל הפרה מצדכם, נחזיר לכם את החלק היחסי של תשלום
+            ששילמתם עבור קרדיטים שלא נוצלו. הקרדיטים אינם ניתנים להמרה לכסף (סעיף 8).
           </li>
         </Bullets>
       </Section>
@@ -358,40 +308,32 @@ export default function TermsPage() {
             נתונים או מוניטין, או לתוצאות של פרסום המודעות.
           </li>
           <li>
-            האחריות הכוללת שלנו כלפיכם לא תעלה על הסכום ששילמתם לנו בשלושת החודשים שקדמו לאירוע.{" "}
-            <Lawyer>
-              cap amount; most accounts have paid nothing to date, so this cap may be zero
-            </Lawyer>
+            האחריות הכוללת שלנו כלפיכם לא תעלה על הגבוה מבין: הסכום ששילמתם לנו ב־12 החודשים שקדמו
+            לאירוע, או 500 ₪.
           </li>
           <li>
-            אתם תשפו אותנו על כל תביעה, נזק או הוצאה שינבעו מהתוכן שלכם, מהמודעות שפרסמתם או מהפרת
-            התנאים על ידכם.{" "}
-            <Lawyer>
-              indemnity is uncapped and one-sided; confirm scope (legal costs? claims caused by our
-              own generated copy?), whether it should be capped like the clause above, and Standard
-              Contracts Law s.4 exposure
-            </Lawyer>
+            אתם תשפו אותנו על כל תביעה של צד שלישי, נזק או הוצאה סבירה (כולל שכר טרחת עורך דין סביר)
+            שינבעו מהתוכן שלכם, מהמוצר או מהטענות השיווקיות שלכם, מהמודעות שפרסמתם או מהפרת התנאים
+            על ידכם, למעט ככל שהם נובעים מהפרת התנאים על ידינו. נודיע לכם על תביעה כזאת ונאפשר לכם
+            להשתתף בהגנה.
           </li>
-          <li>אין באמור כדי לגרוע מזכויות שאינן ניתנות להתניה לפי דין.</li>
+          <li>
+            אין בסעיפים 10 עד 12 כדי לגרוע מזכויות שאינן ניתנות להתניה לפי דין, ובכלל זה אחריות שלא
+            ניתן להגבילה לפי חוק החוזים האחידים, התשמ״ג-1982.
+          </li>
         </Bullets>
       </Section>
 
       <Section n={13} title="דין וסמכות שיפוט">
-        <p>
-          על התנאים יחול הדין הישראלי. סמכות השיפוט הבלעדית נתונה לבתי המשפט המוסמכים בתל אביב-יפו.{" "}
-          <Lawyer>
-            exclusive Tel Aviv venue: Standard Contracts Law s.4(9) presumes a term displacing
-            statutory venue rules to be unduly disadvantageous, and the law reaches business
-            customers too; confirm, or soften to non-exclusive
-          </Lawyer>
-        </p>
+        <p>על התנאים יחול הדין הישראלי, וסמכות השיפוט נתונה לבתי המשפט המוסמכים בישראל.</p>
       </Section>
 
       <Section n={14} title="שינויים בתנאים">
         <p>
-          אנחנו רשאים לעדכן את התנאים. על שינוי מהותי נודיע באימייל לחשבון לפני כניסתו לתוקף,
-          והתאריך בראש העמוד יתעדכן. המשך שימוש לאחר מועד העדכון מהווה הסכמה לתנאים המעודכנים.{" "}
-          <Lawyer>notice period and enforceability of continued-use acceptance</Lawyer>
+          אנחנו רשאים לעדכן את התנאים. על שינוי מהותי נודיע באימייל לחשבון לפחות 14 ימים לפני כניסתו
+          לתוקף, והתאריך בראש העמוד יתעדכן. אם אינכם מסכימים לשינוי, תוכלו להפסיק להשתמש בשירות
+          ולבקש לסגור את החשבון לפני מועד הכניסה לתוקף. המשך שימוש לאחר מועד העדכון מהווה הסכמה
+          לתנאים המעודכנים.
         </p>
       </Section>
 
