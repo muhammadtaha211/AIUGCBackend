@@ -28,6 +28,15 @@ export async function middleware(request: NextRequest) {
 
   let response = NextResponse.next({ request });
 
+  // deny() returns a response that is not `response`, so it has to carry the
+  // cookies `setAll` just rotated onto it — dropping them leaves the browser
+  // presenting a spent refresh token. Reads `response` at call time: `setAll`
+  // reassigns it, possibly after the users read.
+  const withAuthCookies = (target: NextResponse) => {
+    for (const cookie of response.cookies.getAll()) target.cookies.set(cookie);
+    return target;
+  };
+
   const supabase = createServerClient(supabaseUrl(), supabaseAnonKey(), {
     cookies: {
       getAll() {
@@ -54,8 +63,8 @@ export async function middleware(request: NextRequest) {
 
   const deny = () =>
     path.startsWith("/api")
-      ? NextResponse.json({ ok: false, error: "אין הרשאה." }, { status: 403 })
-      : NextResponse.redirect(new URL("/login", request.url));
+      ? withAuthCookies(NextResponse.json({ ok: false, error: "אין הרשאה." }, { status: 403 }))
+      : withAuthCookies(NextResponse.redirect(new URL("/login", request.url)));
 
   if (!user) return deny();
 
