@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Brand } from "@/components/brand";
+import { GOOGLE_SIGN_IN_FAILED } from "@/lib/auth";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "כניסה | תבנית" };
@@ -9,8 +10,18 @@ export const metadata: Metadata = { title: "כניסה | תבנית" };
  * Light login, matching the landing/onboarding scene. The layout is sized to
  * fit a laptop viewport with no scrollbar: 64px header + centered card, tight
  * vertical rhythm. Shared components pick up their light styles via theme-light.
+ *
+ * Also the landing for a failed Google round-trip: /auth/callback sends the
+ * user here with ?error=oauth, and the message sits above the email form that
+ * is the way out.
  */
-export default function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+
   return (
     <div className="theme-light relative isolate flex min-h-dvh flex-col overflow-hidden bg-paper text-ink">
       <div
@@ -34,7 +45,7 @@ export default function LoginPage() {
             <h1 className="text-2xl font-semibold tracking-tight text-ink">כניסה לחשבון</h1>
             <p className="mt-2 text-[15px] text-ink/65">ממשיכים מאיפה שהפסקתם.</p>
 
-            <LoginForm />
+            <LoginForm initialError={error === "oauth" ? GOOGLE_SIGN_IN_FAILED : null} />
 
             <p className="mt-4 text-sm">
               <Link

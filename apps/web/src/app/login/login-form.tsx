@@ -9,11 +9,13 @@ import { GoogleG } from "@/components/ui/icons";
 import { GOOGLE_SIGN_IN_ENABLED, signIn, signUpWithGoogle } from "@/lib/auth";
 import { clearDraft, loadDraft } from "@/lib/onboarding";
 
-export function LoginForm() {
+/** `initialError` seeds the inline message — a Google failure sent here by
+ *  /auth/callback. Any later submit replaces it. */
+export function LoginForm({ initialError = null }: { initialError?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [submitting, setSubmitting] = useState<"email" | "google" | null>(null);
 
   async function handleSubmit(event: React.FormEvent) {

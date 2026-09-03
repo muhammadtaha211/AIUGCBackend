@@ -26,6 +26,15 @@ export const GOOGLE_SIGN_IN_ENABLED = true;
 
 const GENERIC_ERROR = "משהו השתבש. נסו שוב בעוד רגע.";
 
+/**
+ * Shown on /login after a Google round-trip came back without a session —
+ * /auth/callback sends them here with `?error=oauth`. The failure happens on
+ * Google's side or in the exchange, so there is nothing specific to say; the
+ * email form is right there and always works.
+ */
+export const GOOGLE_SIGN_IN_FAILED =
+  "ההתחברות עם Google לא הצליחה. נסו שוב, או היכנסו עם אימייל וסיסמה.";
+
 /** Map Supabase auth error codes to inline Hebrew messages. */
 function hebrewAuthError(error: unknown): string {
   const code = isAuthApiError(error) ? error.code : undefined;
