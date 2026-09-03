@@ -28,6 +28,13 @@ switching to PayPlus/Cardcom/Sumit during merchant onboarding is one adapter cla
 confirmation happens when the founder opens the merchant account — deliberately not a code
 dependency.
 
+**Document type depends on dealer status.** This section assumes חשבונית מס. The operator is
+registered as **עוסק פטור** and cannot issue one — it issues קבלה / חשבונית עסקה, which is what
+the live terms §8 promises. Whichever vendor is chosen, its invoicing integration must be
+configured to match the status in force when billing ships, and the plan above only becomes
+correct on conversion to עוסק מורשה:
+[`docs/vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md`](vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md).
+
 ## Subscription lifecycle
 
 ```

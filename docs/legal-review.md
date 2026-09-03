@@ -15,7 +15,9 @@ recorded verbatim below with the position now taken, the statutory basis for it,
 counsel should still confirm. No marker remains in the code.
 
 Counsel should read the two live pages together with this file. The tables are the review: the
-pages state positions, this file states why.
+pages state positions, this file states why. The decision itself is recorded in the project vault
+at [`docs/vault/decisions/0014-legal-page-positions.md`](vault/decisions/0014-legal-page-positions.md),
+with the two open problems it surfaced in `docs/vault/defects/`.
 
 **How the statutes were checked.** The statutory texts behind the positions below were checked
 against official Reshumot / gov.il publications where those could be fetched, and against two
@@ -98,8 +100,12 @@ Grades: [R] official Reshumot / gov.il publication fetched; [M] two independent 
   sample only after a yes (Communications Law s.30א(ג)).
 - Convert to עוסק מורשה before the payment that crosses the 2026 ceiling (₪122,833 per secondary
   sources — verify on gov.il); then update terms §1 and the VAT sentence in §8.
-- Terms §8 says "ספק סליקה ישראלי"; the project plan names Paddle (foreign merchant of record).
-  Reconcile before billing ships.
+- Terms §8 describes a payment flow that does not exist yet: no gateway or invoicing integration
+  is built and the vendor is unconfirmed until the merchant account is opened
+  (`docs/05-billing.md`). The plan is an Israeli gateway, so §8's "ספק סליקה ישראלי" is accurate;
+  what needs reconciling before billing ships is the **document type** — the plan issues
+  חשבונית מס, which an עוסק פטור cannot
+  ([`docs/vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md`](vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md)).
 - Supabase / Vercel backup retention.
 - If private individuals are ever allowed to buy: Consumer Protection Law s.14ג disclosures (incl.
   ID number and address) must be given before the sale, e.g. in the checkout flow, and s.13ד

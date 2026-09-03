@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-02
+updated: 2026-09-03
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -146,8 +146,9 @@ even with non-sensitive scopes.
    refused at the account chooser with `error=access_denied`, which this app does not
    read — the user lands on `/start` with no session and no message.
    Pages carry no review markers as of 2026-09-03; positions, legal basis and open
-   questions: docs/legal-review.md. Lawyer review is still owed but no longer blocks
-   publishing.
+   questions: docs/legal-review.md, decision recorded in
+   [[0014-legal-page-positions]]. Lawyer review is still owed but no longer
+   blocks publishing.
 2. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
    Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
    production-recommended; believed unset) and verify `fra1` there while in the
@@ -196,6 +197,15 @@ even with non-sensitive scopes.
   `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is
   the only user; needed before strangers, i.e. before queue item 1 lands.
 - **`daily_caps` for stranger traffic.** An `app_config` UPDATE, not a deploy.
+- **Invoice document type before billing ships.** The billing plan issues חשבונית מס;
+  the operator is עוסק פטור and cannot —
+  [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as
+  עוסק פטור (קבלה / חשבונית עסקה) or convert first. No money moves today, so nothing is
+  currently wrong; it is a configuration decision the gateway work must not skip.
+- **The reg. 2 מסמך הגדרות מאגר.** Privacy §11 now claims compliance with the 2017 Data
+  Security Regulations; the document those regulations require has never been written —
+  [[database-definitions-document-missing]]. A collation job, not an
+  investigation: everything it must describe is already in the privacy policy.
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing
   fix closed the silent variant for every writer, not just the CLI.
 

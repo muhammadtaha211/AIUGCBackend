@@ -104,4 +104,5 @@ changing policy is an UPDATE, not a deploy.
 | Gateway callbacks, dunning, cancellations, plan changes | [05-billing.md](05-billing.md)                                                                      |
 | Admin/ops surface                                       | this file, above                                                                                    |
 | Content policy for Service A                            | [04-integrations.md](04-integrations.md) §Content policy — Claude classifier pre-render             |
+| Terms & privacy: the position each page takes, and why  | [legal-review.md](legal-review.md) — per-marker positions, statutes, what counsel must confirm      |
 | Observability                                           | this file, above                                                                                    |
