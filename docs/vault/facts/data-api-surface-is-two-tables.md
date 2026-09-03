@@ -12,8 +12,8 @@ The whole PostgREST surface of this product is `businesses` (web) and `users` (a
 
 | Table        | Read by                                                                                                                                                                     | Columns                                             |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `businesses` | `apps/web/src/middleware.ts:40`, `app/home/layout.tsx:24`, `app/home/page.tsx:72`, `app/home/demos/page.tsx:21`, `app/home/a/new/page.tsx:23`, `app/home/b/new/page.tsx:25` | `id`, `name`, `questionnaire`, `created_at` (order) |
-| `users`      | `apps/admin/src/middleware.ts:63`, `apps/admin/src/app/login/login-form.tsx:38`                                                                                             | `role`, `id` (filter)                               |
+| `businesses` | `apps/web/src/middleware.ts:49`, `app/home/layout.tsx:24`, `app/home/page.tsx:72`, `app/home/demos/page.tsx:21`, `app/home/a/new/page.tsx:23`, `app/home/b/new/page.tsx:25` | `id`, `name`, `questionnaire`, `created_at` (order) |
+| `users`      | `apps/admin/src/middleware.ts:72`, `apps/admin/src/app/login/login-form.tsx:38`                                                                                             | `role`, `id` (filter)                               |
 
 All eight call sites run after `auth.getUser()` has returned a user, so only `authenticated` needs
 a grant. `anon` needs none.
