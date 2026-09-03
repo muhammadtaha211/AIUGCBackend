@@ -163,15 +163,12 @@ non-sensitive scopes.
 
 ## The queue
 
-1. **Copy the auth cookies onto the middleware's redirects.** `apps/web/src/middleware.ts`
-   returns a fresh `NextResponse.redirect(...)` on both of its exits (`:35`, `:42`), so a
-   session `getUser()` just refreshed loses the rotated token on the way out. Rotation is on
-   with a 10s reuse interval (`supabase/config.toml:171,174`), so the browser re-presents the
-   old one and GoTrue revokes the family. Predicted symptom: an owner returning after an hour
-   idle via `/` or `/start` — a `<Link href="/start">` prefetch is enough — is signed out in
-   every tab. **Code-read, never observed**:
-   [[middleware-redirects-drop-refreshed-auth-cookies]]. Small fix, largest blast radius of
-   anything open here.
+1. ~~**Copy the auth cookies onto the middleware's redirects.**~~ — **fixed 2026-09-03** in
+   `c925d4a` (web, guarded by `apps/web/test/middleware.test.ts`) and `ad6d5ce` (the same drop
+   in admin's `deny()`); defect note updated:
+   [[middleware-redirects-drop-refreshed-auth-cookies]]. Both exits now copy the rotated
+   cookies onto the redirect they return. Still **code-read, never observed** — the test proves
+   the cookies are carried, not that anyone was ever signed out.
 2. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
    Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
    production-recommended; believed unset) and verify `fra1` there while in the
