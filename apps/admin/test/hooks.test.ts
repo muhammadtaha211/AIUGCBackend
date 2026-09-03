@@ -20,8 +20,11 @@ describe("hook file pre-check", () => {
 describe("hook metadata bounds (client pre-check = server bounds-check)", () => {
   const good = { durationMs: 2000, width: 1080, height: 1920 };
 
-  it("accepts 0.5-10s at exactly 1080x1920", () => {
+  it("accepts 0.5-10s at 1080x1920 or anything close to 9:16", () => {
     expect(hookMetadataError(good)).toBeNull();
+    // Real export the founder has — 1.6% off 9:16, covers the frame fine.
+    expect(hookMetadataError({ ...good, width: 1072, height: 1936 })).toBeNull();
+    expect(hookMetadataError({ ...good, width: 720, height: 1280 })).toBeNull();
     expect(hookMetadataError({ ...good, durationMs: 500 })).toBeNull();
     expect(hookMetadataError({ ...good, durationMs: 10_000 })).toBeNull();
   });
@@ -31,9 +34,11 @@ describe("hook metadata bounds (client pre-check = server bounds-check)", () => 
     expect(hookMetadataError({ ...good, durationMs: 12_345 })).toMatch(/12\.3/);
   });
 
-  it("rejects wrong dimensions, naming the actual values", () => {
-    expect(hookMetadataError({ ...good, width: 720, height: 1280 })).toMatch(/720×1280/);
+  it("rejects non-9:16 dimensions, naming the actual values", () => {
     expect(hookMetadataError({ ...good, width: 1920, height: 1080 })).toMatch(/1920×1080/);
+    // 19.5:9 phone frame and 4:5 — both well past the tolerance.
+    expect(hookMetadataError({ ...good, width: 1080, height: 2340 })).toMatch(/1080×2340/);
+    expect(hookMetadataError({ ...good, width: 1080, height: 1350 })).toMatch(/1080×1350/);
   });
 });
 

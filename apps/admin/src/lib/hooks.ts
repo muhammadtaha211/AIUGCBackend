@@ -1,4 +1,4 @@
-import { HOOK_FRAME, textSafeAreaSchema } from "@aiugc/core/hook-geometry";
+import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 import { z } from "zod";
 
 /**
@@ -35,6 +35,20 @@ export {
 export const HOOK_DURATION = { minMs: 500, maxMs: 10_000 } as const;
 export const MAX_HOOK_BYTES = 50 * 1024 * 1024;
 
+/**
+ * Dimensions only have to be close to 9:16, not exactly 1080x1920: the
+ * composition and the safe-area preview both object-fit: cover the clip into
+ * the 1080x1920 frame, so a near-9:16 clip loses a few edge pixels and renders
+ * identically otherwise. 3% lets through the 1072x1936 exports the founder
+ * actually has (1.6% off) and still rejects landscape and 19.5:9 phone frames.
+ */
+export const HOOK_ASPECT_TOLERANCE = 0.03;
+
+function isNear9x16(width: number, height: number): boolean {
+  const target = 9 / 16;
+  return Math.abs(width / height - target) / target <= HOOK_ASPECT_TOLERANCE;
+}
+
 /** Hebrew validation error for the picked file, or null when fine. */
 export function hookFileError(file: { type: string; size: number }): string | null {
   if (file.type !== "video/mp4") return "אפשר להעלות רק וידאו בפורמט MP4.";
@@ -49,8 +63,8 @@ export function hookMetadataError(meta: {
   width: number;
   height: number;
 }): string | null {
-  if (meta.width !== HOOK_FRAME.width || meta.height !== HOOK_FRAME.height) {
-    return `הווידאו חייב להיות בדיוק 1080×1920 — הקובץ הוא ${meta.width}×${meta.height}.`;
+  if (!isNear9x16(meta.width, meta.height)) {
+    return `הווידאו חייב להיות ביחס 9:16 (למשל 1080×1920) — הקובץ הוא ${meta.width}×${meta.height}.`;
   }
   if (meta.durationMs < HOOK_DURATION.minMs || meta.durationMs > HOOK_DURATION.maxMs) {
     return `אורך הקליפ חייב להיות 0.5–10 שניות — הקובץ הוא ${(meta.durationMs / 1000).toFixed(1)} שניות.`;

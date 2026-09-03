@@ -174,7 +174,7 @@ export function UploadHook({
         <span className="text-sm font-medium text-gray-200">
           {prefill ? "שכפול לדמות" : "פתיח חדש"}
           <span className="ms-2 text-[13px] font-normal text-gray-500">
-            MP4 בדיוק 1080×1920, באורך 0.5–10 שניות
+            MP4 ביחס 9:16 (למשל 1080×1920), באורך 0.5–10 שניות
           </span>
         </span>
 
