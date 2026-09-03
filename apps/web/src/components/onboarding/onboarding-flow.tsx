@@ -95,21 +95,35 @@ export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
     const saved = loadDraft();
     if (saved) setDraft(saved);
 
-    // Returning from the OAuth redirect (or already signed in) with a finished
-    // draft: persist it server-side and land on the homepage — no wizard flash.
+    // Returning from the OAuth redirect (or already signed in): a finished
+    // draft is persisted server-side and lands on the homepage; anyone else
+    // with an account is handed to the dashboard's wizard, because the public
+    // one has nothing to say to someone who is already signed in.
+    // getUser(), not getSession(): the decision has to be server-validated —
+    // a stale local session would send them to /home/new-business, whose own
+    // getUser() fails and redirects back here, and the two would loop.
     (async () => {
-      if (saved && saved.step === STEPS.length - 1) {
-        const { data } = await createClient().auth.getSession();
-        if (data.session) {
+      const {
+        data: { user },
+      } = await createClient().auth.getUser();
+
+      if (user) {
+        if (saved && saved.step === STEPS.length - 1) {
           const result = await postDraft(saved);
           if ("businessId" in result) {
             clearDraft();
             router.replace("/home");
             return;
           }
+          // The draft is worth more than the redirect — keep them here with it.
           setCompletionError("החשבון מחובר אבל השמירה נכשלה — רעננו את העמוד כדי לנסות שוב.");
+        } else {
+          // Before setHydrated, so the wizard never flashes on the way out.
+          router.replace("/home/new-business");
+          return;
         }
       }
+
       setHydrated(true);
     })();
   }, [mode, router]);
