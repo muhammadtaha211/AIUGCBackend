@@ -23,14 +23,18 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return NextResponse.redirect(`${origin}/start`);
     // The message only — the code is a credential and never gets logged.
-    console.error("[auth/callback] code exchange failed:", error.message);
+    console.error("[auth/callback] code exchange failed:", error.message.slice(0, 200));
     return NextResponse.redirect(`${origin}/login?error=oauth`);
   }
 
   const providerError = searchParams.get("error") ?? searchParams.get("error_code");
   const description = searchParams.get("error_description");
   if (providerError || description) {
-    console.error("[auth/callback] provider returned an error:", providerError, description);
+    console.error(
+      "[auth/callback] provider returned an error:",
+      providerError?.slice(0, 200),
+      description?.slice(0, 200),
+    );
     return NextResponse.redirect(`${origin}/login?error=oauth`);
   }
 

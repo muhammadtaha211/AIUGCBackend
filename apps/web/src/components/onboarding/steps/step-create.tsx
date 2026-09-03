@@ -54,9 +54,12 @@ export function StepCreate({
         onBack={onBack}
       />
 
-      <ul className="mt-6 space-y-2 rounded-xl bg-white/5 p-4">
+      <ul className="mt-6 space-y-2 rounded-xl bg-white/5 p-4 light:bg-paper">
         {recap.map((line, index) => (
-          <li key={index} className="flex items-start gap-2 text-sm text-gray-300">
+          <li
+            key={index}
+            className="flex items-start gap-2 text-sm text-gray-300 light:text-ink/75"
+          >
             <Check className="mt-0.5 size-4 shrink-0 text-accent" />
             <span dir="auto" className="min-w-0 truncate">
               {line}
@@ -66,7 +69,10 @@ export function StepCreate({
       </ul>
 
       {error && (
-        <p role="alert" className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+        <p
+          role="alert"
+          className="mt-6 rounded-lg bg-red-500/10 px-3 py-2.5 text-sm text-red-300 light:bg-red-100 light:text-red-700"
+        >
           {error}
         </p>
       )}
