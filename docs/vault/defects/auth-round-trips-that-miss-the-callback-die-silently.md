@@ -1,15 +1,15 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-27
-method: "repo-wide enumeration of every supabase `.auth.<method>` call site over **/*.{ts,tsx} (complete set: getUser, getSession, signUp, signInWithPassword, signInWithOAuth, signOut, exchangeCodeForSession — nothing else); full reads of apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/src/middleware.ts, both apps' login pages; full route-tree globs of apps/web and apps/admin. Run as 4 investigators + 4 adversarial verifiers (Hebrew UI strings, raw /auth/v1 fetches, dynamic dispatch all swept); every claim confirmed."
+verified: 2026-09-03
+method: "2026-09-03 — GoTrue's own error handling read at the version this project runs (v2.196.0, from `GET {SUPABASE_URL}/auth/v1/health`): `redirectErrors` (internal/api/external.go:812-836 @ v2.196.0) writes the error params into BOTH the query string and the fragment, unconditionally, with no PKCE/implicit branch, and `getErrorQueryString` (:839-883) sets `error_code` only for `*HTTPError`, so a provider `access_denied` carries `error` + `error_description` and no `error_code`. The Part B code was read and typechecked, NOT exercised against a real failed round-trip. 2026-08-27 — repo-wide enumeration of every supabase `.auth.<method>` call site over **/*.{ts,tsx} (complete set: getUser, getSession, signUp, signInWithPassword, signInWithOAuth, signOut, exchangeCodeForSession — nothing else); full reads of apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/src/middleware.ts, both apps' login pages; full route-tree globs of apps/web and apps/admin. Run as 4 investigators + 4 adversarial verifiers (Hebrew UI strings, raw /auth/v1 fetches, dynamic dispatch all swept); every claim confirmed."
 source: code
 ---
 
 # Auth round-trips that miss `/auth/callback` die silently — password recovery is the third variation
 
 Three flows depend on an email or OAuth round-trip landing back at `/auth/callback` — the **only**
-route in the repo that exchanges a PKCE code (`apps/web/src/app/auth/callback/route.ts:15`). A
+route in the repo that exchanges a PKCE code (`apps/web/src/app/auth/callback/route.ts:23`). A
 round-trip that misses it falls back to the Site URL root, where nothing listens: `/` is a static
 marketing page that never reads `searchParams` (`apps/web/src/app/page.tsx`), `/home` reads only
 cookies, and the middleware routes purely on session state (`apps/web/src/middleware.ts:34-44`).
@@ -21,8 +21,8 @@ State of the three, verified 2026-08-27 at `7f95875`:
 
 | Flow                | Redirects to `/auth/callback`?                             | Completes?                                    |
 | ------------------- | ---------------------------------------------------------- | --------------------------------------------- |
-| Signup confirmation | Yes — `emailRedirectTo`, `auth.ts:65` (fixed in `02f58bb`) | Yes (latent — confirm-email is OFF)           |
-| Google OAuth        | Success: yes — `auth.ts:97`, in daily use. Error return: **no** — Site URL root with unread params ([[0006-google-oauth-is-in-scope-for-launch]]) | Success yes; error path is a silent dead end  |
+| Signup confirmation | Yes — `emailRedirectTo`, `auth.ts:78` (fixed in `02f58bb`) | Yes (latent — confirm-email is OFF)           |
+| Google OAuth        | Success: yes — `auth.ts:161`, in daily use. Error return: **yes for a provider refusal** — GoTrue redirects to `redirect_to` carrying `error`/`error_description` (and `error_code` only for its own HTTP errors), so `/auth/callback` does see it. **No** for a bad or expired `state`, which GoTrue sends to the **Site URL** instead, where nothing reads it (`internal/api/external_oauth.go:31-58` @ v2.196.0 — see Fixed below; [[0006-google-oauth-is-in-scope-for-launch]] carries the `access_denied` history) | Success yes; the error path was a silent dead end until 2026-09-03 — see Fixed below. The Site-URL landing is still unhandled |
 | Password recovery   | ~~No sending call exists at all~~ **built 2026-08-27**, via its own `/auth/recovery` route (see Fixed below) | Yes — including the expired-link path         |
 
 ## Recovery, the variation that surfaced this
@@ -76,14 +76,59 @@ removes the same-browser PKCE constraint. The template edit went live the same d
 ran a real end-to-end recovery through it (request → email → token_hash form → new password →
 `/home`): **worked**. `/auth/recovery` stays for any reset email sent before the template change.
 
-Still open from the pattern: the OAuth **error return** dead end, and `/auth/callback` still
-discarding its exchange result (below).
+Still open from the pattern at that point: the OAuth **error return** dead end, and
+`/auth/callback` still discarding its exchange result. Both closed 2026-09-03 — see Fixed below.
 
 ## Aggravator at the door itself
 
-The callback discards `exchangeCodeForSession`'s result and redirects to `/start` regardless
-(`route.ts:13-18`) — a flow that *does* reach the callback still fails silently when the exchange
-fails (expired link, reused code).
+The callback discarded `exchangeCodeForSession`'s result and redirected to `/start` regardless
+(`route.ts:13-18` as it then stood) — a flow that *did* reach the callback still failed silently
+when the exchange failed (expired link, reused code). Fixed below.
+
+## FIXED (the OAuth error return, and the discarded exchange result) — 2026-09-03, `5646529`
+
+`apps/web/src/app/auth/callback/route.ts` now has four outcomes instead of one:
+
+- **A working exchange** → `/start`, as before.
+- **A failed exchange** → `/login?error=oauth`; the error's `message` is logged, never the code.
+- **No code, but `error` / `error_code` / `error_description` on the query string** →
+  `/login?error=oauth`, with both logged.
+- Neither → `/start`, unchanged, so nothing regresses if the params ever move.
+
+`/login` reads `?error=oauth` server-side from its `searchParams` prop and seeds `LoginForm`'s
+existing error state with `GOOGLE_SIGN_IN_FAILED` (`apps/web/src/lib/auth.ts`):
+`ההתחברות עם Google לא הצליחה. נסו שוב, או היכנסו עם אימייל וסיסמה.` Only `error=oauth` is
+recognised. The wizard draft in `localStorage` is untouched, so a user who was on the final step
+can return to `/start` and retry from there.
+
+**Why the query string is enough.** GoTrue v2.196.0 — the version this project runs, read off
+`GET {SUPABASE_URL}/auth/v1/health` — writes the error params into the query string **and** the
+fragment on the same redirect, unconditionally, with no PKCE/implicit branch
+(`redirectErrors`, `internal/api/external.go:812-836` @ v2.196.0; the `TODO` on that function
+marks the *fragment* as the deprecated half). A route handler can only ever see the query string,
+and the query string is the half that has been there since v2.60. One trap this settles:
+`getErrorQueryString` (`:839-883`) sets `error_code` only for GoTrue's own `*HTTPError`, so a
+provider refusal — Google's `access_denied` — arrives with `error` and `error_description` and
+**no** `error_code`. Keying on `error_code` alone would have missed exactly the case this was
+built for; the route checks `error` first.
+
+**Not verified end to end.** The code was read and typechecked; no real failed Google round-trip
+has been put through it. Reproducing one means cancelling at Google's consent screen.
+
+**Still open — the Site-URL landing.** GoTrue's `loadFlowState` sends a bad, expired or missing
+`state` to `config.SiteURL`, not to `redirect_to`, query params only
+(`internal/api/external_oauth.go:31-58` @ v2.196.0). `/auth/callback` never runs, and nothing in
+this repo reads `?error=` at `/` — a repo-wide grep for `error_description|error_code|
+access_denied|location.hash` hits only `auth/callback/route.ts`. Same silent dead end as the
+original defect, one door further out. Not fixed, deliberately: it needs a decision about what `/`
+should do with an auth error, and `/` is the marketing page.
+
+**Also still open — `/auth/recovery` swallows the same information.** Its own comment claims
+"GoTrue also lands here with error params and no code … same handling", but it reads only `code`,
+logs nothing, and discards a failed `exchangeCodeForSession` without a message
+(`apps/web/src/app/auth/recovery/route.ts`). The user always gets
+`/forgot-password?error=expired`, which happens to be a reasonable destination — so this is a
+diagnosability gap, not a dead end. Left alone: it was out of scope for the 2026-09-03 change.
 
 ## Workaround taken instead
 

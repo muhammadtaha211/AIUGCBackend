@@ -47,10 +47,10 @@ symptom.** `git log -1 --oneline` on the box, not "a render worked afterwards" �
 alone produces that. §11 now carries the check.
 
 All four deaths surfaced only because the founder happened to be running a wizard test —
-that is the Sentry argument (queue item 5), now with four data points instead of two.
+that is the Sentry argument (queue item 4), now with four data points instead of two.
 
 `apps/admin` is also deployed and publicly reachable on its vercel.app URL, gated only
-by `requireAdmin` (the basic-auth second wall is believed unset — queue item 2).
+by `requireAdmin` (the basic-auth second wall is believed unset — queue item 1).
 
 **Render progress is now visible to the customer** (2026-09-02). The A wizard's render
 step has a real bar with the percentage on it; `/home` shows a live chip plus the percent
@@ -63,6 +63,24 @@ that creates for any future pointer math under `/home`). Whether 0.95 is the rig
 is still unmeasured against the founder's own viewport.
 
 The worker box is live; the pipeline does not depend on the founder's desktop being awake.
+
+**Google sign-in is live to the public** (2026-09-03) — old queue item 1, closed. `/privacy`
+and `/terms` shipped, `tavnit.ai` is verified in Search Console, and the founder published
+the OAuth app; status reads _In production_ with no review, and a Google account that is
+**not** on the test-user list signed in on `tavnit.ai` the same day. That lifts the hard gate
+the 0006 amendment put on ANY traffic.
+
+That first stranger sign-in also exposed two holes in what happens _after_ Google returns.
+Both are fixed **in the tree only** — branch `fix/signed-in-no-business-and-oauth-error`,
+not merged and not deployed as of 2026-09-03:
+
+- A signed-in user with **no business** had no way off the public wizard: the middleware
+  forwards only owners, so they sat on `/start` with nothing saying they were signed in.
+  They now go to `/home/new-business` —
+  [[0015-signed-in-without-business-lands-on-new-business]].
+- A **failed** round-trip still died silently at `/auth/callback`, which discarded the
+  exchange result and ignored provider error params. It now lands on `/login` with a Hebrew
+  message — [[auth-round-trips-that-miss-the-callback-die-silently]].
 
 ## External state — not in the repo
 
@@ -109,22 +127,25 @@ Fine-grained tokens). Deploy-key alternative rejected: [[0008-github-pat-over-de
 (`SKIP LOCKED`), but the desktop's `.env` carries `DRY_RUN=1` and the box's deliberately
 does not. A desktop worker claiming a real customer job reports success and writes
 placeholder files. Start it only deliberately. (Whether it briefly did exactly that
-around 2026-08-27 is an open check — queue item 3.)
+around 2026-08-27 is an open check — queue item 2.)
 
-**Google OAuth is in Testing mode.** Works for test-list accounts only. Scopes
-`openid`/`email`/`profile` — all non-sensitive, so publishing is a form, not a review.
-Publishing requires `tavnit.ai` live (now true) plus `/privacy` and `/terms` routes,
-which do not exist. Do NOT upload a custom app logo: it triggers Google's brand review
-even with non-sensitive scopes.
+**Google OAuth is published — status _In production_.** The founder published it
+2026-09-03, having verified `tavnit.ai` in Search Console a few days earlier (exact date
+not recorded) and shipped `/privacy` and `/terms`. Scopes `openid`/`email`/`profile` —
+all non-sensitive, so publishing was a form, not a review, exactly as
+[[0006-google-oauth-is-in-scope-for-launch]] said. **Measured 2026-09-03:** a Google
+account **not** on the test-user list signed in on `tavnit.ai` — it ended on `/start`
+looking signed out, and `/home` → `/home/new-business` is what proved the session
+existed. Do NOT upload a custom app logo: it triggers Google's brand review even with
+non-sensitive scopes.
 
 ## Decisions made in conversation — not yet fully in the repo
 
 1. **`GOOGLE_SIGN_IN_ENABLED` stays `true`** — recorded 2026-09-01 as an amendment in
-   [[0006-google-oauth-is-in-scope-for-launch]]. The consequence: **OAuth publishing is
-   a hard gate on ANY traffic** (queue item 1). Still owed: reconciling
-   `docs/08-supabase-project-rebuild.md` §8B (~line 685), which still advises keeping
-   the flag `false` for a public window — that advice is overridden by the amendment
-   but the doc text itself is unedited.
+   [[0006-google-oauth-is-in-scope-for-launch]]. Its consequence, that **OAuth publishing
+   was a hard gate on ANY traffic**, is spent: the app is published.
+   `docs/08-supabase-project-rebuild.md` §8B now points at the amendment instead of
+   advising the flag be set `false` for a public window.
 2. **Where `apps/admin` lives — proposed `admin.tavnit.ai`, never decided.** Admin is
    deployed and publicly reachable on its vercel.app URL today. Should live:
    `decisions/` when settled.
@@ -138,32 +159,21 @@ even with non-sensitive scopes.
 
 ## The queue
 
-1. **Write `/privacy` and `/terms`, then publish the Google OAuth app** — adding
-   `tavnit.ai` under **Authorized domains** (docs/08 §8B step 7; _Authorized JavaScript
-   origins_ stays **empty** — see corrections). Hard gate on ANY traffic per the 0006
-   amendment: the site will not be advertised until Google sign-in works, and until
-   publishing status reads _In production_, any address not on the test-user list is
-   refused at the account chooser with `error=access_denied`, which this app does not
-   read — the user lands on `/start` with no session and no message.
-   Pages carry no review markers as of 2026-09-03; positions, legal basis and open
-   questions: docs/legal-review.md, decision recorded in
-   [[0014-legal-page-positions]]. Lawyer review is still owed but no longer
-   blocks publishing.
-2. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
+1. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
    Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
    production-recommended; believed unset) and verify `fra1` there while in the
    dashboard. Cheap, and admin is publicly reachable today behind `requireAdmin` alone.
-3. **Check the DRY_RUN contamination window.** The desktop worker (DRY_RUN=1) may have
+2. **Check the DRY_RUN contamination window.** The desktop worker (DRY_RUN=1) may have
    run briefly alongside the box around 2026-08-27. Any job it claimed reported SUCCESS
    while writing placeholder files. One query settles it:
    `select id, type, status, locked_by, finished_at from jobs where locked_by like
 'local:%' order by finished_at desc;` — anything dated after the box went live is
    stub output wearing a success status. An open check, not a known problem.
-4. **2026-09-03 — count the drops.** `journalctl -u aiugc-worker -o cat | grep -c
+3. **2026-09-03 — count the drops.** `journalctl -u aiugc-worker -o cat | grep -c
 '"claim failed'`. That number decides whether `DATABASE_URL` moves off port 6543.
    Clock started 2026-08-27; fires on its date regardless of queue position. Do not
    change the port before then.
-5. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
+4. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
    08-28, 09-01 and again on 09-02, and every one surfaced only because the founder
    happened to be running a wizard test. `status='dead'` is the alert condition, the DSN
    is wired and unset, and the worker runs on a machine nobody is looking at. The
@@ -171,11 +181,11 @@ even with non-sensitive scopes.
    work is on the box) and the real cause lives in `jobs.last_error`. Read it with
    `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only);
    box logs are `journalctl -u aiugc-worker -o cat`.
-6. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
+5. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
    verified, and the bundle is confirmed outside `/tmp`. This is the known-good image —
    capture it before the box drifts. One-off, not the +20%/month backup plan. One-off, not the
    +20%/month backup plan.
-7. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
+6. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
    CPX41-class, ~€30/mo flat" predates the June 2026 price rise and understates by
    roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
    against three measured renders (verified 2026-09-02,
@@ -192,10 +202,11 @@ even with non-sensitive scopes.
   rendered signed thumbnails, it must. Check against `apps/web/.env.local` before
   touching anything; do not fix the `.env.example` comment blind.
 - **`DATABASE_URL` port 6543.** Deliberately undecided in `docs/07-worker-box.md`;
-  queue item 4 produces the number that settles it.
+  queue item 3 produces the number that settles it.
 - **Content policy.** Nothing reviews customer copy before an MP4 exists —
   `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is
-  the only user; needed before strangers, i.e. before queue item 1 lands.
+  the only user. Strangers can reach the app now that Google sign-in is published, so
+  this no longer waits on a queue item.
 - **`daily_caps` for stranger traffic.** An `app_config` UPDATE, not a deploy.
 - **Invoice document type before billing ships.** The billing plan issues חשבונית מס;
   the operator is עוסק פטור and cannot —
@@ -223,10 +234,10 @@ Neither blocks anything; both get more expensive to recover later.
 - ~~The wizard render's duration~~ — **taken 2026-09-02**, three live renders, mean 66.1s:
   [[service-a-render-wall-clock-on-the-box]]. It shows `docs/02-jobs.md:111`'s "~2–6 min
   per video" to be 2–5× too slow, so that line and its stale box price are now one fix
-  (queue item 7).
+  (queue item 6).
 - **No cold render has been measured on the box** — one including the ~92 MB Chrome
   Headless Shell download. Matters only if the box is rebuilt from scratch rather than
-  from the queue-item-6 snapshot.
+  from the queue-item-5 snapshot.
 
 ## Corrections worth not repeating
 

@@ -620,10 +620,23 @@ than waiting for step 7.
 Pre-flight the `public.users` check from §8A step 2 first. Then `pnpm dev` → confirm port **3000** →
 `http://localhost:3000/start` → **המשך עם Google** → pick the account.
 
-**The gate is the browser staying on `http://localhost:3000/home`.** Landing back on `/start` proves
-nothing: `apps/web/src/app/auth/callback/route.ts:18` redirects there unconditionally and discards
-the result of `exchangeCodeForSession` at `:15`, so a failed exchange looks identical to a
-successful one. Only `/home` requires a session (`apps/web/src/middleware.ts:34-36`).
+**The gate is the browser staying on `http://localhost:3000/home`** — for an account that already
+owns a business. Only `/home` requires a session (`apps/web/src/middleware.ts:34-36`).
+
+Two other landings are also gates now, and both are new on 2026-09-03:
+
+- **A fresh account with no business ends on `/home/new-business`**, the dashboard-chromed
+  wizard. OnboardingFlow resolves the user with `getUser()` on `/start` and sends anyone signed
+  in there, unless a finished draft is waiting — see
+  `docs/vault/decisions/0015-signed-in-without-business-lands-on-new-business.md`.
+- **A failed round-trip ends on `/login`** with `ההתחברות עם Google לא הצליחה…`. `/auth/callback`
+  now checks `exchangeCodeForSession`'s result and reads the provider's `error` /
+  `error_code` / `error_description` off the query string.
+
+So **landing back on `/start` still proves nothing** — it is where the callback goes when it has
+neither a working exchange nor error params — but it is no longer where a *failure* ends up.
+Before those two changes it was: the callback redirected there unconditionally and discarded the
+exchange result, so a failed exchange looked identical to a successful one.
 
 Then the secondary SQL confirmation, time-anchored as in §8A step 3:
 
@@ -642,10 +655,14 @@ is account linking, not a failure.
 
 ### Step 7 — publish, once `tavnit.ai` is live
 
+**Done — the founder published the OAuth app on 2026-09-03 and its status reads *In production*.**
+The procedure stays: this document is the rebuild recipe, so it has to describe the step even
+though this project has taken it.
+
 Everything here waits on the domain. Nothing above does.
 
-1. Deploy the app to `tavnit.ai` with two publicly reachable routes that **do not exist yet**:
-   `/privacy` and `/terms`. See "What still has to be written".
+1. Deploy the app to `tavnit.ai` with two publicly reachable routes, `/privacy` and `/terms`.
+   Both exist — see the table below.
 2. Verify `tavnit.ai` in **Google Search Console** (DNS TXT record or HTML file).
 3. Consent screen → fill in **App home page**, **privacy policy URL**, **terms URL**, and add
    `tavnit.ai` under **Authorized domains**.
@@ -662,7 +679,7 @@ statute-checked positions pending lawyer review (see docs/legal-review.md):
 | `/privacy` route             | **Exists** — `apps/web/src/app/(legal)/privacy/page.tsx`, static, linked from the landing footer and the signup/login consent lines. Markers resolved 2026-09-03; positions and open questions for counsel in docs/legal-review.md. |
 | `/terms` route               | **Exists** — `apps/web/src/app/(legal)/terms/page.tsx`, same status.                                                                                                                                |
 | Home page explaining the app | The marketing page at `/` exists.                                                                                                                                                                   |
-| `tavnit.ai` Search Console   | Not verified.                                                                                                                                                                                       |
+| `tavnit.ai` Search Console   | **Verified** — founder-done a few days before 2026-09-03; the exact date was not recorded.                                                                                                            |
 
 The privacy policy has to be honest about what this product collects: email address and Google
 profile name, the questionnaire, the uploaded video, and the generated output. Terms is optional
@@ -670,7 +687,16 @@ for Google but conventional to ship alongside.
 
 ### What a customer sees before you publish
 
-Everything below applies only while publishing status is **Testing**.
+Everything below applies only while publishing status is **Testing**, which this app left on
+2026-09-03. Kept for the rebuild.
+
+**Google documents an exception that would have made most of this moot** — for an app requesting
+only `openid`, `email` and `profile`, Testing mode does **not** require the test-user list, shows
+**no** unverified-app warning, and authorizations do **not** expire after 7 days
+(<https://support.google.com/cloud/answer/15549945>). That is Google's documentation, **not
+measured on this app**: by the time the first off-list account signed in here, the app was already
+published, so this project has no observation either way. Treat the two paragraphs below as the
+pre-publish worst case, not as a contradiction of it.
 
 **On the test-user list:** they pick their account and then see Google's unverified-app
 interstitial — headed roughly "Google hasn't verified this app", with *Go back to safety* as the
@@ -679,14 +705,16 @@ designed to look like a security warning. Warn anyone you demo to, or they will 
 will hear "it didn't work".
 
 **Not on the list — any real customer:** they never reach that screen. Google refuses at the
-account chooser and returns `error=access_denied`. The app does not read those params:
-`/auth/callback` gets no `code`, redirects to `/start` anyway, and they land on the wizard with no
-session and no message. **Silent failure.**
+account chooser and returns `error=access_denied`. This used to be a **silent failure**: the app
+read none of those params, so `/auth/callback` got no `code`, redirected to `/start` anyway, and
+the customer landed on the wizard with no session and no message. Since 2026-09-03 the callback
+reads them and sends the customer to `/login` with a Hebrew message instead.
 
-That is what `GOOGLE_SIGN_IN_ENABLED` in `apps/web/src/lib/auth.ts` is for. Keep it `false` for any
-build a real customer can reach until publishing status reads *In production*; both Google buttons
-and the `או` divider above the email form disappear, and the email path is untouched. Flip it to
-`true` for your own local testing and after publishing.
+`GOOGLE_SIGN_IN_ENABLED` in `apps/web/src/lib/auth.ts` is the kill switch for both Google buttons
+and the `או` divider above the email form. **This document used to advise setting it `false` for
+any public window before publishing; that advice is overridden** — see the 2026-09-01 amendment in
+`docs/vault/decisions/0006-google-oauth-is-in-scope-for-launch.md`. The flag stays `true`, and the
+question is moot now that the app is published anyway.
 
 ---
 

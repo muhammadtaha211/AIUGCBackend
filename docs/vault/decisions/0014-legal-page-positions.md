@@ -18,8 +18,8 @@ time (a Standard Contracts Law notice period on credit-price changes; a Privacy 
 s.11(1) voluntariness statement).
 
 **The pages no longer flag anything to the reader.** Lawyer review is still owed, but it no longer
-blocks publishing — which is what unblocks queue item 1 (Google OAuth publication needs two
-reachable, presentable legal routes).
+blocks publishing — which is what unblocked the Google OAuth publication (it needs two
+reachable, presentable legal routes). Published 2026-09-03.
 
 Every marker, its verbatim text, the position taken, the statute it rests on, and the one thing
 counsel must confirm are in [`docs/legal-review.md`](../../legal-review.md). That file is the
