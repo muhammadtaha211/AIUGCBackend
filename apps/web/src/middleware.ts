@@ -10,6 +10,15 @@ import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/client";
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  // Both early exits below return a response that is not `response`, so they
+  // have to carry the cookies `setAll` just rotated onto it — dropping them
+  // leaves the browser presenting a spent refresh token. Reads `response` at
+  // call time: `setAll` reassigns it, possibly after the businesses read.
+  const withAuthCookies = (target: NextResponse) => {
+    for (const cookie of response.cookies.getAll()) target.cookies.set(cookie);
+    return target;
+  };
+
   const supabase = createServerClient(supabaseUrl(), supabaseAnonKey(), {
     cookies: {
       getAll() {
@@ -32,14 +41,14 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   if (!user && path.startsWith("/home")) {
-    return NextResponse.redirect(new URL("/start", request.url));
+    return withAuthCookies(NextResponse.redirect(new URL("/start", request.url)));
   }
 
   if (user && (path === "/" || path === "/start")) {
     // RLS-scoped read: returns rows only for businesses this user owns.
     const { data } = await supabase.from("businesses").select("id").limit(1);
     if (data && data.length > 0) {
-      return NextResponse.redirect(new URL("/home", request.url));
+      return withAuthCookies(NextResponse.redirect(new URL("/home", request.url)));
     }
   }
 

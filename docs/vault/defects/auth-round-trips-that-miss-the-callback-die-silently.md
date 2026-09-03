@@ -19,11 +19,11 @@ the allow-list, is delivered to the Site URL with no error
 
 State of the three, verified 2026-08-27 at `7f95875`:
 
-| Flow                | Redirects to `/auth/callback`?                             | Completes?                                    |
-| ------------------- | ---------------------------------------------------------- | --------------------------------------------- |
-| Signup confirmation | Yes — `emailRedirectTo`, `auth.ts:78` (fixed in `02f58bb`) | Yes (latent — confirm-email is OFF)           |
+| Flow                | Redirects to `/auth/callback`?                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Completes?                                                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Signup confirmation | Yes — `emailRedirectTo`, `auth.ts:78` (fixed in `02f58bb`)                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Yes (latent — confirm-email is OFF)                                                                                           |
 | Google OAuth        | Success: yes — `auth.ts:161`, in daily use. Error return: **yes for a provider refusal** — GoTrue redirects to `redirect_to` carrying `error`/`error_description` (and `error_code` only for its own HTTP errors), so `/auth/callback` does see it. **No** for a bad or expired `state`, which GoTrue sends to the **Site URL** instead, where nothing reads it (`internal/api/external_oauth.go:31-58` @ v2.196.0 — see Fixed below; [[0006-google-oauth-is-in-scope-for-launch]] carries the `access_denied` history) | Success yes; the error path was a silent dead end until 2026-09-03 — see Fixed below. The Site-URL landing is still unhandled |
-| Password recovery   | ~~No sending call exists at all~~ **built 2026-08-27**, via its own `/auth/recovery` route (see Fixed below) | Yes — including the expired-link path         |
+| Password recovery   | ~~No sending call exists at all~~ **built 2026-08-27**, via its own `/auth/recovery` route (see Fixed below)                                                                                                                                                                                                                                                                                                                                                                                                            | Yes — including the expired-link path                                                                                         |
 
 ## Recovery, the variation that surfaced this
 
@@ -82,7 +82,7 @@ Still open from the pattern at that point: the OAuth **error return** dead end, 
 ## Aggravator at the door itself
 
 The callback discarded `exchangeCodeForSession`'s result and redirected to `/start` regardless
-(`route.ts:13-18` as it then stood) — a flow that *did* reach the callback still failed silently
+(`route.ts:13-18` as it then stood) — a flow that _did_ reach the callback still failed silently
 when the exchange failed (expired link, reused code). Fixed below.
 
 ## FIXED (the OAuth error return, and the discarded exchange result) — 2026-09-03, `5646529`
@@ -105,7 +105,7 @@ can return to `/start` and retry from there.
 `GET {SUPABASE_URL}/auth/v1/health` — writes the error params into the query string **and** the
 fragment on the same redirect, unconditionally, with no PKCE/implicit branch
 (`redirectErrors`, `internal/api/external.go:812-836` @ v2.196.0; the `TODO` on that function
-marks the *fragment* as the deprecated half). A route handler can only ever see the query string,
+marks the _fragment_ as the deprecated half). A route handler can only ever see the query string,
 and the query string is the half that has been there since v2.60. One trap this settles:
 `getErrorQueryString` (`:839-883`) sets `error_code` only for GoTrue's own `*HTTPError`, so a
 provider refusal — Google's `access_denied` — arrives with `error` and `error_description` and
