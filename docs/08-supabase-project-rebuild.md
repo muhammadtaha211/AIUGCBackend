@@ -277,7 +277,7 @@ Five local files: `.env`, `apps/cli/.env`, `apps/worker/.env`, `apps/web/.env.lo
   **`NEXT_PUBLIC_SUPABASE_ANON_KEY`** and none defines `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
   while `apps/web/src/lib/supabase/client.ts:16-17` resolves
   `NEXT_PUBLIC_SUPABASE_ANON_KEY ?? NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — **`ANON` wins when
-  both are set.** So *replace the value of the existing `ANON` line*; adding a `PUBLISHABLE` line
+  both are set.** So _replace the value of the existing `ANON` line_; adding a `PUBLISHABLE` line
   beside a stale `ANON` line sends the old project's key to the new project's URL, and every auth
   call 401s with `Invalid API key` before any redirect is computed. `apps/web/src/lib/auth.ts:75-79`
   flattens that into the Hebrew "ההתחברות עם Google לא זמינה כרגע", which reads exactly like a
@@ -323,7 +323,7 @@ Then **Authentication → URL Configuration**:
 
 - **Site URL**: `http://localhost:3000` for now; flip it to the Vercel domain when one exists.
 - **Redirect URLs**: add `http://localhost:3000/auth/callback`. Not used by the password flow
-  today, but it is what the confirmation link needs if you ever turn Confirm-email on *and* the
+  today, but it is what the confirmation link needs if you ever turn Confirm-email on _and_ the
   one-line code change in §8A.1 lands. Also add `http://localhost:3000/auth/recovery` — the
   password-recovery flow (added 2026-08-27) sends its email link back through it, and without the
   entry GoTrue silently delivers the link to the Site URL root, where nothing reads it.
@@ -383,7 +383,7 @@ DevTools → Application → Cookies → `http://localhost:3000` should show
 
 ### Step 3 — secondary confirmation in SQL
 
-This confirms *what landed*, and only after step 2 has already passed. It is not the gate: GoTrue
+This confirms _what landed_, and only after step 2 has already passed. It is not the gate: GoTrue
 writes these rows before the app is involved, so they can all be present while the browser has no
 session at all.
 
@@ -432,13 +432,13 @@ properly is a one-line change — add
 ``emailRedirectTo: `${window.location.origin}/auth/callback` `` to that call — and needs no new
 route, because `/auth/callback` already handles a PKCE `code`.
 
-| | **Confirm email OFF** | **Confirm email ON** |
-| --- | --- | --- |
-| Signup UX | One step. Session immediately, wizard auto-posts the draft, lands on `/home`. | Two steps, split across an email client. Draft survives in `localStorage`; user must return and sign in. |
-| Code change needed | None. | One line (`emailRedirectTo`), or the confirmation click dead-ends. |
-| Email delivery is a dependency | No. Nothing is sent at signup. | **Yes** — signup is blocked on an email arriving. |
-| Address is proven real | No. Typos create accounts nobody can reach; anyone can sign up as anyone's address. | Yes. |
-| Password reset | Already depends on email whenever you build it. | Same. |
+|                                | **Confirm email OFF**                                                               | **Confirm email ON**                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Signup UX                      | One step. Session immediately, wizard auto-posts the draft, lands on `/home`.       | Two steps, split across an email client. Draft survives in `localStorage`; user must return and sign in. |
+| Code change needed             | None.                                                                               | One line (`emailRedirectTo`), or the confirmation click dead-ends.                                       |
+| Email delivery is a dependency | No. Nothing is sent at signup.                                                      | **Yes** — signup is blocked on an email arriving.                                                        |
+| Address is proven real         | No. Typos create accounts nobody can reach; anyone can sign up as anyone's address. | Yes.                                                                                                     |
+| Password reset                 | Already depends on email whenever you build it.                                     | Same.                                                                                                    |
 
 **What "email delivery is a dependency" costs.** Supabase's built-in SMTP is explicitly a
 development convenience: it is rate-limited to a small number of messages per hour, it is shared
@@ -489,7 +489,7 @@ click it; there is no submission to wait on and no approval to schedule around.
 
 Two consequences worth knowing before you start:
 
-- **Do not upload an app logo.** A custom logo triggers Google's *brand* verification review even
+- **Do not upload an app logo.** A custom logo triggers Google's _brand_ verification review even
   when every scope is non-sensitive. It is the one thing on the consent screen that can put you in
   a queue. Leave it blank and the app publishes immediately.
 - **Testing mode needs no domain, no privacy policy and no terms.** You can have Google sign-in
@@ -498,17 +498,17 @@ Two consequences worth knowing before you start:
 
 ### What each mode actually requires
 
-| | **Testing** (today) | **In production** (public launch) |
-| --- | --- | --- |
-| Who can sign in | Only addresses on the test-user list, max **100** | Anyone with a Google account |
-| Test-user sessions | Refresh tokens expire after **7 days** | Normal |
-| App name, support email, developer contact | Required | Required |
-| App logo | Leave blank | Leave blank (a logo forces a brand review) |
-| Home page URL | Not required | **Required** |
-| Privacy policy URL | Not required | **Required** |
-| Terms of service URL | Not required | Optional |
-| Authorized domain, verified in Search Console | Not required | **Required** |
-| Verification review | None | **None** — non-sensitive scopes only |
+|                                               | **Testing** (today)                               | **In production** (public launch)          |
+| --------------------------------------------- | ------------------------------------------------- | ------------------------------------------ |
+| Who can sign in                               | Only addresses on the test-user list, max **100** | Anyone with a Google account               |
+| Test-user sessions                            | Refresh tokens expire after **7 days**            | Normal                                     |
+| App name, support email, developer contact    | Required                                          | Required                                   |
+| App logo                                      | Leave blank                                       | Leave blank (a logo forces a brand review) |
+| Home page URL                                 | Not required                                      | **Required**                               |
+| Privacy policy URL                            | Not required                                      | **Required**                               |
+| Terms of service URL                          | Not required                                      | Optional                                   |
+| Authorized domain, verified in Search Console | Not required                                      | **Required**                               |
+| Verification review                           | None                                              | **None** — non-sensitive scopes only       |
 
 **The domain is a prerequisite for going public, not for using Google.** This does not block you
 today: steps 1–6 give you working Google sign-in for yourself and up to 99 other addresses, with
@@ -564,6 +564,7 @@ console.cloud.google.com → create a project (or reuse one). Everything below l
   returns to the app at `/auth/callback`. Putting `http://localhost:3000/auth/callback` here is the
   classic mistake and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase code
   runs.
+
 - **Authorized JavaScript origins**: leave empty. This is a server-side code flow and does not need
   them.
 - Save the **Client ID** and **Client Secret**. The secret goes into the Supabase dashboard and
@@ -602,7 +603,7 @@ character for character.
 own entry.
 
 **A missed allow-list entry does not error.** GoTrue silently falls back to the Site URL, so a wrong
-list looks like a *successful* sign-in that lands on the marketing page with no session, while the
+list looks like a _successful_ sign-in that lands on the marketing page with no session, while the
 SQL still shows a `google` identity. This is why the browser check below is the gate.
 
 ### Step 6 — add yourself as a test user
@@ -634,7 +635,7 @@ Two other landings are also gates now, and both are new on 2026-09-03:
   `error_code` / `error_description` off the query string.
 
 So **landing back on `/start` still proves nothing** — it is where the callback goes when it has
-neither a working exchange nor error params — but it is no longer where a *failure* ends up.
+neither a working exchange nor error params — but it is no longer where a _failure_ ends up.
 Before those two changes it was: the callback redirected there unconditionally and discarded the
 exchange result, so a failed exchange looked identical to a successful one.
 
@@ -655,7 +656,7 @@ is account linking, not a failure.
 
 ### Step 7 — publish, once `tavnit.ai` is live
 
-**Done — the founder published the OAuth app on 2026-09-03 and its status reads *In production*.**
+**Done — the founder published the OAuth app on 2026-09-03 and its status reads _In production_.**
 The procedure stays: this document is the rebuild recipe, so it has to describe the step even
 though this project has taken it.
 
@@ -667,19 +668,19 @@ Everything here waits on the domain. Nothing above does.
 3. Consent screen → fill in **App home page**, **privacy policy URL**, **terms URL**, and add
    `tavnit.ai` under **Authorized domains**.
 4. **Publishing status → Publish app.** With non-sensitive scopes only and no logo, the status
-   changes to *In production* immediately. There is no review to wait for.
+   changes to _In production_ immediately. There is no review to wait for.
 
 ### What still has to be written
 
 The two pages were written 2026-09-02 from a repo fact sheet and take founder-chosen,
 statute-checked positions pending lawyer review (see docs/legal-review.md):
 
-| Requirement                  | Status today                                                                                                                                                                                        |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requirement                  | Status today                                                                                                                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/privacy` route             | **Exists** — `apps/web/src/app/(legal)/privacy/page.tsx`, static, linked from the landing footer and the signup/login consent lines. Markers resolved 2026-09-03; positions and open questions for counsel in docs/legal-review.md. |
-| `/terms` route               | **Exists** — `apps/web/src/app/(legal)/terms/page.tsx`, same status.                                                                                                                                |
-| Home page explaining the app | The marketing page at `/` exists.                                                                                                                                                                   |
-| `tavnit.ai` Search Console   | **Verified** — founder-done a few days before 2026-09-03; the exact date was not recorded.                                                                                                            |
+| `/terms` route               | **Exists** — `apps/web/src/app/(legal)/terms/page.tsx`, same status.                                                                                                                                                                |
+| Home page explaining the app | The marketing page at `/` exists.                                                                                                                                                                                                   |
+| `tavnit.ai` Search Console   | **Verified** — founder-done a few days before 2026-09-03; the exact date was not recorded.                                                                                                                                          |
 
 The privacy policy has to be honest about what this product collects: email address and Google
 profile name, the questionnaire, the uploaded video, and the generated output. Terms is optional
@@ -699,8 +700,8 @@ published, so this project has no observation either way. Treat the two paragrap
 pre-publish worst case, not as a contradiction of it.
 
 **On the test-user list:** they pick their account and then see Google's unverified-app
-interstitial — headed roughly "Google hasn't verified this app", with *Go back to safety* as the
-prominent button. Continuing takes a small **Advanced** link, then "Go to *app* (unsafe)". It is
+interstitial — headed roughly "Google hasn't verified this app", with _Go back to safety_ as the
+prominent button. Continuing takes a small **Advanced** link, then "Go to _app_ (unsafe)". It is
 designed to look like a security warning. Warn anyone you demo to, or they will back out and you
 will hear "it didn't work".
 
@@ -786,7 +787,7 @@ Read-only looks. Do not change anything; nothing here needs a database connectio
    re-register on the new project — there is no export.
 4. **Table editor** → spot-check `businesses`, `demos`, `video_renders`. All test rows.
 5. **Nothing points at it any more.** `grep -rl mtpmrqltldfwhziyyzdu --exclude-dir=node_modules
-   --exclude-dir=.git .` from the repo root should return only `.next` build artifacts and vault
+--exclude-dir=.git .` from the repo root should return only `.next` build artifacts and vault
    notes that describe the history. If it names an `.env` file, stop and fix that first.
 6. **Vercel → the web project → Environment Variables.** If a deploy exists, its Supabase URL/key
    must already be the new project's. A stale Vercel env is the one place a "working" local setup
