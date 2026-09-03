@@ -47,7 +47,7 @@ symptom.** `git log -1 --oneline` on the box, not "a render worked afterwards" �
 alone produces that. §11 now carries the check.
 
 All four deaths surfaced only because the founder happened to be running a wizard test —
-that is the Sentry argument (queue item 6), now with four data points instead of two.
+that is the Sentry argument (queue item 7), now with four data points instead of two.
 
 `apps/admin` is also deployed and publicly reachable on its vercel.app URL, gated only
 by `requireAdmin` (the basic-auth second wall is believed unset — queue item 2).
@@ -131,7 +131,7 @@ Fine-grained tokens). Deploy-key alternative rejected: [[0008-github-pat-over-de
 (`SKIP LOCKED`), but the desktop's `.env` carries `DRY_RUN=1` and the box's deliberately
 does not. A desktop worker claiming a real customer job reports success and writes
 placeholder files. Start it only deliberately. (Whether it briefly did exactly that
-around 2026-08-27 is an open check — queue item 5.)
+around 2026-08-27 is an open check — queue item 6.)
 
 **Google OAuth is published — status _In production_.** The founder published it
 2026-09-03, having verified `tavnit.ai` in Search Console a few days earlier (exact date
@@ -173,25 +173,36 @@ non-sensitive scopes.
    Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
    production-recommended; believed unset) and verify `fra1` there while in the
    dashboard. Cheap, and admin is publicly reachable today behind `requireAdmin` alone.
-3. **A failed `businesses` query reads as "no businesses".** `middleware.ts:40` and
+3. **`setAll` drops the no-store headers `@supabase/ssr` passes with rotated cookies.** All four
+   hooks — `apps/web/src/middleware.ts:27`, `apps/admin/src/middleware.ts:45`, and both
+   `lib/supabase/server.ts:17` — declare one parameter, so the `Cache-Control: private, no-store`
+   / `Expires: 0` / `Pragma: no-cache` map the library passes alongside a rotated session is
+   discarded; TypeScript cannot catch it, because a shorter function is assignable. The library's
+   stated risk is a cached auth response serving one user's session token to another. Believed
+   inert today — Next marks cookie-reading routes dynamic, and Vercel is not believed to cache
+   middleware responses — but that mitigation is **inference, never measured**, and `c925d4a` /
+   `ad6d5ce` just put `Set-Cookie` on four more exits than before. Read a deployed response header
+   before deciding how much this is worth.
+   [[supabase-ssr-setall-cache-headers-are-ignored]].
+4. **A failed `businesses` query reads as "no businesses".** `middleware.ts:49` and
    `home/page.tsx:71` both drop the query's `error`, so a transient PostgREST failure makes a
    real owner look business-less. Since `03fc7f9` that lands them in the additional-business
    wizard, whose completion posts `allowCreate` and skips the idempotency guard — a filled-in
    questionnaire then creates a **second** business. Pre-existing class, new consequence.
    [[a-failed-businesses-query-reads-as-no-businesses]] records the two closures considered
    and deferred.
-4. **`/login` wipes a draft the server threw away.** `login-form.tsx:45` calls `clearDraft()`
+5. **`/login` wipes a draft the server threw away.** `login-form.tsx:45` calls `clearDraft()`
    on any 200, but `/api/onboarding/complete` is idempotent by **owner, not content**: an
    existing owner who fills the public wizard for a second product gets their old business
    back and their new answers deleted, silently and unrecoverably.
    [[login-clears-a-draft-the-server-never-stored]].
-5. **Check the DRY_RUN contamination window.** The desktop worker (DRY_RUN=1) may have
+6. **Check the DRY_RUN contamination window.** The desktop worker (DRY_RUN=1) may have
    run briefly alongside the box around 2026-08-27. Any job it claimed reported SUCCESS
    while writing placeholder files. One query settles it:
    `select id, type, status, locked_by, finished_at from jobs where locked_by like
 'local:%' order by finished_at desc;` — anything dated after the box went live is
    stub output wearing a success status. An open check, not a known problem.
-6. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
+7. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
    08-28, 09-01 and again on 09-02, and every one surfaced only because the founder
    happened to be running a wizard test. `status='dead'` is the alert condition, the DSN
    is wired and unset, and the worker runs on a machine nobody is looking at. The
@@ -199,28 +210,28 @@ non-sensitive scopes.
    work is on the box) and the real cause lives in `jobs.last_error`. Read it with
    `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only);
    box logs are `journalctl -u aiugc-worker -o cat`.
-7. **Grant `aiugc` full journal visibility on the box.** `journalctl` as that user currently
+8. **Grant `aiugc` full journal visibility on the box.** `journalctl` as that user currently
    prints "You are currently not seeing messages from other users and the system" — the worker's
    own stdout is visible (the count in [[0016-worker-stays-on-transaction-pooler-6543]] is valid),
    but systemd's unit lifecycle lines (restarts, OOM kills) are not.
    `sudo usermod -aG systemd-journal aiugc` fixes it (takes effect on next login). Not yet run.
-8. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
+9. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
    verified, and the bundle is confirmed outside `/tmp`. This is the known-good image —
    capture it before the box drifts. One-off, not the +20%/month backup plan. One-off, not the
    +20%/month backup plan.
-9. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
-   CPX41-class, ~€30/mo flat" predates the June 2026 price rise and understates by
-   roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
-   against three measured renders (verified 2026-09-02,
-   [[service-a-render-wall-clock-on-the-box]]). Other sizing was derived from both.
-10. **The lint gate is red on the Windows desktop and proves nothing there.**
+10. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
+    CPX41-class, ~€30/mo flat" predates the June 2026 price rise and understates by
+    roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
+    against three measured renders (verified 2026-09-02,
+    [[service-a-render-wall-clock-on-the-box]]). Other sizing was derived from both.
+11. **The lint gate is red on the Windows desktop and proves nothing there.**
     `core.autocrlf=true` rewrites the whole tree to CRLF on checkout while prettier defaults to
     `endOfLine: lf`, so `pnpm lint` reports ~648 files on a clean `main` — measured 2026-09-03
     by running it on both `main` and a branch. Fix with a `.gitattributes` carrying
     `* text=auto eol=lf` (the stored blobs are already LF, so there is no renormalize diff to
     review) or with `endOfLine: "auto"` in `.prettierrc`. Until then `pnpm lint` is not a
     signal on this machine; check a file by running prettier against its LF content.
-11. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03 and
+12. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03 and
     deliberately left alone — none of it is load-bearing, all of it misleads a reader:
     - `docs/08` §8B `:495` "Testing mode needs no domain, no privacy policy and no terms",
       `:501` the mode table labelled `**Testing** (today)` on the wrong column, `:514` "up to
@@ -279,10 +290,10 @@ Neither blocks anything; both get more expensive to recover later.
 - ~~The wizard render's duration~~ — **taken 2026-09-02**, three live renders, mean 66.1s:
   [[service-a-render-wall-clock-on-the-box]]. It shows `docs/02-jobs.md:111`'s "~2–6 min
   per video" to be 2–5× too slow, so that line and its stale box price are now one fix
-  (queue item 9).
+  (queue item 10).
 - **No cold render has been measured on the box** — one including the ~92 MB Chrome
   Headless Shell download. Matters only if the box is rebuilt from scratch rather than
-  from the queue-item-8 snapshot.
+  from the queue-item-9 snapshot.
 
 ## Corrections worth not repeating
 

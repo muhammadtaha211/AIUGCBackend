@@ -174,8 +174,8 @@ not affect. That leaves exactly two tables, both **SELECT only**:
 
 | Table        | Read by                                                                                                                                                                     | Columns                                             |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `businesses` | `apps/web/src/middleware.ts:40`, `app/home/layout.tsx:24`, `app/home/page.tsx:72`, `app/home/demos/page.tsx:21`, `app/home/a/new/page.tsx:23`, `app/home/b/new/page.tsx:25` | `id`, `name`, `questionnaire`, `created_at` (order) |
-| `users`      | `apps/admin/src/middleware.ts:63`, `apps/admin/src/app/login/login-form.tsx:38`                                                                                             | `role`, `id` (filter)                               |
+| `businesses` | `apps/web/src/middleware.ts:49`, `app/home/layout.tsx:24`, `app/home/page.tsx:72`, `app/home/demos/page.tsx:21`, `app/home/a/new/page.tsx:23`, `app/home/b/new/page.tsx:25` | `id`, `name`, `questionnaire`, `created_at` (order) |
+| `users`      | `apps/admin/src/middleware.ts:72`, `apps/admin/src/app/login/login-form.tsx:38`                                                                                             | `role`, `id` (filter)                               |
 
 All eight call sites run after `auth.getUser()` has returned a user, so `authenticated` is the only
 role that needs anything. `anon` needs nothing.
@@ -347,7 +347,7 @@ the address bar. Check the port Next prints before you start.
 `/start` proves nothing on its own. `apps/web/src/app/auth/callback/route.ts:18` redirects there
 unconditionally, `apps/web/src/app/start/page.tsx` renders the wizard with no auth check, and a
 signed-out visitor and a signed-in-without-a-business user see a byte-identical page. The only
-surface that requires a session is `/home`: `apps/web/src/middleware.ts:34-36` bounces any `/home`
+surface that requires a session is `/home`: `apps/web/src/middleware.ts:43-45` bounces any `/home`
 request without a user, and `apps/web/src/app/home/layout.tsx:21` does it again server-side.
 
 **Pre-flight** — make sure no stale `public.users` row holds the address you are about to use, or
@@ -622,7 +622,7 @@ Pre-flight the `public.users` check from §8A step 2 first. Then `pnpm dev` → 
 `http://localhost:3000/start` → **המשך עם Google** → pick the account.
 
 **The gate is the browser staying on `http://localhost:3000/home`** — for an account that already
-owns a business. Only `/home` requires a session (`apps/web/src/middleware.ts:34-36`).
+owns a business. Only `/home` requires a session (`apps/web/src/middleware.ts:43-45`).
 
 Two other landings are also gates now, and both are new on 2026-09-03:
 

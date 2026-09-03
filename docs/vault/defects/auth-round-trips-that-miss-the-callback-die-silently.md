@@ -12,7 +12,7 @@ Three flows depend on an email or OAuth round-trip landing back at `/auth/callba
 route in the repo that exchanges a PKCE code (`apps/web/src/app/auth/callback/route.ts:23`). A
 round-trip that misses it falls back to the Site URL root, where nothing listens: `/` is a static
 marketing page that never reads `searchParams` (`apps/web/src/app/page.tsx`), `/home` reads only
-cookies, and the middleware routes purely on session state (`apps/web/src/middleware.ts:34-44`).
+cookies, and the middleware routes purely on session state (`apps/web/src/middleware.ts:43-53`).
 GoTrue makes the fallback silent by design — a link with no explicit redirect, or a redirect not on
 the allow-list, is delivered to the Site URL with no error
 (`docs/08-supabase-project-rebuild.md:591`).
