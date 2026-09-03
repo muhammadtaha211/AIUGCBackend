@@ -294,6 +294,11 @@ journalctl -u aiugc-worker -o cat | grep '"claim failed'
 journalctl -u aiugc-worker --since today -o cat | grep '"level":50'
 ```
 
+**Journal visibility.** `journalctl` run as `aiugc` currently prints "You are currently not seeing
+messages from other users and the system. Users in groups 'adm', 'systemd-journal' can see all
+messages" — the worker's own stdout above is visible, but systemd's unit lifecycle lines (restarts,
+OOM kills) are not. `sudo usermod -aG systemd-journal aiugc` fixes it (takes effect on next login).
+
 ## 11. Updating the box later
 
 ```
@@ -349,6 +354,6 @@ session pooler) prints it alongside the job's attempt count and the worker heart
    `echo 'kernel.apparmor_restrict_unprivileged_userns=0' | sudo tee /etc/sysctl.d/60-remotion.conf && sudo sysctl --system`
    and rerun step 3.
 
-After the box passes: leave it running for a week, then count the drops —
-`journalctl -u aiugc-worker -o cat | grep -c '"claim failed'` — that number, not the desktop's
-~2/day, is what decides whether `DATABASE_URL` moves off the transaction pooler.
+**Resolved 2026-09-03.** The box's first week on port 6543 logged zero `"claim failed` and zero
+`"lease sweep failed` lines — `DATABASE_URL` stays on the transaction pooler:
+`docs/vault/decisions/0016-worker-stays-on-transaction-pooler-6543.md`.

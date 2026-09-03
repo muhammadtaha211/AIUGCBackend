@@ -47,7 +47,7 @@ symptom.** `git log -1 --oneline` on the box, not "a render worked afterwards" �
 alone produces that. §11 now carries the check.
 
 All four deaths surfaced only because the founder happened to be running a wizard test —
-that is the Sentry argument (queue item 7), now with four data points instead of two.
+that is the Sentry argument (queue item 6), now with four data points instead of two.
 
 `apps/admin` is also deployed and publicly reachable on its vercel.app URL, gated only
 by `requireAdmin` (the basic-auth second wall is believed unset — queue item 2).
@@ -71,8 +71,12 @@ the OAuth app; status reads _In production_ with no review, and a Google account
 the 0006 amendment put on ANY traffic.
 
 That first stranger sign-in also exposed two holes in what happens _after_ Google returns.
-Both are fixed **in the tree only** — branch `fix/signed-in-no-business-and-oauth-error`,
-not merged and not deployed as of 2026-09-03:
+Both are fixed, merged to `main` (fast-forward, tip `c4cbf60`), and deployed to production by
+Vercel on 2026-09-03. Founder-smoke-tested there the same day:
+`/auth/callback?error=access_denied&error_description=test` -> `/login` with the Hebrew message;
+a Google sign-in with a zero-business account -> `/home/new-business`; the finished-wizard path ->
+`/home`. Not exercised: a genuine failed `exchangeCodeForSession` (as opposed to GoTrue returning
+error params with no code) — see the callback note's Fixed section.
 
 - A signed-in user with **no business** had no way off the public wizard: the middleware
   forwards only owners, so they sat on `/start` with nothing saying they were signed in.
@@ -190,11 +194,7 @@ non-sensitive scopes.
    `select id, type, status, locked_by, finished_at from jobs where locked_by like
 'local:%' order by finished_at desc;` — anything dated after the box went live is
    stub output wearing a success status. An open check, not a known problem.
-6. **2026-09-03 — count the drops.** `journalctl -u aiugc-worker -o cat | grep -c
-'"claim failed'`. That number decides whether `DATABASE_URL` moves off port 6543.
-   Clock started 2026-08-27; fires on its date regardless of queue position. Do not
-   change the port before then.
-7. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
+6. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
    08-28, 09-01 and again on 09-02, and every one surfaced only because the founder
    happened to be running a wizard test. `status='dead'` is the alert condition, the DSN
    is wired and unset, and the worker runs on a machine nobody is looking at. The
@@ -202,6 +202,11 @@ non-sensitive scopes.
    work is on the box) and the real cause lives in `jobs.last_error`. Read it with
    `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only);
    box logs are `journalctl -u aiugc-worker -o cat`.
+7. **Grant `aiugc` full journal visibility on the box.** `journalctl` as that user currently
+   prints "You are currently not seeing messages from other users and the system" — the worker's
+   own stdout is visible (the count in [[0016-worker-stays-on-transaction-pooler-6543]] is valid),
+   but systemd's unit lifecycle lines (restarts, OOM kills) are not.
+   `sudo usermod -aG systemd-journal aiugc` fixes it (takes effect on next login). Not yet run.
 8. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
    verified, and the bundle is confirmed outside `/tmp`. This is the known-good image —
    capture it before the box drifts. One-off, not the +20%/month backup plan. One-off, not the
@@ -246,8 +251,6 @@ non-sensitive scopes.
   runs. Open: whether the Vercel web env has the key — if any smoke-tested page
   rendered signed thumbnails, it must. Check against `apps/web/.env.local` before
   touching anything; do not fix the `.env.example` comment blind.
-- **`DATABASE_URL` port 6543.** Deliberately undecided in `docs/07-worker-box.md`;
-  queue item 6 produces the number that settles it.
 - **Content policy.** Nothing reviews customer copy before an MP4 exists —
   `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is
   the only user. Strangers can reach the app now that Google sign-in is published, so

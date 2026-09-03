@@ -112,8 +112,17 @@ provider refusal — Google's `access_denied` — arrives with `error` and `erro
 **no** `error_code`. Keying on `error_code` alone would have missed exactly the case this was
 built for; the route checks `error` first.
 
-**Not verified end to end.** The code was read and typechecked; no real failed Google round-trip
-has been put through it. Reproducing one means cancelling at Google's consent screen.
+**Verified in production, 2026-09-03.** Merged to `main` (fast-forward, tip `c4cbf60`), deployed by
+Vercel the same day, and founder-smoke-tested there:
+`/auth/callback?error=access_denied&error_description=test` -> `/login` with the Hebrew message —
+the no-code/error-params branch this note is about. Two adjacent paths were also confirmed live: a
+Google sign-in with a zero-business account -> `/home/new-business`, and the finished-wizard path
+-> `/home`.
+
+**Still not exercised: a genuine failed exchange** — `exchangeCodeForSession` itself erroring, as
+opposed to GoTrue returning error params with no code. The three checks above hit the
+no-code/error-params branch and both success branches. Reproducing a real failed exchange means
+cancelling consent at Google's own screen, or presenting an expired or reused code.
 
 **Still open — the Site-URL landing.** GoTrue's `loadFlowState` sends a bad, expired or missing
 `state` to `config.SiteURL`, not to `redirect_to`, query params only

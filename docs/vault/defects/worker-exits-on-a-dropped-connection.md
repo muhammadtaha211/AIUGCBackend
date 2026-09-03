@@ -37,6 +37,11 @@ Deliberately left as-is (founder, 2026-08-26 in chat): the boot-time `ensureDail
 runs under systemd `Restart=always` (landing separately). The CLI's continuous `aiugc work` keeps
 its bare `Promise.all`; holes 1–2 protect it from within, but it has no supervisor.
 
+**Measured on the box, 2026-09-03:** zero `"claim failed` and zero `"lease sweep failed` lines
+across the unit's first week (`2026-08-27T08:06:56Z` through 2026-09-03, 9,996 worker lines) —
+`DATABASE_URL` stays on the transaction pooler, port 6543:
+[[0016-worker-stays-on-transaction-pooler-6543]].
+
 Everything below is the original 2026-08-23 analysis, kept as the record of the crash path.
 
 ## The crash path

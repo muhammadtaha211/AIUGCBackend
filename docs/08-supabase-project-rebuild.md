@@ -60,9 +60,9 @@ password if it contains anything outside `A-Za-z0-9._~-`.
 
 > For **`apps/worker/.env`** specifically, 6543 is also the connection the vault blames for the
 > worker's dropped connections (`docs/vault/defects/worker-exits-on-a-dropped-connection.md`);
-> `c46131d` made those survivable rather than fatal, and `docs/07-worker-box.md` defers the port
-> decision until the worker has a week on the Hetzner box. Use 6543 now; revisit it as its own
-> decision.
+> `c46131d` made those survivable rather than fatal. **Resolved 2026-09-03**: the box's first week
+> on 6543 logged zero drop lines, and `DATABASE_URL` stays there —
+> `docs/vault/decisions/0016-worker-stays-on-transaction-pooler-6543.md`.
 
 ---
 
