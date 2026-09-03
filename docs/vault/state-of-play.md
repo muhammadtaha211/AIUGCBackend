@@ -47,10 +47,10 @@ symptom.** `git log -1 --oneline` on the box, not "a render worked afterwards" �
 alone produces that. §11 now carries the check.
 
 All four deaths surfaced only because the founder happened to be running a wizard test —
-that is the Sentry argument (queue item 4), now with four data points instead of two.
+that is the Sentry argument (queue item 7), now with four data points instead of two.
 
 `apps/admin` is also deployed and publicly reachable on its vercel.app URL, gated only
-by `requireAdmin` (the basic-auth second wall is believed unset — queue item 1).
+by `requireAdmin` (the basic-auth second wall is believed unset — queue item 2).
 
 **Render progress is now visible to the customer** (2026-09-02). The A wizard's render
 step has a real bar with the percentage on it; `/home` shows a live chip plus the percent
@@ -127,7 +127,7 @@ Fine-grained tokens). Deploy-key alternative rejected: [[0008-github-pat-over-de
 (`SKIP LOCKED`), but the desktop's `.env` carries `DRY_RUN=1` and the box's deliberately
 does not. A desktop worker claiming a real customer job reports success and writes
 placeholder files. Start it only deliberately. (Whether it briefly did exactly that
-around 2026-08-27 is an open check — queue item 2.)
+around 2026-08-27 is an open check — queue item 5.)
 
 **Google OAuth is published — status _In production_.** The founder published it
 2026-09-03, having verified `tavnit.ai` in Search Console a few days earlier (exact date
@@ -159,21 +159,42 @@ non-sensitive scopes.
 
 ## The queue
 
-1. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
+1. **Copy the auth cookies onto the middleware's redirects.** `apps/web/src/middleware.ts`
+   returns a fresh `NextResponse.redirect(...)` on both of its exits (`:35`, `:42`), so a
+   session `getUser()` just refreshed loses the rotated token on the way out. Rotation is on
+   with a 10s reuse interval (`supabase/config.toml:171,174`), so the browser re-presents the
+   old one and GoTrue revokes the family. Predicted symptom: an owner returning after an hour
+   idle via `/` or `/start` — a `<Link href="/start">` prefetch is enough — is signed out in
+   every tab. **Code-read, never observed**:
+   [[middleware-redirects-drop-refreshed-auth-cookies]]. Small fix, largest blast radius of
+   anything open here.
+2. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
    Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
    production-recommended; believed unset) and verify `fra1` there while in the
    dashboard. Cheap, and admin is publicly reachable today behind `requireAdmin` alone.
-2. **Check the DRY_RUN contamination window.** The desktop worker (DRY_RUN=1) may have
+3. **A failed `businesses` query reads as "no businesses".** `middleware.ts:40` and
+   `home/page.tsx:71` both drop the query's `error`, so a transient PostgREST failure makes a
+   real owner look business-less. Since `03fc7f9` that lands them in the additional-business
+   wizard, whose completion posts `allowCreate` and skips the idempotency guard — a filled-in
+   questionnaire then creates a **second** business. Pre-existing class, new consequence.
+   [[a-failed-businesses-query-reads-as-no-businesses]] records the two closures considered
+   and deferred.
+4. **`/login` wipes a draft the server threw away.** `login-form.tsx:45` calls `clearDraft()`
+   on any 200, but `/api/onboarding/complete` is idempotent by **owner, not content**: an
+   existing owner who fills the public wizard for a second product gets their old business
+   back and their new answers deleted, silently and unrecoverably.
+   [[login-clears-a-draft-the-server-never-stored]].
+5. **Check the DRY_RUN contamination window.** The desktop worker (DRY_RUN=1) may have
    run briefly alongside the box around 2026-08-27. Any job it claimed reported SUCCESS
    while writing placeholder files. One query settles it:
    `select id, type, status, locked_by, finished_at from jobs where locked_by like
 'local:%' order by finished_at desc;` — anything dated after the box went live is
    stub output wearing a success status. An open check, not a known problem.
-3. **2026-09-03 — count the drops.** `journalctl -u aiugc-worker -o cat | grep -c
+6. **2026-09-03 — count the drops.** `journalctl -u aiugc-worker -o cat | grep -c
 '"claim failed'`. That number decides whether `DATABASE_URL` moves off port 6543.
    Clock started 2026-08-27; fires on its date regardless of queue position. Do not
    change the port before then.
-4. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
+7. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
    08-28, 09-01 and again on 09-02, and every one surfaced only because the founder
    happened to be running a wizard test. `status='dead'` is the alert condition, the DSN
    is wired and unset, and the worker runs on a machine nobody is looking at. The
@@ -181,15 +202,39 @@ non-sensitive scopes.
    work is on the box) and the real cause lives in `jobs.last_error`. Read it with
    `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only);
    box logs are `journalctl -u aiugc-worker -o cat`.
-5. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
+8. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
    verified, and the bundle is confirmed outside `/tmp`. This is the known-good image —
    capture it before the box drifts. One-off, not the +20%/month backup plan. One-off, not the
    +20%/month backup plan.
-6. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
+9. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
    CPX41-class, ~€30/mo flat" predates the June 2026 price rise and understates by
    roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
    against three measured renders (verified 2026-09-02,
    [[service-a-render-wall-clock-on-the-box]]). Other sizing was derived from both.
+10. **The lint gate is red on the Windows desktop and proves nothing there.**
+    `core.autocrlf=true` rewrites the whole tree to CRLF on checkout while prettier defaults to
+    `endOfLine: lf`, so `pnpm lint` reports ~648 files on a clean `main` — measured 2026-09-03
+    by running it on both `main` and a branch. Fix with a `.gitattributes` carrying
+    `* text=auto eol=lf` (the stored blobs are already LF, so there is no renormalize diff to
+    review) or with `endOfLine: "auto"` in `.prettierrc`. Until then `pnpm lint` is not a
+    signal on this machine; check a file by running prettier against its LF content.
+11. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03 and
+    deliberately left alone — none of it is load-bearing, all of it misleads a reader:
+    - `docs/08` §8B `:495` "Testing mode needs no domain, no privacy policy and no terms",
+      `:501` the mode table labelled `**Testing** (today)` on the wrong column, `:514` "up to
+      99 other addresses", `:547` "App domain / privacy policy / terms: leave blank for now",
+      `:608` step 6 (test-user list, 7-day expiry), `:672` the heading "What still has to be
+      written" over a table whose every row now reads Exists or Verified.
+    - `docs/08` §8A.1 `:424` asserts `signUp` has **no** `emailRedirectTo` — false
+      (`auth.ts:78`) — and `:438` "Code change needed | ... One line (`emailRedirectTo`)"
+      contradicts the defect note that records the fix commit `02f58bb`.
+    - `0006` `:34` still says `access_denied` is "which this app does not read" (false since
+      `5646529`), `:52` and `:54` describe the pre-publish world in the present tense.
+      `0005` `:14`, `:30` likewise, including "Google's verification queue", which `0006`
+      itself falsified.
+    - Drifted line cites: `docs/08:378`, `:424`, `:429` (`auth.ts:42`/`:46`/`:56`), `:476`
+      and `0006:44` (`auth.ts:71-74`), `docs/08:600` (`auth.ts:73`), `0005:41`
+      (`auth.ts:69-85`), `0005:48` (`auth.ts:78`).
 
 ## Open decisions
 
@@ -202,7 +247,7 @@ non-sensitive scopes.
   rendered signed thumbnails, it must. Check against `apps/web/.env.local` before
   touching anything; do not fix the `.env.example` comment blind.
 - **`DATABASE_URL` port 6543.** Deliberately undecided in `docs/07-worker-box.md`;
-  queue item 3 produces the number that settles it.
+  queue item 6 produces the number that settles it.
 - **Content policy.** Nothing reviews customer copy before an MP4 exists —
   `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is
   the only user. Strangers can reach the app now that Google sign-in is published, so
@@ -234,10 +279,10 @@ Neither blocks anything; both get more expensive to recover later.
 - ~~The wizard render's duration~~ — **taken 2026-09-02**, three live renders, mean 66.1s:
   [[service-a-render-wall-clock-on-the-box]]. It shows `docs/02-jobs.md:111`'s "~2–6 min
   per video" to be 2–5× too slow, so that line and its stale box price are now one fix
-  (queue item 6).
+  (queue item 9).
 - **No cold render has been measured on the box** — one including the ~92 MB Chrome
   Headless Shell download. Matters only if the box is rebuilt from scratch rather than
-  from the queue-item-5 snapshot.
+  from the queue-item-8 snapshot.
 
 ## Corrections worth not repeating
 

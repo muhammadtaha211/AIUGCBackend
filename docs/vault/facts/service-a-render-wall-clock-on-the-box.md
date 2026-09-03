@@ -39,7 +39,7 @@ queue wait was ~0 — nothing else was competing for the heavy lane.
 
 `docs/02-jobs.md:111` sizes a full customer render at **"~2–6 min wall time per video"**.
 Measured, it is roughly **one minute** — 2× to 5× faster than the doc claims. That line has
-not been edited; it is also wrong about the box price (queue item 6 in
+not been edited; it is also wrong about the box price (queue item 9 in
 `state-of-play.md`), so both belong in the same one-line fix.
 
 The practical consequence is on the customer-facing wait, not on capacity: a minute is
