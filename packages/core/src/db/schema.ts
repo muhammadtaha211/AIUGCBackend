@@ -264,9 +264,11 @@ export const personas = pgTable("personas", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Reference images are the only InfiniteTalk source (image + audio; no
-// video-to-video). At most one default per persona — partial unique index in
-// the hand-written 0006 migration.
+// Reference images are the only lipsync source (image + audio; no
+// video-to-video — locked decision #12). The provider is HeyGen, not the
+// InfiniteTalk this comment used to name; the image+audio-only constraint is
+// unchanged by the switch. At most one default per persona — partial unique
+// index in the hand-written 0006 migration.
 export const personaImages = pgTable("persona_images", {
   id: uuid("id").primaryKey().defaultRandom(),
   personaId: uuid("persona_id")
@@ -290,7 +292,7 @@ export const personaImages = pgTable("persona_images", {
 
 // Product-in-hand composites (Service B, physical products only): a generated
 // image of a persona holding the customer's product. The approved image takes
-// precedence over the persona's reference image as the InfiniteTalk source.
+// precedence over the persona's reference image as the HeyGen lipsync source.
 export const composites = pgTable(
   "composites",
   {

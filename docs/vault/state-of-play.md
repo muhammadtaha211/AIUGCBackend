@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-03
+updated: 2026-09-04
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -160,6 +160,27 @@ non-sensitive scopes.
 4. **`debitRender`'s non-positive-cost hole: deliberately not fixed.** The note is in
    the tree ([[debit-render-accepts-non-positive-cost]]); the decision is that it stays
    a note for now.
+5. **The Service B format is decided** — recorded 2026-09-04 in
+   [[0017-service-b-single-setting-selfie-talking-head]]. Single-setting selfie talking
+   head, optional founder-made opener clip, no image or composite step, physical products
+   out. **What is not in the repo is all of it**: nothing has been built to this note. The
+   tree still holds the pre-revamp Service B. Queue items 13–16 are the build.
+6. **HeyGen Avatar IV needs leading silence to start on a still frame** — recorded in
+   [[heygen-avatar-iv-idles-on-leading-silence]]. Founder hand test, ~800ms, one persona,
+   by eye. **Not in the repo**: no code prepends silence today, and the tolerance is
+   unmeasured — 800ms was the only value tried. Re-measure before the opener ships.
+7. **[[0004-service-b-config-is-provisional]] is superseded by 0017** — but only on the
+   open-endedness. The three keys stay placeholders until the engine work lands and
+   `auto_release_b` still may not be flipped by a session. The note is marked
+   `status: superseded` and kept, not deleted.
+8. **Four stale provider references corrected 2026-09-04**, all in git: the
+   `motion_prompt`/`expressiveness` caveat in `docs/04-integrations.md` (HeyGen's pages do
+   **not** disagree — `developers.heygen.com/avatar-iv`, read 2026-09-04, says both apply to
+   arbitrary images; the new limit recorded there is that gesture **timing** is not
+   promptable), the "only InfiniteTalk source" wording in
+   `packages/core/src/db/schema.ts` and `docs/01-schema.md` (provider renamed, image+audio-only
+   constraint kept), and the 30s comment in `b-wizard.tsx` (the frame ceiling is gone; 30s
+   stays off **pending the founder**, not because it would fail). 30s was **not** re-enabled.
 
 ## The queue
 
@@ -249,6 +270,41 @@ non-sensitive scopes.
       and `0006:44` (`auth.ts:71-74`), `docs/08:600` (`auth.ts:73`), `0005:41`
       (`auth.ts:69-85`), `0005:48` (`auth.ts:78`).
 
+**Items 13–16 are the Service B revamp**, built to
+[[0017-service-b-single-setting-selfie-talking-head]] and in that order — each is the
+input to the next. They sit **after** everything above, including the cheap docs-only
+item 12, because Service B is explicitly parked until Service A is finished and none of
+this is on the validation sequence (pipeline → outreach samples → self-serve app).
+
+13. **Schema 0032 for the selfie format.** The migration 0017 implies: a `selfie` value
+    for `persona_images.kind` (today `'preview' | 'background'`,
+    `packages/core/src/db/schema.ts:286` — and **not only a migration**: the two literals
+    are enforced at `apps/admin/src/lib/admin.ts:65` and used to filter at
+    `apps/web/src/lib/service-b.ts:61,68-69`), and the opener-clip bank — one row per
+    (selfie image × effect) carrying the play-ready file path, `reveal_at_ms` and a text
+    safe area. Read [[0013-hook-clips-near-9-16-not-exact-1080x1920]] first: the Service A
+    bank's registration constraints are the precedent, and its `text_safe_area`-required-at-
+    register rule is the one to copy. Reversibility gate applies — the new project is
+    production now.
+14. **The engine: core + Remotion + CLI.** The `b_script` v9 that emits `hook_text`
+    alongside `script` (the output contract is one field today —
+    `packages/core/src/pipelines/copy.ts:264` — and that zod schema is **shared with
+    `vo_script`**, passed to `callClaude` at both `:349` and `:447`, so `b_script` needs
+    its own schema rather than a widened `scriptOutput`), re-derivation on script edit, the opener
+    composition in `packages/remotion`, the hard cut at `reveal_at_ms`, and **the final
+    hook text copied into render params** rather than pointed at — 0017 §"Why the final
+    string is copied, not pointed at" is the reason, and it is the one part of this that
+    is a correctness rule rather than a preference. Plus the CLI commands to drive it
+    before any UI exists.
+15. **Admin registration for the opener bank.** The founder-facing side: upload a
+    play-ready clip against a (selfie image × effect) pair, set `reveal_at_ms`, place the
+    text safe area. Check [[admin-hook-upload-persona-footgun]] before reusing the Service A
+    upload path — it has a known footgun that this would inherit.
+16. **The B wizard.** `persona → pointers → script → audio → opener effect → render`.
+    Removes today's image and composite steps, adds the effect step with the customer-
+    editable hook text. Largest of the four and the only one a customer sees, so it goes
+    last.
+
 ## Open decisions
 
 - **Service-role key in `apps/web`.** Root `.env.example` (line 9) says "never the
@@ -278,10 +334,21 @@ non-sensitive scopes.
 
 ## Service B
 
-Getting a full revamp after Service A is finished. `lipsync_motion_prompt`,
-`lipsync_resolution`, and `auto_release_b` are placeholders, not tuned values — do not
-spend care on them. `poll_deadline_seconds` and `words_per_second` are the live Service A
-keys that matter.
+Still parked until Service A is finished — but the revamp now has a **shape**, decided
+2026-09-03/04: [[0017-service-b-single-setting-selfie-talking-head]]. Read that note before
+touching anything Service B; it settles the format (flow, one background per persona, the
+opener clip, where the final hook text lives, HeyGen stays) and lists what it deliberately
+does **not** settle. The one measurement it rests on is
+[[heygen-avatar-iv-idles-on-leading-silence]].
+
+Nothing in the engine has been built to it. What exists in the tree is the pre-revamp Service
+B, including the image and composite steps 0017 removes.
+
+`lipsync_motion_prompt`, `lipsync_resolution` and `auto_release_b` are **still placeholders**
+— 0017 settles the format, not the engine, so
+[[0004-service-b-config-is-provisional]]'s instruction carries forward unchanged and
+`auto_release_b` still stays `true`. `poll_deadline_seconds` and `words_per_second` are the
+live Service A keys that matter.
 
 ## Unfinished measurement
 

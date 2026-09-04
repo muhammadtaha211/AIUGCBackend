@@ -56,8 +56,12 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
   const [personaImage, setPersonaImage] = useState<PersonaImage | null>(null);
   const [composite, setComposite] = useState<CompositeState | null>(null);
   const [pointers, setPointers] = useState("");
-  // 30s was removed from the wizard: its word budget can produce audio past the
-  // lipsync frame ceiling, failing after the customer already paid for TTS.
+  // 30s is not offered. The original reason — its word budget could produce audio
+  // past InfiniteTalk's frame ceiling, failing after the customer paid for TTS —
+  // is spent: HeyGen generates to the audio's length with no frame-count parameter
+  // (docs/04-integrations.md §HeyGen). 30s stays off pending a founder decision,
+  // not because it would fail. Do not re-enable it as a cleanup — see
+  // docs/vault/decisions/0017-service-b-single-setting-selfie-talking-head.md.
   const duration = 15;
   const [script, setScript] = useState<ScriptState | null>(null);
   const [editedText, setEditedText] = useState("");
