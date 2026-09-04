@@ -82,7 +82,7 @@ with no caller in the new flow.
 The opener's safe area is the same idea against a new bank; `reveal_at_ms` is the new field.
 
 **Reasoned:** storing the clip play-ready is what keeps that part of the render deterministic.
-Service B's lipsync output is explicitly non-deterministic (`docs/04-integrations.md:238-239` —
+Service B's lipsync output is explicitly non-deterministic (`docs/04-integrations.md:245-246` —
 HeyGen exposes no seed), so the opener is the one part of a B render that can be byte-identical
 every time, and it stays that way only if the pipeline does no video processing on it.
 
@@ -185,7 +185,7 @@ small.
 
 | Alternative                                             | Why not                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-angle cuts** (several camera angles per script) | N × the non-determinism — HeyGen has no seed (`docs/04:238-239`), so every cut is an independent generation that can differ. Also needs an image set per persona, which the one-background decision above removes.                                                                |
+| **Multi-angle cuts** (several camera angles per script) | N × the non-determinism — HeyGen has no seed (`docs/04:245-246`), so every cut is an independent generation that can differ. Also needs an image set per persona, which the one-background decision above removes.                                                                |
 | **A motion bank per persona** (pre-made motion clips)   | Multiplies by backgrounds — the bank to curate by hand becomes personas × backgrounds × motions.                                                                                                                                                                                  |
 | **Hedra Omnia / Kling video-to-video**                  | Viable, untested, **parked** — not rejected on merit. Both would also need locked decision #12 reopened.                                                                                                                                                                          |
 | **HeyGen `motion_prompt` to produce the opener**        | Timing and camera are **not promptable** — founder, from the HeyGen help center. `motion_prompt` directs gesture and motion; it cannot place a reveal at a known millisecond, which is the one thing the opener needs.                                                            |

@@ -216,9 +216,16 @@ keyless (the e2e test relies on this).
   never requested.
 - **Pricing**: **$0.0667/s at BOTH 720p and 1080p** — same price, hence the 1080p default —
   ≈ 25 agorot/s at ₪3.75/$; `GPU_COST_AGOROT_PER_SECOND` maps both tiers to 25. Usage rows
-  keep kind `gpu_seconds` (quantity = audio seconds ≈ output seconds); the provider column
-  stays `fal` until a migration adds a `heygen` enum value. `credit_costs.b_render` is
-  unchanged — per-second billing is a separate change.
+  keep kind `gpu_seconds` (quantity = audio seconds ≈ output seconds) and now record
+  **`provider = 'heygen'`** (`pipelines/renders.ts:254`): `0019_usage_provider_heygen.sql` added
+  the enum value and `0020_backfill_heygen_usage.sql` relabelled the 14 real HeyGen rows,
+  matching on the 25 agorot/s rate so the 7 genuine fal/InfiniteTalk rows were left alone.
+- **Customer credits are per-second, not flat**: `credit_costs.b_per_second` × the approved VO's
+  measured seconds, floored by `b_minimum_credits` (`quoteServiceB`, `pricing.ts:114-120`; the
+  floor is `0`, i.e. inactive). The flat `b_render: 15` this line used to cite is **gone** —
+  `0017_credit_costs_per_second.sql` replaced the `{a_render, b_render}` placeholder, it is
+  absent from `creditCostsSchema` (`pricing.ts:24-36`), and `pricing.test.ts:52-53` asserts the
+  old shape is rejected. Decoded row and its traps: `docs/vault/facts/credit-costs-row.md`.
 - **Motion prompt — optional, absent by default**: the image mode accepts `motion_prompt`
   (free-text gesture/motion direction) and `expressiveness` (`low`/`medium`/`high`, HeyGen
   defaults to `low`). Native v3 names verified 2026-08 — the wrappers' `custom_motion_prompt`

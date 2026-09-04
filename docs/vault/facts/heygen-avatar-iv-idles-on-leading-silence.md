@@ -49,10 +49,10 @@ Stated explicitly, because this is one person watching two videos.
   reference used had the mouth **closed**; nothing is known about a reference with the mouth open,
   which is a different starting condition.
 - **The effect of `expressiveness` / `motion_prompt` on the idle is untested.** Both are absent by
-  default (`docs/04-integrations.md:222-228`) and both were absent here. A non-default
+  default (`docs/04-integrations.md:229-235`) and both were absent here. A non-default
   `expressiveness` could plausibly move the head during the silence and undo the property — that is
   the obvious next A/B.
-- **n=1 per condition, and Avatar IV is non-deterministic.** `docs/04-integrations.md:238-239`
+- **n=1 per condition, and Avatar IV is non-deterministic.** `docs/04-integrations.md:245-246`
   records that HeyGen exposes no seed and its own guide states identical inputs can differ per
   generation. So "mouth open without silence" is one draw, not a characterisation of the
   distribution. The silence result is the more robust half — a still head through silence is a
