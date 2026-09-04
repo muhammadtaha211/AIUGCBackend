@@ -53,13 +53,14 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 - **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id`; reference
   images as separate rows (a persona accumulates looks/angles). `is_default` marks the image a
   render uses when a variant names only the persona — at most one per persona (partial unique
-  index, 0006). Reference images are the only InfiniteTalk source; there are no persona base
-  clips and no video-to-video.
+  index, 0006). Reference images are the only lipsync source — HeyGen, not the InfiniteTalk this
+  line used to name; the image+audio-only constraint survived the switch. There are no persona
+  base clips and no video-to-video (locked decision #12).
 - **composites** — product-in-hand images (Service B, `category === "physical_product"` only):
   business, persona, product photo path, generated output path, status
   `queued→generating→ready|failed`, and **`approved_at`** — a hard gate exactly like audio:
   lipsync refuses composites without it. The approved image takes precedence over the persona's
-  reference image as the InfiniteTalk source.
+  reference image as the HeyGen lipsync source.
 - **structures** — the weekly "clonable winners" menu: `skeleton jsonb` (beat outline + script
   skeleton), persona-fit tags, source ref, week.
 - **sounds** — a **trending-sound research tracker**, not an asset bank: which sound trended on

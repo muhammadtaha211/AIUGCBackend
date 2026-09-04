@@ -1,12 +1,25 @@
 ---
 type: decision
-status: verified
+status: superseded
 verified: 2026-08-26
 method: "founder instruction in chat, 2026-08-26 session, given while directing the 0031 apply"
 source: founder
 ---
 
 # Service B config keys are provisional until the post-A revamp
+
+> **Superseded 2026-09-04 by [[0017-service-b-single-setting-selfie-talking-head]]** — the revamp
+> this note deferred to now has a shape: a single-setting selfie talking head with an optional
+> opener clip. Kept verbatim below, because **the operative instruction has not expired**:
+>
+> - **The three keys stay placeholders until the engine work lands.** 0017 settles the format, not
+>   the engine, the schema or the wizard. Until those ship, `lipsync_motion_prompt`,
+>   `lipsync_resolution` and `auto_release_b` are still "whatever was lying around when Service B
+>   was parked" — do not treat them as tuned, and do not cite them as calibration output.
+> - **`auto_release_b` still may not be flipped by a session.** 0017 changes nothing about it.
+>
+> What 0017 _does_ retire is the open-endedness: "expect the revamp to replace them wholesale" now
+> has a note saying what the revamp is.
 
 Service B is getting a full revamp after Service A is finished. Until then its `app_config`
 settings are **placeholders, not decisions**:

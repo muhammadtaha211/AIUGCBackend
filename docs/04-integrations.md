@@ -226,11 +226,15 @@ keyless (the e2e test relies on this).
   render param (`render-b --motion-prompt` / `--expressiveness`) → app_config
   `lipsync_motion_prompt` / `lipsync_expressiveness` → **absent** (the default: the submit
   body is byte-identical to the no-knob body). This is NOT the old InfiniteTalk resolver —
-  that chain stays deleted and `personas.identity.motionPrompt` is still unread. Caveat:
-  HeyGen's own guide pages disagree on whether the knobs take effect on arbitrary-image input
-  (the API reference carries both fields on the image mode; the image-to-video guide's table
-  says photo-avatars only) — the fields are accepted either way; A/B a render with and
-  without to see the effect.
+  that chain stays deleted and `personas.identity.motionPrompt` is still unread. **Both knobs do
+  apply to arbitrary images**: `developers.heygen.com/avatar-iv` (read 2026-09-04) states
+  `motion_prompt` and `expressiveness` are available for photo avatars **and** arbitrary images.
+  That replaces an earlier caveat here which said HeyGen's own pages disagreed on the point —
+  they do not. Effect size is still unmeasured, so A/B a render with and without to see it.
+  **What they cannot do is timing**: gesture timing and pacing are not promptable (HeyGen help
+  centre), so nothing needing an event at a known millisecond — an opener reveal, a cut point —
+  can be driven from `motion_prompt`. See
+  [vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md).
 - **No seed — NON-deterministic**: HeyGen exposes no seed parameter and its own Avatar IV
   guide states results are non-deterministic — identical inputs can differ per generation.
   QC implication: a regeneration (`pipelines/qc.ts`) with an unchanged script+audio is a
