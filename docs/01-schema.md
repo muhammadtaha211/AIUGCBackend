@@ -50,12 +50,34 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   one clip in the live bank is 4086ms ([04-integrations.md](04-integrations.md) §Hook-clip bank
   source, which also records why the ~60-char hook-line cap is calibrated to the long end).
   `text_safe_area` is required at register; `DEFAULT_HOOK_TEXT_RECT` only seeds the editor.
+- **opener_clips** (0032) — Service B's equivalent closed bank: one founder-made clip per
+  (selfie image × effect), stored **play-ready** (already reversed where the effect is a reveal —
+  nothing processes it at render time). `persona_image_id`, `effect` (free key, e.g.
+  `hand_cover`/`finger_snap`), `label` (Hebrew, shown to the customer), `file_path`,
+  `duration_ms`, `reveal_at_ms`, `text_safe_area jsonb` ({x,y,w,h} in 1080×1920, the same shape
+  and the same required-at-register rule as `hook_clips`), `active`. The reveal is constrained by
+  `CHECK (reveal_at_ms >= 0 AND reveal_at_ms <= duration_ms)`, and one **active** row per
+  (image, effect) by a partial unique index — so a superseded clip stays as `active=false` and
+  the pair can be re-registered. Soft delete is `active=false`, like the hook bank.
+  `reveal_at_ms` is the first frame the face is fully clear: the hook text burns over the palm
+  phase before it and the render hard-cuts into the HeyGen output there — which is why **a clip
+  must end on (approximately) the selfie frame it was made from**
+  (`docs/vault/facts/heygen-avatar-iv-idles-on-leading-silence.md`;
+  `docs/vault/decisions/0017-service-b-single-setting-selfie-talking-head.md`).
 - **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id`; reference
   images as separate rows (a persona accumulates looks/angles). `is_default` marks the image a
   render uses when a variant names only the persona — at most one per persona (partial unique
-  index, 0006). Reference images are the only lipsync source — HeyGen, not the InfiniteTalk this
-  line used to name; the image+audio-only constraint survived the switch. There are no persona
-  base clips and no video-to-video (locked decision #12).
+  index, 0006). `kind` (0009) is `'preview'` (avatar-card thumbnail only) | `'background'`
+  (background picker) | `'selfie'` (added by 0032 — the Service B render source and the B card
+  thumbnail). It is plain text with no CHECK, so a new value costs no DDL, but the first two
+  literals are enforced at the app boundary in `apps/admin/src/lib/admin.ts` and
+  `apps/web/src/lib/service-b.ts`; 0032 changed neither. `source_image_id` (0032) is lineage
+  only — which standing image a selfie was derived from — a self-FK with no cascade, exactly
+  like `hook_clips.source_clip_id`. 0032 does **not** touch `is_default` or its index: pointing a
+  persona's default at its selfie is an UPDATE, not a migration. Reference images are the only
+  lipsync source — HeyGen, not the InfiniteTalk this line used to name; the image+audio-only
+  constraint survived the switch. There are no persona base clips and no video-to-video (locked
+  decision #12).
 - **composites** — product-in-hand images (Service B, `category === "physical_product"` only):
   business, persona, product photo path, generated output path, status
   `queued→generating→ready|failed`, and **`approved_at`** — a hard gate exactly like audio:
@@ -159,8 +181,10 @@ get read-only access. Policies:
   Service B output before the founder releases it; a rejected-and-regenerated render is
   internal.
 - Catalog SELECT for any authenticated user: hook_clips/personas/structures (active rows),
-  sounds, plans, and persona_images of active personas (0007). (0002's persona_clips policy is
-  dropped with the table in 0005; composites get an owner-scoped SELECT in 0007.)
+  sounds, plans, opener_clips (active rows — `opener_clips_select_active`, 0033, mirroring
+  `hook_clips_select_active`), and persona_images of active personas (0007). (0002's
+  persona_clips policy is dropped with the table in 0005; composites get an owner-scoped SELECT
+  in 0007.)
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
   pronunciation_entries.
 - `handle_new_user()` trigger mirrors `auth.users` inserts into `public.users`.

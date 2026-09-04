@@ -11,7 +11,9 @@ export const MIGRATIONS_DIR = fileURLToPath(
 );
 
 // 0002_supabase_rls.sql is deliberately absent: it references the Supabase
-// auth schema, which only exists on Supabase.
+// auth schema, which only exists on Supabase. So are the later RLS files
+// (0007, 0012, 0024, 0033) — 0033's policy names the `authenticated` role,
+// which PGlite has no more than it has auth.uid().
 export const PORTABLE_MIGRATIONS = [
   "0000_init.sql",
   "0001_extras_and_seed.sql",
@@ -41,6 +43,7 @@ export const PORTABLE_MIGRATIONS = [
   "0029_plan_failure_diagnostics.sql",
   "0030_analysis_sections.sql",
   "0031_seed_unseeded_config.sql",
+  "0032_opener_clips.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

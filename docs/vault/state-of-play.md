@@ -393,10 +393,11 @@ Recorded because each cost real time, and each came from asserting rather than c
   describing a plan read identically to docs describing reality.
 - `words_per_second`: old project 2.1 (calibration output), migration seed 2.2 (a
   guess). 2.1 is correct.
-- There are **32** migrations, 0000–0031.
+- There are **34** migrations, 0000–0033. The live project is still at 0031 — 0032
+  (`opener_clips`) and 0033 (its RLS) are in the tree, unapplied.
 - `scripts/verify-migration-ledger.sql` cannot fully pass on a fresh database — two
-  checks assert old-project row IDs. Structural layer: 22 true and one NULL for 0020;
-  the NULL is correct.
+  checks assert old-project row IDs. Structural layer: 24 true and one NULL for 0020;
+  the NULL is correct. (It was 22 before the 0032/0033 rows were added.)
 - `/start` proves nothing about auth — it redirects unconditionally and discards
   `exchangeCodeForSession`'s result. `/home` is the only real gate.
 - A credential was echoed in session output three times. The CLAUDE.md rule now covers

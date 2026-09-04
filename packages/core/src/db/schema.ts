@@ -282,11 +282,54 @@ export const personaImages = pgTable("persona_images", {
    *  didn't decode at upload — backfilled by `aiugc persona sync-catalog`. */
   blurDataUrl: text("blur_data_url"),
   isDefault: boolean("is_default").notNull().default(false),
-  /** 'preview' (avatar-card thumbnail only) | 'background' (background picker). */
+  /** 'preview' (avatar-card thumbnail only) | 'background' (background picker)
+   *  | 'selfie' (the Service B render source and the B card thumbnail, added
+   *  by 0032). Plain text with no CHECK, so a new value costs no DDL — but the
+   *  first two literals are still enforced at the app boundary in
+   *  apps/admin/src/lib/admin.ts and apps/web/src/lib/service-b.ts, which
+   *  0032 deliberately did not touch. */
   kind: text("kind").notNull().default("background"),
   label: text("label"),
+  // Lineage: the standing image this selfie was derived from (self-FK in the
+  // 0032 migration, same shape as hookClips.sourceClipId). No cascade.
+  sourceImageId: uuid("source_image_id"),
   // Soft delete: render params reference image ids, so rows are never removed.
   retired: boolean("retired").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Service B's opener-clip bank: one founder-made clip per (selfie image x
+// effect), uploaded play-ready — already reversed where the effect is a reveal,
+// so nothing processes it at render time. Soft delete is active=false, like
+// hook_clips; the partial unique index keeping one ACTIVE row per
+// (persona_image_id, effect) and the CHECK reveal_at_ms <= duration_ms live in
+// the hand-written 0032 migration.
+//
+// THE INVARIANT: an opener clip must END on (approximately) the selfie frame it
+// was made from. The render hard-cuts at reveal_at_ms into the HeyGen output,
+// whose own first frames are the persona idling on that same still — HeyGen
+// Avatar IV does not start from the reference image, it idles there only while
+// the audio is silent (~800ms hand-measured, one persona, by eye — see
+// docs/vault/facts/heygen-avatar-iv-idles-on-leading-silence.md, which is
+// explicit that the tolerance is unmeasured). A clip that ends anywhere else
+// makes the cut read as a glitch rather than a transition.
+export const openerClips = pgTable("opener_clips", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  personaImageId: uuid("persona_image_id")
+    .notNull()
+    .references(() => personaImages.id),
+  // Free key for the motion, e.g. 'hand_cover' | 'finger_snap'.
+  effect: text("effect").notNull(),
+  // Hebrew, shown to the customer in the effect step.
+  label: text("label").notNull(),
+  filePath: text("file_path").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  // First frame the face is fully clear, in clip time. The hook text burns over
+  // the palm phase before it; the hard cut lands here.
+  revealAtMs: integer("reveal_at_ms").notNull(),
+  // {x, y, w, h} in 1080x1920 space, same shape as hookClips.textSafeArea.
+  textSafeArea: jsonb("text_safe_area").notNull(),
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -1,6 +1,7 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030 actually landed in a given database.
+-- Proves that migrations 0008-0030 and 0032-0033 actually landed in a given
+-- database. (0031 has never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
 -- production's supabase_migrations.schema_migrations recorded only 0000-0007
@@ -9,7 +10,7 @@
 --
 -- STRICTLY READ-ONLY: one SELECT over system catalogs and existing rows.
 -- Written as a single statement on purpose — the Supabase SQL editor shows only
--- the last statement's result, so 26 separate SELECTs would display one row.
+-- the last statement's result, so 28 separate SELECTs would display one row.
 --
 -- ---------------------------------------------------------------------------
 -- TWO LAYERS. Check the one that matches the database you are pointed at.
@@ -32,8 +33,9 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect 22 true + 1 NULL. On the old production database, run the whole file
--- and expect all 26 to read true.
+-- expect 24 true + 1 NULL. The old production database read all 26 of its rows
+-- true (see RESULTS); it predates 0032-0033 and is deleted, so the two rows
+-- added for them have nothing to say about it.
 --
 -- Corrected 2026-08-26: this file previously claimed it "stays useful for
 -- verifying any OTHER environment (staging, a rebuilt DB)" while mixing both
@@ -164,7 +166,7 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- is nothing a fresh database can assert. NULL, not true: a true here would be
 -- an assertion this file cannot make. The proof lives in the 'data' row below.
 -- A NULL on this row is therefore the CORRECT result on every database — the
--- expected structural read-out is 22 true plus this one NULL, and a NULL here
+-- expected structural read-out is 24 true plus this one NULL, and a NULL here
 -- is not a failed check and needs no investigation. Only the 0020 'data' row
 -- (meaningful on the old production database alone) can say whether the
 -- backfill actually ran.
@@ -256,6 +258,41 @@ WITH checks(migration, layer, applied, note) AS (VALUES
   WHERE table_schema = 'public' AND table_name = 'demo_analyses'
     AND column_name IN ('sections', 'sections_prompt_version')) = 2), 'both columns exist'),
 
+-- 0032: persona_images.source_image_id and its FK, then the opener_clips table,
+-- its named CHECK and its partial unique index. All four are separate
+-- statements after the first ALTER, so each is asserted against a paste
+-- truncated mid-file. `kind` gaining 'selfie' is deliberately NOT asserted:
+-- the column is plain text with no CHECK, so that value has no DDL footprint
+-- and nothing structural can prove it. to_regclass, never ::regclass — a cast
+-- would ERROR rather than read false when the table is absent.
+('0032', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'persona_images'
+      AND column_name = 'source_image_id')
+  AND EXISTS (SELECT 1 FROM pg_constraint
+    WHERE connamespace = 'public'::regnamespace AND contype = 'f'
+      AND conname = 'persona_images_source_image_id_persona_images_id_fk')
+  AND to_regclass('public.opener_clips') IS NOT NULL
+  AND EXISTS (SELECT 1 FROM pg_constraint
+    WHERE connamespace = 'public'::regnamespace AND contype = 'c'
+      AND conname = 'opener_clips_reveal_within_duration')
+  AND EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'opener_clips'
+      AND indexname = 'opener_clips_one_active_per_image_effect')),
+  'column + its FK, table, CHECK, partial unique index'),
+
+-- 0033: the SELECT policy exists AND row security is actually enabled on
+-- opener_clips — ENABLE and CREATE POLICY are separate statements, so both
+-- halves are asserted against a partial paste, exactly as 0024's row does.
+('0033', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'opener_clips'
+      AND policyname = 'opener_clips_select_active')
+  AND EXISTS (SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'opener_clips' AND c.relrowsecurity)),
+  'policy + RLS enabled'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -312,6 +349,13 @@ ORDER BY migration, layer DESC;
 -- list and investigate it first):
 --
 --   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 0030
+--
+-- That command is the 2026-08-26 backfill of the old ledger, kept as written.
+-- 0032/0033 are NOT in it. `db push` records them itself and needs no repair;
+-- only a hand-paste into the SQL editor does, and then only once both rows
+-- above read true:
+--
+--   npx -y supabase migration repair --status applied 0032 0033 --db-url <session pooler url>
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS

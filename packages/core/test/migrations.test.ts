@@ -308,6 +308,62 @@ describe("migrations", () => {
     await pg.close();
   });
 
+  it("0032: selfie lineage + one active opener clip per (image, effect), reveal inside the clip", async () => {
+    const { db, pg } = await createTestDb();
+
+    const [persona] = await db
+      .insert(schema.personas)
+      .values({ name: "נועה", voiceId: "voice_noa" })
+      .returning();
+    const [standing] = await db
+      .insert(schema.personaImages)
+      .values({ personaId: persona!.id, filePath: "assets/p1.jpg", kind: "background" })
+      .returning();
+    const [selfie] = await db
+      .insert(schema.personaImages)
+      .values({
+        personaId: persona!.id,
+        filePath: "assets/p1-selfie.jpg",
+        kind: "selfie",
+        sourceImageId: standing!.id,
+      })
+      .returning();
+    expect(selfie!.sourceImageId).toBe(standing!.id);
+
+    const clip = (over: Partial<typeof schema.openerClips.$inferInsert> = {}) => ({
+      personaImageId: selfie!.id,
+      effect: "hand_cover",
+      label: "כף יד",
+      filePath: "assets/o1.mp4",
+      durationMs: 1200,
+      revealAtMs: 900,
+      textSafeArea: { x: 0, y: 0, w: 500, h: 500 },
+      ...over,
+    });
+
+    await db.insert(schema.openerClips).values(clip());
+    // A different effect on the same image is fine.
+    await db.insert(schema.openerClips).values(clip({ effect: "finger_snap" }));
+    // A second ACTIVE clip for the same pair is not.
+    await expect(db.insert(schema.openerClips).values(clip())).rejects.toThrow(/duplicate key/i);
+    // The index is partial: a superseded clip stays as active=false and the
+    // pair can be re-registered.
+    await db.insert(schema.openerClips).values(clip({ active: false }));
+
+    // reveal_at_ms must land inside the clip.
+    await expect(
+      db.insert(schema.openerClips).values(clip({ effect: "late", revealAtMs: 1201 })),
+    ).rejects.toThrow(/check constraint/i);
+    await expect(
+      db.insert(schema.openerClips).values(clip({ effect: "negative", revealAtMs: -1 })),
+    ).rejects.toThrow(/check constraint/i);
+    // The boundaries themselves are legal.
+    await db.insert(schema.openerClips).values(clip({ effect: "at_zero", revealAtMs: 0 }));
+    await db.insert(schema.openerClips).values(clip({ effect: "at_end", revealAtMs: 1200 }));
+
+    await pg.close();
+  });
+
   it("enforce the circular sets -> video_renders FK from 0001", async () => {
     const { db, pg } = await createTestDb();
 
