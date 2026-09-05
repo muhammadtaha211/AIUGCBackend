@@ -312,7 +312,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     // HeyGen generates and bills the padded length; the quote stayed unpadded.
     const usage = (await gpuUsageRows()).slice(usageBefore);
     expect(usage).toHaveLength(1);
-    expect(usage[0]!.quantity).toBe(Math.ceil((await audioDurationMs(audioId) + 800) / 1000));
+    expect(usage[0]!.quantity).toBe(Math.ceil(((await audioDurationMs(audioId)) + 800) / 1000));
   });
 
   it("app_config lipsync_lead_in_ms sets the pad, and a later change does not move a pinned render", async () => {

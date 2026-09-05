@@ -21,7 +21,12 @@ import {
 
 const VO_MS = 10_000;
 /** HeyGen generates to the padded audio: VO + lead-in. */
-const noOpener = { hasOpener: false, leadInMs: 800, lipsyncDurationMs: VO_MS + 800, voDurationMs: VO_MS };
+const noOpener = {
+  hasOpener: false,
+  leadInMs: 800,
+  lipsyncDurationMs: VO_MS + 800,
+  voDurationMs: VO_MS,
+};
 const opener = {
   hasOpener: true,
   openerDurationMs: 2400,

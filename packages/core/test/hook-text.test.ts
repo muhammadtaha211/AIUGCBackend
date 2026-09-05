@@ -154,7 +154,9 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
   });
 
   it("an over-cap hook_text is a PermanentError and inserts no row", async () => {
-    generateObject.mockReset().mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: OVER_CAP }));
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: OVER_CAP }));
     const before = await scriptCount();
 
     await expect(generateBScript(db, { businessId, personaId, structureId })).rejects.toThrow(
@@ -178,9 +180,7 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
 
   it("deriveHookText rejects an over-cap answer the same way", async () => {
     generateObject.mockReset().mockResolvedValueOnce(reply({ hook_text: OVER_CAP }));
-    await expect(deriveHookText(db, { businessId, text: SCRIPT })).rejects.toThrow(
-      PermanentError,
-    );
+    await expect(deriveHookText(db, { businessId, text: SCRIPT })).rejects.toThrow(PermanentError);
   });
 
   it("updateScriptText merges params into the one new row and leaves the original alone", async () => {
@@ -202,7 +202,10 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
 
     // Immutable: the original row still carries the draft.
     const original = (
-      await db.select().from(dbSchema.scripts).where(sql`${dbSchema.scripts.id} = ${script.id}`)
+      await db
+        .select()
+        .from(dbSchema.scripts)
+        .where(sql`${dbSchema.scripts.id} = ${script.id}`)
     )[0]!;
     expect((original.params as { hookText?: string }).hookText).toBe(HOOK);
 

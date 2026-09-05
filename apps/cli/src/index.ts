@@ -522,7 +522,9 @@ bank
         // (locked), so an audio track on the clip is simply not played.
         const clip = await probe(opts.file);
         if (clip.hasAudio) {
-          console.log("note: the clip carries an audio track — it is ignored; the opener plays silent");
+          console.log(
+            "note: the clip carries an audio track — it is ignored; the opener plays silent",
+          );
         }
         const row = await addOpenerClip(getDb(), {
           personaImageId: opts.personaImage,

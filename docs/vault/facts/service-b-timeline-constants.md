@@ -14,14 +14,14 @@ composition, which only converts milliseconds to frames. `serviceBTimeline` is u
 `packages/core/test/service-b-timeline.test.ts`; the Remotion preview fixtures mirror its output
 as literals and that test pins them.
 
-| constant           | value | what it does                                                                                | provenance                  |
-| ------------------ | ----- | ------------------------------------------------------------------------------------------- | --------------------------- |
+| constant           | value | what it does                                                                                  | provenance                    |
+| ------------------ | ----- | --------------------------------------------------------------------------------------------- | ----------------------------- |
 | `GAP_MS`           | 250   | silence between the reveal cut and the first spoken word; the clip starts `leadInMs − GAP` in | **reasoned** (chosen in chat) |
-| `HOLD_MIN_MS`      | 1200  | floor on how long the opener's first frame freezes under the hook text                      | **reasoned** (chosen in chat) |
-| `HOLD_MAX_MS`      | 2500  | ceiling on the same hold                                                                    | **reasoned** (chosen in chat) |
-| `CROSSFADE_FRAMES` | 5     | the opener→talking-head dissolve, centred on the reveal (2 frames before, 3 after)          | **reasoned** (chosen in chat) |
-| `PUNCH_IN_SCALE`   | 1.06  | the talking head's scale after the reveal, held                                             | **reasoned** (chosen in chat) |
-| `PUNCH_IN_MS`      | 300   | how long the punch-in takes from the reveal                                                 | **reasoned** (chosen in chat) |
+| `HOLD_MIN_MS`      | 1200  | floor on how long the opener's first frame freezes under the hook text                        | **reasoned** (chosen in chat) |
+| `HOLD_MAX_MS`      | 2500  | ceiling on the same hold                                                                      | **reasoned** (chosen in chat) |
+| `CROSSFADE_FRAMES` | 5     | the opener→talking-head dissolve, centred on the reveal (2 frames before, 3 after)            | **reasoned** (chosen in chat) |
+| `PUNCH_IN_SCALE`   | 1.06  | the talking head's scale after the reveal, held                                               | **reasoned** (chosen in chat) |
+| `PUNCH_IN_MS`      | 300   | how long the punch-in takes from the reveal                                                   | **reasoned** (chosen in chat) |
 
 The hold itself is `clamp(readTimeMs(hookText), HOLD_MIN_MS, HOLD_MAX_MS)` — `readTimeMs` is
 `plan-format.ts`'s step-label reading-time guess (400ms + words / 2.5 wps), which its own

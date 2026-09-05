@@ -480,7 +480,8 @@ export async function createBRender(
     if (!opener.active) throw new Error(`opener clip ${opts.openerClipId} is not active`);
     // An opener was made from ONE selfie and ends on that frame; it must be
     // cut against a talking head animated from the same image.
-    if (!sourceImage) throw new Error("an opener clip needs a persona image source, not a composite");
+    if (!sourceImage)
+      throw new Error("an opener clip needs a persona image source, not a composite");
     if (opener.personaImageId !== sourceImage.id) {
       throw new Error(`opener clip ${opts.openerClipId} belongs to a different persona image`);
     }
@@ -488,7 +489,9 @@ export async function createBRender(
     if (problem) throw new Error(problem);
     hookText = opts.hookText!.trim();
     hookTextSafeArea = resolveHookTextSafeArea(
-      opts.hookTextSafeArea === undefined ? undefined : textSafeAreaSchema.parse(opts.hookTextSafeArea),
+      opts.hookTextSafeArea === undefined
+        ? undefined
+        : textSafeAreaSchema.parse(opts.hookTextSafeArea),
       opener.textSafeArea as SafeRect,
     );
   }
