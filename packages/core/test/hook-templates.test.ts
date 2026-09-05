@@ -11,7 +11,7 @@ import {
 import { logger } from "../src/logger";
 import { addPersona, addStructure } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
-import { generateBScript } from "../src/pipelines/copy";
+import { deriveHookText, generateBScript } from "../src/pipelines/copy";
 import { renderPrompt } from "../src/prompts";
 import { createTestDb } from "./helpers/pglite";
 
@@ -87,6 +87,25 @@ describe("b_script prompt rendering", () => {
       expect(text).toContain(`The speaker is ${gender}.`);
     }
   });
+
+  it("carries the {script, hook_text} output contract (v9+)", () => {
+    const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(9);
+    expect(text).toContain('{"script": "...", "hook_text": "..."}');
+    expect(text).toContain("At most 7 Hebrew words and at most 40 characters");
+  });
+});
+
+describe("hook_text prompt rendering", () => {
+  it("resolves to a hook_text version and renders clean", () => {
+    const { text, promptVersion } = renderPrompt("hook_text", {
+      script: "ניסיתי מיליון דברים ושום דבר לא עבד",
+    });
+    expect(promptVersion).toMatch(/^hook_text@v\d+$/);
+    expect(text).toContain("ניסיתי מיליון דברים");
+    expect(text).toContain('{"hook_text": "..."}');
+    expect(text).not.toMatch(/\{\{\w+\}\}/);
+  });
 });
 
 describe("tts_enhance prompt rendering", () => {
@@ -146,6 +165,18 @@ describe("generateBScript (dry-run, real DB)", () => {
     expect(hookTemplates).toHaveLength(HOOK_OPTIONS_PER_GENERATION);
     expect(new Set(hookTemplates).size).toBe(hookTemplates.length);
     for (const template of hookTemplates) expect(HOOK_TEMPLATES).toContain(template);
+  });
+
+  it("records hookText — the first five words of the dry-run script", async () => {
+    const script = await generateBScript(db, { businessId, personaId, structureId });
+    const { hookText } = script.params as { hookText: string };
+    expect(hookText).toBe(script.text.split(" ").slice(0, 5).join(" "));
+    expect(hookText).toBe("חייבת לספר לכם על משהו");
+  });
+
+  it("deriveHookText (dry-run) returns the first five words without a model call", async () => {
+    const text = "ממש מפחיד כמה שהמוצר הזה טוב ניסיתי הכל וזה מה שעבד";
+    expect(await deriveHookText(db, { businessId, text })).toBe("ממש מפחיד כמה שהמוצר הזה");
   });
 
   it("records a b_script prompt_version, with and without pointers", async () => {

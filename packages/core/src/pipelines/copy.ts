@@ -1,11 +1,13 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getConfigValue } from "../appConfig";
-import { recordUsage } from "../budget";
+import { assertBudget, recordUsage } from "../budget";
 import { getEnv, wordsPerSecondSchema } from "../config";
 import type { Db } from "../db";
 import { demos, events, personas, scripts, structures } from "../db/schema";
+import { hookTextError } from "../hook-text";
 import { pickHookTemplates } from "../hook-templates";
+import { PermanentError } from "../jobs/errors";
 import { logger } from "../logger";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
@@ -380,6 +382,27 @@ export async function generateVoScript(
 
 const durationPresetSchema = z.union([z.literal(15), z.literal(30)]);
 
+// Service B's own output contract (v9+). Deliberately NOT `scriptOutput`
+// above: that schema is also what vo_script is parsed with, and a required
+// hook_text there would fail every Service A voiced script that (correctly)
+// has none.
+const bScriptOutput = z.object({ script: z.string(), hook_text: z.string() });
+
+/** DRY_RUN stand-in for the model's hook_text: the script's first five words. */
+function dryRunHookText(script: string): string {
+  return script.trim().split(/\s+/).slice(0, 5).join(" ");
+}
+
+/**
+ * A hook_text outside the caps is a bad generation, never something to trim:
+ * the string is burned into the frame, so nothing here silently shortens it.
+ */
+function assertHookText(hookText: string): string {
+  const problem = hookTextError(hookText);
+  if (problem) throw new PermanentError(problem);
+  return hookText.trim();
+}
+
 export async function generateBScript(
   db: Db,
   opts: {
@@ -435,6 +458,7 @@ export async function generateBScript(
   };
 
   let text: string;
+  let hookText: string;
   let promptVersion: string;
   if (getEnv().DRY_RUN) {
     // Dry-run still renders the template so prompt_version stays traceable and
@@ -443,11 +467,14 @@ export async function generateBScript(
     text =
       "חייבת לספר לכם על משהו שגיליתי השבוע ניסיתי את זה בספקנות מוחלטת ותוך יום " +
       "הבנתי שאין סיכוי שאני חוזרת אחורה זה עושה בדיוק מה שהבטיחו תבדקו בעצמכם";
+    hookText = dryRunHookText(text);
   } else {
-    const result = await callClaude(db, opts.businessId, "b_script", vars, scriptOutput);
+    const result = await callClaude(db, opts.businessId, "b_script", vars, bScriptOutput);
     text = result.object.script;
+    hookText = result.object.hook_text;
     promptVersion = result.promptVersion;
   }
+  hookText = assertHookText(hookText);
 
   const rows = await db
     .insert(scripts)
@@ -458,12 +485,38 @@ export async function generateBScript(
       kind: "b_script",
       text,
       // hookTemplates: the exact openers offered this generation, so a winning
-      // hook can be traced back to its template later.
-      params: { pointers, durationPreset, wordBudget, hookTemplates },
+      // hook can be traced back to its template later. hookText: the DRAFT
+      // on-screen line — the customer edits it in the effect step and the
+      // FINAL string is copied into the render's params (vault 0017).
+      params: { pointers, durationPreset, wordBudget, hookTemplates, hookText },
       promptVersion,
     })
     .returning();
   return rows[0]!;
+}
+
+const hookTextOutput = z.object({ hook_text: z.string() });
+
+/**
+ * Re-derive the on-screen hook text from an edited script: the script goes
+ * in, hook_text comes out, under the caps generateBScript enforces. One
+ * llm_tokens usage row, gated by the platform cap the way tts_enhance is.
+ * Kind-agnostic on purpose — the caller decides which scripts carry one.
+ */
+export async function deriveHookText(
+  db: Db,
+  opts: { businessId: string; text: string },
+): Promise<string> {
+  const vars = { script: opts.text };
+  if (getEnv().DRY_RUN) {
+    // Rendered for the same reason generateBScript renders in DRY_RUN: a
+    // template/vars mismatch must surface in tests, not in production.
+    renderPrompt("hook_text", vars);
+    return dryRunHookText(opts.text);
+  }
+  await assertBudget(db, "llm_tokens");
+  const { object } = await callClaude(db, opts.businessId, "hook_text", vars, hookTextOutput);
+  return assertHookText(object.hook_text);
 }
 
 /**
@@ -528,11 +581,26 @@ async function getReadyDemo(db: Db, demoId: string) {
   return demo;
 }
 
-export async function updateScriptText(db: Db, scriptId: string, text: string): Promise<Script> {
-  // User edits create a NEW row (scripts are immutable once audio references them).
+export async function getScript(db: Db, scriptId: string): Promise<Script> {
   const rows = await db.select().from(scripts).where(eq(scripts.id, scriptId)).limit(1);
-  const original = rows[0];
-  if (!original) throw new Error(`script ${scriptId} not found`);
+  if (!rows[0]) throw new Error(`script ${scriptId} not found`);
+  return rows[0];
+}
+
+/**
+ * User edits create a NEW row (scripts are immutable once audio references
+ * them). `params` is merged over the original row's params in that SAME
+ * insert — there is never a second UPDATE. Kind-agnostic and model-free:
+ * callers derive what the new text implies (deriveHookText for a b_script)
+ * and pass it in.
+ */
+export async function updateScriptText(
+  db: Db,
+  scriptId: string,
+  text: string,
+  params?: Record<string, unknown>,
+): Promise<Script> {
+  const original = await getScript(db, scriptId);
   const inserted = await db
     .insert(scripts)
     .values({
@@ -542,7 +610,7 @@ export async function updateScriptText(db: Db, scriptId: string, text: string): 
       structureId: original.structureId,
       kind: original.kind,
       text,
-      params: original.params as Record<string, unknown>,
+      params: { ...(original.params as Record<string, unknown>), ...params },
       promptVersion: original.promptVersion,
       userEdited: true,
     })

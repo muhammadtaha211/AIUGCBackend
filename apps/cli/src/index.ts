@@ -20,6 +20,7 @@ import {
   createBusiness,
   createDemo,
   createSet,
+  deriveHookText,
   enqueueMissingSections,
   ensureReaperJob,
   generateBenefitCaptions,
@@ -29,6 +30,7 @@ import {
   getDb,
   getEnv,
   getLatestDemoAnalysis,
+  getScript,
   getStepPlan,
   getStorage,
   HEAVY_JOB_TYPES,
@@ -384,10 +386,25 @@ program
   .command("script")
   .command("edit <scriptId>")
   .requiredOption("--text <text>", "edited script text (creates a new immutable row)")
+  .description("edit a script; a b_script also gets its on-screen hook text re-derived")
   .action(
     run(async (scriptId: string, opts: { text: string }) => {
-      const row = await updateScriptText(getDb(), scriptId, opts.text);
+      const db = getDb();
+      const original = await getScript(db, scriptId);
+      // A b_script carries a draft hook_text: re-derive it from the edited
+      // text so the one new row holds both (the row is immutable after).
+      const params =
+        original.kind === "b_script"
+          ? {
+              hookText: await deriveHookText(db, {
+                businessId: original.businessId,
+                text: opts.text,
+              }),
+            }
+          : undefined;
+      const row = await updateScriptText(db, scriptId, opts.text, params);
       console.log(`new script row: ${row.id}`);
+      if (params) console.log(`hook text: ${params.hookText}`);
     }),
   );
 
