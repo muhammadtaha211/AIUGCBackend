@@ -391,6 +391,13 @@ export async function addOpenerClip(
   if (image.kind !== "selfie") {
     throw new Error(`persona image ${opts.personaImageId} is not a selfie (kind: ${image.kind})`);
   }
+  // Same exclusions createBRender applies to the render source: a retired
+  // image and a stranded "pending" placeholder (no "/") can never be animated,
+  // so a clip made from them could never be cut against anything.
+  if (image.retired) throw new Error(`persona image ${opts.personaImageId} is retired`);
+  if (!image.filePath.includes("/")) {
+    throw new Error(`persona image ${opts.personaImageId} never finished uploading`);
+  }
   if (opts.revealAtMs < 0 || opts.revealAtMs > opts.durationMs) {
     throw new Error(`revealAtMs ${opts.revealAtMs} is outside the clip (0..${opts.durationMs})`);
   }

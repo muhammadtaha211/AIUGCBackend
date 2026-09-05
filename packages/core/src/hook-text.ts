@@ -18,6 +18,23 @@ const EMOJI = /\p{Extended_Pictographic}/u;
 /** Hebrew points and cantillation marks — not maqaf (U+05BE) or geresh, which
  *  a plain line may legitimately carry (ב־2026, צ׳יפס). */
 const NIQQUD = /[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/;
+/**
+ * The burnable set — the same class generateHookLines enforces on a hook line
+ * (pipelines/copy.ts, ILLEGAL_HOOK_LINE_CHAR), because this string is burned
+ * the same way: Hebrew, Latin, digits, ASCII punctuation and the typographic
+ * marks that render inside an RTL line. A zero-width joiner or an Arabic
+ * tatweel burns as a stray glyph or corrupts the line invisibly.
+ */
+// Escapes, not literals: a Hebrew range inside a character class reorders in
+// every editor that renders bidi.
+const ILLEGAL_CHAR = new RegExp(
+  "[^" +
+    "\u0020-\u007E" +
+    "\u0590-\u05FF" +
+    "\u2013\u2014\u2018\u2019\u201C\u201D\u2026\u20AA" +
+    "]",
+  "u",
+);
 
 /** Tokens carrying a letter or digit — the same rule plan-format's readTimeMs
  *  counts by, so a spaced dash is not a word. */
@@ -32,7 +49,14 @@ export function hookTextWordCount(text: string): number {
 export function hookTextError(text: string): string | undefined {
   const trimmed = text.trim();
   if (!trimmed) return "hook_text is empty";
+  if (EMOJI.test(trimmed)) return "hook_text contains an emoji";
+  const illegal = ILLEGAL_CHAR.exec(trimmed)?.[0];
+  if (illegal !== undefined) {
+    const hex = illegal.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+    return `hook_text contains an unrenderable character U+${hex}`;
+  }
   const words = hookTextWordCount(trimmed);
+  if (words === 0) return "hook_text has no words";
   if (words > HOOK_TEXT_MAX_WORDS) {
     return `hook_text is ${words} words — the cap is ${HOOK_TEXT_MAX_WORDS}`;
   }
@@ -41,7 +65,6 @@ export function hookTextError(text: string): string | undefined {
     return `hook_text is ${chars} characters — the cap is ${HOOK_TEXT_MAX_CHARS}`;
   }
   if (TRAILING_PUNCTUATION.test(trimmed)) return "hook_text ends with punctuation";
-  if (EMOJI.test(trimmed)) return "hook_text contains an emoji";
   if (NIQQUD.test(trimmed)) return "hook_text contains niqqud";
   return undefined;
 }

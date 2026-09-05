@@ -66,6 +66,16 @@ describe("hookTextError", () => {
     expect(hookTextError("   ")).toMatch(/empty/);
   });
 
+  it("rejects a line with no words, and the characters a hook line may not burn", () => {
+    expect(hookTextError("—")).toMatch(/no words/);
+    // Zero-width space and an Arabic tatweel — the same set copy.ts rejects
+    // on hook lines; both would burn as stray glyphs.
+    expect(hookTextError("מצאתי​דירה")).toMatch(/U\+200B/);
+    expect(hookTextError("כולם עברו לـAI")).toMatch(/U\+0640/);
+    // Latin brand names, digits and ASCII punctuation stay legal.
+    expect(hookTextError("ככה מוחקים את ChatGPT ב-2026")).toBeUndefined();
+  });
+
   it("exports the caps the prompts state", () => {
     expect(HOOK_TEXT_MAX_WORDS).toBe(7);
     expect(HOOK_TEXT_MAX_CHARS).toBe(40);

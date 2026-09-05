@@ -479,9 +479,13 @@ export async function createBRender(
     if (!opener) throw new Error(`opener clip ${opts.openerClipId} not found`);
     if (!opener.active) throw new Error(`opener clip ${opts.openerClipId} is not active`);
     // An opener was made from ONE selfie and ends on that frame; it must be
-    // cut against a talking head animated from the same image.
-    if (!sourceImage)
+    // cut against a talking head animated from the same image. A composite is
+    // what handleLipsync animates whenever one is named — even next to an
+    // explicit persona image — so it can never carry an opener.
+    if (opts.compositeId) {
       throw new Error("an opener clip needs a persona image source, not a composite");
+    }
+    if (!sourceImage) throw new Error("an opener clip needs the persona's default image to exist");
     if (opener.personaImageId !== sourceImage.id) {
       throw new Error(`opener clip ${opts.openerClipId} belongs to a different persona image`);
     }

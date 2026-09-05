@@ -45,7 +45,7 @@ beforeAll(async () => {
 }, 60_000);
 
 describe("padAudioStart", () => {
-  it("prepends the silence: the probed duration grows by the pad", async () => {
+  it("prepends the silence: the probed duration grows by the pad, and the pad is silent", async () => {
     const out = path.join(dir, "mono-padded.mp3");
     const before = await measureDurationMs(mono);
     await padAudioStart(mono, out, 800);
@@ -53,6 +53,15 @@ describe("padAudioStart", () => {
     // mp3 frames are ~26ms, so the encoder may round by a frame either way.
     expect(after - before).toBeGreaterThanOrEqual(800 - 60);
     expect(after - before).toBeLessThanOrEqual(800 + 60);
+
+    // Prepended, not appended: the file opens on silence that ends where the
+    // tone begins. ffmpeg reports the detector's output on stderr.
+    const { stderr } = await exec("ffmpeg", [
+      ...["-hide_banner", "-i", out, "-af", "silencedetect=n=-50dB:d=0.3", "-f", "null", "-"],
+    ]);
+    const silenceEnd = Number(/silence_end: ([\d.]+)/.exec(stderr)?.[1]);
+    expect(silenceEnd).toBeGreaterThanOrEqual(0.74);
+    expect(silenceEnd).toBeLessThanOrEqual(0.9);
   }, 30_000);
 
   it("keeps the codec, sample rate and channel layout of the input", async () => {

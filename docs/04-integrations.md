@@ -239,9 +239,11 @@ keyless (the e2e test relies on this).
   ≈ 25 agorot/s at ₪3.75/$; `GPU_COST_AGOROT_PER_SECOND` maps both tiers to 25. Usage rows
   keep kind `gpu_seconds` and for Service B the quantity is the **padded** length — HeyGen
   generates and bills the output, lead-in included — while the customer's credit quote
-  (`quoteBRender`) stays on the unpadded audio: the lead-in is our cost (~0.2 agorot at 800ms).
+  (`quoteBRender`) stays on the unpadded audio: the lead-in is our cost — ~20 agorot (≈₪0.20) at
+  800ms, and since the usage row rounds the padded length UP to whole seconds it lands per render
+  as 0 or one full 25-agorot second.
   The `MAX_LIPSYNC_SECONDS` runaway guard counts the padded length too. Rows record
-  **`provider = 'heygen'`** (`pipelines/renders.ts:254`): `0019_usage_provider_heygen.sql` added
+  **`provider = 'heygen'`** (`pipelines/renders.ts:313`): `0019_usage_provider_heygen.sql` added
   the enum value and `0020_backfill_heygen_usage.sql` relabelled the 14 real HeyGen rows,
   matching on the 25 agorot/s rate so the 7 genuine fal/InfiniteTalk rows were left alone.
 - **Customer credits are per-second, not flat**: `credit_costs.b_per_second` × the approved VO's

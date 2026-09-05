@@ -8,6 +8,7 @@ import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
+import { TransientError } from "../src/jobs/errors";
 import { DEFAULT_POLL_DEADLINE_SECONDS } from "../src/jobs/poll";
 import { recoverExpiredLeases } from "../src/jobs/queue";
 import { runLane } from "../src/jobs/worker";
@@ -347,6 +348,44 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect((await paramsOf(renderId)).leadInMs).toBe(500);
   });
 
+  it("a submit retried after the pin was written reuses the pinned lead-in, not the current config", async () => {
+    await db.insert(dbSchema.appConfig).values({ key: "lipsync_lead_in_ms", value: 500 });
+    let attempts = 0;
+    const submits: LipsyncSubmitInput[] = [];
+    setLipsyncProvider({
+      async submit(input) {
+        attempts++;
+        // The pin and the padded upload have already happened when HeyGen
+        // answers — this is the crash-between-merge-and-checkpoint window.
+        if (attempts === 1) throw new TransientError("heygen 503");
+        submits.push(input);
+        return { providerJobId: "job_retry" };
+      },
+      async poll() {
+        return { status: "done", videoUrl: "dryrun://lipsync/job_retry.mp4" };
+      },
+    });
+    const usageBefore = (await gpuUsageRows()).length;
+
+    const { renderId, audioId } = await queueBRender();
+    await lanePass(); // submit hop 1: pinned, padded, then the provider failed
+    expect(attempts).toBe(1);
+    expect((await paramsOf(renderId)).leadInMs).toBe(500);
+
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: 1200 })
+      .where(sql`${dbSchema.appConfig.key} = 'lipsync_lead_in_ms'`);
+    await drainAll(); // the retried submit hop, then poll and render
+
+    expect(attempts).toBe(2);
+    expect(submits[0]!.audioUrl).toContain(`audio/${renderId}/vo-padded.mp3`);
+    expect((await paramsOf(renderId)).leadInMs).toBe(500);
+    const usage = (await gpuUsageRows()).slice(usageBefore);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]!.quantity).toBe(Math.ceil(((await audioDurationMs(audioId)) + 500) / 1000));
+  });
+
   it("the runaway guard counts the padded length", async () => {
     setLipsyncProvider({
       async submit() {
@@ -575,6 +614,53 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
       '"timeline":{"holdMs":1600,"revealAbsMs":3200,"lipsyncStartFromMs":550,"captionOffsetMs":3450,',
     );
     expect(props).toContain('"crossfadeFrames":5,"punchInScale":1.06,"punchInMs":300');
+  });
+
+  it("a render lip-synced before the lead-in existed lays out from 0 with the VO from 0", async () => {
+    const { renderId } = await queueBRender();
+    await lanePass(); // submit hop: pinned and padded like any render today
+    // A pre-lead-in row carries no leadInMs at all — strip it before the
+    // poll and render hops, which are what a legacy row goes through.
+    await db.execute(
+      sql`update video_renders set params = params - 'leadInMs' where id = ${renderId}`,
+    );
+    await drainAll();
+
+    const row = await renderRow(renderId);
+    const props = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+    expect(props).toContain(
+      '"timeline":{"holdMs":0,"revealAbsMs":0,"lipsyncStartFromMs":0,"captionOffsetMs":0,',
+    );
+  });
+
+  it("an opener is refused next to a composite, even with a matching explicit image", async () => {
+    const { persona, image, audioId } = await selfiePersona();
+    const opener = await openerFor(image.id);
+    // handleLipsync animates a named composite before any persona image, so
+    // the opener's selfie would never be what the talking head shows.
+    const composite = (
+      await db
+        .insert(dbSchema.composites)
+        .values({
+          businessId,
+          personaId: persona.id,
+          status: "ready",
+          outputPath: "assets/composite/x/out.png",
+          approvedAt: new Date(),
+        })
+        .returning()
+    )[0]!;
+    await expect(
+      createBRender(db, {
+        businessId,
+        audioRenderId: audioId,
+        personaId: persona.id,
+        personaImageId: image.id,
+        compositeId: composite.id,
+        openerClipId: opener.id,
+        hookText: "ניסיתי מיליון דברים",
+      }),
+    ).rejects.toThrow(/not a composite/);
   });
 
   it("a persona whose default is not a selfie is refused; an explicit image bypasses the guard", async () => {

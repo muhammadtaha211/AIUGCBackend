@@ -82,7 +82,7 @@ with no caller in the new flow.
 The opener's safe area is the same idea against a new bank; `reveal_at_ms` is the new field.
 
 **Reasoned:** storing the clip play-ready is what keeps that part of the render deterministic.
-Service B's lipsync output is explicitly non-deterministic (`docs/04-integrations.md:245-246` —
+Service B's lipsync output is explicitly non-deterministic (`docs/04-integrations.md:269-270` —
 HeyGen exposes no seed), so the opener is the one part of a B render that can be byte-identical
 every time, and it stays that way only if the pipeline does no video processing on it.
 
@@ -174,7 +174,7 @@ backfill used to separate the eras, and says why the rate is the only safe discr
 
 So HeyGen is **6× cheaper than InfiniteTalk's original rate and 3× cheaper than its revised rate**
 (150 / 25 = 6; 75 / 25 = 3). Those are the rates the ledger was actually priced at, which is a
-stronger artifact than a price list — and `docs/04-integrations.md:217-218` independently gives
+stronger artifact than a price list — and `docs/04-integrations.md:238-239` independently gives
 HeyGen's list price as $0.0667/s at both 720p and 1080p, ≈25 agorot/s at ₪3.75/$.
 
 **Caveat, stated so it is not over-read:** these are per-second _billing_ rates across 21 real GPU
@@ -185,7 +185,7 @@ small.
 
 | Alternative                                             | Why not                                                                                                                                                                                                                                                                           |
 | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-angle cuts** (several camera angles per script) | N × the non-determinism — HeyGen has no seed (`docs/04:245-246`), so every cut is an independent generation that can differ. Also needs an image set per persona, which the one-background decision above removes.                                                                |
+| **Multi-angle cuts** (several camera angles per script) | N × the non-determinism — HeyGen has no seed (`docs/04:269-270`), so every cut is an independent generation that can differ. Also needs an image set per persona, which the one-background decision above removes.                                                                |
 | **A motion bank per persona** (pre-made motion clips)   | Multiplies by backgrounds — the bank to curate by hand becomes personas × backgrounds × motions.                                                                                                                                                                                  |
 | **Hedra Omnia / Kling video-to-video**                  | Viable, untested, **parked** — not rejected on merit. Both would also need locked decision #12 reopened.                                                                                                                                                                          |
 | **HeyGen `motion_prompt` to produce the opener**        | Timing and camera are **not promptable** — founder, from the HeyGen help center. `motion_prompt` directs gesture and motion; it cannot place a reveal at a known millisecond, which is the one thing the opener needs.                                                            |
@@ -199,7 +199,7 @@ Listed so a later session does not read this note as settling them.
   founder instruction (CLAUDE.md decision #8 amendment, 2026-08-09) still holds and a session may
   not flip it. See [[0004-service-b-config-is-provisional]].
 - **The 30s preset.** It left with InfiniteTalk's frame ceiling. That ceiling is gone
-  (`docs/04-integrations.md:202-204`), so the original reason is spent — but 30s is **not offered
+  (`docs/04-integrations.md:213-215`), so the original reason is spent — but 30s is **not offered
   pending the founder**. Do not re-enable it as a cleanup.
 - **A physical-product service.** Parked as its own thing, not scoped.
 - **Sound under the palm phase.** If it happens it is **attached natively at post time**, per the

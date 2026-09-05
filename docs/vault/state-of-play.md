@@ -354,10 +354,12 @@ does **not** settle. The one measurement it rests on is
 [[heygen-avatar-iv-idles-on-leading-silence]].
 
 The engine is built to it as of 2026-09-05 (queue item 14). The web wizard is not: it still
-shows the image and composite steps 0017 removes, passes no opener, and its `createBRender`
-call now trips the selfie guard for any persona whose default is a standing image — expected
-until item 16, and the reason no live persona should have its default flipped to a selfie
-before the wizard can show one.
+shows the image and composite steps 0017 removes and passes no opener. Its `createBRender`
+call meets the new selfie guard only on the path where the image picker was skipped (a
+persona with zero background images, so the default is resolved); a persona WITH backgrounds
+is posted as an explicit `personaImageId`, which bypasses the guard, and renders a standing
+talking head exactly as before — a standing head next to a selfie card, not an error. Both
+are expected until item 16.
 
 `lipsync_motion_prompt`, `lipsync_resolution` and `auto_release_b` are **still placeholders**
 — 0017 settles the format, not the engine, so

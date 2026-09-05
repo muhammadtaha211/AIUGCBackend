@@ -1,4 +1,8 @@
-import { sampleOpenerTimeline, sampleTimeline } from "@aiugc/remotion/fixtures";
+import {
+  sampleDurationInFrames,
+  sampleOpenerTimeline,
+  sampleTimeline,
+} from "@aiugc/remotion/fixtures";
 import { describe, expect, it } from "vitest";
 import { readTimeMs } from "../src/plan-format";
 import {
@@ -115,7 +119,9 @@ describe("serviceBTimeline — opener", () => {
       punchInScale: PUNCH_IN_SCALE,
       punchInMs: PUNCH_IN_MS,
     };
-    const voMs = sampleTimeline.totalMs;
+    // Derived from the fixture length, not read back off the fixture, so
+    // totalMs is genuinely pinned. 30 is the locked FPS.
+    const voMs = (sampleDurationInFrames / 30) * 1000;
     expect(sampleTimeline).toEqual({
       ...serviceBTimeline({
         hasOpener: false,

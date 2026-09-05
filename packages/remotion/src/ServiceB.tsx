@@ -58,13 +58,18 @@ export const ServiceB: React.FC<ServiceBProps> = ({
   const voFromFrames = msToFrame(timeline.captionOffsetMs);
 
   // The dissolve straddles the reveal: the talking head mounts fadeIn frames
-  // early (and trims that many frames earlier, so the reveal frame still
-  // shows clip time lipsyncStartFromMs) and the opener plays fadeOut frames
-  // past it. Without an opener there is nothing to dissolve from.
-  const fadeIn = hasOpener ? Math.floor(timeline.crossfadeFrames / 2) : 0;
+  // early and trims that many frames earlier, so the reveal frame still shows
+  // clip time lipsyncStartFromMs; the opener plays fadeOut frames past it.
+  // fadeIn is capped by the trim — a lead-in too short to give the clip two
+  // frames before speech (leadInMs under ~300) shortens the pre-reveal half
+  // rather than mounting speech early. Without an opener there is nothing to
+  // dissolve from.
+  const fadeIn = hasOpener
+    ? Math.min(Math.floor(timeline.crossfadeFrames / 2), trimBeforeFrames)
+    : 0;
   const fadeOut = hasOpener ? timeline.crossfadeFrames - fadeIn : 0;
   const talkingHeadFrom = Math.max(0, revealFrames - fadeIn);
-  const talkingHeadTrim = Math.max(0, trimBeforeFrames - (revealFrames - talkingHeadFrom));
+  const talkingHeadTrim = trimBeforeFrames - (revealFrames - talkingHeadFrom);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
