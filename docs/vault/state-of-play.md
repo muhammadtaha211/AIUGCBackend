@@ -306,9 +306,10 @@ this is on the validation sequence (pipeline → outreach samples → self-serve
     `vo_script` untouched. The FINAL hook text is copied into `video_renders.params` at
     enqueue. Verified: core suite + `render:sample:b-opener` rendered for real and its
     frames checked by eye (hold, cut, caption onset). **Not verified**: any CLI command
-    against the live DB — 0032 is still unapplied there, so `bank add-opener` and
-    `render-b --opener` cannot run until it is pushed (reversibility gate; the new
-    project is production).
+    against the live DB. 0032 and 0033 **are applied** there — the founder ran them in the
+    dashboard on 2026-09-05, the ledger reads 24 true + 0020 NULL on the structural layer,
+    and `supabase migration repair --status applied 0032 0033` was run — so
+    `bank add-opener` and `render-b --opener` can run against it now; neither has been.
 15. **Admin registration for the opener bank.** The founder-facing side: upload a
     play-ready clip against a (selfie image × effect) pair, set `reveal_at_ms`, place the
     text safe area. Check [[admin-hook-upload-persona-footgun]] before reusing the Service A
