@@ -163,8 +163,25 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     // Opt-in knobs: absent is the default state, so restore means delete.
     await db
       .delete(dbSchema.appConfig)
-      .where(sql`${dbSchema.appConfig.key} in ('lipsync_motion_prompt', 'lipsync_expressiveness')`);
+      .where(
+        sql`${dbSchema.appConfig.key} in ('lipsync_motion_prompt', 'lipsync_expressiveness', 'lipsync_lead_in_ms')`,
+      );
   });
+
+  async function gpuUsageRows() {
+    return db
+      .select()
+      .from(dbSchema.usageEvents)
+      .where(sql`${dbSchema.usageEvents.kind} = 'gpu_seconds'`);
+  }
+
+  async function audioDurationMs(audioId: string): Promise<number> {
+    const rows = await db
+      .select()
+      .from(dbSchema.audioRenders)
+      .where(sql`${dbSchema.audioRenders.id} = ${audioId}`);
+    return rows[0]!.durationMs!;
+  }
 
   afterAll(async () => {
     setStorage(undefined);
@@ -227,6 +244,85 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(submits[0]!.imageUrl).toContain("persona_image"); // the signed reference image
     expect(submits[0]!.resolution).toBe("1080p"); // the code default, no app_config row
     expect((await paramsOf(renderId)).lipsyncPath).toMatch(/lipsync\.mp4$/);
+  });
+
+  it("submits the lead-in-padded VO, pins leadInMs before submit, and bills the padded length", async () => {
+    const submits: LipsyncSubmitInput[] = [];
+    setLipsyncProvider({
+      async submit(input) {
+        submits.push(input);
+        return { providerJobId: "job_pad" };
+      },
+      async poll() {
+        return { status: "done", videoUrl: "dryrun://lipsync/job_pad.mp4" };
+      },
+    });
+    const usageBefore = (await gpuUsageRows()).length;
+
+    const { renderId, audioId } = await queueBRender();
+    await drainAll();
+
+    // The padded copy under the render's audio key — never the approved mp3.
+    expect(submits).toHaveLength(1);
+    expect(submits[0]!.audioUrl).toContain(`audio/${renderId}/vo-padded.mp3`);
+    // The code default, no app_config row.
+    expect((await paramsOf(renderId)).leadInMs).toBe(800);
+    // HeyGen generates and bills the padded length; the quote stayed unpadded.
+    const usage = (await gpuUsageRows()).slice(usageBefore);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]!.quantity).toBe(Math.ceil((await audioDurationMs(audioId) + 800) / 1000));
+  });
+
+  it("app_config lipsync_lead_in_ms sets the pad, and a later change does not move a pinned render", async () => {
+    await db.insert(dbSchema.appConfig).values({ key: "lipsync_lead_in_ms", value: 500 });
+    setLipsyncProvider({
+      async submit() {
+        return { providerJobId: "job_pin" };
+      },
+      async poll() {
+        return { status: "pending" };
+      },
+    });
+
+    const { renderId } = await queueBRender();
+    await lanePass(); // submit hop only — the job is now polling
+    expect((await paramsOf(renderId)).leadInMs).toBe(500);
+
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: 1200 })
+      .where(sql`${dbSchema.appConfig.key} = 'lipsync_lead_in_ms'`);
+    setLipsyncProvider({
+      async submit() {
+        throw new Error("a pinned render must not resubmit");
+      },
+      async poll() {
+        return { status: "done", videoUrl: "dryrun://lipsync/job_pin.mp4" };
+      },
+    });
+    await makeRunnable();
+    await drainAll();
+    expect((await paramsOf(renderId)).leadInMs).toBe(500);
+  });
+
+  it("the runaway guard counts the padded length", async () => {
+    setLipsyncProvider({
+      async submit() {
+        throw new Error("submit must not be called past the runaway guard");
+      },
+      async poll() {
+        return { status: "pending" };
+      },
+    });
+    const { renderId, audioId } = await queueBRender();
+    // Under the guard unpadded, over it with the 800ms lead-in.
+    await db
+      .update(dbSchema.audioRenders)
+      .set({ durationMs: MAX_LIPSYNC_SECONDS * 1000 - 500 })
+      .where(sql`${dbSchema.audioRenders.id} = ${audioId}`);
+    await drainAll();
+    expect((await lipsyncJob(renderId))!.lastError).toMatch(/runaway-cost guard/);
+    expect((await renderRow(renderId)).status).toBe("failed");
   });
 
   it("render-b --motion-prompt / --expressiveness reach the submit input", async () => {

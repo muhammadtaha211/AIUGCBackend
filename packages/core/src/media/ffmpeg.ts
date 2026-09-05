@@ -226,6 +226,21 @@ export async function atempoStretch(input: string, output: string, tempo: number
 }
 
 /**
+ * Prepend `ms` of digital silence. Re-encoded (a stream copy cannot insert
+ * samples) with the input's sample rate and channel layout kept — ffmpeg
+ * carries both through by default — and the codec chosen by the output
+ * extension, so an mp3 in is an mp3 out and a duration probe of the output
+ * reports input + ms. Feeds the Service B lip-sync: HeyGen Avatar IV idles on
+ * the reference still only while the audio is silent, so the lead-in is what
+ * lets the opener's hard cut land on a frame that still looks like the
+ * reference image (docs/vault/facts/heygen-avatar-iv-idles-on-leading-silence.md).
+ */
+export async function padAudioStart(input: string, output: string, ms: number): Promise<void> {
+  mkdirSync(path.dirname(output), { recursive: true });
+  await run("ffmpeg", ["-y", "-i", input, "-af", `adelay=${Math.round(ms)}:all=1`, output]);
+}
+
+/**
  * The audio from `startMs` to the end, re-encoded for a sample-accurate cut
  * (`-ss` after `-i`; stream copy can only cut on frame boundaries). Feeds the
  * avatar-outro lip-sync, so the cut must land exactly on the word gap.

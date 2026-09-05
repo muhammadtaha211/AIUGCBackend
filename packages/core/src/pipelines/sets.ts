@@ -80,6 +80,12 @@ export interface VariantParams {
   expressiveness?: LipsyncExpressiveness;
   /** The clip Remotion composes: the stored HeyGen output (lipsync.mp4). */
   lipsyncPath?: string;
+  /**
+   * Service B: the silence handleLipsync prepended to the VO before submit,
+   * pinned there so the composition assumes the value HeyGen actually saw —
+   * never the current app_config row.
+   */
+  leadInMs?: number;
   /** Service A voiced: what happens when the VO outlasts the demo (see createSet). */
   outroMode?: "none" | "freeze" | "avatar";
   /** Avatar ending: VO offset (ms) where the outro begins — snapped to a word gap. */

@@ -27,6 +27,7 @@ import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { logger } from "../logger";
 import {
+  padAudioStart,
   probe,
   probeColorTags,
   retagBt709Full,
@@ -71,6 +72,24 @@ export async function lipsyncResolution(db: Db): Promise<LipsyncResolution> {
     "lipsync_resolution",
     lipsyncResolutionSchema,
     DEFAULT_LIPSYNC_RESOLUTION,
+  );
+}
+
+/**
+ * Leading silence prepended to the approved VO before a Service B lip-sync
+ * submit. ~800ms is the ONE value the founder hand-tested — HeyGen Avatar IV
+ * held the reference still through it; the tolerance is unmeasured
+ * (docs/vault/facts/heygen-avatar-iv-idles-on-leading-silence.md). No seed:
+ * a plain app_config row overrides it, no deploy.
+ */
+export const DEFAULT_LIPSYNC_LEAD_IN_MS = 800;
+
+export async function lipsyncLeadInMs(db: Db): Promise<number> {
+  return getConfigValueOr(
+    db,
+    "lipsync_lead_in_ms",
+    z.number().int().nonnegative(),
+    DEFAULT_LIPSYNC_LEAD_IN_MS,
   );
 }
 
@@ -138,7 +157,11 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
 
       // Service A avatar ending: lip-sync only the VO tail past the demo.
       // Slice at the word-gap boundary createSet chose, store the slice, and
-      // submit that. Service B submits the whole approved VO.
+      // submit that. Service B submits the whole approved VO behind a
+      // lead-in of silence. Either way `audioMs` is the length HeyGen will
+      // generate — and bill — so it feeds the runaway guard and the usage
+      // row below. The customer's credit quote stays on the unpadded audio
+      // (quoteBRender): the lead-in is our cost.
       let audioPath = audio.filePath;
       let audioMs = audio.durationMs;
       if (render.service === "a") {
@@ -162,6 +185,35 @@ export async function handleLipsync(job: Job, ctx: JobContext): Promise<JobResul
           await storage.download(audio.filePath, localVo);
           await sliceAudioFrom(localVo, localSlice, params.voSliceMs);
           audioPath = await storage.put("renders", sliceKey, localSlice);
+        }
+      } else {
+        // HeyGen Avatar IV idles on the reference still only while the audio
+        // is silent, and the opener's hard cut needs frame 0 to still look
+        // like the reference. The value is pinned on params BEFORE submit:
+        // Remotion assumes it later, so a config change after this point
+        // must not move it — and a retry of this hop reuses the pinned value.
+        const leadInMs = params.leadInMs ?? (await lipsyncLeadInMs(ctx.db));
+        if (params.leadInMs === undefined) {
+          await mergeParams(ctx.db, videoRenderId, { leadInMs });
+        }
+        audioMs = audio.durationMs + leadInMs;
+        if (leadInMs > 0) {
+          const paddedKey = storageKey({
+            businessId: render.businessId,
+            entity: "audio",
+            id: videoRenderId,
+            filename: "vo-padded.mp3",
+          });
+          if (getEnv().DRY_RUN) {
+            audioPath = await storage.put("renders", paddedKey, Buffer.from("DRY_RUN vo padded"));
+          } else {
+            const padDir = path.join(WORK_DIR, "lipsync", videoRenderId);
+            const localVo = path.join(padDir, "vo.mp3");
+            const localPadded = path.join(padDir, "vo-padded.mp3");
+            await storage.download(audio.filePath, localVo);
+            await padAudioStart(localVo, localPadded, leadInMs);
+            audioPath = await storage.put("renders", paddedKey, localPadded);
+          }
         }
       }
       if (audioMs > MAX_LIPSYNC_SECONDS * 1000) {
