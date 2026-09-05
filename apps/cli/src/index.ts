@@ -616,22 +616,32 @@ persona
     "--kind <kind>",
     "preview|background|selfie — a Service B render from the persona's default needs a selfie (default: background)",
   )
+  .option("--label <he>", "Hebrew label shown in the admin console")
+  .option("--source-image <id>", "the standing image this selfie was derived from (lineage only)")
   .action(
-    run(async (personaId: string, file: string, opts: { default?: boolean; kind?: string }) => {
-      if (opts.kind && !["preview", "background", "selfie"].includes(opts.kind)) {
-        throw new Error(`--kind must be preview, background or selfie (got ${opts.kind})`);
-      }
-      const image = await addPersonaImage(getDb(), {
-        personaId,
-        filePath: file,
-        isDefault: opts.default,
-        kind: opts.kind as "preview" | "background" | "selfie" | undefined,
-      });
-      console.log(`persona image added: ${image.id}${image.isDefault ? " (default)" : ""}`);
-      if (!image.blurDataUrl) {
-        console.log("  (no blur placeholder — ffmpeg missing or bytes did not decode)");
-      }
-    }),
+    run(
+      async (
+        personaId: string,
+        file: string,
+        opts: { default?: boolean; kind?: string; label?: string; sourceImage?: string },
+      ) => {
+        if (opts.kind && !["preview", "background", "selfie"].includes(opts.kind)) {
+          throw new Error(`--kind must be preview, background or selfie (got ${opts.kind})`);
+        }
+        const image = await addPersonaImage(getDb(), {
+          personaId,
+          filePath: file,
+          isDefault: opts.default,
+          kind: opts.kind as "preview" | "background" | "selfie" | undefined,
+          label: opts.label,
+          sourceImageId: opts.sourceImage,
+        });
+        console.log(`persona image added: ${image.id}${image.isDefault ? " (default)" : ""}`);
+        if (!image.blurDataUrl) {
+          console.log("  (no blur placeholder — ffmpeg missing or bytes did not decode)");
+        }
+      },
+    ),
   );
 
 persona
