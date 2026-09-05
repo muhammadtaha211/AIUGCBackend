@@ -37,6 +37,16 @@ One pnpm monorepo, boring-tech throughout:
 - **`DRY_RUN=1` stubs every external provider** with deterministic fakes, so the entire pipeline
   (including alignment, chunking, length fit, QC) runs end-to-end without API keys. The e2e test
   (`packages/core/test/e2e.test.ts`) exercises exactly the founder workflow this way.
+- **The web wizards are thin shells over the same functions.** Service A
+  (`apps/web/src/components/a-wizard`): persona → hook clip → hook studio → demo → step plan →
+  render. Service B (`apps/web/src/components/b-wizard`, vault decision 0017): persona →
+  pointers → script → audio → opener effect → render. Single setting, so B has no image step and
+  no product step: the persona card shows the persona's selfie (`personaSelfie` in
+  `apps/web/src/lib/service-b.ts` — the one resolver for the card, the opener list and the
+  render source), the wizard sends that image's id with the render, and the route refuses
+  anything that is not that persona's live `kind='selfie'` image or an opener made from it.
+  The effect step lists the selfie's active `opener_clips`; the customer's FINAL hook text and
+  placement go into render params at enqueue, never onto the script.
 
 ## Repo layout
 
@@ -57,7 +67,7 @@ packages/core/src/
   budget.ts             rolling-24h spend caps + usage recording
 apps/cli/               `aiugc` — the founder's headless pipeline
 apps/worker/            the production job loop
-apps/web/               placeholder (thin wrapper at launch)
+apps/web/               the customer app — onboarding, /home, the two wizards (see System shape)
 ```
 
 ## Environments

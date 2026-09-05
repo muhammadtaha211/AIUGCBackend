@@ -89,7 +89,9 @@ error params with no code) — see the callback note's Fixed section.
 ## External state — not in the repo
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro plan, Micro
-compute. Migrations 0000–0031 applied, ledger clean. Auth: Email provider on, "Confirm
+compute. Migrations 0000–0033 applied (0032 and 0033 by the founder in the dashboard on
+2026-09-05, then `supabase migration repair --status applied 0032 0033`), ledger clean —
+24 true + 0020 NULL on the structural layer. Auth: Email provider on, "Confirm
 email" OFF, Google enabled. Site URL is `https://tavnit.ai`;
 `https://tavnit.ai/auth/callback` is on the redirect allowlist; the localhost entry was
 kept (founder-verified 2026-09-01). The old project is deleted — org back to $25/month.
@@ -166,9 +168,9 @@ non-sensitive scopes.
    out. **The engine is now built to it** (2026-09-05, queue item 14, commits
    `2d446e6..b6c652a` on `main`, unpushed at the time of writing): b_script v9 + `hook_text`,
    the lead-in, opener + hook text on render params with the selfie guard, the
-   `serviceBTimeline` + opener composition, and the CLI. Still NOT built: admin
-   registration (15) and the B wizard (16) — the web wizard still shows the image and
-   composite steps and passes no opener. Three engine decisions were made in the chat
+   `serviceBTimeline` + opener composition, and the CLI. **The B wizard (16) is built too**
+   (2026-09-05, branch `service-b-wizard`, unmerged and unpushed at the time of writing).
+   Still NOT built: admin registration (15). Three engine decisions were made in the chat
    that built it, all in the code and its comments: the talking head stays muted and the
    approved mp3 plays from `captionOffsetMs` (the repo's measured glitch reason won over
    the brief); the `kind='selfie'` guard applies to any render resolved from a persona
@@ -283,12 +285,16 @@ non-sensitive scopes.
       (`auth.ts:69-85`), `0005:48` (`auth.ts:78`).
 
 **Items 13–16 are the Service B revamp**, built to
-[[0017-service-b-single-setting-selfie-talking-head]] and in that order — each is the
-input to the next. They sit **after** everything above, including the cheap docs-only
-item 12, because Service B is explicitly parked until Service A is finished and none of
-this is on the validation sequence (pipeline → outreach samples → self-serve app).
+[[0017-service-b-single-setting-selfie-talking-head]]. The planned order was 13 → 14 →
+15 → 16; it went 13 → 14 → 16, and 15 (admin) is now the one left, after the wizard. They
+sit **after** everything above, including the cheap docs-only item 12, because Service B
+is explicitly parked until Service A is finished and none of this is on the validation
+sequence (pipeline → outreach samples → self-serve app).
 
-13. **Schema 0032 for the selfie format.** The migration 0017 implies: a `selfie` value
+13. ~~**Schema 0032 for the selfie format.**~~ — **done**: 0032 (`selfie` kind,
+    `opener_clips`) and 0033 (its RLS) are in the tree and applied on live (see the
+    Supabase paragraph above and item 14). The original brief, kept for the record: a
+    `selfie` value
     for `persona_images.kind` (today `'preview' | 'background'`,
     `packages/core/src/db/schema.ts:286` — and **not only a migration**: the two literals
     are enforced at `apps/admin/src/lib/admin.ts:65` and used to filter at
@@ -310,14 +316,38 @@ this is on the validation sequence (pipeline → outreach samples → self-serve
     dashboard on 2026-09-05, the ledger reads 24 true + 0020 NULL on the structural layer,
     and `supabase migration repair --status applied 0032 0033` was run — so
     `bank add-opener` and `render-b --opener` can run against it now; neither has been.
-15. **Admin registration for the opener bank.** The founder-facing side: upload a
-    play-ready clip against a (selfie image × effect) pair, set `reveal_at_ms`, place the
-    text safe area. Check [[admin-hook-upload-persona-footgun]] before reusing the Service A
-    upload path — it has a known footgun that this would inherit.
-16. **The B wizard.** `persona → pointers → script → audio → opener effect → render`.
-    Removes today's image and composite steps, adds the effect step with the customer-
-    editable hook text. Largest of the four and the only one a customer sees, so it goes
-    last.
+15. **Admin registration for the opener bank — still open, and now after the wizard.**
+    The founder-facing side: upload a play-ready clip against a (selfie image × effect)
+    pair, set `reveal_at_ms`, place the text safe area. Check
+    [[admin-hook-upload-persona-footgun]] before reusing the Service A upload path — it
+    has a known footgun that this would inherit. Until it lands, `aiugc bank add-opener`
+    (and `persona add-image --kind selfie`) is the only way a clip reaches the bank, and
+    the wizard's effect step lists exactly what that registered.
+16. ~~**The B wizard.**~~ — **built 2026-09-05** on branch `service-b-wizard` (unmerged,
+    unpushed): `persona → pointers → script → audio → opener effect → render`, one flow
+    for every business. Commits, in order: `e4cb08e` this file's 0032 correction;
+    `de49627` the six steps, the pointers step, hook text on the script and edit
+    responses; `44f4af5` `personaSelfie`, `personaThumbnail(service)`,
+    `loadPersonaCatalog(service)`, `?withSelfie=1`, and the `/home` preload (B's card set
+    only — both wizards are one click away); `10da873` the effect step and
+    `GET /api/personas/[personaId]/openers`; `f6333c9` the render body (`personaImageId`
+    required, `compositeId` gone) and the route's selfie and opener checks; `8e37d2c`
+    tests; `3832a0b` the removal; `6754f35` prettier. Verified: web typecheck and the 8
+    web test files (249 tests); the new routes compile on the dev server (401 JSON
+    unauthenticated). **Not verified**: a wizard walk in a browser (no session in the
+    in-app browser) and any render through it — the effect step has never listed a real
+    clip, because none is registered (item 15, or `bank add-opener`).
+    **Deleted surfaces** (delete, don't guard — the a-sets precedent): `StepImage`,
+    `StepComposite`, `POST /api/businesses/[businessId]/composites`,
+    `GET|approve|regenerate /api/composites/[id]`, `GET /api/personas/[personaId]/images`,
+    `requireComposite`, `canUseComposites` / `photoError` / `PHOTO_EXTENSIONS` /
+    `MAX_PHOTO_BYTES` / `backgroundImages`, `PersonaImage` / `CompositeState` /
+    `clientPhotoError`, and the two composite lines in `api-errors.ts`, with their tests.
+    **Resurrection pointer: `8e37d2c`** is the last commit that carries all of them.
+    `packages/core`'s composites pipeline and schema are untouched (a physical-product
+    service is parked as its own thing — 0017). One behaviour change outside B:
+    `GET /api/personas` without a flag now returns the A catalog (hook-matrix personas),
+    not the whole catalog — nothing called it bare.
 
 ## Open decisions
 
@@ -355,13 +385,14 @@ opener clip, where the final hook text lives, HeyGen stays) and lists what it de
 does **not** settle. The one measurement it rests on is
 [[heygen-avatar-iv-idles-on-leading-silence]].
 
-The engine is built to it as of 2026-09-05 (queue item 14). The web wizard is not: it still
-shows the image and composite steps 0017 removes and passes no opener. Its `createBRender`
-call meets the new selfie guard only on the path where the image picker was skipped (a
-persona with zero background images, so the default is resolved); a persona WITH backgrounds
-is posted as an explicit `personaImageId`, which bypasses the guard, and renders a standing
-talking head exactly as before — a standing head next to a selfie card, not an error. Both
-are expected until item 16.
+The engine is built to it as of 2026-09-05 (queue item 14), and so is the web wizard (item
+16, branch `service-b-wizard`, unmerged). The wizard never resolves a default: the B catalog
+lists only personas with a usable selfie, the card shows that selfie, its id travels with
+the render, and `POST /renders` refuses an image that is not that persona's live
+`kind='selfie'` row — so core's selfie guard (which covers only a resolved default) is never
+the thing standing between a customer and a standing head. Rendering through the wizard has
+not been exercised; the effect step has never shown a real opener clip because none is
+registered yet (item 15).
 
 `lipsync_motion_prompt`, `lipsync_resolution` and `auto_release_b` are **still placeholders**
 — 0017 settles the format, not the engine, so
@@ -412,8 +443,10 @@ Recorded because each cost real time, and each came from asserting rather than c
   describing a plan read identically to docs describing reality.
 - `words_per_second`: old project 2.1 (calibration output), migration seed 2.2 (a
   guess). 2.1 is correct.
-- There are **34** migrations, 0000–0033. The live project is still at 0031 — 0032
-  (`opener_clips`) and 0033 (its RLS) are in the tree, unapplied.
+- There are **34** migrations, 0000–0033, all applied on live: 0032 (`opener_clips`) and
+  0033 (its RLS) went in from the dashboard on 2026-09-05 and the ledger was repaired to
+  match. This file said "still at 0031 / unapplied" in three places until then — the
+  vault-correction commit `e4cb08e` fixed item 14, and the step-7 docs commit the other two.
 - `scripts/verify-migration-ledger.sql` cannot fully pass on a fresh database — two
   checks assert old-project row IDs. Structural layer: 24 true and one NULL for 0020;
   the NULL is correct. (It was 22 before the 0032/0033 rows were added.)
