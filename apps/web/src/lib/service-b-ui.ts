@@ -138,6 +138,14 @@ export type Persona = {
   imageUrl: string;
   /** Tiny base64 WebP for next/image placeholder="blur"; null on old rows. */
   blurDataUrl?: string | null;
+  /**
+   * Service B catalog only: the persona_images row the card shows — its
+   * selfie, resolved server-side by personaSelfie — and therefore the exact
+   * image the render must animate. The wizard sends this id with the render;
+   * nothing on the customer path resolves a default at render time. Absent on
+   * the Service A catalog, whose thumbnail is a portrait and renders nothing.
+   */
+  personaImageId?: string;
 };
 
 /**

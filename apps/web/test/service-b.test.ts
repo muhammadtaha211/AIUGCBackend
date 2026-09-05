@@ -78,23 +78,23 @@ describe("persona image selection (thumbnail + background picker)", () => {
   it("prefers kind='preview' over the default image", () => {
     const preview = image({ kind: "preview" });
     const fallback = image({ isDefault: true });
-    expect(personaThumbnail([fallback, preview])).toBe(preview);
+    expect(personaThumbnail([fallback, preview], "a")).toBe(preview);
   });
 
   it("falls back to is_default, then to the newest image", () => {
     const older = image({ createdAt: new Date("2026-01-01") });
     const newer = image({ createdAt: new Date("2026-02-01") });
     const fallback = image({ isDefault: true });
-    expect(personaThumbnail([older, fallback, newer])).toBe(fallback);
-    expect(personaThumbnail([older, newer])).toBe(newer);
-    expect(personaThumbnail([])).toBeUndefined();
+    expect(personaThumbnail([older, fallback, newer], "a")).toBe(fallback);
+    expect(personaThumbnail([older, newer], "a")).toBe(newer);
+    expect(personaThumbnail([], "a")).toBeUndefined();
   });
 
   it("never picks a stranded 'pending' placeholder", () => {
     const pending = image({ kind: "preview", filePath: "pending" });
     const stored = image({});
-    expect(personaThumbnail([pending, stored])).toBe(stored);
-    expect(personaThumbnail([pending])).toBeUndefined();
+    expect(personaThumbnail([pending, stored], "a")).toBe(stored);
+    expect(personaThumbnail([pending], "a")).toBeUndefined();
   });
 
   it("backgroundImages keeps only stored kind='background' rows", () => {
@@ -108,8 +108,8 @@ describe("persona image selection (thumbnail + background picker)", () => {
     const retiredPreview = image({ kind: "preview", retired: true });
     const retiredDefault = image({ isDefault: true, retired: true });
     const stored = image({});
-    expect(personaThumbnail([retiredPreview, retiredDefault, stored])).toBe(stored);
-    expect(personaThumbnail([retiredPreview])).toBeUndefined();
+    expect(personaThumbnail([retiredPreview, retiredDefault, stored], "a")).toBe(stored);
+    expect(personaThumbnail([retiredPreview], "a")).toBeUndefined();
     expect(backgroundImages([image({ retired: true }), stored])).toEqual([stored]);
   });
 });

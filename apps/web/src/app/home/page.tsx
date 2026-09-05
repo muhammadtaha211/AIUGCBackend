@@ -26,7 +26,10 @@ const PRELOAD_COUNT = 3;
  * service cards warms the wizard's RSC payload, but never its images — these
  * hints put the bytes in the HTTP cache before the user picks a service. The
  * srcset comes from getImageProps with the picker's exact geometry, so the
- * browser preloads the same optimizer URL the picker will request.
+ * browser preloads the same optimizer URL the picker will request. Both
+ * wizards are one click away, and their catalogs differ (A: portrait
+ * thumbnails of hook-matrix personas; B: the selfie of selfie personas), so
+ * this warms B's card set only — one set of hints, not two.
  *
  * Split so the most-clicked route gets a SHAPED skeleton: the segment-level
  * /home/loading.tsx must stay shape-agnostic (it fronts every child nav),
@@ -82,7 +85,7 @@ async function HomeContent() {
   const hasQuestionnaire = selected.questionnaire != null;
 
   // Best-effort: a failed catalog read only costs the warm cache.
-  const catalog = await loadPersonaCatalog().catch(() => []);
+  const catalog = await loadPersonaCatalog("b").catch(() => []);
   const preloads = catalog
     .filter((persona) => isStableCatalogUrl(persona.imageUrl))
     .slice(0, PRELOAD_COUNT)

@@ -24,7 +24,7 @@ import { postJson, useJobPoll } from "@/lib/use-api";
 type StepRenderProps = {
   businessId: string;
   personaId: string;
-  /** The background chosen in the image step; absent -> persona default. */
+  /** The selfie the persona card showed (Persona.personaImageId). */
   personaImageId?: string;
   scriptId: string;
   audioId: string;

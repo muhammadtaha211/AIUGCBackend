@@ -206,6 +206,7 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
               <StepRender
                 businessId={businessId}
                 personaId={persona.id}
+                personaImageId={persona.personaImageId}
                 scriptId={script.scriptId}
                 audioId={audio.id}
                 render={render}

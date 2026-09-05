@@ -35,7 +35,7 @@ export default async function NewBRenderPage() {
   const gate = await wizardGate(selected.id);
 
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
-  const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
+  const personaCatalog = await loadPersonaCatalog("b").catch(() => undefined);
 
   return (
     <div className="flex flex-col items-center px-6 pb-16">

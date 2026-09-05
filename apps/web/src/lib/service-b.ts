@@ -36,36 +36,62 @@ export function isUuid(value: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Persona image selection (avatar-card thumbnail + background picker)
+// Persona image selection (avatar-card thumbnail + the Service B render source)
 // ---------------------------------------------------------------------------
 
-type PersonaImageRow = { kind: string; filePath: string; retired: boolean };
+type StoredImage = { kind: string; filePath: string; retired: boolean };
+type PersonaImageRow = StoredImage & { isDefault: boolean; createdAt: Date };
+
+/** Which wizard is asking: the two pick different images off the same rows. */
+export type CatalogService = "a" | "b";
 
 /**
  * A stranded "pending" placeholder (no "/" in file_path — a crashed
  * `persona add-image`) must never be signed, and a retired image is out of
  * every picker. Same guards as core's lipsync default-image resolution.
  */
-function isUsable(image: PersonaImageRow): boolean {
+function isUsable(image: StoredImage): boolean {
   return image.filePath.includes("/") && !image.retired;
 }
 
-/** Avatar-card thumbnail preference: kind='preview' -> is_default -> newest. */
-export function personaThumbnail<
-  T extends PersonaImageRow & { isDefault: boolean; createdAt: Date },
->(images: T[]): T | undefined {
-  const newestFirst = [...images]
-    .filter(isUsable)
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+function newestFirst<T extends PersonaImageRow>(images: T[]): T[] {
+  return [...images].filter(isUsable).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+}
+
+/**
+ * THE Service B image of a persona: the default kind='selfie' image, else the
+ * newest usable selfie, else none. One resolver for the card thumbnail, the
+ * opener list and the render source, so all three land on the same row —
+ * the card can never show one selfie while the render animates another. A
+ * persona without one is not renderable by Service B and is excluded from
+ * its catalog. is_default only breaks ties between selfies; a standing
+ * default is never picked.
+ */
+export function personaSelfie<T extends PersonaImageRow>(images: T[]): T | undefined {
+  const selfies = newestFirst(images).filter((image) => image.kind === "selfie");
+  return selfies.find((image) => image.isDefault) ?? selfies[0];
+}
+
+/**
+ * Avatar-card thumbnail. Service A (the hook-gallery speaker): kind='preview'
+ * -> is_default -> newest — the card is a portrait, nothing renders from it.
+ * Service B: personaSelfie, because the card IS the render source.
+ */
+export function personaThumbnail<T extends PersonaImageRow>(
+  images: T[],
+  service: CatalogService,
+): T | undefined {
+  if (service === "b") return personaSelfie(images);
+  const usable = newestFirst(images);
   return (
-    newestFirst.find((image) => image.kind === "preview") ??
-    newestFirst.find((image) => image.isDefault) ??
-    newestFirst[0]
+    usable.find((image) => image.kind === "preview") ??
+    usable.find((image) => image.isDefault) ??
+    usable[0]
   );
 }
 
 /** The background picker shows only stored, non-retired kind='background' images. */
-export function backgroundImages<T extends PersonaImageRow>(images: T[]): T[] {
+export function backgroundImages<T extends StoredImage>(images: T[]): T[] {
   return images.filter((image) => image.kind === "background" && isUsable(image));
 }
 

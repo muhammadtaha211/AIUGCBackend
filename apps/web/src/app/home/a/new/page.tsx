@@ -37,7 +37,7 @@ export default async function NewARenderPage() {
   const gate = await wizardGate(selected.id);
 
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
-  const personaCatalog = await loadPersonaCatalog({ withHookClips: true }).catch(() => undefined);
+  const personaCatalog = await loadPersonaCatalog("a").catch(() => undefined);
 
   return (
     <div className="flex flex-col items-center px-6 pb-8">
