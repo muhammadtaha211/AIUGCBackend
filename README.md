@@ -4,8 +4,9 @@ Hebrew-first ad-generation platform for Israeli advertisers. Two services on one
 
 - **Service A** — 3–4s pre-rendered hook clip (curated bank) with a burned Hebrew hook line, hard cut
   into the customer's phone-filmed demo, with burned Hebrew captions and optional Hebrew voiceover.
-- **Service B** — UGC-style ads with consistent AI personas (ElevenLabs V3 + InfiniteTalk lip-sync),
-  released through a founder QC gate.
+- **Service B** — UGC-style ads with consistent AI personas: a single-setting selfie talking head
+  (ElevenLabs V3 + HeyGen lip-sync behind ~800ms of leading silence), optionally opened by a
+  founder-made clip with the hook text burned over it, released through a founder QC gate.
 
 All output: vertical 9:16, 1080×1920, H.264 MP4. Everything user-facing is Hebrew.
 
@@ -37,5 +38,23 @@ pnpm test                   # jobs/migrations smoke tests run against in-process
 pnpm --filter @aiugc/cli dev -- --help
 ```
 
-See [docs/06-cli-first.md](docs/06-cli-first.md) for the founder workflow and the path from CLI to
-the self-serve HTTP layer.
+## CLI
+
+`pnpm --filter @aiugc/cli dev <command>` (`DRY_RUN=1` stubs every external provider). The
+founder workflow, end to end, is in [docs/06-cli-first.md](docs/06-cli-first.md); the Service B
+half in one breath:
+
+```sh
+aiugc persona add-image <personaId> selfie.jpg --kind selfie        # the render source
+aiugc bank add-opener --persona-image <imageId> --effect hand_cover --label "כף יד" \
+  --file opener.mp4 --reveal-at-ms 1600 --safe-area '{"x":60,"y":900,"w":960,"h":300}'
+aiugc copy b-script --business <bizId> --persona <id> --structure <id>   # script + draft hook text
+aiugc script edit <scriptId> --text "..."                            # re-derives the hook text
+aiugc tts <scriptId> && aiugc work --once && aiugc audio approve <audioId>
+aiugc render-b --business <bizId> --audio <audioId> --persona <personaId> \
+  --opener <clipId> --hook-text "ככה מזמינים בלי לחכות"
+aiugc work --once && aiugc qc list
+```
+
+See [docs/06-cli-first.md](docs/06-cli-first.md) for the full founder workflow and the path from
+CLI to the self-serve HTTP layer.

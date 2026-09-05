@@ -64,7 +64,11 @@ lane-level on purpose: a stuck job can only be healed from outside the job syste
 - **HeyGen lipsync / fal composites (GPU + image gen)**: the expensive ones. `handleLipsync`
   writes `state.providerJobId` via `checkpoint()` **immediately after submission acceptance**;
   any retry/crash resumes polling that id instead of resubmitting a paid GPU run
-  (`generate_composite` does the same). A pending poll past the deadline (`assertPollDeadline`,
+  (`generate_composite` does the same). For Service B the submit hop first pins
+  `params.leadInMs` (app_config `lipsync_lead_in_ms`, default 800) on the render and uploads
+  the lead-in-padded `vo-padded.mp3`; a retry of that hop reuses the pinned value, so the
+  file HeyGen gets and the layout Remotion assumes can never disagree
+  ([04-integrations.md](04-integrations.md) §HeyGen). A pending poll past the deadline (`assertPollDeadline`,
   app_config `poll_deadline_seconds`) fails the job permanently through the normal
   terminal-failure path — render failed, credits refunded.
 - **Remotion/ffmpeg**: local and idempotent by construction (same inputs → overwrite outputs).
@@ -79,7 +83,7 @@ Each handler enqueues its successor in code — no DAG engine:
 Service A silent : ingest_demo ─▶ ready ─┐ (user picks copy + set)      ┌▶ released
                                           └ createSet ─▶ render_video ──┘
 Service A voiced : synth_tts ─▶ audio ready ─▶ ⏸ HUMAN: approveAudio ⏸ ─▶ createSet ─▶ render_video
-Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (submit ▶ poll…) ─▶ render_video ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
+Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (pad lead-in ▶ submit ▶ poll…) ─▶ render_video (opener + timeline) ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
 Daily            : janitor (retention only) · billing_renewals — idempotency key = date, so each runs ONCE a day (the server worker re-attempts the enqueue hourly; `aiugc work` doesn't)
 Continuous       : reap_dead_renders — singleton (constant key), reschedules itself every ~60s; ensured at both server-worker and `aiugc work` startup
 ```

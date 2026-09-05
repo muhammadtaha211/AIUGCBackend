@@ -1,24 +1,33 @@
 ---
 type: fact
 status: verified
-verified: 2026-08-25
-method: "ls prompts/*/ ; packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23)"
+verified: 2026-09-05
+method: "ls prompts/*/ (2026-09-05); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run)"
 source: code
 ---
 
-# Nine prompt families, and the newest file always wins
+# Ten prompt families, and the newest file always wins
 
 ```
 analyze_demo          v1 v2 v3                              (latest v3)
-b_script              v1..v8                                (latest v8)
+b_script              v1..v9                                (latest v9, new 2026-09-05)
 benefit_captions      v1 v2                                 (latest v2)
 content_policy        v1                                    (latest v1)
 group_analysis_states v1                                    (latest v1, new 2026-08-25)
 hook_lines            v1..v7                                (latest v7)
+hook_text             v1                                    (latest v1, new 2026-09-05)
 plan_demo_steps       v1..v13                               (latest v13)
 tts_enhance           v1..v4                                (latest v4)
 vo_script             v1..v7                                (latest v7)
 ```
+
+b_script v9 (2026-09-05) is v8's vars and rules with the output changed to the JSON
+`{script, hook_text}`; the brief that asked for it cited "v2 from v1", the second time a brief
+named a stale version (the first was the tts_enhance v3 regression, 2026-08-05). It was
+caught by the stop-and-report rule, not by luck: v1's var set has `target_seconds`, which nothing
+passes. `hook_text` v1 is the re-derivation prompt (`deriveHookText`) for an edited script.
+**Neither has run in production yet** — the first live `copy b-script` after 2026-09-05 stamps
+`b_script@v9`.
 
 v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
 the file landed while two pre-change workers were live, and both had to be restarted in the same

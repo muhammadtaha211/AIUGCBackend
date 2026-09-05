@@ -7,7 +7,7 @@ Read this fully before every task. It is the source of truth for what this proje
 A Hebrew-first AI UGC ad platform for advertisers targeting Israelis. Two services, one shared pipeline:
 
 - **Service A — Hook+Demo generator.** One fixed format: a 3–4s pre-rendered AI reaction clip (from a closed, founder-curated bank) with a Hebrew text hook burned on → hard cut into the customer's own phone-filmed product demo → burned Hebrew RTL captions (v1: evenly-paced benefit captions) → optional Hebrew voiceover (ElevenLabs V3), loosely synced by design. Variants are the product: one demo + one questionnaire → many ads (hook clip × hook line × copy angle × voiced/silent).
-- **Service B — Hebrew AI avatar ads.** 5–10 consistent generated personas, each a small bank of reference images + a pinned ElevenLabs voice. A render is a single reference image (the persona's default, an explicit image, or an approved product-in-hand composite) + ElevenLabs V3 audio through HeyGen lip-sync — talking head with product B-roll cutaways (reuses A's engine). Self-serve behind a founder QC-release gate; DFY tier on the same pipeline.
+- **Service B — Hebrew AI avatar ads.** 5–10 consistent generated personas, each with a pinned ElevenLabs voice and one default **selfie** reference image (`persona_images.kind='selfie'` — a render resolved from a persona's default refuses any other kind; an explicit image or an approved composite bypasses that). A render is that single image + ElevenLabs V3 audio, with ~800ms of leading silence prepended (`lipsync_lead_in_ms`, pinned on `params.leadInMs`), through HeyGen lip-sync — a single-setting selfie talking head, optionally behind a founder-made **opener clip** from the `opener_clips` bank (one per selfie image × effect, play-ready) with the customer's **hook text** burned over its palm phase and a hard cut at `reveal_at_ms`. `b_script` (v9+) emits the draft `hook_text` with the script; the FINAL string is copied into render params at enqueue, never pointed at (vault 0017). The layout is `serviceBTimeline` in core; the composition only converts to frames. Self-serve behind a founder QC-release gate; DFY tier on the same pipeline. Format decision: `docs/vault/decisions/0017-service-b-single-setting-selfie-talking-head.md`.
 
 Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre-validation. The founder is user #1, generating cold-outreach sample ads via CLI before the UI exists. Full product/backend spec: `docs/00-overview.md` and the numbered docs it indexes — read them when a task touches pipeline logic, schema, or external services.
 
@@ -107,6 +107,7 @@ pnpm lint / format  # prettier
 pnpm --filter @aiugc/remotion studio          # live composition preview (Remotion Studio)
 pnpm --filter @aiugc/remotion render:sample   # ServiceB sample -> packages/remotion/out/sample.mp4
 pnpm --filter @aiugc/remotion render:sample:a # ServiceA sample (hook line + avatar ending) -> out/sample-a.mp4
+pnpm --filter @aiugc/remotion render:sample:b-opener # ServiceB opener effect over a lavfi clip -> out/sample-b-opener.mp4
 ```
 
 Never run `next build` while `pnpm dev` is serving — the build replaces `.next` and the running dev server starts 404-ing its own chunks (symptom: every page stuck on its loading state, DevTools shows 404 on `/_next/static/chunks/main-app.js`). Recovery: stop dev, delete `apps/web/.next`, start dev again.
@@ -114,7 +115,7 @@ Never run `next build` while `pnpm dev` is serving — the build replaces `.next
 The CLI is `apps/cli` and it is where the pipeline is driven today:
 
 ```
-pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI: demo, plan, copy, set, bank, qc, work, status, costs
+pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI: demo, plan, copy, script, set, bank (add-hook, add-opener), persona, render-b, qc, work, status, costs
 pnpm --filter @aiugc/worker dev        # the job loop (also `aiugc work --once` to drain and exit)
 
 npx -y supabase db push --db-url <session-pooler url>   # apply new migrations (see below)

@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-04
+updated: 2026-09-05
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -163,12 +163,24 @@ non-sensitive scopes.
 5. **The Service B format is decided** — recorded 2026-09-04 in
    [[0017-service-b-single-setting-selfie-talking-head]]. Single-setting selfie talking
    head, optional founder-made opener clip, no image or composite step, physical products
-   out. **What is not in the repo is all of it**: nothing has been built to this note. The
-   tree still holds the pre-revamp Service B. Queue items 13–16 are the build.
+   out. **The engine is now built to it** (2026-09-05, queue item 14, six commits
+   `2d446e6..` on `main`, unpushed at the time of writing): b_script v9 + `hook_text`,
+   the lead-in, opener + hook text on render params with the selfie guard, the
+   `serviceBTimeline` + opener composition, and the CLI. Still NOT built: admin
+   registration (15) and the B wizard (16) — the web wizard still shows the image and
+   composite steps and passes no opener. Three engine decisions were made in the chat
+   that built it, all in the code and its comments: the talking head stays muted and the
+   approved mp3 plays from `captionOffsetMs` (the repo's measured glitch reason won over
+   the brief); the `kind='selfie'` guard applies to any render resolved from a persona
+   DEFAULT, opener or not (explicit image / composite bypass); a non-selfie default throws
+   a plain Hebrew `Error`.
 6. **HeyGen Avatar IV needs leading silence to start on a still frame** — recorded in
    [[heygen-avatar-iv-idles-on-leading-silence]]. Founder hand test, ~800ms, one persona,
-   by eye. **Not in the repo**: no code prepends silence today, and the tolerance is
-   unmeasured — 800ms was the only value tried. Re-measure before the opener ships.
+   by eye. **Now in the repo** (2026-09-05): `handleLipsync` prepends
+   `app_config.lipsync_lead_in_ms` (code default 800, no seed) and pins it on
+   `params.leadInMs`. The tolerance is still unmeasured — 800ms remains the only value
+   tried, and `GAP_MS = 250` was chosen next to it, not measured with it
+   ([[service-b-timeline-constants]]). Re-measure on the first real opener render.
 7. **[[0004-service-b-config-is-provisional]] is superseded by 0017** — but only on the
    open-endedness. The three keys stay placeholders until the engine work lands and
    `auto_release_b` still may not be flipped by a session. The note is marked
@@ -286,16 +298,16 @@ this is on the validation sequence (pipeline → outreach samples → self-serve
     bank's registration constraints are the precedent, and its `text_safe_area`-required-at-
     register rule is the one to copy. Reversibility gate applies — the new project is
     production now.
-14. **The engine: core + Remotion + CLI.** The `b_script` v9 that emits `hook_text`
-    alongside `script` (the output contract is one field today —
-    `packages/core/src/pipelines/copy.ts:264` — and that zod schema is **shared with
-    `vo_script`**, passed to `callClaude` at both `:349` and `:447`, so `b_script` needs
-    its own schema rather than a widened `scriptOutput`), re-derivation on script edit, the opener
-    composition in `packages/remotion`, the hard cut at `reveal_at_ms`, and **the final
-    hook text copied into render params** rather than pointed at — 0017 §"Why the final
-    string is copied, not pointed at" is the reason, and it is the one part of this that
-    is a correctness rule rather than a preference. Plus the CLI commands to drive it
-    before any UI exists.
+14. ~~**The engine: core + Remotion + CLI.**~~ — **built 2026-09-05**, one commit per step
+    (`2d446e6` b_script v9 + hook_text, `cccd5f8` lead-in, `9635c7d` render params +
+    selfie guard, `cf4a3ad` timeline + composition, `3996446` CLI, then the docs commit).
+    `b_script` parses with its own `bScriptOutput`; `scriptOutput` stays shared with
+    `vo_script` untouched. The FINAL hook text is copied into `video_renders.params` at
+    enqueue. Verified: core suite + `render:sample:b-opener` rendered for real and its
+    frames checked by eye (hold, cut, caption onset). **Not verified**: any CLI command
+    against the live DB — 0032 is still unapplied there, so `bank add-opener` and
+    `render-b --opener` cannot run until it is pushed (reversibility gate; the new
+    project is production).
 15. **Admin registration for the opener bank.** The founder-facing side: upload a
     play-ready clip against a (selfie image × effect) pair, set `reveal_at_ms`, place the
     text safe area. Check [[admin-hook-upload-persona-footgun]] before reusing the Service A
@@ -341,8 +353,11 @@ opener clip, where the final hook text lives, HeyGen stays) and lists what it de
 does **not** settle. The one measurement it rests on is
 [[heygen-avatar-iv-idles-on-leading-silence]].
 
-Nothing in the engine has been built to it. What exists in the tree is the pre-revamp Service
-B, including the image and composite steps 0017 removes.
+The engine is built to it as of 2026-09-05 (queue item 14). The web wizard is not: it still
+shows the image and composite steps 0017 removes, passes no opener, and its `createBRender`
+call now trips the selfie guard for any persona whose default is a standing image — expected
+until item 16, and the reason no live persona should have its default flipped to a selfie
+before the wizard can show one.
 
 `lipsync_motion_prompt`, `lipsync_resolution` and `auto_release_b` are **still placeholders**
 — 0017 settles the format, not the engine, so
