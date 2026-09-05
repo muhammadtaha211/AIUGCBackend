@@ -10,9 +10,9 @@ import { postJson } from "@/lib/use-api";
 type StepScriptProps = {
   businessId: string;
   personaId: string;
+  /** The brief from the pointers step — posted with the generation, shown as a recap. */
   pointers: string;
-  setPointers: (value: string) => void;
-  /** Only 15s ships: a 30s word budget can outrun the lipsync frame ceiling. */
+  /** Only 15s ships — see the duration note in b-wizard.tsx. */
   duration: 15;
   script: ScriptState | null;
   setScript: (script: ScriptState | null) => void;
@@ -24,12 +24,17 @@ type StepScriptProps = {
   onFatal: (message: string) => void;
 };
 
-/** Step 3: generate the Hebrew script, edit it within the word budget. */
+/**
+ * Step 3: generate the Hebrew script, edit it within the word budget. The
+ * generation is an explicit click, not a mount effect — the pointers step
+ * leads here, and a paid call on navigation would be spent by every back-and-
+ * forth. The response also carries the draft on-screen hook text, which this
+ * step keeps in state for the effect step and does not display.
+ */
 export function StepScript({
   businessId,
   personaId,
   pointers,
-  setPointers,
   duration,
   script,
   setScript,
@@ -48,14 +53,17 @@ export function StepScript({
   async function generate() {
     setError(null);
     setBusy("generate");
-    const result = await postJson<{ scriptId: string; text: string; wordBudget?: number }>(
-      `/api/businesses/${businessId}/scripts`,
-      {
-        personaId,
-        durationPreset: duration,
-        ...(pointers.trim() ? { pointers: pointers.trim() } : {}),
-      },
-    );
+    const brief = pointers.trim();
+    const result = await postJson<{
+      scriptId: string;
+      text: string;
+      wordBudget?: number;
+      hookText?: string;
+    }>(`/api/businesses/${businessId}/scripts`, {
+      personaId,
+      durationPreset: duration,
+      ...(brief ? { pointers: brief } : {}),
+    });
     setBusy(null);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
@@ -65,6 +73,8 @@ export function StepScript({
       scriptId: result.body.scriptId,
       text: result.body.text,
       wordBudget: result.body.wordBudget,
+      hookText: result.body.hookText,
+      pointers: brief,
     });
     setEditedText(result.body.text);
   }
@@ -75,7 +85,7 @@ export function StepScript({
 
     setError(null);
     setBusy("save");
-    const result = await postJson<{ scriptId: string; text: string }>(
+    const result = await postJson<{ scriptId: string; text: string; hookText?: string }>(
       `/api/scripts/${script.scriptId}/text`,
       { text: editedText },
     );
@@ -89,35 +99,24 @@ export function StepScript({
     onContinue(latest);
   }
 
-  // Phase 1: no script yet — pointers + duration, then generate.
+  // Phase 1: no script yet — the brief as a recap, then generate on click.
   if (script === null) {
     return (
       <div>
         <StepHeader
-          title="מה הדמות צריכה להגיד?"
-          sub="כמה מילים על מה חשוב להדגיש, ואנחנו נכתוב תסריט בעברית לפי שאלון העסק."
+          title="התסריט"
+          sub="נכתוב תסריט בעברית לפי שאלון העסק וההנחיות שלכם. אפשר לערוך אותו אחר כך."
           onBack={onBack}
         />
 
-        <div className="mt-6 space-y-6">
-          <TextAreaField
-            label="מה הדמות צריכה להגיד?"
-            hint="לא חובה"
-            rows={3}
-            maxLength={500}
-            placeholder="למשל: לפתוח עם המשלוח המהיר, להזכיר את ההנחה של החודש"
-            value={pointers}
-            onChange={(event) => setPointers(event.target.value)}
-          />
-
-          {/* No concrete duration: the 15s preset is a word budget (15 ×
-              app_config.words_per_second), and words_per_second is uncalibrated —
-              measured narration runs ~2.1–3.8 words/sec, so real output spans
-              roughly 9–16s. Name a number only once it's calibrated per voice. */}
-          <p className="text-sm text-ink/60">
-            הסרטון יהיה קצר וקולע, באורך שמתאים לפרסום ברשתות החברתיות.
-          </p>
-        </div>
+        {pointers.trim() && (
+          <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white px-5 py-4">
+            <p className="text-[13px] text-ink/55">ההנחיות שלכם</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-ink/80">
+              {pointers.trim()}
+            </p>
+          </div>
+        )}
 
         {error && (
           <p role="alert" className="mt-6 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
@@ -195,17 +194,6 @@ export function StepScript({
           צור מחדש
         </Button>
       </div>
-
-      <button
-        type="button"
-        onClick={() => {
-          setScript(null);
-          setError(null);
-        }}
-        className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
-      >
-        שינוי ההנחיות ויצירת תסריט חדש
-      </button>
     </div>
   );
 }

@@ -1,51 +1,51 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
+import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
 import {
+  pointersChanged,
   wizardSteps,
   type AudioState,
-  type CompositeState,
   type Persona,
-  type PersonaImage,
   type RenderState,
   type ScriptState,
   type WizardStep,
 } from "@/lib/service-b-ui";
 import { StepAudio } from "./step-audio";
-import { StepComposite } from "./step-composite";
-import { StepImage } from "./step-image";
 import { StepPersona } from "./step-persona";
+import { StepPointers } from "./step-pointers";
 import { StepRender } from "./step-render";
 import { StepScript } from "./step-script";
 
 const STEP_TITLES: Record<WizardStep, string> = {
   persona: "בחירת דמות",
-  image: "בחירת רקע",
-  composite: "תמונת מוצר",
+  pointers: "מה הדמות אומרת?",
   script: "תסריט",
   audio: "הקלטה",
+  effect: "אפקט פתיחה",
   render: "יצירת הסרטון",
 };
 
 type BWizardProps = {
   businessId: string;
   businessName: string;
-  category: string;
   /** Catalog server-rendered by the page shell — undefined falls back to the
    *  mount fetch (and its retry UI) via /api/personas. */
   initialCatalog?: Persona[];
 };
 
 /**
- * The Service B wizard: persona -> (product photo) -> script -> audio ->
- * render. State is client-side only — a refresh restarts the wizard. Back
- * navigation is allowed until the render is enqueued.
+ * The Service B wizard: persona -> pointers -> script -> audio -> opener
+ * effect -> render (vault 0017). Single setting: the persona's selfie is the
+ * render source, so there is no image step and no product step. State is
+ * client-side only — a refresh restarts the wizard. Back navigation is
+ * allowed until the render is enqueued.
  */
-export function BWizard({ businessId, businessName, category, initialCatalog }: BWizardProps) {
-  const steps = wizardSteps(category);
+export function BWizard({ businessId, businessName, initialCatalog }: BWizardProps) {
+  const steps = wizardSteps();
   const [stepIndex, setStepIndex] = useState(0);
   /** 403/404 from any call: the business/resource is gone for this session. */
   const [fatal, setFatal] = useState<string | null>(null);
@@ -53,8 +53,6 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
   /** The persona catalog, cached here so re-entering the step skips the fetch. */
   const [personaCatalog, setPersonaCatalog] = useState<Persona[] | null>(initialCatalog ?? null);
   const [persona, setPersona] = useState<Persona | null>(null);
-  const [personaImage, setPersonaImage] = useState<PersonaImage | null>(null);
-  const [composite, setComposite] = useState<CompositeState | null>(null);
   const [pointers, setPointers] = useState("");
   // 30s is not offered. The original reason — its word budget could produce audio
   // past InfiniteTalk's frame ceiling, failing after the customer paid for TTS —
@@ -69,33 +67,30 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
   const [render, setRender] = useState<RenderState | null>(null);
 
   const step = steps[stepIndex]!;
-  /** Which way the user last moved — a self-skipping step leaves the same way. */
-  const lastNav = useRef<"back" | "next">("next");
-  const goBack = () => {
-    lastNav.current = "back";
-    setStepIndex((index) => Math.max(0, index - 1));
-  };
-  const goNext = () => {
-    lastNav.current = "next";
-    setStepIndex((index) => Math.min(steps.length - 1, index + 1));
-  };
-  /** Rail jump — backwards only. lastNav "back" so a self-skipping step exits backwards too. */
+  const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
+  const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
+  /** Rail jump — backwards only. */
   const jumpTo = (index: number) => {
-    if (index >= stepIndex) return;
-    lastNav.current = "back";
-    setStepIndex(index);
+    if (index < stepIndex) setStepIndex(index);
   };
+
+  /** Everything generated for the previous persona is that persona's — drop it. */
+  function discardScript() {
+    setScript(null);
+    setEditedText("");
+    setAudio(null);
+  }
 
   /** A different persona invalidates everything generated for the previous one. */
   function selectPersona(next: Persona) {
-    if (persona && persona.id !== next.id) {
-      setPersonaImage(null);
-      setComposite(null);
-      setScript(null);
-      setEditedText("");
-      setAudio(null);
-    }
+    if (persona && persona.id !== next.id) discardScript();
     setPersona(next);
+  }
+
+  /** Leaving the pointers step: a changed brief means the held script is stale. */
+  function continueFromPointers() {
+    if (script && pointersChanged(script, pointers)) discardScript();
+    goNext();
   }
 
   /** Leaving the script step: later steps must use the latest scriptId only. */
@@ -108,10 +103,11 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
    * The audio step resolved the spoken script through audio_renders.script_id
    * and it isn't the one we were carrying. Take it whole — B posts this
    * scriptId to the render, so a stale one would caption a different script
-   * than the voice speaks.
+   * than the voice speaks. The pointers it was written from are unknown to the
+   * server; keep ours so the pointers step does not read the swap as an edit.
    */
   function adoptResolvedScript(resolved: ScriptState) {
-    setScript(resolved);
+    setScript({ ...resolved, pointers: script?.pointers });
     setEditedText(resolved.text);
   }
 
@@ -158,27 +154,12 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
               />
             )}
 
-            {step === "image" && persona && (
-              <StepImage
-                personaId={persona.id}
-                selected={personaImage}
-                onSelect={setPersonaImage}
-                onSkip={() => (lastNav.current === "back" ? goBack() : goNext())}
+            {step === "pointers" && persona && (
+              <StepPointers
+                pointers={pointers}
+                setPointers={setPointers}
                 onBack={goBack}
-                onContinue={goNext}
-                onFatal={setFatal}
-              />
-            )}
-
-            {step === "composite" && persona && (
-              <StepComposite
-                businessId={businessId}
-                personaId={persona.id}
-                composite={composite}
-                setComposite={setComposite}
-                onBack={goBack}
-                onContinue={goNext}
-                onFatal={setFatal}
+                onContinue={continueFromPointers}
               />
             )}
 
@@ -187,7 +168,6 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
                 businessId={businessId}
                 personaId={persona.id}
                 pointers={pointers}
-                setPointers={setPointers}
                 duration={duration}
                 script={script}
                 setScript={setScript}
@@ -211,14 +191,23 @@ export function BWizard({ businessId, businessName, category, initialCatalog }: 
               />
             )}
 
+            {/* Placeholder until StepEffect lands (step 3 of this series):
+                no opener is offered, so the render goes without one. */}
+            {step === "effect" && (
+              <div>
+                <StepHeader title={STEP_TITLES.effect} onBack={goBack} />
+                <Button type="button" size="lg" className="mt-7 w-full" onClick={goNext}>
+                  המשך בלי אפקט
+                </Button>
+              </div>
+            )}
+
             {step === "render" && persona && script && audio && (
               <StepRender
                 businessId={businessId}
                 personaId={persona.id}
-                personaImageId={personaImage?.id}
                 scriptId={script.scriptId}
                 audioId={audio.id}
-                compositeId={composite?.approved ? composite.id : undefined}
                 render={render}
                 setRender={setRender}
                 onBack={goBack}

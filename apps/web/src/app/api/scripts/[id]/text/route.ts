@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertWithinWordBudget, getDb, updateScriptText } from "@aiugc/core";
+import { assertWithinWordBudget, deriveHookText, getDb, updateScriptText } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireScript, requireUser } from "@/lib/api";
 import { scriptTextSchema } from "@/lib/service-b";
 
@@ -7,6 +7,11 @@ import { scriptTextSchema } from "@/lib/service-b";
  * "Write it myself" / post-generation edit. Scripts are immutable rows — the
  * edit creates a NEW row and the response carries its id. The word-budget
  * validator runs first so an oversized script never reaches TTS.
+ *
+ * A b_script also gets its draft on-screen hook text re-derived from the
+ * edited text (one more LLM call, under the llm_tokens cap) so the one new
+ * row holds both — the same merge `aiugc script edit` does. Hook-line and
+ * VO-script rows (Service A) carry no hook text and skip it.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -25,12 +30,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // ceiling). A Service A VO may run long on purpose — the overshoot
     // becomes a freeze/avatar ending, chosen in the shape display.
     const { wordBudget } = found.script.params as { wordBudget?: number };
-    if (found.script.kind === "b_script" && wordBudget) {
+    const isBScript = found.script.kind === "b_script";
+    if (isBScript && wordBudget) {
       assertWithinWordBudget(body.data.text, wordBudget);
     }
 
-    const edited = await updateScriptText(db, id, body.data.text);
-    return NextResponse.json({ scriptId: edited.id, text: edited.text });
+    const merge = isBScript
+      ? {
+          hookText: await deriveHookText(db, {
+            businessId: found.script.businessId,
+            text: body.data.text,
+          }),
+        }
+      : undefined;
+    const edited = await updateScriptText(db, id, body.data.text, merge);
+    return NextResponse.json({ scriptId: edited.id, text: edited.text, hookText: merge?.hookText });
   } catch (err) {
     return coreErrorResponse(err);
   }

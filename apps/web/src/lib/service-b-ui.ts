@@ -106,20 +106,19 @@ export function renderStageIndex(status: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Wizard steps (visibility is category-driven)
+// Wizard steps
 // ---------------------------------------------------------------------------
 
-export type WizardStep = "persona" | "image" | "composite" | "script" | "audio" | "render";
+export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" | "render";
 
 /**
- * The composite step exists only for physical products; it is skippable inside
- * the step itself. The image (background) step skips itself silently when the
- * persona has no background images.
+ * One flow for every business: the persona is one look in one setting, so
+ * there is no image step, and physical products are out of Service B, so
+ * there is no composite step (vault 0017). The effect step is where the
+ * customer picks an opener clip — or none — and edits the on-screen hook text.
  */
-export function wizardSteps(category: string | undefined): WizardStep[] {
-  return category === "physical_product"
-    ? ["persona", "image", "composite", "script", "audio", "render"]
-    : ["persona", "image", "script", "audio", "render"];
+export function wizardSteps(): WizardStep[] {
+  return ["persona", "pointers", "script", "audio", "effect", "render"];
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +219,8 @@ export type AudioPollResult = {
   scriptId: string;
   text: string;
   wordBudget?: number;
+  /** The resolved script's draft hook text (b_script rows only). */
+  hookText?: string;
   /**
    * The pointer was rewritten after the audio was enqueued. A property of the
    * rows, not of anything the client sent, so it stays true for every later
@@ -274,7 +275,23 @@ export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-export type ScriptState = { scriptId: string; text: string; wordBudget?: number };
+export type ScriptState = {
+  scriptId: string;
+  text: string;
+  wordBudget?: number;
+  /**
+   * The DRAFT on-screen hook text the script call emitted (params.hookText).
+   * A seed for the effect step only — the customer's edit lives in wizard
+   * state and the FINAL string goes into render params, never back onto the
+   * script (vault 0017).
+   */
+  hookText?: string;
+  /**
+   * The pointers this script was generated from. A script step reached with
+   * different pointers is stale — see pointersChanged.
+   */
+  pointers?: string;
+};
 
 /** Only a real content change warrants a save (and therefore a new script row). */
 export function needsTextSave(savedText: string, editedText: string): boolean {
@@ -282,14 +299,30 @@ export function needsTextSave(savedText: string, editedText: string): boolean {
 }
 
 /**
+ * The pointers step sits before the script step now, so a customer can walk
+ * back and change the brief under an existing script. Changed pointers mean a
+ * new script — the same rule the old "שינוי ההנחיות ויצירת תסריט חדש" link
+ * enforced when both lived on one step. Whitespace-only edits don't count.
+ */
+export function pointersChanged(script: Pick<ScriptState, "pointers">, pointers: string): boolean {
+  return (script.pointers ?? "").trim() !== pointers.trim();
+}
+
+/**
  * POST /api/scripts/[id]/text creates a NEW immutable row — every later step
- * (audio, render) must reference the returned id, never the original.
+ * (audio, render) must reference the returned id, never the original. A
+ * b_script edit re-derives the draft hook text on the server; it rides along.
  */
 export function withEditedText(
   script: ScriptState,
-  response: { scriptId: string; text: string },
+  response: { scriptId: string; text: string; hookText?: string },
 ): ScriptState {
-  return { ...script, scriptId: response.scriptId, text: response.text };
+  return {
+    ...script,
+    scriptId: response.scriptId,
+    text: response.text,
+    hookText: response.hookText ?? script.hookText,
+  };
 }
 
 // ---------------------------------------------------------------------------

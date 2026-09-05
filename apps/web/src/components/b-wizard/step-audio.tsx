@@ -115,6 +115,7 @@ export function StepAudio({
           scriptId: body.scriptId,
           text: body.text,
           wordBudget: body.wordBudget,
+          hookText: body.hookText,
         });
       }
     },

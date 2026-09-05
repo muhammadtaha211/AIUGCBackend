@@ -15,7 +15,8 @@ import { scriptRequestSchema } from "@/lib/service-b";
  * word budget through core's generateBScript. The structure skeleton is not
  * part of the HTTP contract — the server picks a random active one from the
  * founder-curated bank. Generation is synchronous (one LLM call), so the
- * response carries the finished script.
+ * response carries the finished script — and the DRAFT on-screen hook text
+ * the same call emitted (b_script v9+), which seeds the effect step.
  */
 export async function POST(
   request: Request,
@@ -49,8 +50,8 @@ export async function POST(
       pointers: body.data.pointers,
       durationPreset: body.data.durationPreset,
     });
-    const { wordBudget } = script.params as { wordBudget?: number };
-    return NextResponse.json({ scriptId: script.id, text: script.text, wordBudget });
+    const { wordBudget, hookText } = script.params as { wordBudget?: number; hookText?: string };
+    return NextResponse.json({ scriptId: script.id, text: script.text, wordBudget, hookText });
   } catch (err) {
     return coreErrorResponse(err);
   }

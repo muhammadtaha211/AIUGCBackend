@@ -50,22 +50,14 @@ describe("script edit threading (immutable rows)", () => {
   });
 });
 
-describe("wizardSteps (category gating)", () => {
-  it("physical products get the composite step", () => {
-    expect(wizardSteps("physical_product")).toEqual([
-      "persona",
-      "image",
-      "composite",
-      "script",
-      "audio",
-      "render",
-    ]);
+describe("wizardSteps (one flow, vault 0017)", () => {
+  it("is persona -> pointers -> script -> audio -> effect -> render for every business", () => {
+    expect(wizardSteps()).toEqual(["persona", "pointers", "script", "audio", "effect", "render"]);
   });
 
-  it("every other category skips it", () => {
-    for (const category of ["app_or_digital", "local_service", "other", "", undefined]) {
-      expect(wizardSteps(category)).toEqual(["persona", "image", "script", "audio", "render"]);
-    }
+  it("has no image step and no composite step", () => {
+    expect(wizardSteps()).not.toContain("image");
+    expect(wizardSteps()).not.toContain("composite");
   });
 });
 
