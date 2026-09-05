@@ -163,8 +163,8 @@ non-sensitive scopes.
 5. **The Service B format is decided** — recorded 2026-09-04 in
    [[0017-service-b-single-setting-selfie-talking-head]]. Single-setting selfie talking
    head, optional founder-made opener clip, no image or composite step, physical products
-   out. **The engine is now built to it** (2026-09-05, queue item 14, six commits
-   `2d446e6..` on `main`, unpushed at the time of writing): b_script v9 + `hook_text`,
+   out. **The engine is now built to it** (2026-09-05, queue item 14, commits
+   `2d446e6..b6c652a` on `main`, unpushed at the time of writing): b_script v9 + `hook_text`,
    the lead-in, opener + hook text on render params with the selfie guard, the
    `serviceBTimeline` + opener composition, and the CLI. Still NOT built: admin
    registration (15) and the B wizard (16) — the web wizard still shows the image and
@@ -300,7 +300,8 @@ this is on the validation sequence (pipeline → outreach samples → self-serve
     production now.
 14. ~~**The engine: core + Remotion + CLI.**~~ — **built 2026-09-05**, one commit per step
     (`2d446e6` b_script v9 + hook_text, `cccd5f8` lead-in, `9635c7d` render params +
-    selfie guard, `cf4a3ad` timeline + composition, `3996446` CLI, then the docs commit).
+    selfie guard, `cf4a3ad` timeline + composition, `3996446` CLI, `c925898` docs; then `0d7a19e` prettier over the new
+    lines and `b6c652a` the six-lens review's fixes).
     `b_script` parses with its own `bScriptOutput`; `scriptOutput` stays shared with
     `vo_script` untouched. The FINAL hook text is copied into `video_renders.params` at
     enqueue. Verified: core suite + `render:sample:b-opener` rendered for real and its
