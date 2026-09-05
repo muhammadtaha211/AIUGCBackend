@@ -16,13 +16,16 @@ import {
   requireUser,
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
-import { renderRequestSchema } from "@/lib/service-b";
-import { pickActiveHead } from "@/lib/service-b-ui";
+import { renderOpenerError, renderRequestSchema, renderSourceError } from "@/lib/service-b";
+import { hookTextFieldError, pickActiveHead } from "@/lib/service-b-ui";
 
 /**
- * Create a Service B render. Core enforces the hard gates (approved audio,
- * approved composite takes precedence as the lipsync source); the route only
- * verifies the referenced rows belong to this business, then enqueues.
+ * Create a Service B render. Core enforces the approved-audio gate and the
+ * opener/hook-text pairing; the route verifies the referenced rows belong to
+ * this business, holds the card's image to the format (this persona's selfie,
+ * stored, not retired — createBRender takes an explicit id on trust) and
+ * checks the opener is that image's, then enqueues with the FINAL hook text
+ * copied into params (vault 0017).
  */
 export async function POST(
   request: Request,
@@ -39,7 +42,7 @@ export async function POST(
 
     const body = renderRequestSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
-    const { scriptId, audioId, personaId, personaImageId, compositeId } = body.data;
+    const { scriptId, audioId, personaId, personaImageId, openerClipId, hookText } = body.data;
 
     const scriptRows = await db
       .select()
@@ -61,25 +64,43 @@ export async function POST(
       return jsonError(400, "האודיו לא שייך לתסריט הזה.");
     }
 
-    if (compositeId) {
-      const compositeRows = await db
-        .select()
-        .from(schema.composites)
-        .where(eq(schema.composites.id, compositeId))
+    const imageRows = await db
+      .select({
+        personaId: schema.personaImages.personaId,
+        kind: schema.personaImages.kind,
+        filePath: schema.personaImages.filePath,
+        retired: schema.personaImages.retired,
+      })
+      .from(schema.personaImages)
+      .where(eq(schema.personaImages.id, personaImageId))
+      .limit(1);
+    const sourceProblem = renderSourceError(imageRows[0], personaId);
+    if (sourceProblem) return jsonError(sourceProblem.status, sourceProblem.error);
+
+    if (openerClipId !== undefined) {
+      const openerRows = await db
+        .select({
+          personaImageId: schema.openerClips.personaImageId,
+          active: schema.openerClips.active,
+        })
+        .from(schema.openerClips)
+        .where(eq(schema.openerClips.id, openerClipId))
         .limit(1);
-      if (!compositeRows[0]) return jsonError(404, "תמונת הדמות עם המוצר לא נמצאה.");
-      if (compositeRows[0].businessId !== businessId) {
-        return jsonError(403, "תמונת הדמות עם המוצר לא שייכת לעסק הזה.");
-      }
+      const openerProblem = renderOpenerError(openerRows[0], personaImageId);
+      if (openerProblem) return jsonError(openerProblem.status, openerProblem.error);
+      // The same rule core refuses on at enqueue, answered in Hebrew here.
+      const textProblem = hookTextFieldError(hookText!);
+      if (textProblem) return jsonError(400, textProblem);
     }
 
-    // createBRender rejects an unknown image or one of a different persona.
     const render = await createBRender(db, {
       businessId,
       audioRenderId: audioId,
       personaId,
       personaImageId,
-      compositeId,
+      openerClipId,
+      hookText,
+      hookTextSafeArea: body.data.hookTextSafeArea,
     });
     return NextResponse.json({ renderId: render.id });
   } catch (err) {

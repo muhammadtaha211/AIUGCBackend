@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { questionnaireSchema } from "@aiugc/core";
+import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 
 /**
  * Pure, unit-testable parts of the Service B HTTP layer: request body schemas,
- * the ownership decision, the composite category guard, and product photo
+ * the persona image and opener selection, the render-source checks, the
+ * ownership decision, the composite category guard, and product photo
  * validation. Route handlers (src/app/api) wire these to auth + DB.
  */
 
@@ -19,14 +21,28 @@ export const scriptRequestSchema = z.object({
 
 export const scriptTextSchema = z.object({ text: z.string().trim().min(1) });
 
-export const renderRequestSchema = z.object({
-  scriptId: z.string().uuid(),
-  audioId: z.string().uuid(),
-  personaId: z.string().uuid(),
-  /** Explicit persona reference image chosen in the background step. */
-  personaImageId: z.string().uuid().optional(),
-  compositeId: z.string().uuid().optional(),
-});
+export const renderRequestSchema = z
+  .object({
+    scriptId: z.string().uuid(),
+    audioId: z.string().uuid(),
+    personaId: z.string().uuid(),
+    /** The selfie the persona card showed (Persona.personaImageId). Required:
+     *  nothing on the customer path resolves a default at render time. */
+    personaImageId: z.string().uuid(),
+    /** An opener clip of that selfie, with the FINAL on-screen line and,
+     *  when the customer moved it, the rect it sits in. */
+    openerClipId: z.string().uuid().optional(),
+    hookText: z.string().trim().min(1).optional(),
+    hookTextSafeArea: textSafeAreaSchema.optional(),
+  })
+  // The opener and its text come together or not at all, and a rect without
+  // an opener has nothing to sit on — the same rule createBRender throws on,
+  // caught here as a 400 instead.
+  .refine((body) =>
+    body.openerClipId === undefined
+      ? body.hookText === undefined && body.hookTextSafeArea === undefined
+      : body.hookText !== undefined,
+  );
 
 /** Pre-confirm quote lookup — the render's price comes from the approved audio. */
 export const renderPreviewRequestSchema = z.object({ audioId: z.string().uuid() });
@@ -105,6 +121,50 @@ export function personaOpeners<
   const selfie = personaSelfie(images);
   if (!selfie) return [];
   return clips.filter((clip) => clip.active && clip.personaImageId === selfie.id);
+}
+
+// ---------------------------------------------------------------------------
+// Render source checks (POST /renders): the card's image, and its opener
+// ---------------------------------------------------------------------------
+
+export type RouteRefusal = { status: 400 | 404; error: string };
+
+/**
+ * Why `image` cannot be the source of a Service B render for `personaId`.
+ * createBRender takes an explicit personaImageId on trust — its selfie guard
+ * covers only a resolved default, so the founder's CLI can render any image —
+ * which makes the customer route the place where the card's image is held to
+ * the format: this persona's, a selfie, stored, not retired.
+ */
+export function renderSourceError(
+  image: { personaId: string; kind: string; filePath: string; retired: boolean } | undefined,
+  personaId: string,
+): RouteRefusal | undefined {
+  if (!image) return { status: 404, error: "תמונת הדמות לא נמצאה." };
+  if (image.personaId !== personaId) {
+    return { status: 400, error: "התמונה לא שייכת לדמות הזאת." };
+  }
+  if (image.kind !== "selfie") {
+    return { status: 400, error: "אפשר ליצור סרטון רק מתמונת סלפי של הדמות." };
+  }
+  if (image.retired) return { status: 400, error: "התמונה הזאת הוסרה — בחרו את הדמות מחדש." };
+  if (!image.filePath.includes("/")) {
+    return { status: 400, error: "תמונת הדמות עדיין לא מוכנה — נסו שוב בעוד רגע." };
+  }
+  return undefined;
+}
+
+/** Why `opener` cannot play in front of a talking head animated from `personaImageId`. */
+export function renderOpenerError(
+  opener: { personaImageId: string; active: boolean } | undefined,
+  personaImageId: string,
+): RouteRefusal | undefined {
+  if (!opener) return { status: 404, error: "אפקט הפתיחה לא נמצא." };
+  if (!opener.active) return { status: 400, error: "אפקט הפתיחה הזה כבר לא זמין — בחרו אחר." };
+  if (opener.personaImageId !== personaImageId) {
+    return { status: 400, error: "אפקט הפתיחה לא שייך לתמונת הדמות הזאת." };
+  }
+  return undefined;
 }
 
 /** The background picker shows only stored, non-retired kind='background' images. */

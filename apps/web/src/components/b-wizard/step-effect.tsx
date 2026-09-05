@@ -16,21 +16,20 @@ import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
-import { hookTextFieldError, type OpenerClip, type ScriptState } from "@/lib/service-b-ui";
+import { hookTextFieldError, type OpenerClip } from "@/lib/service-b-ui";
 import { apiFetch } from "@/lib/use-api";
 
 type StepEffectProps = {
   personaId: string;
-  /** The script whose draft hook text seeds the field. */
-  script: ScriptState;
   /** The persona's opener clips, held by the wizard so re-entering skips the fetch. */
   openers: OpenerClip[] | null;
   setOpeners: (openers: OpenerClip[] | null) => void;
   /** The chosen clip; null = "ללא אפקט", the default. */
   opener: OpenerClip | null;
   setOpener: (opener: OpenerClip | null) => void;
-  /** The customer's on-screen line; null = untouched, seed from the script. */
-  hookText: string | null;
+  /** The on-screen line as the wizard resolves it: the customer's edit, else
+   *  the script call's draft (b-wizard's effectText). */
+  hookText: string;
   setHookText: (value: string) => void;
   /** The customer-placed rect; null = untouched (the clip's safe area). */
   rect: SafeRect | null;
@@ -52,7 +51,6 @@ type StepEffectProps = {
  */
 export function StepEffect({
   personaId,
-  script,
   openers,
   setOpeners,
   opener,
@@ -88,8 +86,7 @@ export function StepEffect({
     setOpener(next);
   }
 
-  const text = hookText ?? script.hookText ?? "";
-  const textError = opener ? hookTextFieldError(text) : undefined;
+  const textError = opener ? hookTextFieldError(hookText) : undefined;
   const shownRect = opener
     ? resolveHookTextSafeArea(rect ?? undefined, opener.textSafeArea)
     : undefined;
@@ -98,7 +95,7 @@ export function StepEffect({
   const belowFloor =
     shownRect !== undefined &&
     textError === undefined &&
-    fittedFontSize(text, shownRect, measure) < HOOK_LINE_LEGIBLE_MIN_PX;
+    fittedFontSize(hookText, shownRect, measure) < HOOK_LINE_LEGIBLE_MIN_PX;
 
   const cardClass = (selected: boolean) =>
     `overflow-hidden rounded-xl border text-start transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink ${
@@ -196,7 +193,7 @@ export function StepEffect({
                     preload="auto"
                     className="absolute inset-0 size-full object-cover"
                   />
-                  <PlacementEditor rect={shownRect} onChange={setRect} text={text} />
+                  <PlacementEditor rect={shownRect} onChange={setRect} text={hookText} />
                 </div>
                 <p className="mt-1.5 text-[12px] text-ink/55">
                   גוררים את המסגרת כדי להזיז את הטקסט, ומהפינות כדי לשנות גודל.
@@ -213,7 +210,7 @@ export function StepEffect({
                 <TextField
                   label="משפט הפתיחה"
                   hint={`עד ${HOOK_TEXT_MAX_WORDS} מילים`}
-                  value={text}
+                  value={hookText}
                   onChange={(event) => setHookText(event.target.value)}
                   error={textError}
                 />

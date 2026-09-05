@@ -77,6 +77,9 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   const [render, setRender] = useState<RenderState | null>(null);
 
   const step = steps[stepIndex]!;
+  /** The on-screen line the effect step shows and the render burns: the
+   *  customer's edit, else the script call's draft. */
+  const effectText = hookText ?? script?.hookText ?? "";
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
   const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
   /** Rail jump — backwards only. */
@@ -217,12 +220,11 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
             {step === "effect" && persona && script && (
               <StepEffect
                 personaId={persona.id}
-                script={script}
                 openers={openers}
                 setOpeners={setOpeners}
                 opener={opener}
                 setOpener={setOpener}
-                hookText={hookText}
+                hookText={effectText}
                 setHookText={setHookText}
                 rect={rect}
                 setRect={setRect}
@@ -232,13 +234,18 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
               />
             )}
 
-            {step === "render" && persona && script && audio && (
+            {/* persona.personaImageId is always set on the B catalog (a persona
+                without a selfie is not listed); the check narrows the type. */}
+            {step === "render" && persona?.personaImageId && script && audio && (
               <StepRender
                 businessId={businessId}
                 personaId={persona.id}
                 personaImageId={persona.personaImageId}
                 scriptId={script.scriptId}
                 audioId={audio.id}
+                openerClipId={opener?.id}
+                hookText={effectText}
+                hookTextSafeArea={rect ?? undefined}
                 render={render}
                 setRender={setRender}
                 onBack={goBack}

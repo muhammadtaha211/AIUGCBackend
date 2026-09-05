@@ -62,23 +62,41 @@ describe("wizardSteps (one flow, vault 0017)", () => {
 });
 
 describe("renderRequestBody (wizard state -> enqueue request)", () => {
-  const base = { scriptId: "script-1", audioId: "audio-1", personaId: "persona-1" };
+  const base = {
+    scriptId: "script-1",
+    audioId: "audio-1",
+    personaId: "persona-1",
+    personaImageId: "image-1",
+  };
 
-  it("carries the chosen personaImageId", () => {
-    expect(renderRequestBody({ ...base, personaImageId: "image-1" })).toEqual({
-      ...base,
-      personaImageId: "image-1",
-    });
-  });
-
-  it("omits personaImageId and compositeId when nothing was chosen", () => {
+  it("always carries the card's personaImageId and nothing else without an opener", () => {
     expect(renderRequestBody(base)).toEqual(base);
   });
 
-  it("carries an approved composite alongside the image", () => {
+  it("carries the opener with its FINAL hook text", () => {
     expect(
-      renderRequestBody({ ...base, personaImageId: "image-1", compositeId: "comp-1" }),
-    ).toEqual({ ...base, personaImageId: "image-1", compositeId: "comp-1" });
+      renderRequestBody({ ...base, openerClipId: "clip-1", hookText: "משלוח חינם היום" }),
+    ).toEqual({ ...base, openerClipId: "clip-1", hookText: "משלוח חינם היום" });
+  });
+
+  it("sends the rect only when the customer placed one", () => {
+    const rect = { x: 60, y: 900, w: 960, h: 300 };
+    expect(
+      renderRequestBody({
+        ...base,
+        openerClipId: "clip-1",
+        hookText: "היי",
+        hookTextSafeArea: rect,
+      }),
+    ).toEqual({ ...base, openerClipId: "clip-1", hookText: "היי", hookTextSafeArea: rect });
+    expect(
+      renderRequestBody({ ...base, openerClipId: "clip-1", hookText: "היי" }),
+    ).not.toHaveProperty("hookTextSafeArea");
+  });
+
+  it("drops a stale hook text and rect when no opener is chosen", () => {
+    const rect = { x: 60, y: 900, w: 960, h: 300 };
+    expect(renderRequestBody({ ...base, hookText: "היי", hookTextSafeArea: rect })).toEqual(base);
   });
 });
 

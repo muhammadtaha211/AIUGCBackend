@@ -48,20 +48,21 @@ describe("request body schemas", () => {
     expect(scriptTextSchema.parse({ text: "  טקסט חדש  " }).text).toBe("טקסט חדש");
   });
 
-  it("accepts a render request with and without compositeId", () => {
+  it("requires personaImageId on a render request — the card's selfie, never a default", () => {
     const base = { scriptId: UUID_A, audioId: UUID_B, personaId: UUID_A };
-    expect(renderRequestSchema.safeParse(base).success).toBe(true);
-    expect(renderRequestSchema.safeParse({ ...base, compositeId: UUID_B }).success).toBe(true);
-    expect(renderRequestSchema.safeParse({ scriptId: UUID_A, personaId: UUID_A }).success).toBe(
-      false,
-    );
+    expect(renderRequestSchema.safeParse({ ...base, personaImageId: UUID_B }).success).toBe(true);
+    expect(renderRequestSchema.safeParse(base).success).toBe(false);
+    expect(renderRequestSchema.safeParse({ ...base, personaImageId: "smile" }).success).toBe(false);
+    expect(
+      renderRequestSchema.safeParse({ scriptId: UUID_A, personaId: UUID_A, personaImageId: UUID_B })
+        .success,
+    ).toBe(false);
   });
 
-  it("carries an optional personaImageId, rejecting non-uuids", () => {
-    const base = { scriptId: UUID_A, audioId: UUID_B, personaId: UUID_A };
-    const parsed = renderRequestSchema.parse({ ...base, personaImageId: UUID_B });
-    expect(parsed.personaImageId).toBe(UUID_B);
-    expect(renderRequestSchema.safeParse({ ...base, personaImageId: "smile" }).success).toBe(false);
+  it("no longer knows compositeId", () => {
+    const body = { scriptId: UUID_A, audioId: UUID_B, personaId: UUID_A, personaImageId: UUID_B };
+    const parsed = renderRequestSchema.parse({ ...body, compositeId: UUID_A });
+    expect("compositeId" in parsed).toBe(false);
   });
 });
 

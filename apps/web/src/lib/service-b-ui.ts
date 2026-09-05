@@ -380,22 +380,33 @@ export function withEditedText(
 // ---------------------------------------------------------------------------
 
 /**
- * The exact body StepRender posts. personaImageId is the background chosen in
- * the image step; absent means the persona's default image at render time.
+ * The exact body StepRender posts. personaImageId is the selfie the persona
+ * card showed — always sent, so the render animates that row and no default
+ * is resolved. The hook text and rect ride along only with an opener: without
+ * one there is nothing to burn them over, and a stale edit must not leak into
+ * a render that has no clip (the server refuses the pair anyway).
  */
 export function renderRequestBody(opts: {
   scriptId: string;
   audioId: string;
   personaId: string;
-  personaImageId?: string;
-  compositeId?: string;
-}): Record<string, string> {
+  personaImageId: string;
+  openerClipId?: string;
+  hookText?: string;
+  hookTextSafeArea?: SafeRect;
+}): Record<string, unknown> {
   return {
     scriptId: opts.scriptId,
     audioId: opts.audioId,
     personaId: opts.personaId,
-    ...(opts.personaImageId ? { personaImageId: opts.personaImageId } : {}),
-    ...(opts.compositeId ? { compositeId: opts.compositeId } : {}),
+    personaImageId: opts.personaImageId,
+    ...(opts.openerClipId
+      ? {
+          openerClipId: opts.openerClipId,
+          hookText: opts.hookText,
+          ...(opts.hookTextSafeArea ? { hookTextSafeArea: opts.hookTextSafeArea } : {}),
+        }
+      : {}),
   };
 }
 
