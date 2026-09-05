@@ -5,12 +5,14 @@ import {
   countWords,
   failedRenderNotice,
   generatingLine,
+  hookTextFieldError,
   isActiveRenderStatus,
   MAX_PHOTO_BYTES,
   needsScriptAdoption,
   needsTextSave,
   pickActiveHead,
   pickSelectedBusiness,
+  pointersChanged,
   RENDER_STATUS_LABELS,
   renderRequestBody,
   renderStageIndex,
@@ -47,6 +49,57 @@ describe("script edit threading (immutable rows)", () => {
     expect(needsTextSave("הטקסט המקורי", "הטקסט המקורי")).toBe(false);
     expect(needsTextSave("הטקסט המקורי", "  הטקסט המקורי  ")).toBe(false);
     expect(needsTextSave("הטקסט המקורי", "טקסט אחר")).toBe(true);
+  });
+
+  it("takes the re-derived draft hook text, keeping the old one only when none came back", () => {
+    const withDraft = { ...script, hookText: "הטיוטה הישנה" };
+    expect(
+      withEditedText(withDraft, { scriptId: "new-id", text: "טקסט ערוך", hookText: "טיוטה חדשה" })
+        .hookText,
+    ).toBe("טיוטה חדשה");
+    expect(withEditedText(withDraft, { scriptId: "new-id", text: "טקסט ערוך" }).hookText).toBe(
+      "הטיוטה הישנה",
+    );
+  });
+});
+
+describe("pointersChanged (the brief under an existing script)", () => {
+  it("a real change to the brief stales the script", () => {
+    expect(pointersChanged({ pointers: "משלוח מהיר" }, "הנחה של החודש")).toBe(true);
+    expect(pointersChanged({ pointers: "" }, "משלוח מהיר")).toBe(true);
+    expect(pointersChanged({ pointers: "משלוח מהיר" }, "")).toBe(true);
+  });
+
+  it("whitespace does not count, and no recorded brief means an empty one", () => {
+    expect(pointersChanged({ pointers: "משלוח מהיר" }, "  משלוח מהיר\n")).toBe(false);
+    expect(pointersChanged({}, "   ")).toBe(false);
+    expect(pointersChanged({}, "משלוח מהיר")).toBe(true);
+  });
+});
+
+describe("hookTextFieldError (core's rule, Hebrew words)", () => {
+  it("accepts a burnable line", () => {
+    expect(hookTextFieldError("משלוח חינם עד הבית")).toBeUndefined();
+    expect(hookTextFieldError("ב־2026 זה אחרת")).toBeUndefined(); // maqaf is fine
+  });
+
+  it("asks for a line when there is none", () => {
+    expect(hookTextFieldError("")).toBe("צריך לכתוב משפט פתיחה.");
+    expect(hookTextFieldError("   ")).toBe("צריך לכתוב משפט פתיחה.");
+    expect(hookTextFieldError("- -")).toBe("צריך לכתוב משפט פתיחה."); // no words, only dashes
+  });
+
+  it("names the caps, in words and characters", () => {
+    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע שמונה")).toBe("עד 7 מילים.");
+    expect(hookTextFieldError("א".repeat(41))).toBe("עד 40 תווים.");
+    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע")).toBeUndefined();
+  });
+
+  it("refuses what cannot burn: emoji, niqqud, trailing punctuation, stray glyphs", () => {
+    expect(hookTextFieldError("משלוח חינם 🎉")).toBe("בלי אימוג'י, הטקסט נצרב על הסרטון.");
+    expect(hookTextFieldError("שָׁלוֹם")).toBe("בלי ניקוד.");
+    expect(hookTextFieldError("משלוח חינם!")).toBe("בלי סימן פיסוק בסוף המשפט.");
+    expect(hookTextFieldError("משלוח​חינם")).toBe("יש כאן תו שאי אפשר להציג על הסרטון.");
   });
 });
 
