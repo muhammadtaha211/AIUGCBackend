@@ -10,7 +10,8 @@
     "./hook-geometry": "./src/hook-geometry.ts",
     "./hook-text": "./src/hook-text.ts",
     "./plan-format": "./src/plan-format.ts",
-    "./pricing": "./src/pricing.ts"
+    "./pricing": "./src/pricing.ts",
+    "./service-b-timeline": "./src/service-b-timeline.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

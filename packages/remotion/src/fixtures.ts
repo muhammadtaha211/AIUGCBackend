@@ -64,6 +64,47 @@ export const sampleCaptions: CaptionChunk[] = (() => {
 export const sampleDurationInFrames =
   msToFrame(sampleCaptions[sampleCaptions.length - 1]!.endMs) + FPS / 2;
 
+/** The fixture VO's length in ms — what the timelines below are built on. */
+const sampleVoMs = (sampleDurationInFrames / FPS) * 1000;
+
+/**
+ * Service B layouts for the previews. These MIRROR @aiugc/core's
+ * serviceBTimeline as literals — core depends on this package, never the
+ * other way round — and core's service-b-timeline.test.ts asserts the
+ * function reproduces them, so a drift here fails a test there. The effect
+ * fields are core's CROSSFADE_FRAMES / PUNCH_IN_SCALE / PUNCH_IN_MS.
+ */
+const sampleEffects = { crossfadeFrames: 5, punchInScale: 1.06, punchInMs: 300 };
+
+/** No opener, no lead-in: everything at 0 and the VO from frame 0 — the
+ *  pre-opener preview, unchanged. */
+export const sampleTimeline = {
+  holdMs: 0,
+  revealAbsMs: 0,
+  lipsyncStartFromMs: 0,
+  captionOffsetMs: 0,
+  totalMs: sampleVoMs,
+  ...sampleEffects,
+};
+
+/**
+ * With the 2.4s synthetic opener (fixtures/opener.mp4, reveal at 1.6s) and an
+ * 800ms lead-in: the 4-word hook text reads in 2000ms (400 + 4/2.5 s), so the
+ * first frame holds 2000ms, the cut lands at 3600ms, the clip starts 550ms in
+ * and the VO begins 250ms after the cut. The placeholder talking head carries
+ * no lead-in of its own, so the VO tail sets the end.
+ */
+export const sampleOpenerTimeline = {
+  holdMs: 2000,
+  revealAbsMs: 3600,
+  lipsyncStartFromMs: 550,
+  captionOffsetMs: 3850,
+  totalMs: 3850 + sampleVoMs,
+  ...sampleEffects,
+};
+
+export const sampleHookText = "ככה מזמינים בלי לחכות";
+
 /**
  * Preview steps for the lavfi clock demo (fixtures/steps-demo.mp4, 24s): six
  * windows in the 12–17s target shape. The demo's on-screen clock jumps at

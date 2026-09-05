@@ -22,6 +22,9 @@ export const TALKING_HEAD_FIXTURE = `${FIXTURE_DIR}talking-head.mp4`;
  *  clock makes every trim visible — a cut jumps the on-screen timestamp. */
 export const STEPS_HOOK_FIXTURE = `${FIXTURE_DIR}steps-hook.mp4`;
 export const STEPS_DEMO_FIXTURE = `${FIXTURE_DIR}steps-demo.mp4`;
+/** Service B opener stand-in: a 2.4s silent lavfi clip whose pattern makes the
+ *  reveal cut into the gradient talking head unmistakable by eye. */
+export const OPENER_FIXTURE = `${FIXTURE_DIR}opener.mp4`;
 
 export async function ensureFixtures(): Promise<void> {
   mkdirSync(FIXTURE_DIR, { recursive: true });
@@ -35,6 +38,9 @@ export async function ensureFixtures(): Promise<void> {
     "-vf",
     "hue=H=6.28*t/24", // slow hue rotation: each trim point also has its own tint
   ]);
+  // sampleOpenerTimeline (src/fixtures.ts) is built for exactly this length
+  // and a 1.6s reveal; the moving pattern shows whether the hold really froze.
+  ensureLavfiFixture(OPENER_FIXTURE, "testsrc2=size=1080x1920:rate=30:duration=2.4");
 
   // The tones must exist before bundling: Remotion copies public/ into the
   // bundle, and the compositions load them with staticFile().

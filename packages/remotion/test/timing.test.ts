@@ -8,7 +8,6 @@ import {
   msToFrame,
   serviceAStepsTimeline,
   serviceATimeline,
-  serviceBDurations,
 } from "../src/timing";
 import { fitFontSize } from "../src/text-fit";
 
@@ -46,32 +45,8 @@ describe("ms/frame math", () => {
   });
 });
 
-describe("serviceBDurations", () => {
-  it("runs as long as the voiceover when the clip came back short, and holds the rest", () => {
-    const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(10, 8);
-    expect(durationInFrames).toBe(300);
-    expect(talkingHeadDurationInFrames).toBe(240);
-    // 60 frames of held final frame rather than 2s of cut-off voiceover.
-    expect(durationInFrames - talkingHeadDurationInFrames).toBe(60);
-  });
-
-  it("trims a clip that outruns the voiceover", () => {
-    const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(8, 10);
-    expect(durationInFrames).toBe(240);
-    expect(talkingHeadDurationInFrames).toBe(300);
-  });
-
-  it("holds nothing when they match", () => {
-    const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(9.5, 9.5);
-    expect(durationInFrames).toBe(285);
-    expect(talkingHeadDurationInFrames).toBe(285);
-  });
-
-  it("never renders a zero-frame composition", () => {
-    expect(serviceBDurations(0, 0).durationInFrames).toBe(1);
-    expect(serviceBDurations(0, 0).talkingHeadDurationInFrames).toBe(1);
-  });
-});
+// Service B's length rules moved to @aiugc/core (service-b-timeline.test.ts):
+// the VO is still never cut off, and the fixtures below mirror that function.
 
 describe("serviceATimeline", () => {
   // 2s hook, 20s demo at 30fps.

@@ -14,6 +14,7 @@ import {
   type ServiceAProps,
   type ServiceAStepsProps,
   type ServiceBProps,
+  type ServiceBTimeline,
   type TextSafeArea,
 } from "./schema";
 
@@ -56,6 +57,12 @@ export interface RenderServiceBInput {
   voiceoverPath: string;
   brollPaths: string[];
   captions: CaptionChunk[];
+  /** The opener effect — all three together, or none (core validates). */
+  openerPath?: string;
+  hookText?: string;
+  hookTextSafeArea?: TextSafeArea;
+  /** Computed by @aiugc/core's serviceBTimeline; the composition only converts to frames. */
+  timeline: ServiceBTimeline;
   watermark: boolean;
 }
 
@@ -297,7 +304,10 @@ export async function renderServiceB(
   outPath: string,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
-  const files = [input.talkingHeadPath, input.voiceoverPath, ...input.brollPaths];
+  const files = [input.talkingHeadPath, input.voiceoverPath];
+  if (input.openerPath) files.push(input.openerPath);
+  const brollStart = files.length;
+  files.push(...input.brollPaths);
   assertFilesExist(files);
 
   const served = await serveLocalFiles(files);
@@ -305,8 +315,12 @@ export async function renderServiceB(
     const props = serviceBSchema.safeParse({
       talkingHeadSrc: served.urls[0]!,
       voiceoverSrc: served.urls[1]!,
-      brollSrcs: served.urls.slice(2),
+      brollSrcs: served.urls.slice(brollStart),
       captions: input.captions,
+      openerSrc: input.openerPath ? served.urls[2] : undefined,
+      hookText: input.hookText,
+      hookTextSafeArea: input.hookTextSafeArea,
+      timeline: input.timeline,
       watermark: input.watermark,
     } satisfies ServiceBProps);
     if (!props.success) {

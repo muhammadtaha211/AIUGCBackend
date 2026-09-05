@@ -3,7 +3,14 @@ import { Audio, Composition, interpolate, staticFile, useCurrentFrame } from "re
 import { ServiceA, calculateServiceAMetadata } from "./ServiceA";
 import { ServiceASteps, calculateServiceAStepsMetadata } from "./ServiceASteps";
 import { ServiceB, calculateServiceBMetadata } from "./ServiceB";
-import { sampleCaptions, sampleDurationInFrames, sampleSteps } from "./fixtures";
+import {
+  sampleCaptions,
+  sampleDurationInFrames,
+  sampleHookText,
+  sampleOpenerTimeline,
+  sampleSteps,
+  sampleTimeline,
+} from "./fixtures";
 import { FPS, HEIGHT, WIDTH, serviceASchema, serviceAStepsSchema, serviceBSchema } from "./schema";
 
 /**
@@ -18,7 +25,18 @@ const previewProps = {
   voiceoverSrc: staticFile("fixtures/voiceover.wav"),
   brollSrcs: [],
   captions: sampleCaptions,
+  timeline: sampleTimeline,
   watermark: false,
+};
+
+/** The opener effect over a synthetic lavfi clip (`pnpm fixtures`), so the
+ *  hold, the burned hook text and the seam at the reveal can be eyeballed. */
+const previewPropsOpener = {
+  ...previewProps,
+  openerSrc: staticFile("fixtures/opener.mp4"),
+  hookText: sampleHookText,
+  hookTextSafeArea: { x: 25, y: 1062, w: 1009, h: 179 },
+  timeline: sampleOpenerTimeline,
 };
 
 /** The placeholder clip stands in for both the hook clip and the demo. */
@@ -73,6 +91,17 @@ export const RemotionRoot: React.FC = () => (
       component={ServiceB}
       schema={serviceBSchema}
       defaultProps={previewProps}
+      calculateMetadata={calculateServiceBMetadata}
+      width={WIDTH}
+      height={HEIGHT}
+      fps={FPS}
+      durationInFrames={sampleDurationInFrames}
+    />
+    <Composition
+      id="ServiceB-Opener"
+      component={ServiceB}
+      schema={serviceBSchema}
+      defaultProps={previewPropsOpener}
       calculateMetadata={calculateServiceBMetadata}
       width={WIDTH}
       height={HEIGHT}

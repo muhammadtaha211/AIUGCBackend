@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -42,6 +42,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
   let db: Db;
   let pg: { close(): Promise<void> };
   let cleanupStorage: () => void;
+  let storageRoot: string;
   let businessId: string;
 
   /** One pass over everything currently runnable (a single poll hop). */
@@ -168,6 +169,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     pg = testDb.pg;
     const ts = tempStorage();
     setStorage(ts.storage);
+    storageRoot = ts.root;
     cleanupStorage = ts.cleanup;
     const business = await createBusiness(db, {
       ownerEmail: "founder@example.com",
@@ -175,6 +177,13 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
       ownerRole: "admin",
     });
     businessId = business.id;
+    // Every render here requests its own audio preview for one owner, and the
+    // file passed the seeded per-account cap (20/24h) when the opener tests
+    // landed. The cap is an abuse ceiling, not what this file tests.
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: 1000 })
+      .where(sql`${dbSchema.appConfig.key} = 'audio_preview_daily_limit'`);
   });
 
   beforeEach(async () => {
@@ -545,6 +554,27 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(retry.hookTextSafeArea).toEqual(params.hookTextSafeArea);
     expect(retry.personaImageId).toBe(params.personaImageId);
     expect(retry.leadInMs).toBe(params.leadInMs);
+  });
+
+  it("renders the opener under DRY_RUN: the props echo carries the clip, the hook text and the timeline", async () => {
+    const { renderId } = await queueBRender({ withOpener: true });
+    await drainAll();
+
+    const row = await renderRow(renderId);
+    expect(row.status).toBe("qc_pending");
+    const props = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+    expect(props).toContain('"kind":"service_b"');
+    expect(props).toMatch(/"openerPath":"[^"]*opener(-tagged)?\.mp4"/);
+    expect(props).toContain('"hookText":"ניסיתי מיליון דברים"');
+    // jsonb hands the rect back with its keys reordered, so parse it out.
+    const rect = /"hookTextSafeArea":(\{[^}]*\})/.exec(props)?.[1];
+    expect(rect && JSON.parse(rect)).toEqual(OPENER_RECT);
+    // 3 words read in 1600ms → hold 1600; reveal at 1600 into the clip → 3200;
+    // 800ms lead-in → clip from 550, VO 250ms after the cut.
+    expect(props).toContain(
+      '"timeline":{"holdMs":1600,"revealAbsMs":3200,"lipsyncStartFromMs":550,"captionOffsetMs":3450,',
+    );
+    expect(props).toContain('"crossfadeFrames":5,"punchInScale":1.06,"punchInMs":300');
   });
 
   it("a persona whose default is not a selfie is refused; an explicit image bypasses the guard", async () => {

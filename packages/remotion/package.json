@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./render": "./src/render.ts",
-    "./text-fit": "./src/text-fit.ts"
+    "./text-fit": "./src/text-fit.ts",
+    "./fixtures": "./src/fixtures.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -15,7 +16,8 @@
     "render:sample": "tsx scripts/render-sample.ts",
     "render:sample:watermark": "tsx scripts/render-sample.ts --watermark",
     "render:sample:a": "tsx scripts/render-sample.ts --service-a",
-    "render:sample:steps": "tsx scripts/render-sample.ts --steps"
+    "render:sample:steps": "tsx scripts/render-sample.ts --steps",
+    "render:sample:b-opener": "tsx scripts/render-sample.ts --opener"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.499",

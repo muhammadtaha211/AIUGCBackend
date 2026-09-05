@@ -1,27 +1,37 @@
-import { getAudioDurationInSeconds, getVideoMetadata } from "@remotion/media-utils";
+import { getVideoMetadata } from "@remotion/media-utils";
 import type React from "react";
 import {
   AbsoluteFill,
   Audio,
   Freeze,
   OffthreadVideo,
+  Sequence,
   interpolate,
   useCurrentFrame,
   useVideoConfig,
   type CalculateMetadataFunction,
 } from "remotion";
+import { HookLine } from "./ServiceA";
 import { Captions, Watermark } from "./overlays";
 import { type ServiceBProps } from "./schema";
-import { frameToMs, serviceBDurations } from "./timing";
+import { frameToMs, msToFrame } from "./timing";
 
 /**
- * Service B: lip-synced talking head + burned Hebrew karaoke captions.
- * The approved mp3 is the audio track and the talking head is muted: its
- * embedded audio is the GPU provider's re-encode of that same mp3, which
- * arrives with a glitch in the first second and would be encoded a third time
- * here. Playing the approved file directly also guarantees caption sync — it is
- * the exact file the timestamps were computed against. No music, ever (locked).
+ * Service B: an optional founder-made opener clip with the hook text burned
+ * over its palm phase → hard cut at the reveal into the lip-synced talking
+ * head + burned Hebrew karaoke captions. The approved mp3 is the audio track
+ * and the talking head is muted: its embedded audio is the GPU provider's
+ * re-encode of that same mp3, which arrives with a glitch in the first second
+ * and would be encoded a third time here. Playing the approved file directly
+ * also guarantees caption sync — it is the exact file the timestamps were
+ * computed against. No music, ever (locked).
+ *
+ * Every millisecond here comes from @aiugc/core's serviceBTimeline via the
+ * `timeline` prop; this file converts to frames and lays out. It does no
+ * timeline arithmetic of its own.
  */
+
+const COVER: React.CSSProperties = { width: "100%", height: "100%", objectFit: "cover" };
 
 export const ServiceB: React.FC<ServiceBProps> = ({
   talkingHeadSrc,
@@ -29,59 +39,162 @@ export const ServiceB: React.FC<ServiceBProps> = ({
   voiceoverSrc,
   captions,
   watermark,
+  openerSrc,
+  hookText,
+  hookTextSafeArea,
+  timeline,
+  openerDurationInFrames,
 }) => {
   // TODO: brollSrcs is accepted and ignored — cutaway logic (when to cut away,
   // for how long, how to hide the lip-sync) is its own task.
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
 
-  // Micro-motion: a ~2.5% drift across the whole clip. A perfectly static
-  // frame is the strongest "this is AI" tell; anything faster is noticeable.
-  const scale = interpolate(frame, [0, durationInFrames], [1, 1.025], {
-    extrapolateRight: "clamp",
-  });
+  const hasOpener =
+    openerSrc !== undefined && hookText !== undefined && hookTextSafeArea !== undefined;
+  const holdFrames = msToFrame(timeline.holdMs);
+  const revealFrames = msToFrame(timeline.revealAbsMs);
+  const trimBeforeFrames = msToFrame(timeline.lipsyncStartFromMs);
+  const voFromFrames = msToFrame(timeline.captionOffsetMs);
 
-  // The composition runs as long as the VO, so a talking head that came back
-  // shorter would leave black frames under the last words. Freeze holds its
-  // final frame instead — outside the scale wrapper, so the micro-motion keeps
-  // drifting and the hold reads as stillness rather than a frozen render.
-  const lastClipFrame = Math.max(0, (talkingHeadDurationInFrames ?? durationInFrames) - 1);
+  // The dissolve straddles the reveal: the talking head mounts fadeIn frames
+  // early (and trims that many frames earlier, so the reveal frame still
+  // shows clip time lipsyncStartFromMs) and the opener plays fadeOut frames
+  // past it. Without an opener there is nothing to dissolve from.
+  const fadeIn = hasOpener ? Math.floor(timeline.crossfadeFrames / 2) : 0;
+  const fadeOut = hasOpener ? timeline.crossfadeFrames - fadeIn : 0;
+  const talkingHeadFrom = Math.max(0, revealFrames - fadeIn);
+  const talkingHeadTrim = Math.max(0, trimBeforeFrames - (revealFrames - talkingHeadFrom));
 
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
-      <Audio src={voiceoverSrc} />
-      <AbsoluteFill style={{ transform: `scale(${scale})` }}>
-        <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
-          <OffthreadVideo
-            src={talkingHeadSrc}
-            muted
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        </Freeze>
-      </AbsoluteFill>
-      <Captions captions={captions} ms={frameToMs(frame)} />
+      {hasOpener ? (
+        <>
+          {/* First frame frozen under the hook text, then the clip from 0. */}
+          <Sequence durationInFrames={Math.max(1, holdFrames)}>
+            <Freeze frame={0}>
+              <OffthreadVideo src={openerSrc} muted style={COVER} />
+            </Freeze>
+          </Sequence>
+          <Sequence
+            from={holdFrames}
+            durationInFrames={Math.max(1, revealFrames + fadeOut - holdFrames)}
+          >
+            <OpenerSegment src={openerSrc} clipFrames={openerDurationInFrames} />
+          </Sequence>
+          {/* Visible through the palm phase; hard cut at the reveal. */}
+          <Sequence durationInFrames={Math.max(1, revealFrames)}>
+            <HookLine text={hookText} area={hookTextSafeArea} />
+          </Sequence>
+        </>
+      ) : null}
+
+      <Sequence from={talkingHeadFrom}>
+        <TalkingHead
+          src={talkingHeadSrc}
+          trimBeforeFrames={talkingHeadTrim}
+          clipFrames={talkingHeadDurationInFrames}
+          fadeInFrames={hasOpener ? timeline.crossfadeFrames : 0}
+          punchIn={
+            hasOpener
+              ? {
+                  fromFrame: revealFrames - talkingHeadFrom,
+                  frames: msToFrame(timeline.punchInMs),
+                  scale: timeline.punchInScale,
+                }
+              : undefined
+          }
+          driftFrames={durationInFrames - talkingHeadFrom}
+        />
+      </Sequence>
+
+      <Sequence from={voFromFrames}>
+        <Audio src={voiceoverSrc} />
+      </Sequence>
+
+      {/* Chunks are timed against the unpadded audio; negative ms shows none. */}
+      <Captions captions={captions} ms={frameToMs(frame) - timeline.captionOffsetMs} />
       {watermark ? <Watermark /> : null}
     </AbsoluteFill>
   );
 };
 
 /**
- * Duration comes from the approved VO, never from the clip: the ad must not cut
- * the voiceover off mid-sentence. The clip is probed too, only to tell the
- * composition where to start holding its final frame. Both probes run in the
- * browser (Studio and the headless render both have one), so the worker box
- * needs no ffprobe for this step.
+ * The opener playing from 0, holding its final frame if the dissolve tail
+ * runs past the clip's end (a reveal at the very last frame).
+ */
+const OpenerSegment: React.FC<{ src: string; clipFrames?: number }> = ({ src, clipFrames }) => {
+  const frame = useCurrentFrame(); // local to the sequence
+  const lastClipFrame = Math.max(0, (clipFrames ?? Number.MAX_SAFE_INTEGER) - 1);
+  return (
+    <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
+      <OffthreadVideo src={src} muted style={COVER} />
+    </Freeze>
+  );
+};
+
+/**
+ * The lip-synced clip, muted, from `trimBeforeFrames` into the file. With an
+ * opener it dissolves in over `fadeInFrames` and punches in from the reveal,
+ * held after; without one it keeps the slow micro-motion drift — a perfectly
+ * static frame is the strongest "this is AI" tell. Its final frame holds if
+ * the composition outlasts the clip (the VO is never cut off).
+ */
+const TalkingHead: React.FC<{
+  src: string;
+  trimBeforeFrames: number;
+  clipFrames?: number;
+  fadeInFrames: number;
+  punchIn?: { fromFrame: number; frames: number; scale: number };
+  driftFrames: number;
+}> = ({ src, trimBeforeFrames, clipFrames, fadeInFrames, punchIn, driftFrames }) => {
+  const frame = useCurrentFrame(); // local to the sequence
+  const opacity =
+    fadeInFrames > 0
+      ? interpolate(frame, [0, fadeInFrames], [0, 1], { extrapolateRight: "clamp" })
+      : 1;
+  const scale = punchIn
+    ? interpolate(
+        frame,
+        [punchIn.fromFrame, punchIn.fromFrame + Math.max(1, punchIn.frames)],
+        [1, punchIn.scale],
+        { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+      )
+    : interpolate(frame, [0, Math.max(1, driftFrames)], [1, 1.025], {
+        extrapolateRight: "clamp",
+      });
+  // Local frame of the clip's last frame: the file's length minus the trim.
+  const lastClipFrame = Math.max(0, (clipFrames ?? Number.MAX_SAFE_INTEGER) - 1 - trimBeforeFrames);
+
+  return (
+    <AbsoluteFill style={{ opacity, transform: `scale(${scale})` }}>
+      <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
+        <OffthreadVideo src={src} muted trimBefore={trimBeforeFrames} style={COVER} />
+      </Freeze>
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * Length comes from the timeline's totalMs — computed in core from the
+ * approved VO's stored length and the probed lip-sync clip, so the ad never
+ * cuts the voiceover off. The files are probed here only for the frame at
+ * which each clip runs out and its last frame has to be held.
  */
 export const calculateServiceBMetadata: CalculateMetadataFunction<ServiceBProps> = async ({
   props,
 }) => {
-  const [voiceoverSeconds, clip] = await Promise.all([
-    getAudioDurationInSeconds(props.voiceoverSrc),
+  const [clip, opener] = await Promise.all([
     getVideoMetadata(props.talkingHeadSrc),
+    props.openerSrc ? getVideoMetadata(props.openerSrc) : undefined,
   ]);
-  const { durationInFrames, talkingHeadDurationInFrames } = serviceBDurations(
-    voiceoverSeconds,
-    clip.durationInSeconds,
-  );
-  return { durationInFrames, props: { ...props, talkingHeadDurationInFrames } };
+  const toFrames = (seconds: number) => Math.max(1, msToFrame(seconds * 1000));
+  return {
+    durationInFrames: Math.max(1, msToFrame(props.timeline.totalMs)),
+    props: {
+      ...props,
+      talkingHeadDurationInFrames: toFrames(clip.durationInSeconds),
+      openerDurationInFrames: opener ? toFrames(opener.durationInSeconds) : undefined,
+    },
+  };
 };

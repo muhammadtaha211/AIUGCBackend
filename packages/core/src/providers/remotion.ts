@@ -3,6 +3,7 @@ import path from "node:path";
 import type { CaptionChunk } from "../captions";
 import { getEnv } from "../config";
 import { PermanentError, TransientError } from "../jobs/errors";
+import type { ServiceBTimeline } from "../service-b-timeline";
 
 /**
  * Remotion render contract. Remotion exists specifically because browser text
@@ -62,18 +63,33 @@ export interface RenderServiceAStepsProps {
 
 export interface RenderServiceBProps {
   kind: "service_b";
-  /** Lip-synced talking-head clip (InfiniteTalk output, downloaded locally). */
+  /** Lip-synced talking-head clip (HeyGen output, downloaded locally). */
   talkingHeadPath: string;
   /**
    * Local mp3 path — the approved audio, which IS the final audio track: the
    * talking head is muted so the render never re-encodes the GPU clip's audio,
    * and the captions are timed against exactly this file. Always required.
+   * Starts at timeline.captionOffsetMs, the frame speech begins in the clip.
    */
   voiceoverPath: string;
   /** Product B-roll cutaways that hide lip-sync during risky stretches. */
   brollPaths: string[];
-  captions: CaptionChunk[];
+  /**
+   * The opener effect (vault 0017): a founder-made clip in front of the
+   * talking head with the hook text burned over its palm phase, hard-cut at
+   * the reveal. All three together, or none.
+   */
+  openerPath?: string;
+  hookText?: string;
+  hookTextSafeArea?: TextSafeArea;
+  /**
+   * The layout in ms, from serviceBTimeline, plus the effect constants — the
+   * composition converts to frames and does no timeline arithmetic of its own.
+   */
+  timeline: ServiceBTimeline & { crossfadeFrames: number; punchInScale: number; punchInMs: number };
   watermark: boolean;
+  /** Last on purpose: the DRY_RUN render echoes a prefix of these props. */
+  captions: CaptionChunk[];
 }
 
 export type RenderVideoProps =
@@ -123,7 +139,10 @@ export async function renderVideo(
 ): Promise<void> {
   if (getEnv().DRY_RUN) {
     mkdirSync(path.dirname(outPath), { recursive: true });
-    writeFileSync(outPath, `DRY_RUN placeholder render: ${JSON.stringify(props).slice(0, 500)}`);
+    // A prefix, not the whole thing: captions are the one unbounded field and
+    // every builder puts them last. 1200 keeps the fixed fields — three local
+    // paths, the opener's, the timeline — inside it on a long checkout path.
+    writeFileSync(outPath, `DRY_RUN placeholder render: ${JSON.stringify(props).slice(0, 1200)}`);
     return;
   }
 

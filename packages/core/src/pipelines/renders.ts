@@ -15,6 +15,7 @@ import {
   demoStepPlans,
   events,
   hookClips,
+  openerClips,
   personaImages,
   scripts,
   sets,
@@ -44,6 +45,12 @@ import {
   type LipsyncResolution,
 } from "../providers/lipsync";
 import { renderVideo, type RenderVideoProps, type TextSafeArea } from "../providers/remotion";
+import {
+  CROSSFADE_FRAMES,
+  PUNCH_IN_MS,
+  PUNCH_IN_SCALE,
+  serviceBTimeline,
+} from "../service-b-timeline";
 import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
 import { planStepsSchema } from "./demo-step-plans";
@@ -673,28 +680,74 @@ async function buildServiceBProps(
     throw new PermanentError("audio render is missing word timestamps");
   }
   if (!audio.filePath) throw new PermanentError("audio render has no file");
+  if (!audio.durationMs) throw new PermanentError("audio render has no duration");
   const captions = audio.wordTimestamps as CaptionChunk[];
+
+  // The opener effect: the bank clip, the FINAL hook text and its rect were
+  // all copied onto params at enqueue (vault 0017) — nothing is re-derived.
+  let opener: typeof openerClips.$inferSelect | undefined;
+  if (params.openerClipId) {
+    opener = (
+      await db.select().from(openerClips).where(eq(openerClips.id, params.openerClipId)).limit(1)
+    )[0];
+    if (!opener) throw new PermanentError("opener clip not found");
+    if (params.hookText === undefined || params.hookTextSafeArea === undefined) {
+      throw new PermanentError("opener render has no hook text or safe area on its params");
+    }
+  }
 
   // The approved mp3 becomes the render's audio track — the same bytes the
   // customer approved and the same file these timestamps were computed against.
   // The lip-sync clip's own audio (HeyGen's re-encode of this mp3) is muted.
   const voiceoverPath = path.join(localDir, "vo.mp3");
-  await getStorage().download(audio.filePath, voiceoverPath);
-
   let talkingHeadPath = path.join(localDir, "talking-head.mp4");
-  await getStorage().download(params.lipsyncPath, talkingHeadPath);
+  let openerPath = opener ? path.join(localDir, "opener.mp4") : undefined;
+  await Promise.all([
+    getStorage().download(audio.filePath, voiceoverPath),
+    getStorage().download(params.lipsyncPath, talkingHeadPath),
+    opener && openerPath ? getStorage().download(opener.filePath, openerPath) : undefined,
+  ]);
+  // HeyGen generated to the PADDED audio; the layout needs the clip's real
+  // length (probed before the stream-copy retag, which does not change it).
+  const clip = getEnv().DRY_RUN ? DRY_RUN_PROBE : await probe(talkingHeadPath);
   talkingHeadPath = await retagIfUntagged(
     talkingHeadPath,
     path.join(localDir, "talking-head-tagged.mp4"),
   );
+  if (openerPath) {
+    openerPath = await retagIfUntagged(openerPath, path.join(localDir, "opener-tagged.mp4"));
+  }
+
+  const timeline = serviceBTimeline({
+    hasOpener: opener !== undefined,
+    openerDurationMs: opener?.durationMs,
+    revealAtMs: opener?.revealAtMs,
+    hookText: params.hookText,
+    // Absent on a render lip-synced before the lead-in existed: the clip
+    // then starts at 0 with the VO, exactly as it did.
+    leadInMs: params.leadInMs ?? 0,
+    lipsyncDurationMs: clip.durationMs,
+    voDurationMs: audio.durationMs,
+  });
 
   return {
     kind: "service_b",
     talkingHeadPath,
     voiceoverPath,
     brollPaths: [], // product B-roll cutaways: wired when the composition lands
-    captions,
+    openerPath,
+    hookText: params.hookText,
+    hookTextSafeArea: params.hookTextSafeArea,
+    timeline: {
+      ...timeline,
+      crossfadeFrames: CROSSFADE_FRAMES,
+      punchInScale: PUNCH_IN_SCALE,
+      punchInMs: PUNCH_IN_MS,
+    },
     watermark: render.watermarked,
+    // Last on purpose: the DRY_RUN render echoes a prefix of these props, and
+    // captions are the one unbounded field.
+    captions,
   };
 }
 

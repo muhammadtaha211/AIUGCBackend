@@ -29,6 +29,7 @@ export * from "./pipelines/sets";
 export * from "./pipelines/tts";
 export * from "./pricing";
 export * from "./prompts";
+export * from "./service-b-timeline";
 export * from "./providers/anthropic";
 export * from "./providers/elevenlabs";
 export * from "./providers/imagegen";

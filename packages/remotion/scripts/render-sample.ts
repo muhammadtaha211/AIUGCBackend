@@ -1,9 +1,17 @@
 import { fileURLToPath } from "node:url";
-import { sampleCaptions, sampleDurationInFrames, sampleSteps } from "../src/fixtures";
+import {
+  sampleCaptions,
+  sampleDurationInFrames,
+  sampleHookText,
+  sampleOpenerTimeline,
+  sampleSteps,
+  sampleTimeline,
+} from "../src/fixtures";
 import { renderServiceA, renderServiceASteps, renderServiceB } from "../src/render";
 import { FPS } from "../src/schema";
 import {
   ensureFixtures,
+  OPENER_FIXTURE,
   STEPS_DEMO_FIXTURE,
   STEPS_HOOK_FIXTURE,
   TALKING_HEAD_FIXTURE,
@@ -21,12 +29,16 @@ import {
  * `--hook-line "<text>"` overrides the burned line — e.g. a `POV:` line to
  * check the mixed-direction (Latin prefix in RTL) rendering. `--steps` renders
  * the ServiceASteps composition from the lavfi fixtures — a silent mp4 with
- * visible hard cuts (the demo fixture's clock jumps at each one).
+ * visible hard cuts (the demo fixture's clock jumps at each one). `--opener`
+ * renders ServiceB with the synthetic opener clip in front: the frozen first
+ * frame under the hook text, the hard cut at the reveal, the dissolve and
+ * punch-in, and the VO starting 250ms after the cut.
  */
 
 const watermark = process.argv.includes("--watermark");
 const serviceA = process.argv.includes("--service-a");
 const steps = process.argv.includes("--steps");
+const opener = process.argv.includes("--opener");
 
 function argValue(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
@@ -36,9 +48,11 @@ const name = steps
   ? "sample-steps"
   : serviceA
     ? "sample-a"
-    : watermark
-      ? "sample-watermarked"
-      : "sample";
+    : opener
+      ? "sample-b-opener"
+      : watermark
+        ? "sample-watermarked"
+        : "sample";
 const outPath = fileURLToPath(new URL(`../out/${name}.mp4`, import.meta.url));
 
 await ensureFixtures();
@@ -78,6 +92,22 @@ if (steps) {
     },
     outPath,
   );
+} else if (opener) {
+  const [x, y, w, h] = (argValue("--safe-area") ?? "25,1062,1009,179").split(",").map(Number);
+  await renderServiceB(
+    {
+      talkingHeadPath: TALKING_HEAD_FIXTURE,
+      voiceoverPath: VOICEOVER_FIXTURE,
+      brollPaths: [],
+      captions: sampleCaptions,
+      openerPath: argValue("--opener-file") ?? OPENER_FIXTURE,
+      hookText: argValue("--hook-line") ?? sampleHookText,
+      hookTextSafeArea: { x: x!, y: y!, w: w!, h: h! },
+      timeline: sampleOpenerTimeline,
+      watermark,
+    },
+    outPath,
+  );
 } else {
   await renderServiceB(
     {
@@ -85,6 +115,7 @@ if (steps) {
       voiceoverPath: VOICEOVER_FIXTURE,
       brollPaths: [],
       captions: sampleCaptions,
+      timeline: sampleTimeline,
       watermark,
     },
     outPath,

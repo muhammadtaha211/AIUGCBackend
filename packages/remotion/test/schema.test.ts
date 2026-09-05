@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sampleCaptions } from "../src/fixtures";
+import { sampleCaptions, sampleOpenerTimeline, sampleTimeline } from "../src/fixtures";
 import { serviceAStepsSchema, serviceBSchema } from "../src/schema";
 
 const valid = {
@@ -7,12 +7,30 @@ const valid = {
   voiceoverSrc: "http://127.0.0.1:1234/1.mp3",
   brollSrcs: [],
   captions: sampleCaptions,
+  timeline: sampleTimeline,
   watermark: false,
 };
 
 describe("serviceBSchema", () => {
   it("accepts a render with no b-roll", () => {
     expect(serviceBSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("accepts the opener effect: clip, hook text, rect and its timeline", () => {
+    const result = serviceBSchema.safeParse({
+      ...valid,
+      openerSrc: "http://127.0.0.1:1234/2.mp4",
+      hookText: "ככה מזמינים בלי לחכות",
+      hookTextSafeArea: { x: 25, y: 1062, w: 1009, h: 179 },
+      timeline: sampleOpenerTimeline,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a missing timeline — the layout is computed in core, never guessed here", () => {
+    const { timeline, ...rest } = valid;
+    expect(serviceBSchema.safeParse(rest).success).toBe(false);
+    expect(serviceBSchema.safeParse({ ...valid, timeline: { holdMs: 0 } }).success).toBe(false);
   });
 
   it("accepts b-roll paths when they are present", () => {
