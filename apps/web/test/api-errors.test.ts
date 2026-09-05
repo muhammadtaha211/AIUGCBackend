@@ -106,9 +106,9 @@ describe("coreErrorMapping — the not-ready demo, phrased both ways", () => {
     expect(coreErrorMapping(new Error("composite is not ready yet (status: queued)")).error).toBe(
       "עוד לא מוכן — נסו שוב בעוד רגע.",
     );
-    expect(coreErrorMapping(new Error("audio render is not ready yet (status: queued)")).error).toBe(
-      "עוד לא מוכן — נסו שוב בעוד רגע.",
-    );
+    expect(
+      coreErrorMapping(new Error("audio render is not ready yet (status: queued)")).error,
+    ).toBe("עוד לא מוכן — נסו שוב בעוד רגע.");
   });
 });
 

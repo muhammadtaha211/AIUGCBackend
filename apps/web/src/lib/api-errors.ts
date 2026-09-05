@@ -31,7 +31,11 @@ export type CoreErrorMapping = {
 
 export function coreErrorMapping(err: unknown): CoreErrorMapping {
   const message = err instanceof Error ? err.message : "";
-  const hit = (status: number, error: string): CoreErrorMapping => ({ status, error, mapped: true });
+  const hit = (status: number, error: string): CoreErrorMapping => ({
+    status,
+    error,
+    mapped: true,
+  });
 
   if (/ארוך מדי/.test(message)) return hit(400, message); // word budget — already Hebrew
   if (/has no questionnaire yet/.test(message)) {
