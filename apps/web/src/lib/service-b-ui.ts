@@ -1,7 +1,12 @@
+import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/core/hook-text";
+
 /**
  * Pure, client-safe helpers for the homepage and the Service B wizard.
- * No imports from @aiugc/core here — this file is bundled into client
- * components, and core drags in server-only dependencies.
+ * No imports from @aiugc/core's main entry — this file is bundled into
+ * client components, and core drags in server-only dependencies. The
+ * "hook-geometry" and "hook-text" subpaths are the deliberate exceptions
+ * (pure constants and validation, the same ones service-a-ui.ts leans on).
  */
 
 // ---------------------------------------------------------------------------
@@ -161,6 +166,43 @@ export const PERSONA_CARD_QUALITY = 60;
 
 /** A kind='background' reference image of the selected persona. */
 export type PersonaImage = { id: string; label?: string; imageUrl: string };
+
+// ---------------------------------------------------------------------------
+// Opener effect (GET /api/personas/[personaId]/openers + the effect step)
+// ---------------------------------------------------------------------------
+
+/** One founder-made opener clip of the persona's selfie, play-ready. */
+export type OpenerClip = {
+  id: string;
+  effect: string;
+  /** Hebrew, shown on the card. */
+  label: string;
+  /** Signed, short-lived. */
+  previewUrl: string;
+  /** First frame the face is clear, in clip time — the hard cut lands here. */
+  revealAtMs: number;
+  /** The clip's default text safe area — seeds the placement editor. */
+  textSafeArea: SafeRect;
+};
+
+/**
+ * The effect step's hook-text field, in Hebrew. core's hookTextError is the
+ * rule (the same one createBRender refuses on at enqueue); this only puts
+ * words on it the customer can act on. Order matters: "has no words" must
+ * be caught before the word-cap line, which also says "words".
+ */
+export function hookTextFieldError(text: string): string | undefined {
+  const problem = hookTextError(text);
+  if (problem === undefined) return undefined;
+  if (/is empty|no words/.test(problem)) return "צריך לכתוב משפט פתיחה.";
+  if (/emoji/.test(problem)) return "בלי אימוג'י, הטקסט נצרב על הסרטון.";
+  if (/unrenderable/.test(problem)) return "יש כאן תו שאי אפשר להציג על הסרטון.";
+  if (/words/.test(problem)) return `עד ${HOOK_TEXT_MAX_WORDS} מילים.`;
+  if (/characters/.test(problem)) return `עד ${HOOK_TEXT_MAX_CHARS} תווים.`;
+  if (/punctuation/.test(problem)) return "בלי סימן פיסוק בסוף המשפט.";
+  if (/niqqud/.test(problem)) return "בלי ניקוד.";
+  return "המשפט לא תקין.";
+}
 
 export type CompositeState = {
   id: string;

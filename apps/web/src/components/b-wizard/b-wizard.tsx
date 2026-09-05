@@ -2,19 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { StepHeader } from "@/components/onboarding/steps/step-chrome";
+import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
 import {
   pointersChanged,
   wizardSteps,
   type AudioState,
+  type OpenerClip,
   type Persona,
   type RenderState,
   type ScriptState,
   type WizardStep,
 } from "@/lib/service-b-ui";
 import { StepAudio } from "./step-audio";
+import { StepEffect } from "./step-effect";
 import { StepPersona } from "./step-persona";
 import { StepPointers } from "./step-pointers";
 import { StepRender } from "./step-render";
@@ -64,6 +66,14 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   const [script, setScript] = useState<ScriptState | null>(null);
   const [editedText, setEditedText] = useState("");
   const [audio, setAudio] = useState<AudioState | null>(null);
+  /** The persona's opener clips, cached like the catalog; null = not loaded. */
+  const [openers, setOpeners] = useState<OpenerClip[] | null>(null);
+  /** The chosen opener; null = no effect (the default). */
+  const [opener, setOpener] = useState<OpenerClip | null>(null);
+  /** The on-screen line; null = untouched, the effect step seeds it from the script. */
+  const [hookText, setHookText] = useState<string | null>(null);
+  /** Customer-placed hook-text rect; null = the clip's safe area. */
+  const [rect, setRect] = useState<SafeRect | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
 
   const step = steps[stepIndex]!;
@@ -74,16 +84,27 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
     if (index < stepIndex) setStepIndex(index);
   };
 
-  /** Everything generated for the previous persona is that persona's — drop it. */
+  /**
+   * Everything generated from the script is the script's — drop it. The hook
+   * text goes too: the draft is re-derived with the script, and the effect
+   * step reseeds from the new one.
+   */
   function discardScript() {
     setScript(null);
     setEditedText("");
     setAudio(null);
+    setHookText(null);
   }
 
-  /** A different persona invalidates everything generated for the previous one. */
+  /** A different persona invalidates everything generated for the previous one —
+   *  and its opener list, which is that persona's selfie's. */
   function selectPersona(next: Persona) {
-    if (persona && persona.id !== next.id) discardScript();
+    if (persona && persona.id !== next.id) {
+      discardScript();
+      setOpeners(null);
+      setOpener(null);
+      setRect(null);
+    }
     setPersona(next);
   }
 
@@ -93,9 +114,11 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
     goNext();
   }
 
-  /** Leaving the script step: later steps must use the latest scriptId only. */
+  /** Leaving the script step: later steps must use the latest scriptId only,
+   *  and the hook text follows the script it was derived from. */
   function continueFromScript(latest: ScriptState) {
     if (audio && audio.scriptId !== latest.scriptId) setAudio(null);
+    if (script?.scriptId !== latest.scriptId) setHookText(null);
     goNext();
   }
 
@@ -191,15 +214,22 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
               />
             )}
 
-            {/* Placeholder until StepEffect lands (step 3 of this series):
-                no opener is offered, so the render goes without one. */}
-            {step === "effect" && (
-              <div>
-                <StepHeader title={STEP_TITLES.effect} onBack={goBack} />
-                <Button type="button" size="lg" className="mt-7 w-full" onClick={goNext}>
-                  המשך בלי אפקט
-                </Button>
-              </div>
+            {step === "effect" && persona && script && (
+              <StepEffect
+                personaId={persona.id}
+                script={script}
+                openers={openers}
+                setOpeners={setOpeners}
+                opener={opener}
+                setOpener={setOpener}
+                hookText={hookText}
+                setHookText={setHookText}
+                rect={rect}
+                setRect={setRect}
+                onBack={goBack}
+                onContinue={goNext}
+                onFatal={setFatal}
+              />
             )}
 
             {step === "render" && persona && script && audio && (

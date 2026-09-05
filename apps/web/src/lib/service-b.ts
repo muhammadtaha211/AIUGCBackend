@@ -90,6 +90,23 @@ export function personaThumbnail<T extends PersonaImageRow>(
   );
 }
 
+/**
+ * The opener list for one persona: the ACTIVE clips made from
+ * personaSelfie(images) — the row the card shows and the render animates.
+ * Clips of any other image of the persona (a retired selfie, a standing
+ * default, a newer non-default selfie) are not offered, whatever is_default
+ * says: an opener ends on the frame of the selfie it was made from, and it
+ * is only a transition if the talking head starts on that same frame.
+ */
+export function personaOpeners<
+  I extends PersonaImageRow & { id: string },
+  C extends { personaImageId: string; active: boolean },
+>(images: I[], clips: C[]): C[] {
+  const selfie = personaSelfie(images);
+  if (!selfie) return [];
+  return clips.filter((clip) => clip.active && clip.personaImageId === selfie.id);
+}
+
 /** The background picker shows only stored, non-retired kind='background' images. */
 export function backgroundImages<T extends StoredImage>(images: T[]): T[] {
   return images.filter((image) => image.kind === "background" && isUsable(image));
