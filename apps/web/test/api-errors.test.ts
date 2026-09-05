@@ -70,20 +70,17 @@ describe("coreErrorMapping — the three approval gates", () => {
     expect(result.error).toBe("צריך לאשר את האודיו לפני יצירת הסרטון.");
   });
 
-  it("still maps the composite gate", () => {
-    const err = new Error("composite must be approved before rendering (hard gate)");
-    const result = coreErrorMapping(err);
-    expect(result.status).toBe(409);
-    expect(result.error).toBe("צריך לאשר את תמונת הדמות עם המוצר לפני יצירת הסרטון.");
-  });
-
-  it("gives the three gates three different lines", () => {
+  it("gives the two gates two different lines", () => {
     const lines = [
       "step plan must be approved before rendering (hard gate)",
       "audio must be approved before rendering (hard gate)",
-      "composite must be approved before rendering (hard gate)",
     ].map((m) => coreErrorMapping(new Error(m)).error);
-    expect(new Set(lines).size).toBe(3);
+    expect(new Set(lines).size).toBe(2);
+  });
+
+  it("no longer maps the composite gate — the composite routes are gone", () => {
+    const err = new Error("composite must be approved before rendering (hard gate)");
+    expect(coreErrorMapping(err).mapped).toBe(false);
   });
 });
 

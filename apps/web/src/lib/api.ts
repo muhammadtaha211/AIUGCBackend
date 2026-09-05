@@ -66,23 +66,6 @@ export async function requireBusiness(
  * and a malformed id.
  */
 
-export async function requireComposite(
-  db: Db,
-  compositeId: string,
-  userId: string,
-): Promise<{ composite: typeof schema.composites.$inferSelect } | { response: NextResponse }> {
-  if (!isUuid(compositeId)) return { response: jsonError(404, NOT_FOUND) };
-  const rows = await db
-    .select()
-    .from(schema.composites)
-    .where(eq(schema.composites.id, compositeId))
-    .limit(1);
-  if (!rows[0]) return { response: jsonError(404, NOT_FOUND) };
-  const owned = await requireBusiness(db, rows[0].businessId, userId);
-  if ("response" in owned) return owned;
-  return { composite: rows[0] };
-}
-
 export async function requireScript(
   db: Db,
   scriptId: string,

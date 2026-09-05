@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  backgroundImages,
   businessAccess,
-  canUseComposites,
-  MAX_PHOTO_BYTES,
   personaOpeners,
   personaSelfie,
   personaThumbnail,
-  photoError,
   renderOpenerError,
   renderRequestSchema,
   renderSourceError,
@@ -152,7 +148,7 @@ describe("renderOpenerError (the opener must be the source image's)", () => {
   });
 });
 
-describe("persona image selection (thumbnail + background picker)", () => {
+describe("persona image selection (thumbnail + render source)", () => {
   const image = (over: Partial<Parameters<typeof personaThumbnail>[0][number]> = {}) => ({
     kind: "background",
     filePath: "personas/p1/img.png",
@@ -281,20 +277,12 @@ describe("persona image selection (thumbnail + background picker)", () => {
     });
   });
 
-  it("backgroundImages keeps only stored kind='background' rows", () => {
-    const background = image({});
-    const preview = image({ kind: "preview" });
-    const pending = image({ filePath: "pending" });
-    expect(backgroundImages([background, preview, pending])).toEqual([background]);
-  });
-
-  it("retired images are out of the thumbnail and the background picker", () => {
+  it("retired images are out of the thumbnail", () => {
     const retiredPreview = image({ kind: "preview", retired: true });
     const retiredDefault = image({ isDefault: true, retired: true });
     const stored = image({});
     expect(personaThumbnail([retiredPreview, retiredDefault, stored], "a")).toBe(stored);
     expect(personaThumbnail([retiredPreview], "a")).toBeUndefined();
-    expect(backgroundImages([image({ retired: true }), stored])).toEqual([stored]);
   });
 });
 
@@ -319,42 +307,5 @@ describe("businessAccess (ownership gate)", () => {
 
   it("missing business -> missing", () => {
     expect(businessAccess(undefined, { id: UUID_A, role: "customer" })).toBe("missing");
-  });
-});
-
-describe("canUseComposites (category guard)", () => {
-  const questionnaire = {
-    category: "physical_product",
-    product_name: "קרם הפנים",
-    what_it_does: "קרם לחות טבעי לעור רגיש",
-    advantages: ["רכיבים טבעיים בלבד"],
-    target_audience: "נשים 25-45",
-    tone: "friendly",
-  };
-
-  it("physical product -> allowed", () => {
-    expect(canUseComposites(questionnaire)).toBe(true);
-  });
-
-  it("any other category -> blocked", () => {
-    expect(canUseComposites({ ...questionnaire, category: "local_service" })).toBe(false);
-    expect(canUseComposites({ ...questionnaire, category: "app_or_digital" })).toBe(false);
-  });
-
-  it("missing or unfilled questionnaire -> blocked", () => {
-    expect(canUseComposites(null)).toBe(false);
-    expect(canUseComposites({})).toBe(false);
-  });
-});
-
-describe("photoError (upload validation)", () => {
-  it("accepts a normal jpeg", () => {
-    expect(photoError({ type: "image/jpeg", size: 500_000 })).toBeNull();
-  });
-
-  it("rejects non-image types, empty files, and oversized files in Hebrew", () => {
-    expect(photoError({ type: "application/pdf", size: 1000 })).toMatch(/JPG/);
-    expect(photoError({ type: "image/jpeg", size: 0 })).toMatch(/ריק/);
-    expect(photoError({ type: "image/png", size: MAX_PHOTO_BYTES + 1 })).toMatch(/גדולה מדי/);
   });
 });

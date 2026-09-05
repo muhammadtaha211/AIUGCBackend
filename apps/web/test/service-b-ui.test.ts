@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   applyAudioPoll,
-  clientPhotoError,
   countWords,
   failedRenderNotice,
   generatingLine,
   hookTextFieldError,
   isActiveRenderStatus,
-  MAX_PHOTO_BYTES,
   needsScriptAdoption,
   needsTextSave,
   pickActiveHead,
@@ -250,18 +248,6 @@ describe("pickSelectedBusiness", () => {
     expect(pickSelectedBusiness(businesses, undefined)).toEqual({ id: "a" });
     expect(pickSelectedBusiness(businesses, "deleted")).toEqual({ id: "a" });
     expect(pickSelectedBusiness([], "a")).toBeUndefined();
-  });
-});
-
-describe("clientPhotoError (mirror of the server rules)", () => {
-  it("accepts a normal jpeg", () => {
-    expect(clientPhotoError({ type: "image/jpeg", size: 500_000 })).toBeNull();
-  });
-
-  it("rejects bad types, empty files, and oversized files in Hebrew", () => {
-    expect(clientPhotoError({ type: "application/pdf", size: 1000 })).toMatch(/JPG/);
-    expect(clientPhotoError({ type: "image/jpeg", size: 0 })).toMatch(/ריק/);
-    expect(clientPhotoError({ type: "image/png", size: MAX_PHOTO_BYTES + 1 })).toMatch(/גדולה מדי/);
   });
 });
 

@@ -164,9 +164,6 @@ export const PERSONA_CARD_SIZES = "(max-width: 640px) 45vw, 200px";
 /** At card size 60 is indistinguishable from the default 75 and meaningfully smaller. */
 export const PERSONA_CARD_QUALITY = 60;
 
-/** A kind='background' reference image of the selected persona. */
-export type PersonaImage = { id: string; label?: string; imageUrl: string };
-
 // ---------------------------------------------------------------------------
 // Opener effect (GET /api/personas/[personaId]/openers + the effect step)
 // ---------------------------------------------------------------------------
@@ -203,14 +200,6 @@ export function hookTextFieldError(text: string): string | undefined {
   if (/niqqud/.test(problem)) return "בלי ניקוד.";
   return "המשפט לא תקין.";
 }
-
-export type CompositeState = {
-  id: string;
-  status: string; // queued | generating | ready | failed
-  previewUrl?: string;
-  error?: string;
-  approved: boolean;
-};
 
 export type AudioState = {
   id: string;
@@ -408,23 +397,4 @@ export function renderRequestBody(opts: {
         }
       : {}),
   };
-}
-
-// ---------------------------------------------------------------------------
-// Product photo validation (client-side copy)
-// ---------------------------------------------------------------------------
-
-/**
- * Duplicates the server rules in src/lib/service-b.ts (photoError) — that file
- * imports @aiugc/core and must stay out of the client bundle. The server
- * re-validates every upload; this only saves a round-trip.
- */
-export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
-
-export function clientPhotoError(photo: { type: string; size: number }): string | null {
-  if (!PHOTO_TYPES.includes(photo.type)) return "אפשר להעלות רק תמונה בפורמט JPG, PNG או WebP.";
-  if (photo.size === 0) return "הקובץ שהועלה ריק.";
-  if (photo.size > MAX_PHOTO_BYTES) return "התמונה גדולה מדי — המקסימום הוא 10MB.";
-  return null;
 }

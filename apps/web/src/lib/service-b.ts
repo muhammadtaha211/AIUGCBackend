@@ -1,12 +1,10 @@
 import { z } from "zod";
-import { questionnaireSchema } from "@aiugc/core";
 import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 
 /**
  * Pure, unit-testable parts of the Service B HTTP layer: request body schemas,
- * the persona image and opener selection, the render-source checks, the
- * ownership decision, the composite category guard, and product photo
- * validation. Route handlers (src/app/api) wire these to auth + DB.
+ * the persona image and opener selection, the render-source checks, and the
+ * ownership decision. Route handlers (src/app/api) wire these to auth + DB.
  */
 
 // ---------------------------------------------------------------------------
@@ -167,11 +165,6 @@ export function renderOpenerError(
   return undefined;
 }
 
-/** The background picker shows only stored, non-retired kind='background' images. */
-export function backgroundImages<T extends StoredImage>(images: T[]): T[] {
-  return images.filter((image) => image.kind === "background" && isUsable(image));
-}
-
 // ---------------------------------------------------------------------------
 // Ownership: core writes bypass RLS, so every route decides access explicitly.
 // ---------------------------------------------------------------------------
@@ -186,30 +179,4 @@ export function businessAccess(
   if (!requester) return "forbidden";
   if (requester.role === "admin") return "ok";
   return business.ownerUserId === requester.id ? "ok" : "forbidden";
-}
-
-// ---------------------------------------------------------------------------
-// Composite guards (physical products only; sane photo uploads)
-// ---------------------------------------------------------------------------
-
-export function canUseComposites(questionnaire: unknown): boolean {
-  const parsed = questionnaireSchema.safeParse(questionnaire);
-  return parsed.success && parsed.data.category === "physical_product";
-}
-
-export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-
-/** MIME -> extension for the stored product photo; also the allowlist. */
-export const PHOTO_EXTENSIONS: Record<string, string> = {
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/webp": ".webp",
-};
-
-/** Hebrew validation error for an uploaded product photo, or null when fine. */
-export function photoError(photo: { type: string; size: number }): string | null {
-  if (!PHOTO_EXTENSIONS[photo.type]) return "אפשר להעלות רק תמונה בפורמט JPG, PNG או WebP.";
-  if (photo.size === 0) return "הקובץ שהועלה ריק.";
-  if (photo.size > MAX_PHOTO_BYTES) return "התמונה גדולה מדי — המקסימום הוא 10MB.";
-  return null;
 }
