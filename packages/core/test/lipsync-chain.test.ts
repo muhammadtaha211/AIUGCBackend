@@ -11,7 +11,12 @@ import { buildHandlers } from "../src/handlers";
 import { DEFAULT_POLL_DEADLINE_SECONDS } from "../src/jobs/poll";
 import { recoverExpiredLeases } from "../src/jobs/queue";
 import { runLane } from "../src/jobs/worker";
-import { addPersona, addPersonaImage, setPersonaImageRetired } from "../src/pipelines/bank";
+import {
+  addOpenerClip,
+  addPersona,
+  addPersonaImage,
+  setPersonaImageRetired,
+} from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
 import { rejectRender } from "../src/pipelines/qc";
 import { createBRender, type VariantParams } from "../src/pipelines/sets";
@@ -73,13 +78,16 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     return file;
   }
 
-  /** A Service B render with approved audio, queued at the lipsync step. */
-  async function queueBRender(extra?: {
-    motionPrompt?: string;
-    expressiveness?: string;
-  }): Promise<{ renderId: string; audioId: string }> {
-    const persona = await addPersona(db, { name: "נועה", voiceId: "voice_noa" });
-    await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("persona.jpg") });
+  const OPENER_RECT = { x: 60, y: 900, w: 960, h: 300 };
+
+  /** A persona with a default SELFIE (the Service B render source) and approved audio. */
+  async function selfiePersona(name = "נועה", voiceId = "voice_noa") {
+    const persona = await addPersona(db, { name, voiceId });
+    const image = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("persona.jpg"),
+      kind: "selfie",
+    });
     const script = (
       await db
         .insert(dbSchema.scripts)
@@ -91,16 +99,41 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
         })
         .returning()
     )[0]!;
-    const audio = await requestAudio(db, { scriptId: script.id, voiceId: "voice_noa" });
+    const audio = await requestAudio(db, { scriptId: script.id, voiceId });
     await drainAll();
     await approveAudio(db, audio.id);
+    return { persona, image, audioId: audio.id };
+  }
+
+  async function openerFor(personaImageId: string, effect = "hand_cover") {
+    return addOpenerClip(db, {
+      personaImageId,
+      effect,
+      label: "כף יד",
+      filePath: tempFile("opener.mp4"),
+      durationMs: 2400,
+      revealAtMs: 1600,
+      textSafeArea: OPENER_RECT,
+    });
+  }
+
+  /** A Service B render with approved audio, queued at the lipsync step. */
+  async function queueBRender(extra?: {
+    motionPrompt?: string;
+    expressiveness?: string;
+    withOpener?: boolean;
+  }): Promise<{ renderId: string; audioId: string }> {
+    const { persona, image, audioId } = await selfiePersona();
+    const { withOpener, ...rest } = extra ?? {};
+    const opener = withOpener ? await openerFor(image.id) : undefined;
     const render = await createBRender(db, {
       businessId,
-      audioRenderId: audio.id,
+      audioRenderId: audioId,
       personaId: persona.id,
-      ...extra,
+      ...(opener && { openerClipId: opener.id, hookText: "ניסיתי מיליון דברים" }),
+      ...rest,
     });
-    return { renderId: render.id, audioId: audio.id };
+    return { renderId: render.id, audioId };
   }
 
   async function paramsOf(videoRenderId: string): Promise<VariantParams> {
@@ -490,10 +523,11 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
   });
 
   it("a QC regeneration strips the clip path; a different take needs a script or audio change", async () => {
-    const { renderId } = await queueBRender();
+    const { renderId } = await queueBRender({ withOpener: true });
     await drainAll();
     const params = await paramsOf(renderId);
     expect(params.lipsyncPath).toBeDefined();
+    expect(params.openerClipId).toBeDefined();
 
     const { regeneratedRenderId } = await rejectRender(db, renderId, "עיניים מוזרות");
     expect(regeneratedRenderId).toBeDefined();
@@ -504,6 +538,144 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(retry.lipsyncPath).toBeUndefined();
     expect(retry.audioRenderId).toBe(params.audioRenderId);
     expect(retry.personaId).toBe(params.personaId);
+    // The opener, its FINAL hook text, the rect and the pinned lead-in all
+    // survive: the re-roll composes the same ad around a new take.
+    expect(retry.openerClipId).toBe(params.openerClipId);
+    expect(retry.hookText).toBe(params.hookText);
+    expect(retry.hookTextSafeArea).toEqual(params.hookTextSafeArea);
+    expect(retry.personaImageId).toBe(params.personaImageId);
+    expect(retry.leadInMs).toBe(params.leadInMs);
+  });
+
+  it("a persona whose default is not a selfie is refused; an explicit image bypasses the guard", async () => {
+    const persona = await addPersona(db, { name: "רותם", voiceId: "voice_rotem" });
+    // kind absent = "background": the standing image, which is the default.
+    const standing = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("standing.jpg"),
+    });
+    const script = (
+      await db
+        .insert(dbSchema.scripts)
+        .values({ businessId, personaId: persona.id, kind: "b_script", text: "טקסט לבדיקה" })
+        .returning()
+    )[0]!;
+    const audio = await requestAudio(db, { scriptId: script.id, voiceId: "voice_rotem" });
+    await drainAll();
+    await approveAudio(db, audio.id);
+
+    await expect(
+      createBRender(db, { businessId, audioRenderId: audio.id, personaId: persona.id }),
+    ).rejects.toThrow(/סלפי/);
+
+    const render = await createBRender(db, {
+      businessId,
+      audioRenderId: audio.id,
+      personaId: persona.id,
+      personaImageId: standing.id,
+    });
+    expect((render.params as VariantParams).personaImageId).toBe(standing.id);
+    await drainAll();
+  });
+
+  it("an opener needs hookText and hookText needs an opener", async () => {
+    const { persona, image, audioId } = await selfiePersona();
+    const opener = await openerFor(image.id);
+    await expect(
+      createBRender(db, {
+        businessId,
+        audioRenderId: audioId,
+        personaId: persona.id,
+        openerClipId: opener.id,
+      }),
+    ).rejects.toThrow(/hookText is required/);
+    await expect(
+      createBRender(db, {
+        businessId,
+        audioRenderId: audioId,
+        personaId: persona.id,
+        hookText: "ניסיתי מיליון דברים",
+      }),
+    ).rejects.toThrow(/needs an opener/);
+  });
+
+  it("validates the opener: it exists, is active, and was made from the render's source image", async () => {
+    const { persona, image, audioId } = await selfiePersona();
+    const other = await selfiePersona("יעל", "voice_yael");
+    const base = { businessId, audioRenderId: audioId, personaId: persona.id, hookText: "רגע אחד" };
+
+    await expect(createBRender(db, { ...base, openerClipId: randomUUID() })).rejects.toThrow(
+      /not found/,
+    );
+
+    const foreign = await openerFor(other.image.id);
+    await expect(createBRender(db, { ...base, openerClipId: foreign.id })).rejects.toThrow(
+      /different persona image/,
+    );
+
+    const mine = await openerFor(image.id);
+    // Re-registering the pair supersedes: the old row stays, inactive.
+    const replacement = await openerFor(image.id);
+    expect(replacement.id).not.toBe(mine.id);
+    await expect(createBRender(db, { ...base, openerClipId: mine.id })).rejects.toThrow(
+      /not active/,
+    );
+
+    // The opener's own registration refuses a non-selfie image.
+    const standing = await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("standing2.jpg"),
+    });
+    await expect(openerFor(standing.id)).rejects.toThrow(/not a selfie/);
+  });
+
+  it("copies the FINAL hook text and the resolved rect into params, and pins the source image", async () => {
+    const { persona, image, audioId } = await selfiePersona();
+    const opener = await openerFor(image.id);
+
+    const render = await createBRender(db, {
+      businessId,
+      audioRenderId: audioId,
+      personaId: persona.id,
+      openerClipId: opener.id,
+      hookText: "  ניסיתי מיליון דברים  ",
+    });
+    const params = render.params as VariantParams;
+    expect(params.openerClipId).toBe(opener.id);
+    expect(params.hookText).toBe("ניסיתי מיליון דברים");
+    // No customer rect: the opener's registered safe area is what burns.
+    expect(params.hookTextSafeArea).toEqual(OPENER_RECT);
+    // The resolved default is pinned — a default that moves later must not
+    // change what HeyGen animates against this opener.
+    expect(params.personaImageId).toBe(image.id);
+
+    // A customer-placed rect wins over the clip's.
+    const moved = await createBRender(db, {
+      businessId,
+      audioRenderId: audioId,
+      personaId: persona.id,
+      openerClipId: opener.id,
+      hookText: "ניסיתי מיליון דברים",
+      hookTextSafeArea: { x: 100, y: 1000, w: 880, h: 200 },
+    });
+    expect((moved.params as VariantParams).hookTextSafeArea).toEqual({
+      x: 100,
+      y: 1000,
+      w: 880,
+      h: 200,
+    });
+
+    // Over the caps: refused, never trimmed.
+    await expect(
+      createBRender(db, {
+        businessId,
+        audioRenderId: audioId,
+        personaId: persona.id,
+        openerClipId: opener.id,
+        hookText: "אחת שתיים שלוש ארבע חמש שש שבע שמונה",
+      }),
+    ).rejects.toThrow(/8 words/);
+    await drainAll();
   });
 
   it("a reclaimed lipsync job polls its providerJobId instead of resubmitting", async () => {

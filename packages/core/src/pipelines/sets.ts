@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
 import { snapToWordGap, type CaptionChunk } from "../captions";
@@ -8,12 +8,14 @@ import {
   composites,
   demos,
   events,
+  openerClips,
   personaImages,
   sets,
   videoRenders,
 } from "../db/schema";
 import { assertAccountBudget } from "../budget";
-import { textSafeAreaSchema, type SafeRect } from "../hook-geometry";
+import { resolveHookTextSafeArea, textSafeAreaSchema, type SafeRect } from "../hook-geometry";
+import { hookTextError } from "../hook-text";
 import { enqueue } from "../jobs/queue";
 import {
   creditCostsSchema,
@@ -92,6 +94,16 @@ export interface VariantParams {
   voSliceMs?: number;
   /** Customer-placed hook-line rect; resolveHookTextSafeArea falls back to the clip's. */
   textSafeArea?: SafeRect;
+  /** Service B: the founder-made opener clip played in front of the talking head (vault 0017). */
+  openerClipId?: string;
+  /**
+   * Service B: the FINAL on-screen hook text, copied here at enqueue — never a
+   * pointer to the script row, so a later re-derivation or edit cannot change
+   * what gets burned after the customer confirmed (vault 0017).
+   */
+  hookText?: string;
+  /** Service B: where hookText burns over the opener — the clip's rect unless the customer moved it. */
+  hookTextSafeArea?: SafeRect;
 }
 
 export interface AOutroPlan {
@@ -371,6 +383,12 @@ export async function createBRender(
     motionPrompt?: string;
     /** HeyGen expressiveness (low|medium|high) — overrides the app_config default. */
     expressiveness?: string;
+    /** Opener clip (opener_clips.id); must belong to the render's source image. */
+    openerClipId?: string;
+    /** The FINAL on-screen hook text — required with an opener, refused without one. */
+    hookText?: string;
+    /** Customer-placed rect for hookText; absent = the opener's text_safe_area. */
+    hookTextSafeArea?: SafeRect;
   },
 ) {
   const audio = await db
@@ -395,6 +413,10 @@ export async function createBRender(
       throw new Error("composite must be approved before rendering (hard gate)");
     }
   }
+  // The persona image the lip-sync will animate: an explicit image, else the
+  // persona's default. A composite is neither — it is its own file — and
+  // takes precedence in handleLipsync, so no image is resolved for it here.
+  let sourceImage: typeof personaImages.$inferSelect | undefined;
   if (opts.personaImageId) {
     const image = await db
       .select()
@@ -407,6 +429,68 @@ export async function createBRender(
     }
     // New renders only — QC regeneration reuses old params without this check.
     if (image[0].retired) throw new Error(`persona image ${opts.personaImageId} is retired`);
+    sourceImage = image[0];
+  } else if (!opts.compositeId && opts.personaId) {
+    // Same predicates handleLipsync resolves the default with.
+    sourceImage = (
+      await db
+        .select()
+        .from(personaImages)
+        .where(
+          and(
+            eq(personaImages.personaId, opts.personaId),
+            eq(personaImages.isDefault, true),
+            eq(personaImages.retired, false),
+            like(personaImages.filePath, "%/%"),
+          ),
+        )
+        .limit(1)
+    )[0];
+    // A default resolved here must be a selfie — the Service B render source
+    // (vault 0017). While the catalog shows a persona's selfie on its card,
+    // is_default may still point at the standing image, and a standing image
+    // would render a standing talking head under a selfie card. An explicit
+    // personaImageId (founder/CLI) and a composite bypass this on purpose. A
+    // persona with no default at all still fails in handleLipsync, as before.
+    if (sourceImage && sourceImage.kind !== "selfie") {
+      throw new Error(
+        "תמונת ברירת המחדל של הדמות אינה סלפי — יש להגדיר תמונת סלפי כברירת מחדל לפני יצירת סרטון",
+      );
+    }
+  }
+
+  // The opener and its hook text come together or not at all: the text burns
+  // over the clip's palm phase, and a clip with nothing to say over it is not
+  // an effect.
+  if ((opts.openerClipId === undefined) !== (opts.hookText === undefined)) {
+    throw new Error(
+      opts.openerClipId
+        ? "hookText is required with an opener clip"
+        : "hookText needs an opener clip to burn over",
+    );
+  }
+  let opener: typeof openerClips.$inferSelect | undefined;
+  let hookText: string | undefined;
+  let hookTextSafeArea: SafeRect | undefined;
+  if (opts.openerClipId !== undefined) {
+    opener = (
+      await db.select().from(openerClips).where(eq(openerClips.id, opts.openerClipId)).limit(1)
+    )[0];
+    if (!opener) throw new Error(`opener clip ${opts.openerClipId} not found`);
+    if (!opener.active) throw new Error(`opener clip ${opts.openerClipId} is not active`);
+    // An opener was made from ONE selfie and ends on that frame; it must be
+    // cut against a talking head animated from the same image.
+    if (!sourceImage) throw new Error("an opener clip needs a persona image source, not a composite");
+    if (opener.personaImageId !== sourceImage.id) {
+      throw new Error(`opener clip ${opts.openerClipId} belongs to a different persona image`);
+    }
+    const problem = hookTextError(opts.hookText!);
+    if (problem) throw new Error(problem);
+    hookText = opts.hookText!.trim();
+    hookTextSafeArea = resolveHookTextSafeArea(
+      opts.hookTextSafeArea === undefined ? undefined : textSafeAreaSchema.parse(opts.hookTextSafeArea),
+      opener.textSafeArea as SafeRect,
+    );
   }
 
   // Fail a typo'd tier here, not as a HeyGen 400 after the render is queued.
@@ -434,10 +518,16 @@ export async function createBRender(
         params: {
           audioRenderId: opts.audioRenderId,
           personaId: opts.personaId,
-          personaImageId: opts.personaImageId,
+          // With an opener the resolved image is pinned: the clip was made
+          // from exactly that selfie, so a default that moves between enqueue
+          // and the lipsync job must not change what HeyGen animates.
+          personaImageId: opts.personaImageId ?? (opener ? sourceImage!.id : undefined),
           compositeId: opts.compositeId,
           motionPrompt: opts.motionPrompt,
           expressiveness,
+          openerClipId: opts.openerClipId,
+          hookText,
+          hookTextSafeArea,
         },
       })
       .returning();

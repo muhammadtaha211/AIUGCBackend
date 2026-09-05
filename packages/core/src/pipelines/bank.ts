@@ -4,7 +4,16 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import path from "node:path";
 import { getEnv } from "../config";
 import type { Db } from "../db";
-import { hookClips, jobs, personaImages, personas, structures, videoRenders } from "../db/schema";
+import {
+  hookClips,
+  jobs,
+  openerClips,
+  personaImages,
+  personas,
+  structures,
+  videoRenders,
+} from "../db/schema";
+import { textSafeAreaSchema } from "../hook-geometry";
 import { enqueue, type Job } from "../jobs/queue";
 import { PermanentError } from "../jobs/errors";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -210,11 +219,16 @@ async function tryBlurPlaceholder(bytes: Buffer, id: string, extension: string) 
  * catalog copy (stable cacheable URL for the pickers — persona images are
  * catalog data any signed-in user may see, per 0007's RLS).
  */
+export type PersonaImageKind = "preview" | "background" | "selfie";
+
 export async function addPersonaImage(
   db: Db,
-  opts: { personaId: string; isDefault?: boolean } & (
-    { filePath: string } | { bytes: Buffer; extension: string }
-  ),
+  opts: {
+    personaId: string;
+    isDefault?: boolean;
+    /** Absent = the column default ("background"). "selfie" is the Service B render source. */
+    kind?: PersonaImageKind;
+  } & ({ filePath: string } | { bytes: Buffer; extension: string }),
 ) {
   const existing = await db
     .select()
@@ -227,7 +241,7 @@ export async function addPersonaImage(
   // unique index on is_default never sees two defaults).
   const inserted = await db
     .insert(personaImages)
-    .values({ personaId: opts.personaId, filePath: "pending", isDefault: false })
+    .values({ personaId: opts.personaId, filePath: "pending", isDefault: false, kind: opts.kind })
     .returning();
   const image = inserted[0]!;
   const extension = "filePath" in opts ? path.extname(opts.filePath) || ".jpg" : opts.extension;
@@ -347,6 +361,83 @@ export async function setPersonaImageRetired(db: Db, imageId: string, retired: b
   }
   await db.update(personaImages).set({ retired }).where(eq(personaImages.id, imageId));
   return { ...image, retired };
+}
+
+/**
+ * Register one founder-made opener clip against a (selfie image × effect)
+ * pair (vault 0017). The file is uploaded play-ready — already reversed where
+ * the effect is a reveal; nothing processes it at render time. One ACTIVE row
+ * per pair (0032's partial unique index): a re-registration supersedes the
+ * previous clip, which stays in the table as active=false because render
+ * params may reference it.
+ */
+export async function addOpenerClip(
+  db: Db,
+  opts: {
+    personaImageId: string;
+    effect: string;
+    label: string;
+    filePath: string;
+    durationMs: number;
+    /** First frame the face is fully clear, in clip time; 0..durationMs. */
+    revealAtMs: number;
+    textSafeArea: TextSafeArea;
+  },
+) {
+  const image = (
+    await db.select().from(personaImages).where(eq(personaImages.id, opts.personaImageId)).limit(1)
+  )[0];
+  if (!image) throw new Error(`persona image ${opts.personaImageId} not found`);
+  if (image.kind !== "selfie") {
+    throw new Error(`persona image ${opts.personaImageId} is not a selfie (kind: ${image.kind})`);
+  }
+  if (opts.revealAtMs < 0 || opts.revealAtMs > opts.durationMs) {
+    throw new Error(`revealAtMs ${opts.revealAtMs} is outside the clip (0..${opts.durationMs})`);
+  }
+  const textSafeArea = textSafeAreaSchema.parse(opts.textSafeArea);
+
+  // Inserted inactive: the partial unique index only sees active rows, so the
+  // previous clip for this pair keeps serving until the upload has landed.
+  const inserted = await db
+    .insert(openerClips)
+    .values({
+      personaImageId: opts.personaImageId,
+      effect: opts.effect,
+      label: opts.label,
+      filePath: "pending",
+      durationMs: opts.durationMs,
+      revealAtMs: opts.revealAtMs,
+      textSafeArea,
+      active: false,
+    })
+    .returning();
+  const clip = inserted[0]!;
+  let filePath: string;
+  try {
+    filePath = await getStorage().put(
+      "assets",
+      storageKey({ entity: "opener_clip", id: clip.id, filename: "clip.mp4" }),
+      opts.filePath,
+    );
+  } catch (err) {
+    // A failed upload must not strand the "pending" placeholder row.
+    await db.delete(openerClips).where(eq(openerClips.id, clip.id));
+    throw err;
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .update(openerClips)
+      .set({ active: false })
+      .where(
+        and(
+          eq(openerClips.personaImageId, opts.personaImageId),
+          eq(openerClips.effect, opts.effect),
+          eq(openerClips.active, true),
+        ),
+      );
+    await tx.update(openerClips).set({ filePath, active: true }).where(eq(openerClips.id, clip.id));
+  });
+  return { ...clip, filePath, active: true };
 }
 
 export async function addStructure(db: Db, opts: { title: string; skeleton: unknown }) {

@@ -161,7 +161,11 @@ beforeAll(async () => {
   hookLineId = (await generateHookLines(db, { businessId, n: 1 }))[0]!.id;
 
   personaId = (await addPersona(db, { name: "נועה", voiceId: "voice_noa" })).id;
-  await addPersonaImage(db, { personaId, filePath: tempFile("persona.jpg", "fake photo") });
+  await addPersonaImage(db, {
+    personaId,
+    filePath: tempFile("persona.jpg", "fake photo"),
+    kind: "selfie", // the Service B render source (vault 0017)
+  });
 }, 120_000);
 
 afterAll(async () => {

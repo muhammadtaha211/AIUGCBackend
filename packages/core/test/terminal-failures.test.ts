@@ -89,7 +89,11 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
   /** A Service B render with approved audio, queued at the lipsync step. */
   async function queueBRender(businessId: string): Promise<string> {
     const persona = await addPersona(db, { name: "נועה", voiceId: "voice_noa" });
-    await addPersonaImage(db, { personaId: persona.id, filePath: tempFile("persona.jpg") });
+    await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("persona.jpg"),
+      kind: "selfie", // the Service B render source (vault 0017)
+    });
     const script = (
       await db
         .insert(dbSchema.scripts)

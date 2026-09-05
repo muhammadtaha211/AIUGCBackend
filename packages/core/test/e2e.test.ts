@@ -314,9 +314,12 @@ describe("founder workflow (dry-run, end to end)", () => {
     async () => {
       const persona = await addPersona(db, { name: "נועה", voiceId: "voice_noa" });
       // The first image for a persona becomes the default automatically.
+      // The Service B render source is a SELFIE (vault 0017): a persona whose
+      // default is a standing image is refused by createBRender.
       const personaImage = await addPersonaImage(db, {
         personaId: persona.id,
         filePath: tempFile("persona.jpg", "fake persona photo"),
+        kind: "selfie",
       });
       expect(personaImage.isDefault).toBe(true);
       const structure = await addStructure(db, {
