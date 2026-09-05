@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   addHookClip,
+  addOpenerClip,
   addPersona,
   addPersonaImage,
   addStructure,
@@ -34,11 +35,14 @@ import {
   getStepPlan,
   getStorage,
   HEAVY_JOB_TYPES,
+  HOOK_TEXT_MAX_CHARS,
+  HOOK_TEXT_MAX_WORDS,
   planStepsSchema,
   listQcQueue,
   moreLikeThis,
   normalizeHookClip,
   observedWordsPerSecond,
+  probe,
   recentJobs,
   recentRenders,
   rejectRender,
@@ -378,6 +382,9 @@ copy
           durationPreset: Number(opts.seconds),
         });
         console.log(`b script: ${row.id}\n${row.text}`);
+        // The draft on-screen line — what `render-b --hook-text` takes once
+        // the founder is happy with it (edit it freely; the caps still apply).
+        console.log(`hook text: ${(row.params as { hookText?: string }).hookText}`);
       },
     ),
   );
@@ -481,6 +488,60 @@ bank
   );
 
 bank
+  .command("add-opener")
+  .description(
+    "Service B: register a play-ready opener clip against a SELFIE image × effect (one active per pair; re-registering supersedes)",
+  )
+  .requiredOption("--persona-image <id>", "the selfie persona image the clip was made from")
+  .requiredOption("--effect <key>", "motion key, e.g. hand_cover")
+  .requiredOption("--label <he>", "Hebrew label the customer sees in the effect step")
+  .requiredOption(
+    "--file <mp4>",
+    "the clip as it should play (already reversed where the effect is a reveal)",
+  )
+  .requiredOption(
+    "--reveal-at-ms <n>",
+    "first frame the face is fully clear, in clip time — the hard cut lands here",
+  )
+  .requiredOption(
+    "--safe-area <json>",
+    'hook-text rect in 1080x1920 space, e.g. {"x":60,"y":900,"w":960,"h":300}',
+  )
+  .action(
+    run(
+      async (opts: {
+        personaImage: string;
+        effect: string;
+        label: string;
+        file: string;
+        revealAtMs: string;
+        safeArea: string;
+      }) => {
+        // duration_ms is read off the file, never taken on trust — ffprobe is
+        // on the founder's machine. Sound is never baked into an export
+        // (locked), so an audio track on the clip is simply not played.
+        const clip = await probe(opts.file);
+        if (clip.hasAudio) {
+          console.log("note: the clip carries an audio track — it is ignored; the opener plays silent");
+        }
+        const row = await addOpenerClip(getDb(), {
+          personaImageId: opts.personaImage,
+          effect: opts.effect,
+          label: opts.label,
+          filePath: opts.file,
+          durationMs: clip.durationMs,
+          revealAtMs: Number(opts.revealAtMs),
+          textSafeArea: JSON.parse(opts.safeArea),
+        });
+        console.log(
+          `opener clip added: ${row.id} (${clip.durationMs}ms, reveal at ${row.revealAtMs}ms, ` +
+            `${clip.width}x${clip.height} @ ${clip.fps}fps)`,
+        );
+      },
+    ),
+  );
+
+bank
   .command("normalize-hooks")
   .description("re-encode bank clips that are not 30fps (the composition rate)")
   .option("--check", "report each clip's frame rate and change nothing")
@@ -549,12 +610,20 @@ const persona = program.command("persona").description("persona reference images
 persona
   .command("add-image <personaId> <file>")
   .option("--default", "make this the persona's default reference image")
+  .option(
+    "--kind <kind>",
+    "preview|background|selfie — a Service B render from the persona's default needs a selfie (default: background)",
+  )
   .action(
-    run(async (personaId: string, file: string, opts: { default?: boolean }) => {
+    run(async (personaId: string, file: string, opts: { default?: boolean; kind?: string }) => {
+      if (opts.kind && !["preview", "background", "selfie"].includes(opts.kind)) {
+        throw new Error(`--kind must be preview, background or selfie (got ${opts.kind})`);
+      }
       const image = await addPersonaImage(getDb(), {
         personaId,
         filePath: file,
         isDefault: opts.default,
+        kind: opts.kind as "preview" | "background" | "selfie" | undefined,
       });
       console.log(`persona image added: ${image.id}${image.isDefault ? " (default)" : ""}`);
       if (!image.blurDataUrl) {
@@ -674,6 +743,18 @@ program
     "--expressiveness <level>",
     "HeyGen expressiveness: low|medium|high (default: not sent — HeyGen uses low)",
   )
+  .option(
+    "--opener <clipId>",
+    "opener clip (aiugc bank add-opener) played in front of the talking head; needs --hook-text",
+  )
+  .option(
+    "--hook-text <text>",
+    `on-screen line burned over the opener — the FINAL string (≤${HOOK_TEXT_MAX_WORDS} words, ≤${HOOK_TEXT_MAX_CHARS} chars, no trailing punctuation)`,
+  )
+  .option(
+    "--hook-text-safe-area <json>",
+    "where the hook text burns, 1080x1920 space (default: the clip's registered rect)",
+  )
   .action(
     run(
       async (opts: {
@@ -683,6 +764,9 @@ program
         personaImage?: string;
         motionPrompt?: string;
         expressiveness?: string;
+        opener?: string;
+        hookText?: string;
+        hookTextSafeArea?: string;
       }) => {
         const render = await createBRender(getDb(), {
           businessId: opts.business,
@@ -691,6 +775,9 @@ program
           personaImageId: opts.personaImage,
           motionPrompt: opts.motionPrompt,
           expressiveness: opts.expressiveness,
+          openerClipId: opts.opener,
+          hookText: opts.hookText,
+          hookTextSafeArea: opts.hookTextSafeArea ? JSON.parse(opts.hookTextSafeArea) : undefined,
         });
         console.log(`b render queued: ${render.id}`);
       },
