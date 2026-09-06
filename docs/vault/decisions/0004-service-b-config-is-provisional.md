@@ -9,13 +9,15 @@ source: founder
 # Service B config keys are provisional until the post-A revamp
 
 > **Superseded 2026-09-04 by [[0017-service-b-single-setting-selfie-talking-head]]** — the revamp
-> this note deferred to now has a shape: a single-setting selfie talking head with an optional
-> opener clip. Kept verbatim below, because **the operative instruction has not expired**:
+> this note deferred to now has a shape: a single-setting selfie talking head — one HeyGen clip with a
+> Remotion animation hook ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]); the optional opener clip 0017 first
+> described is retired 2026-09-06. Kept verbatim below, because **the operative instruction has not expired**:
 >
-> - **The three keys stay placeholders until the engine work lands.** 0017 settles the format, not
->   the engine, the schema or the wizard. Until those ship, `lipsync_motion_prompt`,
->   `lipsync_resolution` and `auto_release_b` are still "whatever was lying around when Service B
->   was parked" — do not treat them as tuned, and do not cite them as calibration output.
+> - **The engine landed 2026-09-05 and `lipsync_motion_prompt` is founder-chosen since 2026-09-06** —
+>   with the new `lipsync_expressiveness`, migration 0034
+>   ([[0022-heygen-expressiveness-medium-generic-motion-prompt]]). Only `lipsync_resolution` and
+>   `auto_release_b` are still "whatever was lying around when Service B was parked" — do not treat
+>   those two as tuned.
 > - **`auto_release_b` still may not be flipped by a session.** 0017 changes nothing about it.
 >
 > What 0017 _does_ retire is the open-endedness: "expect the revamp to replace them wholesale" now

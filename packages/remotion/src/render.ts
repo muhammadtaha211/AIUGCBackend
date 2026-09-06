@@ -16,6 +16,7 @@ import {
   type ServiceBProps,
   type ServiceBTimeline,
   type TextSafeArea,
+  type GradeCurve,
 } from "./schema";
 
 /**
@@ -57,12 +58,20 @@ export interface RenderServiceBInput {
   voiceoverPath: string;
   brollPaths: string[];
   captions: CaptionChunk[];
-  /** The opener effect — all three together, or none (core validates). */
+  /** The opener effect — all three together, or none (core validates). Exclusive with hookZoom. */
   openerPath?: string;
   hookText?: string;
   hookTextSafeArea?: TextSafeArea;
   /** Computed by @aiugc/core's serviceBTimeline; the composition only converts to frames. */
   timeline: ServiceBTimeline;
+  /** Measured in core against the opener's reveal frame; absent = ungraded. */
+  talkingHeadGrade?: GradeCurve;
+  /** Measured in core: the slide that puts the head's idle frame on the opener's reveal frame. */
+  talkingHeadAlign?: { dx: number; dy: number };
+  /** Seeds the handheld camera path; absent = the fixed preview path. */
+  cameraSeed?: string;
+  /** The zoom hook (schema `hookZoomSchema`); `sfxPath` is served like the clips. */
+  hookZoom?: { from: number; to: number; atMs: number; durationMs: number; sfxPath?: string };
   watermark: boolean;
 }
 
@@ -84,7 +93,7 @@ export class RenderPropsError extends Error {
  * NOTE: the conversion is only correct when the input clips themselves carry
  * colour tags — an untagged clip's pixels pass through full-swing into the
  * "tv"-tagged output (verified empirically, 4.0.499). That is why the worker
- * retags untagged lip-sync clips before rendering (core: retagBt709Full).
+ * retags untagged lip-sync clips before rendering (core: retagBt709Limited).
  */
 export const bt709FfmpegOverride: FfmpegOverrideFn = ({ type, args }) => {
   if (type !== "stitcher") return args;
@@ -304,10 +313,19 @@ export async function renderServiceB(
   outPath: string,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
+  // The zoom is clocked on composition time and the head mounts at the reveal,
+  // so with an opener the zoom would silently do nothing while its whoosh
+  // still played. Refuse the pair up front rather than render it.
+  if (input.hookZoom && input.openerPath) {
+    throw new RenderPropsError(
+      "hookZoom and an opener are exclusive: the zoom hook replaces the opener",
+    );
+  }
   const files = [input.talkingHeadPath, input.voiceoverPath];
   if (input.openerPath) files.push(input.openerPath);
   const brollStart = files.length;
   files.push(...input.brollPaths);
+  const sfxIndex = input.hookZoom?.sfxPath ? files.push(input.hookZoom.sfxPath) - 1 : undefined;
   assertFilesExist(files);
 
   const served = await serveLocalFiles(files);
@@ -315,12 +333,24 @@ export async function renderServiceB(
     const props = serviceBSchema.safeParse({
       talkingHeadSrc: served.urls[0]!,
       voiceoverSrc: served.urls[1]!,
-      brollSrcs: served.urls.slice(brollStart),
+      brollSrcs: served.urls.slice(brollStart, brollStart + input.brollPaths.length),
       captions: input.captions,
       openerSrc: input.openerPath ? served.urls[2] : undefined,
       hookText: input.hookText,
       hookTextSafeArea: input.hookTextSafeArea,
       timeline: input.timeline,
+      talkingHeadGrade: input.talkingHeadGrade,
+      talkingHeadAlign: input.talkingHeadAlign,
+      cameraSeed: input.cameraSeed,
+      hookZoom: input.hookZoom
+        ? {
+            from: input.hookZoom.from,
+            to: input.hookZoom.to,
+            atMs: input.hookZoom.atMs,
+            durationMs: input.hookZoom.durationMs,
+            sfxSrc: sfxIndex === undefined ? undefined : served.urls[sfxIndex],
+          }
+        : undefined,
       watermark: input.watermark,
     } satisfies ServiceBProps);
     if (!props.success) {

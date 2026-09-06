@@ -14,7 +14,7 @@ One pnpm monorepo, boring-tech throughout:
 │ (founder)    │                │                │  Hetzner) — apps/worker     │
 └──────────────┘                ▼                │  · job loop (2 lanes)       │
 ┌──────────────┐        ┌──────────────┐         │  · ffmpeg / Remotion        │
-│ Next.js on   │───────▶│  Supabase    │◀────────│  · polls fal.ai (GPU)       │
+│ Next.js on   │───────▶│  Supabase    │◀────────│  ·  polls HeyGen (lip-sync) — fal only for nano-banana composites       │
 │ Vercel       │        │  Postgres +  │         │  · calls Anthropic / EL     │
 │ (at launch)  │        │  Auth +      │         └─────────────────────────────┘
 └──────┬───────┘        │  Storage     │
@@ -35,18 +35,17 @@ One pnpm monorepo, boring-tech throughout:
   minutes-long render never blocks an audio preview. Render concurrency is exactly 1 by
   construction. See [02-jobs.md](02-jobs.md).
 - **`DRY_RUN=1` stubs every external provider** with deterministic fakes, so the entire pipeline
-  (including alignment, chunking, length fit, QC) runs end-to-end without API keys. The e2e test
+  (including alignment, chunking, QC — the length fit belongs to the retired Service A "full" format, [0020](vault/decisions/0020-service-a-is-hook-and-steps-only.md)) runs end-to-end without API keys. The e2e test
   (`packages/core/test/e2e.test.ts`) exercises exactly the founder workflow this way.
 - **The web wizards are thin shells over the same functions.** Service A
   (`apps/web/src/components/a-wizard`): persona → hook clip → hook studio → demo → step plan →
   render. Service B (`apps/web/src/components/b-wizard`, vault decision 0017): persona →
-  pointers → script → audio → opener effect → render. Single setting, so B has no image step and
+  pointers → script → audio → hook animation (zoom hook or none; the opener-clip listing is retired 2026-09-06, its replacement pending — [0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) → render. Single setting, so B has no image step and
   no product step: the persona card shows the persona's selfie (`personaSelfie` in
-  `apps/web/src/lib/service-b.ts` — the one resolver for the card, the opener list and the
+  `apps/web/src/lib/service-b.ts` — the one resolver for the card and the
   render source), the wizard sends that image's id with the render, and the route refuses
-  anything that is not that persona's live `kind='selfie'` image or an opener made from it.
-  The effect step lists the selfie's active `opener_clips`; the customer's FINAL hook text and
-  placement go into render params at enqueue, never onto the script.
+  anything that is not that persona's live `kind='selfie'` image (its opener-clip check is retired 2026-09-06).
+  The effect step offers the hook animation (zoom hook — `hookZoom` in `packages/remotion` — or none); the customer's FINAL hook text goes into render params at enqueue, never onto the script, and is burned centred from frame 0 over the one HeyGen clip. The `opener_clips` listing is retired 2026-09-06.
 
 ## Repo layout
 

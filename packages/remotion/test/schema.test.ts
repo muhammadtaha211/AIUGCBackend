@@ -30,12 +30,27 @@ describe("serviceBSchema", () => {
   it("rejects a missing timeline — the layout is computed in core, never guessed here", () => {
     const { timeline, ...rest } = valid;
     expect(serviceBSchema.safeParse(rest).success).toBe(false);
-    expect(serviceBSchema.safeParse({ ...valid, timeline: { holdMs: 0 } }).success).toBe(false);
+    expect(serviceBSchema.safeParse({ ...valid, timeline: { hookTextMs: 0 } }).success).toBe(false);
   });
 
   it("accepts b-roll paths when they are present", () => {
     const result = serviceBSchema.safeParse({ ...valid, brollSrcs: ["http://x/1.mp4"] });
     expect(result.success).toBe(true);
+  });
+
+  it("accepts the zoom hook with or without a whoosh, and rejects a scale under 1", () => {
+    const zoom = { from: 1.35, to: 1.42, atMs: 1200, durationMs: 450 };
+    expect(serviceBSchema.safeParse({ ...valid, hookZoom: zoom }).success).toBe(true);
+    expect(
+      serviceBSchema.safeParse({ ...valid, hookZoom: { ...zoom, sfxSrc: "http://x/4.wav" } })
+        .success,
+    ).toBe(true);
+    expect(serviceBSchema.safeParse({ ...valid, hookZoom: { ...zoom, from: 0.5 } }).success).toBe(
+      false,
+    );
+    expect(
+      serviceBSchema.safeParse({ ...valid, hookZoom: { ...zoom, durationMs: 0 } }).success,
+    ).toBe(false);
   });
 
   it("accepts captions with no word timings (even-spaced variant)", () => {

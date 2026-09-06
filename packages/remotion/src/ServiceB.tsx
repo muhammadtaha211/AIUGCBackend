@@ -6,25 +6,39 @@ import {
   Freeze,
   OffthreadVideo,
   Sequence,
-  interpolate,
   useCurrentFrame,
-  useVideoConfig,
   type CalculateMetadataFunction,
 } from "remotion";
 import { HookLine } from "./ServiceA";
 import { Captions, Watermark } from "./overlays";
-import { type ServiceBProps } from "./schema";
-import { frameToMs, msToFrame } from "./timing";
+import { type GradeCurve, type ServiceBProps } from "./schema";
+import {
+  frameToMs,
+  gradeAt,
+  handheld,
+  hookZoomScale,
+  msToFrame,
+  OVERSCAN,
+  SEAM_DISSOLVE_FRAMES,
+} from "./timing";
 
 /**
- * Service B: an optional founder-made opener clip with the hook text burned
- * over its palm phase → hard cut at the reveal into the lip-synced talking
- * head + burned Hebrew karaoke captions. The approved mp3 is the audio track
- * and the talking head is muted: its embedded audio is the GPU provider's
- * re-encode of that same mp3, which arrives with a glitch in the first second
- * and would be encoded a third time here. Playing the approved file directly
- * also guarantees caption sync — it is the exact file the timestamps were
- * computed against. No music, ever (locked).
+ * Service B: an optional founder-made opener clip, playing from its first
+ * frame with the hook text burned over it, → hard cut at the reveal into the
+ * lip-synced talking head + burned Hebrew karaoke captions. The hook text
+ * lives its read time and never leaves before the reveal (decision 0019); the
+ * captions wait for it to leave — one text element at a time. The approved
+ * mp3 is the audio track and the talking head is muted: its embedded audio is
+ * the GPU provider's re-encode of that same mp3, which arrives with a glitch
+ * in the first second and would be encoded a third time here. Playing the
+ * approved file directly also guarantees caption sync — it is the exact file
+ * the timestamps were computed against. No music, ever (locked).
+ *
+ * The whole picture — opener and talking head alike — sits under one
+ * handheld camera path (timing.ts `handheld`) that runs continuously through
+ * the cut; the burned text, the captions and the watermark stay fixed to the
+ * frame, as burned-in-post overlays do. The talking head carries a measured
+ * brightness gain so the cut lands at the opener's exposure.
  *
  * Every millisecond here comes from @aiugc/core's serviceBTimeline via the
  * `timeline` prop; this file converts to frames and lays out. It does no
@@ -44,89 +58,86 @@ export const ServiceB: React.FC<ServiceBProps> = ({
   hookTextSafeArea,
   timeline,
   openerDurationInFrames,
+  talkingHeadGrade,
+  talkingHeadAlign,
+  cameraSeed,
+  hookZoom,
 }) => {
   // TODO: brollSrcs is accepted and ignored — cutaway logic (when to cut away,
   // for how long, how to hide the lip-sync) is its own task.
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
 
   const hasOpener =
     openerSrc !== undefined && hookText !== undefined && hookTextSafeArea !== undefined;
-  const holdFrames = msToFrame(timeline.holdMs);
+  const hookTextFrames = msToFrame(timeline.hookTextMs);
   const revealFrames = msToFrame(timeline.revealAbsMs);
   const trimBeforeFrames = msToFrame(timeline.lipsyncStartFromMs);
   const voFromFrames = msToFrame(timeline.captionOffsetMs);
-
-  // The dissolve straddles the reveal: the talking head mounts fadeIn frames
-  // early and trims that many frames earlier, so the reveal frame still shows
-  // clip time lipsyncStartFromMs; the opener plays fadeOut frames past it.
-  // fadeIn is capped by the trim — a lead-in too short to give the clip two
-  // frames before speech (leadInMs under ~300) shortens the pre-reveal half
-  // rather than mounting speech early. Without an opener there is nothing to
-  // dissolve from.
-  const fadeIn = hasOpener
-    ? Math.min(Math.floor(timeline.crossfadeFrames / 2), trimBeforeFrames)
-    : 0;
-  const fadeOut = hasOpener ? timeline.crossfadeFrames - fadeIn : 0;
-  const talkingHeadFrom = Math.max(0, revealFrames - fadeIn);
-  const talkingHeadTrim = trimBeforeFrames - (revealFrames - talkingHeadFrom);
+  const cam = handheld(frame, cameraSeed ?? "preview");
+  const zoomScale = hookZoom ? hookZoomScale(hookZoom, frameToMs(frame)) : 1;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
-      {hasOpener ? (
-        <>
-          {/* First frame frozen under the hook text, then the clip from 0. */}
-          <Sequence durationInFrames={Math.max(1, holdFrames)}>
-            <Freeze frame={0}>
-              <OffthreadVideo src={openerSrc} muted style={COVER} />
-            </Freeze>
-          </Sequence>
-          <Sequence
-            from={holdFrames}
-            durationInFrames={Math.max(1, revealFrames + fadeOut - holdFrames)}
-          >
+      <AbsoluteFill
+        style={{
+          transform: `translate(${cam.x}px, ${cam.y}px) rotate(${cam.rot}deg) scale(${OVERSCAN})`,
+        }}
+      >
+        {hasOpener ? (
+          /* The clip from its first frame to the reveal (SEAM_DISSOLVE_FRAMES
+             past it — 0 today, a hard cut), holding its last frame if it runs out. */
+          <Sequence durationInFrames={Math.max(1, revealFrames + SEAM_DISSOLVE_FRAMES)}>
             <OpenerSegment src={openerSrc} clipFrames={openerDurationInFrames} />
           </Sequence>
-          {/* Visible through the palm phase; hard cut at the reveal. */}
-          <Sequence durationInFrames={Math.max(1, revealFrames)}>
-            <HookLine text={hookText} area={hookTextSafeArea} />
-          </Sequence>
-        </>
-      ) : null}
+        ) : null}
 
-      <Sequence from={talkingHeadFrom}>
-        <TalkingHead
-          src={talkingHeadSrc}
-          trimBeforeFrames={talkingHeadTrim}
-          clipFrames={talkingHeadDurationInFrames}
-          fadeInFrames={hasOpener ? timeline.crossfadeFrames : 0}
-          punchIn={
-            hasOpener
-              ? {
-                  fromFrame: revealFrames - talkingHeadFrom,
-                  frames: msToFrame(timeline.punchInMs),
-                  scale: timeline.punchInScale,
-                }
-              : undefined
-          }
-          driftFrames={durationInFrames - talkingHeadFrom}
-        />
-      </Sequence>
+        <Sequence from={revealFrames}>
+          <TalkingHead
+            src={talkingHeadSrc}
+            trimBeforeFrames={trimBeforeFrames}
+            clipFrames={talkingHeadDurationInFrames}
+            grade={talkingHeadGrade}
+            align={talkingHeadAlign}
+            dissolveFrames={hasOpener ? SEAM_DISSOLVE_FRAMES : 0}
+            scale={zoomScale}
+          />
+        </Sequence>
+      </AbsoluteFill>
+
+      {hookText !== undefined && hookTextSafeArea !== undefined && hookTextFrames > 0 ? (
+        /* From frame 0 for its life: its read time with an opener, never
+           leaving before the reveal. Without an opener the timeline gives it
+           no life, unless a caller sets hookTextMs — as the zoom hook does. */
+        <Sequence durationInFrames={hookTextFrames}>
+          <HookLine text={hookText} area={hookTextSafeArea} />
+        </Sequence>
+      ) : null}
 
       <Sequence from={voFromFrames}>
         <Audio src={voiceoverSrc} />
       </Sequence>
 
-      {/* Chunks are timed against the unpadded audio; negative ms shows none. */}
-      <Captions captions={captions} ms={frameToMs(frame) - timeline.captionOffsetMs} />
+      {hookZoom?.sfxSrc ? (
+        /* The whoosh leads the ease by two frames, as sound design does. */
+        <Sequence from={Math.max(0, msToFrame(hookZoom.atMs) - 2)}>
+          <Audio src={hookZoom.sfxSrc} volume={0.7} />
+        </Sequence>
+      ) : null}
+
+      {/* Chunks are timed against the unpadded audio; negative ms shows none.
+          The captions wait for the hook text to leave (hookTextFrames is 0
+          without an opener). */}
+      {frame >= hookTextFrames ? (
+        <Captions captions={captions} ms={frameToMs(frame) - timeline.captionOffsetMs} />
+      ) : null}
       {watermark ? <Watermark /> : null}
     </AbsoluteFill>
   );
 };
 
 /**
- * The opener playing from 0, holding its final frame if the dissolve tail
- * runs past the clip's end (a reveal at the very last frame).
+ * The opener playing from 0, holding its final frame if the reveal sits on
+ * the clip's very last frame.
  */
 const OpenerSegment: React.FC<{ src: string; clipFrames?: number }> = ({ src, clipFrames }) => {
   const frame = useCurrentFrame(); // local to the sequence
@@ -139,44 +150,60 @@ const OpenerSegment: React.FC<{ src: string; clipFrames?: number }> = ({ src, cl
 };
 
 /**
- * The lip-synced clip, muted, from `trimBeforeFrames` into the file. With an
- * opener it dissolves in over `fadeInFrames` and punches in from the reveal,
- * held after; without one it keeps the slow micro-motion drift — a perfectly
- * static frame is the strongest "this is AI" tell. Its final frame holds if
- * the composition outlasts the clip (the VO is never cut off).
+ * The lip-synced clip, muted, from `trimBeforeFrames` into the file, under
+ * the measured colour grade: per-channel gains sampled over talking-head
+ * time (core's media/grade.ts), applied as an SVG colour matrix in sRGB —
+ * CSS filters have no per-channel gain. Its final frame holds if the
+ * composition outlasts the clip (the VO is never cut off).
  */
 const TalkingHead: React.FC<{
   src: string;
   trimBeforeFrames: number;
   clipFrames?: number;
-  fadeInFrames: number;
-  punchIn?: { fromFrame: number; frames: number; scale: number };
-  driftFrames: number;
-}> = ({ src, trimBeforeFrames, clipFrames, fadeInFrames, punchIn, driftFrames }) => {
+  grade?: GradeCurve;
+  align?: { dx: number; dy: number };
+  dissolveFrames: number;
+  /** The zoom hook's scale for this frame (timing.ts hookZoomScale); 1 = none. */
+  scale: number;
+}> = ({ src, trimBeforeFrames, clipFrames, grade, align, dissolveFrames, scale }) => {
   const frame = useCurrentFrame(); // local to the sequence
-  const opacity =
-    fadeInFrames > 0
-      ? interpolate(frame, [0, fadeInFrames], [0, 1], { extrapolateRight: "clamp" })
-      : 1;
-  const scale = punchIn
-    ? interpolate(
-        frame,
-        [punchIn.fromFrame, punchIn.fromFrame + Math.max(1, punchIn.frames)],
-        [1, punchIn.scale],
-        { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
-      )
-    : interpolate(frame, [0, Math.max(1, driftFrames)], [1, 1.025], {
-        extrapolateRight: "clamp",
-      });
+  const ms = frameToMs(frame);
   // Local frame of the clip's last frame: the file's length minus the trim.
   const lastClipFrame = Math.max(0, (clipFrames ?? Number.MAX_SAFE_INTEGER) - 1 - trimBeforeFrames);
+  const [r, g, b] = grade ? gradeAt(grade, ms) : [1, 1, 1];
+  // The alignment offset holds for the whole clip: an ease back to 0 (1.5s,
+  // 2026-09-06) drifted the head after the cut, and the founder saw it.
+  const dx = align?.dx ?? 0;
+  const dy = align?.dy ?? 0;
+  const opacity = dissolveFrames > 0 ? Math.min(1, (frame + 1) / dissolveFrames) : 1;
 
   return (
-    <AbsoluteFill style={{ opacity, transform: `scale(${scale})` }}>
-      <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
-        <OffthreadVideo src={src} muted trimBefore={trimBeforeFrames} style={COVER} />
-      </Freeze>
-    </AbsoluteFill>
+    <>
+      {grade ? (
+        <svg width={0} height={0} style={{ position: "absolute" }} aria-hidden>
+          <filter id="talking-head-grade" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values={`${r} 0 0 0 0  0 ${g} 0 0 0  0 0 ${b} 0 0  0 0 0 1 0`}
+            />
+          </filter>
+        </svg>
+      ) : null}
+      <AbsoluteFill
+        style={{
+          filter: grade ? "url(#talking-head-grade)" : undefined,
+          transform: `translate(${dx}px, ${dy}px) scale(${scale})`,
+          // Scale about the face, not the frame centre, so a zoom keeps the
+          // eyes where they are and the torso does the moving.
+          transformOrigin: "50% 40%",
+          opacity,
+        }}
+      >
+        <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
+          <OffthreadVideo src={src} muted trimBefore={trimBeforeFrames} style={COVER} />
+        </Freeze>
+      </AbsoluteFill>
+    </>
   );
 };
 

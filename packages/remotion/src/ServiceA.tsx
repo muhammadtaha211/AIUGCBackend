@@ -129,9 +129,10 @@ const DemoSegment: React.FC<{
 };
 
 /**
- * The lip-synced outro. Muted — the continuous VO carries the audio — with the
- * same micro-motion drift as Service B, and a final-frame hold in case the
- * GPU clip came back a hair shorter than the VO tail.
+ * The lip-synced outro. Muted — the continuous VO carries the audio — with a
+ * slow micro-motion drift (Service B moved on to a handheld camera path), and
+ * a final-frame hold in case the GPU clip came back a hair shorter than the
+ * VO tail.
  */
 const AvatarSegment: React.FC<{
   src: string;

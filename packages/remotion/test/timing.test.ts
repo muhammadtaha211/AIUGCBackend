@@ -5,7 +5,10 @@ import {
   activeChunkIndex,
   activeWordIndex,
   frameToMs,
+  handheld,
   msToFrame,
+  hookZoomScale,
+  OVERSCAN,
   serviceAStepsTimeline,
   serviceATimeline,
 } from "../src/timing";
@@ -272,5 +275,100 @@ describe("sample fixture", () => {
     for (let ms = 250; ms < lastMs; ms += 100) {
       expect(activeChunkIndex(sampleCaptions, ms)).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe("hookZoomScale", () => {
+  const zoom = { from: 1.35, to: 1.42, atMs: 1200, durationMs: 450 };
+
+  it("creeps through the hook, eases out to 1 without overshoot, then holds", () => {
+    expect(hookZoomScale(zoom, 0)).toBeCloseTo(1.35);
+    expect(hookZoomScale(zoom, 600)).toBeCloseTo(1.385);
+    expect(hookZoomScale(zoom, 1200)).toBeCloseTo(1.42);
+    expect(hookZoomScale(zoom, 1425)).toBeCloseTo(1.21, 2); // ease-in-out midpoint
+    expect(hookZoomScale(zoom, 1650)).toBeCloseTo(1);
+    expect(hookZoomScale(zoom, 5000)).toBe(1);
+    let prev = hookZoomScale(zoom, 1200);
+    for (let ms = 1233; ms <= 1700; ms += 33) {
+      const s = hookZoomScale(zoom, ms);
+      expect(s).toBeLessThanOrEqual(prev + 1e-9);
+      expect(s).toBeGreaterThanOrEqual(1);
+      prev = s;
+    }
+  });
+
+  it("with atMs 0 there is no creep: the ease starts at `to`, and negative time cannot throw", () => {
+    expect(hookZoomScale({ ...zoom, atMs: 0 }, 0)).toBeCloseTo(1.42);
+    expect(hookZoomScale({ ...zoom, atMs: 0 }, -1)).toBeCloseTo(1.42);
+  });
+
+  it("lands on exactly 1 at the ease's end, whichever way the creep runs", () => {
+    expect(hookZoomScale(zoom, zoom.atMs + zoom.durationMs)).toBe(1);
+    const shrinking = { ...zoom, from: 1.42, to: 1.35 };
+    expect(hookZoomScale(shrinking, 600)).toBeCloseTo(1.385);
+    expect(hookZoomScale(shrinking, 1200)).toBeCloseTo(1.35);
+    expect(hookZoomScale(shrinking, 1650)).toBe(1);
+    expect(hookZoomScale({ ...zoom, durationMs: 1 }, 1201)).toBe(1);
+  });
+});
+
+describe("handheld camera", () => {
+  const W = 1080;
+  const H = 1920;
+  const seeds = [
+    "preview",
+    "1397ffcd-4c2c-4cc0-9afd-692c23f5f772",
+    // The tightest of 300 random render ids scanned on 2026-09-06 (13.5px of
+    // horizontal headroom): the seed that decided ALIGN_MAX_PX.dx = 12.
+    "c1b200d8-0e30-430c-ada0-638284e61b56",
+  ];
+
+  it("never exposes an edge: every corner stays inside the overscan, with room for the alignment offset", () => {
+    for (const seed of seeds) {
+      for (let frame = 0; frame < 3600; frame++) {
+        const { x, y, rot } = handheld(frame, seed);
+        const r = (rot * Math.PI) / 180;
+        const corners: [number, number][] = [
+          [W / 2, H / 2],
+          [-W / 2, H / 2],
+          [W / 2, -H / 2],
+          [-W / 2, -H / 2],
+        ];
+        for (const [cx, cy] of corners) {
+          // Inverse of translate → rotate → scale: where this viewport corner
+          // lands on the untransformed picture.
+          const px = cx - x;
+          const py = cy - y;
+          const u = (px * Math.cos(r) + py * Math.sin(r)) / OVERSCAN;
+          const v = (-px * Math.sin(r) + py * Math.cos(r)) / OVERSCAN;
+          // The talking head's alignment offset (core's ALIGN_MAX_PX: 12px x,
+          // 32px y) holds for the head's whole length since 2026-09-06, so
+          // every frame must leave that much of the overscan unused by the
+          // sway and its rotation. Over 300 random seeds the tightest frame
+          // left 13.5px x / 42.3px y; 65 of them dipped under 16, none under 12.
+          expect(W / 2 - Math.abs(u)).toBeGreaterThanOrEqual(12);
+          expect(H / 2 - Math.abs(v)).toBeGreaterThanOrEqual(32);
+        }
+      }
+    }
+  });
+
+  it("moves like a held phone: fractional, under 1.2px per frame, and never still", () => {
+    let prev = handheld(0, seeds[0]!);
+    let moved = 0;
+    for (let frame = 1; frame < 900; frame++) {
+      const cur = handheld(frame, seeds[0]!);
+      const step = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+      expect(step).toBeLessThanOrEqual(1.2);
+      if (step > 0.02) moved++;
+      prev = cur;
+    }
+    expect(moved).toBeGreaterThan(800);
+  });
+
+  it("is a pure function of frame and seed", () => {
+    expect(handheld(17, "a")).toEqual(handheld(17, "a"));
+    expect(handheld(17, "a")).not.toEqual(handheld(17, "b"));
+    expect(handheld(17, "a")).not.toEqual(handheld(18, "a"));
   });
 });

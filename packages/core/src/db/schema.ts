@@ -324,8 +324,9 @@ export const openerClips = pgTable("opener_clips", {
   label: text("label").notNull(),
   filePath: text("file_path").notNull(),
   durationMs: integer("duration_ms").notNull(),
-  // First frame the face is fully clear, in clip time. The hook text burns over
-  // the palm phase before it; the hard cut lands here.
+  // Where the hard cut lands, in clip time: the first frame whose pose matches
+  // the selfie (hand out of frame and settled). The hook text burns over the
+  // palm phase before it.
   revealAtMs: integer("reveal_at_ms").notNull(),
   // {x, y, w, h} in 1080x1920 space, same shape as hookClips.textSafeArea.
   textSafeArea: jsonb("text_safe_area").notNull(),

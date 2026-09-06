@@ -176,7 +176,7 @@ export type OpenerClip = {
   label: string;
   /** Signed, short-lived. */
   previewUrl: string;
-  /** First frame the face is clear, in clip time — the hard cut lands here. */
+  /** Where the hard cut lands, in clip time: the first frame whose pose matches the selfie. */
   revealAtMs: number;
   /** The clip's default text safe area — seeds the placement editor. */
   textSafeArea: SafeRect;

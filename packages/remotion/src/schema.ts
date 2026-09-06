@@ -37,20 +37,39 @@ export const textSafeAreaSchema = z.object({
 /**
  * The Service B layout, computed ONCE by @aiugc/core's serviceBTimeline and
  * passed in — the composition converts these to frames and does no timeline
- * arithmetic of its own. The three effect fields are core's constants
- * (CROSSFADE_FRAMES, PUNCH_IN_SCALE, PUNCH_IN_MS) carried along so the
- * numbers are written in exactly one place.
+ * arithmetic of its own.
  */
 export const serviceBTimelineSchema = z.object({
-  holdMs: z.number().nonnegative(),
+  hookTextMs: z.number().nonnegative(),
   revealAbsMs: z.number().nonnegative(),
   lipsyncStartFromMs: z.number().nonnegative(),
   captionOffsetMs: z.number().nonnegative(),
   totalMs: z.number().positive(),
-  crossfadeFrames: z.number().int().nonnegative(),
-  punchInScale: z.number().positive(),
-  punchInMs: z.number().nonnegative(),
 });
+
+/** Mirrors @aiugc/core's media/grade.ts GradeCurve (core depends on this package, never the other way round). */
+export const gradeCurveSchema = z.object({
+  stepMs: z.number().positive(),
+  r: z.array(z.number().positive()).min(1),
+  g: z.array(z.number().positive()).min(1),
+  b: z.array(z.number().positive()).min(1),
+});
+export type GradeCurve = z.infer<typeof gradeCurveSchema>;
+
+/**
+ * The zoom hook (mock, 2026-09-06): the talking head opens tight — scale
+ * `from` creeping to `to` over the hook — then eases out to 1 at `atMs` over
+ * `durationMs`, with an optional whoosh at the ease. One clip, so the "cut"
+ * is a camera move, not a seam between two generations.
+ */
+export const hookZoomSchema = z.object({
+  from: z.number().min(1),
+  to: z.number().min(1),
+  atMs: z.number().min(0),
+  durationMs: z.number().min(1),
+  sfxSrc: z.string().optional(),
+});
+export type HookZoom = z.infer<typeof hookZoomSchema>;
 
 export const serviceBSchema = z.object({
   talkingHeadSrc: z.string(),
@@ -69,12 +88,35 @@ export const serviceBSchema = z.object({
   /**
    * The opener effect (vault 0017): a founder-made clip played in front of the
    * talking head with the hook text burned over its palm phase, hard-cut at
-   * the reveal. The three come together or not at all — core validates that.
+   * the reveal. Core sends the three together or not at all; the composition
+   * itself needs only hookText + rect + a positive hookTextMs to burn the
+   * line, which is how the zoom hook shows it without an opener.
    */
   openerSrc: z.string().optional(),
   hookText: z.string().optional(),
   hookTextSafeArea: textSafeAreaSchema.optional(),
   timeline: serviceBTimelineSchema,
+  /**
+   * Per-channel gain curve on the talking head, measured in core against the
+   * opener's reveal frame: one sample every `stepMs` of talking-head time,
+   * interpolated and held past the last, so the cut lands at the opener's
+   * colour and stays there while HeyGen's head brightens into speech.
+   * Absent = ungraded.
+   */
+  talkingHeadGrade: gradeCurveSchema.optional(),
+  /**
+   * Pixels the talking head is offset by, for its whole length, so its idle
+   * frame sits on the opener's reveal frame at the cut. Absent = no offset.
+   */
+  talkingHeadAlign: z.object({ dx: z.number(), dy: z.number() }).optional(),
+  /** Absent = no zoom. The pipeline never sets it yet; the mock script does. */
+  hookZoom: hookZoomSchema.optional(),
+  /**
+   * Seeds the handheld camera path (timing.ts `handheld`). The worker passes
+   * the render id; absent = the fixed "preview" path Studio and the sample
+   * renders show.
+   */
+  cameraSeed: z.string().optional(),
   /**
    * Filled in by `calculateServiceBMetadata` (which probes the clips), not by
    * the caller — they mark where each clip runs out and its final frame has

@@ -30,9 +30,10 @@ import {
  * check the mixed-direction (Latin prefix in RTL) rendering. `--steps` renders
  * the ServiceASteps composition from the lavfi fixtures — a silent mp4 with
  * visible hard cuts (the demo fixture's clock jumps at each one). `--opener`
- * renders ServiceB with the synthetic opener clip in front: the frozen first
- * frame under the hook text, the hard cut at the reveal, the dissolve and
- * punch-in, and the VO starting 250ms after the cut.
+ * renders ServiceB with the synthetic opener clip in front: the clip from its
+ * first frame under the hook text, the hard cut at the reveal (the text
+ * outliving it), the handheld sway over the whole picture, and the VO
+ * starting 250ms after the cut.
  */
 
 const watermark = process.argv.includes("--watermark");

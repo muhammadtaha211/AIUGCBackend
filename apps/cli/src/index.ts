@@ -53,6 +53,7 @@ import {
   runLane,
   runPlanRegression,
   schema,
+  seedStructures,
   servedContentType,
   setQuestionnaire,
   starVariant,
@@ -501,7 +502,7 @@ bank
   )
   .requiredOption(
     "--reveal-at-ms <n>",
-    "first frame the face is fully clear, in clip time — the hard cut lands here",
+    "where the hard cut lands, in clip time: the first frame whose pose matches the selfie (hand out of frame and settled), not the first frame the face shows",
   )
   .requiredOption(
     "--safe-area <json>",
@@ -602,6 +603,20 @@ bank
         skeleton: JSON.parse(readFileSync(opts.skeleton, "utf8")),
       });
       console.log(`structure added: ${structure.id}`);
+    }),
+  );
+
+bank
+  .command("seed-structures")
+  .description(
+    "insert every checked-in skeleton (seed/structures/*.json); titles already in the bank are skipped",
+  )
+  .action(
+    run(async () => {
+      const added = await seedStructures(getDb());
+      console.log(
+        `${added.length} structure(s) added${added.length ? `: ${added.join(", ")}` : ""}`,
+      );
     }),
   );
 

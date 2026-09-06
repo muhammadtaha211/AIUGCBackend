@@ -9,9 +9,12 @@ supersedes: "[[0004-service-b-config-is-provisional]]"
 
 # 0017 — Service B ships as a single-setting selfie talking head with an optional opener clip
 
+> **Amended 2026-09-06 by [[0023-hook-is-a-remotion-animation-opener-clips-retired]]** — the opener clip is retired. A Service B ad is one HeyGen
+> clip; the hook is a Remotion animation over it. Everything else here stands; sections marked retired
+> are kept for the record.
+
 This is the shape of the Service B revamp that [[0004-service-b-config-is-provisional]] parked
-until Service A was finished. It settles the **format**. It does not settle the engine, the schema,
-or the wizard — those are queue items, and this note is what they build to.
+until Service A was finished. It settles the **format**. The engine, schema and wizard were built to it on 2026-09-05 and rendered end to end; on 2026-09-06 its opener half was retired, and the effects step now builds to [[0023-hook-is-a-remotion-animation-opener-clips-retired]].
 
 Every item below is marked **founder-decided** (stated in chat) or **reasoned** (derived here from
 the repo, and therefore falsifiable by the repo).
@@ -21,7 +24,7 @@ the repo, and therefore falsifiable by the repo).
 **Founder-decided.** Six steps, in order:
 
 ```
-persona -> pointers -> script -> audio -> opener effect -> render
+persona -> pointers -> script -> audio -> opener effect (retired 2026-09-06 -> animation effect, 'none' among the options — [[0023-hook-is-a-remotion-animation-opener-clips-retired]]) -> render
 ```
 
 There is **no image step and no composite step.** Today's wizard has both
@@ -64,9 +67,9 @@ product-in-hand composites only_) is now scoped to something Service B no longer
 repealed here — only the founder repeals a locked decision — but it currently authorises a path
 with no caller in the new flow.
 
-## The opener clip
+## The opener clip — retired 2026-09-06
 
-**Founder-decided.** An optional short clip in front of the talking head.
+**Founder-decided 2026-09-04, retired 2026-09-06** ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]): an optional short clip in front of the talking head. Kept for the record; nothing is stitched in front of the HeyGen clip any more.
 
 - **Founder-made, one per (selfie image × effect).** Not generated at runtime, not prompted. A
   bank, exactly like Service A's hook clips.
@@ -85,6 +88,16 @@ The opener's safe area is the same idea against a new bank; `reveal_at_ms` is th
 Service B's lipsync output is explicitly non-deterministic (`docs/04-integrations.md:269-270` —
 HeyGen exposes no seed), so the opener is the one part of a B render that can be byte-identical
 every time, and it stays that way only if the pipeline does no video processing on it.
+(Precision, 2026-09-05: the FILE stays untouched and every render is deterministic given its
+row, but the composition now moves the whole picture along a handheld camera path seeded by the
+render id — [[handheld-sway-constants]] — so the rendered opener frames differ across renders.
+Amended the same day by [[0019-hook-text-outlives-the-reveal]]: the hook text no longer
+hard-cuts with the picture at the reveal, and nothing is frozen in front of the clip. On
+2026-09-06 the "hard cut" briefly became a 4-frame soft cut between two aligned, colour-graded
+stills — because a hard cut between two generations of one face still showed as a jump even
+with their colours matched — and was zeroed the same day on the founder's verdict that it read
+as a transition animation: the cut is hard again and the alignment a constant offset —
+[[0021-nothing-moves-at-the-service-b-seam]], [[service-b-seam-constants]].)
 
 ## The hook text — spoken, on-screen, and where the final string lives
 
@@ -156,8 +169,7 @@ hook text in render params, never on the script row.
 ## HeyGen stays; InfiniteTalk is not coming back
 
 **Founder-decided.** HeyGen remains the lipsync provider, **image + audio only**. Locked decision
-#12 (no video-to-video) is **re-affirmed**, not relaxed — the opener clip is a _cut_, played before
-the talking head, never an input to it.
+#12 (no video-to-video) is **re-affirmed**, not relaxed — HeyGen's inputs are the selfie and the audio, nothing else. (The opener clip this sentence once excluded from HeyGen's inputs is retired 2026-09-06 — [[0023-hook-is-a-remotion-animation-opener-clips-retired]].)
 
 The founder's reason for not reversing the 2026-08 switch is **judgement on quality and speed**.
 That half is not measured here and is not presented as measured.
@@ -183,13 +195,13 @@ small.
 
 ## Rejected alternatives
 
-| Alternative                                             | Why not                                                                                                                                                                                                                                                                           |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-angle cuts** (several camera angles per script) | N × the non-determinism — HeyGen has no seed (`docs/04:269-270`), so every cut is an independent generation that can differ. Also needs an image set per persona, which the one-background decision above removes.                                                                |
-| **A motion bank per persona** (pre-made motion clips)   | Multiplies by backgrounds — the bank to curate by hand becomes personas × backgrounds × motions.                                                                                                                                                                                  |
-| **Hedra Omnia / Kling video-to-video**                  | Viable, untested, **parked** — not rejected on merit. Both would also need locked decision #12 reopened.                                                                                                                                                                          |
-| **HeyGen `motion_prompt` to produce the opener**        | Timing and camera are **not promptable** — founder, from the HeyGen help center. `motion_prompt` directs gesture and motion; it cannot place a reveal at a known millisecond, which is the one thing the opener needs.                                                            |
-| **Reusing the Service A hook bank**                     | A's hook→cut works _because the demo is a different thing_ — a different person, a different room, so the cut reads as an edit. Here the same persona is on both sides of the cut, so a clip that isn't this persona in this setting is a **continuity error**, not a transition. |
+| Alternative                                             | Why not                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Multi-angle cuts** (several camera angles per script) | N × the non-determinism — HeyGen has no seed (`docs/04:269-270`), so every cut is an independent generation that can differ. Also needs an image set per persona, which the one-background decision above removes.                                                                                                                                                                                                                                                                        |
+| **A motion bank per persona** (pre-made motion clips)   | Multiplies by backgrounds — the bank to curate by hand becomes personas × backgrounds × motions.                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Hedra Omnia / Kling video-to-video**                  | Viable, untested, **parked** — not rejected on merit. Both would also need locked decision #12 reopened.                                                                                                                                                                                                                                                                                                                                                                                  |
+| **HeyGen `motion_prompt` to produce the opener**        | Not promptable — measured 2026-09-06: a staged palm-over-lens was ignored outright ([[heygen-motion-prompt-two-draws]]). Moot: the opener is retired ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Same 'moot since 2026-09-06' marker on the next row; its continuity argument is why two generations of one face never cut clean. `motion_prompt` directs gesture and motion; it cannot place a reveal at a known millisecond, which is the one thing the opener needs. |
+| **Reusing the Service A hook bank**                     | A's hook→cut works _because the demo is a different thing_ — a different person, a different room, so the cut reads as an edit. Here the same persona is on both sides of the cut, so a clip that isn't this persona in this setting is a **continuity error**, not a transition.                                                                                                                                                                                                         |
 
 ## Still open — do not decide
 
@@ -202,8 +214,7 @@ Listed so a later session does not read this note as settling them.
   (`docs/04-integrations.md:213-215`), so the original reason is spent — but 30s is **not offered
   pending the founder**. Do not re-enable it as a cleanup.
 - **A physical-product service.** Parked as its own thing, not scoped.
-- **Sound under the palm phase.** If it happens it is **attached natively at post time**, per the
-  existing sounds doctrine (`docs/01-schema.md:66-69`: "Sounds are attached natively at post time,
+- ~~**Sound under the palm phase.**~~ Settled 2026-09-06: there is no palm phase, and the zoom hook's soft wind whoosh is baked into the export — the founder ruled 'a whoosh is not music', so locked decision #7 (no music) stands unchanged ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Music still goes on natively at post time. (`docs/01-schema.md:66-69`: "Sounds are attached natively at post time,
   never baked in") and locked decision #7. Nothing gets baked into an organic export.
 
 ## Related
@@ -213,5 +224,4 @@ placeholders until the engine work lands.
 [[heygen-avatar-iv-idles-on-leading-silence]] — the measurement that makes the opener's hard cut
 land cleanly on frame 0.
 [[events-table-is-empty]] — the pointer-move tripwire quoted above.
-[[0013-hook-clips-near-9-16-not-exact-1080x1920]] — the Service A bank's registration constraints,
-which the opener bank should be read against before its schema is written.
+[[0013-hook-clips-near-9-16-not-exact-1080x1920]] — the precedent the opener bank's schema (0032) was read against; that bank is retired 2026-09-06 ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]).

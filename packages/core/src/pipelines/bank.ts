@@ -389,7 +389,12 @@ export async function addOpenerClip(
     label: string;
     filePath: string;
     durationMs: number;
-    /** First frame the face is fully clear, in clip time; 0..durationMs. */
+    /**
+     * Where the hard cut lands, in clip time (0..durationMs): the first frame
+     * whose pose matches the selfie — hand out of the frame and settled — so
+     * the talking head, idling on that selfie, continues it. Tagging the
+     * frame where the face merely appears cuts on a moving hand.
+     */
     revealAtMs: number;
     textSafeArea: TextSafeArea;
   },

@@ -1,6 +1,6 @@
 # AIUGC — project vault
 
-Source of truth for the Service A steps pipeline. Lives at `docs/vault/` inside the repo and is
+Source of truth for the project — the Service A steps pipeline ([[0020-service-a-is-hook-and-steps-only]]) and the Service B talking-head pipeline ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Lives at `docs/vault/` inside the repo and is
 git-tracked, so a note changes in the same commit as the code it describes and `git log` gives every
 fact a provenance trail.
 

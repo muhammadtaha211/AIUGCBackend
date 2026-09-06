@@ -1,4 +1,19 @@
-import { FPS, type CaptionChunk } from "./schema";
+import { interpolate, random } from "remotion/no-react";
+import { FPS, type CaptionChunk, type GradeCurve, type HookZoom } from "./schema";
+
+/**
+ * The talking-head grade at `ms` into the clip: linear between samples, held
+ * past the last. Mirrors @aiugc/core's media/grade.ts `gradeAt` — core cannot
+ * be imported here — and core's grade.test.ts pins the shared semantics.
+ */
+export function gradeAt(curve: GradeCurve, ms: number): [number, number, number] {
+  const pos = Math.max(0, ms / curve.stepMs);
+  const i = Math.min(Math.floor(pos), curve.r.length - 1);
+  const j = Math.min(i + 1, curve.r.length - 1);
+  const f = Math.min(1, pos - i);
+  const lerp = (arr: number[]) => arr[i]! + (arr[j]! - arr[i]!) * f;
+  return [lerp(curve.r), lerp(curve.g), lerp(curve.b)];
+}
 
 /**
  * Caption timing selection — pure functions, no React, no I/O (this is the
@@ -17,6 +32,96 @@ export function msToFrame(ms: number): number {
 
 export function frameToMs(frame: number): number {
   return (frame / FPS) * 1000;
+}
+
+/**
+ * Handheld camera: a phone held at arm's length never sits still, and a
+ * perfectly static picture is the strongest "this is AI" tell (both source
+ * clips — the Seedance opener and the HeyGen talking head — have locked-off
+ * cameras). Three octaves of smooth seeded noise per axis — a slow wander
+ * with a little jitter on top — rather than sines: a hand has no period, and
+ * the first sine version read as a pattern (founder, 2026-09-05). A pure
+ * function of the ABSOLUTE frame, so the path runs continuously through the
+ * reveal cut instead of restarting on it, and of the seed (the render id), so
+ * a retry re-renders identical frames. The picture underneath is scaled by
+ * OVERSCAN so no edge shows; timing.test.ts pins that every frame of three
+ * seeds — two renders' ids and the tightest of 300 random ones — stays
+ * covered with room for the alignment offset. Not a proof for every seed.
+ *
+ * Every amplitude (px at 1080×1920, degrees) and knot rate (Hz) here was
+ * chosen by eye on 2026-09-05, none measured — the dial is these nine numbers.
+ */
+const SWAY = {
+  x: { amp: [8, 3, 1], hz: [0.35, 1.1, 3.3] },
+  y: { amp: [6.5, 2.5, 0.8], hz: [0.4, 1.3, 3.7] },
+  rot: { amp: [0.3, 0.12, 0.04], hz: [0.3, 0.9, 2.9] },
+} as const;
+
+export const OVERSCAN = 1.06;
+
+/**
+ * The seam: the opener's reveal frame and the talking head's idle frame are
+ * the same pose, colour-graded to each other and offset into alignment, and
+ * the cut between them is HARD. A 4-frame soft cut here plus a 1.5s ease on
+ * the alignment offset (2026-09-06) read to the founder as "a weird
+ * transition animation" on top of the jump they were meant to hide, and a
+ * 5-frame dissolve before that (2026-09-05) ghosted a moving hand. Nothing
+ * moves at the seam now except the shared camera path. Frames of opacity
+ * ramp on the head while the opener holds underneath; 0 = hard cut.
+ */
+export const SEAM_DISSOLVE_FRAMES = 0;
+
+/**
+ * Smooth noise within ±1.25 (the curve's overshoot past its knots): a Catmull-Rom curve through random
+ * knots `hz` per second. Continuous velocity — no stall at the knots — and
+ * no period.
+ */
+function smoothNoise(seed: string, t: number, hz: number): number {
+  const x = t * hz;
+  const i = Math.floor(x);
+  const f = x - i;
+  const knot = (k: number) => random(`${seed}:${k}`) * 2 - 1;
+  const [p0, p1, p2, p3] = [knot(i - 1), knot(i), knot(i + 1), knot(i + 2)];
+  return (
+    0.5 *
+    (2 * p1 +
+      (-p0 + p2) * f +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f)
+  );
+}
+
+export function handheld(frame: number, seed: string): { x: number; y: number; rot: number } {
+  const t = frame / FPS;
+  const axis = (name: keyof typeof SWAY) =>
+    SWAY[name].amp.reduce(
+      (sum, amp, i) => sum + amp * smoothNoise(`${seed}:${name}:${i}`, t, SWAY[name].hz[i]!),
+      0,
+    );
+  return { x: axis("x"), y: axis("y"), rot: axis("rot") };
+}
+
+/**
+ * The zoom hook's scale at `ms` of composition time: the tight opening creeps
+ * from `from` to `to` (a still shot that is not quite still), then eases out
+ * to 1 over `durationMs` from `atMs`. Ease-in-out cubic — soft at both ends,
+ * fast in the middle, the shape of a hand pulling a phone back. One clip, so
+ * this is a camera move, never a seam. `atMs` 0 skips the creep.
+ */
+const easeInOutCubic = (t: number): number =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+export function hookZoomScale(zoom: HookZoom, ms: number): number {
+  if (zoom.atMs > 0 && ms < zoom.atMs) {
+    return interpolate(ms, [0, zoom.atMs], [zoom.from, zoom.to], {
+      extrapolateLeft: "clamp",
+      extrapolateRight: "clamp",
+    });
+  }
+  return interpolate(ms, [zoom.atMs, zoom.atMs + zoom.durationMs], [zoom.to, 1], {
+    extrapolateRight: "clamp",
+    easing: easeInOutCubic,
+  });
 }
 
 // Service B's length lives in @aiugc/core's serviceBTimeline (client-safe,
