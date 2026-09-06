@@ -1,5 +1,15 @@
 import { interpolate, random } from "remotion/no-react";
-import { FPS, type CaptionChunk, type GradeCurve, type HookZoom } from "./schema";
+import {
+  FPS,
+  WIDTH,
+  type CaptionChunk,
+  type GradeCurve,
+  type HookBeats,
+  type HookFocus,
+  type HookTextReveal,
+  type HookWhip,
+  type HookZoom,
+} from "./schema";
 
 /**
  * The talking-head grade at `ms` into the clip: linear between samples, held
@@ -122,6 +132,143 @@ export function hookZoomScale(zoom: HookZoom, ms: number): number {
     extrapolateRight: "clamp",
     easing: easeInOutCubic,
   });
+}
+
+/**
+ * The other hook animations (mocks, 2026-09-06 — schema.ts says why they are
+ * all optional). Each is a pure function of composition ms and its own prop;
+ * ServiceB multiplies whatever scales come back into the one transform on the
+ * talking-head layer.
+ *
+ * THE INVARIANT they all have to keep: the picture sits inside the outer
+ * handheld container's OVERSCAN, and timing.test.ts pins that the sway leaves
+ * at least 12px horizontally and 32px vertically of it unused. So a transform
+ * that only scales UP is safe by construction (a bigger picture cannot expose
+ * an edge); anything that translates or blurs has to buy its own cover, which
+ * is why `hookFocusState` and `hookWhipState` return a scale rather than
+ * taking one.
+ */
+
+/** Half the frame — the tight axis for every coverage sum below. */
+const HALF_W = WIDTH / 2;
+/**
+ * Cover for a blur: a Gaussian of stdDeviation `blurPx` (what CSS
+ * `blur(Npx)` sets) has ~2.3% of its mass past 2σ, so a frame edge cut there
+ * is at worst ~2% dark — invisible in an ad, where 3σ would cost a third
+ * more zoom. The sway's pinned 12px of spare cover is the margin on top; the
+ * scale below buys exactly the bleed and nothing more, so it lands on 1 the
+ * instant the blur does instead of stepping.
+ */
+const BLUR_COVER_SIGMAS = 2;
+
+const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+const clamp01 = (t: number): number => (t < 0 ? 0 : t > 1 ? 1 : t);
+
+/**
+ * Rack focus at `ms`: soft to `holdMs`, then sharp over `durationMs`.
+ * The scale is not a second knob — it is the cover the blur needs (above),
+ * and it decays with the blur, so it reads as the focus breathing a real lens
+ * does and lands at exactly 1 the moment the picture is sharp.
+ */
+export function hookFocusState(focus: HookFocus, ms: number): { blurPx: number; scale: number } {
+  const blurPx = interpolate(
+    ms,
+    [focus.holdMs, focus.holdMs + focus.durationMs],
+    [focus.blurPx, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: easeInOutCubic },
+  );
+  return { blurPx, scale: blurCoverScale(0, blurPx) };
+}
+
+/**
+ * Whip-in at `ms`: the picture enters `fromX` px off, under a blur that is
+ * directional (x only, an SVG feGaussianBlur — CSS blur() is isotropic and
+ * would soften the whole frame), and settles by `durationMs` on an ease-out
+ * cubic — fast off the mark, no bounce. The scale is derived cover, as above.
+ */
+export function hookWhipState(
+  whip: HookWhip,
+  ms: number,
+): { dx: number; blurPx: number; scale: number } {
+  const remaining = 1 - easeOutCubic(clamp01(ms / whip.durationMs));
+  const dx = whip.fromX * remaining;
+  const blurPx = whip.blurPx * remaining;
+  return { dx, blurPx, scale: blurCoverScale(dx, blurPx) };
+}
+
+/**
+ * The scale that keeps a picture offset by `dx` and blurred by `blurPx`
+ * covering the frame. A CSS/SVG filter runs in the element's LOCAL pixels and
+ * the element's own transform is then applied to the filtered result, so the
+ * alpha ramp is inset 2 sigma * s on screen, not 2 sigma — the compensating
+ * scale magnifies the very bleed it buys. Solving `s(HALF_W - 2 sigma) =
+ * HALF_W + |dx|` lands the near edge on exactly -HALF_W at every sigma, so
+ * the sway's spare cover is never spent. (The additive form this replaced
+ * under-bought by 2 sigma (s-1): 3px at blur 20, 23px at blur 56 — measured
+ * 2026-09-06, packages/core/.work/hook-probe.ts.) The clamp is what stops a
+ * large blur turning a division into a NEGATIVE scale, i.e. a mirrored picture.
+ */
+function blurCoverScale(dx: number, blurPx: number): number {
+  const bleed = Math.min(BLUR_COVER_SIGMAS * blurPx, HALF_W - 1);
+  return (HALF_W + Math.abs(dx)) / (HALF_W - bleed);
+}
+
+/**
+ * Kinetic hook text at `ms`, given `endMs` — the time the line leaves, which
+ * is the caption handoff. Per-word progress 0..1 (the pop) and one exit
+ * progress 0..1 for the slide-and-fade that finishes exactly at `endMs`, so
+ * the line is gone by the frame the first caption line arrives. Words with no
+ * entry in `wordMs` follow the last one, so a hook line the matcher could not
+ * split still fully appears.
+ */
+export function hookTextRevealState(
+  reveal: HookTextReveal,
+  ms: number,
+  endMs: number,
+  wordCount: number,
+): { wordProgress: number[]; exit: number } {
+  const last = reveal.wordMs[reveal.wordMs.length - 1]!;
+  const wordProgress = Array.from({ length: wordCount }, (_, i) =>
+    easeOutCubic(clamp01((ms - (reveal.wordMs[i] ?? last)) / reveal.popMs)),
+  );
+  const exit =
+    reveal.exitDurationMs <= 0
+      ? 0
+      : easeInOutCubic(clamp01((ms - (endMs - reveal.exitDurationMs)) / reveal.exitDurationMs));
+  return { wordProgress, exit };
+}
+
+/**
+ * Emphasis punches at `ms`: a pop on each beat — a sharp rise over the first
+ * third, a softer fall over the rest, which is how a bump on a stressed word
+ * reads — plus the optional slow push from `push.fromMs` to `endMs`.
+ * Overlapping beats take the LOUDER one, never the sum: two beats 100ms apart
+ * must not double the punch.
+ */
+const PUNCH_ATTACK = 0.3;
+
+export function hookBeatsScale(beats: HookBeats, ms: number, endMs: number): number {
+  let punch = 0;
+  for (const at of beats.atMs) {
+    const t = (ms - at) / beats.durationMs;
+    if (t < 0 || t > 1) continue;
+    const shape =
+      t < PUNCH_ATTACK
+        ? easeOutCubic(t / PUNCH_ATTACK)
+        : 1 - easeInOutCubic((t - PUNCH_ATTACK) / (1 - PUNCH_ATTACK));
+    punch = Math.max(punch, beats.amount * shape);
+  }
+  // Math.min: a push starting at or past the ad's end is a caller mistake, but
+  // `endMs` is timeline.totalMs — computed, never typed — so it must not throw
+  // ("inputRange must be strictly monotonically increasing") at frame 0 and
+  // lose the whole render. It degrades to a push with nowhere left to run.
+  const push = beats.push
+    ? interpolate(ms, [Math.min(beats.push.fromMs, endMs - 1), endMs], [0, beats.push.to - 1], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 0;
+  return 1 + punch + push;
 }
 
 // Service B's length lives in @aiugc/core's serviceBTimeline (client-safe,

@@ -71,6 +71,70 @@ export const hookZoomSchema = z.object({
 });
 export type HookZoom = z.infer<typeof hookZoomSchema>;
 
+/**
+ * The other hook-animation mocks (2026-09-06), all pending the founder's pick
+ * — decision 0023 says the wizard will offer animation effects with "none" as
+ * one option, and these are the candidates being judged. Same contract as
+ * `hookZoom`: optional, inert unless passed, all timing in pure functions in
+ * timing.ts. Whichever survive collapse into one `hookEffect` render param and
+ * the rest get deleted, so nothing else in the tree may depend on them.
+ */
+
+/**
+ * Rack focus: the picture opens soft at `blurPx`, holds to `holdMs`, then
+ * pulls sharp over `durationMs` as speech starts. A CSS blur bleeds
+ * transparency past the element box, so the layer also carries a compensating
+ * scale that decays with the blur (timing.ts `hookFocusState`) — that is what
+ * keeps the frame edge covered, and it reads as focus breathing.
+ */
+export const hookFocusSchema = z.object({
+  blurPx: z.number().min(0),
+  holdMs: z.number().min(0),
+  durationMs: z.number().min(1),
+});
+export type HookFocus = z.infer<typeof hookFocusSchema>;
+
+/**
+ * Whip-in: the picture enters offset by `fromX` px under a directional blur
+ * and settles at rest over `durationMs`. The scale that keeps the slide
+ * covered is DERIVED from the offset and the blur, never passed in
+ * (timing.ts `hookWhipState`).
+ */
+export const hookWhipSchema = z.object({
+  fromX: z.number(),
+  durationMs: z.number().min(1),
+  blurPx: z.number().min(0),
+  sfxSrc: z.string().optional(),
+});
+export type HookWhip = z.infer<typeof hookWhipSchema>;
+
+/**
+ * Kinetic hook text: the centred line's words pop in one at a time at
+ * `wordMs` (composition ms, one per word of `hookText`), then the whole line
+ * slides down and fades over the LAST `exitDurationMs` of its life — so it
+ * leaves exactly as the first caption line arrives, instead of cutting.
+ * Fewer entries than words = the rest pop with the last one.
+ */
+export const hookTextRevealSchema = z.object({
+  wordMs: z.array(z.number()).min(1),
+  popMs: z.number().min(1),
+  exitDurationMs: z.number().min(0),
+});
+export type HookTextReveal = z.infer<typeof hookTextRevealSchema>;
+
+/**
+ * Emphasis punches: a quick scale pop at each `atMs` (an emphasis word's
+ * onset), plus an optional slow push-in from `push.fromMs` to the ad's end.
+ * Both only ever scale UP, so neither can expose a frame edge.
+ */
+export const hookBeatsSchema = z.object({
+  atMs: z.array(z.number()),
+  amount: z.number().min(0),
+  durationMs: z.number().min(1),
+  push: z.object({ fromMs: z.number().min(0), to: z.number().min(1) }).optional(),
+});
+export type HookBeats = z.infer<typeof hookBeatsSchema>;
+
 export const serviceBSchema = z.object({
   talkingHeadSrc: z.string(),
   /**
@@ -111,6 +175,11 @@ export const serviceBSchema = z.object({
   talkingHeadAlign: z.object({ dx: z.number(), dy: z.number() }).optional(),
   /** Absent = no zoom. The pipeline never sets it yet; the mock script does. */
   hookZoom: hookZoomSchema.optional(),
+  /** The other candidates, all absent = off. Mocks; see the block above. */
+  hookFocus: hookFocusSchema.optional(),
+  hookWhip: hookWhipSchema.optional(),
+  hookTextReveal: hookTextRevealSchema.optional(),
+  hookBeats: hookBeatsSchema.optional(),
   /**
    * Seeds the handheld camera path (timing.ts `handheld`). The worker passes
    * the render id; absent = the fixed "preview" path Studio and the sample

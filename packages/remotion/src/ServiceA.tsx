@@ -154,11 +154,34 @@ const AvatarSegment: React.FC<{
   );
 };
 
-export const HookLine: React.FC<{ text: string; area: TextSafeArea; color?: string }> = ({
+/**
+ * How far the kinetic hook line travels on its way out — down toward the
+ * caption slot (~425px below the rect's centre) and a little smaller, fading
+ * as it goes. Service B's `hookTextReveal` mock only; a hook line with no
+ * `exit` never moves.
+ */
+const HOOK_EXIT_DY = 360;
+const HOOK_EXIT_SCALE = 0.92;
+
+export const HookLine: React.FC<{
+  text: string;
+  area: TextSafeArea;
+  color?: string;
+  /**
+   * Kinetic hook text (Service B mock, timing.ts `hookTextRevealState`):
+   * one 0..1 pop progress per whitespace-separated word. Absent = the whole
+   * line is simply on screen, which is what Service A always passes.
+   */
+  wordProgress?: number[];
+  /** 0..1 of the slide-down-and-fade exit; absent = at rest. */
+  exit?: number;
+}> = ({
   text,
   area,
   // White for the hook line; the steps format burns its labels yellow.
   color = "white",
+  wordProgress,
+  exit = 0,
 }) => {
   const fontSize = useMemo(
     () =>
@@ -200,13 +223,52 @@ export const HookLine: React.FC<{ text: string; area: TextSafeArea; color?: stri
         lineHeight: HOOK_FONT.lineHeight,
         color,
         textShadow: TEXT_OUTLINE,
+        transform:
+          exit > 0
+            ? `translateY(${(HOOK_EXIT_DY * exit).toFixed(1)}px) scale(${1 - (1 - HOOK_EXIT_SCALE) * exit})`
+            : undefined,
+        opacity: 1 - exit,
       }}
     >
       {/* isolate, not plaintext: plaintext takes base direction from the first
           strong character, so a line opening with a Latin run (`POV:`) flips
           the whole line LTR and the prefix drifts to the wrong edge. isolate
-          keeps the container's RTL base; the Latin run stays an LTR island. */}
-      <span style={{ unicodeBidi: "isolate" }}>{text}</span>
+          keeps the container's RTL base; the Latin run stays an LTR island.
+          The words live INSIDE this one span, never as siblings: the parent is
+          a flex container, which drops whitespace-only text nodes between flex
+          items and would eat every space in the line. */}
+      <span style={{ unicodeBidi: "isolate" }}>
+        {wordProgress === undefined
+          ? text
+          : text
+              .split(/\s+/)
+              .filter(Boolean)
+              .map((word, i) => {
+                // A word with no progress of its own has already fully popped
+                // (hookTextRevealState pads to the word count, so this is only
+                // reached if a caller passes a short array directly).
+                const p = wordProgress[i] ?? 1;
+                return (
+                  <React.Fragment key={`${i}-${word}`}>
+                    {i > 0 ? " " : null}
+                    {/* inline-block so the pop can scale it; transforms do not
+                        affect layout, so the line never reflows as words land. */}
+                    <span
+                      style={{
+                        display: "inline-block",
+                        opacity: p,
+                        // No transform once it has landed — Captions does the
+                        // same, so a finished word is not left on a
+                        // compositing path for the rest of the ad.
+                        transform: p >= 1 ? undefined : `scale(${(0.86 + 0.14 * p).toFixed(3)})`,
+                      }}
+                    >
+                      {word}
+                    </span>
+                  </React.Fragment>
+                );
+              })}
+      </span>
     </div>
   );
 };

@@ -36,3 +36,7 @@ export const LOCAL_STORAGE_DIR = path.join(REPO_ROOT, ".storage");
 
 /** Scratch dir for ffmpeg outputs before they are pushed to storage. */
 export const WORK_DIR = path.join(REPO_ROOT, ".work");
+
+/** The hook animations' sound effects — tracked files, so the worker box has
+ *  them by `git pull` (docs/07). See assets/sfx/README.md. */
+export const SFX_DIR = path.join(REPO_ROOT, "assets", "sfx");

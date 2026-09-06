@@ -14,7 +14,13 @@ import {
   videoRenders,
 } from "../db/schema";
 import { assertAccountBudget } from "../budget";
-import { resolveHookTextSafeArea, textSafeAreaSchema, type SafeRect } from "../hook-geometry";
+import { hookEffectSchema, isHookAnimation, type HookEffect } from "../hook-effect";
+import {
+  CENTRED_HOOK_TEXT_RECT,
+  resolveHookTextSafeArea,
+  textSafeAreaSchema,
+  type SafeRect,
+} from "../hook-geometry";
 import { hookTextError } from "../hook-text";
 import { enqueue } from "../jobs/queue";
 import {
@@ -94,15 +100,23 @@ export interface VariantParams {
   voSliceMs?: number;
   /** Customer-placed hook-line rect; resolveHookTextSafeArea falls back to the clip's. */
   textSafeArea?: SafeRect;
-  /** Service B: the founder-made opener clip played in front of the talking head (vault 0017). */
+  /** Service B: the founder-made opener clip played in front of the talking head — RETIRED (vault 0023), CLI-only. */
   openerClipId?: string;
+  /**
+   * Service B: the hook animation the composition performs on the one HeyGen
+   * clip (vault 0023). A NAME only — the numbers behind it live in
+   * `buildServiceBProps`, so a retune never has to rewrite stored rows.
+   * Absent = no animation, which is also what every pre-2026-09-06 row means.
+   */
+  hookEffect?: HookEffect;
   /**
    * Service B: the FINAL on-screen hook text, copied here at enqueue — never a
    * pointer to the script row, so a later re-derivation or edit cannot change
-   * what gets burned after the customer confirmed (vault 0017).
+   * what gets burned after the customer confirmed (vault 0017). Present with a
+   * hook animation or an opener, never on its own.
    */
   hookText?: string;
-  /** Service B: where hookText burns over the opener — the clip's rect unless the customer moved it. */
+  /** Service B: where hookText burns — the customer's rect, else the opener's or CENTRED_HOOK_TEXT_RECT. */
   hookTextSafeArea?: SafeRect;
 }
 
@@ -162,7 +176,7 @@ export async function createSet(
   const format = grid.format ?? (grid.stepPlanId ? "steps" : "full");
   // Refuse the contradictory grid rather than store a half-ignored field.
   if (format === "full" && grid.stepPlanId) {
-    throw new Error("full format does not take a stepPlanId — pass format \"steps\" or drop it");
+    throw new Error('full format does not take a stepPlanId — pass format "steps" or drop it');
   }
 
   const demoRows = await db.select().from(demos).where(eq(demos.id, opts.demoId)).limit(1);
@@ -172,7 +186,8 @@ export async function createSet(
   let outro: Pick<VariantParams, "outroMode" | "voSliceMs"> = {};
   if (format === "steps") {
     // Steps is silent by definition: no VO, no outro, no captions requirement.
-    if (grid.mode === "voiced") throw new Error("steps format is silent — voiced mode does not apply");
+    if (grid.mode === "voiced")
+      throw new Error("steps format is silent — voiced mode does not apply");
     if (!grid.stepPlanId) throw new Error("steps format requires stepPlanId");
     const plan = await getStepPlan(db, grid.stepPlanId);
     if (!plan) throw new Error(`step plan ${grid.stepPlanId} not found`);
@@ -383,11 +398,18 @@ export async function createBRender(
     motionPrompt?: string;
     /** HeyGen expressiveness (low|medium|high) — overrides the app_config default. */
     expressiveness?: string;
-    /** Opener clip (opener_clips.id); must belong to the render's source image. */
+    /** Opener clip (opener_clips.id); must belong to the render's source image. RETIRED (vault 0023). */
     openerClipId?: string;
-    /** The FINAL on-screen hook text — required with an opener, refused without one. */
+    /**
+     * The hook animation the composition performs (vault 0023): "none" |
+     * "zoom" | "focus" | "whip". Typed as a bare string, like `expressiveness`
+     * above, so the CLI can pass raw text and be refused HERE — pre-debit —
+     * rather than writing a name nothing downstream recognises.
+     */
+    hookEffect?: string;
+    /** The FINAL on-screen hook text — required with a hook animation or an opener, refused with neither. */
     hookText?: string;
-    /** Customer-placed rect for hookText; absent = the opener's text_safe_area. */
+    /** Customer-placed rect for hookText; absent = the opener's, else CENTRED_HOOK_TEXT_RECT. */
     hookTextSafeArea?: SafeRect;
   },
 ) {
@@ -459,19 +481,47 @@ export async function createBRender(
     }
   }
 
-  // The opener and its hook text come together or not at all: the text burns
-  // over the clip's palm phase, and a clip with nothing to say over it is not
-  // an effect.
-  if ((opts.openerClipId === undefined) !== (opts.hookText === undefined)) {
+  // Fail a typo'd effect name here, pre-debit: an unknown name would be stored,
+  // read back as "no animation" at render time, and ship a hookless ad with
+  // nothing anywhere saying why.
+  const hookEffect =
+    opts.hookEffect === undefined ? undefined : hookEffectSchema.parse(opts.hookEffect);
+  const animation = isHookAnimation(hookEffect) ? hookEffect : undefined;
+  // A hook animation is performed ON the one clip; an opener is a clip in
+  // front of it. renderServiceB refuses the pair — but only at render time,
+  // after HeyGen has been billed, so refuse it here instead.
+  if (animation !== undefined && opts.openerClipId !== undefined) {
+    throw new Error("a hook animation and an opener clip are exclusive");
+  }
+  // The hook text comes with the thing it burns over, and never alone: an
+  // animation or an opener with nothing to say is not an effect, and a line
+  // with neither has no lifetime the timeline can give it.
+  const hookSource = animation ?? opts.openerClipId;
+  if ((hookSource === undefined) !== (opts.hookText === undefined)) {
     throw new Error(
-      opts.openerClipId
-        ? "hookText is required with an opener clip"
-        : "hookText needs an opener clip to burn over",
+      hookSource !== undefined
+        ? "hookText is required with a hook animation or an opener clip"
+        : "hookText needs a hook animation or an opener clip to burn over",
     );
   }
+
   let opener: typeof openerClips.$inferSelect | undefined;
   let hookText: string | undefined;
   let hookTextSafeArea: SafeRect | undefined;
+  if (opts.hookText !== undefined) {
+    const problem = hookTextError(opts.hookText);
+    if (problem) throw new Error(problem);
+    hookText = opts.hookText.trim();
+  }
+  const placedRect =
+    opts.hookTextSafeArea === undefined
+      ? undefined
+      : textSafeAreaSchema.parse(opts.hookTextSafeArea);
+  if (animation !== undefined) {
+    // No clip underneath to inherit a rect from: the centred rect every mock
+    // the founder judged burned in, unless he/the customer moved it.
+    hookTextSafeArea = resolveHookTextSafeArea(placedRect, CENTRED_HOOK_TEXT_RECT);
+  }
   if (opts.openerClipId !== undefined) {
     opener = (
       await db.select().from(openerClips).where(eq(openerClips.id, opts.openerClipId)).limit(1)
@@ -489,15 +539,7 @@ export async function createBRender(
     if (opener.personaImageId !== sourceImage.id) {
       throw new Error(`opener clip ${opts.openerClipId} belongs to a different persona image`);
     }
-    const problem = hookTextError(opts.hookText!);
-    if (problem) throw new Error(problem);
-    hookText = opts.hookText!.trim();
-    hookTextSafeArea = resolveHookTextSafeArea(
-      opts.hookTextSafeArea === undefined
-        ? undefined
-        : textSafeAreaSchema.parse(opts.hookTextSafeArea),
-      opener.textSafeArea as SafeRect,
-    );
+    hookTextSafeArea = resolveHookTextSafeArea(placedRect, opener.textSafeArea as SafeRect);
   }
 
   // Fail a typo'd tier here, not as a HeyGen 400 after the render is queued.
@@ -533,6 +575,9 @@ export async function createBRender(
           motionPrompt: opts.motionPrompt,
           expressiveness,
           openerClipId: opts.openerClipId,
+          // Stored only when it is an animation, so an absent key means "no
+          // animation" for a pre-2026-09-06 row and a "none" render alike.
+          hookEffect: animation,
           hookText,
           hookTextSafeArea,
         },

@@ -31,6 +31,20 @@ export const MIN_SAFE_AREA = 120;
 export const DEFAULT_HOOK_TEXT_RECT: SafeRect = { x: 25, y: 1062, w: 1009, h: 179 };
 
 /**
+ * Where a hook line sits on a Service B hook-animation render (vault 0023),
+ * as a fallback AND as the seed the wizard's placement editor opens on — the
+ * two must be the same rect or the preview and the burn disagree.
+ *
+ * Centred, not lower-third: an animation hook has no opener under it and no
+ * captions yet, so the line owns the frame. Its centre is y 1004, close to
+ * the frame's own 960, and it is the rect every mock the founder judged on
+ * 2026-09-06 burned in. The 473 height is a three-line-plus envelope — much
+ * taller than DEFAULT_HOOK_TEXT_RECT's two-line 179 — because nothing else is
+ * on screen to collide with; `fitFontSize` still shrinks a long line to fit.
+ */
+export const CENTRED_HOOK_TEXT_RECT: SafeRect = { x: 25, y: 768, w: 1055, h: 473 };
+
+/**
  * The legibility floor: below this fitted font size (px at 1080x1920) a burned
  * hook line reads poorly on a phone. Advisory only — the wizard shows a gentle
  * note, nothing blocks (inform, never restrict).

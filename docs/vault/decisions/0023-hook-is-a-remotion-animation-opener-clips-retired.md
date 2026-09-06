@@ -60,13 +60,24 @@ said "I like it".
 
 - `packages/remotion`: optional `hookZoom` prop end to end, `hookZoomScale` in `timing.ts`,
   the whoosh as a served audio file, tests 56/56. Not yet set by the pipeline.
-- Still to build (next session): the caption-handoff rule in `serviceBTimeline`, the effects
-  step in the wizard (`apps/web/src/components/b-wizard`) replacing the opener step, the render
-  route and `createBRender` params for an effect, more animations to judge, and the vault notes
-  for each.
+- **2026-09-06, round 2:** four more candidates built to the same contract and rendered free
+  on the stored medium take for judgement — `hookFocus` (rack focus), `hookWhip` (whip-in),
+  `hookTextReveal` (kinetic hook text), `hookBeats` (emphasis punches + a tail push), each an
+  optional prop with a pure function in `timing.ts`, inert unless passed; remotion 76/76.
+  Parameters, verification and the two caveats on the judged files are in
+  [[service-b-hook-animation-mocks-2026-09-06]]. Still no founder pick, so still no
+  `hookEffect` param and no wizard step.
+- **All of it built 2026-09-06** ([[0024-hook-effect-is-a-render-param-the-customer-picks]]), after the founder picked zoom, focus and whip and
+  rejected the punches: the caption-handoff rule is `hookHandoffMs` in `serviceBTimeline`, the
+  wizard's effect step offers the animations with "none", and `hookEffect` travels route →
+  `createBRender` → params → `buildServiceBProps` → the composition prop. What is left of this
+  decision is the deletion task for the opener-clip code.
 
 ## Related
 
+- [[service-b-hook-animation-mocks-2026-09-06]] — the candidates on the table
+- [[emphasis-signal-in-word-timestamps]] — what an "emphasis word" can be inferred from
+- [[atomic-inline-words-reverse-a-latin-run-in-rtl]] — a limit on the kinetic hook text
 - [[0022-heygen-expressiveness-medium-generic-motion-prompt]] — the engine settings
 - [[heygen-motion-prompt-two-draws]] — why staged actions cannot come from HeyGen
 - [[heygen-head-moves-before-speech-onset]] — the still window the animation opens on

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
@@ -29,9 +30,9 @@ type StepRenderProps = {
   personaImageId: string;
   scriptId: string;
   audioId: string;
-  /** The effect step's choice: the opener clip, its FINAL on-screen line and
-   *  the rect the customer placed it in (absent = the clip's safe area). */
-  openerClipId?: string;
+  /** The effect step's choice: the opening animation, its FINAL on-screen line
+   *  and the rect the customer placed it in (absent = the centred default). */
+  hookEffect: HookEffect;
   hookText?: string;
   hookTextSafeArea?: SafeRect;
   render: RenderState | null;
@@ -56,7 +57,7 @@ export function StepRender({
   personaImageId,
   scriptId,
   audioId,
-  openerClipId,
+  hookEffect,
   hookText,
   hookTextSafeArea,
   render,
@@ -95,7 +96,7 @@ export function StepRender({
         audioId,
         personaId,
         personaImageId,
-        openerClipId,
+        hookEffect,
         hookText,
         hookTextSafeArea,
       }),

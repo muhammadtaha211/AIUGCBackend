@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hookEffectSchema } from "@aiugc/core/hook-effect";
 import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 
 /**
@@ -27,17 +28,25 @@ export const renderRequestSchema = z
     /** The selfie the persona card showed (Persona.personaImageId). Required:
      *  nothing on the customer path resolves a default at render time. */
     personaImageId: z.string().uuid(),
-    /** An opener clip of that selfie, with the FINAL on-screen line and,
-     *  when the customer moved it, the rect it sits in. */
-    openerClipId: z.string().uuid().optional(),
+    /**
+     * The hook animation the composition performs on the clip (vault 0023),
+     * with the FINAL on-screen line and, when the customer moved it, the rect
+     * it sits in. Absent = "none", which is what an older open tab sends.
+     *
+     * `openerClipId` is deliberately NOT here any more: the opener is retired
+     * and this object is non-strict, so a stale tab's opener body has the key
+     * silently stripped and renders as a plain talking head rather than 400ing
+     * on something the customer cannot fix.
+     */
+    hookEffect: hookEffectSchema.optional(),
     hookText: z.string().trim().min(1).optional(),
     hookTextSafeArea: textSafeAreaSchema.optional(),
   })
-  // The opener and its text come together or not at all, and a rect without
-  // an opener has nothing to sit on — the same rule createBRender throws on,
-  // caught here as a 400 instead.
+  // The line and the animation that carries it come together or not at all,
+  // and a rect with no line has nothing to sit in — the same rule
+  // createBRender throws on, caught here as a 400 instead.
   .refine((body) =>
-    body.openerClipId === undefined
+    body.hookEffect === undefined || body.hookEffect === "none"
       ? body.hookText === undefined && body.hookTextSafeArea === undefined
       : body.hookText !== undefined,
   );
@@ -105,6 +114,9 @@ export function personaThumbnail<T extends PersonaImageRow>(
 }
 
 /**
+ * RETIRED 2026-09-06 (vault 0023) with the opener bank; no customer path
+ * calls this any more — the CLI's `render-b --opener` is the last caller.
+ *
  * The opener list for one persona: the ACTIVE clips made from
  * personaSelfie(images) — the row the card shows and the render animates.
  * Clips of any other image of the persona (a retired selfie, a standing
@@ -152,7 +164,8 @@ export function renderSourceError(
   return undefined;
 }
 
-/** Why `opener` cannot play in front of a talking head animated from `personaImageId`. */
+/** Why `opener` cannot play in front of a talking head animated from `personaImageId`.
+ *  RETIRED 2026-09-06 (vault 0023): the render route stopped calling it. */
 export function renderOpenerError(
   opener: { personaImageId: string; active: boolean } | undefined,
   personaImageId: string,

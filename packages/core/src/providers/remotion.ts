@@ -107,6 +107,18 @@ export interface RenderServiceBProps {
    * outside what the overscan hides.
    */
   talkingHeadAlign?: { dx: number; dy: number };
+  /**
+   * The hook animation the composition performs on the clip — at most one,
+   * chosen by name in the wizard and turned into numbers by buildServiceBProps
+   * (vault 0023). Field names and shapes MIRROR @aiugc/remotion's
+   * RenderServiceBInput exactly: `sfxPath` is a local file (the composition's
+   * own prop is `sfxSrc`, a loopback URL its render entry maps to). Nothing
+   * typechecks that mirror — loadRemotion casts the dynamic import against
+   * this interface — so a wrong name here renders silently and wrongly.
+   */
+  hookZoom?: { from: number; to: number; atMs: number; durationMs: number; sfxPath?: string };
+  hookFocus?: { blurPx: number; holdMs: number; durationMs: number };
+  hookWhip?: { fromX: number; durationMs: number; blurPx: number; sfxPath?: string };
   watermark: boolean;
   /** Last on purpose: the DRY_RUN render echoes a prefix of these props. */
   captions: CaptionChunk[];
@@ -157,9 +169,10 @@ export async function renderVideo(
   if (getEnv().DRY_RUN) {
     mkdirSync(path.dirname(outPath), { recursive: true });
     // A prefix, not the whole thing: captions are the one unbounded field and
-    // every builder puts them last. 1200 keeps the fixed fields — three local
-    // paths, the opener's, the timeline — inside it on a long checkout path.
-    writeFileSync(outPath, `DRY_RUN placeholder render: ${JSON.stringify(props).slice(0, 1200)}`);
+    // every builder puts them last. 2000 keeps the fixed fields — four local
+    // paths (the clip, the VO, the opener's, a hook animation's sfx), the hook
+    // text and its rect, and the timeline — inside it on a long checkout path.
+    writeFileSync(outPath, `DRY_RUN placeholder render: ${JSON.stringify(props).slice(0, 2000)}`);
     return;
   }
 

@@ -11,11 +11,15 @@ import {
 } from "remotion";
 import { HookLine } from "./ServiceA";
 import { Captions, Watermark } from "./overlays";
-import { type GradeCurve, type ServiceBProps } from "./schema";
+import { FPS, type GradeCurve, type ServiceBProps } from "./schema";
 import {
   frameToMs,
   gradeAt,
   handheld,
+  hookBeatsScale,
+  hookFocusState,
+  hookTextRevealState,
+  hookWhipState,
   hookZoomScale,
   msToFrame,
   OVERSCAN,
@@ -62,6 +66,10 @@ export const ServiceB: React.FC<ServiceBProps> = ({
   talkingHeadAlign,
   cameraSeed,
   hookZoom,
+  hookFocus,
+  hookWhip,
+  hookTextReveal,
+  hookBeats,
 }) => {
   // TODO: brollSrcs is accepted and ignored — cutaway logic (when to cut away,
   // for how long, how to hide the lip-sync) is its own task.
@@ -69,12 +77,36 @@ export const ServiceB: React.FC<ServiceBProps> = ({
 
   const hasOpener =
     openerSrc !== undefined && hookText !== undefined && hookTextSafeArea !== undefined;
-  const hookTextFrames = msToFrame(timeline.hookTextMs);
+  // CEIL, not round: hookTextMs is a caption-chunk boundary, and a handoff
+  // frame rounded DOWN starts the captions before that chunk does — so
+  // activeChunkIndex hands back the PREVIOUS chunk, the one holding the hook's
+  // last word, and one hook word flashes at the bottom under the hook line.
+  const hookTextFrames = Math.ceil((timeline.hookTextMs / 1000) * FPS);
   const revealFrames = msToFrame(timeline.revealAbsMs);
   const trimBeforeFrames = msToFrame(timeline.lipsyncStartFromMs);
   const voFromFrames = msToFrame(timeline.captionOffsetMs);
   const cam = handheld(frame, cameraSeed ?? "preview");
-  const zoomScale = hookZoom ? hookZoomScale(hookZoom, frameToMs(frame)) : 1;
+
+  // The hook animations (timing.ts). All optional and inert when absent; the
+  // scales multiply into the ONE transform on the head, so two of them
+  // composed are two camera moves at once and never two layers.
+  const ms = frameToMs(frame);
+  const focus = hookFocus ? hookFocusState(hookFocus, ms) : undefined;
+  const whip = hookWhip ? hookWhipState(hookWhip, ms) : undefined;
+  const pictureScale =
+    (hookZoom ? hookZoomScale(hookZoom, ms) : 1) *
+    (focus?.scale ?? 1) *
+    (whip?.scale ?? 1) *
+    (hookBeats ? hookBeatsScale(hookBeats, ms, timeline.totalMs) : 1);
+  const textReveal =
+    hookTextReveal && hookText !== undefined
+      ? hookTextRevealState(
+          hookTextReveal,
+          ms,
+          timeline.hookTextMs,
+          hookText.split(/\s+/).filter(Boolean).length,
+        )
+      : undefined;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
@@ -99,7 +131,10 @@ export const ServiceB: React.FC<ServiceBProps> = ({
             grade={talkingHeadGrade}
             align={talkingHeadAlign}
             dissolveFrames={hasOpener ? SEAM_DISSOLVE_FRAMES : 0}
-            scale={zoomScale}
+            scale={pictureScale}
+            offsetX={whip?.dx ?? 0}
+            blurPx={focus?.blurPx ?? 0}
+            whipBlurPx={whip?.blurPx ?? 0}
           />
         </Sequence>
       </AbsoluteFill>
@@ -109,7 +144,12 @@ export const ServiceB: React.FC<ServiceBProps> = ({
            leaving before the reveal. Without an opener the timeline gives it
            no life, unless a caller sets hookTextMs — as the zoom hook does. */
         <Sequence durationInFrames={hookTextFrames}>
-          <HookLine text={hookText} area={hookTextSafeArea} />
+          <HookLine
+            text={hookText}
+            area={hookTextSafeArea}
+            wordProgress={textReveal?.wordProgress}
+            exit={textReveal?.exit}
+          />
         </Sequence>
       ) : null}
 
@@ -121,6 +161,13 @@ export const ServiceB: React.FC<ServiceBProps> = ({
         /* The whoosh leads the ease by two frames, as sound design does. */
         <Sequence from={Math.max(0, msToFrame(hookZoom.atMs) - 2)}>
           <Audio src={hookZoom.sfxSrc} volume={0.7} />
+        </Sequence>
+      ) : null}
+
+      {hookWhip?.sfxSrc ? (
+        /* The whip's whoosh runs with the move, from frame 0. */
+        <Sequence from={0}>
+          <Audio src={hookWhip.sfxSrc} volume={0.7} />
         </Sequence>
       ) : null}
 
@@ -163,9 +210,26 @@ const TalkingHead: React.FC<{
   grade?: GradeCurve;
   align?: { dx: number; dy: number };
   dissolveFrames: number;
-  /** The zoom hook's scale for this frame (timing.ts hookZoomScale); 1 = none. */
+  /** Every hook animation's scale for this frame, multiplied (timing.ts); 1 = none. */
   scale: number;
-}> = ({ src, trimBeforeFrames, clipFrames, grade, align, dissolveFrames, scale }) => {
+  /** The whip's horizontal offset, on top of the alignment slide; 0 = none. */
+  offsetX: number;
+  /** Rack-focus blur, isotropic; 0 = sharp. */
+  blurPx: number;
+  /** Whip blur, horizontal only — an SVG filter, since CSS blur() has no direction. */
+  whipBlurPx: number;
+}> = ({
+  src,
+  trimBeforeFrames,
+  clipFrames,
+  grade,
+  align,
+  dissolveFrames,
+  scale,
+  offsetX,
+  blurPx,
+  whipBlurPx,
+}) => {
   const frame = useCurrentFrame(); // local to the sequence
   const ms = frameToMs(frame);
   // Local frame of the clip's last frame: the file's length minus the trim.
@@ -176,9 +240,25 @@ const TalkingHead: React.FC<{
   const dx = align?.dx ?? 0;
   const dy = align?.dy ?? 0;
   const opacity = dissolveFrames > 0 ? Math.min(1, (frame + 1) / dissolveFrames) : 1;
+  // A filter list, in order: colour, then the directional whip blur, then the
+  // isotropic focus blur. Sub-0.01px is not a blur, and an idle filter pass
+  // costs a compositor layer every frame.
+  const directional = whipBlurPx > 0.01;
+  const filters = [
+    grade ? "url(#talking-head-grade)" : undefined,
+    directional ? "url(#talking-head-whip)" : undefined,
+    blurPx > 0.01 ? `blur(${blurPx.toFixed(2)}px)` : undefined,
+  ].filter(Boolean);
 
   return (
     <>
+      {directional ? (
+        <svg width={0} height={0} style={{ position: "absolute" }} aria-hidden>
+          <filter id="talking-head-whip" colorInterpolationFilters="sRGB">
+            <feGaussianBlur stdDeviation={`${whipBlurPx.toFixed(2)} 0`} />
+          </filter>
+        </svg>
+      ) : null}
       {grade ? (
         <svg width={0} height={0} style={{ position: "absolute" }} aria-hidden>
           <filter id="talking-head-grade" colorInterpolationFilters="sRGB">
@@ -191,8 +271,8 @@ const TalkingHead: React.FC<{
       ) : null}
       <AbsoluteFill
         style={{
-          filter: grade ? "url(#talking-head-grade)" : undefined,
-          transform: `translate(${dx}px, ${dy}px) scale(${scale})`,
+          filter: filters.length > 0 ? filters.join(" ") : undefined,
+          transform: `translate(${dx + offsetX}px, ${dy}px) scale(${scale})`,
           // Scale about the face, not the frame centre, so a zoom keeps the
           // eyes where they are and the torso does the moving.
           transformOrigin: "50% 40%",

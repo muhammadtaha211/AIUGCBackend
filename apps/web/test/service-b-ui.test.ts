@@ -4,6 +4,7 @@ import {
   countWords,
   failedRenderNotice,
   generatingLine,
+  HOOK_EFFECT_OPTIONS,
   hookTextFieldError,
   isActiveRenderStatus,
   needsScriptAdoption,
@@ -112,6 +113,27 @@ describe("wizardSteps (one flow, vault 0017)", () => {
   });
 });
 
+describe("hook effects offered by the wizard", () => {
+  it("offers exactly the three the founder picked, plus none, in that order", () => {
+    expect(HOOK_EFFECT_OPTIONS.map((option) => option.id)).toEqual([
+      "none",
+      "zoom",
+      "focus",
+      "whip",
+    ]);
+    // The two that were built and not picked must not be offerable.
+    expect(HOOK_EFFECT_OPTIONS.map((o) => String(o.id))).not.toContain("beats");
+    expect(HOOK_EFFECT_OPTIONS.map((o) => String(o.id))).not.toContain("textReveal");
+  });
+
+  it("every option has Hebrew words on it — the card is the only place they live", () => {
+    for (const option of HOOK_EFFECT_OPTIONS) {
+      expect(option.label).toMatch(/[\u0590-\u05FF]/);
+      expect(option.hint).toMatch(/[\u0590-\u05FF]/);
+    }
+  });
+});
+
 describe("renderRequestBody (wizard state -> enqueue request)", () => {
   const base = {
     scriptId: "script-1",
@@ -120,14 +142,17 @@ describe("renderRequestBody (wizard state -> enqueue request)", () => {
     personaImageId: "image-1",
   };
 
-  it("always carries the card's personaImageId and nothing else without an opener", () => {
-    expect(renderRequestBody(base)).toEqual(base);
+  it("always carries the card's personaImageId and the chosen effect", () => {
+    expect(renderRequestBody({ ...base, hookEffect: "none" })).toEqual({
+      ...base,
+      hookEffect: "none",
+    });
   });
 
-  it("carries the opener with its FINAL hook text", () => {
-    expect(
-      renderRequestBody({ ...base, openerClipId: "clip-1", hookText: "משלוח חינם היום" }),
-    ).toEqual({ ...base, openerClipId: "clip-1", hookText: "משלוח חינם היום" });
+  it("carries the animation with its FINAL hook text", () => {
+    expect(renderRequestBody({ ...base, hookEffect: "zoom", hookText: "משלוח חינם היום" })).toEqual(
+      { ...base, hookEffect: "zoom", hookText: "משלוח חינם היום" },
+    );
   });
 
   it("sends the rect only when the customer placed one", () => {
@@ -135,19 +160,24 @@ describe("renderRequestBody (wizard state -> enqueue request)", () => {
     expect(
       renderRequestBody({
         ...base,
-        openerClipId: "clip-1",
+        hookEffect: "focus",
         hookText: "היי",
         hookTextSafeArea: rect,
       }),
-    ).toEqual({ ...base, openerClipId: "clip-1", hookText: "היי", hookTextSafeArea: rect });
-    expect(
-      renderRequestBody({ ...base, openerClipId: "clip-1", hookText: "היי" }),
-    ).not.toHaveProperty("hookTextSafeArea");
+    ).toEqual({ ...base, hookEffect: "focus", hookText: "היי", hookTextSafeArea: rect });
+    expect(renderRequestBody({ ...base, hookEffect: "focus", hookText: "היי" })).not.toHaveProperty(
+      "hookTextSafeArea",
+    );
   });
 
-  it("drops a stale hook text and rect when no opener is chosen", () => {
+  it("drops a stale hook text and rect when the customer backs out to 'none'", () => {
+    // b-wizard computes effectText unconditionally and passes it on every
+    // render, so this gate is the only thing standing between a "none" choice
+    // and a 400 from the route's matching refine.
     const rect = { x: 60, y: 900, w: 960, h: 300 };
-    expect(renderRequestBody({ ...base, hookText: "היי", hookTextSafeArea: rect })).toEqual(base);
+    expect(
+      renderRequestBody({ ...base, hookEffect: "none", hookText: "היי", hookTextSafeArea: rect }),
+    ).toEqual({ ...base, hookEffect: "none" });
   });
 });
 

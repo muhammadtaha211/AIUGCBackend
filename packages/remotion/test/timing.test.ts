@@ -6,6 +6,10 @@ import {
   activeWordIndex,
   frameToMs,
   handheld,
+  hookBeatsScale,
+  hookFocusState,
+  hookTextRevealState,
+  hookWhipState,
   msToFrame,
   hookZoomScale,
   OVERSCAN,
@@ -370,5 +374,171 @@ describe("handheld camera", () => {
     expect(handheld(17, "a")).toEqual(handheld(17, "a"));
     expect(handheld(17, "a")).not.toEqual(handheld(17, "b"));
     expect(handheld(17, "a")).not.toEqual(handheld(18, "a"));
+  });
+});
+
+/**
+ * The other hook animations (mocks pending the founder's pick, 2026-09-06).
+ * The load-bearing assertion in each block is COVERAGE: the picture may only
+ * translate or blur if it also scales enough to keep the frame edge covered,
+ * on top of the 12px the sway test above leaves spare. Everything else here
+ * is shape.
+ */
+const HALF_W = 540;
+/**
+ * What `blurCoverScale` has to buy, in SCREEN px: the offset plus 2 sigma of
+ * blur bleed — and the bleed is magnified by the same scale, because a filter
+ * runs in local px and the element's transform is applied to the filtered
+ * result. Asserting against `2 * blurPx` alone would only restate the formula.
+ */
+const cover = (scale: number) => HALF_W * (scale - 1);
+const needed = (dx: number, blurPx: number, scale: number) => Math.abs(dx) + 2 * blurPx * scale;
+
+describe("hookFocusState", () => {
+  const focus = { blurPx: 16, holdMs: 350, durationMs: 850 };
+
+  it("holds soft, pulls sharp, and lands on exactly 1 — no step at the end", () => {
+    expect(hookFocusState(focus, 0).blurPx).toBeCloseTo(16);
+    expect(hookFocusState(focus, 350).blurPx).toBeCloseTo(16);
+    expect(hookFocusState(focus, 775).blurPx).toBeCloseTo(8); // ease-in-out midpoint
+    expect(hookFocusState(focus, 1200).blurPx).toBe(0);
+    expect(hookFocusState(focus, 1200).scale).toBe(1);
+    expect(hookFocusState(focus, 9000).scale).toBe(1);
+    // Negative time cannot throw or overshoot (Studio scrubs there).
+    expect(hookFocusState(focus, -100).blurPx).toBeCloseTo(16);
+  });
+
+  it("covers its own blur at every frame, and shrinks monotonically", () => {
+    let prev = Infinity;
+    for (let ms = 0; ms <= 1400; ms += 1000 / 30) {
+      const { blurPx, scale } = hookFocusState(focus, ms);
+      expect(cover(scale)).toBeGreaterThanOrEqual(needed(0, blurPx, scale) - 1e-9);
+      expect(scale).toBeLessThanOrEqual(prev + 1e-9);
+      expect(scale).toBeGreaterThanOrEqual(1);
+      prev = scale;
+    }
+  });
+
+  it("a zero blur is a no-op, not a 1.0-something scale", () => {
+    expect(hookFocusState({ ...focus, blurPx: 0 }, 0)).toEqual({ blurPx: 0, scale: 1 });
+  });
+
+  it("an absurd blur still covers and never mirrors the picture", () => {
+    // The cover is a division now, so an unbounded blurPx could go negative.
+    for (const blurPx of [200, 400, 5000]) {
+      const { scale } = hookFocusState({ ...focus, blurPx }, 0);
+      expect(scale).toBeGreaterThan(1);
+      expect(Number.isFinite(scale)).toBe(true);
+    }
+  });
+});
+
+describe("hookWhipState", () => {
+  const whip = { fromX: 140, durationMs: 320, blurPx: 18 };
+
+  it("enters offset and blurred, settles at rest by durationMs and stays", () => {
+    const start = hookWhipState(whip, 0);
+    expect(start.dx).toBeCloseTo(140);
+    expect(start.blurPx).toBeCloseTo(18);
+    expect(start.scale).toBeCloseTo((540 + 140) / (540 - 36));
+    expect(hookWhipState(whip, 320)).toEqual({ dx: 0, blurPx: 0, scale: 1 });
+    expect(hookWhipState(whip, 5000)).toEqual({ dx: 0, blurPx: 0, scale: 1 });
+    expect(hookWhipState(whip, -50).dx).toBeCloseTo(140);
+  });
+
+  it("is fast off the mark: past halfway in the first quarter of its time", () => {
+    expect(hookWhipState(whip, 80).dx).toBeLessThan(70);
+  });
+
+  it("covers the slide AND the blur at every frame, from either side", () => {
+    for (const w of [whip, { ...whip, fromX: -140 }, { ...whip, blurPx: 0 }]) {
+      for (let ms = 0; ms <= 400; ms += 1000 / 30) {
+        const { dx, blurPx, scale } = hookWhipState(w, ms);
+        expect(cover(scale)).toBeGreaterThanOrEqual(needed(dx, blurPx, scale) - 1e-9);
+      }
+    }
+  });
+});
+
+describe("hookTextRevealState", () => {
+  const reveal = { wordMs: [0, 140, 280, 420, 560], popMs: 200, exitDurationMs: 320 };
+  const END = 2520;
+
+  it("pops the words in order and holds them up", () => {
+    const at0 = hookTextRevealState(reveal, 0, END, 5).wordProgress;
+    expect(at0[0]).toBe(0);
+    expect(at0[4]).toBe(0);
+    // 300ms in: word 0 landed 100ms ago, word 1 is 80% through its 200ms pop
+    // (eased 0.99), word 2 has just started, word 3 has not.
+    const mid = hookTextRevealState(reveal, 300, END, 5).wordProgress;
+    expect(mid[0]).toBe(1);
+    expect(mid[1]).toBeCloseTo(0.992, 3);
+    expect(mid[2]).toBeGreaterThan(0);
+    expect(mid[2]).toBeLessThan(0.5);
+    expect(mid[3]).toBe(0);
+    expect(hookTextRevealState(reveal, 1500, END, 5).wordProgress).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it("pads words the matcher could not time onto the last one — the line always completes", () => {
+    const p = hookTextRevealState({ ...reveal, wordMs: [0, 140] }, 400, END, 4).wordProgress;
+    expect(p).toHaveLength(4);
+    expect(p).toEqual([1, 1, 1, 1]);
+  });
+
+  it("exits over the LAST exitDurationMs of its life, finishing exactly at the handoff", () => {
+    expect(hookTextRevealState(reveal, 0, END, 5).exit).toBe(0);
+    expect(hookTextRevealState(reveal, END - 320, END, 5).exit).toBe(0);
+    expect(hookTextRevealState(reveal, END - 160, END, 5).exit).toBeCloseTo(0.5);
+    expect(hookTextRevealState(reveal, END, END, 5).exit).toBe(1);
+  });
+
+  it("with no exit the line simply cuts, as it does today", () => {
+    expect(hookTextRevealState({ ...reveal, exitDurationMs: 0 }, END, END, 5).exit).toBe(0);
+  });
+});
+
+describe("hookBeatsScale", () => {
+  const beats = { atMs: [1000, 2000], amount: 0.035, durationMs: 180 };
+  const END = 12_800;
+
+  it("is 1 between beats and pops to `amount` inside one", () => {
+    expect(hookBeatsScale(beats, 0, END)).toBe(1);
+    expect(hookBeatsScale(beats, 999, END)).toBe(1);
+    expect(hookBeatsScale(beats, 1054, END)).toBeCloseTo(1.035, 3); // the attack's peak
+    expect(hookBeatsScale(beats, 1180, END)).toBe(1);
+    expect(hookBeatsScale(beats, 5000, END)).toBe(1);
+  });
+
+  it("never sums overlapping beats — two 40ms apart are still one punch", () => {
+    const stacked = { ...beats, atMs: [1000, 1040] };
+    for (let ms = 900; ms <= 1400; ms += 1000 / 30) {
+      expect(hookBeatsScale(stacked, ms, END)).toBeLessThanOrEqual(1 + beats.amount + 1e-9);
+    }
+  });
+
+  it("only ever scales UP, so it cannot expose a frame edge", () => {
+    const withPush = { ...beats, push: { fromMs: 9800, to: 1.06 } };
+    for (let ms = 0; ms <= END; ms += 1000 / 30) {
+      expect(hookBeatsScale(withPush, ms, END)).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("a push at or past the ad's end degrades, never throws the render away", () => {
+    // endMs is timeline.totalMs — computed, never typed by the caller, so a
+    // BEATS value that looks fine must not abort the render at frame 0.
+    for (const fromMs of [END, END + 200, 99_999]) {
+      const beatsPush = { ...beats, push: { fromMs, to: 1.06 } };
+      expect(() => hookBeatsScale(beatsPush, 500, END)).not.toThrow();
+      expect(hookBeatsScale(beatsPush, 500, END)).toBe(1);
+    }
+  });
+
+  it("pushes in slowly over the tail and holds past the end", () => {
+    const withPush = { ...beats, push: { fromMs: 9800, to: 1.06 } };
+    expect(withPush.push.fromMs).toBeLessThan(END);
+    expect(hookBeatsScale(withPush, 9800, END)).toBe(1);
+    expect(hookBeatsScale(withPush, 11_300, END)).toBeCloseTo(1.03, 3);
+    expect(hookBeatsScale(withPush, END, END)).toBeCloseTo(1.06, 3);
+    expect(hookBeatsScale(withPush, END + 500, END)).toBeCloseTo(1.06, 3);
   });
 });

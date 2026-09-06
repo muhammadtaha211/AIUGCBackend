@@ -1,3 +1,4 @@
+import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/core/hook-text";
 
@@ -120,7 +121,8 @@ export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" 
  * One flow for every business: the persona is one look in one setting, so
  * there is no image step, and physical products are out of Service B, so
  * there is no composite step (vault 0017). The effect step is where the
- * customer picks an opener clip — or none — and edits the on-screen hook text.
+ * customer picks a hook animation — or none — and edits the on-screen hook
+ * text it burns (vault 0024; it offered opener clips until 2026-09-06).
  */
 export function wizardSteps(): WizardStep[] {
   return ["persona", "pointers", "script", "audio", "effect", "render"];
@@ -165,10 +167,26 @@ export const PERSONA_CARD_SIZES = "(max-width: 640px) 45vw, 200px";
 export const PERSONA_CARD_QUALITY = 60;
 
 // ---------------------------------------------------------------------------
-// Opener effect (GET /api/personas/[personaId]/openers + the effect step)
+// Hook effect (the effect step) — the opener bank it replaced is retired
 // ---------------------------------------------------------------------------
 
-/** One founder-made opener clip of the persona's selfie, play-ready. */
+/**
+ * The hook animations, in the order the effect step offers them, in Hebrew.
+ * The ids come from @aiugc/core/hook-effect (one vocabulary, shared with the
+ * route and the render); the words are the customer's and live only here, so
+ * the step component stays a dumb renderer and this table stays testable —
+ * apps/web has no DOM test runner and adding one is locked decision #10.
+ */
+export const HOOK_EFFECT_OPTIONS: { id: HookEffect; label: string; hint: string }[] = [
+  { id: "none", label: "ללא אפקט", hint: "הסרטון מתחיל ישר מהדמות, בלי משפט על המסך" },
+  { id: "zoom", label: "זום אחורה", hint: "מתחילים צמוד לפנים, והפריים נפתח לאט" },
+  { id: "focus", label: "פוקוס", hint: "התמונה נכנסת לפוקוס בדיוק כשהדמות מתחילה לדבר" },
+  { id: "whip", label: "כניסה מהצד", hint: "התמונה נכנסת בתנועה מהירה עם סוויש" },
+];
+
+/** One founder-made opener clip of the persona's selfie, play-ready.
+ *  RETIRED 2026-09-06 (vault 0023) with the opener bank; no wizard step reads
+ *  it any more — GET /api/personas/[personaId]/openers is its last caller. */
 export type OpenerClip = {
   id: string;
   effect: string;
@@ -380,7 +398,7 @@ export function renderRequestBody(opts: {
   audioId: string;
   personaId: string;
   personaImageId: string;
-  openerClipId?: string;
+  hookEffect: HookEffect;
   hookText?: string;
   hookTextSafeArea?: SafeRect;
 }): Record<string, unknown> {
@@ -389,9 +407,9 @@ export function renderRequestBody(opts: {
     audioId: opts.audioId,
     personaId: opts.personaId,
     personaImageId: opts.personaImageId,
-    ...(opts.openerClipId
+    hookEffect: opts.hookEffect,
+    ...(opts.hookEffect !== "none"
       ? {
-          openerClipId: opts.openerClipId,
           hookText: opts.hookText,
           ...(opts.hookTextSafeArea ? { hookTextSafeArea: opts.hookTextSafeArea } : {}),
         }
