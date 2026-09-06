@@ -53,9 +53,25 @@ describe("hookTextError", () => {
     expect(hookTextError(`${forty}ח`)).toMatch(/41 characters/);
   });
 
-  it("rejects trailing punctuation, emoji and niqqud; a maqaf is fine", () => {
-    expect(hookTextError("למה אף אחד לא סיפר לי?")).toMatch(/punctuation/);
+  it("rejects a trailing full stop, comma, colon, semicolon or ellipsis", () => {
     expect(hookTextError("זה טוב מדי…")).toMatch(/punctuation/);
+    expect(hookTextError("זה טוב מדי.")).toMatch(/punctuation/);
+    expect(hookTextError("זה טוב מדי,")).toMatch(/punctuation/);
+    expect(hookTextError("זה טוב מדי:")).toMatch(/punctuation/);
+    expect(hookTextError("זה טוב מדי;")).toMatch(/punctuation/);
+  });
+
+  // Founder, 2026-09-06: a Hebrew hook is very often a question, and the wizard
+  // invites the customer to edit the line — "?" was the most natural thing to
+  // type there and the field refused it.
+  it("allows a trailing question mark or exclamation mark", () => {
+    expect(hookTextError("למה אף אחד לא סיפר לי?")).toBeUndefined();
+    expect(hookTextError("משלוח חינם!")).toBeUndefined();
+    // Still counted and capped like any other line.
+    expect(hookTextError("א ב ג ד ה ו ז ח?")).toMatch(/8 words/);
+  });
+
+  it("rejects emoji and niqqud; a maqaf is fine", () => {
     expect(hookTextError("מצאתי את זה 🔥")).toMatch(/emoji/);
     expect(hookTextError("שָׁלוֹם לכולם")).toMatch(/niqqud/);
     expect(hookTextError("הסוד ל־2026")).toBeUndefined();

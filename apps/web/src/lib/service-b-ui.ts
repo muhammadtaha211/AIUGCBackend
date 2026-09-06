@@ -214,7 +214,7 @@ export function hookTextFieldError(text: string): string | undefined {
   if (/unrenderable/.test(problem)) return "יש כאן תו שאי אפשר להציג על הסרטון.";
   if (/words/.test(problem)) return `עד ${HOOK_TEXT_MAX_WORDS} מילים.`;
   if (/characters/.test(problem)) return `עד ${HOOK_TEXT_MAX_CHARS} תווים.`;
-  if (/punctuation/.test(problem)) return "בלי סימן פיסוק בסוף המשפט.";
+  if (/punctuation/.test(problem)) return "בלי נקודה או פסיק בסוף — סימן שאלה או קריאה בסדר גמור.";
   if (/niqqud/.test(problem)) return "בלי ניקוד.";
   return "המשפט לא תקין.";
 }

@@ -45,7 +45,14 @@ One pnpm monorepo, boring-tech throughout:
   `apps/web/src/lib/service-b.ts` — the one resolver for the card and the
   render source), the wizard sends that image's id with the render, and the route refuses
   anything that is not that persona's live `kind='selfie'` image (its opener-clip check is retired 2026-09-06).
-  The effect step offers the hook animation (zoom hook — `hookZoom` in `packages/remotion` — or none); the customer's FINAL hook text goes into render params at enqueue, never onto the script, and is burned centred from frame 0 over the one HeyGen clip. The `opener_clips` listing is retired 2026-09-06.
+  The effect step offers the hook animation by name — none | zoom | focus | whip, the numbers behind
+  each in `packages/core/src/hook-effect.ts` — and PREVIEWS it: picking one plays the real
+  animation once over the persona's selfie and then shows a replay button
+  (`hook-effect-preview.tsx`, which runs the composition's own `@aiugc/remotion/timing` state
+  functions in the browser; vault 0026). The customer's FINAL hook text goes into render params at
+  enqueue, never onto the script, and is burned centred from frame 0 over the one HeyGen clip; it may
+  end with `?` or `!` but not with `.` `,` `;` `:` `…` (vault 0025). The `opener_clips` listing is
+  retired 2026-09-06.
 
 ## Repo layout
 

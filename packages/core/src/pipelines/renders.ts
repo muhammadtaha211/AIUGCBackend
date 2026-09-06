@@ -21,7 +21,7 @@ import {
   sets,
   videoRenders,
 } from "../db/schema";
-import { isHookAnimation } from "../hook-effect";
+import { hookAnimation, isHookAnimation } from "../hook-effect";
 import { resolveHookTextSafeArea } from "../hook-geometry";
 import { BudgetError, PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
@@ -820,62 +820,34 @@ async function buildServiceBProps(
 }
 
 /**
- * The hook animations, by the name the customer picked (`hook-effect.ts`).
- * These numbers ARE the product: the founder judged one free mock per effect
- * on 2026-09-06 and picked these three
- * (docs/vault/facts/service-b-hook-animation-mocks-2026-09-06.md). They live
- * here rather than in the DB so a retune is a deploy, never a rewrite of every
- * stored render's params.
- */
-const HOOK_ZOOM = { from: 1.35, to: 1.42, durationMs: 450 } as const;
-const HOOK_FOCUS = { blurPx: 20, pullMs: 850 } as const;
-const HOOK_WHIP = { fromX: 140, durationMs: 420, blurPx: 20 } as const;
-/**
- * When the move LANDS, measured from speech onset rather than from frame 0.
- *
- * Every mock was rendered at a cut-to-speech gap of 800ms; the pipeline's
- * GAP_MS is 250 ([[service-b-timeline-constants]]). Pinning the judged
- * literals (zoom `atMs` 1200, focus sharp at 1200) would put the whole move
- * ~950ms deep into speech instead of the ~400ms the founder watched. So the
- * one thing held constant is what he actually judged — the move settles
- * 400ms after she starts talking — and the run-up takes whatever silence the
- * gap leaves. The whip is exempt: it runs from frame 0 and is over before
- * speech at any gap.
- */
-const HOOK_LANDS_AFTER_SPEECH_MS = 400;
-
-/**
- * Name -> the composition prop, with the SFX resolved off disk. A name this
- * build does not know renders with no animation and never throws: QC
- * regeneration replays old params wholesale (pipelines/qc.ts), so a renamed
- * effect from an older deploy would otherwise fail a render the customer has
- * already paid HeyGen for. Same reason a missing wav only drops the sound.
+ * Name -> the composition prop: the numbers from @aiugc/core's hook-effect
+ * module (one home, shared with the wizard's preview), with the SFX resolved
+ * off disk here because only the worker has the files. A name this build does
+ * not know renders with no animation and never throws — QC regeneration
+ * replays old params wholesale (pipelines/qc.ts), so a renamed effect from an
+ * older deploy would otherwise fail a render the customer has already paid
+ * HeyGen for. Same reason a missing wav only drops the sound.
  */
 function hookAnimationProps(
   effect: string | undefined,
   captionOffsetMs: number,
   hasOpener: boolean,
 ): Partial<Pick<RenderServiceBProps, "hookZoom" | "hookFocus" | "hookWhip">> {
-  if (!isHookAnimation(effect)) return {};
-  if (hasOpener) {
+  if (hasOpener && isHookAnimation(effect)) {
     // Refused at enqueue; a hand-edited row could still get here, and the
     // composition would refuse the pair AFTER the GPU was billed.
     logger.warn({ effect }, "render: hook animation ignored — this render has an opener");
     return {};
   }
-  const landsAtMs = captionOffsetMs + HOOK_LANDS_AFTER_SPEECH_MS;
-  if (effect === "zoom") {
-    return {
-      hookZoom: { ...HOOK_ZOOM, atMs: landsAtMs, sfxPath: sfxPath("hook-zoom-whoosh.wav") },
-    };
+  const animation = hookAnimation(effect, captionOffsetMs);
+  if (animation.zoom) {
+    return { hookZoom: { ...animation.zoom, sfxPath: sfxPath("hook-zoom-whoosh.wav") } };
   }
-  if (effect === "focus") {
-    // The pull ends where the zoom's does; it starts as early as the silence
-    // allows, never before frame 0.
-    const durationMs = Math.max(1, Math.min(HOOK_FOCUS.pullMs, landsAtMs));
-    return { hookFocus: { blurPx: HOOK_FOCUS.blurPx, holdMs: landsAtMs - durationMs, durationMs } };
+  if (animation.focus) return { hookFocus: animation.focus };
+  if (animation.whip) {
+    return { hookWhip: { ...animation.whip, sfxPath: sfxPath("hook-whip-swish.wav") } };
   }
-  return { hookWhip: { ...HOOK_WHIP, sfxPath: sfxPath("hook-whip-swish.wav") } };
+  return {};
 }
 
 /**

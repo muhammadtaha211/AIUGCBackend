@@ -13,7 +13,19 @@
 export const HOOK_TEXT_MAX_WORDS = 7;
 export const HOOK_TEXT_MAX_CHARS = 40;
 
-const TRAILING_PUNCTUATION = /[.,!?;:…]$/;
+/**
+ * Punctuation that cannot end a burned line. A question mark or an exclamation
+ * mark CAN (founder, 2026-09-06): a Hebrew hook is very often a question, the
+ * wizard invites the customer to edit the line, and refusing "?" rejected the
+ * most natural thing to type there. A full stop, comma, colon, semicolon or
+ * ellipsis still cannot — on one big centred line they read as a sentence that
+ * was cut off rather than as a hook.
+ *
+ * The prompts (b_script v9+, hook_text v1) still ask the model for no trailing
+ * punctuation at all. A generator stricter than its validator is safe, and
+ * relaxing the prompt is a prompt-version decision, not this one.
+ */
+const TRAILING_PUNCTUATION = /[.,;:…]$/;
 const EMOJI = /\p{Extended_Pictographic}/u;
 /** Hebrew points and cantillation marks — not maqaf (U+05BE) or geresh, which
  *  a plain line may legitimately carry (ב־2026, צ׳יפס). */
@@ -64,7 +76,8 @@ export function hookTextError(text: string): string | undefined {
   if (chars > HOOK_TEXT_MAX_CHARS) {
     return `hook_text is ${chars} characters — the cap is ${HOOK_TEXT_MAX_CHARS}`;
   }
-  if (TRAILING_PUNCTUATION.test(trimmed)) return "hook_text ends with punctuation";
+  if (TRAILING_PUNCTUATION.test(trimmed))
+    return "hook_text ends with punctuation — only ? and ! may";
   if (NIQQUD.test(trimmed)) return "hook_text contains niqqud";
   return undefined;
 }
