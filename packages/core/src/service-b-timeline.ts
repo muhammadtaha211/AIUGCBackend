@@ -8,28 +8,31 @@ import { readTimeMs } from "./plan-format";
  * numbers to frames, nothing more. The wizard's preview can show the same
  * numbers without a render.
  *
- * Every constant here was CHOSEN in chat (2026-09-05), none measured — see
- * docs/vault/facts/service-b-timeline-constants.md.
+ * The constants were CHOSEN in chat (2026-09-05), none measured — see
+ * docs/vault/facts/service-b-timeline-constants.md. The shape changed the
+ * same day, after the first real render (decision 0019): the opener plays
+ * from its first frame — nothing is ever frozen — and the hook text lives its
+ * read time from frame 0, never leaving before the reveal.
  */
 
 /** Silence between the reveal cut and the first spoken word. */
 export const GAP_MS = 250;
-/** How long the opener's first frame holds under the hook text — readTimeMs of the text, clamped. */
-export const HOLD_MIN_MS = 1200;
-export const HOLD_MAX_MS = 2500;
-/** The opener→talking-head dissolve, centred on the reveal. */
-export const CROSSFADE_FRAMES = 5;
-/** Punch-in on the talking head from the reveal, held after. */
-export const PUNCH_IN_SCALE = 1.06;
-export const PUNCH_IN_MS = 300;
+/** How long the hook text stays on screen from frame 0 — readTimeMs of the text, clamped. */
+export const HOOK_TEXT_MIN_MS = 1200;
+export const HOOK_TEXT_MAX_MS = 2500;
+// The 5-frame dissolve, the 1.06 punch-in and the frozen first-frame hold
+// that used to sit here were deleted 2026-09-05 after the first real opener
+// render: the dissolve ghosted the moving hand, the zoom read as a jump cut,
+// and 2.4s of a frozen human read as a stalled video. The reveal is a hard
+// cut, as decision 0017 says; the text's lifetime is decision 0019.
 
 export interface ServiceBTimelineInput {
   hasOpener: boolean;
   /** Opener only: the clip's own length, from the bank row. */
   openerDurationMs?: number;
-  /** Opener only: first frame the face is clear, in clip time (opener_clips.reveal_at_ms). */
+  /** Opener only: where the hard cut lands, in clip time (opener_clips.reveal_at_ms) — the first frame whose pose matches the selfie. */
   revealAtMs?: number;
-  /** Opener only: the FINAL on-screen line — its read time sets the hold. */
+  /** Opener only: the FINAL on-screen line — its read time sets how long it stays. */
   hookText?: string;
   /** The silence handleLipsync prepended before submit (params.leadInMs); 0 for a pre-lead-in render. */
   leadInMs: number;
@@ -40,9 +43,13 @@ export interface ServiceBTimelineInput {
 }
 
 export interface ServiceBTimeline {
-  /** Opener: how long its first frame is frozen under the hook text. 0 without one. */
-  holdMs: number;
-  /** Absolute time of the hard cut into the talking head. 0 without an opener. */
+  /**
+   * Opener: how long the hook text is on screen from frame 0 — its read
+   * time, never shorter than the reveal, so it never leaves while the palm
+   * still covers the face. 0 without an opener.
+   */
+  hookTextMs: number;
+  /** Absolute time of the hard cut into the talking head — the opener plays from 0, so this is its reveal_at_ms. 0 without an opener. */
   revealAbsMs: number;
   /** Where the lip-sync clip starts playing from, in clip time: just before its speech onset. */
   lipsyncStartFromMs: number;
@@ -61,7 +68,7 @@ export function serviceBTimeline(input: ServiceBTimelineInput): ServiceBTimeline
   // than the gap (a pre-lead-in render at 0) starts the clip at 0 instead.
   const lipsyncStartFromMs = Math.max(0, input.leadInMs - GAP_MS);
 
-  let holdMs = 0;
+  let hookTextMs = 0;
   let revealAbsMs = 0;
   if (input.hasOpener) {
     if (
@@ -76,8 +83,11 @@ export function serviceBTimeline(input: ServiceBTimelineInput): ServiceBTimeline
         `revealAtMs ${input.revealAtMs} is outside the opener (0..${input.openerDurationMs})`,
       );
     }
-    holdMs = Math.min(Math.max(readTimeMs(input.hookText), HOLD_MIN_MS), HOLD_MAX_MS);
-    revealAbsMs = holdMs + input.revealAtMs;
+    revealAbsMs = input.revealAtMs;
+    hookTextMs = Math.max(
+      Math.min(Math.max(readTimeMs(input.hookText), HOOK_TEXT_MIN_MS), HOOK_TEXT_MAX_MS),
+      input.revealAtMs,
+    );
   }
 
   // Speech onset sits leadInMs into the clip, which the layer shows
@@ -92,5 +102,6 @@ export function serviceBTimeline(input: ServiceBTimelineInput): ServiceBTimeline
   const voEndMs = captionOffsetMs + Math.max(0, input.voDurationMs);
   const totalMs = Math.max(1, lipsyncEndMs, voEndMs);
 
-  return { holdMs, revealAbsMs, lipsyncStartFromMs, captionOffsetMs, totalMs };
+  // hookTextMs first: the DRY_RUN props echo pins this object's key order.
+  return { hookTextMs, revealAbsMs, lipsyncStartFromMs, captionOffsetMs, totalMs };
 }

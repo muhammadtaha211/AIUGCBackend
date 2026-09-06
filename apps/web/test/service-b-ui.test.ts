@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   applyAudioPoll,
-  clientPhotoError,
   countWords,
   failedRenderNotice,
   generatingLine,
+  hookTextFieldError,
   isActiveRenderStatus,
-  MAX_PHOTO_BYTES,
   needsScriptAdoption,
   needsTextSave,
   pickActiveHead,
   pickSelectedBusiness,
+  pointersChanged,
   RENDER_STATUS_LABELS,
   renderRequestBody,
   renderStageIndex,
@@ -48,45 +48,106 @@ describe("script edit threading (immutable rows)", () => {
     expect(needsTextSave("הטקסט המקורי", "  הטקסט המקורי  ")).toBe(false);
     expect(needsTextSave("הטקסט המקורי", "טקסט אחר")).toBe(true);
   });
+
+  it("takes the re-derived draft hook text, keeping the old one only when none came back", () => {
+    const withDraft = { ...script, hookText: "הטיוטה הישנה" };
+    expect(
+      withEditedText(withDraft, { scriptId: "new-id", text: "טקסט ערוך", hookText: "טיוטה חדשה" })
+        .hookText,
+    ).toBe("טיוטה חדשה");
+    expect(withEditedText(withDraft, { scriptId: "new-id", text: "טקסט ערוך" }).hookText).toBe(
+      "הטיוטה הישנה",
+    );
+  });
 });
 
-describe("wizardSteps (category gating)", () => {
-  it("physical products get the composite step", () => {
-    expect(wizardSteps("physical_product")).toEqual([
-      "persona",
-      "image",
-      "composite",
-      "script",
-      "audio",
-      "render",
-    ]);
+describe("pointersChanged (the brief under an existing script)", () => {
+  it("a real change to the brief stales the script", () => {
+    expect(pointersChanged({ pointers: "משלוח מהיר" }, "הנחה של החודש")).toBe(true);
+    expect(pointersChanged({ pointers: "" }, "משלוח מהיר")).toBe(true);
+    expect(pointersChanged({ pointers: "משלוח מהיר" }, "")).toBe(true);
   });
 
-  it("every other category skips it", () => {
-    for (const category of ["app_or_digital", "local_service", "other", "", undefined]) {
-      expect(wizardSteps(category)).toEqual(["persona", "image", "script", "audio", "render"]);
-    }
+  it("whitespace does not count, and no recorded brief means an empty one", () => {
+    expect(pointersChanged({ pointers: "משלוח מהיר" }, "  משלוח מהיר\n")).toBe(false);
+    expect(pointersChanged({}, "   ")).toBe(false);
+    expect(pointersChanged({}, "משלוח מהיר")).toBe(true);
+  });
+});
+
+describe("hookTextFieldError (core's rule, Hebrew words)", () => {
+  it("accepts a burnable line", () => {
+    expect(hookTextFieldError("משלוח חינם עד הבית")).toBeUndefined();
+    expect(hookTextFieldError("ב־2026 זה אחרת")).toBeUndefined(); // maqaf is fine
+  });
+
+  it("asks for a line when there is none", () => {
+    expect(hookTextFieldError("")).toBe("צריך לכתוב משפט פתיחה.");
+    expect(hookTextFieldError("   ")).toBe("צריך לכתוב משפט פתיחה.");
+    expect(hookTextFieldError("- -")).toBe("צריך לכתוב משפט פתיחה."); // no words, only dashes
+  });
+
+  it("names the caps, in words and characters", () => {
+    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע שמונה")).toBe("עד 7 מילים.");
+    expect(hookTextFieldError("א".repeat(41))).toBe("עד 40 תווים.");
+    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע")).toBeUndefined();
+  });
+
+  it("refuses what cannot burn: emoji, niqqud, trailing punctuation, stray glyphs", () => {
+    expect(hookTextFieldError("משלוח חינם 🎉")).toBe("בלי אימוג'י, הטקסט נצרב על הסרטון.");
+    expect(hookTextFieldError("שָׁלוֹם")).toBe("בלי ניקוד.");
+    expect(hookTextFieldError("משלוח חינם!")).toBe("בלי סימן פיסוק בסוף המשפט.");
+    expect(hookTextFieldError("משלוח​חינם")).toBe("יש כאן תו שאי אפשר להציג על הסרטון.");
+  });
+});
+
+describe("wizardSteps (one flow, vault 0017)", () => {
+  it("is persona -> pointers -> script -> audio -> effect -> render for every business", () => {
+    expect(wizardSteps()).toEqual(["persona", "pointers", "script", "audio", "effect", "render"]);
+  });
+
+  it("has no image step and no composite step", () => {
+    expect(wizardSteps()).not.toContain("image");
+    expect(wizardSteps()).not.toContain("composite");
   });
 });
 
 describe("renderRequestBody (wizard state -> enqueue request)", () => {
-  const base = { scriptId: "script-1", audioId: "audio-1", personaId: "persona-1" };
+  const base = {
+    scriptId: "script-1",
+    audioId: "audio-1",
+    personaId: "persona-1",
+    personaImageId: "image-1",
+  };
 
-  it("carries the chosen personaImageId", () => {
-    expect(renderRequestBody({ ...base, personaImageId: "image-1" })).toEqual({
-      ...base,
-      personaImageId: "image-1",
-    });
-  });
-
-  it("omits personaImageId and compositeId when nothing was chosen", () => {
+  it("always carries the card's personaImageId and nothing else without an opener", () => {
     expect(renderRequestBody(base)).toEqual(base);
   });
 
-  it("carries an approved composite alongside the image", () => {
+  it("carries the opener with its FINAL hook text", () => {
     expect(
-      renderRequestBody({ ...base, personaImageId: "image-1", compositeId: "comp-1" }),
-    ).toEqual({ ...base, personaImageId: "image-1", compositeId: "comp-1" });
+      renderRequestBody({ ...base, openerClipId: "clip-1", hookText: "משלוח חינם היום" }),
+    ).toEqual({ ...base, openerClipId: "clip-1", hookText: "משלוח חינם היום" });
+  });
+
+  it("sends the rect only when the customer placed one", () => {
+    const rect = { x: 60, y: 900, w: 960, h: 300 };
+    expect(
+      renderRequestBody({
+        ...base,
+        openerClipId: "clip-1",
+        hookText: "היי",
+        hookTextSafeArea: rect,
+      }),
+    ).toEqual({ ...base, openerClipId: "clip-1", hookText: "היי", hookTextSafeArea: rect });
+    expect(
+      renderRequestBody({ ...base, openerClipId: "clip-1", hookText: "היי" }),
+    ).not.toHaveProperty("hookTextSafeArea");
+  });
+
+  it("drops a stale hook text and rect when no opener is chosen", () => {
+    const rect = { x: 60, y: 900, w: 960, h: 300 };
+    expect(renderRequestBody({ ...base, hookText: "היי", hookTextSafeArea: rect })).toEqual(base);
   });
 });
 
@@ -187,18 +248,6 @@ describe("pickSelectedBusiness", () => {
     expect(pickSelectedBusiness(businesses, undefined)).toEqual({ id: "a" });
     expect(pickSelectedBusiness(businesses, "deleted")).toEqual({ id: "a" });
     expect(pickSelectedBusiness([], "a")).toBeUndefined();
-  });
-});
-
-describe("clientPhotoError (mirror of the server rules)", () => {
-  it("accepts a normal jpeg", () => {
-    expect(clientPhotoError({ type: "image/jpeg", size: 500_000 })).toBeNull();
-  });
-
-  it("rejects bad types, empty files, and oversized files in Hebrew", () => {
-    expect(clientPhotoError({ type: "application/pdf", size: 1000 })).toMatch(/JPG/);
-    expect(clientPhotoError({ type: "image/jpeg", size: 0 })).toMatch(/ריק/);
-    expect(clientPhotoError({ type: "image/png", size: MAX_PHOTO_BYTES + 1 })).toMatch(/גדולה מדי/);
   });
 });
 

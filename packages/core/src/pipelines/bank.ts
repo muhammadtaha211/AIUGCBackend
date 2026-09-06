@@ -228,6 +228,9 @@ export async function addPersonaImage(
     isDefault?: boolean;
     /** Absent = the column default ("background"). "selfie" is the Service B render source. */
     kind?: PersonaImageKind;
+    label?: string;
+    /** Lineage: the standing image a selfie was derived from (persona_images.source_image_id). */
+    sourceImageId?: string;
   } & ({ filePath: string } | { bytes: Buffer; extension: string }),
 ) {
   const existing = await db
@@ -241,7 +244,14 @@ export async function addPersonaImage(
   // unique index on is_default never sees two defaults).
   const inserted = await db
     .insert(personaImages)
-    .values({ personaId: opts.personaId, filePath: "pending", isDefault: false, kind: opts.kind })
+    .values({
+      personaId: opts.personaId,
+      filePath: "pending",
+      isDefault: false,
+      kind: opts.kind,
+      label: opts.label,
+      sourceImageId: opts.sourceImageId,
+    })
     .returning();
   const image = inserted[0]!;
   const extension = "filePath" in opts ? path.extname(opts.filePath) || ".jpg" : opts.extension;
@@ -379,7 +389,12 @@ export async function addOpenerClip(
     label: string;
     filePath: string;
     durationMs: number;
-    /** First frame the face is fully clear, in clip time; 0..durationMs. */
+    /**
+     * Where the hard cut lands, in clip time (0..durationMs): the first frame
+     * whose pose matches the selfie — hand out of the frame and settled — so
+     * the talking head, idling on that selfie, continues it. Tagging the
+     * frame where the face merely appears cuts on a moving hand.
+     */
     revealAtMs: number;
     textSafeArea: TextSafeArea;
   },

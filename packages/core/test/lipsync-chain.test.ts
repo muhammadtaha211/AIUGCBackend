@@ -608,12 +608,16 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     // jsonb hands the rect back with its keys reordered, so parse it out.
     const rect = /"hookTextSafeArea":(\{[^}]*\})/.exec(props)?.[1];
     expect(rect && JSON.parse(rect)).toEqual(OPENER_RECT);
-    // 3 words read in 1600ms → hold 1600; reveal at 1600 into the clip → 3200;
-    // 800ms lead-in → clip from 550, VO 250ms after the cut.
+    // 3 words read in 1600ms and the reveal is at 1600 into the clip, so the
+    // text leaves on the cut; 800ms lead-in → clip from 550, VO 250ms after.
     expect(props).toContain(
-      '"timeline":{"holdMs":1600,"revealAbsMs":3200,"lipsyncStartFromMs":550,"captionOffsetMs":3450,',
+      '"timeline":{"hookTextMs":1600,"revealAbsMs":1600,"lipsyncStartFromMs":550,"captionOffsetMs":1850,',
     );
-    expect(props).toContain('"crossfadeFrames":5,"punchInScale":1.06,"punchInMs":300');
+    // The handheld camera is seeded by the row; DRY_RUN measures no colour, so
+    // the talking head carries no grade.
+    expect(props).toContain(`"cameraSeed":"${renderId}"`);
+    expect(props).not.toContain("talkingHeadGrade");
+    expect(props).not.toContain("talkingHeadAlign");
   });
 
   it("a render lip-synced before the lead-in existed lays out from 0 with the VO from 0", async () => {
@@ -629,7 +633,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     const row = await renderRow(renderId);
     const props = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
     expect(props).toContain(
-      '"timeline":{"holdMs":0,"revealAbsMs":0,"lipsyncStartFromMs":0,"captionOffsetMs":0,',
+      '"timeline":{"hookTextMs":0,"revealAbsMs":0,"lipsyncStartFromMs":0,"captionOffsetMs":0,',
     );
   });
 

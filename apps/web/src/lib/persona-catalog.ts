@@ -1,20 +1,23 @@
 import { and, eq, exists, sql } from "drizzle-orm";
 import { getDb, getStorage, schema } from "@aiugc/core";
 import { SIGNED_URL_TTL_SECONDS } from "@/lib/api";
-import { personaThumbnail } from "@/lib/service-b";
+import { personaThumbnail, type CatalogService } from "@/lib/service-b";
 import type { Persona } from "@/lib/service-b-ui";
 
 /**
  * The persona catalog for the pickers: active personas with their card
- * thumbnail (kind='preview' preferred, then the default image, then newest)
- * and blur placeholder. A persona without stored images is not renderable and
- * is excluded.
+ * thumbnail and blur placeholder. Which thumbnail — and which personas — is
+ * the service's call (personaThumbnail):
  *
- * `withHookClips` narrows to personas that own at least one ACTIVE hook clip.
- * The Service A picker needs it: the hook bank is a persona × clip matrix and
- * the gallery lists one persona's column, so a persona with an empty column
- * would dead-end the customer on an empty gallery. Service B (and the /home
- * preload) keeps the whole catalog — any persona can present.
+ * - "a": personas that own at least one ACTIVE hook clip, with a portrait
+ *   thumbnail. The hook bank is a persona × clip matrix and the gallery lists
+ *   one persona's column, so a persona with an empty column would dead-end
+ *   the customer on an empty gallery.
+ * - "b": personas with a usable selfie (personaSelfie), and that selfie IS
+ *   the thumbnail — the card shows the exact image the render animates, and
+ *   its id rides along as `personaImageId` so the wizard can send it back.
+ *   A persona without a selfie is dropped the same way a persona without any
+ *   stored image is dropped: no thumbnail, no card.
  *
  * The ONE query path for every surface that shows the catalog — the
  * /api/personas route and the server pages that inline it into first paint
@@ -22,7 +25,7 @@ import type { Persona } from "@/lib/service-b-ui";
  * service role like every route (personas are founder catalog data any
  * signed-in user may see — 0002/0007 declare the same in RLS).
  */
-export async function loadPersonaCatalog(opts?: { withHookClips?: boolean }): Promise<Persona[]> {
+export async function loadPersonaCatalog(service: CatalogService): Promise<Persona[]> {
   const db = getDb();
   const { personas, personaImages, hookClips } = schema;
   const active = eq(personas.active, true);
@@ -37,6 +40,7 @@ export async function loadPersonaCatalog(opts?: { withHookClips?: boolean }): Pr
       id: personas.id,
       name: personas.name,
       gender: personas.gender,
+      imageId: personaImages.id,
       filePath: personaImages.filePath,
       catalogPath: personaImages.catalogPath,
       blurDataUrl: personaImages.blurDataUrl,
@@ -47,7 +51,7 @@ export async function loadPersonaCatalog(opts?: { withHookClips?: boolean }): Pr
     })
     .from(personas)
     .innerJoin(personaImages, eq(personaImages.personaId, personas.id))
-    .where(opts?.withHookClips ? and(active, hasHookClips) : active)
+    .where(service === "a" ? and(active, hasHookClips) : active)
     .orderBy(personas.createdAt);
 
   const byPersona = new Map<
@@ -65,7 +69,7 @@ export async function loadPersonaCatalog(opts?: { withHookClips?: boolean }): Pr
   const storage = getStorage();
   return Promise.all(
     [...byPersona].flatMap(([id, { name, gender, images }]) => {
-      const thumbnail = personaThumbnail(images);
+      const thumbnail = personaThumbnail(images, service);
       if (!thumbnail) return [];
       const url = thumbnail.catalogPath
         ? Promise.resolve(storage.publicUrl(thumbnail.catalogPath))
@@ -76,6 +80,7 @@ export async function loadPersonaCatalog(opts?: { withHookClips?: boolean }): Pr
         gender,
         imageUrl,
         blurDataUrl: thumbnail.blurDataUrl,
+        ...(service === "b" ? { personaImageId: thumbnail.imageId } : {}),
       }));
     }),
   );

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
@@ -24,11 +25,15 @@ import { postJson, useJobPoll } from "@/lib/use-api";
 type StepRenderProps = {
   businessId: string;
   personaId: string;
-  /** The background chosen in the image step; absent -> persona default. */
-  personaImageId?: string;
+  /** The selfie the persona card showed (Persona.personaImageId) — the render source. */
+  personaImageId: string;
   scriptId: string;
   audioId: string;
-  compositeId?: string;
+  /** The effect step's choice: the opener clip, its FINAL on-screen line and
+   *  the rect the customer placed it in (absent = the clip's safe area). */
+  openerClipId?: string;
+  hookText?: string;
+  hookTextSafeArea?: SafeRect;
   render: RenderState | null;
   setRender: (render: RenderState | null) => void;
   onBack: () => void;
@@ -36,7 +41,7 @@ type StepRenderProps = {
 };
 
 /**
- * Step 5: the advisory shape and price first — length from the approved audio,
+ * Step 6: the advisory shape and price first — length from the approved audio,
  * credits from the same function createBRender debits with — then an explicit
  * confirm enqueues the render. This step used to fire the render from a mount
  * effect, which meant NAVIGATING here spent credits; a confirm is the only
@@ -51,7 +56,9 @@ export function StepRender({
   personaImageId,
   scriptId,
   audioId,
-  compositeId,
+  openerClipId,
+  hookText,
+  hookTextSafeArea,
   render,
   setRender,
   onBack,
@@ -83,7 +90,15 @@ export function StepRender({
     setStartError(null);
     const result = await postJson<{ renderId: string }>(
       `/api/businesses/${businessId}/renders`,
-      renderRequestBody({ scriptId, audioId, personaId, personaImageId, compositeId }),
+      renderRequestBody({
+        scriptId,
+        audioId,
+        personaId,
+        personaImageId,
+        openerClipId,
+        hookText,
+        hookTextSafeArea,
+      }),
     );
     setStarting(false);
     if (!result.ok) {

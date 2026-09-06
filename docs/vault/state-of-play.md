@@ -89,7 +89,9 @@ error params with no code) — see the callback note's Fixed section.
 ## External state — not in the repo
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro plan, Micro
-compute. Migrations 0000–0031 applied, ledger clean. Auth: Email provider on, "Confirm
+compute. Migrations 0000–0033 applied (0032 and 0033 by the founder in the dashboard on
+2026-09-05, then `supabase migration repair --status applied 0032 0033`), ledger clean —
+24 true + 0020 NULL on the structural layer. Auth: Email provider on, "Confirm
 email" OFF, Google enabled. Site URL is `https://tavnit.ai`;
 `https://tavnit.ai/auth/callback` is on the redirect allowlist; the localhost entry was
 kept (founder-verified 2026-09-01). The old project is deleted — org back to $25/month.
@@ -162,13 +164,11 @@ non-sensitive scopes.
    a note for now.
 5. **The Service B format is decided** — recorded 2026-09-04 in
    [[0017-service-b-single-setting-selfie-talking-head]]. Single-setting selfie talking
-   head, optional founder-made opener clip, no image or composite step, physical products
-   out. **The engine is now built to it** (2026-09-05, queue item 14, commits
+   head, no image or composite step, physical products out; the optional founder-made opener clip was retired 2026-09-06 — the hook is a Remotion animation over the one HeyGen clip ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). **The engine is now built to it** (2026-09-05, queue item 14, commits
    `2d446e6..b6c652a` on `main`, unpushed at the time of writing): b_script v9 + `hook_text`,
-   the lead-in, opener + hook text on render params with the selfie guard, the
-   `serviceBTimeline` + opener composition, and the CLI. Still NOT built: admin
-   registration (15) and the B wizard (16) — the web wizard still shows the image and
-   composite steps and passes no opener. Three engine decisions were made in the chat
+   the lead-in, hook text on render params with the selfie guard, `serviceBTimeline` and the CLI — plus the opener half (opener on render params, the opener composition, `bank add-opener`), **retired 2026-09-06** and still in the tree ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). **The B wizard (16) is built too**
+   (2026-09-05, branch `service-b-wizard`, unmerged and unpushed at the time of writing).
+   Still NOT built: the animation-effects step that replaces the opener step, the speech-tied caption handoff in `serviceBTimeline`, and an effect param on the render route / `createBRender` ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Admin registration (15) is retired with the opener bank. Three engine decisions were made in the chat
    that built it, all in the code and its comments: the talking head stays muted and the
    approved mp3 plays from `captionOffsetMs` (the repo's measured glitch reason won over
    the brief); the `kind='selfie'` guard applies to any render resolved from a persona
@@ -178,12 +178,9 @@ non-sensitive scopes.
    [[heygen-avatar-iv-idles-on-leading-silence]]. Founder hand test, ~800ms, one persona,
    by eye. **Now in the repo** (2026-09-05): `handleLipsync` prepends
    `app_config.lipsync_lead_in_ms` (code default 800, no seed) and pins it on
-   `params.leadInMs`. The tolerance is still unmeasured — 800ms remains the only value
-   tried, and `GAP_MS = 250` was chosen next to it, not measured with it
-   ([[service-b-timeline-constants]]). Re-measure on the first real opener render.
+   `params.leadInMs`. Measured 2026-09-06 at three expressiveness levels: the head is still only to 0.56s and moves from 0.60s, before speech, so 800ms buys a 0.56s still window ([[heygen-head-moves-before-speech-onset]]) — the window the zoom hook now opens on ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). `GAP_MS = 250` was the reveal-to-speech gap of the retired cut.
 7. **[[0004-service-b-config-is-provisional]] is superseded by 0017** — but only on the
-   open-endedness. The three keys stay placeholders until the engine work lands and
-   `auto_release_b` still may not be flipped by a session. The note is marked
+   open-endedness. `lipsync_resolution` and `auto_release_b` stay placeholders; `lipsync_motion_prompt` and the new `lipsync_expressiveness` are founder-chosen since 2026-09-06 (migration 0034, [[0022-heygen-expressiveness-medium-generic-motion-prompt]]). `auto_release_b` still may not be flipped by a session. The note is marked
    `status: superseded` and kept, not deleted.
 8. **Four stale provider references corrected 2026-09-04**, all in git: the
    `motion_prompt`/`expressiveness` caveat in `docs/04-integrations.md` (HeyGen's pages do
@@ -283,12 +280,16 @@ non-sensitive scopes.
       (`auth.ts:69-85`), `0005:48` (`auth.ts:78`).
 
 **Items 13–16 are the Service B revamp**, built to
-[[0017-service-b-single-setting-selfie-talking-head]] and in that order — each is the
-input to the next. They sit **after** everything above, including the cheap docs-only
-item 12, because Service B is explicitly parked until Service A is finished and none of
-this is on the validation sequence (pipeline → outreach samples → self-serve app).
+[[0017-service-b-single-setting-selfie-talking-head]]. The planned order was 13 → 14 →
+15 → 16; it went 13 → 14 → 16; 15 (admin registration for the opener bank) died with the bank on 2026-09-06 ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). What is open now is 0023's list: the animation-effects step, the caption handoff rule, the effect render param. They
+sit **after** everything above, including the cheap docs-only item 12, because Service B
+is explicitly parked until Service A is finished and none of this is on the validation
+sequence (pipeline → outreach samples → self-serve app).
 
-13. **Schema 0032 for the selfie format.** The migration 0017 implies: a `selfie` value
+13. ~~**Schema 0032 for the selfie format.**~~ — **done**: 0032 (`selfie` kind,
+    `opener_clips`) and 0033 (its RLS) are in the tree and applied on live (see the
+    Supabase paragraph above and item 14). The original brief, kept for the record: a
+    `selfie` value
     for `persona_images.kind` (today `'preview' | 'background'`,
     `packages/core/src/db/schema.ts:286` — and **not only a migration**: the two literals
     are enforced at `apps/admin/src/lib/admin.ts:65` and used to filter at
@@ -306,17 +307,40 @@ this is on the validation sequence (pipeline → outreach samples → self-serve
     `vo_script` untouched. The FINAL hook text is copied into `video_renders.params` at
     enqueue. Verified: core suite + `render:sample:b-opener` rendered for real and its
     frames checked by eye (hold, cut, caption onset). **Not verified**: any CLI command
-    against the live DB — 0032 is still unapplied there, so `bank add-opener` and
-    `render-b --opener` cannot run until it is pushed (reversibility gate; the new
-    project is production).
-15. **Admin registration for the opener bank.** The founder-facing side: upload a
-    play-ready clip against a (selfie image × effect) pair, set `reveal_at_ms`, place the
-    text safe area. Check [[admin-hook-upload-persona-footgun]] before reusing the Service A
-    upload path — it has a known footgun that this would inherit.
-16. **The B wizard.** `persona → pointers → script → audio → opener effect → render`.
-    Removes today's image and composite steps, adds the effect step with the customer-
-    editable hook text. Largest of the four and the only one a customer sees, so it goes
-    last.
+    against the live DB. 0032 and 0033 **are applied** there — the founder ran them in the
+    dashboard on 2026-09-05, the ledger reads 24 true + 0020 NULL on the structural layer,
+    and `supabase migration repair --status applied 0032 0033` was run — so
+    `bank add-opener` ran against live on 2026-09-05 (opener f8f7b2cc…, rendered by the wizard as video_renders 1397ffcd…); both commands are **retired 2026-09-06** with the opener bank ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]).
+15. ~~**Admin registration for the opener bank**~~ — **retired 2026-09-06** with the opener bank ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Animation effects are code in `packages/remotion` (`hookZoom` first, 'none' an option), not a bank — nothing to register. `persona add-image --kind selfie` stays the way a selfie reaches a persona; `aiugc bank add-opener` is retired.
+    The founder-facing side: upload a play-ready clip against a (selfie image × effect)
+    pair, set `reveal_at_ms`, place the text safe area. Check
+    [[admin-hook-upload-persona-footgun]] before reusing the Service A upload path — it
+    has a known footgun that this would inherit. Until it lands, `aiugc bank add-opener`
+    (and `persona add-image --kind selfie`) is the only way a clip reaches the bank, and
+    the wizard's effect step lists exactly what that registered.
+16. ~~**The B wizard.**~~ — **built 2026-09-05** on branch `service-b-wizard` (unmerged,
+    unpushed): `persona → pointers → script → audio → opener effect → render`, one flow
+    for every business. Commits, in order: `e4cb08e` this file's 0032 correction;
+    `de49627` the six steps, the pointers step, hook text on the script and edit
+    responses; `44f4af5` `personaSelfie`, `personaThumbnail(service)`,
+    `loadPersonaCatalog(service)`, `?withSelfie=1`, and the `/home` preload (B's card set
+    only — both wizards are one click away); `10da873` the effect step and
+    `GET /api/personas/[personaId]/openers`; `f6333c9` the render body (`personaImageId`
+    required, `compositeId` gone) and the route's selfie and opener checks; `8e37d2c`
+    tests; `3832a0b` the removal; `6754f35` prettier. Verified: web typecheck and the 8
+    web test files (249 tests); the new routes compile on the dev server (401 JSON
+    unauthenticated). **Verified 2026-09-05**: the wizard rendered a real opener end to end (video_renders 1397ffcd…, opener f8f7b2cc… via `bank add-opener`), and further paid HeyGen draws followed on 2026-09-06 ([[heygen-motion-prompt-two-draws]]). The opener step it exercised is retired the same day ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). (item 15, or `bank add-opener`).
+    **Deleted surfaces** (delete, don't guard — the a-sets precedent): `StepImage`,
+    `StepComposite`, `POST /api/businesses/[businessId]/composites`,
+    `GET|approve|regenerate /api/composites/[id]`, `GET /api/personas/[personaId]/images`,
+    `requireComposite`, `canUseComposites` / `photoError` / `PHOTO_EXTENSIONS` /
+    `MAX_PHOTO_BYTES` / `backgroundImages`, `PersonaImage` / `CompositeState` /
+    `clientPhotoError`, and the two composite lines in `api-errors.ts`, with their tests.
+    **Resurrection pointer: `8e37d2c`** is the last commit that carries all of them.
+    `packages/core`'s composites pipeline and schema are untouched (a physical-product
+    service is parked as its own thing — 0017). One behaviour change outside B:
+    `GET /api/personas` without a flag now returns the A catalog (hook-matrix personas),
+    not the whole catalog — nothing called it bare.
 
 ## Open decisions
 
@@ -349,21 +373,35 @@ this is on the validation sequence (pipeline → outreach samples → self-serve
 
 Still parked until Service A is finished — but the revamp now has a **shape**, decided
 2026-09-03/04: [[0017-service-b-single-setting-selfie-talking-head]]. Read that note before
-touching anything Service B; it settles the format (flow, one background per persona, the
-opener clip, where the final hook text lives, HeyGen stays) and lists what it deliberately
+touching anything Service B; it settles the format (flow, one background per persona, where the final hook text lives, HeyGen stays); its opener-clip half is retired 2026-09-06 — read [[0023-hook-is-a-remotion-animation-opener-clips-retired]] with it: the hook is a Remotion animation over the one HeyGen clip. and lists what it deliberately
 does **not** settle. The one measurement it rests on is
 [[heygen-avatar-iv-idles-on-leading-silence]].
 
-The engine is built to it as of 2026-09-05 (queue item 14). The web wizard is not: it still
-shows the image and composite steps 0017 removes and passes no opener. Its `createBRender`
-call meets the new selfie guard only on the path where the image picker was skipped (a
-persona with zero background images, so the default is resolved); a persona WITH backgrounds
-is posted as an explicit `personaImageId`, which bypasses the guard, and renders a standing
-talking head exactly as before — a standing head next to a selfie card, not an error. Both
-are expected until item 16.
+The engine is built to it as of 2026-09-05 (queue item 14), and so is the web wizard (item
+16, branch `service-b-wizard`, unmerged). The wizard never resolves a default: the B catalog
+lists only personas with a usable selfie, the card shows that selfie, its id travels with
+the render, and `POST /renders` refuses an image that is not that persona's live
+`kind='selfie'` row — so core's selfie guard (which covers only a resolved default) is never
+the thing standing between a customer and a standing head. **The wizard rendered its first real
+opener on 2026-09-05** (video_renders 1397ffcd…, opener f8f7b2cc…, registered through
+`bank add-opener`). The founder rejected the result on four counts — the 2.4s frozen hold, the
+dissolve + punch-in, a colour step at the cut, a dead-still camera — and the same day the
+dissolve and punch-in were deleted, the HeyGen colour tag corrected
+([[heygen-output-is-limited-range]]), a measured colour grade and a handheld camera path
+added ([[handheld-sway-constants]]), and the opener's own faults recorded
+([[opener-bank-clip-dup-frames-and-tight-trim]]). The hold was then killed on the founder's
+verdict ([[0019-hook-text-outlives-the-reveal]]); the constants note keeps the measurements
+([[service-b-timeline-constants]], first-render section). On 2026-09-06 a per-channel colour-grade
+curve and a pixel alignment were added, and a 4-frame soft cut plus a 1.5s alignment ease were
+tried and zeroed the same day on the founder's verdict
+([[0021-nothing-moves-at-the-service-b-seam]], [[service-b-seam-constants]]). **The seam is gone, not fixed**: on 2026-09-06 the founder retired the opener clip entirely — a Service B ad is one HeyGen clip with a Remotion animation hook (zoom hook first, `hookZoom` in `packages/remotion`, whoosh allowed) — [[0023-hook-is-a-remotion-animation-opener-clips-retired]]. Open: the effects step, the speech-tied caption handoff, more animations to judge.
 
-`lipsync_motion_prompt`, `lipsync_resolution` and `auto_release_b` are **still placeholders**
-— 0017 settles the format, not the engine, so
+All of the seam work — grade curve, alignment, soft cut — is **retired 2026-09-06** with the opener; the code stays in the tree and the measurements stay true ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). The limited-range tag and the handheld sway carry over to the single-clip product.
+
+`lipsync_resolution` and `auto_release_b` are **still placeholders**; `lipsync_motion_prompt`
+and the new `lipsync_expressiveness` are founder-chosen since 2026-09-06 (migration 0034,
+[[0022-heygen-expressiveness-medium-generic-motion-prompt]]) — 0017 settles the format, not
+the engine, so
 [[0004-service-b-config-is-provisional]]'s instruction carries forward unchanged and
 `auto_release_b` still stays `true`. `poll_deadline_seconds` and `words_per_second` are the
 live Service A keys that matter.
@@ -411,8 +449,10 @@ Recorded because each cost real time, and each came from asserting rather than c
   describing a plan read identically to docs describing reality.
 - `words_per_second`: old project 2.1 (calibration output), migration seed 2.2 (a
   guess). 2.1 is correct.
-- There are **34** migrations, 0000–0033. The live project is still at 0031 — 0032
-  (`opener_clips`) and 0033 (its RLS) are in the tree, unapplied.
+- There are **35** migration files, 0000–0034. 0000–0033 are applied on live (0032/0033 from the dashboard on 2026-09-05, ledger repaired); 0034 (`lipsync_expressiveness`, [[0022-heygen-expressiveness-medium-generic-motion-prompt]]) landed 2026-09-06 — record whether it has been pushed.: 0032 (`opener_clips`) and
+  0033 (its RLS) went in from the dashboard on 2026-09-05 and the ledger was repaired to
+  match. This file said "still at 0031 / unapplied" in three places until then — the
+  vault-correction commit `e4cb08e` fixed item 14, and the step-7 docs commit the other two.
 - `scripts/verify-migration-ledger.sql` cannot fully pass on a fresh database — two
   checks assert old-project row IDs. Structural layer: 24 true and one NULL for 0020;
   the NULL is correct. (It was 22 before the 0032/0033 rows were added.)

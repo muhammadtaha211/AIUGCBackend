@@ -44,6 +44,7 @@ export const PORTABLE_MIGRATIONS = [
   "0030_analysis_sections.sql",
   "0031_seed_unseeded_config.sql",
   "0032_opener_clips.sql",
+  "0034_lipsync_expressiveness_medium.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

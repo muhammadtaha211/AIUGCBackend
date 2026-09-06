@@ -71,36 +71,33 @@ const sampleVoMs = (sampleDurationInFrames / FPS) * 1000;
  * Service B layouts for the previews. These MIRROR @aiugc/core's
  * serviceBTimeline as literals — core depends on this package, never the
  * other way round — and core's service-b-timeline.test.ts asserts the
- * function reproduces them, so a drift here fails a test there. The effect
- * fields are core's CROSSFADE_FRAMES / PUNCH_IN_SCALE / PUNCH_IN_MS.
+ * function reproduces them, so a drift here fails a test there.
  */
-const sampleEffects = { crossfadeFrames: 5, punchInScale: 1.06, punchInMs: 300 };
 
 /** No opener, no lead-in: everything at 0 and the VO from frame 0 — the
  *  pre-opener preview, unchanged. */
 export const sampleTimeline = {
-  holdMs: 0,
+  hookTextMs: 0,
   revealAbsMs: 0,
   lipsyncStartFromMs: 0,
   captionOffsetMs: 0,
   totalMs: sampleVoMs,
-  ...sampleEffects,
 };
 
 /**
  * With the 2.4s synthetic opener (fixtures/opener.mp4, reveal at 1.6s) and an
- * 800ms lead-in: the 4-word hook text reads in 2000ms (400 + 4/2.5 s), so the
- * first frame holds 2000ms, the cut lands at 3600ms, the clip starts 550ms in
- * and the VO begins 250ms after the cut. The placeholder talking head carries
- * no lead-in of its own, so the VO tail sets the end.
+ * 800ms lead-in: the clip plays from 0 and the cut lands at 1600ms; the 4-word
+ * hook text reads in 2000ms (400 + 4/2.5 s), so it outlives the cut by 400ms;
+ * the clip starts 550ms in and the VO begins 250ms after the cut. The
+ * placeholder talking head carries no lead-in of its own, so the VO tail sets
+ * the end.
  */
 export const sampleOpenerTimeline = {
-  holdMs: 2000,
-  revealAbsMs: 3600,
+  hookTextMs: 2000,
+  revealAbsMs: 1600,
   lipsyncStartFromMs: 550,
-  captionOffsetMs: 3850,
-  totalMs: 3850 + sampleVoMs,
-  ...sampleEffects,
+  captionOffsetMs: 1850,
+  totalMs: 1850 + sampleVoMs,
 };
 
 export const sampleHookText = "ככה מזמינים בלי לחכות";

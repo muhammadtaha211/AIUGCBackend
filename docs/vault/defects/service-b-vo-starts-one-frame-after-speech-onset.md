@@ -2,7 +2,7 @@
 type: defect
 status: verified
 verified: 2026-09-05
-method: "hand trace of packages/remotion/src/ServiceB.tsx's ms->frame conversions (msToFrame = round(ms/1000*30)) for the no-opener default (lipsyncStartFromMs 550, captionOffsetMs 250) and the opener fixture (reveal 3600, start 550, captionOffset 3850); surfaced by the 2026-09-05 six-lens review, both skeptics confirmed"
+method: "hand trace of packages/remotion/src/ServiceB.tsx's ms->frame conversions (msToFrame = round(ms/1000*30)) for the no-opener default (lipsyncStartFromMs 550, captionOffsetMs 250) and the opener fixture (reveal 1600, start 550, captionOffset 1850 — re-derived 2026-09-05 after decision 0019 removed the hold; it was reveal 3600 / captionOffset 3850 → frames 115 / 116 before); surfaced by the 2026-09-05 six-lens review, both skeptics confirmed"
 source: code
 ---
 
@@ -16,7 +16,7 @@ frames **independently**, so the two half-frames add:
 | render                      | clip shows speech onset (abs frame) | `<Audio>` starts (abs frame) |
 | --------------------------- | ----------------------------------- | ---------------------------- |
 | no opener, lead-in 800      | 7 (550ms → 16.5 → 17 trimmed)       | 8 (250ms → 7.5 → 8)          |
-| opener fixture, reveal 3600 | 115                                 | 116 (3850ms → 115.5 → 116)   |
+| opener fixture, reveal 1600 | 55 (48 + 24 − 17)                   | 56 (1850ms → 55.5 → 56)      |
 
 The lips move **one frame (33ms) before** the audio. Video-leads-audio is the less noticeable
 direction and 33ms sits inside the ±45ms/−125ms band usually quoted for lip-sync

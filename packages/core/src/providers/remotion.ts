@@ -3,6 +3,7 @@ import path from "node:path";
 import type { CaptionChunk } from "../captions";
 import { getEnv } from "../config";
 import { PermanentError, TransientError } from "../jobs/errors";
+import type { GradeCurve } from "../media/grade";
 import type { ServiceBTimeline } from "../service-b-timeline";
 
 /**
@@ -63,6 +64,12 @@ export interface RenderServiceAStepsProps {
 
 export interface RenderServiceBProps {
   kind: "service_b";
+  /**
+   * Seeds the composition's handheld camera path — the render id, so a retry
+   * re-renders identical frames. Right after `kind` so the DRY_RUN echo
+   * always carries it.
+   */
+  cameraSeed: string;
   /** Lip-synced talking-head clip (HeyGen output, downloaded locally). */
   talkingHeadPath: string;
   /**
@@ -83,19 +90,29 @@ export interface RenderServiceBProps {
   hookText?: string;
   hookTextSafeArea?: TextSafeArea;
   /**
-   * The layout in ms, from serviceBTimeline, plus the effect constants — the
-   * composition converts to frames and does no timeline arithmetic of its own.
+   * The layout in ms, from serviceBTimeline — the composition converts to
+   * frames and does no timeline arithmetic of its own.
    */
-  timeline: ServiceBTimeline & { crossfadeFrames: number; punchInScale: number; punchInMs: number };
+  timeline: ServiceBTimeline;
+  /**
+   * Per-channel gain curve on the talking head, measured per render against
+   * the opener's reveal frame (media/grade.ts). Absent without an opener,
+   * under DRY_RUN, and when the two frames were not comparable.
+   */
+  talkingHeadGrade?: GradeCurve;
+  /**
+   * Pixels (at 1080×1920) the talking head is offset by, for its whole
+   * length, so its idle frame sits on the opener's reveal frame at the cut
+   * (no ease — vault 0021). Absent when not measured or when the match was
+   * outside what the overscan hides.
+   */
+  talkingHeadAlign?: { dx: number; dy: number };
   watermark: boolean;
   /** Last on purpose: the DRY_RUN render echoes a prefix of these props. */
   captions: CaptionChunk[];
 }
 
-export type RenderVideoProps =
-  | RenderServiceAProps
-  | RenderServiceAStepsProps
-  | RenderServiceBProps;
+export type RenderVideoProps = RenderServiceAProps | RenderServiceAStepsProps | RenderServiceBProps;
 
 /** renderMedia's 0-1 frame fraction, surfaced so the worker can checkpoint
  *  honest render progress for the customer poll. */

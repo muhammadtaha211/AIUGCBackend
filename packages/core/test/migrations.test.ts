@@ -364,6 +364,34 @@ describe("migrations", () => {
     await pg.close();
   });
 
+  it("0034: expressiveness medium + the generic motion prompt are seeded; a later flip survives a re-run", async () => {
+    const { pg } = await createTestDb();
+
+    const read = async (key: string) =>
+      (await pg.query<{ value: unknown }>("SELECT value FROM app_config WHERE key = $1", [key]))
+        .rows[0]?.value;
+    // Founder decision 0022 lives here, not in the SQL editor (the 0031 rule).
+    expect(await read("lipsync_expressiveness")).toBe("medium");
+    expect(await read("lipsync_motion_prompt")).toBe(
+      "Speaks naturally to the camera with a warm, relaxed expression, small natural head movements, steady eye contact",
+    );
+
+    // Both statements are guarded: a deliberate later change is never undone.
+    await pg.query(
+      `UPDATE app_config SET value = '"low"'::jsonb WHERE key = 'lipsync_expressiveness'`,
+    );
+    await pg.query(
+      `UPDATE app_config SET value = '"a later founder pick"'::jsonb WHERE key = 'lipsync_motion_prompt'`,
+    );
+    await pg.exec(
+      readFileSync(join(MIGRATIONS_DIR, "0034_lipsync_expressiveness_medium.sql"), "utf8"),
+    );
+    expect(await read("lipsync_expressiveness")).toBe("low");
+    expect(await read("lipsync_motion_prompt")).toBe("a later founder pick");
+
+    await pg.close();
+  });
+
   it("enforce the circular sets -> video_renders FK from 0001", async () => {
     const { db, pg } = await createTestDb();
 

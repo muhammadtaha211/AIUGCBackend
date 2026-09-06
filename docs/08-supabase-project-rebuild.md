@@ -242,14 +242,14 @@ seeds and quietly reverted. Same class of problem as `0027`'s cap.
 guarded updates that only fire if the row still holds the original seed — a later recalibration or
 founder flip is not clobbered:
 
-| Key                     | Before `0031`               | After                 | Why it matters                                                                     |
-| ----------------------- | --------------------------- | --------------------- | ---------------------------------------------------------------------------------- |
-| `poll_deadline_seconds` | absent → code constant 2400 | `900`                 | `poll.ts:14` already called 900 "the intended live setting"; 2400 is 2.7x the wait |
-| `lipsync_motion_prompt` | absent → field omitted      | the production prompt | No fallback — its absence changes what every Service B render looks like           |
-| `lipsync_resolution`    | absent → `"1080p"`          | `"1080p"`             | Same value; seeded so OFF is a decision, not a missing row                         |
-| `tts_enhance`           | absent → `false`            | `false`               | Same                                                                               |
-| `auto_release_b`        | `false` (seeded by `0001`)  | `true`                | Standing founder instruction, CLAUDE.md decision #8                                |
-| `words_per_second`      | `{"default":2.2}`           | `{"default":2.1}`     | 2.1 is calibration output; `calibrate.ts:9` calls 2.2 "a guess"                    |
+| Key                     | Before `0031`               | After                                                                                                                                                                                                                       | Why it matters                                                                     |
+| ----------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `poll_deadline_seconds` | absent → code constant 2400 | `900`                                                                                                                                                                                                                       | `poll.ts:14` already called 900 "the intended live setting"; 2400 is 2.7x the wait |
+| `lipsync_motion_prompt` | absent → field omitted      | the 2026-08-26 placeholder, replaced by `0034` with the generic hand-free prompt (alongside `lipsync_expressiveness` `"medium"` — [vault 0022](vault/decisions/0022-heygen-expressiveness-medium-generic-motion-prompt.md)) | No fallback — its absence changes what every Service B render looks like           |
+| `lipsync_resolution`    | absent → `"1080p"`          | `"1080p"`                                                                                                                                                                                                                   | Same value; seeded so OFF is a decision, not a missing row                         |
+| `tts_enhance`           | absent → `false`            | `false`                                                                                                                                                                                                                     | Same                                                                               |
+| `auto_release_b`        | `false` (seeded by `0001`)  | `true`                                                                                                                                                                                                                      | Standing founder instruction, CLAUDE.md decision #8                                |
+| `words_per_second`      | `{"default":2.2}`           | `{"default":2.1}`                                                                                                                                                                                                           | 2.1 is calibration output; `calibrate.ts:9` calls 2.2 "a guess"                    |
 
 `tts_stability` is deliberately **not** seeded: the old project held `0.5`, and the decision on
 2026-08-26 was to let ElevenLabs' own default stand. The absence of that row is the setting, and
@@ -259,7 +259,7 @@ Everything else the migrations produce already matched the old project — `dail
 7200 from `0022`, `per_account.llm_tokens` 1500000 from `0027`, `credit_costs` from
 `0017`/`0026`/`0028`.
 
-**Works:** `select count(*) from app_config;` returns 12, and
+**Works:** `select count(*) from app_config;` returns 13 (12 after `0031`, plus `lipsync_expressiveness` from `0034`), `select value from app_config where key = 'auto_release_b';` returns `true`, and `lipsync_expressiveness` returns `"medium"`.
 `select value from app_config where key = 'auto_release_b';` returns `true`.
 
 ---
@@ -751,6 +751,10 @@ line them up first or the smoke test stops early:
   and `hook_clips` are all empty on a rebuilt project and no migration seeds them — add a persona
   with at least one reference image and one active clip assigned to it via the admin console, and
   make sure the files exist in storage.
+- **Script structures.** `structures` is empty on a rebuilt project too, and the Service B script
+  step returns `אין כרגע תבנית תסריט זמינה` until it has an active row (hit on 2026-09-05, the
+  first B wizard walk after the rebuild). `aiugc bank seed-structures` inserts the five checked-in
+  skeletons from `seed/structures/`; it skips titles already present, so re-running is safe.
 
 Uploading through the web app is deliberate here: it creates the `public.users` row from the auth
 uid via the trigger. `aiugc business create` invents a uuid instead, which permanently blocks that

@@ -28,10 +28,11 @@ type StepPersonaProps = {
    */
   copy?: { title: string; sub: string };
   /**
-   * Where the mount/retry fetch goes. Default = the whole catalog (Service B,
-   * where any persona can present). Service A passes the hook-matrix filter
-   * (?withHookClips=1) so the retry lists the same personas the server shell
-   * preloaded — never one whose gallery would come back empty.
+   * Where the mount/retry fetch goes. Default = the Service B catalog
+   * (?withSelfie=1: personas with a selfie, shown on the card). Service A
+   * passes the hook-matrix filter (?withHookClips=1) so the retry lists the
+   * same personas the server shell preloaded — never one whose gallery would
+   * come back empty.
    */
   catalogUrl?: string;
 };
@@ -50,7 +51,7 @@ export function StepPersona({
   onContinue,
   onFatal,
   copy = B_COPY,
-  catalogUrl = "/api/personas",
+  catalogUrl = "/api/personas?withSelfie=1",
 }: StepPersonaProps) {
   const [error, setError] = useState<string | null>(null);
 

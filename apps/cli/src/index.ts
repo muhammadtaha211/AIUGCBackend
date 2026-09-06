@@ -53,6 +53,7 @@ import {
   runLane,
   runPlanRegression,
   schema,
+  seedStructures,
   servedContentType,
   setQuestionnaire,
   starVariant,
@@ -501,7 +502,7 @@ bank
   )
   .requiredOption(
     "--reveal-at-ms <n>",
-    "first frame the face is fully clear, in clip time — the hard cut lands here",
+    "where the hard cut lands, in clip time: the first frame whose pose matches the selfie (hand out of frame and settled), not the first frame the face shows",
   )
   .requiredOption(
     "--safe-area <json>",
@@ -605,6 +606,20 @@ bank
     }),
   );
 
+bank
+  .command("seed-structures")
+  .description(
+    "insert every checked-in skeleton (seed/structures/*.json); titles already in the bank are skipped",
+  )
+  .action(
+    run(async () => {
+      const added = await seedStructures(getDb());
+      console.log(
+        `${added.length} structure(s) added${added.length ? `: ${added.join(", ")}` : ""}`,
+      );
+    }),
+  );
+
 // --- persona reference images ---------------------------------------------------
 
 const persona = program.command("persona").description("persona reference images");
@@ -616,22 +631,32 @@ persona
     "--kind <kind>",
     "preview|background|selfie — a Service B render from the persona's default needs a selfie (default: background)",
   )
+  .option("--label <he>", "Hebrew label shown in the admin console")
+  .option("--source-image <id>", "the standing image this selfie was derived from (lineage only)")
   .action(
-    run(async (personaId: string, file: string, opts: { default?: boolean; kind?: string }) => {
-      if (opts.kind && !["preview", "background", "selfie"].includes(opts.kind)) {
-        throw new Error(`--kind must be preview, background or selfie (got ${opts.kind})`);
-      }
-      const image = await addPersonaImage(getDb(), {
-        personaId,
-        filePath: file,
-        isDefault: opts.default,
-        kind: opts.kind as "preview" | "background" | "selfie" | undefined,
-      });
-      console.log(`persona image added: ${image.id}${image.isDefault ? " (default)" : ""}`);
-      if (!image.blurDataUrl) {
-        console.log("  (no blur placeholder — ffmpeg missing or bytes did not decode)");
-      }
-    }),
+    run(
+      async (
+        personaId: string,
+        file: string,
+        opts: { default?: boolean; kind?: string; label?: string; sourceImage?: string },
+      ) => {
+        if (opts.kind && !["preview", "background", "selfie"].includes(opts.kind)) {
+          throw new Error(`--kind must be preview, background or selfie (got ${opts.kind})`);
+        }
+        const image = await addPersonaImage(getDb(), {
+          personaId,
+          filePath: file,
+          isDefault: opts.default,
+          kind: opts.kind as "preview" | "background" | "selfie" | undefined,
+          label: opts.label,
+          sourceImageId: opts.sourceImage,
+        });
+        console.log(`persona image added: ${image.id}${image.isDefault ? " (default)" : ""}`);
+        if (!image.blurDataUrl) {
+          console.log("  (no blur placeholder — ffmpeg missing or bytes did not decode)");
+        }
+      },
+    ),
   );
 
 persona

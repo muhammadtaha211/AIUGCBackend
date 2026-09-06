@@ -31,25 +31,24 @@ export type CoreErrorMapping = {
 
 export function coreErrorMapping(err: unknown): CoreErrorMapping {
   const message = err instanceof Error ? err.message : "";
-  const hit = (status: number, error: string): CoreErrorMapping => ({ status, error, mapped: true });
+  const hit = (status: number, error: string): CoreErrorMapping => ({
+    status,
+    error,
+    mapped: true,
+  });
 
   if (/ארוך מדי/.test(message)) return hit(400, message); // word budget — already Hebrew
   if (/has no questionnaire yet/.test(message)) {
     return hit(400, "צריך למלא קודם את שאלון העסק.");
-  }
-  if (/only available for physical products/.test(message)) {
-    return hit(400, "תמונת דמות עם המוצר זמינה רק לעסקים עם מוצר פיזי.");
   }
   if (/is not voiceable/.test(message)) return hit(400, "אי אפשר להקליט תסריט מהסוג הזה.");
   if (/not found/.test(message)) return hit(404, NOT_FOUND);
   if (/audio must be approved/.test(message)) {
     return hit(409, "צריך לאשר את האודיו לפני יצירת הסרטון.");
   }
-  if (/composite must be approved/.test(message)) {
-    return hit(409, "צריך לאשר את תמונת הדמות עם המוצר לפני יצירת הסרטון.");
-  }
-  // The steps-format hard gate (sets.ts) — the third of the three approval
-  // gates, and the only one that used to fall through to a generic 500.
+  // The steps-format hard gate (sets.ts) — the second of the two approval
+  // gates the web reaches, and the one that used to fall through to a
+  // generic 500. (The composite gate's line left with the composite routes.)
   if (/step plan must be approved/.test(message)) {
     return hit(409, "צריך לאשר את תוכנית הצעדים לפני יצירת הסרטון.");
   }

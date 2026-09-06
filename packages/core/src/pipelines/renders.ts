@@ -31,11 +31,15 @@ import {
   padAudioStart,
   probe,
   probeColorTags,
-  retagBt709Full,
+  alignmentOffset,
+  meanRgb,
+  rgbSeries,
+  retagBt709Limited,
   sliceAudioFrom,
   thumbnail,
   type ProbeResult,
 } from "../media/ffmpeg";
+import { gradeCurve, type GradeCurve } from "../media/grade";
 import { WORK_DIR } from "../paths";
 import {
   getLipsyncProvider,
@@ -45,12 +49,7 @@ import {
   type LipsyncResolution,
 } from "../providers/lipsync";
 import { renderVideo, type RenderVideoProps, type TextSafeArea } from "../providers/remotion";
-import {
-  CROSSFADE_FRAMES,
-  PUNCH_IN_MS,
-  PUNCH_IN_SCALE,
-  serviceBTimeline,
-} from "../service-b-timeline";
+import { serviceBTimeline } from "../service-b-timeline";
 import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
 import { planStepsSchema } from "./demo-step-plans";
@@ -730,20 +729,73 @@ async function buildServiceBProps(
     voDurationMs: audio.durationMs,
   });
 
+  // Colour: the cut leaves the opener's reveal frame and lands on the talking
+  // head — two generations of one selfie that never come back at the same
+  // exposure, and HeyGen's idle frame is darker and cooler than its own
+  // talking frames a second later. A per-channel gain curve (media/grade.ts)
+  // holds the head's colour at the opener's through the first seconds and
+  // then settles; the composition applies it as a colour matrix. Measured on
+  // the head box, where the cut is judged. Best-effort, like the retag above:
+  // a measurement failure must never sink a render the GPU has been paid for.
+  let talkingHeadGrade: GradeCurve | undefined;
+  // Geometry: the two frames the cut joins are near-identical poses, but the
+  // generations do not land at the same place — 8px apart on the first real
+  // render, which reads as a jump cut. The head is measured against the
+  // opener and offset into alignment for its whole length (no ease: a drift
+  // after the cut is itself visible).
+  let talkingHeadAlign: { dx: number; dy: number } | undefined;
+  if (opener && openerPath && !getEnv().DRY_RUN) {
+    try {
+      const [target, series, align] = await Promise.all([
+        meanRgb(openerPath, opener.revealAtMs, HEAD_BOX),
+        rgbSeries(talkingHeadPath, timeline.lipsyncStartFromMs, GRADE_SERIES_FRAMES, HEAD_BOX),
+        alignmentOffset(
+          openerPath,
+          opener.revealAtMs,
+          talkingHeadPath,
+          timeline.lipsyncStartFromMs,
+        ),
+      ]);
+      talkingHeadGrade = gradeCurve(target, series, clip.fps);
+      // Inside what the overscan hides under the sway; a bigger answer is a
+      // wrong match, not a bigger correction.
+      if (Math.abs(align.dx) <= ALIGN_MAX_PX.dx && Math.abs(align.dy) <= ALIGN_MAX_PX.dy) {
+        talkingHeadAlign = align;
+      }
+      logger[talkingHeadGrade ? "info" : "warn"](
+        {
+          videoRenderId: render.id,
+          target,
+          first: series[0],
+          frames: series.length,
+          graded: talkingHeadGrade !== undefined,
+          align,
+          aligned: talkingHeadAlign !== undefined,
+        },
+        "render: talking-head grade and alignment against the opener's reveal frame",
+      );
+    } catch (err) {
+      logger.warn(
+        { err, videoRenderId: render.id },
+        "render: talking-head grade not measured — rendering ungraded",
+      );
+    }
+  }
+
   return {
     kind: "service_b",
+    // The handheld camera path is seeded by the row, so a retry — or a
+    // resumed chunk — re-renders the very same frames.
+    cameraSeed: render.id,
     talkingHeadPath,
     voiceoverPath,
     brollPaths: [], // product B-roll cutaways: wired when the composition lands
     openerPath,
     hookText: params.hookText,
     hookTextSafeArea: params.hookTextSafeArea,
-    timeline: {
-      ...timeline,
-      crossfadeFrames: CROSSFADE_FRAMES,
-      punchInScale: PUNCH_IN_SCALE,
-      punchInMs: PUNCH_IN_MS,
-    },
+    timeline,
+    talkingHeadGrade,
+    talkingHeadAlign,
     watermark: render.watermarked,
     // Last on purpose: the DRY_RUN render echoes a prefix of these props, and
     // captions are the one unbounded field.
@@ -752,9 +804,30 @@ async function buildServiceBProps(
 }
 
 /**
+ * Where the talking-head grade is measured: the upper-middle of the frame,
+ * where a selfie's head sits. HeyGen and the opener's generator redistribute
+ * brightness between head and torso differently (measured 2026-09-05 on the
+ * first real render: matched whole-frame, the face still read +2.4% and the
+ * founder saw it), and the cut is judged on the face.
+ */
+const HEAD_BOX = "crop=iw/2:ih*2/5:iw/4:ih/10";
+/** Six seconds of the head at 30fps — the lock, the blend and a stretch for the settled level. */
+const GRADE_SERIES_FRAMES = 180;
+/**
+ * The alignment offset the composition can hide for the head's whole length.
+ * Measured in picture px (the translate sits inside scale(OVERSCAN)): 1.06
+ * leaves 30.6px horizontally / 54.3px vertically before the sway, and the sway
+ * plus its rotation take up to ~17px of the horizontal margin on the tightest
+ * frame of a random seed (300 seeds × 3600 frames, 2026-09-06: tightest 13.5px
+ * x, 42.3px y; 65 seeds dipped under 16, none under 12). The search answers in
+ * 4px steps, so 12 is the largest safe answer — vault service-b-seam-constants.
+ */
+const ALIGN_MAX_PX = { dx: 12, dy: 32 };
+
+/**
  * Provider clips (HeyGen) arrive with every colour field unset (probed on a
  * real released render), leaving Remotion's decoder to guess how to interpret
- * the pixels. Pin the truthful interpretation — BT.709 full range — with a
+ * the pixels. Pin the truthful interpretation — BT.709 limited range — with a
  * stream-copy retag. Best-effort: a retag failure must never sink a render
  * the GPU has already been paid for.
  */
@@ -763,7 +836,7 @@ async function retagIfUntagged(clipPath: string, retaggedPath: string): Promise<
   try {
     const tags = await probeColorTags(clipPath);
     if (!tags.colorRange || !tags.colorSpace || !tags.colorPrimaries || !tags.colorTransfer) {
-      await retagBt709Full(clipPath, retaggedPath);
+      await retagBt709Limited(clipPath, retaggedPath);
       return retaggedPath;
     }
   } catch (err) {

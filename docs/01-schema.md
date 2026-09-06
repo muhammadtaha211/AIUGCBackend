@@ -50,8 +50,7 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   one clip in the live bank is 4086ms ([04-integrations.md](04-integrations.md) §Hook-clip bank
   source, which also records why the ~60-char hook-line cap is calibrated to the long end).
   `text_safe_area` is required at register; `DEFAULT_HOOK_TEXT_RECT` only seeds the editor.
-- **opener_clips** (0032) — Service B's equivalent closed bank: one founder-made clip per
-  (selfie image × effect), stored **play-ready** (already reversed where the effect is a reveal —
+- **opener_clips** (0032) — **retired 2026-09-06** ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)): the table stays (no migration drops it) but no render reads it — the Service B hook is a Remotion animation over the one HeyGen clip. What it held: one founder-made clip per (selfie image × effect), stored play-ready…
   nothing processes it at render time). `persona_image_id`, `effect` (free key, e.g.
   `hand_cover`/`finger_snap`), `label` (Hebrew, shown to the customer), `file_path`,
   `duration_ms`, `reveal_at_ms`, `text_safe_area jsonb` ({x,y,w,h} in 1080×1920, the same shape
@@ -59,9 +58,10 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   `CHECK (reveal_at_ms >= 0 AND reveal_at_ms <= duration_ms)`, and one **active** row per
   (image, effect) by a partial unique index — so a superseded clip stays as `active=false` and
   the pair can be re-registered. Soft delete is `active=false`, like the hook bank.
-  `reveal_at_ms` is the first frame the face is fully clear: the hook text burns over the palm
-  phase before it and the render hard-cuts into the HeyGen output there — which is why **a clip
-  must end on (approximately) the selfie frame it was made from**
+  `reveal_at_ms` was where the hard cut landed (the first frame whose pose matched the selfie — hand out of frame and settled); the hook text burned over the palm phase and the render hard-cut into the HeyGen output there. No render cuts anything against the HeyGen clip since 2026-09-06 ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)).
+  The hook text burns over the palm phase before it and the render hard-cuts into the HeyGen
+  output there — which is why **a clip must end on (approximately) the selfie frame it was made
+  from**
   (`docs/vault/facts/heygen-avatar-iv-idles-on-leading-silence.md`;
   `docs/vault/decisions/0017-service-b-single-setting-selfie-talking-head.md`).
 - **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id`; reference
@@ -113,14 +113,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   a new set holding the starred variant's params and varying the requested axes
   (`moreLikeThis()`); the FK to video_renders is added in 0001 (circular with `set_id`).
 - **video_renders** — one row per variant/render. `params jsonb` is the fully resolved cell;
-  for Service B the pipeline also accumulates `seed` (pinned before the lipsync submit),
-  `lipsyncUrl`, `lipsyncPlatePath`, `lipsyncPath` (the clip Remotion composes) and
-  `upscaleError` (set on upscale fallback — forces the QC gate) on it (`VariantParams`,
-  `pipelines/sets.ts`). Status: `queued→rendering→(qc_pending)→released | rejected | failed`.
+  for Service B the pipeline also pins `leadInMs` (before the HeyGen submit), `lipsyncPath` (the one clip Remotion composes) and the FINAL `hookText` + `hookTextSafeArea` (copied at enqueue, [vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md)) on it (`VariantParams`, `pipelines/sets.ts`); HeyGen has no seed and no upscale stage, and `openerClipId` is retired 2026-09-06 ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)). Status: `queued→rendering→(qc_pending)→released | rejected | failed`.
   Service A skips `qc_pending`; Service B enters it unless `auto_release_b`. `watermarked`,
-  `starred_at`, `released_at`, `rejected_reason`, `error`. QC rejection + regeneration inserts
-  a **new row** with the same params minus the seed and the per-render output keys (no
-  re-debit).
+  `starred_at`, `released_at`, `rejected_reason`, `error`. QC rejection + regeneration inserts a **new row** with the same params minus `lipsyncPath` (no re-debit) — HeyGen has no seed, so the regeneration is a fresh non-deterministic take ([04-integrations.md](04-integrations.md) §HeyGen).
 
 ### Jobs & usage
 
@@ -128,9 +123,7 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   external side effects (e.g. the fal request id); `(status, run_at)` index drives the claim.
 - **usage_events** — one row per external call: provider, kind (`llm_tokens|tts_chars|
 gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feeds the
-  rolling-24h spend caps and any future per-business analytics. **Known gap**: `usage_kind` has
-  no value for the Topaz upscale, so upscale calls write no row — cost-per-video is understated
-  until the enum gets a migration (see 04 §Topaz).
+  rolling-24h spend caps and any future per-business analytics. The four values cover every call made today — the Topaz upscale that had no `usage_kind` left with InfiniteTalk in 2026-08 (HeyGen has no upscale stage; [04-integrations.md](04-integrations.md) §HeyGen).
 
 ### Billing (details in [05-billing.md](05-billing.md))
 
@@ -163,10 +156,7 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   the code default and toggling them is an INSERT/DELETE, never a migration:
   `tts_enhance` (boolean; absent = `false` = no v3 audio-tag pass), `tts_stability` (number;
   absent = `voice_settings` omitted from the ElevenLabs body — v3 takes 0.0 / 0.5 / 1.0 =
-  creative / natural / robust), and the four lipsync knobs (`pipelines/renders.ts`):
-  `lipsync_fps` (default 25), `lipsync_resolution` (`480p|720p`, default `720p`),
-  `lipsync_safety_frames` (default 2) and `lipsync_prompt` (default
-  `DEFAULT_LIPSYNC_PROMPT`; a persona's `identity.motionPrompt` overrides both).
+  creative / natural / robust), and the HeyGen knobs (`pipelines/renders.ts`): `lipsync_resolution` (default `1080p`), `lipsync_lead_in_ms` (default 800), `lipsync_motion_prompt` and `lipsync_expressiveness` — the last two seeded by 0034 at the generic hand-free prompt and `"medium"` ([vault 0022](vault/decisions/0022-heygen-expressiveness-medium-generic-motion-prompt.md)); `lipsync_resolution`, `lipsync_motion_prompt` and `tts_enhance` are seeded by 0031, so the genuinely unseeded rows are `tts_stability` and `lipsync_lead_in_ms`. `personas.identity.motionPrompt` is unread.
 
 ## Row-level security (0002, Supabase only)
 

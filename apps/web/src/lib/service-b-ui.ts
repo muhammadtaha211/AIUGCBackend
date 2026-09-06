@@ -1,7 +1,12 @@
+import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/core/hook-text";
+
 /**
  * Pure, client-safe helpers for the homepage and the Service B wizard.
- * No imports from @aiugc/core here — this file is bundled into client
- * components, and core drags in server-only dependencies.
+ * No imports from @aiugc/core's main entry — this file is bundled into
+ * client components, and core drags in server-only dependencies. The
+ * "hook-geometry" and "hook-text" subpaths are the deliberate exceptions
+ * (pure constants and validation, the same ones service-a-ui.ts leans on).
  */
 
 // ---------------------------------------------------------------------------
@@ -106,20 +111,19 @@ export function renderStageIndex(status: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Wizard steps (visibility is category-driven)
+// Wizard steps
 // ---------------------------------------------------------------------------
 
-export type WizardStep = "persona" | "image" | "composite" | "script" | "audio" | "render";
+export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" | "render";
 
 /**
- * The composite step exists only for physical products; it is skippable inside
- * the step itself. The image (background) step skips itself silently when the
- * persona has no background images.
+ * One flow for every business: the persona is one look in one setting, so
+ * there is no image step, and physical products are out of Service B, so
+ * there is no composite step (vault 0017). The effect step is where the
+ * customer picks an opener clip — or none — and edits the on-screen hook text.
  */
-export function wizardSteps(category: string | undefined): WizardStep[] {
-  return category === "physical_product"
-    ? ["persona", "image", "composite", "script", "audio", "render"]
-    : ["persona", "image", "script", "audio", "render"];
+export function wizardSteps(): WizardStep[] {
+  return ["persona", "pointers", "script", "audio", "effect", "render"];
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +143,14 @@ export type Persona = {
   imageUrl: string;
   /** Tiny base64 WebP for next/image placeholder="blur"; null on old rows. */
   blurDataUrl?: string | null;
+  /**
+   * Service B catalog only: the persona_images row the card shows — its
+   * selfie, resolved server-side by personaSelfie — and therefore the exact
+   * image the render must animate. The wizard sends this id with the render;
+   * nothing on the customer path resolves a default at render time. Absent on
+   * the Service A catalog, whose thumbnail is a portrait and renders nothing.
+   */
+  personaImageId?: string;
 };
 
 /**
@@ -152,16 +164,42 @@ export const PERSONA_CARD_SIZES = "(max-width: 640px) 45vw, 200px";
 /** At card size 60 is indistinguishable from the default 75 and meaningfully smaller. */
 export const PERSONA_CARD_QUALITY = 60;
 
-/** A kind='background' reference image of the selected persona. */
-export type PersonaImage = { id: string; label?: string; imageUrl: string };
+// ---------------------------------------------------------------------------
+// Opener effect (GET /api/personas/[personaId]/openers + the effect step)
+// ---------------------------------------------------------------------------
 
-export type CompositeState = {
+/** One founder-made opener clip of the persona's selfie, play-ready. */
+export type OpenerClip = {
   id: string;
-  status: string; // queued | generating | ready | failed
-  previewUrl?: string;
-  error?: string;
-  approved: boolean;
+  effect: string;
+  /** Hebrew, shown on the card. */
+  label: string;
+  /** Signed, short-lived. */
+  previewUrl: string;
+  /** Where the hard cut lands, in clip time: the first frame whose pose matches the selfie. */
+  revealAtMs: number;
+  /** The clip's default text safe area — seeds the placement editor. */
+  textSafeArea: SafeRect;
 };
+
+/**
+ * The effect step's hook-text field, in Hebrew. core's hookTextError is the
+ * rule (the same one createBRender refuses on at enqueue); this only puts
+ * words on it the customer can act on. Order matters: "has no words" must
+ * be caught before the word-cap line, which also says "words".
+ */
+export function hookTextFieldError(text: string): string | undefined {
+  const problem = hookTextError(text);
+  if (problem === undefined) return undefined;
+  if (/is empty|no words/.test(problem)) return "צריך לכתוב משפט פתיחה.";
+  if (/emoji/.test(problem)) return "בלי אימוג'י, הטקסט נצרב על הסרטון.";
+  if (/unrenderable/.test(problem)) return "יש כאן תו שאי אפשר להציג על הסרטון.";
+  if (/words/.test(problem)) return `עד ${HOOK_TEXT_MAX_WORDS} מילים.`;
+  if (/characters/.test(problem)) return `עד ${HOOK_TEXT_MAX_CHARS} תווים.`;
+  if (/punctuation/.test(problem)) return "בלי סימן פיסוק בסוף המשפט.";
+  if (/niqqud/.test(problem)) return "בלי ניקוד.";
+  return "המשפט לא תקין.";
+}
 
 export type AudioState = {
   id: string;
@@ -220,6 +258,8 @@ export type AudioPollResult = {
   scriptId: string;
   text: string;
   wordBudget?: number;
+  /** The resolved script's draft hook text (b_script rows only). */
+  hookText?: string;
   /**
    * The pointer was rewritten after the audio was enqueued. A property of the
    * rows, not of anything the client sent, so it stays true for every later
@@ -274,7 +314,23 @@ export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-export type ScriptState = { scriptId: string; text: string; wordBudget?: number };
+export type ScriptState = {
+  scriptId: string;
+  text: string;
+  wordBudget?: number;
+  /**
+   * The DRAFT on-screen hook text the script call emitted (params.hookText).
+   * A seed for the effect step only — the customer's edit lives in wizard
+   * state and the FINAL string goes into render params, never back onto the
+   * script (vault 0017).
+   */
+  hookText?: string;
+  /**
+   * The pointers this script was generated from. A script step reached with
+   * different pointers is stale — see pointersChanged.
+   */
+  pointers?: string;
+};
 
 /** Only a real content change warrants a save (and therefore a new script row). */
 export function needsTextSave(savedText: string, editedText: string): boolean {
@@ -282,14 +338,30 @@ export function needsTextSave(savedText: string, editedText: string): boolean {
 }
 
 /**
+ * The pointers step sits before the script step now, so a customer can walk
+ * back and change the brief under an existing script. Changed pointers mean a
+ * new script — the same rule the old "שינוי ההנחיות ויצירת תסריט חדש" link
+ * enforced when both lived on one step. Whitespace-only edits don't count.
+ */
+export function pointersChanged(script: Pick<ScriptState, "pointers">, pointers: string): boolean {
+  return (script.pointers ?? "").trim() !== pointers.trim();
+}
+
+/**
  * POST /api/scripts/[id]/text creates a NEW immutable row — every later step
- * (audio, render) must reference the returned id, never the original.
+ * (audio, render) must reference the returned id, never the original. A
+ * b_script edit re-derives the draft hook text on the server; it rides along.
  */
 export function withEditedText(
   script: ScriptState,
-  response: { scriptId: string; text: string },
+  response: { scriptId: string; text: string; hookText?: string },
 ): ScriptState {
-  return { ...script, scriptId: response.scriptId, text: response.text };
+  return {
+    ...script,
+    scriptId: response.scriptId,
+    text: response.text,
+    hookText: response.hookText ?? script.hookText,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -297,40 +369,32 @@ export function withEditedText(
 // ---------------------------------------------------------------------------
 
 /**
- * The exact body StepRender posts. personaImageId is the background chosen in
- * the image step; absent means the persona's default image at render time.
+ * The exact body StepRender posts. personaImageId is the selfie the persona
+ * card showed — always sent, so the render animates that row and no default
+ * is resolved. The hook text and rect ride along only with an opener: without
+ * one there is nothing to burn them over, and a stale edit must not leak into
+ * a render that has no clip (the server refuses the pair anyway).
  */
 export function renderRequestBody(opts: {
   scriptId: string;
   audioId: string;
   personaId: string;
-  personaImageId?: string;
-  compositeId?: string;
-}): Record<string, string> {
+  personaImageId: string;
+  openerClipId?: string;
+  hookText?: string;
+  hookTextSafeArea?: SafeRect;
+}): Record<string, unknown> {
   return {
     scriptId: opts.scriptId,
     audioId: opts.audioId,
     personaId: opts.personaId,
-    ...(opts.personaImageId ? { personaImageId: opts.personaImageId } : {}),
-    ...(opts.compositeId ? { compositeId: opts.compositeId } : {}),
+    personaImageId: opts.personaImageId,
+    ...(opts.openerClipId
+      ? {
+          openerClipId: opts.openerClipId,
+          hookText: opts.hookText,
+          ...(opts.hookTextSafeArea ? { hookTextSafeArea: opts.hookTextSafeArea } : {}),
+        }
+      : {}),
   };
-}
-
-// ---------------------------------------------------------------------------
-// Product photo validation (client-side copy)
-// ---------------------------------------------------------------------------
-
-/**
- * Duplicates the server rules in src/lib/service-b.ts (photoError) — that file
- * imports @aiugc/core and must stay out of the client bundle. The server
- * re-validates every upload; this only saves a round-trip.
- */
-export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
-
-export function clientPhotoError(photo: { type: string; size: number }): string | null {
-  if (!PHOTO_TYPES.includes(photo.type)) return "אפשר להעלות רק תמונה בפורמט JPG, PNG או WebP.";
-  if (photo.size === 0) return "הקובץ שהועלה ריק.";
-  if (photo.size > MAX_PHOTO_BYTES) return "התמונה גדולה מדי — המקסימום הוא 10MB.";
-  return null;
 }

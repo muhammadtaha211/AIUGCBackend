@@ -225,16 +225,14 @@ keyless (the e2e test relies on this).
   1080×1920 Remotion frame, so nothing is browser-upscaled. Native output is **25fps**; the v3
   API exposes **no fps or interpolation field**, and 30/60fps would be AI interpolation —
   never requested.
-- **Leading silence (Service B only)**: Avatar IV does not start on the reference image — it
-  animates from frame 0 and idles on the still only while the audio is silent
-  ([vault fact](vault/facts/heygen-avatar-iv-idles-on-leading-silence.md): ~800ms hand-tested,
-  one persona, tolerance unmeasured). So `handleLipsync` prepends
+- **Leading silence (Service B only)**: Avatar IV does not start on the reference image — it animates from frame 0 and idles on the still through most of the leading silence: with 800ms prepended the head is still to 0.56s and moves from 0.60s, ~200ms before the first word, at every expressiveness level tried ([vault fact](vault/facts/heygen-head-moves-before-speech-onset.md), correcting [the idle note](vault/facts/heygen-avatar-iv-idles-on-leading-silence.md)). So `handleLipsync` prepends
   `app_config.lipsync_lead_in_ms` (code default **800**, no seed — an INSERT overrides it) of
   digital silence with `padAudioStart` (`adelay`, same codec/rate/channels), stores it as
   `vo-padded.mp3` under the render's audio key and submits THAT, never the approved mp3. The
   value is pinned on `params.leadInMs` BEFORE submit — the composition assumes it later, so a
   config change after that point cannot move it, and a retry of the submit hop reuses it.
-  Service A's avatar outro submits its `vo-outro.mp3` slice unpadded, as before.
+  The retired Service A avatar outro (`format: "full"`, CLI-only) submits its `vo-outro.mp3`
+  slice unpadded, as before.
 - **Pricing**: **$0.0667/s at BOTH 720p and 1080p** — same price, hence the 1080p default —
   ≈ 25 agorot/s at ₪3.75/$; `GPU_COST_AGOROT_PER_SECOND` maps both tiers to 25. Usage rows
   keep kind `gpu_seconds` and for Service B the quantity is the **padded** length — HeyGen
@@ -252,21 +250,24 @@ keyless (the e2e test relies on this).
   `0017_credit_costs_per_second.sql` replaced the `{a_render, b_render}` placeholder, it is
   absent from `creditCostsSchema` (`pricing.ts:24-36`), and `pricing.test.ts:52-53` asserts the
   old shape is rejected. Decoded row and its traps: `docs/vault/facts/credit-costs-row.md`.
-- **Motion prompt — optional, absent by default**: the image mode accepts `motion_prompt`
+- **Motion prompt and expressiveness — seeded since 0034** (`lipsync_expressiveness` `"medium"`, `lipsync_motion_prompt` the generic hand-free prompt — [vault 0022](vault/decisions/0022-heygen-expressiveness-medium-generic-motion-prompt.md); absent only if the rows are deleted): the image mode accepts `motion_prompt`
   (free-text gesture/motion direction) and `expressiveness` (`low`/`medium`/`high`, HeyGen
   defaults to `low`). Native v3 names verified 2026-08 — the wrappers' `custom_motion_prompt`
   / `enhance_custom_motion_prompt` do NOT exist on this endpoint. Resolution per render:
-  render param (`render-b --motion-prompt` / `--expressiveness`) → app_config
-  `lipsync_motion_prompt` / `lipsync_expressiveness` → **absent** (the default: the submit
-  body is byte-identical to the no-knob body). This is NOT the old InfiniteTalk resolver —
+  render param (`render-b --motion-prompt` / `--expressiveness`) → the 0034-seeded app_config rows `lipsync_motion_prompt` / `lipsync_expressiveness` → absent only if a row is deleted (then the field is omitted and HeyGen falls back to `low`). **Since 2026-09-06 the app_config rows are
+  founder-set** — `lipsync_expressiveness` `"medium"` and a generic, hand-free
+  `lipsync_motion_prompt` — after two paid draws: `high` read as "way too fake" and hallucinated
+  a prop, a staged action (palm over the lens) was ignored, `medium` "looks natural"
+  ([vault 0022](vault/decisions/0022-heygen-expressiveness-medium-generic-motion-prompt.md),
+  measurements in [vault fact](vault/facts/heygen-motion-prompt-two-draws.md)). This is NOT the
+  old InfiniteTalk resolver —
   that chain stays deleted and `personas.identity.motionPrompt` is still unread. **Both knobs do
   apply to arbitrary images**: `developers.heygen.com/avatar-iv` (read 2026-09-04) states
   `motion_prompt` and `expressiveness` are available for photo avatars **and** arbitrary images.
   That replaces an earlier caveat here which said HeyGen's own pages disagreed on the point —
   they do not. Effect size is still unmeasured, so A/B a render with and without to see it.
   **What they cannot do is timing**: gesture timing and pacing are not promptable (HeyGen help
-  centre), so nothing needing an event at a known millisecond — an opener reveal, a cut point —
-  can be driven from `motion_prompt`. See
+  centre), so nothing needing an event at a known millisecond can be driven from `motion_prompt` — one reason the stitched opener (retired 2026-09-06, [vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) could not be made in-model either; the hook is a Remotion animation over the one clip instead. See
   [vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md).
 - **No seed — NON-deterministic**: HeyGen exposes no seed parameter and its own Avatar IV
   guide states results are non-deterministic — identical inputs can differ per generation.
@@ -362,14 +363,14 @@ this reasoning behind them.
 
 - Exists because browser text rendering handles Hebrew RTL/bidi correctly and ffmpeg drawtext
   does not. License: free ≤3-person company (verified).
-- The **props contract is fixed** and `packages/remotion` ships both compositions
-  against it (next subsection): `RenderServiceAProps` (hook clip + burned hook line in the
-  clip's `text_safe_area` → hard cut → demo + karaoke/even captions + optional approved VO
-  track + the conditional ending: `outroMode` freeze/avatar with `voSliceMs`/`avatarPath`
-  when the VO outlasts the demo) and `RenderServiceBProps` (lip-synced talking head + **required `voiceoverPath`** —
-  the approved mp3, which IS the final audio track while the talking head is muted — + the
-  optional opener effect (`openerPath` + `hookText` + `hookTextSafeArea`, all three or none) +
-  the `timeline` from `serviceBTimeline` + B-roll cutaway paths + micro-motion), both with a
+- The **props contract is fixed** and `packages/remotion` ships the compositions
+  against it (next subsection): `RenderServiceAStepsProps` (the live Service A: hook clip +
+  burned hook line in the clip's `text_safe_area` → hard cut → the approved steps of the one
+  demo file, each with a burned label; silent), `RenderServiceAProps` (the **retired** "full"
+  format, CLI-only since 2026-09-05: demo + karaoke/even captions + optional approved VO track +
+  the conditional ending `outroMode` freeze/avatar with `voSliceMs`/`avatarPath`) and
+  `RenderServiceBProps` (lip-synced talking head + **required `voiceoverPath`** —
+  the approved mp3, which IS the final audio track while the talking head is muted — + `hookText` + `hookTextSafeArea` (burned from frame 0) + the optional hook animation `hookZoom` (`from`/`to`/`atMs`/`durationMs` + a whoosh `sfxPath`; the pipeline does not set it yet — [vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) + the `timeline` from `serviceBTimeline` + `cameraSeed` + B-roll paths; `openerPath`, `talkingHeadGrade` and `talkingHeadAlign` are still accepted but retired 2026-09-06), both with a
   props-driven `watermark` layer. All media are
   **local paths** — the render handler downloads from storage first. Output
   1080×1920/30fps/H.264; **no music track exists in the contract at all** (locked decision).
@@ -386,7 +387,9 @@ this reasoning behind them.
   resolves the workspace source.
 - **Compositions** (`src/Root.tsx`): `ServiceA` and `ServiceB` are what the pipeline renders.
   `ServiceB-Watermarked` and `PlaceholderTalkingHead` are founder preview scaffolding.
-- **`ServiceA`** (`src/ServiceA.tsx`): muted bank hook clip with the burned hook line
+- **`ServiceA`** (`src/ServiceA.tsx`) — **retired 2026-09-05** (founder: Service A is the hook
+  and the steps demo, nothing else; reachable only from the CLI's `format: "full"`, kept in the
+  tree pending deletion): muted bank hook clip with the burned hook line
   (shrink-to-fit inside `text_safe_area` via greedy word-wrap over measured text — Hebrew word
   lengths vary too much to trust a prompt-side cap) → hard cut → the customer's demo with the
   shared caption overlay; the approved VO (voiced variant) plays from **demo start** and is the
@@ -395,7 +398,8 @@ this reasoning behind them.
   with a slow 1 → 1.03 push-in while VO and captions continue; `outroMode: "avatar"` hard-cuts
   at `voSliceMs` (word-gap-snapped) into the muted lip-synced outro clip, captions continuing —
   the one continuous VO carries all audio. Durations probed from the actual files in
-  `calculateServiceAMetadata`, exactly like B.
+  `calculateServiceAMetadata`, exactly like B. The `HookLine` component it exports is still the
+  live one — `ServiceASteps` and `ServiceB` burn their text through it.
 - **`ServiceB`** (`src/ServiceB.tsx`): full-bleed `OffthreadVideo` of the lip-synced talking
   head — **muted**; the approved mp3 (`voiceoverSrc`, required by the schema) is the
   composition's only audio track, starting at `timeline.captionOffsetMs` — the frame speech
@@ -403,29 +407,34 @@ this reasoning behind them.
   provider's re-encode of that same mp3, and would get encoded a third time here; playing the
   approved file directly also guarantees caption sync —
   it is the exact file the timestamps were computed against. No music, ever (locked). Plus: a
-  slow 1 → 1.025 micro-motion scale across the clip (no opener), burned RTL captions, and the props-driven
+  handheld camera path over the whole picture (`timing.ts` `handheld` — three octaves of smooth
+  seeded noise, seeded by
+  the render id, continuous through any cut; text, captions and watermark stay fixed to the
+  frame; [vault fact](vault/facts/handheld-sway-constants.md)), burned RTL captions, and the props-driven
   watermark (tiled, rotated, 12% opacity). Chunks with word timings render karaoke-style (active word
   `#FFE04A`, 1.06 scale); chunks with an empty `words` array — the even-spaced captions — render
   as a plain line. Each word sits in its own `unicodeBidi: isolate` span so numbers and Latin
   product names keep their LTR run without flipping Hebrew word order.
-- **The opener effect** ([vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md)):
-  when the render carries `openerClipId` + the FINAL `hookText` + `hookTextSafeArea` (copied onto
+- **The opener effect — retired 2026-09-06** ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)): no render carries `openerClipId` any more. The hook is an animation the composition performs on the one HeyGen clip under the burned hook text — first the zoom hook (`hookZoom`: 1.35× creeping to 1.42×, a 450ms ease-in-out pull-back to full frame at 1.2s, a soft wind whoosh; `hookZoomScale` in `timing.ts`, mock-only until the pipeline sets it); more animations are to be explored and the wizard's effects step offers them with "none". What the opener did, kept while its code is in the tree: when a render carried `openerClipId`, `hookText` and `hookTextSafeArea` (copied onto
   `video_renders.params` at enqueue — never pointed at), the composition plays the founder-made
-  clip (`opener_clips`, play-ready, silent) in front of the talking head: its **first frame is
-  frozen for `holdMs`** under the hook text (the same `HookLine` / `fitFontSize` / safe-area path
-  as Service A's hook line), then it plays from 0, the text **hard-cuts at the reveal**
-  (`holdMs + reveal_at_ms`), a **5-frame dissolve centred on the reveal** brings the talking head
-  in, which **punches in to 1.06 over 300ms** and holds. The talking head starts `leadInMs − 250ms`
-  into its file, so the reveal lands on a still frame of the lead-in and speech begins 250ms
-  after the cut — where the VO and the captions (chunks are relative to the unpadded audio)
-  start. **Every millisecond comes from `serviceBTimeline`** (`@aiugc/core/service-b-timeline`,
-  client-safe): `holdMs = clamp(readTimeMs(hookText), 1200, 2500)`, `revealAbsMs`,
-  `lipsyncStartFromMs`, `captionOffsetMs`, `totalMs` — the composition converts to frames and
-  does no timeline arithmetic of its own; the constants (`GAP_MS`, `HOLD_MIN/MAX_MS`,
-  `CROSSFADE_FRAMES`, `PUNCH_IN_SCALE`, `PUNCH_IN_MS`) are chosen, not measured
-  ([vault fact](vault/facts/service-b-timeline-constants.md)). Without an opener the clip plays
-  from the same `lipsyncStartFromMs` with no text — a pre-lead-in render (`leadInMs` absent → 0)
-  lays out exactly as before.
+  clip (`opener_clips`, play-ready, silent) from its first frame in front of the talking head —
+  nothing is ever frozen ([vault 0019](vault/decisions/0019-hook-text-outlives-the-reveal.md)) —
+  with the hook text burned over it from frame 0 (the same `HookLine` / `fitFontSize` /
+  safe-area path as Service A's hook line) for `hookTextMs`: its read time, never shorter than
+  the reveal, so the line never leaves while the palm covers the face and may sit over the
+  talking head after the cut. There is no cut any more (retired 2026-09-06). The hook text stays centred until speech has passed its last word and the captions take over from the next caption line — decided ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)), measured on a mock, not yet a rule in `serviceBTimeline`. The talking head starts `leadInMs − 250ms` (`GAP_MS`) into its file, so the ad opens on a still frame of the lead-in and speech begins 250ms in — where the VO and the captions (chunks are relative to the unpadded audio) start. (chunks are relative to the unpadded audio)
+  start. Retired 2026-09-06 with the seam ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)): the measured colour grade (`talkingHeadGrade`, `media/grade.ts` — [vault fact](vault/facts/heygen-idle-frame-is-darker-than-its-reference-and-its-talking-frames.md)) is computed by `buildServiceBProps` only for a render that carries an opener, which none does; the limited-range retag ([vault fact](vault/facts/heygen-output-is-limited-range.md)) still runs on every stored HeyGen clip.
+  first 2s, then ease into the median of the talking frames — HeyGen's idle frame is darker
+  than its own talking frames, so one gain lets the head brighten after the cut; applied as an
+  SVG `feColorMatrix` in sRGB; absent when the frames are not comparable —
+  [vault fact](vault/facts/heygen-idle-frame-is-darker-than-its-reference-and-its-talking-frames.md));
+  the HeyGen clip is retagged **limited** range first
+  ([vault fact](vault/facts/heygen-output-is-limited-range.md)). Retired 2026-09-06: the pixel alignment (`talkingHeadAlign`) and the hard cut (`SEAM_DISSOLVE_FRAMES` 0, [vault 0021](vault/decisions/0021-nothing-moves-at-the-service-b-seam.md)) were the seam machinery — there is no seam in the product now ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)); the measurements in [vault fact](vault/facts/service-b-seam-constants.md) stay true of the retired code.
+  **Every millisecond comes from `serviceBTimeline`** (`@aiugc/core/service-b-timeline`,
+  client-safe): **Every millisecond still comes from `serviceBTimeline`**, but its `hookTextMs`/`revealAbsMs` arithmetic is the retired opener's (0 without one); the live rule — hook text centred until speech passes its last word, captions from the next line — is decided ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) and not yet in `serviceBTimeline` (the zoom-hook mock sets `hookTextMs` by hand). `lipsyncStartFromMs`, `captionOffsetMs`, `totalMs` stand ([vault fact](vault/facts/service-b-timeline-constants.md)). — the
+  composition converts to frames and does no timeline arithmetic of its own; the constants
+  (`GAP_MS`, `HOOK_TEXT_MIN/MAX_MS`) are chosen, not measured
+  ([vault fact](vault/facts/service-b-timeline-constants.md)). Without an animation ("none" in the effects step) the clip plays from `lipsyncStartFromMs` under the hook text alone; a pre-lead-in render (`leadInMs` absent → 0) lays out exactly as before.
 - **`brollSrcs` is accepted and ignored.** The prop is validated and passed through, but cutaway
   logic (when to cut away, for how long, how to hide the lip-sync) is unbuilt. Empty is the
   normal case and renders cleanly.
@@ -444,8 +453,7 @@ this reasoning behind them.
   stored HeyGen clip (the worker has ffmpeg; `handleLipsync` already probes the same file).
   The customer signed off on the audio, so the ad must never cut it off; a clip that came back
   a hair shorter holds its final frame (`<Freeze>` at `talkingHeadDurationInFrames`, which
-  `calculateServiceBMetadata` still probes in the browser, along with the opener's length for
-  the same hold at the end of its dissolve tail).
+  `calculateServiceBMetadata` still probes in the browser; the opener probe beside it is retired machinery, 2026-09-06 — [vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)).
 - **Encode**: `renderMedia` with `codec: "h264"`, `audioCodec: "aac"`, `crf: 20` (matching the
   normalize step in `media/ffmpeg.ts`), 1080×1920 @30fps from `src/schema.ts`. The webpack bundle
   is built once per process (`getBundle()`) and cached; a failed bundle clears the cache so a
@@ -461,7 +469,7 @@ this reasoning behind them.
   pnpm --filter @aiugc/remotion studio                    # fixtures, then Remotion Studio
   pnpm --filter @aiugc/remotion render:sample             # -> packages/remotion/out/sample.mp4
   pnpm --filter @aiugc/remotion render:sample:watermark   # -> out/sample-watermarked.mp4
-  pnpm --filter @aiugc/remotion render:sample:b-opener    # -> out/sample-b-opener.mp4 (opener effect over a lavfi clip)
+  pnpm --filter @aiugc/remotion render:sample:b-opener    # -> out/sample-b-opener.mp4 (the RETIRED opener effect, 2026-09-06 — kept until the code goes; vault 0023)
   ```
 
   Fixtures cost nothing: no TTS, no GPU, no lip-sync. Two same-length fixtures stand in for the

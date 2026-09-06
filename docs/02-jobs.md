@@ -83,7 +83,7 @@ Each handler enqueues its successor in code — no DAG engine:
 Service A silent : ingest_demo ─▶ ready ─┐ (user picks copy + set)      ┌▶ released
                                           └ createSet ─▶ render_video ──┘
 Service A voiced : synth_tts ─▶ audio ready ─▶ ⏸ HUMAN: approveAudio ⏸ ─▶ createSet ─▶ render_video
-Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (pad lead-in ▶ submit ▶ poll…) ─▶ render_video (opener + timeline) ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
+Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (pad lead-in ▶ submit ▶ poll…) ─▶ render_video (one clip + timeline + hook animation) ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
 Daily            : janitor (retention only) · billing_renewals — idempotency key = date, so each runs ONCE a day (the server worker re-attempts the enqueue hourly; `aiugc work` doesn't)
 Continuous       : reap_dead_renders — singleton (constant key), reschedules itself every ~60s; ensured at both server-worker and `aiugc work` startup
 ```
@@ -95,7 +95,10 @@ enqueues the next job. No job ever waits on a human inside a handler.
 `synth_tts` contains the whole **length fit** internally: measure → atempo ≤5% if that closes the
 gap → otherwise store the natural length. An overrun past the stretch is never corrected — it is
 an ending, decided by `planAOutro` and priced in the advisory before confirm. `synth_tts` never
-repoints `audio_renders.script_id`.
+repoints `audio_renders.script_id`. _(For Service A this whole paragraph is retired as of
+2026-09-05: the live steps format is silent — no script, no VO, no ending. `synth_tts` still
+serves Service B's audio; the length fit and `planAOutro` are reachable only from the CLI's
+`format: "full"`.)_
 
 ## Worker: two lanes, one process
 

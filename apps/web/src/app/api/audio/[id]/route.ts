@@ -38,12 +38,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       });
     }
 
-    const { wordBudget } = script.params as { wordBudget?: number };
+    const { wordBudget, hookText } = script.params as { wordBudget?: number; hookText?: string };
     const body: {
       status: string;
       scriptId: string;
       text: string;
       wordBudget?: number;
+      hookText?: string;
       scriptChanged: boolean;
       audioUrl?: string;
       durationMs?: number;
@@ -52,6 +53,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       scriptId: script.id,
       text: script.text,
       wordBudget,
+      // The resolved script's draft hook text: a wizard that adopts this
+      // script must also adopt the seed its effect step shows.
+      hookText,
       scriptChanged: pointerMoved,
     };
     if (audio.status === "ready" && audio.filePath) {

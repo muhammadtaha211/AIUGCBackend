@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { PermanentError } from "../jobs/errors";
+import type { Rgb } from "./grade";
 
 /**
  * ffmpeg/ffprobe wrappers: probing, normalization to the single output format
@@ -188,15 +189,19 @@ export async function probeColorTags(file: string): Promise<ColorTags> {
 }
 
 /**
- * Stream-copy retag of an H.264 file's colour metadata to BT.709 FULL range —
- * no re-encode, runs in ~1s. Lip-sync clips come back with every colour field
- * unset while carrying full-swing luma (measured on a released render: YMIN=3
- * in every frame, YMAX=241 — outside 16–235), so full range is the truthful
- * label; stamping limited would make decoders expand again and crush exactly
- * the blacks this exists to protect. Bitstream filter only: 1=BT.709 for
- * primaries/transfer/matrix, video_full_range_flag=1=full.
+ * Stream-copy retag of an H.264 file's colour metadata to BT.709 LIMITED
+ * range — no re-encode, runs in ~1s. Lip-sync clips come back with every
+ * colour field unset, and their stored luma is the ordinary encoder shape:
+ * measured 2026-09-05 on a HeyGen clip, Y spans 13–209 in every sampled frame
+ * with no pixel below 16 or above 235 — the same span as a tv-tagged clip of
+ * the same scene (12–215) and nothing like the full-range selfie it was made
+ * from (0–231). Until then this stamped FULL, which made Remotion read those
+ * frames with lifted blacks and dimmed whites — the "washed" talking head of
+ * the first real opener render (docs/vault/falsified/heygen-clips-are-full-range.md).
+ * Bitstream filter only: 1=BT.709 for primaries/transfer/matrix,
+ * video_full_range_flag=0=limited.
  */
-export async function retagBt709Full(input: string, output: string): Promise<void> {
+export async function retagBt709Limited(input: string, output: string): Promise<void> {
   mkdirSync(path.dirname(output), { recursive: true });
   await run("ffmpeg", [
     "-y",
@@ -205,9 +210,129 @@ export async function retagBt709Full(input: string, output: string): Promise<voi
     "-c",
     "copy",
     "-bsf:v",
-    "h264_metadata=video_full_range_flag=1:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
+    "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
     output,
   ]);
+}
+
+/**
+ * Mean RGB (0–255 sRGB) of the frame at `atMs`, read per the file's own range
+ * tag — a limited-range clip and a full-range still land on one scale; an
+ * untagged file reads as limited, ffmpeg's default. Past the clip's last
+ * frame (a reveal tagged on duration_ms, one frame interval past the last
+ * timestamp, is legal everywhere else) it reads the last frame. ffmpeg
+ * area-averages the frame to 128×128 and Node averages the rest: ffmpeg's own
+ * 1080→1 downscale is a nonlinear kernel path, not a mean — media-color.test.ts
+ * pins both. One decode, ~0.3s.
+ */
+export async function meanRgb(
+  file: string,
+  atMs: number,
+  /** Optional ffmpeg crop (e.g. "crop=iw/2:ih/2:iw/4:ih/4") — the region measured. */
+  region?: string,
+): Promise<Rgb> {
+  let out = await rgbFrames(file, ["-ss", (atMs / 1000).toFixed(3)], 1, region);
+  // Past the last frame's timestamp ffmpeg writes nothing and exits 0. The
+  // last frame is then the first of the final half-second played backwards.
+  if (out.length === 0) out = await rgbFrames(file, ["-sseof", "-0.5"], 1, region, "reverse,");
+  if (out.length === 0) throw new Error(`meanRgb: no frame at ${atMs}ms in ${file}`);
+  return out[0]!;
+}
+
+/** Mean RGB per source frame, `frames` frames from `fromMs` — a colour over time. */
+export async function rgbSeries(
+  file: string,
+  fromMs: number,
+  frames: number,
+  region?: string,
+): Promise<Rgb[]> {
+  return rgbFrames(file, ["-ss", (fromMs / 1000).toFixed(3)], frames, region);
+}
+
+const RGB_SAMPLE = 128;
+
+async function rgbFrames(
+  file: string,
+  seek: string[],
+  frames: number,
+  region?: string,
+  filter = "",
+): Promise<Rgb[]> {
+  const out = await runRaw("ffmpeg", [
+    ...["-v", "error", ...seek, "-i", file, "-frames:v", String(frames)],
+    ...[
+      "-vf",
+      `${filter}scale=out_range=pc,format=yuv420p,${region ? `${region},` : ""}` +
+        `scale=${RGB_SAMPLE}:${RGB_SAMPLE}:flags=area,format=rgb24`,
+    ],
+    ...["-f", "rawvideo", "-"],
+  ]);
+  const frameBytes = RGB_SAMPLE * RGB_SAMPLE * 3;
+  const result: Rgb[] = [];
+  for (let f = 0; f + frameBytes <= out.length; f += frameBytes) {
+    const sum = [0, 0, 0];
+    for (let i = f; i < f + frameBytes; i += 3) {
+      sum[0]! += out[i]!;
+      sum[1]! += out[i + 1]!;
+      sum[2]! += out[i + 2]!;
+    }
+    result.push(sum.map((v) => v / (RGB_SAMPLE * RGB_SAMPLE)) as Rgb);
+  }
+  return result;
+}
+
+/**
+ * How far frame B (file/time) has to move to sit on frame A, in pixels at the
+ * files' own resolution — the talking head's idle frame against the opener's
+ * reveal frame, both 1080×1920. Both are read as luma at quarter size and the
+ * best of a ±5-step (±20px) search by sum of absolute differences wins; the
+ * answer is a multiple of 4px, which is below what a cut shows. Measured
+ * 2026-09-06 on the first real render: HeyGen's head sat 8px above the
+ * opener's, and that alone read as a jump cut once the colours matched.
+ */
+export async function alignmentOffset(
+  fileA: string,
+  atMsA: number,
+  fileB: string,
+  atMsB: number,
+): Promise<{ dx: number; dy: number }> {
+  const SCALE = 4;
+  const W = 1080 / SCALE;
+  const H = 1920 / SCALE;
+  const RANGE = 5;
+  const [a, b] = await Promise.all([grayFrame(fileA, atMsA, W, H), grayFrame(fileB, atMsB, W, H)]);
+  let best = { sad: Number.POSITIVE_INFINITY, dx: 0, dy: 0 };
+  for (let dy = -RANGE; dy <= RANGE; dy++) {
+    for (let dx = -RANGE; dx <= RANGE; dx++) {
+      let sad = 0;
+      for (let y = RANGE; y < H - RANGE; y++) {
+        const rowA = y * W;
+        const rowB = (y - dy) * W;
+        for (let x = RANGE; x < W - RANGE; x++) {
+          sad += Math.abs(a[rowA + x]! - b[rowB + x - dx]!);
+        }
+      }
+      if (sad < best.sad) best = { sad, dx, dy };
+    }
+  }
+  return { dx: best.dx * SCALE, dy: best.dy * SCALE };
+}
+
+/** One frame's luma at w×h, range-expanded like meanRgb; the last frame past the end. */
+async function grayFrame(file: string, atMs: number, w: number, h: number): Promise<Buffer> {
+  const plane = (seek: string[], filter = "") =>
+    runRaw("ffmpeg", [
+      ...["-v", "error", ...seek, "-i", file, "-frames:v", "1"],
+      ...[
+        "-vf",
+        `${filter}scale=out_range=pc,format=yuv420p,scale=${w}:${h}:flags=area,format=gray`,
+      ],
+      ...["-f", "rawvideo", "-"],
+    ]);
+  let out = await plane(["-ss", (atMs / 1000).toFixed(3)]);
+  if (out.length === 0) out = await plane(["-sseof", "-0.5"], "reverse,");
+  if (out.length !== w * h) throw new Error(`grayFrame: no frame at ${atMs}ms in ${file}`);
+  return out;
 }
 
 export async function measureDurationMs(file: string): Promise<number> {

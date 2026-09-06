@@ -9,10 +9,10 @@ import { wizardGate } from "@/lib/wizard-gate";
 
 /**
  * Server shell for the Service B wizard: resolves the selected business (same
- * cookie the homepage header writes) and hands name + questionnaire category
- * to the client wizard — no extra API round-trips. The persona catalog ships
- * in the HTML too, so the picker's image URLs are known to the preload
- * scanner before React hydrates.
+ * cookie the homepage header writes) and hands its id + name to the client
+ * wizard — no extra API round-trips. The questionnaire gate stays: the script
+ * is written from it. The persona catalog ships in the HTML too, so the
+ * picker's image URLs are known to the preload scanner before React hydrates.
  */
 export default async function NewBRenderPage() {
   const supabase = await createServerSupabase();
@@ -29,14 +29,13 @@ export default async function NewBRenderPage() {
 
   const cookieStore = await cookies();
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;
-  const questionnaire = selected.questionnaire as { category?: string } | null;
-  if (!questionnaire) redirect("/home");
+  if (!selected.questionnaire) redirect("/home");
 
   // Spam control only — the 402 at confirm is the real boundary. Admin bypasses.
   const gate = await wizardGate(selected.id);
 
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
-  const personaCatalog = await loadPersonaCatalog().catch(() => undefined);
+  const personaCatalog = await loadPersonaCatalog("b").catch(() => undefined);
 
   return (
     <div className="flex flex-col items-center px-6 pb-16">
@@ -44,7 +43,6 @@ export default async function NewBRenderPage() {
         <BWizard
           businessId={selected.id}
           businessName={selected.name}
-          category={questionnaire.category ?? ""}
           initialCatalog={personaCatalog}
         />
       ) : (
