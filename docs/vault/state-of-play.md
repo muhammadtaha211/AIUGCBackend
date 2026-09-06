@@ -133,7 +133,23 @@ Fine-grained tokens). Deploy-key alternative rejected: [[0008-github-pat-over-de
 (`SKIP LOCKED`), but the desktop's `.env` carries `DRY_RUN=1` and the box's deliberately
 does not. A desktop worker claiming a real customer job reports success and writes
 placeholder files. Start it only deliberately. (Whether it briefly did exactly that
-around 2026-08-27 is an open check — queue item 6.)
+around 2026-08-27 is an open check — queue item 6.) Two of them were found alive on
+2026-09-06 (started 07:49 and 07:54, `DRY_RUN=1`, polling the production queue beside the
+live box) and were stopped; nothing was claimed at the time.
+
+**The box does not deploy itself, and nothing says when it is behind.** Verified
+2026-09-06: it sat on `4e000e3` while `origin/main` was 14 commits ahead through PRs #21
+and #22, so the wizard stored `hookEffect: "zoom"` and the worker rendered an ad with no
+effect at all — no error, no failed job, just a wrong video
+([[worker-box-was-14-commits-behind-2026-09-06]]). Vercel redeploys on push; the box is
+`git pull` + restart by hand. **After any merge that touches `packages/core`,
+`packages/remotion` or `apps/worker`, deploy the box and check `git log -1 --oneline` on
+it.** Note for the next deploy: `sudo` on the box needs a password, so an unattended
+session cannot run `systemctl restart`; `kill -TERM $(systemctl show aiugc-worker -p
+MainPID --value)` is equivalent because the unit is `User=aiugc` with `Restart=always`.
+Measured 2026-09-06: the stop took ~80s (systemd's stop timeout — the worker never calls
+`closeDb()` or `process.exit(0)`, so its postgres sockets hold the process open), then it
+came back on a fresh PID.
 
 **Google OAuth is published — status _In production_.** The founder published it
 2026-09-03, having verified `tavnit.ai` in Search Console a few days earlier (exact date
