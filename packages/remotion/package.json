@@ -6,6 +6,7 @@
   "exports": {
     "./render": "./src/render.ts",
     "./text-fit": "./src/text-fit.ts",
+    "./timing": "./src/timing.ts",
     "./fixtures": "./src/fixtures.ts"
   },
   "scripts": {

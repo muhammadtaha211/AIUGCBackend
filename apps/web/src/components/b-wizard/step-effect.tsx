@@ -14,6 +14,7 @@ import {
   useHookLineMeasure,
 } from "@/components/a-wizard/placement-editor";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
+import { HookEffectPreview } from "./hook-effect-preview";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { hookTextFieldError, HOOK_EFFECT_OPTIONS } from "@/lib/service-b-ui";
@@ -117,20 +118,15 @@ export function StepEffect({
       {animated && shownRect && (
         <div className="mt-8 flex flex-col gap-5 sm:flex-row">
           {/* The persona's selfie — the image the talking head is generated
-              from, so this is the ad's opening frame — with the live burned-text
-              preview on top. Signed URL: never through next/image. */}
+              from, so this is the ad's opening frame — with the chosen animation
+              playing on it and the live burned-text preview on top. */}
           <div className="mx-auto w-56 shrink-0 sm:mx-0">
-            <div className="relative aspect-[9/16] overflow-hidden rounded-xl border border-ink/10 bg-black">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={personaImageUrl}
-                alt=""
-                className="absolute inset-0 size-full object-cover"
-              />
+            <HookEffectPreview effect={hookEffect} imageUrl={personaImageUrl}>
               <PlacementEditor rect={shownRect} onChange={setRect} text={hookText} />
-            </div>
+            </HookEffectPreview>
             <p className="mt-1.5 text-[12px] text-ink/55">
-              גוררים את המסגרת כדי להזיז את הטקסט, ומהפינות כדי לשנות גודל.
+              האפקט מתנגן פעם אחת — לחיצה על כפתור הנגינה מריצה אותו שוב. גוררים את המסגרת כדי להזיז
+              את הטקסט, ומהפינות כדי לשנות גודל.
             </p>
             {belowFloor && (
               <p className="mt-1.5 text-[12px] text-amber-600">

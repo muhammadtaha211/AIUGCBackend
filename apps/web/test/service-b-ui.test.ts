@@ -97,7 +97,12 @@ describe("hookTextFieldError (core's rule, Hebrew words)", () => {
   it("refuses what cannot burn: emoji, niqqud, trailing punctuation, stray glyphs", () => {
     expect(hookTextFieldError("משלוח חינם 🎉")).toBe("בלי אימוג'י, הטקסט נצרב על הסרטון.");
     expect(hookTextFieldError("שָׁלוֹם")).toBe("בלי ניקוד.");
-    expect(hookTextFieldError("משלוח חינם!")).toBe("בלי סימן פיסוק בסוף המשפט.");
+    expect(hookTextFieldError("משלוח חינם.")).toBe(
+      "בלי נקודה או פסיק בסוף — סימן שאלה או קריאה בסדר גמור.",
+    );
+    // The two the founder asked for on 2026-09-06 pass the field untouched.
+    expect(hookTextFieldError("למה אף אחד לא סיפר לי?")).toBeUndefined();
+    expect(hookTextFieldError("משלוח חינם!")).toBeUndefined();
     expect(hookTextFieldError("משלוח​חינם")).toBe("יש כאן תו שאי אפשר להציג על הסרטון.");
   });
 });

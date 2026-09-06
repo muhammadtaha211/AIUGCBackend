@@ -781,7 +781,7 @@ program
   )
   .option(
     "--hook-text <text>",
-    `on-screen line burned over the animation — the FINAL string (≤${HOOK_TEXT_MAX_WORDS} words, ≤${HOOK_TEXT_MAX_CHARS} chars, no trailing punctuation)`,
+    `on-screen line burned over the animation — the FINAL string (≤${HOOK_TEXT_MAX_WORDS} words, ≤${HOOK_TEXT_MAX_CHARS} chars, no trailing punctuation except ? or !)`,
   )
   .option(
     "--hook-text-safe-area <json>",
