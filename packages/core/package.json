@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./db": "./src/db/index.ts",
     "./db/schema": "./src/db/schema.ts",
+    "./hook-effect": "./src/hook-effect.ts",
     "./hook-geometry": "./src/hook-geometry.ts",
     "./hook-text": "./src/hook-text.ts",
     "./plan-format": "./src/plan-format.ts",

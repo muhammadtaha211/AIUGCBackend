@@ -4,6 +4,7 @@ import {
   sampleTimeline,
 } from "@aiugc/remotion/fixtures";
 import { describe, expect, it } from "vitest";
+import { chunkWords } from "../src/captions";
 import { readTimeMs } from "../src/plan-format";
 import {
   GAP_MS,
@@ -149,5 +150,118 @@ describe("serviceBTimeline — opener", () => {
         voDurationMs: voMs,
       }),
     );
+  });
+});
+
+/**
+ * The hook-animation caption handoff (founder, 2026-09-06, vault 0023): the
+ * centred hook line stays until speech has passed its LAST word, then the
+ * captions take over from the START of the next caption line. Chunks here are
+ * built with chunkWords, the same function that produced the stored
+ * word_timestamps these rules run against in production.
+ */
+describe("serviceBTimeline — the hook animation's caption handoff", () => {
+  // "חייבת לספר לכם על משהו שגיליתי השבוע ניסיתי" -> 3-word chunks.
+  const words = [
+    { word: "חייבת", startMs: 0, endMs: 347 },
+    { word: "לספר", startMs: 373, endMs: 640 },
+    { word: "לכם", startMs: 680, endMs: 840 },
+    { word: "על", startMs: 880, endMs: 960 },
+    { word: "משהו", startMs: 1013, endMs: 1240 },
+    { word: "שגיליתי", startMs: 1280, endMs: 1680 },
+    { word: "השבוע", startMs: 1720, endMs: 2240 },
+    { word: "ניסיתי", startMs: 2520, endMs: 3120 },
+    { word: "את", startMs: 3160, endMs: 3240 },
+    { word: "זה", startMs: 3280, endMs: 3360 },
+    { word: "בספקנות", startMs: 3440, endMs: 3960 },
+    { word: "מוחלטת", startMs: 3980, endMs: 4640 },
+    { word: "ותוך", startMs: 4880, endMs: 5200 },
+    { word: "יום", startMs: 5280, endMs: 5560 },
+    { word: "הבנתי", startMs: 5620, endMs: 6000 },
+  ];
+  const captions = chunkWords(words);
+  const animated = { ...noOpener, captions };
+  // Chunk starts: 0, 880, 1720. The hook's last word is "משהו" in chunk 1, so
+  // the handoff is chunk 2's start.
+  const CHUNK_2_START = 1720;
+
+  it("hands off at the start of the chunk AFTER the one holding the hook's last word", () => {
+    const t = serviceBTimeline({ ...animated, hookText: "חייבת לספר לכם על משהו" });
+    expect(captions.map((c) => c.startMs)).toEqual([0, 880, 1720, 3280, 4880]);
+    expect(t.hookTextMs).toBe(t.captionOffsetMs + CHUNK_2_START);
+    // No hook word is ever also a caption: the first caption shown starts at
+    // the handoff, and every word before it belonged to the hook line.
+    expect(captions[2]!.words[0]!.word).toBe("השבוע");
+  });
+
+  it("is gap-invariant: the same handoff word, shifted by the lead-in", () => {
+    const short = serviceBTimeline({
+      ...animated,
+      hookText: "חייבת לספר לכם על משהו",
+      leadInMs: 0,
+    });
+    const long = serviceBTimeline({ ...animated, hookText: "חייבת לספר לכם על משהו" });
+    expect(short.hookTextMs).toBe(short.captionOffsetMs + CHUNK_2_START);
+    expect(long.hookTextMs - short.hookTextMs).toBe(long.captionOffsetMs - short.captionOffsetMs);
+  });
+
+  it("a partial match keeps the read-time floor — a prefix must not cut the line short", () => {
+    // The customer edited the tail; the first three words still line up. The
+    // last two were never spoken, so the line is only PARTLY read by hearing
+    // it, and the floor applies exactly as it does for an unmatched line.
+    // Without this, a one-word coincidence (Hebrew scripts open from a tiny
+    // set of words) would leave a six-word line on screen for ~1.4s.
+    const hookText = "חייבת לספר לכם משהו אחר";
+    const t = serviceBTimeline({ ...animated, hookText });
+    const readMs = Math.min(Math.max(readTimeMs(hookText), HOOK_TEXT_MIN_MS), HOOK_TEXT_MAX_MS);
+    expect(t.hookTextMs).toBeGreaterThanOrEqual(readMs);
+    expect(captions.map((c) => c.startMs + t.captionOffsetMs)).toContain(t.hookTextMs);
+    // Concretely: past chunk 1's 880 — the naive answer, and 1130ms of screen
+    // time for a five-word line — to the first boundary after the read time.
+    expect(t.hookTextMs).toBe(t.captionOffsetMs + 3280);
+  });
+
+  it("a one-word coincidence does not halve the line's life", () => {
+    // "חייבת" opens both the script and an otherwise unrelated line.
+    const shared = serviceBTimeline({ ...animated, hookText: "חייבת לגלות לכם סוד קטן" });
+    const unrelated = serviceBTimeline({ ...animated, hookText: "רוצה לגלות לכם סוד קטן" });
+    expect(shared.hookTextMs).toBe(unrelated.hookTextMs);
+  });
+
+  it("an unspoken line stays for its read time and still leaves on a chunk boundary", () => {
+    const hookText = "משפט אחר לגמרי";
+    const t = serviceBTimeline({ ...animated, hookText });
+    const readMs = Math.min(Math.max(readTimeMs(hookText), HOOK_TEXT_MIN_MS), HOOK_TEXT_MAX_MS);
+    // Never mid-line: the handoff is a chunk start...
+    expect(captions.map((c) => c.startMs + t.captionOffsetMs)).toContain(t.hookTextMs);
+    // ...and never before the line has been readable.
+    expect(t.hookTextMs).toBeGreaterThanOrEqual(readMs);
+  });
+
+  it("a hook that covers the whole script holds to the end of speech — no captions at all", () => {
+    const t = serviceBTimeline({
+      ...animated,
+      hookText: words.map((w) => w.word).join(" "),
+    });
+    expect(t.hookTextMs).toBe(t.captionOffsetMs + captions[captions.length - 1]!.endMs);
+  });
+
+  it("no captions, empty captions, or a chunk with no words: no burned line, never a throw", () => {
+    const hookText = "חייבת לספר לכם";
+    expect(serviceBTimeline({ ...noOpener, hookText }).hookTextMs).toBe(0);
+    expect(serviceBTimeline({ ...noOpener, hookText, captions: [] }).hookTextMs).toBe(0);
+    const wordless = [{ text: "טקסט", startMs: 0, endMs: 1000, words: [] }];
+    expect(serviceBTimeline({ ...noOpener, hookText, captions: wordless }).hookTextMs).toBe(0);
+    // Captions with no hook text is the "no effect" render — unchanged.
+    expect(serviceBTimeline(animated).hookTextMs).toBe(0);
+  });
+
+  it("never outlives the ad, and the opener still wins when both are passed", () => {
+    const t = serviceBTimeline({ ...animated, hookText: "חייבת לספר לכם על משהו" });
+    expect(t.hookTextMs).toBeLessThanOrEqual(t.totalMs);
+    // An opener + captions is refused downstream (createBRender), but if it
+    // ever reaches here the opener's own rule must decide — not the handoff.
+    const both = serviceBTimeline({ ...opener, captions });
+    expect(both).toEqual(serviceBTimeline(opener));
   });
 });

@@ -68,7 +68,15 @@ async function capturedRenderArgs(): Promise<RenderMediaArgs> {
 
 /** A ServiceB input over stub files; the mock never decodes them. */
 function serviceBInput() {
-  for (const name of ["head.mp4", "vo.mp3", "b1.mp4", "b2.mp4", "whoosh.wav", "opener.mp4"]) {
+  for (const name of [
+    "head.mp4",
+    "vo.mp3",
+    "b1.mp4",
+    "b2.mp4",
+    "whoosh.wav",
+    "whip.wav",
+    "opener.mp4",
+  ]) {
     writeFileSync(path.join(dir, name), "stub");
   }
   return {
@@ -119,6 +127,80 @@ describe("renderServiceB props", () => {
       props.hookZoom!.sfxSrc,
     ];
     expect(new Set(urls).size).toBe(5);
+  });
+
+  it("serves the whip's own whoosh as a separate URL from the zoom's", async () => {
+    await renderServiceB(
+      {
+        ...serviceBInput(),
+        hookZoom: { ...zoom, sfxPath: path.join(dir, "whoosh.wav") },
+        hookWhip: { fromX: 140, durationMs: 320, blurPx: 18, sfxPath: path.join(dir, "whip.wav") },
+        hookFocus: { blurPx: 16, holdMs: 350, durationMs: 850 },
+        hookBeats: { atMs: [1000], amount: 0.035, durationMs: 180 },
+      },
+      path.join(dir, "out.mp4"),
+    );
+    const props = selectComposition.mock.calls.at(-1)![0].inputProps as ServiceBProps;
+    expect(props.hookWhip).toMatchObject({ fromX: 140, durationMs: 320, blurPx: 18 });
+    expect(typeof props.hookWhip?.sfxSrc).toBe("string");
+    expect(props.hookWhip?.sfxSrc).not.toBe(props.hookZoom?.sfxSrc);
+    // The plain-data props travel through untouched.
+    expect(props.hookFocus).toEqual({ blurPx: 16, holdMs: 350, durationMs: 850 });
+    expect(props.hookBeats).toEqual({ atMs: [1000], amount: 0.035, durationMs: 180 });
+  });
+
+  it("refuses a kinetic hook text that would render with no text on screen", async () => {
+    const reveal = { wordMs: [0, 140], popMs: 200, exitDurationMs: 320 };
+    const withText = {
+      hookText: "חייבת לספר לכם",
+      hookTextSafeArea: { x: 25, y: 768, w: 1055, h: 473 },
+    };
+    // hookTextMs 0 (what serviceBTimeline returns with no opener), no text, or
+    // no rect: each one renders the whole ad with the effect silently absent.
+    for (const input of [
+      { hookTextReveal: reveal, ...withText },
+      { hookTextReveal: reveal, timeline: { ...sampleTimeline, hookTextMs: 2520 } },
+      {
+        hookTextReveal: reveal,
+        hookText: withText.hookText,
+        timeline: { ...sampleTimeline, hookTextMs: 2520 },
+      },
+    ]) {
+      await expect(
+        renderServiceB({ ...serviceBInput(), ...input }, path.join(dir, "out.mp4")),
+      ).rejects.toThrow(RenderPropsError);
+    }
+    // With all three it renders, and the prop travels through untouched.
+    await renderServiceB(
+      {
+        ...serviceBInput(),
+        ...withText,
+        timeline: { ...sampleTimeline, hookTextMs: 2520 },
+        hookTextReveal: reveal,
+      },
+      path.join(dir, "out.mp4"),
+    );
+    const props = selectComposition.mock.calls.at(-1)![0].inputProps as ServiceBProps;
+    expect(props.hookTextReveal).toEqual(reveal);
+  });
+
+  it("refuses any hook animation together with an opener, not just the zoom", async () => {
+    const withOpener = {
+      ...serviceBInput(),
+      openerPath: path.join(dir, "opener.mp4"),
+      hookText: "בדיקה",
+      hookTextSafeArea: { x: 25, y: 1062, w: 1009, h: 179 },
+      timeline: sampleOpenerTimeline,
+    };
+    for (const effect of [
+      { hookFocus: { blurPx: 16, holdMs: 350, durationMs: 850 } },
+      { hookWhip: { fromX: 140, durationMs: 320, blurPx: 18 } },
+      { hookBeats: { atMs: [1000], amount: 0.035, durationMs: 180 } },
+    ]) {
+      await expect(
+        renderServiceB({ ...withOpener, ...effect }, path.join(dir, "out.mp4")),
+      ).rejects.toThrow(RenderPropsError);
+    }
   });
 
   it("without b-roll or a whoosh the lists stay empty and the sfx stays absent", async () => {

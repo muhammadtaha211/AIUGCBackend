@@ -66,26 +66,47 @@ describe("request body schemas", () => {
     expect("compositeId" in parsed).toBe(false);
   });
 
-  describe("the opener and its hook text come together", () => {
+  describe("the hook animation and its hook text come together", () => {
     const body = { scriptId: UUID_A, audioId: UUID_B, personaId: UUID_A, personaImageId: UUID_B };
     const rect = { x: 60, y: 900, w: 960, h: 300 };
 
-    it("accepts an opener with its text, with or without a placed rect", () => {
-      const withOpener = { ...body, openerClipId: UUID_C, hookText: "משלוח חינם היום" };
-      expect(renderRequestSchema.safeParse(withOpener).success).toBe(true);
-      const parsed = renderRequestSchema.parse({ ...withOpener, hookTextSafeArea: rect });
-      expect(parsed.hookTextSafeArea).toEqual(rect);
+    it("accepts each of the four names, with a text where one is due", () => {
+      expect(renderRequestSchema.safeParse({ ...body, hookEffect: "none" }).success).toBe(true);
+      for (const hookEffect of ["zoom", "focus", "whip"]) {
+        const animated = { ...body, hookEffect, hookText: "משלוח חינם היום" };
+        expect(renderRequestSchema.safeParse(animated).success).toBe(true);
+        const parsed = renderRequestSchema.parse({ ...animated, hookTextSafeArea: rect });
+        expect(parsed.hookTextSafeArea).toEqual(rect);
+      }
     });
 
-    it("refuses an opener without text, and text or a rect without an opener", () => {
-      expect(renderRequestSchema.safeParse({ ...body, openerClipId: UUID_C }).success).toBe(false);
+    it("refuses an unknown effect name — including the two that were not picked", () => {
+      for (const hookEffect of ["beats", "textReveal", "ZOOM", ""]) {
+        expect(
+          renderRequestSchema.safeParse({ ...body, hookEffect, hookText: "היי" }).success,
+          hookEffect,
+        ).toBe(false);
+      }
+    });
+
+    it("refuses an animation without text, and text or a rect without an animation", () => {
+      expect(renderRequestSchema.safeParse({ ...body, hookEffect: "zoom" }).success).toBe(false);
       expect(
-        renderRequestSchema.safeParse({ ...body, openerClipId: UUID_C, hookText: "  " }).success,
+        renderRequestSchema.safeParse({ ...body, hookEffect: "zoom", hookText: "  " }).success,
       ).toBe(false);
       expect(renderRequestSchema.safeParse({ ...body, hookText: "היי" }).success).toBe(false);
+      expect(
+        renderRequestSchema.safeParse({ ...body, hookEffect: "none", hookText: "היי" }).success,
+      ).toBe(false);
       expect(renderRequestSchema.safeParse({ ...body, hookTextSafeArea: rect }).success).toBe(
         false,
       );
+    });
+
+    it("no longer knows openerClipId: a stale tab's body is stripped, not refused", () => {
+      const parsed = renderRequestSchema.parse({ ...body, openerClipId: UUID_C });
+      expect("openerClipId" in parsed).toBe(false);
+      expect(parsed.hookEffect).toBeUndefined();
     });
 
     it("keeps the rect inside the 1080x1920 frame", () => {
@@ -93,7 +114,7 @@ describe("request body schemas", () => {
       expect(
         renderRequestSchema.safeParse({
           ...body,
-          openerClipId: UUID_C,
+          hookEffect: "zoom",
           hookText: "היי",
           hookTextSafeArea: outside,
         }).success,

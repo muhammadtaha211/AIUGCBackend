@@ -1,5 +1,5 @@
 import { and, eq, like } from "drizzle-orm";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
@@ -21,6 +21,7 @@ import {
   sets,
   videoRenders,
 } from "../db/schema";
+import { isHookAnimation } from "../hook-effect";
 import { resolveHookTextSafeArea } from "../hook-geometry";
 import { BudgetError, PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
@@ -40,7 +41,7 @@ import {
   type ProbeResult,
 } from "../media/ffmpeg";
 import { gradeCurve, type GradeCurve } from "../media/grade";
-import { WORK_DIR } from "../paths";
+import { SFX_DIR, WORK_DIR } from "../paths";
 import {
   getLipsyncProvider,
   lipsyncExpressivenessSchema,
@@ -48,7 +49,12 @@ import {
   MAX_LIPSYNC_SECONDS,
   type LipsyncResolution,
 } from "../providers/lipsync";
-import { renderVideo, type RenderVideoProps, type TextSafeArea } from "../providers/remotion";
+import {
+  renderVideo,
+  type RenderServiceBProps,
+  type RenderVideoProps,
+  type TextSafeArea,
+} from "../providers/remotion";
 import { serviceBTimeline } from "../service-b-timeline";
 import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
@@ -690,9 +696,15 @@ async function buildServiceBProps(
       await db.select().from(openerClips).where(eq(openerClips.id, params.openerClipId)).limit(1)
     )[0];
     if (!opener) throw new PermanentError("opener clip not found");
-    if (params.hookText === undefined || params.hookTextSafeArea === undefined) {
-      throw new PermanentError("opener render has no hook text or safe area on its params");
-    }
+  }
+  // The composition burns the line only with BOTH the text and a rect, and
+  // silently shows neither text nor captions without them. createBRender pairs
+  // them at enqueue, so this only fires on a row edited by hand.
+  if (params.hookText !== undefined && params.hookTextSafeArea === undefined) {
+    throw new PermanentError("hook text has no safe area on its params");
+  }
+  if (params.openerClipId && params.hookText === undefined) {
+    throw new PermanentError("opener render has no hook text on its params");
   }
 
   // The approved mp3 becomes the render's audio track — the same bytes the
@@ -722,6 +734,9 @@ async function buildServiceBProps(
     openerDurationMs: opener?.durationMs,
     revealAtMs: opener?.revealAtMs,
     hookText: params.hookText,
+    // A hook animation's line leaves at the caption handoff, so the layout
+    // needs the chunks. Ignored on the opener path, which uses read time.
+    captions,
     // Absent on a render lip-synced before the lead-in existed: the clip
     // then starts at 0 with the VO, exactly as it did.
     leadInMs: params.leadInMs ?? 0,
@@ -796,11 +811,84 @@ async function buildServiceBProps(
     timeline,
     talkingHeadGrade,
     talkingHeadAlign,
+    ...hookAnimationProps(params.hookEffect, timeline.captionOffsetMs, opener !== undefined),
     watermark: render.watermarked,
     // Last on purpose: the DRY_RUN render echoes a prefix of these props, and
     // captions are the one unbounded field.
     captions,
   };
+}
+
+/**
+ * The hook animations, by the name the customer picked (`hook-effect.ts`).
+ * These numbers ARE the product: the founder judged one free mock per effect
+ * on 2026-09-06 and picked these three
+ * (docs/vault/facts/service-b-hook-animation-mocks-2026-09-06.md). They live
+ * here rather than in the DB so a retune is a deploy, never a rewrite of every
+ * stored render's params.
+ */
+const HOOK_ZOOM = { from: 1.35, to: 1.42, durationMs: 450 } as const;
+const HOOK_FOCUS = { blurPx: 20, pullMs: 850 } as const;
+const HOOK_WHIP = { fromX: 140, durationMs: 420, blurPx: 20 } as const;
+/**
+ * When the move LANDS, measured from speech onset rather than from frame 0.
+ *
+ * Every mock was rendered at a cut-to-speech gap of 800ms; the pipeline's
+ * GAP_MS is 250 ([[service-b-timeline-constants]]). Pinning the judged
+ * literals (zoom `atMs` 1200, focus sharp at 1200) would put the whole move
+ * ~950ms deep into speech instead of the ~400ms the founder watched. So the
+ * one thing held constant is what he actually judged — the move settles
+ * 400ms after she starts talking — and the run-up takes whatever silence the
+ * gap leaves. The whip is exempt: it runs from frame 0 and is over before
+ * speech at any gap.
+ */
+const HOOK_LANDS_AFTER_SPEECH_MS = 400;
+
+/**
+ * Name -> the composition prop, with the SFX resolved off disk. A name this
+ * build does not know renders with no animation and never throws: QC
+ * regeneration replays old params wholesale (pipelines/qc.ts), so a renamed
+ * effect from an older deploy would otherwise fail a render the customer has
+ * already paid HeyGen for. Same reason a missing wav only drops the sound.
+ */
+function hookAnimationProps(
+  effect: string | undefined,
+  captionOffsetMs: number,
+  hasOpener: boolean,
+): Partial<Pick<RenderServiceBProps, "hookZoom" | "hookFocus" | "hookWhip">> {
+  if (!isHookAnimation(effect)) return {};
+  if (hasOpener) {
+    // Refused at enqueue; a hand-edited row could still get here, and the
+    // composition would refuse the pair AFTER the GPU was billed.
+    logger.warn({ effect }, "render: hook animation ignored — this render has an opener");
+    return {};
+  }
+  const landsAtMs = captionOffsetMs + HOOK_LANDS_AFTER_SPEECH_MS;
+  if (effect === "zoom") {
+    return {
+      hookZoom: { ...HOOK_ZOOM, atMs: landsAtMs, sfxPath: sfxPath("hook-zoom-whoosh.wav") },
+    };
+  }
+  if (effect === "focus") {
+    // The pull ends where the zoom's does; it starts as early as the silence
+    // allows, never before frame 0.
+    const durationMs = Math.max(1, Math.min(HOOK_FOCUS.pullMs, landsAtMs));
+    return { hookFocus: { blurPx: HOOK_FOCUS.blurPx, holdMs: landsAtMs - durationMs, durationMs } };
+  }
+  return { hookWhip: { ...HOOK_WHIP, sfxPath: sfxPath("hook-whip-swish.wav") } };
+}
+
+/**
+ * A tracked SFX file, or undefined if it is not on this box. renderServiceB
+ * refuses a missing input file, which the worker maps to a PERMANENT failure
+ * and a refund — after HeyGen has been billed. A silent whoosh is strictly
+ * better than a dead paid render, so a missing wav degrades and says so.
+ */
+function sfxPath(file: string): string | undefined {
+  const full = path.join(SFX_DIR, file);
+  if (existsSync(full)) return full;
+  logger.warn({ file }, "render: hook SFX missing — rendering the animation silently");
+  return undefined;
 }
 
 /**

@@ -168,7 +168,7 @@ non-sensitive scopes.
    `2d446e6..b6c652a` on `main`, unpushed at the time of writing): b_script v9 + `hook_text`,
    the lead-in, hook text on render params with the selfie guard, `serviceBTimeline` and the CLI — plus the opener half (opener on render params, the opener composition, `bank add-opener`), **retired 2026-09-06** and still in the tree ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). **The B wizard (16) is built too**
    (2026-09-05, branch `service-b-wizard`, unmerged and unpushed at the time of writing).
-   Still NOT built: the animation-effects step that replaces the opener step, the speech-tied caption handoff in `serviceBTimeline`, and an effect param on the render route / `createBRender` ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Admin registration (15) is retired with the opener bank. Three engine decisions were made in the chat
+   **Built 2026-09-06** ([[0024-hook-effect-is-a-render-param-the-customer-picks]]): the animation-effects step replacing the opener step (none/zoom/focus/whip, Hebrew labels), the speech-tied caption handoff in `serviceBTimeline`, and the `hookEffect` name on the render route, `createBRender`, `buildServiceBProps` and `render-b --hook-effect`. Still NOT built: nothing on 0023's list. Admin registration (15) is retired with the opener bank. Three engine decisions were made in the chat
    that built it, all in the code and its comments: the talking head stays muted and the
    approved mp3 plays from `captionOffsetMs` (the repo's measured glitch reason won over
    the brief); the `kind='selfie'` guard applies to any render resolved from a persona
@@ -281,7 +281,7 @@ non-sensitive scopes.
 
 **Items 13–16 are the Service B revamp**, built to
 [[0017-service-b-single-setting-selfie-talking-head]]. The planned order was 13 → 14 →
-15 → 16; it went 13 → 14 → 16; 15 (admin registration for the opener bank) died with the bank on 2026-09-06 ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). What is open now is 0023's list: the animation-effects step, the caption handoff rule, the effect render param. They
+15 → 16; it went 13 → 14 → 16; 15 (admin registration for the opener bank) died with the bank on 2026-09-06 ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). 0023's list — the animation-effects step, the caption handoff rule, the effect render param — was built on 2026-09-06 ([[0024-hook-effect-is-a-render-param-the-customer-picks]]). They
 sit **after** everything above, including the cheap docs-only item 12, because Service B
 is explicitly parked until Service A is finished and none of this is on the validation
 sequence (pipeline → outreach samples → self-serve app).
@@ -394,7 +394,7 @@ verdict ([[0019-hook-text-outlives-the-reveal]]); the constants note keeps the m
 ([[service-b-timeline-constants]], first-render section). On 2026-09-06 a per-channel colour-grade
 curve and a pixel alignment were added, and a 4-frame soft cut plus a 1.5s alignment ease were
 tried and zeroed the same day on the founder's verdict
-([[0021-nothing-moves-at-the-service-b-seam]], [[service-b-seam-constants]]). **The seam is gone, not fixed**: on 2026-09-06 the founder retired the opener clip entirely — a Service B ad is one HeyGen clip with a Remotion animation hook (zoom hook first, `hookZoom` in `packages/remotion`, whoosh allowed) — [[0023-hook-is-a-remotion-animation-opener-clips-retired]]. Open: the effects step, the speech-tied caption handoff, more animations to judge.
+([[0021-nothing-moves-at-the-service-b-seam]], [[service-b-seam-constants]]). **The seam is gone, not fixed**: on 2026-09-06 the founder retired the opener clip entirely — a Service B ad is one HeyGen clip with a Remotion animation hook (zoom hook first, `hookZoom` in `packages/remotion`, whoosh allowed) — [[0023-hook-is-a-remotion-animation-opener-clips-retired]]. The effects step, the caption handoff and the `hookEffect` param landed 2026-09-06 ([[0024-hook-effect-is-a-render-param-the-customer-picks]]): three animations plus "none". Open: deleting the opener-clip code, and a real recorded SFX to replace the two synthesized placeholders in `assets/sfx/`.
 
 All of the seam work — grade curve, alignment, soft cut — is **retired 2026-09-06** with the opener; the code stays in the tree and the measurements stay true ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). The limited-range tag and the handheld sway carry over to the single-clip product.
 

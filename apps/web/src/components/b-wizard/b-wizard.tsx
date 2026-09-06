@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
@@ -9,7 +10,6 @@ import {
   pointersChanged,
   wizardSteps,
   type AudioState,
-  type OpenerClip,
   type Persona,
   type RenderState,
   type ScriptState,
@@ -40,11 +40,12 @@ type BWizardProps = {
 };
 
 /**
- * The Service B wizard: persona -> pointers -> script -> audio -> opener
- * effect -> render (vault 0017). Single setting: the persona's selfie is the
- * render source, so there is no image step and no product step. State is
- * client-side only — a refresh restarts the wizard. Back navigation is
- * allowed until the render is enqueued.
+ * The Service B wizard: persona -> pointers -> script -> audio -> opening
+ * animation -> render (vault 0017, 0023). Single setting: the persona's selfie
+ * is the render source, so there is no image step and no product step, and the
+ * ad is one HeyGen clip with the hook performed on it rather than stitched in
+ * front. State is client-side only — a refresh restarts the wizard. Back
+ * navigation is allowed until the render is enqueued.
  */
 export function BWizard({ businessId, businessName, initialCatalog }: BWizardProps) {
   const steps = wizardSteps();
@@ -66,13 +67,11 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   const [script, setScript] = useState<ScriptState | null>(null);
   const [editedText, setEditedText] = useState("");
   const [audio, setAudio] = useState<AudioState | null>(null);
-  /** The persona's opener clips, cached like the catalog; null = not loaded. */
-  const [openers, setOpeners] = useState<OpenerClip[] | null>(null);
-  /** The chosen opener; null = no effect (the default). */
-  const [opener, setOpener] = useState<OpenerClip | null>(null);
+  /** The chosen opening animation; "none" is the default and burns no line. */
+  const [hookEffect, setHookEffect] = useState<HookEffect>("none");
   /** The on-screen line; null = untouched, the effect step seeds it from the script. */
   const [hookText, setHookText] = useState<string | null>(null);
-  /** Customer-placed hook-text rect; null = the clip's safe area. */
+  /** Customer-placed hook-text rect; null = the centred default. */
   const [rect, setRect] = useState<SafeRect | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
 
@@ -99,13 +98,12 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
     setHookText(null);
   }
 
-  /** A different persona invalidates everything generated for the previous one —
-   *  and its opener list, which is that persona's selfie's. */
+  /** A different persona invalidates everything generated for the previous one.
+   *  The animation is not persona-scoped, so the choice survives; the rect is
+   *  dropped because it was placed over the previous persona's selfie. */
   function selectPersona(next: Persona) {
     if (persona && persona.id !== next.id) {
       discardScript();
-      setOpeners(null);
-      setOpener(null);
       setRect(null);
     }
     setPersona(next);
@@ -219,18 +217,15 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
 
             {step === "effect" && persona && script && (
               <StepEffect
-                personaId={persona.id}
-                openers={openers}
-                setOpeners={setOpeners}
-                opener={opener}
-                setOpener={setOpener}
+                personaImageUrl={persona.imageUrl}
+                hookEffect={hookEffect}
+                setHookEffect={setHookEffect}
                 hookText={effectText}
                 setHookText={setHookText}
                 rect={rect}
                 setRect={setRect}
                 onBack={goBack}
                 onContinue={goNext}
-                onFatal={setFatal}
               />
             )}
 
@@ -243,7 +238,7 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
                 personaImageId={persona.personaImageId}
                 scriptId={script.scriptId}
                 audioId={audio.id}
-                openerClipId={opener?.id}
+                hookEffect={hookEffect}
                 hookText={effectText}
                 hookTextSafeArea={rect ?? undefined}
                 render={render}

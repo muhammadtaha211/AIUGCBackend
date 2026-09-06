@@ -4,6 +4,7 @@ export * from "./captions";
 export * from "./config";
 export { closeDb, getDb, setDb, schema, type Db } from "./db";
 export * from "./handlers";
+export * from "./hook-effect";
 export * from "./hook-geometry";
 export * from "./hook-text";
 export * from "./jobs";

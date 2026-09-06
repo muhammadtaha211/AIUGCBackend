@@ -53,6 +53,34 @@ describe("serviceBSchema", () => {
     ).toBe(false);
   });
 
+  it("accepts the other hook animations, and rejects a degenerate one of each", () => {
+    const ok = {
+      hookFocus: { blurPx: 16, holdMs: 350, durationMs: 850 },
+      hookWhip: { fromX: -140, durationMs: 320, blurPx: 18, sfxSrc: "http://x/4.wav" },
+      hookTextReveal: { wordMs: [0, 140], popMs: 200, exitDurationMs: 320 },
+      hookBeats: { atMs: [1000], amount: 0.035, durationMs: 180, push: { fromMs: 9800, to: 1.06 } },
+    };
+    expect(serviceBSchema.safeParse({ ...valid, ...ok }).success).toBe(true);
+    // Each one is independently optional — that is what "inert unless passed" means.
+    for (const key of Object.keys(ok) as (keyof typeof ok)[]) {
+      expect(serviceBSchema.safeParse({ ...valid, [key]: ok[key] }).success).toBe(true);
+    }
+    const bad = [
+      { hookFocus: { ...ok.hookFocus, durationMs: 0 } },
+      { hookFocus: { ...ok.hookFocus, blurPx: -1 } },
+      { hookWhip: { ...ok.hookWhip, durationMs: 0 } },
+      { hookTextReveal: { ...ok.hookTextReveal, wordMs: [] } },
+      { hookTextReveal: { ...ok.hookTextReveal, popMs: 0 } },
+      { hookBeats: { ...ok.hookBeats, amount: -0.1 } },
+      { hookBeats: { ...ok.hookBeats, push: { fromMs: 0, to: 0.9 } } },
+    ];
+    for (const patch of bad) {
+      expect(serviceBSchema.safeParse({ ...valid, ...patch }).success, JSON.stringify(patch)).toBe(
+        false,
+      );
+    }
+  });
+
   it("accepts captions with no word timings (even-spaced variant)", () => {
     const captions = [{ text: "טקסט", startMs: 0, endMs: 1000, words: [] }];
     expect(serviceBSchema.safeParse({ ...valid, captions }).success).toBe(true);

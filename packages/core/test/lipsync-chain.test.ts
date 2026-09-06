@@ -20,6 +20,7 @@ import {
 } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
 import { rejectRender } from "../src/pipelines/qc";
+import { CENTRED_HOOK_TEXT_RECT } from "../src/hook-geometry";
 import { createBRender, type VariantParams } from "../src/pipelines/sets";
 import { approveAudio, requestAudio } from "../src/pipelines/tts";
 import {
@@ -124,15 +125,19 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     motionPrompt?: string;
     expressiveness?: string;
     withOpener?: boolean;
+    hookEffect?: string;
   }): Promise<{ renderId: string; audioId: string }> {
     const { persona, image, audioId } = await selfiePersona();
-    const { withOpener, ...rest } = extra ?? {};
+    const { withOpener, hookEffect, ...rest } = extra ?? {};
     const opener = withOpener ? await openerFor(image.id) : undefined;
     const render = await createBRender(db, {
       businessId,
       audioRenderId: audioId,
       personaId: persona.id,
       ...(opener && { openerClipId: opener.id, hookText: "ניסיתי מיליון דברים" }),
+      ...(hookEffect && hookEffect !== "none"
+        ? { hookEffect, hookText: "ניסיתי מיליון דברים" }
+        : { hookEffect }),
       ...rest,
     });
     return { renderId: render.id, audioId };
@@ -698,25 +703,113 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     await drainAll();
   });
 
-  it("an opener needs hookText and hookText needs an opener", async () => {
+  it("a hook animation or an opener needs hookText, and hookText needs one of them", async () => {
     const { persona, image, audioId } = await selfiePersona();
     const opener = await openerFor(image.id);
+    const base = { businessId, audioRenderId: audioId, personaId: persona.id };
+    await expect(createBRender(db, { ...base, openerClipId: opener.id })).rejects.toThrow(
+      /hookText is required/,
+    );
+    await expect(createBRender(db, { ...base, hookEffect: "zoom" })).rejects.toThrow(
+      /hookText is required/,
+    );
+    await expect(createBRender(db, { ...base, hookText: "ניסיתי מיליון דברים" })).rejects.toThrow(
+      /hookText needs a hook animation or an opener/,
+    );
+    // "none" is not a thing to burn text over.
     await expect(
-      createBRender(db, {
-        businessId,
-        audioRenderId: audioId,
-        personaId: persona.id,
-        openerClipId: opener.id,
-      }),
-    ).rejects.toThrow(/hookText is required/);
+      createBRender(db, { ...base, hookEffect: "none", hookText: "ניסיתי מיליון דברים" }),
+    ).rejects.toThrow(/hookText needs a hook animation or an opener/);
+  });
+
+  it("refuses an unknown effect name and an effect stacked on an opener — both pre-debit", async () => {
+    const { persona, image, audioId } = await selfiePersona();
+    const opener = await openerFor(image.id);
+    const base = {
+      businessId,
+      audioRenderId: audioId,
+      personaId: persona.id,
+      hookText: "ניסיתי מיליון דברים",
+    };
+    // The two the founder did not pick are names this build does not know.
+    for (const hookEffect of ["beats", "textReveal", "ZOOM", ""]) {
+      await expect(createBRender(db, { ...base, hookEffect })).rejects.toThrow();
+    }
     await expect(
-      createBRender(db, {
-        businessId,
-        audioRenderId: audioId,
-        personaId: persona.id,
-        hookText: "ניסיתי מיליון דברים",
-      }),
-    ).rejects.toThrow(/needs an opener/);
+      createBRender(db, { ...base, hookEffect: "zoom", openerClipId: opener.id }),
+    ).rejects.toThrow(/exclusive/);
+  });
+
+  it("stores the effect NAME and the centred rect, and renders the animation under DRY_RUN", async () => {
+    const { renderId } = await queueBRender({ hookEffect: "zoom" });
+    const params = await paramsOf(renderId);
+    expect(params.hookEffect).toBe("zoom");
+    expect(params.hookText).toBe("ניסיתי מיליון דברים");
+    // No clip underneath to inherit a rect from — the centred one.
+    expect(params.hookTextSafeArea).toEqual(CENTRED_HOOK_TEXT_RECT);
+    // A name, never the numbers: a retune must not have to rewrite rows.
+    expect(JSON.stringify(params)).not.toContain("1.35");
+
+    await drainAll();
+    const props = readFileSync(
+      path.join(storageRoot, (await renderRow(renderId)).filePath!),
+      "utf8",
+    );
+    expect(props).not.toContain("openerPath");
+    // The tuned numbers appear at RENDER time, and the pull-back lands
+    // HOOK_LANDS_AFTER_SPEECH_MS after speech onset (captionOffsetMs 250).
+    expect(props).toContain('"hookZoom":{"from":1.35,"to":1.42,"durationMs":450,"atMs":650');
+    expect(props).toMatch(/"sfxPath":"[^"]*hook-zoom-whoosh\.wav"/);
+    // The line leaves at the caption handoff, not at a read-time clamp.
+    expect(props).toContain('"revealAbsMs":0,"lipsyncStartFromMs":550,"captionOffsetMs":250');
+  });
+
+  it("derives focus and whip from the gap too — focus lands with the zoom, whip is gap-free", async () => {
+    const focus = await queueBRender({ hookEffect: "focus" });
+    await drainAll();
+    const focusProps = readFileSync(
+      path.join(storageRoot, (await renderRow(focus.renderId)).filePath!),
+      "utf8",
+    );
+    // captionOffsetMs 250 + 400 = 650 = where the pull ends. The judged 850ms
+    // pull does not fit in 650ms of run-up, so it takes what there is and the
+    // hold collapses to 0 — the LANDING is what was judged, not the run-up.
+    expect(focusProps).toContain('"hookFocus":{"blurPx":20,"holdMs":0,"durationMs":650}');
+    expect(focusProps).not.toContain("sfxPath");
+
+    const whip = await queueBRender({ hookEffect: "whip" });
+    await drainAll();
+    const whipProps = readFileSync(
+      path.join(storageRoot, (await renderRow(whip.renderId)).filePath!),
+      "utf8",
+    );
+    // The whip runs from frame 0 and is over before speech at any gap, so it
+    // carries the judged literals unchanged.
+    expect(whipProps).toContain('"hookWhip":{"fromX":140,"durationMs":420,"blurPx":20');
+    expect(whipProps).toMatch(/"sfxPath":"[^"]*hook-whip-swish\.wav"/);
+  });
+
+  it("a 'none' render is exactly today's plain talking head — no line, no animation", async () => {
+    const { renderId } = await queueBRender({ hookEffect: "none" });
+    const params = await paramsOf(renderId);
+    expect(params.hookEffect).toBeUndefined();
+    expect(params.hookText).toBeUndefined();
+    await drainAll();
+    const props = readFileSync(
+      path.join(storageRoot, (await renderRow(renderId)).filePath!),
+      "utf8",
+    );
+    // Quoted keys: a bare "hookText" would match the timeline's hookTextMs.
+    for (const absent of [
+      '"hookZoom"',
+      '"hookFocus"',
+      '"hookWhip"',
+      '"hookText"',
+      '"openerPath"',
+    ]) {
+      expect(props).not.toContain(absent);
+    }
+    expect(props).toContain('"hookTextMs":0');
   });
 
   it("validates the opener: it exists, is active, and was made from the render's source image", async () => {

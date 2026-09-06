@@ -58,7 +58,8 @@ same frame. Moot since 2026-09-06: there is no reveal and 0019 is retired ([[002
 
 ## What this note does NOT say
 
-- That the surviving values are right. That the surviving values are right. The founder has since watched three paid draws and dozens of free re-renders; `GAP_MS` is still the chat pick, and `HOOK_TEXT_MIN/MAX_MS` govern only the retired opener path — the caption-handoff rule of [[0023-hook-is-a-remotion-animation-opener-clips-retired]] replaces them.
+- That the surviving values are right. The founder has since watched three paid draws and dozens of free re-renders; `GAP_MS` is still the chat pick. `HOOK_TEXT_MIN/MAX_MS` now govern the retired opener path AND, as a floor only, an UNSPOKEN hook line on the animation path: since 2026-09-06 the line's life is `hookHandoffMs` in `service-b-timeline.ts` ([[0024-hook-effect-is-a-render-param-the-customer-picks]]) — it leaves at the start of the caption chunk after the one holding its last spoken word, or, when the line is not spoken at all, at the first chunk boundary at or after its clamped read time. Never mid-chunk: a handoff inside a line un-hides that line under the hook text, which is the artefact the rule exists to kill.
+- **`GAP_MS` is now load-bearing for the animations too.** Every hook-animation mock the founder judged ran at a gap of 800ms; production is 250. The animations are therefore clocked off speech onset (`HOOK_LANDS_AFTER_SPEECH_MS = 400` in `pipelines/renders.ts`), so a change to `GAP_MS` moves the run-up but not the landing.
 - That `GAP_MS` is the right stretch of still head before speech — since 2026-09-06 it opens the ad (the clip starts `leadInMs − GAP` in at frame 0), there being no reveal ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). It rests on
   [[heygen-avatar-iv-idles-on-leading-silence]], whose tolerance is unmeasured; the lead-in
   default (800ms, `lipsync_lead_in_ms`) and this gap have never been tuned together. On the

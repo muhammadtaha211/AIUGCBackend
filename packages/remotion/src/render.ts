@@ -72,6 +72,16 @@ export interface RenderServiceBInput {
   cameraSeed?: string;
   /** The zoom hook (schema `hookZoomSchema`); `sfxPath` is served like the clips. */
   hookZoom?: { from: number; to: number; atMs: number; durationMs: number; sfxPath?: string };
+  /** The other hook animations (schema.ts) — mocks, all exclusive with an opener. */
+  hookFocus?: { blurPx: number; holdMs: number; durationMs: number };
+  hookWhip?: { fromX: number; durationMs: number; blurPx: number; sfxPath?: string };
+  hookTextReveal?: { wordMs: number[]; popMs: number; exitDurationMs: number };
+  hookBeats?: {
+    atMs: number[];
+    amount: number;
+    durationMs: number;
+    push?: { fromMs: number; to: number };
+  };
   watermark: boolean;
 }
 
@@ -313,12 +323,28 @@ export async function renderServiceB(
   outPath: string,
   onProgress?: (fraction: number) => void,
 ): Promise<void> {
-  // The zoom is clocked on composition time and the head mounts at the reveal,
-  // so with an opener the zoom would silently do nothing while its whoosh
-  // still played. Refuse the pair up front rather than render it.
-  if (input.hookZoom && input.openerPath) {
+  // The hook animations are clocked on composition time and the head mounts at
+  // the reveal, so with an opener they would silently do nothing while their
+  // whoosh still played. Refuse the pair up front rather than render it — and
+  // the opener is retired anyway (vault 0023).
+  if (
+    input.openerPath &&
+    (input.hookZoom || input.hookFocus || input.hookWhip || input.hookBeats)
+  ) {
     throw new RenderPropsError(
-      "hookZoom and an opener are exclusive: the zoom hook replaces the opener",
+      "a hook animation and an opener are exclusive: the animation replaces the opener",
+    );
+  }
+  // The composition burns the hook line only when the timeline gives it a
+  // life, so a kinetic reveal with no hook text (or hookTextMs 0, which is
+  // what serviceBTimeline returns without an opener) would render the whole
+  // ad with no text on it at all — 90 seconds of render and a wrong verdict.
+  if (
+    input.hookTextReveal &&
+    (!input.hookText || !input.hookTextSafeArea || input.timeline.hookTextMs <= 0)
+  ) {
+    throw new RenderPropsError(
+      "hookTextReveal needs hookText, its rect, and a positive timeline.hookTextMs",
     );
   }
   const files = [input.talkingHeadPath, input.voiceoverPath];
@@ -326,6 +352,7 @@ export async function renderServiceB(
   const brollStart = files.length;
   files.push(...input.brollPaths);
   const sfxIndex = input.hookZoom?.sfxPath ? files.push(input.hookZoom.sfxPath) - 1 : undefined;
+  const whipSfxIndex = input.hookWhip?.sfxPath ? files.push(input.hookWhip.sfxPath) - 1 : undefined;
   assertFilesExist(files);
 
   const served = await serveLocalFiles(files);
@@ -351,6 +378,17 @@ export async function renderServiceB(
             sfxSrc: sfxIndex === undefined ? undefined : served.urls[sfxIndex],
           }
         : undefined,
+      hookFocus: input.hookFocus,
+      hookWhip: input.hookWhip
+        ? {
+            fromX: input.hookWhip.fromX,
+            durationMs: input.hookWhip.durationMs,
+            blurPx: input.hookWhip.blurPx,
+            sfxSrc: whipSfxIndex === undefined ? undefined : served.urls[whipSfxIndex],
+          }
+        : undefined,
+      hookTextReveal: input.hookTextReveal,
+      hookBeats: input.hookBeats,
       watermark: input.watermark,
     } satisfies ServiceBProps);
     if (!props.success) {

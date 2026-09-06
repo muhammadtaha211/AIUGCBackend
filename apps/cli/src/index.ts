@@ -36,6 +36,7 @@ import {
   getStorage,
   HEAVY_JOB_TYPES,
   HOOK_TEXT_MAX_CHARS,
+  HOOK_EFFECTS,
   HOOK_TEXT_MAX_WORDS,
   planStepsSchema,
   listQcQueue,
@@ -771,16 +772,20 @@ program
     "HeyGen expressiveness: low|medium|high (default: not sent — HeyGen uses low)",
   )
   .option(
+    "--hook-effect <name>",
+    `opening animation performed on the clip: ${HOOK_EFFECTS.join("|")} (default: none); anything but "none" needs --hook-text`,
+  )
+  .option(
     "--opener <clipId>",
-    "opener clip (aiugc bank add-opener) played in front of the talking head; needs --hook-text",
+    "RETIRED (vault 0023): opener clip played in front of the talking head; needs --hook-text",
   )
   .option(
     "--hook-text <text>",
-    `on-screen line burned over the opener — the FINAL string (≤${HOOK_TEXT_MAX_WORDS} words, ≤${HOOK_TEXT_MAX_CHARS} chars, no trailing punctuation)`,
+    `on-screen line burned over the animation — the FINAL string (≤${HOOK_TEXT_MAX_WORDS} words, ≤${HOOK_TEXT_MAX_CHARS} chars, no trailing punctuation)`,
   )
   .option(
     "--hook-text-safe-area <json>",
-    "where the hook text burns, 1080x1920 space (default: the clip's registered rect)",
+    "where the hook text burns, 1080x1920 space (default: centred, or the opener's registered rect)",
   )
   .action(
     run(
@@ -791,6 +796,7 @@ program
         personaImage?: string;
         motionPrompt?: string;
         expressiveness?: string;
+        hookEffect?: string;
         opener?: string;
         hookText?: string;
         hookTextSafeArea?: string;
@@ -802,6 +808,7 @@ program
           personaImageId: opts.personaImage,
           motionPrompt: opts.motionPrompt,
           expressiveness: opts.expressiveness,
+          hookEffect: opts.hookEffect,
           openerClipId: opts.opener,
           hookText: opts.hookText,
           hookTextSafeArea: opts.hookTextSafeArea ? JSON.parse(opts.hookTextSafeArea) : undefined,

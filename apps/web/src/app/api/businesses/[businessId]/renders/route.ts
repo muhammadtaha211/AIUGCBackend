@@ -16,16 +16,16 @@ import {
   requireUser,
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
-import { renderOpenerError, renderRequestSchema, renderSourceError } from "@/lib/service-b";
+import { renderRequestSchema, renderSourceError } from "@/lib/service-b";
 import { hookTextFieldError, pickActiveHead } from "@/lib/service-b-ui";
 
 /**
  * Create a Service B render. Core enforces the approved-audio gate and the
- * opener/hook-text pairing; the route verifies the referenced rows belong to
- * this business, holds the card's image to the format (this persona's selfie,
- * stored, not retired — createBRender takes an explicit id on trust) and
- * checks the opener is that image's, then enqueues with the FINAL hook text
- * copied into params (vault 0017).
+ * hook-animation/hook-text pairing; the route verifies the referenced rows
+ * belong to this business, holds the card's image to the format (this
+ * persona's selfie, stored, not retired — createBRender takes an explicit id
+ * on trust), and enqueues with the chosen animation and the FINAL hook text
+ * copied into params (vault 0017, 0023).
  */
 export async function POST(
   request: Request,
@@ -42,7 +42,7 @@ export async function POST(
 
     const body = renderRequestSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
-    const { scriptId, audioId, personaId, personaImageId, openerClipId, hookText } = body.data;
+    const { scriptId, audioId, personaId, personaImageId, hookEffect, hookText } = body.data;
 
     const scriptRows = await db
       .select()
@@ -77,19 +77,11 @@ export async function POST(
     const sourceProblem = renderSourceError(imageRows[0], personaId);
     if (sourceProblem) return jsonError(sourceProblem.status, sourceProblem.error);
 
-    if (openerClipId !== undefined) {
-      const openerRows = await db
-        .select({
-          personaImageId: schema.openerClips.personaImageId,
-          active: schema.openerClips.active,
-        })
-        .from(schema.openerClips)
-        .where(eq(schema.openerClips.id, openerClipId))
-        .limit(1);
-      const openerProblem = renderOpenerError(openerRows[0], personaImageId);
-      if (openerProblem) return jsonError(openerProblem.status, openerProblem.error);
-      // The same rule core refuses on at enqueue, answered in Hebrew here.
-      const textProblem = hookTextFieldError(hookText!);
+    // The same rule core refuses on at enqueue, answered in Hebrew here —
+    // core's English message has no pattern in coreErrorMapping and would
+    // reach the customer as a generic 500.
+    if (hookText !== undefined) {
+      const textProblem = hookTextFieldError(hookText);
       if (textProblem) return jsonError(400, textProblem);
     }
 
@@ -98,7 +90,7 @@ export async function POST(
       audioRenderId: audioId,
       personaId,
       personaImageId,
-      openerClipId,
+      hookEffect,
       hookText,
       hookTextSafeArea: body.data.hookTextSafeArea,
     });
