@@ -11,6 +11,7 @@ const completeDraft: OnboardingDraft = {
   step: 4,
   businessType: "physical",
   productName: "קרם לחות אלוורה",
+  productKind: "קרם",
   whatItDoes: "קרם טבעי שמרגיע עור יבש",
   link: "https://example.co.il",
   benefits: ["טבעי לגמרי", "נספג מהר", "ריח עדין"],
@@ -49,11 +50,19 @@ describe("draftToQuestionnairePayload", () => {
     expect(draftToQuestionnairePayload(completeDraft).link).toBe("https://example.co.il");
   });
 
+  it("omits an empty product_kind", () => {
+    expect(draftToQuestionnairePayload({ ...completeDraft, productKind: "" })).not.toHaveProperty(
+      "product_kind",
+    );
+    expect(
+      draftToQuestionnairePayload({ ...completeDraft, productKind: "   " }),
+    ).not.toHaveProperty("product_kind");
+    expect(draftToQuestionnairePayload(completeDraft).product_kind).toBe("קרם");
+  });
+
   it("omits an empty wow answer", () => {
     expect(draftToQuestionnairePayload({ ...completeDraft, wow: "" })).not.toHaveProperty("wow");
-    expect(draftToQuestionnairePayload({ ...completeDraft, wow: "   " })).not.toHaveProperty(
-      "wow",
-    );
+    expect(draftToQuestionnairePayload({ ...completeDraft, wow: "   " })).not.toHaveProperty("wow");
     expect(draftToQuestionnairePayload(completeDraft).wow).toBe("העור מפסיק לגרד תוך דקה");
   });
 
@@ -62,6 +71,7 @@ describe("draftToQuestionnairePayload", () => {
     expect(parsed).toEqual({
       category: "physical_product",
       product_name: "קרם לחות אלוורה",
+      product_kind: "קרם",
       what_it_does: "קרם טבעי שמרגיע עור יבש",
       advantages: ["טבעי לגמרי", "נספג מהר", "ריח עדין"],
       target_audience: "נשים 25–45 שמחפשות טיפוח טבעי",

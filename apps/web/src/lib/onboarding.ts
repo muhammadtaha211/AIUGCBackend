@@ -3,8 +3,8 @@
  * material lives here; the demo video is uploaded after sign-in.
  *
  * Field names mirror `questionnaireSchema` in packages/core/src/pipelines/businesses.ts
- * (category, product_name, what_it_does, advantages, target_audience, tone, link); a completed
- * draft maps onto it via `draftToQuestionnairePayload` below.
+ * (category, product_name, product_kind, what_it_does, advantages, target_audience, tone,
+ * link); a completed draft maps onto it via `draftToQuestionnairePayload` below.
  */
 
 export type BusinessType = "physical" | "app" | "service" | "other";
@@ -14,6 +14,7 @@ export type OnboardingDraft = {
   step: number; // index into STEPS
   businessType: BusinessType | null;
   productName: string;
+  productKind: string;
   whatItDoes: string;
   link: string;
   benefits: string[];
@@ -41,6 +42,7 @@ export const emptyDraft: OnboardingDraft = {
   step: 0,
   businessType: null,
   productName: "",
+  productKind: "",
   whatItDoes: "",
   link: "",
   benefits: ["", "", ""],
@@ -81,6 +83,7 @@ const CATEGORY_BY_BUSINESS_TYPE: Record<BusinessType, string> = {
 export function draftToQuestionnairePayload(draft: OnboardingDraft): Record<string, unknown> {
   const link = draft.link.trim();
   const wow = draft.wow.trim();
+  const productKind = draft.productKind.trim();
   return {
     category: draft.businessType ? CATEGORY_BY_BUSINESS_TYPE[draft.businessType] : "",
     product_name: draft.productName.trim(),
@@ -88,6 +91,7 @@ export function draftToQuestionnairePayload(draft: OnboardingDraft): Record<stri
     advantages: draft.benefits.map((benefit) => benefit.trim()).filter((b) => b.length > 0),
     target_audience: draft.audience.trim(),
     tone: draft.tone ?? "",
+    ...(productKind ? { product_kind: productKind } : {}),
     ...(link ? { link } : {}),
     ...(wow ? { wow } : {}),
   };

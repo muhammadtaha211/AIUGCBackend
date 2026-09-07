@@ -102,6 +102,14 @@ describe("b_script prompt rendering", () => {
     expect(text).toContain("Verbatim, not compressed");
   });
 
+  it("refers to the product by its kind, never by a placeholder word (v11+)", () => {
+    const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(11);
+    expect(text).toContain("`product_kind`");
+    expect(text).toContain("Never `משהו`, never `הדבר הזה`, never `מוצר אחד`");
+    expect(text).not.toContain("Refer to it obliquely");
+  });
+
   it("states the word budget as a 90-100% band, not a ceiling (v10+)", () => {
     const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
     expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(10);

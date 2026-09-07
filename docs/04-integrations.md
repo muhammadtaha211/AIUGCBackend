@@ -35,7 +35,11 @@ keyless (the e2e test relies on this).
   opener clip's palm phase; parsed with its own `bScriptOutput` schema, never the `{script}`
   schema `vo_script` shares, and an over-cap value is a `PermanentError`, never trimmed —
   `params.hookText` on the script row is the DRAFT, the FINAL string is copied into render
-  params at enqueue, [vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md)),
+  params at enqueue, [vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md);
+  **v11** adds the optional `product_kind` questionnaire field — the customer's own Hebrew noun for
+  the product — and replaces the reveal beat's oblique-reference list with naming the product's
+  KIND before the name lands, banning `משהו` / `הדבר הזה` / `מוצר אחד`
+  ([vault 0027](vault/decisions/0027-product-kind-is-an-optional-questionnaire-field.md))),
   `hook_text` (v1: script in, `hook_text` out under the same caps — `deriveHookText`, one
   `llm_tokens` row behind `assertBudget` like `tts_enhance`; `aiugc script edit` runs it for a
   `b_script` and `updateScriptText` merges the result into the one new immutable row),

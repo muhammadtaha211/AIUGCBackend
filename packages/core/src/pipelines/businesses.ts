@@ -12,6 +12,11 @@ export const questionnaireSchema = z.object({
   category: z.enum(["app_or_digital", "physical_product", "local_service", "other"]),
   product_name: z.string().min(1),
   what_it_does: z.string().min(1),
+  // Optional: the Hebrew noun a customer would use for the thing — אתר,
+  // אפליקציה, קרם, קורס, קליניקה. `category` is four coarse buckets, so without
+  // this the b_script model has no word for the product before the reveal and
+  // reaches for משהו / הדבר הזה. Absent is fine — the prompt derives a noun.
+  product_kind: z.string().optional(),
   advantages: z.array(z.string().min(1)).min(1).max(8),
   target_audience: z.string().min(1),
   // Ad style key only — Hebrew labels live in the UI layer.

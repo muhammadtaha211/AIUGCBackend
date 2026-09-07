@@ -6,32 +6,62 @@ import { TextField, TextAreaField } from "@/components/ui/field";
 import type { BusinessType } from "@/lib/onboarding";
 import { StepHeader } from "./step-chrome";
 
-const PLACEHOLDERS: Record<BusinessType | "default", { name: string; what: string }> = {
-  physical: { name: "למשל: קרם לחות אלוורה", what: "למשל: קרם טבעי שמרגיע עור יבש תוך שבוע" },
-  app: { name: "למשל: FitTime", what: "למשל: אפליקציה לאימונים קצרים בבית, בלי ציוד" },
-  service: { name: "למשל: קליניקת גלואו", what: "למשל: קליניקה לטיפולי פנים מתקדמים בתל אביב" },
-  other: { name: "השם שהלקוחות מכירים", what: "מה אתם מציעים ולמה זה טוב, במשפט אחד" },
-  default: { name: "השם שהלקוחות מכירים", what: "מה המוצר עושה ולמה הוא טוב, במשפט אחד" },
+type StepPlaceholders = { name: string; what: string; kind: string };
+
+const PLACEHOLDERS: Record<BusinessType | "default", StepPlaceholders> = {
+  physical: {
+    name: "למשל: קרם לחות אלוורה",
+    what: "למשל: קרם טבעי שמרגיע עור יבש תוך שבוע",
+    kind: "קרם / מכשיר / תוסף",
+  },
+  app: {
+    name: "למשל: FitTime",
+    what: "למשל: אפליקציה לאימונים קצרים בבית, בלי ציוד",
+    kind: "אתר / אפליקציה",
+  },
+  service: {
+    name: "למשל: קליניקת גלואו",
+    what: "למשל: קליניקה לטיפולי פנים מתקדמים בתל אביב",
+    kind: "קליניקה / סטודיו / משרד",
+  },
+  other: {
+    name: "השם שהלקוחות מכירים",
+    what: "מה אתם מציעים ולמה זה טוב, במשפט אחד",
+    kind: "אתר / מוצר / שירות",
+  },
+  default: {
+    name: "השם שהלקוחות מכירים",
+    what: "מה המוצר עושה ולמה הוא טוב, במשפט אחד",
+    kind: "אתר / מוצר / שירות",
+  },
 };
 
 type StepProductProps = {
   businessType: BusinessType | null;
   productName: string;
+  productKind: string;
   whatItDoes: string;
   link: string;
-  onSubmit: (values: { productName: string; whatItDoes: string; link: string }) => void;
+  onSubmit: (values: {
+    productName: string;
+    productKind: string;
+    whatItDoes: string;
+    link: string;
+  }) => void;
   onBack: () => void;
 };
 
 export function StepProduct({
   businessType,
   productName,
+  productKind,
   whatItDoes,
   link,
   onSubmit,
   onBack,
 }: StepProductProps) {
   const [name, setName] = useState(productName);
+  const [kind, setKind] = useState(productKind);
   const [what, setWhat] = useState(whatItDoes);
   const [siteLink, setSiteLink] = useState(link);
   const [showLink, setShowLink] = useState(link !== "");
@@ -47,7 +77,12 @@ export function StepProduct({
     if (!what.trim()) nextErrors.what = "משפט אחד קצר מספיק";
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
-    onSubmit({ productName: name.trim(), whatItDoes: what.trim(), link: siteLink.trim() });
+    onSubmit({
+      productName: name.trim(),
+      productKind: kind.trim(),
+      whatItDoes: what.trim(),
+      link: siteLink.trim(),
+    });
   }
 
   return (
@@ -70,6 +105,13 @@ export function StepProduct({
           value={what}
           onChange={(e) => setWhat(e.target.value)}
           error={errors.what}
+        />
+        <TextField
+          label="מה זה, במילה אחת?"
+          hint="רשות"
+          placeholder={placeholders.kind}
+          value={kind}
+          onChange={(e) => setKind(e.target.value)}
         />
 
         {showLink ? (

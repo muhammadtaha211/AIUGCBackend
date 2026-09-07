@@ -186,6 +186,7 @@ export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
           <StepProduct
             businessType={draft.businessType}
             productName={draft.productName}
+            productKind={draft.productKind}
             whatItDoes={draft.whatItDoes}
             link={draft.link}
             onSubmit={(values) => {
