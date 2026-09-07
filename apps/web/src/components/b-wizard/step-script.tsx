@@ -4,7 +4,14 @@ import { useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
-import { countWords, needsTextSave, withEditedText, type ScriptState } from "@/lib/service-b-ui";
+import {
+  countWords,
+  estimateSpokenSeconds,
+  needsTextSave,
+  scriptCeilingWarning,
+  withEditedText,
+  type ScriptState,
+} from "@/lib/service-b-ui";
 import { postJson } from "@/lib/use-api";
 
 type StepScriptProps = {
@@ -25,11 +32,12 @@ type StepScriptProps = {
 };
 
 /**
- * Step 3: generate the Hebrew script, edit it within the word budget. The
- * generation is an explicit click, not a mount effect — the pointers step
- * leads here, and a paid call on navigation would be spent by every back-and-
- * forth. The response also carries the draft on-screen hook text, which this
- * step keeps in state for the effect step and does not display.
+ * Step 3: generate the Hebrew script and edit it freely — length is advisory
+ * here, not enforced. The generation is an explicit click, not a mount effect
+ * — the pointers step leads here, and a paid call on navigation would be
+ * spent by every back-and-forth. The response also carries the draft
+ * on-screen hook text, which this step keeps in state for the effect step and
+ * does not display.
  */
 export function StepScript({
   businessId,
@@ -48,7 +56,24 @@ export function StepScript({
   const [busy, setBusy] = useState<"generate" | "save" | null>(null);
 
   const words = countWords(editedText);
-  const overBudget = script?.wordBudget !== undefined && words > script.wordBudget;
+  // Advisory, never a wall: the word budget is the target the script was
+  // written to, not a cap. A longer script is a longer ad — HeyGen generates
+  // to the audio, and the render is priced per audio second — so the useful
+  // thing to show is the length itself, in the spirit of Service A's ending
+  // advisory. Whole seconds; the exact number arrives with the recording.
+  //
+  // Nothing is said below two seconds. One or two typed words are not a
+  // script yet, "בערך 0 שניות" is absurd, and 1 would need שנייה rather than
+  // the fixed plural שניות — Service A's identical sentence never reaches
+  // those values, so this is where the floor has to be explicit.
+  const rounded =
+    script?.wordBudget !== undefined
+      ? Math.round(estimateSpokenSeconds(words, duration, script.wordBudget))
+      : 0;
+  const projectedSeconds = rounded >= 2 ? rounded : null;
+  // The runaway-cost ceiling, named before the save fails rather than after.
+  // Soft: it warns, it does not disable — the server is what refuses.
+  const ceilingWarning = scriptCeilingWarning(editedText);
 
   async function generate() {
     setError(null);
@@ -92,7 +117,11 @@ export function StepScript({
     setBusy(null);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
-      return setError(result.error); // includes the server-side word-budget 400
+      // Over the ceiling the server answers in the support register — right
+      // when nothing on screen named the limit, wrong now that the amber
+      // line does and the fix is in the textarea above. Show the amber's
+      // instruction instead; the server is still what refused.
+      return setError(ceilingWarning ?? result.error);
     }
     const latest = withEditedText(script, result.body);
     setScript(latest);
@@ -137,7 +166,7 @@ export function StepScript({
     );
   }
 
-  // Phase 2: edit within the budget.
+  // Phase 2: edit, with the projected length alongside.
   return (
     <div>
       <StepHeader
@@ -152,17 +181,14 @@ export function StepScript({
           rows={7}
           value={editedText}
           onChange={(event) => setEditedText(event.target.value)}
-          error={
-            overBudget ? `התסריט ארוך מדי, המקסימום הוא ${script.wordBudget} מילים.` : undefined
-          }
         />
-        <p
-          className={`mt-1.5 text-[13px] tabular-nums ${overBudget ? "text-red-600" : "text-ink/55"}`}
-        >
-          {script.wordBudget !== undefined
-            ? `${words} / ${script.wordBudget} מילים`
-            : `${words} מילים`}
-        </p>
+        <p className="mt-1.5 text-[13px] tabular-nums text-ink/55">{words} מילים</p>
+        {projectedSeconds !== null && (
+          <p className="mt-1.5 text-[13px] text-ink/55">
+            לפי האורך הנוכחי, הסרטון יימשך בערך {projectedSeconds} שניות.
+          </p>
+        )}
+        {ceilingWarning && <p className="mt-1.5 text-[13px] text-amber-700">{ceilingWarning}</p>}
       </div>
 
       {error && (
@@ -177,7 +203,7 @@ export function StepScript({
           size="lg"
           className="flex-1"
           loading={busy === "save"}
-          disabled={overBudget || countWords(editedText) === 0 || busy === "generate"}
+          disabled={countWords(editedText) === 0 || busy === "generate"}
           onClick={() => void saveAndContinue()}
         >
           המשך להקלטה

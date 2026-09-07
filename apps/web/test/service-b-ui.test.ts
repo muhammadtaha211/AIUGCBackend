@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { assertBScriptWordCeiling, MAX_B_SCRIPT_WORDS } from "@aiugc/core/b-script-words";
 import {
   applyAudioPoll,
   countWords,
+  estimateSpokenSeconds,
   failedRenderNotice,
   generatingLine,
   HOOK_EFFECT_OPTIONS,
@@ -16,6 +18,7 @@ import {
   renderRequestBody,
   renderStageIndex,
   renderStatusLabel,
+  scriptCeilingWarning,
   wizardSteps,
   withEditedText,
   type AudioPollResult,
@@ -31,6 +34,80 @@ describe("countWords (mirrors core's budget counting)", () => {
     expect(countWords("  מילה   אחת\nושתיים  ")).toBe(3);
     expect(countWords("")).toBe(0);
     expect(countWords("   ")).toBe(0);
+  });
+});
+
+describe("scriptCeilingWarning (the runaway ceiling, named softly)", () => {
+  const script = (n: number) => "מילה ".repeat(n);
+
+  it("says nothing at or under the ceiling — including well over the word budget", () => {
+    expect(scriptCeilingWarning(script(31))).toBeNull();
+    expect(scriptCeilingWarning(script(100))).toBeNull();
+    expect(scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS))).toBeNull();
+    expect(scriptCeilingWarning("")).toBeNull();
+  });
+
+  it("warns one word past the ceiling, naming the number the server refuses at", () => {
+    const warning = scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS + 1));
+    expect(warning).toContain(String(MAX_B_SCRIPT_WORDS));
+    expect(warning).toContain("קצרו");
+  });
+
+  it("names a processing limit, never a duration — seconds are the other line's job", () => {
+    const warning = scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS + 50)) ?? "";
+    expect(warning).toContain("לא ניתן לעיבוד");
+    expect(warning).not.toContain("שניות");
+  });
+
+  it("tells the customer to shorten it, where the server says to call support", () => {
+    // The step shows this instead of the 400's body (step-script.tsx): the
+    // support register is right for a limit nothing named, wrong for one the
+    // line above names with the fix in the textarea.
+    const warning = scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS + 1)) ?? "";
+    expect(warning).not.toContain("פנו לתמיכה");
+    expect(() => assertBScriptWordCeiling(script(MAX_B_SCRIPT_WORDS + 1))).toThrow(/פנו לתמיכה/);
+  });
+
+  it("fires on exactly the text core's guard throws on — one counter, no drift", () => {
+    const at = script(MAX_B_SCRIPT_WORDS);
+    const over = script(MAX_B_SCRIPT_WORDS + 1);
+    expect(countWords(at)).toBe(MAX_B_SCRIPT_WORDS);
+    expect(scriptCeilingWarning(at)).toBeNull();
+    expect(() => assertBScriptWordCeiling(at)).not.toThrow();
+    expect(scriptCeilingWarning(over)).not.toBeNull();
+    expect(() => assertBScriptWordCeiling(over)).toThrow();
+  });
+});
+
+describe("estimateSpokenSeconds (the script step's length projection)", () => {
+  // The live 15s preset: wordBudget = floor(15 * words_per_second 2.1) = 31,
+  // so the implied rate is 31/15 and a script AT budget projects to 15s.
+  const BUDGET = 31;
+  const PRESET = 15;
+
+  it("projects the preset itself for a script at its word budget", () => {
+    expect(estimateSpokenSeconds(BUDGET, PRESET, BUDGET)).toBeCloseTo(15, 10);
+  });
+
+  it("scales linearly past the budget — the projection has no ceiling", () => {
+    expect(estimateSpokenSeconds(62, PRESET, BUDGET)).toBeCloseTo(30, 10);
+    expect(estimateSpokenSeconds(150, PRESET, BUDGET)).toBeCloseTo(72.58, 2);
+  });
+
+  it("projects short scripts below the preset", () => {
+    expect(estimateSpokenSeconds(16, PRESET, BUDGET)).toBeCloseTo(7.74, 2);
+    expect(estimateSpokenSeconds(0, PRESET, BUDGET)).toBe(0);
+  });
+
+  it("inverts core's mapping for any budget, not just the live one", () => {
+    // wordBudget = floor(30 * 2.1) = 63 — the other preset core accepts.
+    expect(estimateSpokenSeconds(63, 30, 63)).toBeCloseTo(30, 10);
+  });
+
+  it("returns 0 rather than dividing by zero on unusable inputs", () => {
+    expect(estimateSpokenSeconds(20, PRESET, 0)).toBe(0);
+    expect(estimateSpokenSeconds(20, PRESET, -1)).toBe(0);
+    expect(estimateSpokenSeconds(20, 0, BUDGET)).toBe(0);
   });
 });
 

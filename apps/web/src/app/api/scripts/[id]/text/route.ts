@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { assertWithinWordBudget, deriveHookText, getDb, updateScriptText } from "@aiugc/core";
+import { assertBScriptWordCeiling, deriveHookText, getDb, updateScriptText } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireScript, requireUser } from "@/lib/api";
 import { scriptTextSchema } from "@/lib/service-b";
 
 /**
  * "Write it myself" / post-generation edit. Scripts are immutable rows — the
- * edit creates a NEW row and the response carries its id. The word-budget
- * validator runs first so an oversized script never reaches TTS.
+ * edit creates a NEW row and the response carries its id. The only length
+ * check left is the runaway-cost guard, and only on avatar scripts.
  *
  * A b_script also gets its draft on-screen hook text re-derived from the
  * edited text (one more LLM call, under the llm_tokens cap) so the one new
@@ -26,16 +26,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = scriptTextSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
 
-    // The budget is a hard cap only for avatar (b_script) edits, to keep the
-    // render inside the customer's chosen duration preset (15s/30s) — HeyGen
-    // itself has no lipsync frame ceiling; it generates to the audio's length
-    // (docs/04-integrations.md §HeyGen). Service A's voiced `vo_script`
-    // format, where an overshoot became a freeze/avatar ending, is retired
-    // (vault 0020); vo_script edits carry no such cap.
-    const { wordBudget } = found.script.params as { wordBudget?: number };
+    // No length cap on an avatar edit any more: the word budget is what the
+    // prompt writes TO, not a wall the customer hits. HeyGen generates to the
+    // audio's length (docs/04-integrations.md §HeyGen), serviceBTimeline lays
+    // out off the measured audio, and quoteBRender charges per audio second —
+    // so a longer script is a longer ad the customer pays for, not a failure.
+    // What remains is the runaway-cost guard. Still b_script-only: hook-line
+    // edits (Service A's studio step) come through this same route.
     const isBScript = found.script.kind === "b_script";
-    if (isBScript && wordBudget) {
-      assertWithinWordBudget(body.data.text, wordBudget);
+    if (isBScript) {
+      assertBScriptWordCeiling(body.data.text);
     }
 
     const merge = isBScript
