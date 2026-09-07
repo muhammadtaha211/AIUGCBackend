@@ -50,6 +50,21 @@ hook's words anywhere in the opening rather than only as a prefix; or have
 last is the cheapest and lands naturally in the script-generation revamp the
 founder scheduled for 2026-09-07.
 
+## Update 2026-09-07 — common cause addressed at the prompt layer
+
+`prompts/b_script/v10.md` and `prompts/hook_text/v2.md` now require `hook_text` to be a
+VERBATIM PREFIX of the script's own opening line — character for character, not a
+compression — with `b_script` told to shape its opening sentence so the first 5–7 words
+already stand alone as a hook. A verbatim prefix cannot fail the `matched = 0` case this
+note measured: the hook's words are, by construction, the spoken words' own first words.
+
+This is prompt-layer only — `hookHandoffMs` and its no-match fallback are untouched, on
+purpose: a customer-edited hook line (the wizard invites edits) or a pronunciation-map
+respelling can still desync a word, so the fallback stays as the safety net for those
+cases. Not verified against a live generation (no model call was made implementing this;
+DRY_RUN and the unit tests only confirm the prompt text renders and states the rule) — the
+founder asked to see the prompt text and flagged that a live check is still open.
+
 ## Related
 
 - [[0023-hook-is-a-remotion-animation-opener-clips-retired]]

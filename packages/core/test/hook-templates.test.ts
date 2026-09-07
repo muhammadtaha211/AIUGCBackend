@@ -94,6 +94,20 @@ describe("b_script prompt rendering", () => {
     expect(text).toContain('{"script": "...", "hook_text": "..."}');
     expect(text).toContain("At most 7 Hebrew words and at most 40 characters");
   });
+
+  it("states hook_text as a verbatim prefix, not a compression (v10+)", () => {
+    const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(10);
+    expect(text).toContain("VERBATIM PREFIX");
+    expect(text).toContain("Verbatim, not compressed");
+  });
+
+  it("states the word budget as a 90-100% band, not a ceiling (v10+)", () => {
+    const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(10);
+    expect(text).toContain("between 90% and 100% of");
+    expect(text).not.toContain("AT MOST");
+  });
 });
 
 describe("hook_text prompt rendering", () => {
@@ -105,6 +119,15 @@ describe("hook_text prompt rendering", () => {
     expect(text).toContain("ניסיתי מיליון דברים");
     expect(text).toContain('{"hook_text": "..."}');
     expect(text).not.toMatch(/\{\{\w+\}\}/);
+  });
+
+  it("states hook_text as a verbatim prefix, not a compression (v2+)", () => {
+    const { text, promptVersion } = renderPrompt("hook_text", {
+      script: "ניסיתי מיליון דברים ושום דבר לא עבד",
+    });
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(2);
+    expect(text).toContain("VERBATIM PREFIX");
+    expect(text).toContain("Verbatim, not compressed");
   });
 });
 
