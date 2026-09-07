@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { assertBScriptWordCeiling, MAX_B_SCRIPT_WORDS } from "@aiugc/core/b-script-words";
 import {
   applyAudioPoll,
   countWords,
@@ -17,6 +18,7 @@ import {
   renderRequestBody,
   renderStageIndex,
   renderStatusLabel,
+  scriptCeilingWarning,
   wizardSteps,
   withEditedText,
   type AudioPollResult,
@@ -32,6 +34,48 @@ describe("countWords (mirrors core's budget counting)", () => {
     expect(countWords("  מילה   אחת\nושתיים  ")).toBe(3);
     expect(countWords("")).toBe(0);
     expect(countWords("   ")).toBe(0);
+  });
+});
+
+describe("scriptCeilingWarning (the runaway ceiling, named softly)", () => {
+  const script = (n: number) => "מילה ".repeat(n);
+
+  it("says nothing at or under the ceiling — including well over the word budget", () => {
+    expect(scriptCeilingWarning(script(31))).toBeNull();
+    expect(scriptCeilingWarning(script(100))).toBeNull();
+    expect(scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS))).toBeNull();
+    expect(scriptCeilingWarning("")).toBeNull();
+  });
+
+  it("warns one word past the ceiling, naming the number the server refuses at", () => {
+    const warning = scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS + 1));
+    expect(warning).toContain(String(MAX_B_SCRIPT_WORDS));
+    expect(warning).toContain("קצרו");
+  });
+
+  it("names a processing limit, never a duration — seconds are the other line's job", () => {
+    const warning = scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS + 50)) ?? "";
+    expect(warning).toContain("לא ניתן לעיבוד");
+    expect(warning).not.toContain("שניות");
+  });
+
+  it("tells the customer to shorten it, where the server says to call support", () => {
+    // The step shows this instead of the 400's body (step-script.tsx): the
+    // support register is right for a limit nothing named, wrong for one the
+    // line above names with the fix in the textarea.
+    const warning = scriptCeilingWarning(script(MAX_B_SCRIPT_WORDS + 1)) ?? "";
+    expect(warning).not.toContain("פנו לתמיכה");
+    expect(() => assertBScriptWordCeiling(script(MAX_B_SCRIPT_WORDS + 1))).toThrow(/פנו לתמיכה/);
+  });
+
+  it("fires on exactly the text core's guard throws on — one counter, no drift", () => {
+    const at = script(MAX_B_SCRIPT_WORDS);
+    const over = script(MAX_B_SCRIPT_WORDS + 1);
+    expect(countWords(at)).toBe(MAX_B_SCRIPT_WORDS);
+    expect(scriptCeilingWarning(at)).toBeNull();
+    expect(() => assertBScriptWordCeiling(at)).not.toThrow();
+    expect(scriptCeilingWarning(over)).not.toBeNull();
+    expect(() => assertBScriptWordCeiling(over)).toThrow();
   });
 });
 

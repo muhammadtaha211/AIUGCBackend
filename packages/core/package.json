@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./b-script-words": "./src/b-script-words.ts",
     "./db": "./src/db/index.ts",
     "./db/schema": "./src/db/schema.ts",
     "./hook-effect": "./src/hook-effect.ts",

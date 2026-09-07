@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { assertBScriptWordCeiling } from "../src/b-script-words";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
@@ -12,7 +13,6 @@ import { addHookClip, addPersona, addPersonaImage, addStructure } from "../src/p
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { approveComposite, createComposite } from "../src/pipelines/composites";
 import {
-  assertBScriptWordCeiling,
   generateBenefitCaptions,
   generateBScript,
   generateHookLines,

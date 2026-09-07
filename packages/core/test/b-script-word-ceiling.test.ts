@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { assertBScriptWordCeiling, MAX_B_SCRIPT_WORDS } from "../src/pipelines/copy";
+import {
+  assertBScriptWordCeiling,
+  countScriptWords,
+  MAX_B_SCRIPT_WORDS,
+} from "../src/b-script-words";
 import { MAX_LIPSYNC_SECONDS } from "../src/providers/lipsync";
 
 /**
@@ -34,10 +38,20 @@ describe("assertBScriptWordCeiling", () => {
     expect(() => assertBScriptWordCeiling(words(MAX_B_SCRIPT_WORDS + 1))).toThrow(/פנו לתמיכה/);
   });
 
+  it("is reachable from the package barrel, where the web route imports it", async () => {
+    // The guard moved to a client-safe module so the wizard can name the
+    // ceiling; the route's `from "@aiugc/core"` import must survive that.
+    const barrel = await import("../src/index");
+    expect(barrel.MAX_B_SCRIPT_WORDS).toBe(MAX_B_SCRIPT_WORDS);
+    expect(barrel.assertBScriptWordCeiling).toBe(assertBScriptWordCeiling);
+  });
+
   it("counts the way countWords does — whitespace-separated tokens, edges ignored", () => {
     const atCeiling = `  ${words(MAX_B_SCRIPT_WORDS).replace(/ /g, "\n  ")}  `;
+    expect(countScriptWords(atCeiling)).toBe(MAX_B_SCRIPT_WORDS);
     expect(() => assertBScriptWordCeiling(atCeiling)).not.toThrow();
     expect(() => assertBScriptWordCeiling("")).not.toThrow();
+    expect(countScriptWords("   ")).toBe(0);
   });
 
   it("stays an order of magnitude under the lipsync guard it sits behind", () => {

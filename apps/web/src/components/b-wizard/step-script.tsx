@@ -8,6 +8,7 @@ import {
   countWords,
   estimateSpokenSeconds,
   needsTextSave,
+  scriptCeilingWarning,
   withEditedText,
   type ScriptState,
 } from "@/lib/service-b-ui";
@@ -70,6 +71,9 @@ export function StepScript({
       ? Math.round(estimateSpokenSeconds(words, duration, script.wordBudget))
       : 0;
   const projectedSeconds = rounded >= 2 ? rounded : null;
+  // The runaway-cost ceiling, named before the save fails rather than after.
+  // Soft: it warns, it does not disable — the server is what refuses.
+  const ceilingWarning = scriptCeilingWarning(editedText);
 
   async function generate() {
     setError(null);
@@ -113,7 +117,11 @@ export function StepScript({
     setBusy(null);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
-      return setError(result.error); // includes the server-side runaway-guard 400
+      // Over the ceiling the server answers in the support register — right
+      // when nothing on screen named the limit, wrong now that the amber
+      // line does and the fix is in the textarea above. Show the amber's
+      // instruction instead; the server is still what refused.
+      return setError(ceilingWarning ?? result.error);
     }
     const latest = withEditedText(script, result.body);
     setScript(latest);
@@ -180,6 +188,7 @@ export function StepScript({
             לפי האורך הנוכחי, הסרטון יימשך בערך {projectedSeconds} שניות.
           </p>
         )}
+        {ceilingWarning && <p className="mt-1.5 text-[13px] text-amber-700">{ceilingWarning}</p>}
       </div>
 
       {error && (

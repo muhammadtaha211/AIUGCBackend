@@ -1,3 +1,4 @@
+import { countScriptWords, MAX_B_SCRIPT_WORDS } from "@aiugc/core/b-script-words";
 import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/core/hook-text";
@@ -6,8 +7,10 @@ import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/
  * Pure, client-safe helpers for the homepage and the Service B wizard.
  * No imports from @aiugc/core's main entry — this file is bundled into
  * client components, and core drags in server-only dependencies. The
- * "hook-geometry" and "hook-text" subpaths are the deliberate exceptions
- * (pure constants and validation, the same ones service-a-ui.ts leans on).
+ * "b-script-words", "hook-effect", "hook-geometry" and "hook-text" subpaths
+ * are the deliberate exceptions (pure constants and validation, the same
+ * kind service-a-ui.ts leans on). Keep this list exact: a stale allowlist
+ * stops reading as a rule.
  */
 
 // ---------------------------------------------------------------------------
@@ -327,9 +330,30 @@ export function needsScriptAdoption(
 // Script word budget + immutable-row threading
 // ---------------------------------------------------------------------------
 
-/** Mirrors core's word counting (assertBScriptWordCeiling): whitespace-separated tokens. */
+/**
+ * The web's name for core's counting, not a copy of it. It used to mirror
+ * the guard's implementation; now that the guard is client-safe there is one
+ * definition and no way for the two to drift.
+ */
 export function countWords(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
+  return countScriptWords(text);
+}
+
+/**
+ * The soft warning for the runaway-cost ceiling, in the shape service-a-ui's
+ * labelWordWarning uses. Named to the customer on founder instruction
+ * (2026-09-07): the server refuses past MAX_B_SCRIPT_WORDS, and learning that
+ * from a line under the textarea beats learning it from a failed save.
+ *
+ * Soft on purpose — it does not disable anything. It also says nothing about
+ * how long the ad may be: the ceiling is a processing limit, not a duration
+ * limit, and the projected-length line beside it is the only thing that
+ * speaks about seconds.
+ */
+export function scriptCeilingWarning(text: string): string | null {
+  return countScriptWords(text) > MAX_B_SCRIPT_WORDS
+    ? `תסריט מעל ${MAX_B_SCRIPT_WORDS} מילים לא ניתן לעיבוד — קצרו אותו כדי להמשיך.`
+    : null;
 }
 
 /**

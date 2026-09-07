@@ -1,4 +1,5 @@
 export * from "./appConfig";
+export * from "./b-script-words";
 export * from "./budget";
 export * from "./captions";
 export * from "./config";
