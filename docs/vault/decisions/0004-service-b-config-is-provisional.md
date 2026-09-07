@@ -34,10 +34,14 @@ These can be whatever until the revamp. Do not treat them as tuned values, do no
 defending their exact contents, and do not cite them as calibration output. They are carried in
 `0031_seed_unseeded_config.sql` only so a rebuild reproduces the running state by construction.
 
-The keys that **do** matter right now — live Service A settings:
+The keys that **do** matter right now:
 
 - `poll_deadline_seconds` (900)
-- `words_per_second` (`default` 2.1, calibration output — see [[app-config-live-state]])
+- `words_per_second` (`default` 2.1, calibration output — see [[app-config-live-state]]). **Amended
+  2026-09-07**: written when Service A's voiced format was still live and priced the word budget
+  it needed. That format is retired ([[0020-service-a-is-hook-and-steps-only]]) — its
+  `generateVoScript` caller survives only in the CLI's retired `format: "full"` path — so this is
+  now a Service B key (`generateBScript`'s word budget), not a Service A one.
 
 ## What this does and does not change
 

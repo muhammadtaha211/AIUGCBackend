@@ -26,9 +26,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = scriptTextSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
 
-    // The budget is a hard cap only for avatar scripts (lipsync frame
-    // ceiling). A Service A VO may run long on purpose — the overshoot
-    // becomes a freeze/avatar ending, chosen in the shape display.
+    // The budget is a hard cap only for avatar (b_script) edits, to keep the
+    // render inside the customer's chosen duration preset (15s/30s) — HeyGen
+    // itself has no lipsync frame ceiling; it generates to the audio's length
+    // (docs/04-integrations.md §HeyGen). Service A's voiced `vo_script`
+    // format, where an overshoot became a freeze/avatar ending, is retired
+    // (vault 0020); vo_script edits carry no such cap.
     const { wordBudget } = found.script.params as { wordBudget?: number };
     const isBScript = found.script.kind === "b_script";
     if (isBScript && wordBudget) {

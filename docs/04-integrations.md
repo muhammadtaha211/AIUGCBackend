@@ -44,25 +44,32 @@ keyless (the e2e test relies on this).
   The caps live in the client-safe `@aiugc/core/hook-text` (`HOOK_TEXT_MAX_WORDS`,
   `HOOK_TEXT_MAX_CHARS`, `hookTextError`).
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
-  app_config) and passed into the prompt as hard constraints. The live value is
-  **`{"default": 2.1}`**, set from 36 ready audio renders. Both voices pooled to 2.17–2.18 and
-  the subset written by the current `vo_script@v6` ran 2.07–2.13; **2.1 is deliberately low** so
-  the model aims short, because an overshoot past `a_outro_min_seconds` turns into a billable
-  avatar ending. **Per-voice keys were deliberately not written**: the two voices differ by 0.01,
-  which is inside the noise, and a per-voice entry would freeze that noise into pricing.
-- **An undershoot is NOT absorbed by the length fit — OPEN DECISION.** The fit is
+  app_config, or `duration_preset × words_per_second[voice]` for Service B) and passed into the
+  prompt as hard constraints. The live value is **`{"default": 2.1}`**, calibration output set
+  from 36 ready audio renders — both voices pooled to 2.17–2.18 and the subset written by the
+  current `vo_script@v6` ran 2.07–2.13. **Its original rationale is retired**: the value was tuned
+  deliberately low so the model aimed short, because an overshoot turned into a billable avatar
+  ending — that ending, and the format it belonged to, are gone
+  ([vault 0020](vault/decisions/0020-service-a-is-hook-and-steps-only.md)). **Service B
+  (`generateBScript`) is now the value's only live consumer**; Service A's `generateVoScript` still
+  reads it too, but only from the CLI's retired `format: "full"` path. **Per-voice keys were
+  deliberately not written**: the two voices differ by 0.01, which is inside the noise, and a
+  per-voice entry would freeze that noise into pricing.
+- **An undershoot was NOT absorbed by the length fit — CLOSED, moot.** Was an open decision on the
+  retired voiced Service A path; [vault 0020](vault/decisions/0020-service-a-is-hook-and-steps-only.md)
+  retired that whole format (no script, no VO, no length fit, no ending), so there is no live path
+  left for this to be undecided about. The description below is accurate as a record of the
+  retired code, kept for that reason, not as an open question. The fit was
   overshoot-gated: `pipelines/tts.ts:269` enters only when `durationMs > demoDurationMs`, and
   `atempoStretch` (`media/ffmpeg.ts:198`) has no floor, no ceiling and no branch — it is only ever
-  called with `tempo > 1`. A VO shorter than its demo is therefore left at its natural length:
+  called with `tempo > 1`. A VO shorter than its demo was therefore left at its natural length:
   `planAOutro` returns `outroMode: "none"` for `remainderMs <= 0` (`pipelines/sets.ts:113`),
   `serviceATimeline` sets `durationInFrames = hookFrames + demoFrames` (`timing.ts:68`), and the
-  demo is muted under any VO (`ServiceA.tsx:71`) — so the ad plays the demo to its end over
+  demo is muted under any VO (`ServiceA.tsx:71`) — so the ad played the demo to its end over
   **silence**. Measured 2026-08-09 across the 16 ready voiced Service A renders: 3 undershot
   (tails of 2972 / 3580 / 4380 ms — about a hook clip's worth of silence each), 13 overshot into
-  the ending path, and only 1 was actually atempo-stretched. So this is the minority case with an
-  outsized symptom, not an edge case and not the norm. **What should happen instead is undecided**
-  — stretching down, trimming the demo, and leaving it are all live options with different
-  billing and quality consequences. Do not pick one here.
+  the ending path, and only 1 was actually atempo-stretched. So this was the minority case with an
+  outsized symptom, not an edge case and not the norm.
 - **`aiugc calibrate-wps` was deliberately bypassed and is not the recalibration path.**
   `observedWordsPerSecond` has no sample filters — every ready render, any script kind, any
   prompt version, all time — and `applyWordsPerSecond` writes only `words_per_second[voiceId]`,

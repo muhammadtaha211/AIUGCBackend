@@ -22,8 +22,11 @@ aiugc set create --business <bizId> --demo <demoId> \
 aiugc work --once                                      # renders -> released, files in storage
 aiugc status                                           # paths to final.mp4
 
-# voiced variant (--persona derives the voice AND is the avatar-outro face;
-# --voice stays as an explicit escape hatch)
+# voiced variant — RETIRED (CLI-only since 2026-09-05, vault 0020): the live
+# product is hook + steps only, silent, no script/VO/length-fit/ending. The
+# commands below still run from the CLI; nothing customer-facing reaches them.
+# (--persona derives the voice AND is the avatar-outro face; --voice stays as
+# an explicit escape hatch)
 aiugc copy vo --business <bizId> --demo <demoId> --advantages "משלוח מהיר" --persona <personaId>
 aiugc tts <scriptId>
 aiugc work --once && <listen to the mp3>
