@@ -37,7 +37,11 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
     mapped: true,
   });
 
-  if (/ארוך מדי/.test(message)) return hit(400, message); // word budget — already Hebrew
+  // The runaway-cost guards phrase their own refusal in Hebrew, in the
+  // "system limit, contact support" register — pass it through rather than
+  // re-writing it here. It is NOT a product duration limit and must not be
+  // re-worded into one (see MAX_B_SCRIPT_WORDS / MAX_LIPSYNC_SECONDS).
+  if (/חורג מהמגבלה לעיבוד/.test(message)) return hit(400, message);
   if (/has no questionnaire yet/.test(message)) {
     return hit(400, "צריך למלא קודם את שאלון העסק.");
   }

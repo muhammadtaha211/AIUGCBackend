@@ -519,18 +519,6 @@ export async function deriveHookText(
   return assertHookText(object.hook_text);
 }
 
-/**
- * Reject text over the word budget. The web edit path ("write it myself" /
- * post-generation edits) calls this before updateScriptText, so an oversized
- * script never reaches TTS.
- */
-export function assertWithinWordBudget(text: string, wordBudget: number): void {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  if (words > wordBudget) {
-    throw new Error(`התסריט ארוך מדי: ${words} מילים, המקסימום הוא ${wordBudget}`);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Content policy (Service A — B is covered by the founder QC gate)
 // ---------------------------------------------------------------------------

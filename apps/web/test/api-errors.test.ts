@@ -121,8 +121,8 @@ describe("coreErrorMapping — order is load-bearing", () => {
     });
   });
 
-  it("passes an already-Hebrew word-budget message through untouched", () => {
-    const message = "התסריט ארוך מדי לאורך הסרטון";
+  it("passes an already-Hebrew runaway-guard message through untouched", () => {
+    const message = "אורך התסריט חורג מהמגבלה לעיבוד — פנו לתמיכה";
     expect(coreErrorMapping(new Error(message))).toEqual({
       status: 400,
       error: message,
