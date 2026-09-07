@@ -12,7 +12,7 @@ import { addHookClip, addPersona, addPersonaImage, addStructure } from "../src/p
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { approveComposite, createComposite } from "../src/pipelines/composites";
 import {
-  assertWithinWordBudget,
+  assertBScriptWordCeiling,
   generateBenefitCaptions,
   generateBScript,
   generateHookLines,
@@ -346,10 +346,10 @@ describe("founder workflow (dry-run, end to end)", () => {
       // "Write it myself" / post-generation edit: new immutable row, user_edited.
       const edited = await updateScriptText(db, script.id, `${script.text} נסו עכשיו`);
       expect(edited.userEdited).toBe(true);
-      // The validation helper rejects text over the word budget.
-      expect(() =>
-        assertWithinWordBudget("מילה ".repeat(params.wordBudget! + 1), params.wordBudget!),
-      ).toThrow(/ארוך מדי/);
+      // The word budget is what the prompt writes TO, not an edit cap: a
+      // script over it is a longer ad, priced per audio second. Only the
+      // runaway guard refuses — see b-script-word-ceiling.test.ts.
+      expect(() => assertBScriptWordCeiling("מילה ".repeat(params.wordBudget! + 1))).not.toThrow();
 
       const audio = await requestAudio(db, { scriptId: script.id }); // voice from persona
       await drainAll();

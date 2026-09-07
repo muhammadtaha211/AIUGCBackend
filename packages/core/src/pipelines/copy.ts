@@ -520,14 +520,26 @@ export async function deriveHookText(
 }
 
 /**
- * Reject text over the word budget. The web edit path ("write it myself" /
- * post-generation edits) calls this before updateScriptText, so an oversized
- * script never reaches TTS.
+ * Runaway-cost guard, NOT a product limit: a b_script's length is what the
+ * ad's TTS, its HeyGen GPU seconds and its Remotion render are all billed by,
+ * so one pasted document could buy minutes of GPU. ~150 Hebrew words is
+ * ~60-70s of speech — far past any ad we sell, far under
+ * MAX_LIPSYNC_SECONDS. Never surface it as a duration cap in the UI:
+ * `scripts.params.wordBudget` is the generation TARGET the prompt writes to,
+ * and it does not bound what a customer may write.
  */
-export function assertWithinWordBudget(text: string, wordBudget: number): void {
+export const MAX_B_SCRIPT_WORDS = 150;
+
+/**
+ * The web edit path ("write it myself" / post-generation edits) calls this
+ * before updateScriptText. It refuses runaway input only — a script over its
+ * word budget is a longer ad, priced per audio second by quoteBRender, not an
+ * error.
+ */
+export function assertBScriptWordCeiling(text: string): void {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  if (words > wordBudget) {
-    throw new Error(`התסריט ארוך מדי: ${words} מילים, המקסימום הוא ${wordBudget}`);
+  if (words > MAX_B_SCRIPT_WORDS) {
+    throw new Error("אורך התסריט חורג מהמגבלה לעיבוד — פנו לתמיכה");
   }
 }
 

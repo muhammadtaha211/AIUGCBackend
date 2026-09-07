@@ -327,9 +327,33 @@ export function needsScriptAdoption(
 // Script word budget + immutable-row threading
 // ---------------------------------------------------------------------------
 
-/** Mirrors core's assertWithinWordBudget counting: whitespace-separated tokens. */
+/** Mirrors core's word counting (assertBScriptWordCeiling): whitespace-separated tokens. */
 export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * How long the current script will speak for, in seconds. Inverts core's
+ * budget mapping (wordBudget = floor(durationPreset * wps)) using what the
+ * wizard already holds: implied wps = wordBudget / durationPreset, so
+ * seconds = words * durationPreset / wordBudget.
+ *
+ * Advisory only. The budget stopped being a cap — a script over it is a
+ * longer ad, not a rejected one — so the customer needs the length itself
+ * rather than a distance from a number that no longer bounds anything. An
+ * estimate: real speech rate varies by voice and the exact figure only exists
+ * once the recording does.
+ *
+ * Written here, not imported from service-a-ui.ts: that file goes with the
+ * Service A retirement (vault 0020) and this must outlive it.
+ */
+export function estimateSpokenSeconds(
+  words: number,
+  durationPreset: number,
+  wordBudget: number,
+): number {
+  if (wordBudget <= 0 || durationPreset <= 0) return 0;
+  return (words * durationPreset) / wordBudget;
 }
 
 export type ScriptState = {

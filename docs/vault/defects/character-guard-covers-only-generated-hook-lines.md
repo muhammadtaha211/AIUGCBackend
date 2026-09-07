@@ -40,10 +40,13 @@ feature [[0001-five-step-steps-wizard]] leaned on to justify dropping the person
 from `apps/web/src/components/a-wizard/step-hook-studio.tsx` through
 `apps/web/src/app/api/scripts/[id]/text/route.ts`.
 
-The route does validate, but narrowly: `route.ts:28` is
-`if (found.script.kind === "b_script" && wordBudget)`, so the only check is a **word budget**, and
-it applies **only to `b_script`**. A hook line goes through untouched, and no codepoint is looked at
-on any kind.
+The route does validate, but narrowly, and the check has since changed shape without closing
+this gap. It was `route.ts:28`, `if (found.script.kind === "b_script" && wordBudget)` — a
+per-script **word budget**. As of 2026-09-07 it is `route.ts:37`, `if (isBScript)` calling
+`assertBScriptWordCeiling`, a fixed 150-word **runaway-cost ceiling** (`MAX_B_SCRIPT_WORDS`); the
+word budget stopped being a cap. Either way the conclusion here is unchanged: the check applies
+**only to `b_script`**, a hook line goes through untouched, and no codepoint is looked at on any
+kind.
 
 `findPlanViolations` checks a label's **length** (`MAX_LABEL_CHARS`), **word count**
 (`MAX_LABEL_WORDS`) and **provenance** (words must come from `visibleText` or the questionnaire) —
