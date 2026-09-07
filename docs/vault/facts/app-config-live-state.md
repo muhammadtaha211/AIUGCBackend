@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-08-23
-method: "select key, value from app_config order by key — via packages/core/.work/vault-facts-probe.ts, run from repo root"
+verified: 2026-09-07
+method: "select key, value from app_config order by key — via packages/core/.work/vault-app-config-recheck-2026-09-07.ts (a narrower, app_config-only copy of vault-facts-probe.ts, gitignored, not part of the repo), run from repo root"
 source: db
 ---
 
@@ -20,13 +20,25 @@ reads through `getConfigValueOr` falls back to its code constant — see
 | `daily_caps`                | see [[token-and-money-budgets]]                                                                 |
 | `dunning`                   | `{"retry_days":[2,5],"suspend_after_days":7}`                                                   |
 | `imagegen_cost_agorot`      | `15`                                                                                            |
-| `lipsync_motion_prompt`     | `"gestures casually with one hand while talking, warm smile"`                                   |
+| `lipsync_expressiveness`    | `"medium"`                                                                                       |
+| `lipsync_motion_prompt`     | `"Speaks naturally to the camera with a warm, relaxed expression, small natural head movements, steady eye contact"` |
 | `lipsync_resolution`        | `"1080p"`                                                                                       |
 | `poll_deadline_seconds`     | `900`                                                                                           |
 | `retention_days`            | `{"audio_previews":30,"released_renders":90,"raw_after_normalize":30,"watermarked_samples":14}` |
-| `tts_enhance`               | `false`                                                                                         |
-| `tts_stability`             | `0.5`                                                                                           |
+| `tts_enhance`               | `true`                                                                                           |
 | `words_per_second`          | `{"default":2.1}`                                                                               |
+
+## What changed since the last check (2026-08-23)
+
+- **`tts_enhance` flipped `false` → `true`** — founder, in chat, 2026-09-07.
+- **`tts_stability` (was `0.5`) is gone from the table.** `pipelines/tts.ts:229` reads it through
+  `getConfigValueOr(..., undefined)`, so an absent row is not an error: `voice_settings` is simply
+  omitted from the ElevenLabs request and the provider default applies. Nothing in this pass
+  established when or why the row was removed — recorded as observed, not explained.
+- **`lipsync_expressiveness` is new** (`"medium"`), and `lipsync_motion_prompt`'s value changed —
+  both seeded by migration 0034 and founder-set since, per
+  [vault 0022](../decisions/0022-heygen-expressiveness-medium-generic-motion-prompt.md).
+- The row count is still 13 — one dropped (`tts_stability`), one added (`lipsync_expressiveness`).
 
 ## What the reader has to know
 

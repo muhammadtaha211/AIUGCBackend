@@ -44,12 +44,17 @@ keyless (the e2e test relies on this).
   The caps live in the client-safe `@aiugc/core/hook-text` (`HOOK_TEXT_MAX_WORDS`,
   `HOOK_TEXT_MAX_CHARS`, `hookTextError`).
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
-  app_config) and passed into the prompt as hard constraints. The live value is
-  **`{"default": 2.1}`**, set from 36 ready audio renders. Both voices pooled to 2.17–2.18 and
-  the subset written by the current `vo_script@v6` ran 2.07–2.13; **2.1 is deliberately low** so
-  the model aims short, because an overshoot past `a_outro_min_seconds` turns into a billable
-  avatar ending. **Per-voice keys were deliberately not written**: the two voices differ by 0.01,
-  which is inside the noise, and a per-voice entry would freeze that noise into pricing.
+  app_config, or `duration_preset × words_per_second[voice]` for Service B) and passed into the
+  prompt as hard constraints. The live value is **`{"default": 2.1}`**, calibration output set
+  from 36 ready audio renders — both voices pooled to 2.17–2.18 and the subset written by the
+  current `vo_script@v6` ran 2.07–2.13. **Its original rationale is retired**: the value was tuned
+  deliberately low so the model aimed short, because an overshoot turned into a billable avatar
+  ending — that ending, and the format it belonged to, are gone
+  ([vault 0020](vault/decisions/0020-service-a-is-hook-and-steps-only.md)). **Service B
+  (`generateBScript`) is now the value's only live consumer**; Service A's `generateVoScript` still
+  reads it too, but only from the CLI's retired `format: "full"` path. **Per-voice keys were
+  deliberately not written**: the two voices differ by 0.01, which is inside the noise, and a
+  per-voice entry would freeze that noise into pricing.
 - **An undershoot is NOT absorbed by the length fit — OPEN DECISION.** The fit is
   overshoot-gated: `pipelines/tts.ts:269` enters only when `durationMs > demoDurationMs`, and
   `atempoStretch` (`media/ffmpeg.ts:198`) has no floor, no ceiling and no branch — it is only ever
