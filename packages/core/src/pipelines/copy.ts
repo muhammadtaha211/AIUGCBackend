@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getConfigValue } from "../appConfig";
 import { assertBudget, recordUsage } from "../budget";
@@ -454,6 +454,42 @@ async function hookTextOrDerived(
     "b_script hook_text missed a cap; re-derived from the finished script",
   );
   return { hookText: derived.hookText, derivedPromptVersion: derived.promptVersion };
+}
+
+/**
+ * Least-recently-used pick from the active structure bank, for this business.
+ * A random pick repeated a skeleton roughly one regeneration in five with a
+ * bank of five; rotating means five consecutive generations get five
+ * different skeletons and the sixth wraps to the first.
+ *
+ * The join is LEFT so a structure this business has never used sorts ahead of
+ * every used one — Postgres puts nulls LAST on ASC, hence the explicit NULLS
+ * FIRST — which is also how a newly seeded skeleton reaches the front of the
+ * queue rather than the back (behind any older skeleton still unused).
+ * A user edit (updateScriptText) copies structure_id onto its new row, so it
+ * counts as another use of the structure just used, which is already last in
+ * the queue. Returns undefined when the bank has no active structure.
+ */
+export async function pickStructureForBusiness(
+  db: Db,
+  businessId: string,
+): Promise<string | undefined> {
+  const rows = await db
+    .select({ id: structures.id })
+    .from(structures)
+    .leftJoin(
+      scripts,
+      and(
+        eq(scripts.structureId, structures.id),
+        eq(scripts.businessId, businessId),
+        eq(scripts.kind, "b_script"),
+      ),
+    )
+    .where(eq(structures.active, true))
+    .groupBy(structures.id)
+    .orderBy(sql`max(${scripts.createdAt}) asc nulls first`, asc(structures.createdAt))
+    .limit(1);
+  return rows[0]?.id;
 }
 
 export async function generateBScript(

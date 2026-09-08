@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { generateBScript, getDb, schema } from "@aiugc/core";
+import { generateBScript, getDb, pickStructureForBusiness } from "@aiugc/core";
 import {
   coreErrorResponse,
   INVALID_BODY,
@@ -13,10 +12,11 @@ import { scriptRequestSchema } from "@/lib/service-b";
 /**
  * Generate the avatar script (Part 2): pointers + questionnaire + persona +
  * word budget through core's generateBScript. The structure skeleton is not
- * part of the HTTP contract — the server picks a random active one from the
- * founder-curated bank. Generation is synchronous (one LLM call), so the
- * response carries the finished script — and the DRAFT on-screen hook text
- * the same call emitted (b_script v9+), which seeds the effect step.
+ * part of the HTTP contract — the server rotates the founder-curated bank,
+ * least-recently-used first, so consecutive regenerations get new skeletons.
+ * Generation is synchronous (one LLM call), so the response carries the
+ * finished script — and the DRAFT on-screen hook text the same call emitted
+ * (b_script v9+), which seeds the effect step.
  */
 export async function POST(
   request: Request,
@@ -34,19 +34,15 @@ export async function POST(
     const body = scriptRequestSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
 
-    const activeStructures = await db
-      .select({ id: schema.structures.id })
-      .from(schema.structures)
-      .where(eq(schema.structures.active, true));
-    const structure = activeStructures[Math.floor(Math.random() * activeStructures.length)];
-    if (!structure) {
+    const structureId = await pickStructureForBusiness(db, businessId);
+    if (!structureId) {
       return jsonError(500, "אין כרגע תבנית תסריט זמינה — נסו שוב מאוחר יותר.");
     }
 
     const script = await generateBScript(db, {
       businessId,
       personaId: body.data.personaId,
-      structureId: structure.id,
+      structureId,
       pointers: body.data.pointers,
       durationPreset: body.data.durationPreset,
     });

@@ -84,7 +84,10 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   lipsync refuses composites without it. The approved image takes precedence over the persona's
   reference image as the HeyGen lipsync source.
 - **structures** — the weekly "clonable winners" menu: `skeleton jsonb` (beat outline + script
-  skeleton), persona-fit tags, source ref, week.
+  skeleton), persona-fit tags, source ref, week. The web wizard does not choose one at random:
+  `pickStructureForBusiness` rotates the `active` rows least-recently-used first, per business,
+  off `max(scripts.created_at)` — no `last_used_at` column
+  ([vault 0031](vault/decisions/0031-the-structure-bank-rotates-least-recently-used-per-business.md)).
 - **sounds** — a **trending-sound research tracker**, not an asset bank: which sound trended on
   which platform in which week (`title, platform, url, week, tags`). There is no storage path
   and no file reference, so nothing here can be bundled into a render — bundled audio would need
