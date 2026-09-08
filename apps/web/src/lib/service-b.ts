@@ -54,6 +54,12 @@ export const renderRequestSchema = z
 /** Pre-confirm quote lookup — the render's price comes from the approved audio. */
 export const renderPreviewRequestSchema = z.object({ audioId: z.string().uuid() });
 
+/** The render-create response. `balance` is the post-debit account balance
+ *  (null = admin bypass, never debited) — the wizard pushes it into the
+ *  sidebar's BalanceProvider the moment the render starts. Mirrors A's
+ *  AStepsCreateResponse (src/lib/service-a.ts). */
+export type BRenderCreateResponse = { renderId: string; balance: number | null };
+
 export function isUuid(value: string): boolean {
   return z.string().uuid().safeParse(value).success;
 }

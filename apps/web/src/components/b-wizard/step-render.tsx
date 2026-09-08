@@ -7,6 +7,7 @@ import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
+import { useBalance } from "@/app/home/balance-context";
 import {
   bShapeSummary,
   hasShortfall,
@@ -14,6 +15,7 @@ import {
   shortfallLine,
   type QuoteView,
 } from "@/lib/quote-ui";
+import type { BRenderCreateResponse } from "@/lib/service-b";
 import {
   failedRenderNotice,
   RENDER_STAGES,
@@ -69,6 +71,9 @@ export function StepRender({
   const [startError, setStartError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const loading = useRef(false);
+  /** The sidebar's number. The create and refund paths below push the
+   *  server-computed balance here — the moment of the spend, no refresh. */
+  const { setBalance } = useBalance();
 
   async function loadShape() {
     if (loading.current) return;
@@ -89,7 +94,7 @@ export function StepRender({
   async function start() {
     setStarting(true);
     setStartError(null);
-    const result = await postJson<{ renderId: string }>(
+    const result = await postJson<BRenderCreateResponse>(
       `/api/businesses/${businessId}/renders`,
       renderRequestBody({
         scriptId,
@@ -106,6 +111,9 @@ export function StepRender({
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       return setStartError(result.error);
     }
+    // The debit just happened — the sidebar shows it the same moment the
+    // processing screen appears (null = admin bypass, card stays hidden).
+    setBalance(result.body.balance);
     setRender({ id: result.body.renderId, status: "queued" });
   }
 
@@ -123,12 +131,21 @@ export function StepRender({
     slow,
     stalled,
     retry: retryPolling,
-  } = useJobPoll<{ status: string; videoUrl?: string; failureReason?: string; refunded?: boolean }>(
+  } = useJobPoll<{
+    status: string;
+    videoUrl?: string;
+    failureReason?: string;
+    refunded?: boolean;
+    balance?: number;
+  }>(
     inFlight,
     `/api/renders/${render?.id}`,
     2_500,
     (body) => {
       if (!render) return;
+      // The refund's terminal tick carries the post-refund balance — the
+      // sidebar climbs back the moment the refund sentence appears.
+      if (body.refunded && body.balance !== undefined) setBalance(body.balance);
       setRender({
         ...render,
         status: body.status,

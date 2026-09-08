@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { and, desc, eq, ne } from "drizzle-orm";
 import {
+  businessOwnerId,
   createBRender,
+  creditBalance,
   getDb,
   getJobProgress,
   getStorage,
   HEAVY_JOB_TYPES,
+  isAdminOwned,
   schema,
 } from "@aiugc/core";
 import {
@@ -16,7 +19,11 @@ import {
   requireUser,
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
-import { renderRequestSchema, renderSourceError } from "@/lib/service-b";
+import {
+  renderRequestSchema,
+  renderSourceError,
+  type BRenderCreateResponse,
+} from "@/lib/service-b";
 import { hookTextFieldError, pickActiveHead } from "@/lib/service-b-ui";
 
 /**
@@ -94,7 +101,12 @@ export async function POST(
       hookText,
       hookTextSafeArea: body.data.hookTextSafeArea,
     });
-    return NextResponse.json({ renderId: render.id });
+    // The post-debit balance, re-queried after the commit — the wizard pushes
+    // it into the sidebar's BalanceProvider, mirroring the A steps route.
+    const balance = (await isAdminOwned(db, businessId))
+      ? null
+      : await creditBalance(db, await businessOwnerId(db, businessId));
+    return NextResponse.json({ renderId: render.id, balance } satisfies BRenderCreateResponse);
   } catch (err) {
     return coreErrorResponse(err);
   }
