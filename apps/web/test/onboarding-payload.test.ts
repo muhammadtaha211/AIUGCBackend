@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { questionnaireSchema } from "@aiugc/core";
 import {
+  type BusinessType,
   draftToQuestionnairePayload,
   emptyDraft,
   type OnboardingDraft,
+  recommendedTone,
 } from "../src/lib/onboarding";
+
+describe("recommendedTone", () => {
+  // Founder, 2026-09-08: the persona's register is the influencer's; tone is
+  // an opt-in dial, never inferred from the business type.
+  it("is friendly for every business type, and before one is chosen", () => {
+    const types: (BusinessType | null)[] = ["physical", "app", "service", "other", null];
+    for (const t of types) expect(recommendedTone(t), String(t)).toBe("friendly");
+  });
+});
 
 /** A draft as it looks after every wizard step was answered. */
 const completeDraft: OnboardingDraft = {

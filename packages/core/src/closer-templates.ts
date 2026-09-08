@@ -8,10 +8,10 @@ import type { Questionnaire } from "./pipelines/businesses";
  *
  * Punctuation is part of the closer, not decoration. Measured by the founder in
  * the ElevenLabs v3 UI (Hebrew, 2026-09-07): audio tags have no audible effect;
- * punctuation does. Exclamation marks scale excitement (4 = max useful); one
- * trailing dot reads decisive, none reads open-ended; two dots elongate the
- * final sound and do NOT create a pause. So a closer's punctuation is a tested
- * delivery control and the prompt copies it byte for byte.
+ * punctuation does. Exclamation marks scale excitement; one trailing dot reads
+ * decisive, none reads open-ended; two dots elongate the final sound and do NOT
+ * create a pause. So every closer is a tested string — text + punctuation —
+ * and the prompt copies it byte for byte.
  */
 export interface CloserTemplate {
   /**
@@ -20,8 +20,8 @@ export interface CloserTemplate {
    * them down to whatever form the rest of the script uses.
    */
   text: string;
-  /** Tested delivery punctuation. exclaim: the model picks 1..max marks by how casual the business is. */
-  punctuation: { kind: "fixed"; mark: string } | { kind: "exclaim"; max: number };
+  /** Tested delivery punctuation, appended to the text as-is. */
+  punctuation: string;
   tones: readonly Questionnaire["tone"][];
   /** Which axis the text carries, so the prompt knows what may be conjugated. */
   agrees: "none" | "speaker" | "audience";
@@ -33,48 +33,73 @@ const ALL_TONES = ["friendly", "direct", "professional"] as const;
 
 export const CLOSER_TEMPLATES: readonly CloserTemplate[] = [
   {
+    // Always four marks — the tested delivery (founder, 2026-09-08).
     text: "הכי ממליצה בעולם",
-    punctuation: { kind: "exclaim", max: 4 },
+    punctuation: "!!!!",
     tones: ["friendly", "direct"],
     agrees: "speaker",
   },
   {
     text: "אין על זה, אין",
-    punctuation: { kind: "fixed", mark: "." },
+    punctuation: ".",
     tones: ["friendly", "direct"],
     agrees: "none",
   },
   {
     // Two dots on purpose: elongates the final sound, no pause (founder, 2026-09-07).
     text: "חבל על הזמן",
-    punctuation: { kind: "fixed", mark: ".." },
+    punctuation: "..",
     tones: ["friendly"],
     agrees: "none",
   },
   {
     text: "אני לא חוזרת אחורה",
-    punctuation: { kind: "fixed", mark: "." },
+    punctuation: ".",
     tones: ALL_TONES,
     agrees: "speaker",
   },
   {
     text: "מאז אני רק עם זה",
-    punctuation: { kind: "fixed", mark: "." }, // untested
+    punctuation: ".", // untested
     tones: ALL_TONES,
     agrees: "none",
   },
   {
-    text: "תנסו ותגידו לי",
-    punctuation: { kind: "fixed", mark: "." }, // untested
+    text: "תנסו ותגידו לי בתגובות",
+    punctuation: ".", // untested
     tones: ["friendly", "direct"],
     agrees: "audience",
   },
   {
     text: "תודו לי אחר כך",
-    punctuation: { kind: "fixed", mark: "." }, // untested
+    punctuation: ".", // untested
     tones: ["friendly"],
     agrees: "audience",
     pluralOnly: true,
+  },
+  {
+    text: "אין מה להתלבט",
+    punctuation: ".", // untested
+    tones: ["direct", "professional"],
+    agrees: "none",
+  },
+  {
+    text: "שווה כל שקל",
+    punctuation: ".", // untested
+    tones: ["direct", "professional"],
+    agrees: "none",
+  },
+  {
+    text: "מאז, שקט",
+    punctuation: ".", // untested
+    tones: ["professional", "direct"],
+    agrees: "none",
+  },
+  {
+    text: "בעיה נפתרה",
+    punctuation: ".", // untested
+    tones: ["direct", "professional"],
+    agrees: "none",
   },
 ];
 
@@ -100,31 +125,26 @@ export function pickClosers(
   return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
+// Marks a model is tempted to "tidy" get named, so the line says they are on purpose.
+const MARK_NOTES: Record<string, string> = { "..": "two dots", "!!!!": "four exclamation marks" };
+
 /**
  * The line the prompt shows for one closer: the text with its punctuation, and
  * what — if anything — the model may conjugate. The prompt numbers these.
  */
 export function describeCloser(c: CloserTemplate): string {
-  const shown =
-    c.punctuation.kind === "fixed"
-      ? `"${c.text}${c.punctuation.mark}"`
-      : `"${c.text}" + 1 to ${c.punctuation.max} exclamation marks (${c.punctuation.max} = most casual)`;
-  let rule: string;
+  const shown = `"${c.text}${c.punctuation}"`;
+  const mark = MARK_NOTES[c.punctuation];
   switch (c.agrees) {
     case "none":
-      rule =
-        c.punctuation.kind === "fixed" && c.punctuation.mark === ".."
-          ? "copy exactly, two dots, nothing to conjugate"
-          : "copy exactly, nothing to conjugate";
-      break;
+      return `${shown} — copy exactly, ${mark ? `${mark}, ` : ""}nothing to conjugate`;
     case "speaker":
-      rule = "conjugate speaker gender only";
-      break;
+      return `${shown} — ${mark ? `${mark}; ` : ""}conjugate speaker gender only`;
     case "audience":
-      rule = c.pluralOnly
-        ? "plural audience only; copy exactly"
-        : "conjugate only the audience form, to the one every other sentence uses";
-      break;
+      return `${shown} — ${
+        c.pluralOnly
+          ? "plural audience only; copy exactly"
+          : "conjugate only the audience form, to the one every other sentence uses"
+      }`;
   }
-  return `${shown} — ${rule}`;
 }

@@ -21,7 +21,7 @@
       "example": "ומה שמטורף בזה זה ש{יתרון}"
     },
     {
-      "id": "cta",
+      "id": "close",
       "intent": "ONE of the closers offered in the prompt, copied with its punctuation. The example shows one closer; use whichever the prompt offers this time. Nothing after it — no call to action, no link.",
       "example": "תודו לי אחר כך."
     }

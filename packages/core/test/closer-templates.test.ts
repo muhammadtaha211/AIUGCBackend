@@ -37,9 +37,30 @@ describe("CLOSER_TEMPLATES", () => {
 
   it("carries the founder's tested punctuation byte for byte", () => {
     const byText = Object.fromEntries(CLOSER_TEMPLATES.map((c) => [c.text, c]));
-    expect(byText["הכי ממליצה בעולם"]!.punctuation).toEqual({ kind: "exclaim", max: 4 });
-    expect(byText["חבל על הזמן"]!.punctuation).toEqual({ kind: "fixed", mark: ".." });
-    expect(byText["אין על זה, אין"]!.punctuation).toEqual({ kind: "fixed", mark: "." });
+    // Always four marks (founder, 2026-09-08) — no longer a range the model picks from.
+    expect(byText["הכי ממליצה בעולם"]!.punctuation).toBe("!!!!");
+    expect(byText["חבל על הזמן"]!.punctuation).toBe("..");
+    expect(byText["אין על זה, אין"]!.punctuation).toBe(".");
+    expect(byText["תנסו ותגידו לי בתגובות"]!.punctuation).toBe(".");
+    expect(byText["תנסו ותגידו לי"]).toBeUndefined();
+  });
+
+  it("every closer is a tested string: text plus dots or exclamation marks, nothing else", () => {
+    for (const c of CLOSER_TEMPLATES) {
+      expect(c.punctuation, c.text).toMatch(/^(\.{1,2}|!{4})$/);
+      expect(c.text, c.text).not.toMatch(/[.!?]$/);
+    }
+  });
+
+  it("the 2026-09-08 additions are direct/professional, agree with nothing, and end on one dot", () => {
+    const byText = Object.fromEntries(CLOSER_TEMPLATES.map((c) => [c.text, c]));
+    for (const text of ["אין מה להתלבט", "שווה כל שקל", "מאז, שקט", "בעיה נפתרה"]) {
+      const c = byText[text]!;
+      expect(c, text).toBeDefined();
+      expect([...c.tones].sort(), text).toEqual(["direct", "professional"]);
+      expect(c.agrees, text).toBe("none");
+      expect(c.punctuation, text).toBe(".");
+    }
   });
 
   it("the plural-only closer is audience-axis", () => {
@@ -98,9 +119,9 @@ describe("describeCloser", () => {
     CloserTemplate
   >;
 
-  it("an exclamation, speaker-axis closer", () => {
+  it("the four-mark, speaker-axis closer names its marks so they are not tidied", () => {
     expect(describeCloser(byText["הכי ממליצה בעולם"]!)).toBe(
-      '"הכי ממליצה בעולם" + 1 to 4 exclamation marks (4 = most casual) — conjugate speaker gender only',
+      '"הכי ממליצה בעולם!!!!" — four exclamation marks; conjugate speaker gender only',
     );
   });
 
@@ -120,17 +141,17 @@ describe("describeCloser", () => {
     expect(describeCloser(byText["אני לא חוזרת אחורה"]!)).toBe(
       '"אני לא חוזרת אחורה." — conjugate speaker gender only',
     );
-    expect(describeCloser(byText["תנסו ותגידו לי"]!)).toMatch(
-      /^"תנסו ותגידו לי\." — conjugate only the audience form/,
+    expect(describeCloser(byText["תנסו ותגידו לי בתגובות"]!)).toMatch(
+      /^"תנסו ותגידו לי בתגובות\." — conjugate only the audience form/,
+    );
+    expect(describeCloser(byText["בעיה נפתרה"]!)).toBe(
+      '"בעיה נפתרה." — copy exactly, nothing to conjugate',
     );
   });
 
   it("shows every closer's text with its punctuation attached", () => {
     for (const c of CLOSER_TEMPLATES) {
-      const line = describeCloser(c);
-      if (c.punctuation.kind === "fixed")
-        expect(line).toContain(`"${c.text}${c.punctuation.mark}"`);
-      else expect(line).toContain(`"${c.text}" + 1 to ${c.punctuation.max} exclamation marks`);
+      expect(describeCloser(c)).toContain(`"${c.text}${c.punctuation}"`);
     }
   });
 });
@@ -165,8 +186,19 @@ describe("b_script prompt rendering — closers (v12+)", () => {
     ({ text, promptVersion } = renderPrompt("b_script", bScriptVars(closers)));
   });
 
-  it("is v12 or later", () => {
-    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(12);
+  it("is v13 or later", () => {
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(13);
+  });
+
+  it("v13: no exclamation count to choose, and the imperfections budget is in", () => {
+    expect(text).not.toContain("choose the count by how casual");
+    expect(text).not.toContain("never 0");
+    expect(text).toContain("Include **one or two** of these, and no more");
+    expect(text).toContain("Never in the first five words");
+    expect(text).toContain("Never in the closing line");
+    expect(text).toContain("At most one intense device per script");
+    expect(text).toContain("three is a caricature");
+    expect(text).toContain("No written-out vocal sounds");
   });
 
   it("shows the offered closers, numbered, and no unreplaced placeholders", () => {
@@ -196,7 +228,7 @@ describe("b_script prompt rendering — closers (v12+)", () => {
     expect(text).toContain("`ממליצה` → `ממליץ`");
     expect(text).toContain("`תנסו` → `תנסי`");
     expect(text).toContain("plural-audience-only");
-    expect(text).toContain("never 0");
+    expect(text).toContain("Keep its punctuation exactly as offered");
     expect(text).toContain("two full stops by design, not an ellipsis");
     expect(text).toContain("`!!!!` is deliberate");
     expect(text).toContain("אני לא חוזרת אחורה (female)");
@@ -275,6 +307,9 @@ describe("generateBScript (dry-run, real DB)", () => {
         expect(template, `${tone}: ${text}`).toBeDefined();
         expect(template!.tones, `${tone}: ${text}`).toContain(tone);
       }
+      // The dry-run stand-in ends on the first offered closer, punctuation included.
+      const first = CLOSER_TEMPLATES.find((c) => c.text === closers[0])!;
+      expect(script.text.endsWith(`${first.text}${first.punctuation}`), tone).toBe(true);
     }
   });
 });

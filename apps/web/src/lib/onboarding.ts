@@ -51,15 +51,14 @@ export const emptyDraft: OnboardingDraft = {
   tone: null,
 };
 
-export function recommendedTone(businessType: BusinessType | null): Tone {
-  switch (businessType) {
-    case "app":
-      return "direct";
-    case "service":
-      return "professional";
-    default:
-      return "friendly";
-  }
+/**
+ * Founder decision (2026-09-08): the persona's register is the influencer's,
+ * so "friendly" is the default for every business type and tone is an opt-in
+ * dial the customer turns, not a guess made from the category. The parameter
+ * stays so the four call sites keep reading naturally.
+ */
+export function recommendedTone(_businessType: BusinessType | null): Tone {
+  return "friendly";
 }
 
 export const TONE_LABELS: Record<Tone, { title: string; description: string }> = {

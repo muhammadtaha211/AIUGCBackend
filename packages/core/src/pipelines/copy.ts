@@ -467,9 +467,12 @@ export async function generateBScript(
     // Dry-run still renders the template so prompt_version stays traceable and
     // a template/vars mismatch surfaces in tests, not in production.
     ({ promptVersion } = renderPrompt("b_script", vars));
+    // Ends on the first offered closer, so a dry run shows the mechanism.
+    const closer = closers[0]!;
     text =
       "חייבת לספר לכם על משהו שגיליתי השבוע ניסיתי את זה בספקנות מוחלטת ותוך יום " +
-      "הבנתי שאין סיכוי שאני חוזרת אחורה זה עושה בדיוק מה שהבטיחו תבדקו בעצמכם";
+      "הבנתי שאין סיכוי שאני חוזרת אחורה זה עושה בדיוק מה שהבטיחו. " +
+      `${closer.text}${closer.punctuation}`;
     hookText = dryRunHookText(text);
   } else {
     const result = await callClaude(db, opts.businessId, "b_script", vars, bScriptOutput);

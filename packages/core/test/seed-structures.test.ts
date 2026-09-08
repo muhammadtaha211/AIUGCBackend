@@ -26,11 +26,7 @@ type Skeleton = { beats: { id: string; intent: string; example: string }[] };
 
 /** Every closer the bank can offer, with its punctuation as the script would carry it. */
 function endsWithACloser(example: string): boolean {
-  return CLOSER_TEMPLATES.some((c) =>
-    c.punctuation.kind === "fixed"
-      ? example.endsWith(c.text + c.punctuation.mark)
-      : new RegExp(`${c.text}!{1,${c.punctuation.max}}$`).test(example),
-  );
+  return CLOSER_TEMPLATES.some((c) => example.endsWith(c.text + c.punctuation));
 }
 
 describe("seedStructures", () => {
@@ -69,6 +65,11 @@ describe("seedStructures", () => {
       const last = beats[beats.length - 1]!;
       expect(last.intent, title).toContain("closers offered in the prompt");
       expect(endsWithACloser(last.example), `${title}: ${last.example}`).toBe(true);
+      // No beat is a call to action any more — not even by name.
+      expect(
+        beats.map((b) => b.id),
+        title,
+      ).not.toContain("cta");
     }
   });
 
