@@ -610,14 +610,20 @@ bank
 bank
   .command("seed-structures")
   .description(
-    "insert every checked-in skeleton (seed/structures/*.json); titles already in the bank are skipped",
+    "insert every checked-in skeleton (seed/structures/*.json); titles already in the bank are skipped unless --update",
   )
+  .option("--update", "replace the skeleton of titles already in the bank from the file")
   .action(
-    run(async () => {
-      const added = await seedStructures(getDb());
+    run(async (opts: { update?: boolean }) => {
+      const { added, updated } = await seedStructures(getDb(), { update: Boolean(opts.update) });
       console.log(
         `${added.length} structure(s) added${added.length ? `: ${added.join(", ")}` : ""}`,
       );
+      if (opts.update) {
+        console.log(
+          `${updated.length} structure(s) updated${updated.length ? `: ${updated.join(", ")}` : ""}`,
+        );
+      }
     }),
   );
 

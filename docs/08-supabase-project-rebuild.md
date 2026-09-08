@@ -754,7 +754,9 @@ line them up first or the smoke test stops early:
 - **Script structures.** `structures` is empty on a rebuilt project too, and the Service B script
   step returns `אין כרגע תבנית תסריט זמינה` until it has an active row (hit on 2026-09-05, the
   first B wizard walk after the rebuild). `aiugc bank seed-structures` inserts the five checked-in
-  skeletons from `seed/structures/`; it skips titles already present, so re-running is safe.
+  skeletons from `seed/structures/`; it skips titles already present, so re-running is safe, and
+  `--update` replaces the skeletons of titles already present from the files (how an edited seed
+  reaches a live row — `add-structure` is insert-only).
 
 Uploading through the web app is deliberate here: it creates the `public.users` row from the auth
 uid via the trigger. `aiugc business create` invents a uuid instead, which permanently blocks that

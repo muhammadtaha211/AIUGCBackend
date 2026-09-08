@@ -4,6 +4,7 @@ import { getConfigValue } from "../appConfig";
 import { assertBudget, recordUsage } from "../budget";
 import { getEnv, wordsPerSecondSchema } from "../config";
 import type { Db } from "../db";
+import { describeCloser, pickClosers } from "../closer-templates";
 import { demos, events, personas, scripts, structures } from "../db/schema";
 import { hookTextError } from "../hook-text";
 import { pickHookTemplates } from "../hook-templates";
@@ -445,12 +446,14 @@ export async function generateBScript(
   }
 
   const hookTemplates = pickHookTemplates();
+  const closers = pickClosers(questionnaire.tone);
   const vars = {
     questionnaire: JSON.stringify(questionnaire, null, 2),
     persona: JSON.stringify({ name: persona.name, ...(persona.identity as object) }),
     persona_gender: personaGender,
     skeleton: JSON.stringify(structure.skeleton, null, 2),
     hook_options: hookTemplates.map((t, i) => `${i + 1}. ${t}`).join("\n"),
+    closer_options: closers.map((c, i) => `${i + 1}. ${describeCloser(c)}`).join("\n"),
     pointers: pointers ?? "(אין — התבסס על השאלון בלבד)",
     word_budget: wordBudget,
     words_per_second: wps,
@@ -484,11 +487,19 @@ export async function generateBScript(
       structureId: opts.structureId,
       kind: "b_script",
       text,
-      // hookTemplates: the exact openers offered this generation, so a winning
-      // hook can be traced back to its template later. hookText: the DRAFT
-      // on-screen line — the customer edits it in the effect step and the
-      // FINAL string is copied into the render's params (vault 0017).
-      params: { pointers, durationPreset, wordBudget, hookTemplates, hookText },
+      // hookTemplates / closers: the exact openers and closers offered this
+      // generation, so a winning hook or closer can be traced back to its
+      // template later. hookText: the DRAFT on-screen line — the customer
+      // edits it in the effect step and the FINAL string is copied into the
+      // render's params (vault 0017).
+      params: {
+        pointers,
+        durationPreset,
+        wordBudget,
+        hookTemplates,
+        closers: closers.map((c) => c.text),
+        hookText,
+      },
       promptVersion,
     })
     .returning();

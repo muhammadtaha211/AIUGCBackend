@@ -22,8 +22,8 @@
     },
     {
       "id": "cta",
-      "intent": "Direct and immediate.",
-      "example": "רוצו לבדוק את זה"
+      "intent": "ONE of the closers offered in the prompt, copied with its punctuation. The example shows one closer; use whichever the prompt offers this time. Nothing after it — no call to action, no link.",
+      "example": "תודו לי אחר כך."
     }
   ],
   "notes": "For physical_product only — assumes something visible on camera, so pair with an approved composite. Do not select for app_or_digital."

@@ -12,18 +12,13 @@
     },
     {
       "id": "found",
-      "intent": "THE SELLING BEAT. What she found, described entirely by its advantages, still UNNAMED. Talkative register.",
-      "example": "עד שמצאתי משהו שמיוצר בגרמניה עם טכנולוגיה אמיתית ומתאים לכל סוג עור, גם רגיש כמו שלי"
+      "intent": "The turning point — she found one. One clause, still UNNAMED, referred to by its kind (קרם אחד / האתר הזה), never משהו. The advantages wait for the next beat.",
+      "example": "עד שמצאתי קרם אחד שסופסוף עשה את העבודה"
     },
     {
-      "id": "name",
-      "intent": "The name, late and casual. A recommendation framing works well here.",
-      "example": "מניסיון, עולא ביוטי הוא אחד הטובים שיש"
-    },
-    {
-      "id": "close",
-      "intent": "Two to five words.",
-      "example": "ממליצה בחום"
+      "id": "name_and_close",
+      "intent": "The name, late and casual (a recommendation framing works well), then the one or two strongest advantages, concrete, then ONE of the closers offered in the prompt, copied with its punctuation. The example shows one closer; use whichever the prompt offers this time. Nothing after it.",
+      "example": "מניסיון, עולא ביוטי הוא אחד הטובים שיש, מיוצר בגרמניה ומתאים גם לעור רגיש כמו שלי. אין על זה, אין."
     }
   ],
   "notes": "Strongest for services and tools where the benefit is time, effort or a visible result. The hook must be declarative — question-form hooks tested badly."

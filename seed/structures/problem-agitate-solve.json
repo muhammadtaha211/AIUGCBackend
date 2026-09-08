@@ -12,18 +12,13 @@
     },
     {
       "id": "solution",
-      "intent": "THE SELLING BEAT. Describe what actually works using the strongest advantages from the questionnaire, while the product is still UNNAMED. The viewer should want it before they know what it is called. Casual, talkative.",
-      "example": "אז סופסוף מצאתי משהו שהולך להציל אותי אני אומרת לך, מיוצר בגרמניה עם טכנולוגיה שבאמת מתאימה לכל סוג עור"
-    },
-    {
-      "id": "name",
-      "intent": "Only now, the name, phrased the way a person names something to a friend. Use a naming construction: קוראים לו / זה נקרא / הוא נקרא. Never 'מצאתי את {מוצר}'.",
-      "example": "קוראים לו עולא ביוטי"
+      "intent": "THE SELLING BEAT, and the reveal. Name it the way a person names something to a friend — קוראים לו / זה נקרא / הוא נקרא, never 'מצאתי את {מוצר}' — then the one or two strongest advantages from the questionnaire, concrete. Casual, talkative.",
+      "example": "אז סופסוף מצאתי את הקרם, קוראים לו עולא ביוטי, מיוצר בגרמניה עם טכנולוגיה שבאמת מתאימה לכל סוג עור"
     },
     {
       "id": "close",
-      "intent": "Two to five words. Nothing after the name earns the viewer's trust, so do not spend words here. 'ממליצה בחום' is the preferred close.",
-      "example": "ממליצה בחום"
+      "intent": "ONE of the closers offered in the prompt, copied with its punctuation. The example shows one closer; use whichever the prompt offers this time. Nothing after it — no call to action, no link.",
+      "example": "הכי ממליצה בעולם!!!"
     }
   ],
   "notes": "Highest-contrast opener. Best when target_audience is specific and the pain is nameable. The solution beat carries the whole ad — if it is vague, the structure fails."

@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { describeCloser, pickClosers } from "../src/closer-templates";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import { personas } from "../src/db/schema";
@@ -53,6 +54,9 @@ function bScriptVars(hooks: string[], pointers?: string) {
     persona_gender: "female",
     skeleton: JSON.stringify({ beats: ["hook", "story", "cta"] }, null, 2),
     hook_options: hooks.map((t, i) => `${i + 1}. ${t}`).join("\n"),
+    closer_options: pickClosers("friendly")
+      .map((c, i) => `${i + 1}. ${describeCloser(c)}`)
+      .join("\n"),
     pointers: pointers ?? "(אין — התבסס על השאלון בלבד)",
     word_budget: 33,
     words_per_second: 2.2,

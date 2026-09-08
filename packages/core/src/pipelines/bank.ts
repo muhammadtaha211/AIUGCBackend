@@ -473,23 +473,34 @@ export async function addStructure(db: Db, opts: { title: string; skeleton: unkn
 /**
  * Insert every checked-in skeleton (seed/structures/*.json, title = file name)
  * through the same path as `aiugc bank add-structure`. Titles already in the
- * bank are skipped, so re-running after adding a new file is safe.
+ * bank are skipped, so re-running after adding a new file is safe. With
+ * `update`, an existing title gets its skeleton replaced from the file instead
+ * (every row carrying that title — `title` is not unique); nothing else on the
+ * row changes.
  */
-export async function seedStructures(db: Db, dir: string = SEED_STRUCTURES_DIR) {
+export async function seedStructures(
+  db: Db,
+  opts: { update?: boolean } = {},
+  dir: string = SEED_STRUCTURES_DIR,
+): Promise<{ added: string[]; updated: string[] }> {
   const existing = new Set(
     (await db.select({ title: structures.title }).from(structures)).map((r) => r.title),
   );
   const added: string[] = [];
+  const updated: string[] = [];
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".json"))) {
     const title = path.basename(file, ".json");
-    if (existing.has(title)) continue;
-    await addStructure(db, {
-      title,
-      skeleton: JSON.parse(readFileSync(path.join(dir, file), "utf8")),
-    });
+    const skeleton = JSON.parse(readFileSync(path.join(dir, file), "utf8"));
+    if (existing.has(title)) {
+      if (!opts.update) continue;
+      await db.update(structures).set({ skeleton }).where(eq(structures.title, title));
+      updated.push(title);
+      continue;
+    }
+    await addStructure(db, { title, skeleton });
     added.push(title);
   }
-  return added;
+  return { added, updated };
 }
 
 /** Ops views for `aiugc status` (Supabase Studio serves the same need in the browser). */

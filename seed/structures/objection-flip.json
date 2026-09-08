@@ -17,13 +17,8 @@
     },
     {
       "id": "name_and_why",
-      "intent": "Name it, then the advantages immediately after. In this structure only, the advantages may follow the name — the exception beat has already earned it.",
-      "example": "הוא נקרא עולא ביוטי, מיוצר בגרמניה, מתאים לכל סוגי העור וממש איכותי"
-    },
-    {
-      "id": "close",
-      "intent": "Two or three words. Never add reassurance like 'את לא תתחרטי' — it reads as fake straight after a name drop.",
-      "example": "ממליצה בחום"
+      "intent": "Name it, then the advantages immediately after, then ONE of the closers offered in the prompt, copied with its punctuation. The example shows one closer; use whichever the prompt offers this time. Nothing after it — never add reassurance like 'את לא תתחרטי', it reads as fake straight after a name drop.",
+      "example": "הוא נקרא עולא ביוטי, מיוצר בגרמניה, מתאים לכל סוגי העור וממש איכותי. חבל על הזמן.."
     }
   ],
   "notes": "The highest-trust structure and the best fit for a crowded category. Requires at least one genuinely specific advantage; without it the exception beat collapses into generic praise."

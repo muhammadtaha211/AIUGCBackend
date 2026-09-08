@@ -43,6 +43,7 @@ aiugc bank add-opener --persona-image <imageId> --effect hand_cover --label "×›×
   --file opener.mp4 --reveal-at-ms 1600 --safe-area '{"x":60,"y":900,"w":960,"h":300}'
                                                        # play-ready clip; duration probed off the file
 aiugc bank add-structure --title "..." --skeleton skeleton.json
+aiugc bank seed-structures [--update]                  # the checked-in seed/structures/*.json; --update replaces existing titles' skeletons from the files
 aiugc copy b-script --business <bizId> --persona <id> --structure <id>   # prints the draft hook text too
 aiugc script edit <scriptId> --text "..."              # b_script: re-derives the hook text into the new row
 aiugc tts <scriptId> && aiugc work --once && aiugc audio approve <id>

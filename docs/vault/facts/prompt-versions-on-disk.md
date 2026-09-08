@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-09-05
-method: "ls prompts/*/ (2026-09-05); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run)"
+verified: 2026-09-07
+method: "for d in prompts/*/; do ls $d | sort -V; done (2026-09-07); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run)"
 source: code
 ---
 
@@ -10,12 +10,12 @@ source: code
 
 ```
 analyze_demo          v1 v2 v3                              (latest v3)
-b_script              v1..v9                                (latest v9, new 2026-09-05)
+b_script              v1..v12                               (latest v12, new 2026-09-07)
 benefit_captions      v1 v2                                 (latest v2)
 content_policy        v1                                    (latest v1)
 group_analysis_states v1                                    (latest v1, new 2026-08-25)
 hook_lines            v1..v7                                (latest v7)
-hook_text             v1                                    (latest v1, new 2026-09-05)
+hook_text             v1 v2                                 (latest v2)
 plan_demo_steps       v1..v13                               (latest v13)
 tts_enhance           v1..v4                                (latest v4)
 vo_script             v1..v7                                (latest v7)
@@ -28,6 +28,12 @@ caught by the stop-and-report rule, not by luck: v1's var set has `target_second
 passes. `hook_text` v1 is the re-derivation prompt (`deriveHookText`) for an edited script.
 **Neither has run in production yet** — the first live `copy b-script` after 2026-09-05 stamps
 `b_script@v9`.
+
+b_script v10 (hook_text as a verbatim prefix, word budget as a band) and hook_text v2 landed
+together (`9199ece`); v11 is `product_kind` ([[0027-product-kind-is-an-optional-questionnaire-field]]);
+v12 (2026-09-07) adds `{{closer_options}}` — a **new var**, so the restart trap below applies:
+a worker or web process started before the code change throws `missing variable
+"closer_options"` on its next b_script call ([[0028-scripts-end-on-a-closer-from-a-curated-bank]]).
 
 v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
 the file landed while two pre-change workers were live, and both had to be restarted in the same

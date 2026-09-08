@@ -22,8 +22,8 @@
     },
     {
       "id": "name_and_close",
-      "intent": "Name the product as the one option that satisfies all three tips, then stop. Two to five words of close at most.",
-      "example": "המוצר היחיד שמצאתי שעושה את שלושתם נקרא עולא ביוטי, הלינק למטה"
+      "intent": "Name the product as the one option that satisfies all three tips, then its single strongest advantage, concrete, then ONE of the closers offered in the prompt, copied with its punctuation. The example shows one closer; use whichever the prompt offers this time. Nothing after it.",
+      "example": "הקרם היחיד שמצאתי שעושה את שלושתם נקרא עולא ביוטי, ומה שהכי חזק בו זה שהוא מתאים גם לעור רגיש. מאז אני רק עם זה."
     }
   ],
   "notes": "The tips must be real category advice the viewer could act on without buying anything — that is what earns the recommendation at the end. Listing three product features instead is the failure mode. Tight on words: five beats against the budget, so keep every clause short."
