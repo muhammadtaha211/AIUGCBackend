@@ -10,7 +10,7 @@ source: code
 
 ```
 analyze_demo          v1 v2 v3                              (latest v3)
-b_script              v1..v14                               (latest v14, new 2026-09-08)
+b_script              v1..v15                               (latest v15, new 2026-09-08)
 benefit_captions      v1 v2                                 (latest v2)
 content_policy        v1                                    (latest v1)
 group_analysis_states v1                                    (latest v1, new 2026-08-25)
@@ -38,7 +38,11 @@ v12 ran in production on 2026-09-08 (19 rows by 03:30 UTC that day — the query
 above — every one with an anthropic `llm_tokens` usage event within 90 s of it). v13 (2026-09-08, same vars as v12 — no restart needed) fixes every closer's
 punctuation and adds the imperfections budget; v14 (2026-09-08, same vars again) aims the
 opening at 4–6 words with 7 as a ceiling, after the model kept landing exactly on the cap
-([[0030-hook-text-falls-back-to-the-extractor-never-trims]]).
+([[0030-hook-text-falls-back-to-the-extractor-never-trims]]); v15 (2026-09-08, same vars again — no
+restart needed) is v14 with **one bullet** changed, carving an exception out of the output rules'
+blanket "No English" for a product name the naming policy already allows
+([[0033-b-script-may-write-an-allowed-brand-name-in-latin]]). The `hook_text` rule's own "no
+English" is deliberately untouched.
 
 plan_demo_steps v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
 the file landed while two pre-change workers were live, and both had to be restarted in the same

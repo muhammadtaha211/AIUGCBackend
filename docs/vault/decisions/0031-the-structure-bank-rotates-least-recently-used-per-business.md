@@ -37,8 +37,9 @@ select structures.id from structures
  limit 1
 ```
 
-Five active structures therefore give five consecutive generations five different skeletons, and
-the sixth wraps to the first.
+N active structures therefore give N consecutive generations N different skeletons, and the
+(N+1)th wraps to the first. N was 5 when this was written and is **6** since `ranked-countdown`
+joined the bank on 2026-09-08 ([[0032-ranked-countdown-joins-the-structure-bank]]).
 
 Three details are load-bearing:
 

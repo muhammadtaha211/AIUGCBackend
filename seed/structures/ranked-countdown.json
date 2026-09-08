@@ -1,0 +1,25 @@
+{
+  "beats": [
+    {
+      "id": "hook",
+      "intent": "Promise a ranked list of ways to get the RESULT the product delivers (derive it from what_it_does). Number first, agreeing with דרכים. No product name. The first 4–6 words must stand alone as hook_text.",
+      "example": "שלוש דרכים ליצור פרסומות בלי צלם"
+    },
+    {
+      "id": "third_place",
+      "intent": "Third place: a way people get this result today — a generic category, or a household-name product under the prompt's naming policy — then its one downside. The downside MUST be the inverse of an advantage in the questionnaire and phrased as an ABSENCE (does not do X, costs, takes time), never a defect. One clause: the way, comma, the downside.",
+      "example": "מקום שלישי, לשכור יוצר תוכן, מאות שקלים לכל סרטון"
+    },
+    {
+      "id": "second_place",
+      "intent": "Second place: a different way with a DIFFERENT downside, same rules, same clause shape — the parallelism is the rhythm.",
+      "example": "מקום שני, ChatGPT, כותב לך תסריט מעולה, אבל מי מצלם"
+    },
+    {
+      "id": "first_place",
+      "intent": "First place: the product name, casually, then the advantages that answer both downsides, concrete — then ONE of the closers offered in the prompt, copied with its punctuation. The example shows one closer; use whichever the prompt offers this time. Nothing after the closer.",
+      "example": "מקום ראשון, תבנית, סרטון מוכן תוך דקות בלי צלם ובלי ניסיון. אין על זה, אין."
+    }
+  ],
+  "notes": "A countdown, not a tips list (that is three-things). Honesty lives in the two lower places: every downside is one the questionnaire's advantages actually negate, stated as what the alternative lacks, never as a flaw; a named product follows the prompt's naming policy. ~31 words at 15s, so each place is one clause with no connectives."
+}

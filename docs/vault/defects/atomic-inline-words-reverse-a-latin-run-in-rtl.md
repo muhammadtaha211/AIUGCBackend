@@ -36,6 +36,24 @@ atomicity that does the damage, not the isolation.
   inherits it: its words are `inline-block` so the pop can scale them.
   `b_script` emits `hook_text` freely, so this reaches the hook line too.
 
+## Update 2026-09-08 — the aside about all-Hebrew scripts was wrong, and v15 raises the odds
+
+Two corrections to the bullet above, neither touching the measurement:
+
+- **"the scripts so far have been all-Hebrew" was never measured.** Counted 2026-09-08 with
+  `select kind, count(*) from scripts where text ~ '[A-Za-z]' group by 1` (read-only,
+  `packages/core/.work/latin-check.ts`): **19 `hook_line` and 6 `b_script`** rows already carry
+  Latin, and 7 of the 26 `audio_renders` with a `rendered_text` do
+  ([[pronunciation-map-is-empty-on-the-new-project]]). The runs are single tokens — `tavnit.ai`,
+  `excited` — so the two-word case that reverses has genuinely not shipped, which is why nobody has
+  reported it. The premise was right; the evidence for it was not.
+- **`b_script` v15 (2026-09-08) invites a Latin brand into `script` for the first time**
+  ([[0033-b-script-may-write-an-allowed-brand-name-in-latin]]), and `ranked-countdown`'s second
+  place exists to name one ([[0032-ranked-countdown-joins-the-structure-bank]]). Captions come from
+  the script, so this is now an ordinary path rather than a hypothetical one. `ChatGPT`, `Google`,
+  `Excel` and `WhatsApp` — the four the naming policy actually lists — are all **single** tokens and
+  all safe. It reverses the first time a script says `Google Docs`, `Adobe Express` or `Canva Pro`.
+
 ## Not fixed, deliberately
 
 The mock may not survive the founder's pick, and `Captions` is a separate

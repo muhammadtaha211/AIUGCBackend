@@ -25,12 +25,28 @@ reads through `getConfigValueOr` falls back to its code constant — see
 | `lipsync_resolution`        | `"1080p"`                                                                                       |
 | `poll_deadline_seconds`     | `900`                                                                                           |
 | `retention_days`            | `{"audio_previews":30,"released_renders":90,"raw_after_normalize":30,"watermarked_samples":14}` |
-| `tts_enhance`               | `true`                                                                                           |
+| `tts_enhance`               | `false` — was `true` at this note's own measurement; see the correction below                    |
 | `words_per_second`          | `{"default":2.1}`                                                                               |
+
+## Correction — `tts_enhance` is `false` again (2026-09-08)
+
+Re-measured **2026-09-08** with
+`select key, value from app_config where key in ('tts_enhance','tts_stability','words_per_second')`
+(read-only, `packages/core/.work/latin-check.ts`, run from repo root): `tts_enhance` is **`false`**,
+`words_per_second` is still `{"default":2.1}`, and `tts_stability` is still absent. So the flag was
+`true` for at most a day. Nothing in the repo flips it — `app_config` rows are hand-edited in the
+SQL editor and carry no `updated_at` trigger, so when it went back is not recoverable.
+
+Consequence, and the reason this was re-measured: with the flag off, `handleSynthTts`
+(`packages/core/src/pipelines/tts.ts:235-241`) skips `enhanceWithAudioTags` entirely, so the string
+`applyPronunciationMap` and ElevenLabs receive is `scripts.text` verbatim — no injected bracketed
+English audio tags. Only the **other 12 rows** in the table below are still as of 2026-09-07; this
+one row is as of 2026-09-08.
 
 ## What changed since the last check (2026-08-23)
 
-- **`tts_enhance` flipped `false` → `true`** — founder, in chat, 2026-09-07.
+- **`tts_enhance` flipped `false` → `true`** — founder, in chat, 2026-09-07. (And back to `false` by
+  2026-09-08 — see the correction above.)
 - **`tts_stability` (was `0.5`) is gone from the table.** `pipelines/tts.ts:229` reads it through
   `getConfigValueOr(..., undefined)`, so an absent row is not an error: `voice_settings` is simply
   omitted from the ElevenLabs request and the provider default applies. Nothing in this pass

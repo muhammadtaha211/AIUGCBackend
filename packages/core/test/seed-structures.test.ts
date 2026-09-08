@@ -18,6 +18,7 @@ const SEED_TITLES = [
   "before-after",
   "objection-flip",
   "problem-agitate-solve",
+  "ranked-countdown",
   "show-and-react",
   "three-things",
 ];
@@ -43,7 +44,7 @@ describe("seedStructures", () => {
     await pg.close();
   });
 
-  it("seeds the five checked-in skeletons with parseable beats", async () => {
+  it("seeds the six checked-in skeletons with parseable beats", async () => {
     const { added, updated } = await seedStructures(db);
     expect(added.sort()).toEqual(SEED_TITLES);
     expect(updated).toEqual([]);
