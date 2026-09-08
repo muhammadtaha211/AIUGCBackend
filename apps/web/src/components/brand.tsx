@@ -1,13 +1,17 @@
+import mark from "./brand-mark.png";
+
 /**
  * The brand lockup: the app icon mark + Hebrew wordmark.
- * The mark is `/icon.png` — the same file the app-icon file convention serves,
- * so the tab favicon and the in-page logo can never drift apart.
+ *
+ * The mark is its OWN asset, not `/icon.png`: the favicon art runs to the edge of
+ * its tile, which reads as cramped at the 24px this renders at, so this copy is
+ * inset to 76%. Changing the favicon files does not change this, and vice versa.
  */
 export function Brand() {
   return (
     <span className="inline-flex items-center gap-2.5">
       <img
-        src="/icon.png"
+        src={mark.src}
         alt=""
         aria-hidden
         width={24}

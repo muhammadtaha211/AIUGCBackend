@@ -17,14 +17,22 @@ png, jpg, jfif):
 | `favicon.ico`   | 16 + 32 + 48 px | transparent, 20% radius      |
 | `icon.png`      | 512 px          | transparent, 20% radius      |
 | `apple-icon.png`| 180 px          | **opaque, square**           |
+| `brand-mark.png`| 256 px          | transparent, 20% radius, **art inset to 76%** |
 
 `apple-icon.png` is deliberately not rounded: iOS applies its own corner mask and paints
 any transparency black, so rounding it here double-rounds it and puts black wedges in the
 corners.
 
-`icon.png` doubles as the in-page logo mark — `apps/web/src/components/brand.tsx` renders
-`<img src="/icon.png">`, so the tab favicon and the header lockup cannot drift apart. Next
-serves that route `immutable, max-age=31536000`.
+`brand-mark.png` is the in-page logo mark, and it is deliberately a SEPARATE file from the
+three favicon assets — it lives in `apps/web/src/components/`, is imported statically by
+`brand.tsx`, and is served fingerprinted from `/_next/static/media/`. It is not a favicon
+and nothing declares it as one.
+
+It exists because the two jobs want different optical sizing. The favicon art runs to ~80%
+of its tile, which is right for a 16px tab icon but reads as cramped at the 24px the header
+lockup renders at — the wand crowds the rounded corners (founder call, 2026-09-08). The
+mark's copy is inset to 76%, putting the wand at roughly 65% of the tile. Editing the
+favicon files does not change the header lockup, and vice versa.
 
 ## `to-ico` produces a file browsers render as colored stripes
 
