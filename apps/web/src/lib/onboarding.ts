@@ -4,8 +4,11 @@
  *
  * Field names mirror `questionnaireSchema` in packages/core/src/pipelines/businesses.ts
  * (category, product_name, product_kind, what_it_does, advantages, target_audience, tone,
- * link); a completed draft maps onto it via `draftToQuestionnairePayload` below.
+ * link); a completed draft maps onto it via `draftToQuestionnairePayload` below, and a stored
+ * questionnaire maps back into form values via `questionnaireToDraft` (the /home/settings editor).
  */
+
+import type { Questionnaire } from "@aiugc/core";
 
 export type BusinessType = "physical" | "app" | "service" | "other";
 export type Tone = "friendly" | "direct" | "professional";
@@ -22,6 +25,9 @@ export type OnboardingDraft = {
   audience: string;
   tone: Tone | null;
 };
+
+/** The questionnaire answers alone — what /home/settings edits; the wizard adds `step`. */
+export type QuestionnaireDraft = Omit<OnboardingDraft, "step">;
 
 export const STEPS = ["business", "product", "benefits", "audience", "signup"] as const;
 export type StepId = (typeof STEPS)[number];
@@ -61,6 +67,30 @@ export function recommendedTone(_businessType: BusinessType | null): Tone {
   return "friendly";
 }
 
+/**
+ * businesses.name has no cap in the schema; the settings form's input and its
+ * PATCH route (src/lib/settings.ts) agree on this one. Client-safe on purpose —
+ * settings.ts is server-only.
+ */
+export const MAX_BUSINESS_NAME_CHARS = 80;
+
+/** The "מה מפרסמים?" cards — the wizard's first step and the settings editor share the copy. */
+export const BUSINESS_TYPE_OPTIONS: { value: BusinessType; title: string; description: string }[] =
+  [
+    { value: "physical", title: "מוצר פיזי", description: "משהו שנשלח ללקוח או נמכר בחנות" },
+    {
+      value: "app",
+      title: "אפליקציה או מוצר דיגיטלי",
+      description: "אפליקציה, קורס, תוכנה או מנוי",
+    },
+    {
+      value: "service",
+      title: "שירות או עסק מקומי",
+      description: "קליניקה, סטודיו, מסעדה או נותן שירות",
+    },
+    { value: "other", title: "משהו אחר", description: "לא בטוחים? נתאים את השאלות בהמשך" },
+  ];
+
 export const TONE_LABELS: Record<Tone, { title: string; description: string }> = {
   friendly: { title: "חברי וקליל", description: "כמו המלצה מחברה טובה" },
   direct: { title: "ישיר ותכליתי", description: "ישר לעניין — מה המוצר ולמה עכשיו" },
@@ -79,7 +109,7 @@ const CATEGORY_BY_BUSINESS_TYPE: Record<BusinessType, string> = {
   other: "other",
 };
 
-export function draftToQuestionnairePayload(draft: OnboardingDraft): Record<string, unknown> {
+export function draftToQuestionnairePayload(draft: QuestionnaireDraft): Record<string, unknown> {
   const link = draft.link.trim();
   const wow = draft.wow.trim();
   const productKind = draft.productKind.trim();
@@ -93,6 +123,35 @@ export function draftToQuestionnairePayload(draft: OnboardingDraft): Record<stri
     ...(productKind ? { product_kind: productKind } : {}),
     ...(link ? { link } : {}),
     ...(wow ? { wow } : {}),
+  };
+}
+
+const BUSINESS_TYPE_BY_CATEGORY: Record<Questionnaire["category"], BusinessType> = {
+  physical_product: "physical",
+  app_or_digital: "app",
+  local_service: "service",
+  other: "other",
+};
+
+/**
+ * The inverse, for /home/settings: a stored questionnaire back into form
+ * values. Optional fields become "", and advantages are padded to the
+ * wizard's three rows so the editor opens with the same shape. demo_notes are
+ * not form material and are dropped — the PATCH route never accepts them either.
+ */
+export function questionnaireToDraft(questionnaire: Questionnaire): QuestionnaireDraft {
+  const benefits = [...questionnaire.advantages];
+  while (benefits.length < emptyDraft.benefits.length) benefits.push("");
+  return {
+    businessType: BUSINESS_TYPE_BY_CATEGORY[questionnaire.category],
+    productName: questionnaire.product_name,
+    productKind: questionnaire.product_kind ?? "",
+    whatItDoes: questionnaire.what_it_does,
+    link: questionnaire.link ?? "",
+    benefits,
+    wow: questionnaire.wow ?? "",
+    audience: questionnaire.target_audience,
+    tone: questionnaire.tone,
   };
 }
 

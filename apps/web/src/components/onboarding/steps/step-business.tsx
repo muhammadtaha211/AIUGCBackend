@@ -1,16 +1,5 @@
 import { OptionCard } from "@/components/ui/option-card";
-import type { BusinessType } from "@/lib/onboarding";
-
-const OPTIONS: { value: BusinessType; title: string; description: string }[] = [
-  { value: "physical", title: "מוצר פיזי", description: "משהו שנשלח ללקוח או נמכר בחנות" },
-  { value: "app", title: "אפליקציה או מוצר דיגיטלי", description: "אפליקציה, קורס, תוכנה או מנוי" },
-  {
-    value: "service",
-    title: "שירות או עסק מקומי",
-    description: "קליניקה, סטודיו, מסעדה או נותן שירות",
-  },
-  { value: "other", title: "משהו אחר", description: "לא בטוחים? נתאים את השאלות בהמשך" },
-];
+import { BUSINESS_TYPE_OPTIONS, type BusinessType } from "@/lib/onboarding";
 
 type StepBusinessProps = {
   selected: BusinessType | null;
@@ -35,7 +24,7 @@ export function StepBusiness({ selected, onSelect }: StepBusinessProps) {
           aria-label="מה מפרסמים?"
           className="grid gap-3 text-start sm:grid-cols-2"
         >
-          {OPTIONS.map((option) => (
+          {BUSINESS_TYPE_OPTIONS.map((option) => (
             <OptionCard
               key={option.value}
               title={option.title}

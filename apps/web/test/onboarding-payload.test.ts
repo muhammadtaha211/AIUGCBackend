@@ -5,6 +5,7 @@ import {
   draftToQuestionnairePayload,
   emptyDraft,
   type OnboardingDraft,
+  questionnaireToDraft,
   recommendedTone,
 } from "../src/lib/onboarding";
 
@@ -95,5 +96,60 @@ describe("draftToQuestionnairePayload", () => {
   it("rejects an unanswered draft via the schema (empty category and tone)", () => {
     const result = questionnaireSchema.safeParse(draftToQuestionnairePayload(emptyDraft));
     expect(result.success).toBe(false);
+  });
+});
+
+describe("questionnaireToDraft", () => {
+  it("is the inverse of draftToQuestionnairePayload for a complete questionnaire", () => {
+    const stored = questionnaireSchema.parse(draftToQuestionnairePayload(completeDraft));
+    const draft = questionnaireToDraft(stored);
+    const { step: _step, ...answers } = completeDraft;
+    expect(draft).toEqual(answers);
+    expect(draftToQuestionnairePayload(draft)).toEqual(draftToQuestionnairePayload(completeDraft));
+  });
+
+  it("maps every category back to its businessType", () => {
+    const cases = [
+      ["physical_product", "physical"],
+      ["app_or_digital", "app"],
+      ["local_service", "service"],
+      ["other", "other"],
+    ] as const;
+    for (const [category, businessType] of cases) {
+      const stored = questionnaireSchema.parse({
+        ...draftToQuestionnairePayload(completeDraft),
+        category,
+      });
+      expect(questionnaireToDraft(stored).businessType, category).toBe(businessType);
+    }
+  });
+
+  it("pads advantages to the wizard's three rows and blanks the optional fields", () => {
+    const draft = questionnaireToDraft({
+      category: "local_service",
+      product_name: "קליניקת גלואו",
+      what_it_does: "קליניקה לטיפולי פנים",
+      advantages: ["קביעת תור תוך דקה"],
+      target_audience: "נשים 30–50",
+      tone: "direct",
+    });
+    expect(draft.benefits).toEqual(["קביעת תור תוך דקה", "", ""]);
+    expect(draft.productKind).toBe("");
+    expect(draft.link).toBe("");
+    expect(draft.wow).toBe("");
+    // The padding rows fall away again on the way back — a round trip is a no-op.
+    expect(draftToQuestionnairePayload(draft).advantages).toEqual(["קביעת תור תוך דקה"]);
+    expect(draftToQuestionnairePayload(draft)).not.toHaveProperty("product_kind");
+  });
+
+  it("keeps more than three advantages and drops demo_notes", () => {
+    const stored = questionnaireSchema.parse({
+      ...draftToQuestionnairePayload(completeDraft),
+      advantages: ["א", "ב", "ג", "ד", "ה"],
+      demo_notes: ["ההסבר של הלקוח"],
+    });
+    const draft = questionnaireToDraft(stored);
+    expect(draft.benefits).toEqual(["א", "ב", "ג", "ד", "ה"]);
+    expect(draft).not.toHaveProperty("demo_notes");
   });
 });

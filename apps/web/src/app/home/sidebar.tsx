@@ -31,12 +31,13 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
         {email}
       </p>
       <div className="mx-2 mb-1.5 h-px bg-ink/[0.08]" />
-      <button type="button" role="menuitem" className={MENU_ITEM}>
+      {/* Both rows open the same page — vault decision 0034. */}
+      <Link href="/home/settings" role="menuitem" onClick={onClose} className={MENU_ITEM}>
         פרופיל
-      </button>
-      <button type="button" role="menuitem" className={MENU_ITEM}>
+      </Link>
+      <Link href="/home/settings" role="menuitem" onClick={onClose} className={MENU_ITEM}>
         הגדרות
-      </button>
+      </Link>
       {/* /home directly — "/" would just bounce back here via the middleware,
           after an auth check + DB query the user experiences as a dead click. */}
       <Link href="/home" role="menuitem" onClick={onClose} className={MENU_ITEM}>
@@ -62,7 +63,8 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
 /**
  * Dashboard sidebar (Lovable-style, RTL so it sits on the right): business
  * switcher on top, nav (home + the two service flows are live; the rest are
- * placeholders), credits + profile menu at the bottom.
+ * placeholders), credits + profile menu at the bottom — the menu's פרופיל and
+ * הגדרות rows both open /home/settings.
  * Below md it collapses into a compact top bar (brand, switcher, credits,
  * account menu) — the nav is desktop-only for now.
  */
