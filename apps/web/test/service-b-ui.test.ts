@@ -14,11 +14,15 @@ import {
   pickActiveHead,
   pickSelectedBusiness,
   pointersChanged,
+  RENDER_PAGE_SIZE,
   RENDER_STATUS_LABELS,
   renderRequestBody,
+  rendersPageCount,
+  rendersPageParam,
   renderStageIndex,
   renderStatusLabel,
   scriptCeilingWarning,
+  SERVICE_LABELS,
   wizardSteps,
   withEditedText,
   type AudioPollResult,
@@ -336,6 +340,41 @@ describe("pickActiveHead — the one in-flight render the dashboard describes", 
 
   it("qc_pending counts as in flight (it is what auto_release_b bypasses)", () => {
     expect(pickActiveHead([row("qc", "qc_pending", "2026-09-02T10:00:00Z")])?.id).toBe("qc");
+  });
+});
+
+describe("the /home/renders library's paging (route + page must agree)", () => {
+  it("only a 1-based integer switches the route to the paged shape", () => {
+    // null = the homepage strip's shape: newest 20 with head job progress.
+    expect(rendersPageParam(null)).toBe(null);
+    expect(rendersPageParam("1")).toBe(1);
+    expect(rendersPageParam("7")).toBe(7);
+  });
+
+  it("refuses everything a hand-typed URL can carry, back to the strip's shape", () => {
+    // 1e18 is a finite integer but not a SAFE one — its offset would overflow
+    // what postgres takes as a bigint, so it is refused rather than thrown on.
+    for (const raw of ["0", "-1", "abc", "", " ", "1.5", "1e18", "1e3000", "NaN", "Infinity"]) {
+      expect(rendersPageParam(raw)).toBe(null);
+    }
+  });
+
+  it("counts pages off the page size, never off a hard-coded 24", () => {
+    expect(rendersPageCount(RENDER_PAGE_SIZE)).toBe(1);
+    expect(rendersPageCount(RENDER_PAGE_SIZE + 1)).toBe(2);
+    expect(rendersPageCount(RENDER_PAGE_SIZE * 3)).toBe(3);
+  });
+
+  it("offers one page when there is nothing to show — never 'page 1 of 0'", () => {
+    expect(rendersPageCount(0)).toBe(1);
+    expect(rendersPageCount(1)).toBe(1);
+  });
+});
+
+describe("SERVICE_LABELS (the library's per-tile service name)", () => {
+  it("labels both pipelines — video_renders.service is the service_kind enum", () => {
+    expect(SERVICE_LABELS.a).toBe("הוק + דמו");
+    expect(SERVICE_LABELS.b).toBe("דמות AI");
   });
 });
 

@@ -50,6 +50,52 @@ export function isActiveRenderStatus(status: string): boolean {
   return status === "queued" || status === "rendering" || status === "qc_pending";
 }
 
+/** Which pipeline made it — the library labels each tile, the strip doesn't. */
+export const SERVICE_LABELS: Record<"a" | "b", string> = {
+  a: "הוק + דמו",
+  b: "דמות AI",
+};
+
+/** The /home/renders library pages renders 24 at a time (route + page agree). */
+export const RENDER_PAGE_SIZE = 24;
+
+/**
+ * `?page=` on GET /api/businesses/[id]/renders decides the SHAPE, not just the
+ * slice: a 1-based integer gets the library's { renders, total } page, and
+ * everything else — absent, "0", "abc", "1.5" — gets the homepage strip's
+ * newest-20-with-job-progress body, untouched. Returns the page number, or
+ * null for the strip.
+ *
+ * SAFE integer, not merely integer: the page becomes an OFFSET, and a hand-typed
+ * `?page=1e18` would multiply past what postgres accepts as a bigint and throw
+ * where an empty page is the honest answer. Every safe integer's offset fits.
+ */
+export function rendersPageParam(raw: string | null): number | null {
+  if (raw === null) return null;
+  const page = Number(raw);
+  return Number.isSafeInteger(page) && page >= 1 ? page : null;
+}
+
+/** Pages the pager offers. At least 1, so an empty library still says 1 of 1. */
+export function rendersPageCount(total: number): number {
+  return Math.max(1, Math.ceil(total / RENDER_PAGE_SIZE));
+}
+
+/** One row of GET /api/businesses/[id]/renders — strip and library alike. */
+export type RenderRow = {
+  id: string;
+  service: "a" | "b";
+  status: string;
+  createdAt: string;
+  /** Signed only after release — the customer never sees a render pre-QC. */
+  thumbUrl?: string;
+  /** Failed renders only; true when the credits were actually returned. */
+  refunded?: boolean;
+  /** The head in-flight row only, and only in the strip's shape — the library
+   *  is a list of finished work, not a live indicator (see pickActiveHead). */
+  job?: import("./service-a-ui").JobProgressWire;
+};
+
 /**
  * The one in-flight render the dashboard describes — and the only row the
  * list route pays for job progress on.

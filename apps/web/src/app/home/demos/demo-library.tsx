@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { TextAreaField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
@@ -9,9 +10,10 @@ import { apiFetch } from "@/lib/use-api";
 
 /**
  * The business's demos, newest first, with an editable footage note per ready
- * demo. Edits PATCH the demo row — the wizard's reuse picker prefills from the
- * same row, so the library and the wizard never diverge. No delete: sets and
- * scripts reference demos, so removal is a bigger decision than this page.
+ * demo and a way into that demo's step plan. Edits PATCH the demo row — the
+ * wizard's reuse picker prefills from the same row, so the library and the
+ * wizard never diverge. No delete: sets and scripts reference demos, so
+ * removal is a bigger decision than this page.
  */
 export function DemoLibrary({ businessId }: { businessId: string }) {
   const [demos, setDemos] = useState<DemoSummary[] | null>(null);
@@ -57,11 +59,22 @@ export function DemoLibrary({ businessId }: { businessId: string }) {
       )}
 
       {demos !== null && demos.length > 0 && (
-        <ul className="flex flex-col gap-4">
-          {demos.map((demo) => (
-            <DemoRow key={demo.id} demo={demo} />
-          ))}
-        </ul>
+        <>
+          {/* Says what the button on each row actually does, before anyone
+              presses it — so it follows the BUTTON's condition, not the list's:
+              only ready demos carry it, and a library of nothing but rejected
+              uploads would otherwise explain a control that is not there. */}
+          {demos.some((demo) => demo.status === "ready") && (
+            <p className="mb-4 text-sm text-ink/60">
+              בוחרים אילו צעדים נכנסים לסרטון ומה כתוב על כל אחד — כמו בשלב התוכנית ביצירת מודעה.
+            </p>
+          )}
+          <ul className="flex flex-col gap-4">
+            {demos.map((demo) => (
+              <DemoRow key={demo.id} demo={demo} />
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
@@ -134,30 +147,39 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
 
           {demo.status === "ready" && (
             <div className="mt-3">
-              <TextAreaField
-                label="מה רואים בסרטון?"
-                rows={2}
-                maxLength={500}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
-              />
-              {error && (
-                <p role="alert" className="mt-2 text-sm text-red-700">
-                  {error}
-                </p>
-              )}
-              {dirty && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="mt-2"
-                  loading={saving}
-                  onClick={() => void save()}
-                >
-                  שמירת התיאור
-                </Button>
-              )}
+              {/* The row's primary action, above the note: a real button, not
+                  a link buried in a sentence — editing the plan is what this
+                  page is for now, the note is the footnote. */}
+              <Link href={`/home/demos/${demo.id}`} className="inline-block">
+                <Button type="button">עריכת הצעדים והכיתובים</Button>
+              </Link>
+
+              <div className="mt-3">
+                <TextAreaField
+                  label="מה רואים בסרטון?"
+                  rows={2}
+                  maxLength={500}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
+                />
+                {error && (
+                  <p role="alert" className="mt-2 text-sm text-red-700">
+                    {error}
+                  </p>
+                )}
+                {dirty && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-2"
+                    loading={saving}
+                    onClick={() => void save()}
+                  >
+                    שמירת התיאור
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>

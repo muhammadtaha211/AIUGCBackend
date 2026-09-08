@@ -35,6 +35,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       /** The owning business — the wizard's URL-restore refuses a demo from a
        *  different business than the one selected (same user, wrong tenant). */
       businessId: string;
+      /** When it was uploaded. The plan editor's header names it, the same way
+       *  the library row does; the wizard ignores it. */
+      createdAt: string;
       /** The stored footage note. The wizard's URL-restore prefills its field
        *  from this — otherwise a restore + continue would PATCH "" over the
        *  saved note ("blank clears"). Safe beside the 2s ingest poll: the
@@ -50,7 +53,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       /** Newest analysis status once ready — feeds the ready card's
        *  "runs on in the background" line. "missing" = no row yet. */
       analysis?: { status: string };
-    } = { status: demo.status, businessId: demo.businessId };
+    } = {
+      status: demo.status,
+      businessId: demo.businessId,
+      createdAt: demo.createdAt.toISOString(),
+    };
     if (demo.description) body.description = demo.description;
     if (demo.rejectReason) body.rejectReason = demo.rejectReason;
     if (demo.durationMs) body.durationMs = demo.durationMs;

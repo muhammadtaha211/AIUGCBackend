@@ -62,9 +62,9 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
 
 /**
  * Dashboard sidebar (Lovable-style, RTL so it sits on the right): business
- * switcher on top, nav (home + the two service flows are live; the rest are
- * placeholders), credits + profile menu at the bottom — the menu's פרופיל and
- * הגדרות rows both open /home/settings.
+ * switcher on top, nav (home, the two libraries and the two service flows are
+ * live; צור קשר is still a placeholder), credits + profile menu at the bottom
+ * — the menu's פרופיל and הגדרות rows both open /home/settings.
  * Below md it collapses into a compact top bar (brand, switcher, credits,
  * account menu) — the nav is desktop-only for now.
  */
@@ -248,8 +248,8 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Nav — the service entries are live; the rest are placeholders until
-            their pages land. */}
+        {/* Nav — everything but צור קשר is live; that one stays a placeholder
+            until its page lands. */}
         <nav aria-label="ניווט הדשבורד" className="mt-5 flex-1 space-y-0.5 px-3">
           <SidebarItem
             icon={<House className="size-4" />}
@@ -257,8 +257,18 @@ export function Sidebar({
             href="/home"
             active={pathname === "/home"}
           />
-          <SidebarItem icon={<Grid className="size-4" />} label="כל היצירות" />
-          <SidebarItem icon={<Folder className="size-4" />} label="קבצים שהעליתי" />
+          <SidebarItem
+            icon={<Grid className="size-4" />}
+            label="כל היצירות"
+            href="/home/renders"
+            active={pathname.startsWith("/home/renders")}
+          />
+          <SidebarItem
+            icon={<Folder className="size-4" />}
+            label="סרטוני המוצר"
+            href="/home/demos"
+            active={pathname.startsWith("/home/demos")}
+          />
           <SidebarItem
             icon={<Clip className="size-4" />}
             label="הוק + דמו"

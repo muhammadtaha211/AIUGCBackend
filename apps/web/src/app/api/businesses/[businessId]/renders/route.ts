@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import {
   businessOwnerId,
   createBRender,
@@ -24,7 +24,12 @@ import {
   renderSourceError,
   type BRenderCreateResponse,
 } from "@/lib/service-b";
-import { hookTextFieldError, pickActiveHead } from "@/lib/service-b-ui";
+import {
+  hookTextFieldError,
+  pickActiveHead,
+  RENDER_PAGE_SIZE,
+  rendersPageParam,
+} from "@/lib/service-b-ui";
 
 /**
  * Create a Service B render. Core enforces the approved-audio gate and the
@@ -136,12 +141,20 @@ async function headProgress(db: ReturnType<typeof getDb>, renderId: string) {
 }
 
 /**
- * The homepage strip: newest 20 renders. Rejected rows stay internal (a
- * regenerated render replaces them), and thumbnails are signed only after
- * release — the customer never sees Service B output before the QC gate.
+ * This business's renders, newest first, in two shapes. Rejected rows stay
+ * internal (a regenerated render replaces them) in both, and thumbnails are
+ * signed only after release — the customer never sees Service B output before
+ * the QC gate.
+ *
+ * - no `?page=`: the homepage strip — newest 20, plus job progress for the one
+ *   render its "generating now" indicator describes.
+ * - `?page=N` (1-based): the /home/renders library — RENDER_PAGE_SIZE per page
+ *   plus the unpaged total for the pager, and NO job progress: a library lists
+ *   finished work, it is not a live indicator, and progress is the expensive
+ *   part of this route.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ businessId: string }> },
 ) {
   const { businessId } = await params;
@@ -154,29 +167,53 @@ export async function GET(
     if ("response" in owned) return owned.response;
 
     const { videoRenders } = schema;
+    // One predicate for the slice AND the count, so page N+1 exists exactly
+    // when the pager says it does.
+    const visible = and(
+      eq(videoRenders.businessId, businessId),
+      ne(videoRenders.status, "rejected"),
+    );
+    const page = rendersPageParam(new URL(request.url).searchParams.get("page"));
+
     const rows = await db
       .select({
         id: videoRenders.id,
+        service: videoRenders.service,
         status: videoRenders.status,
         createdAt: videoRenders.createdAt,
         thumbPath: videoRenders.thumbPath,
         refundedAt: videoRenders.refundedAt,
       })
       .from(videoRenders)
-      .where(and(eq(videoRenders.businessId, businessId), ne(videoRenders.status, "rejected")))
-      .orderBy(desc(videoRenders.createdAt))
-      .limit(20);
+      .where(visible)
+      // PAGED ONLY, and the id is the point: createSet inserts a whole grid
+      // inside ONE transaction (pipelines/sets.ts) and now() is the transaction
+      // timestamp, so every render of a grid shares created_at to the
+      // microsecond. created_at alone is not a total order, and a tie group
+      // straddling a page boundary lets LIMIT/OFFSET repeat one row on page 2
+      // and drop another entirely. The strip takes ONE slice with no offset, so
+      // it cannot lose or repeat anything and does not need the tiebreaker —
+      // and adding it there would reorder tied rows (and so which one
+      // pickActiveHead calls the head) on a surface that must not change.
+      .orderBy(desc(videoRenders.createdAt), ...(page === null ? [] : [desc(videoRenders.id)]))
+      .limit(page === null ? 20 : RENDER_PAGE_SIZE)
+      .offset(page === null ? 0 : (page - 1) * RENDER_PAGE_SIZE);
 
     // The dashboard's "generating now" indicator needs progress for exactly
     // one render, so only the head row pays for it: getJobProgress is 3-4
     // queries, and every other active row is merely queued behind this one.
-    const head = pickActiveHead(rows);
+    const head = page === null ? pickActiveHead(rows) : undefined;
 
+    // Concurrent, like the sibling demos route: signing is a network call per
+    // released row, and a full page of 24 in series is the whole latency of
+    // this screen. Promise.all resolves in input order, so the body is
+    // byte-identical to the serial loop this replaced — including the single
+    // head `job`, which only one row asks for either way.
     const storage = getStorage();
-    const renders = [];
-    for (const row of rows) {
-      renders.push({
+    const renders = await Promise.all(
+      rows.map(async (row) => ({
         id: row.id,
+        service: row.service,
         status: row.status,
         createdAt: row.createdAt,
         thumbUrl:
@@ -187,9 +224,15 @@ export async function GET(
         // really landed (refunded_at set in the refund transaction).
         refunded: row.status === "failed" ? row.refundedAt !== null : undefined,
         job: row.id === head?.id ? await headProgress(db, row.id) : undefined,
-      });
-    }
-    return NextResponse.json({ renders });
+      })),
+    );
+    if (page === null) return NextResponse.json({ renders });
+
+    const [counted] = await db
+      .select({ n: sql<string>`count(*)` })
+      .from(videoRenders)
+      .where(visible);
+    return NextResponse.json({ renders, total: Number(counted?.n ?? 0) });
   } catch (err) {
     return coreErrorResponse(err);
   }

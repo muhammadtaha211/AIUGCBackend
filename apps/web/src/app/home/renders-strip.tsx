@@ -2,25 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Spinner } from "@/components/ui/icons";
-import { renderWaitView, type JobProgressWire } from "@/lib/service-a-ui";
+import { renderWaitView } from "@/lib/service-a-ui";
 import {
   generatingLine,
   isActiveRenderStatus,
   pickActiveHead,
-  renderStatusLabel,
+  type RenderRow,
 } from "@/lib/service-b-ui";
 import { apiFetch, usePolling } from "@/lib/use-api";
-
-type StripRender = {
-  id: string;
-  status: string;
-  createdAt: string;
-  thumbUrl?: string;
-  /** Failed renders only; true when the credits were actually returned. */
-  refunded?: boolean;
-  /** Present on the head in-flight render only — see pickActiveHead. */
-  job?: JobProgressWire;
-};
+import { RenderTile } from "./render-tile";
 
 /**
  * Fast enough for a percent that visibly moves (a render is minutes, and the
@@ -29,21 +19,6 @@ type StripRender = {
  * is actually in flight.
  */
 const ACTIVE_POLL_MS = 5_000;
-
-const CHIP_COLORS: Record<string, string> = {
-  released: "bg-accent/30 text-ink",
-  failed: "bg-red-100 text-red-700",
-};
-
-function StatusChip({ status }: { status: string }) {
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${CHIP_COLORS[status] ?? "bg-ink/[0.06] text-ink/70"}`}
-    >
-      {renderStatusLabel(status)}
-    </span>
-  );
-}
 
 /** The live chip's dot. It breathes only while something is actually being
  *  worked on — a pulse over a parked job would say the opposite of the line. */
@@ -66,12 +41,12 @@ function LiveDot({ paused }: { paused: boolean }) {
  * render the latest response.
  */
 export function RendersStrip({ businessId }: { businessId: string }) {
-  const [renders, setRenders] = useState<StripRender[] | null>(null);
+  const [renders, setRenders] = useState<RenderRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<{ id: string; videoUrl?: string } | null>(null);
 
   const refetch = useCallback(async () => {
-    const result = await apiFetch<{ renders: StripRender[] }>(
+    const result = await apiFetch<{ renders: RenderRow[] }>(
       `/api/businesses/${businessId}/renders`,
     );
     if (result.ok) {
@@ -177,75 +152,20 @@ export function RendersStrip({ businessId }: { businessId: string }) {
 
       {renders !== null && renders.length > 0 && (
         <ul className="mt-3 flex gap-3 overflow-x-auto pb-2">
-          {renders.map((render) => {
-            const released = render.status === "released";
-            const working = isActiveRenderStatus(render.status);
-            // Only the head render carries job progress (see pickActiveHead),
-            // so it is the only tile that can show a real number. The rest are
-            // queued behind it and keep their status word.
-            const percent = render.id === head?.id ? wait?.bar.percent : undefined;
-            const thumb = (
-              <span
-                className={`relative block aspect-[9/16] w-full overflow-hidden rounded-lg border bg-ink/[0.04] ${
-                  working ? "border-accent" : "border-ink/10"
-                }`}
-              >
-                {render.thumbUrl ? (
-                  // Signed, short-lived URL — next/image optimization would break it.
-                  <img src={render.thumbUrl} alt="" className="size-full object-cover" />
-                ) : (
-                  // `relative` lifts it above the shimmer, which is absolutely
-                  // positioned and would otherwise wash over the number.
-                  <span className="relative flex size-full items-center justify-center px-2 text-center">
-                    {percent !== undefined ? (
-                      <span dir="ltr" className="text-lg font-bold tabular-nums text-ink">
-                        {percent}%
-                      </span>
-                    ) : (
-                      <span className="text-xs text-ink/55">
-                        {renderStatusLabel(render.status)}
-                      </span>
-                    )}
-                  </span>
-                )}
-                {/* The empty tile is where the video will appear — sweeping it
-                    says "this one, right now". w-1/3 at the PHYSICAL left edge
-                    is what the `sweep` keyframe is measured against, and it
-                    travels left-to-right with the progress bar (globals.css). */}
-                {working && sweeping && (
-                  <span
-                    aria-hidden
-                    className="sweep absolute inset-y-0 left-0 hidden w-1/3 bg-gradient-to-r from-transparent via-accent/40 to-transparent motion-safe:block"
-                  />
-                )}
-              </span>
-            );
-            return (
-              <li key={render.id} className="w-20 shrink-0 sm:w-24">
-                {released ? (
-                  <button
-                    type="button"
-                    onClick={() => void play(render.id)}
-                    className="block w-full rounded-lg transition-opacity duration-150 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    {thumb}
-                  </button>
-                ) : (
-                  thumb
-                )}
-                <div className="mt-1.5 flex justify-center">
-                  <StatusChip status={render.status} />
-                </div>
-                {/* Only when the refund really happened — never claim money
-                    moved when it didn't (same rule as failedRenderNotice). */}
-                {render.status === "failed" && render.refunded && (
-                  <p className="mt-1 text-center text-[10px] leading-tight text-ink/55">
-                    הקרדיטים הוחזרו
-                  </p>
-                )}
-              </li>
-            );
-          })}
+          {renders.map((render) => (
+            <li key={render.id} className="w-20 shrink-0 sm:w-24">
+              <RenderTile
+                render={render}
+                // Only the head render carries job progress (see
+                // pickActiveHead), so it is the only tile that can show a real
+                // number. The rest are queued behind it and keep their status
+                // word.
+                percent={render.id === head?.id ? wait?.bar.percent : undefined}
+                sweeping={sweeping}
+                onPlay={(id) => void play(id)}
+              />
+            </li>
+          ))}
         </ul>
       )}
 

@@ -53,6 +53,17 @@ One pnpm monorepo, boring-tech throughout:
   enqueue, never onto the script, and is burned centred from frame 0 over the one HeyGen clip; it may
   end with `?` or `!` but not with `.` `,` `;` `:` `…` (vault 0025). The `opener_clips` listing is
   retired 2026-09-06.
+- **The dashboard is two libraries beside the two wizards.** `/home/renders` (כל היצירות) lists
+  every render of the selected business, both services, 24 per page — the homepage strip is the live
+  window onto the same rows and the same `GET /api/businesses/[id]/renders`, which answers in two
+  shapes: no query = the strip's newest 20 with job progress for the one head render, `?page=N` =
+  `{ renders, total }` with no progress at all. Both carry `service`. The 9:16 tile itself
+  (`apps/web/src/app/home/render-tile.tsx`) is shared so the two surfaces cannot drift.
+  `/home/demos` (סרטוני המוצר) lists the uploaded demos, and each ready one opens
+  `/home/demos/[demoId]` — the A wizard's own `StepPlan` mounted outside the wizard, with no hook
+  picked and nowhere to continue to, so choosing steps and writing their labels is reachable without
+  starting an ad. It needs no changes to `step-plan.tsx`: the component takes `onContinue` as
+  optional and every route it calls is ownership-gated on the demo id alone.
 
 ## Repo layout
 
