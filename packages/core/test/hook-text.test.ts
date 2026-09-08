@@ -27,8 +27,9 @@ import { createTestDb } from "./helpers/pglite";
 
 /**
  * The on-screen hook text of a Service B opener (vault 0017): emitted by
- * b_script v9 alongside the script, re-derived by hook_text v1 when the script
- * is edited, and rejected — never trimmed — when it is over the caps.
+ * b_script v9 alongside the script, re-derived by hook_text when the script is
+ * edited — or when b_script's own line misses a cap — and rejected, never
+ * trimmed, when the re-derived line misses one too.
  */
 
 describe("hookTextError", () => {
@@ -179,16 +180,62 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
     expect(call.schema.safeParse({ script: "x", hook_text: "y" }).success).toBe(true);
   });
 
-  it("an over-cap hook_text is a PermanentError and inserts no row", async () => {
+  it("falls back to hook_text when the model's line misses a cap, and says so on params", async () => {
+    // The production failure this fallback exists for, 2026-09-08 (Vercel log):
+    // "hook_text is 8 words — the cap is 7" lost the customer a good script.
     generateObject
       .mockReset()
-      .mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: OVER_CAP }));
+      .mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: OVER_CAP }))
+      .mockResolvedValueOnce(reply({ hook_text: HOOK }));
+    const usageBefore = await llmUsageCount();
+    const before = await scriptCount();
+
+    const script = await generateBScript(db, { businessId, personaId, structureId });
+
+    // The script survives its bad hook line — that is the whole point.
+    expect(await scriptCount()).toBe(before + 1);
+    expect(script.text).toBe(SCRIPT);
+    const params = script.params as {
+      hookText?: string;
+      hookTextDerived?: boolean;
+      hookTextPromptVersion?: string;
+    };
+    expect(params.hookText).toBe(HOOK);
+    expect(params.hookTextDerived).toBe(true);
+    expect(params.hookTextPromptVersion).toMatch(/^hook_text@v\d+$/);
+
+    // Two paid calls: the b_script generation, then the re-derivation — which
+    // is handed the FINISHED script, so its answer is a prefix of what is said.
+    expect(generateObject).toHaveBeenCalledTimes(2);
+    const second = generateObject.mock.calls[1]![0] as { prompt: string };
+    expect(second.prompt).toContain(SCRIPT);
+    expect(await llmUsageCount()).toBe(usageBefore + 2);
+  });
+
+  it("throws and inserts no row when the re-derived line misses a cap too", async () => {
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: OVER_CAP }))
+      .mockResolvedValueOnce(reply({ hook_text: OVER_CAP }));
     const before = await scriptCount();
 
     await expect(generateBScript(db, { businessId, personaId, structureId })).rejects.toThrow(
       PermanentError,
     );
     expect(await scriptCount()).toBe(before);
+    expect(generateObject).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not re-derive when the model's own line is already in cap", async () => {
+    generateObject.mockReset().mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: HOOK }));
+
+    const script = await generateBScript(db, { businessId, personaId, structureId });
+
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    const params = script.params as Record<string, unknown>;
+    expect(params.hookText).toBe(HOOK);
+    expect(params).not.toHaveProperty("hookTextDerived");
+    expect(params).not.toHaveProperty("hookTextPromptVersion");
   });
 
   it("deriveHookText: script in, hook_text out, one llm_tokens usage row", async () => {

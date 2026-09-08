@@ -404,6 +404,58 @@ function assertHookText(hookText: string): string {
   return hookText.trim();
 }
 
+/**
+ * The model's own hook_text, or `hook_text`'s extraction when that misses a cap.
+ *
+ * b_script emits the on-screen line with the script, and the line is used as
+ * written. When it comes back over a cap — "hook_text is 8 words — the cap is
+ * 7", seen in production 2026-09-08 — the whole generation used to fail, so a
+ * customer lost a good script to a bad hook line and got "try again". The
+ * fallback re-derives the line from the finished script with `hook_text`
+ * (prompts/hook_text/v2.md), a verbatim-prefix extractor under the same caps,
+ * so the read-then-hear rule still holds. A second failure throws, as before.
+ *
+ * Nothing is trimmed here: an over-cap line is still never silently shortened
+ * (hook-text.ts) — it is replaced by a line the extractor cut on purpose.
+ */
+async function hookTextOrDerived(
+  db: Db,
+  opts: { businessId: string; script: string; candidate: string },
+): Promise<{ hookText: string; derivedPromptVersion?: string }> {
+  const problem = hookTextError(opts.candidate);
+  if (!problem) return { hookText: opts.candidate.trim() };
+
+  let derived: { hookText: string; promptVersion: string };
+  try {
+    const result = await deriveHookTextWithVersion(db, {
+      businessId: opts.businessId,
+      text: opts.script,
+    });
+    // Asserted here as well as inside the live derivation: DRY_RUN's stand-in
+    // is not checked there, and this function must never return a line that
+    // cannot be burned.
+    derived = { hookText: assertHookText(result.hookText), promptVersion: result.promptVersion };
+  } catch (err) {
+    // Both candidates in one place: without this the thrown message names the
+    // re-derived line's problem only, and the model's original is invisible.
+    logger.warn(
+      { businessId: opts.businessId, modelHookText: opts.candidate, problem, err },
+      "b_script hook_text missed a cap and the re-derivation did too",
+    );
+    throw err;
+  }
+  logger.warn(
+    {
+      businessId: opts.businessId,
+      modelHookText: opts.candidate,
+      problem,
+      derivedHookText: derived.hookText,
+    },
+    "b_script hook_text missed a cap; re-derived from the finished script",
+  );
+  return { hookText: derived.hookText, derivedPromptVersion: derived.promptVersion };
+}
+
 export async function generateBScript(
   db: Db,
   opts: {
@@ -461,7 +513,7 @@ export async function generateBScript(
   };
 
   let text: string;
-  let hookText: string;
+  let draftHookText: string;
   let promptVersion: string;
   if (getEnv().DRY_RUN) {
     // Dry-run still renders the template so prompt_version stays traceable and
@@ -473,14 +525,18 @@ export async function generateBScript(
       "חייבת לספר לכם על משהו שגיליתי השבוע ניסיתי את זה בספקנות מוחלטת ותוך יום " +
       "הבנתי שאין סיכוי שאני חוזרת אחורה זה עושה בדיוק מה שהבטיחו. " +
       `${closer.text}${closer.punctuation}`;
-    hookText = dryRunHookText(text);
+    draftHookText = dryRunHookText(text);
   } else {
     const result = await callClaude(db, opts.businessId, "b_script", vars, bScriptOutput);
     text = result.object.script;
-    hookText = result.object.hook_text;
+    draftHookText = result.object.hook_text;
     promptVersion = result.promptVersion;
   }
-  hookText = assertHookText(hookText);
+  const hook = await hookTextOrDerived(db, {
+    businessId: opts.businessId,
+    script: text,
+    candidate: draftHookText,
+  });
 
   const rows = await db
     .insert(scripts)
@@ -501,7 +557,13 @@ export async function generateBScript(
         wordBudget,
         hookTemplates,
         closers: closers.map((c) => c.text),
-        hookText,
+        hookText: hook.hookText,
+        // Present only when the model's own line missed a cap and `hook_text`
+        // re-derived it, so a hook that differs from the b_script draft is
+        // explainable later — and traceable to the version that cut it.
+        ...(hook.derivedPromptVersion
+          ? { hookTextDerived: true, hookTextPromptVersion: hook.derivedPromptVersion }
+          : {}),
       },
       promptVersion,
     })
@@ -521,16 +583,34 @@ export async function deriveHookText(
   db: Db,
   opts: { businessId: string; text: string },
 ): Promise<string> {
+  return (await deriveHookTextWithVersion(db, opts)).hookText;
+}
+
+/**
+ * The same derivation, plus the `hook_text` version that produced the line —
+ * recorded on scripts.params when generateBScript falls back to it, so the
+ * version is the one actually used rather than one re-resolved afterwards.
+ */
+async function deriveHookTextWithVersion(
+  db: Db,
+  opts: { businessId: string; text: string },
+): Promise<{ hookText: string; promptVersion: string }> {
   const vars = { script: opts.text };
   if (getEnv().DRY_RUN) {
     // Rendered for the same reason generateBScript renders in DRY_RUN: a
     // template/vars mismatch must surface in tests, not in production.
-    renderPrompt("hook_text", vars);
-    return dryRunHookText(opts.text);
+    const { promptVersion } = renderPrompt("hook_text", vars);
+    return { hookText: dryRunHookText(opts.text), promptVersion };
   }
   await assertBudget(db, "llm_tokens");
-  const { object } = await callClaude(db, opts.businessId, "hook_text", vars, hookTextOutput);
-  return assertHookText(object.hook_text);
+  const { object, promptVersion } = await callClaude(
+    db,
+    opts.businessId,
+    "hook_text",
+    vars,
+    hookTextOutput,
+  );
+  return { hookText: assertHookText(object.hook_text), promptVersion };
 }
 
 // ---------------------------------------------------------------------------

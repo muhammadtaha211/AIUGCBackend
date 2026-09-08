@@ -33,7 +33,9 @@ keyless (the e2e test relies on this).
   the JSON `{script, hook_text}` — `hook_text` is the opening line compressed for the screen,
   ≤7 Hebrew words / ≤40 chars / no trailing punctuation, emoji or niqqud, burned over the
   opener clip's palm phase; parsed with its own `bScriptOutput` schema, never the `{script}`
-  schema `vo_script` shares, and an over-cap value is a `PermanentError`, never trimmed —
+  schema `vo_script` shares; since **v14** an over-cap value is re-derived from the finished
+  script by `hook_text` and only a second over-cap line is a `PermanentError` — never trimmed
+  either way ([vault 0030](vault/decisions/0030-hook-text-falls-back-to-the-extractor-never-trims.md)) —
   `params.hookText` on the script row is the DRAFT, the FINAL string is copied into render
   params at enqueue, [vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md);
   **v11** adds the optional `product_kind` questionnaire field — the customer's own Hebrew noun for

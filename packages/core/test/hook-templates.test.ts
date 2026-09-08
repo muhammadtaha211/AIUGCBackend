@@ -106,6 +106,18 @@ describe("b_script prompt rendering", () => {
     expect(text).toContain("Verbatim, not compressed");
   });
 
+  it("aims the opening at 4-6 words and calls 7 a ceiling, in both places (v14+)", () => {
+    const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(14);
+    // Beat 1 and the on-screen hook text section. The model kept landing on
+    // the cap exactly — 8 words in production, 2026-09-08 — so the prompt
+    // aims below it while the cap sentence itself stays put.
+    expect(text.match(/first 4–6 words/g)).toHaveLength(2);
+    expect(text.match(/7 is the hard ceiling, not the target/g)).toHaveLength(2);
+    expect(text).not.toContain("5–7 words");
+    expect(text).toContain("At most 7 Hebrew words and at most 40 characters");
+  });
+
   it("refers to the product by its kind, never by a placeholder word (v11+)", () => {
     const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
     expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(11);
