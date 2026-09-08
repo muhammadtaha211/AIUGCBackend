@@ -392,6 +392,47 @@ describe("migrations", () => {
     await pg.close();
   });
 
+  it("0035: feedback exists with RLS enabled, no policy, and a nullable business", async () => {
+    const { db, pg } = await createTestDb();
+
+    // RLS on with zero policies is the server-only model (0002's block), and
+    // it rides in the portable file because the statement names no role — the
+    // one thing decisions/0018 says a portable migration cannot do.
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.feedback'::regclass",
+    );
+    expect(rls.rows[0]?.relrowsecurity).toBe(true);
+    const policies = await pg.query("SELECT 1 FROM pg_policies WHERE tablename = 'feedback'");
+    expect(policies.rows).toHaveLength(0);
+
+    const [user] = await db
+      .insert(schema.users)
+      .values({ email: "feedback@test.local" })
+      .returning();
+
+    // business_id is nullable; user_id is not, and both FKs are enforced.
+    await db.insert(schema.feedback).values({ userId: user!.id, message: "בלי עסק" });
+    await expect(
+      db.insert(schema.feedback).values({
+        userId: user!.id,
+        message: "עסק שלא קיים",
+        businessId: "00000000-0000-0000-0000-000000000001",
+      }),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      db.insert(schema.feedback).values({
+        userId: "00000000-0000-0000-0000-000000000002",
+        message: "משתמש שלא קיים",
+      }),
+    ).rejects.toThrow(/foreign key/i);
+
+    expect(
+      (await pg.query("SELECT 1 FROM pg_indexes WHERE indexname = 'feedback_created_idx'")).rows,
+    ).toHaveLength(1);
+
+    await pg.close();
+  });
+
   it("enforce the circular sets -> video_renders FK from 0001", async () => {
     const { db, pg } = await createTestDb();
 

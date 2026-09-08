@@ -62,9 +62,9 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
 
 /**
  * Dashboard sidebar (Lovable-style, RTL so it sits on the right): business
- * switcher on top, nav (home, the two libraries and the two service flows are
- * live; צור קשר is still a placeholder), credits + profile menu at the bottom
- * — the menu's פרופיל and הגדרות rows both open /home/settings.
+ * switcher on top, nav (home, the two libraries, the two service flows and
+ * צור קשר), credits + profile menu at the bottom — the menu's פרופיל and
+ * הגדרות rows both open /home/settings.
  * Below md it collapses into a compact top bar (brand, switcher, credits,
  * account menu) — the nav is desktop-only for now.
  */
@@ -248,8 +248,7 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Nav — everything but צור קשר is live; that one stays a placeholder
-            until its page lands. */}
+        {/* Nav — every row is a live page. */}
         <nav aria-label="ניווט הדשבורד" className="mt-5 flex-1 space-y-0.5 px-3">
           <SidebarItem
             icon={<House className="size-4" />}
@@ -281,7 +280,12 @@ export function Sidebar({
             href="/home/b/new"
             active={pathname.startsWith("/home/b")}
           />
-          <SidebarItem icon={<Mail className="size-4" />} label="צור קשר" />
+          <SidebarItem
+            icon={<Mail className="size-4" />}
+            label="צור קשר"
+            href="/home/feedback"
+            active={pathname.startsWith("/home/feedback")}
+          />
         </nav>
 
         <div className="space-y-3 px-3 pb-4">

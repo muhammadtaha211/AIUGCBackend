@@ -1,7 +1,7 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030 and 0032-0033 actually landed in a given
--- database. (0031 has never had a row here.)
+-- Proves that migrations 0008-0030, 0032-0033 and 0035 actually landed in a
+-- given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
 -- production's supabase_migrations.schema_migrations recorded only 0000-0007
@@ -10,7 +10,7 @@
 --
 -- STRICTLY READ-ONLY: one SELECT over system catalogs and existing rows.
 -- Written as a single statement on purpose — the Supabase SQL editor shows only
--- the last statement's result, so 28 separate SELECTs would display one row.
+-- the last statement's result, so 29 separate SELECTs would display one row.
 --
 -- ---------------------------------------------------------------------------
 -- TWO LAYERS. Check the one that matches the database you are pointed at.
@@ -33,9 +33,9 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect 24 true + 1 NULL. The old production database read all 26 of its rows
--- true (see RESULTS); it predates 0032-0033 and is deleted, so the two rows
--- added for them have nothing to say about it.
+-- expect 25 true + 1 NULL. The old production database read all 26 of its rows
+-- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
+-- three rows added for them have nothing to say about it.
 --
 -- Corrected 2026-08-26: this file previously claimed it "stays useful for
 -- verifying any OTHER environment (staging, a rebuilt DB)" while mixing both
@@ -293,6 +293,22 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     WHERE n.nspname = 'public' AND c.relname = 'opener_clips' AND c.relrowsecurity)),
   'policy + RLS enabled'),
 
+-- 0035: the feedback table, its created_at index, and row security actually
+-- enabled on it. Unlike 0032/0033 this is ONE file, because the ENABLE names no
+-- role (decisions/0018 only bites on `TO authenticated`) — so a partial paste
+-- that stopped after CREATE TABLE is exactly what the relrowsecurity half
+-- catches. The absence of a policy is the intended state and is not asserted:
+-- a future policy would be an addition, not a sign 0035 failed.
+('0035', 'structural', (SELECT
+  to_regclass('public.feedback') IS NOT NULL
+  AND EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'feedback'
+      AND indexname = 'feedback_created_idx')
+  AND EXISTS (SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'feedback' AND c.relrowsecurity)),
+  'table + created_at index + RLS enabled'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -351,11 +367,15 @@ ORDER BY migration, layer DESC;
 --   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 0030
 --
 -- That command is the 2026-08-26 backfill of the old ledger, kept as written.
--- 0032/0033 are NOT in it. `db push` records them itself and needs no repair;
--- only a hand-paste into the SQL editor does, and then only once both rows
--- above read true:
+-- 0032/0033 and 0035 are NOT in it. `db push` records them itself and needs no
+-- repair; only a hand-paste into the SQL editor does, and then only once the
+-- row(s) above for what you pasted read true:
 --
 --   npx -y supabase migration repair --status applied 0032 0033 --db-url <session pooler url>
+--   npx -y supabase migration repair --status applied 0035 --db-url <session pooler url>
+--
+-- 0031 and 0034 have no row here to gate on, so a hand-paste of either is
+-- repaired on the founder's own evidence that it ran, not on this file's.
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS

@@ -3,7 +3,7 @@ import { Wordmark } from "@/components/wordmark";
 import { LogoutButton } from "./logout-button";
 
 /**
- * Admin chrome: wordmark and the two sections. Auth lives in the middleware,
+ * Admin chrome: wordmark and the four sections. Auth lives in the middleware,
  * in each page (adminSession → redirect), and in every API route — this
  * layout protects nothing and holds no logic.
  */
@@ -33,6 +33,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               className="rounded-lg px-3 py-1.5 font-medium text-gray-300 transition-colors duration-150 hover:bg-white/10 hover:text-white"
             >
               משתמשים
+            </Link>
+            <Link
+              href="/feedback"
+              className="rounded-lg px-3 py-1.5 font-medium text-gray-300 transition-colors duration-150 hover:bg-white/10 hover:text-white"
+            >
+              משוב
             </Link>
           </nav>
         </div>

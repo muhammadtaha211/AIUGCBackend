@@ -655,6 +655,28 @@ export const events = pgTable(
   (t) => [index("events_kind_created_idx").on(t.kind, t.createdAt)],
 );
 
+// In-app "צור קשר" (/home/feedback): one message from a signed-in customer,
+// read by the founder in the admin console. No email, no notification — the
+// admin tab IS the inbox. Server-only like `events`: RLS on, no policies.
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    // Nullable: a user with no business yet can still write.
+    businessId: uuid("business_id").references(() => businesses.id),
+    message: text("message").notNull(),
+    // The pathname the form was opened from — context only.
+    page: text("page"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Newest-first is the only way this table is ever read. DESC in the SQL
+  // (0035); Postgres reads either direction, so the ordering is documentation.
+  (t) => [index("feedback_created_idx").on(t.createdAt)],
+);
+
 export const appConfig = pgTable("app_config", {
   key: text("key").primaryKey(),
   value: jsonb("value").notNull(),

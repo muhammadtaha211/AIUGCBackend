@@ -149,6 +149,14 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 
 - **events** — append-only analytics: `star` (with the variant's params — the platform's
   format-performance data), `qc_release`, `qc_reject`, `content_policy_flag`.
+- **feedback** (0035) — the in-app "צור קשר" inbox: one row per message a signed-in customer
+  writes at `/home/feedback`. `user_id` (not null), `business_id` (nullable — a user with no
+  business can still write), `message`, `page` (the pathname the form was opened from, context
+  only), `created_at` + an index on it. The founder reads them at `/feedback` in the admin
+  console; **nothing is emailed, posted or notified**, and there is no handled/resolved state.
+  Server-only: RLS on, no policies — and because there is no policy, the ENABLE rides in the
+  portable migration rather than a separate Supabase-only file
+  ([vault 0035](vault/decisions/0035-a-policyless-table-keeps-its-rls-in-the-portable-file.md)).
 - **app_config** — key/value jsonb knobs (seeded in 0001/0004): `auto_release_b`, `daily_caps`
   (now including `images`), `words_per_second` (live value `{"default": 2.1}`; per-voice keys
   deliberately left empty and the read path unclamped — [04-integrations.md](04-integrations.md)
@@ -179,5 +187,8 @@ get read-only access. Policies:
   persona_clips policy is dropped with the table in 0005; composites get an owner-scoped SELECT
   in 0007.)
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
-  pronunciation_entries.
+  pronunciation_entries, and `feedback` — whose ENABLE is in **0035**, not here, because a
+  policy-less table needs no Supabase role and so stays portable
+  ([vault 0035](vault/decisions/0035-a-policyless-table-keeps-its-rls-in-the-portable-file.md),
+  measured in [facts](vault/facts/pglite-accepts-bare-enable-row-level-security.md)).
 - `handle_new_user()` trigger mirrors `auth.users` inserts into `public.users`.
