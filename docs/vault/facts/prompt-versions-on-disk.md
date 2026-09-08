@@ -10,7 +10,7 @@ source: code
 
 ```
 analyze_demo          v1 v2 v3                              (latest v3)
-b_script              v1..v15                               (latest v15, new 2026-09-08)
+b_script              v1..v16                               (latest v16, new 2026-09-08)
 benefit_captions      v1 v2                                 (latest v2)
 content_policy        v1                                    (latest v1)
 group_analysis_states v1                                    (latest v1, new 2026-08-25)
@@ -18,7 +18,7 @@ hook_lines            v1..v7                                (latest v7)
 hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
 plan_demo_steps       v1..v13                               (latest v13)
 tts_enhance           v1..v4                                (latest v4)
-vo_script             v1..v7                                (latest v7)
+vo_script             v1..v8                                (latest v8, new 2026-09-08)
 ```
 
 b_script v9 (2026-09-05) is v8's vars and rules with the output changed to the JSON
@@ -50,6 +50,16 @@ not the target", twice each, with the cap sentence "At most 7 Hebrew words and a
 characters" kept verbatim. It landed alongside the validator going to **8** words, so both
 generators now aim a word below what `hookTextError` accepts
 ([[0030-hook-text-falls-back-to-the-extractor-never-trims]], amended section).
+
+b_script v16 and vo_script v8 (2026-09-08, same vars as v15/v7 — no restart needed) ban `רגע`
+outright as a filler, restart or aside — the founder's standing instruction is that it is gone
+permanently, after "…וזה, רגע, זה…" kept surfacing as scripts' "A restart" imperfection
+example. Both files drop that bullet entirely from their imperfections list and add a `Never
+`רגע`` rule in its place; vo_script v8 additionally drops `רגע` from its own slang list
+("Slang — one or two, load-bearing"). `packages/core/test/hook-templates.test.ts` and
+`packages/core/test/vo-prompt.test.ts` assert the ban and that `רגע` appears nowhere else in
+either file. The DRY_RUN stand-in scripts in `copy.ts` (`generateBScript`, `generateVoScript`)
+never contained `רגע`, so neither needed a fix.
 
 plan_demo_steps v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
 the file landed while two pre-change workers were live, and both had to be restarted in the same

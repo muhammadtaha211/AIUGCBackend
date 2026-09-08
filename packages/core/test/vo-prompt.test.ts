@@ -9,8 +9,12 @@ import { latestPromptVersion, renderPrompt } from "../src/prompts";
  * soft grounding and v4's {{persona_gender}} axis — same eight variables as v6.
  * renderPrompt auto-selects the highest version, so generateVoScript must
  * always supply every variable — a missing variable throws at render time.
+ *
+ * v8 (same eight vars — no restart needed) drops `רגע` from both the slang
+ * list and its "A restart" imperfection example, and bans it outright: the
+ * founder wants it gone as a filler/restart, permanently.
  */
-describe("vo_script prompt v7", () => {
+describe("vo_script prompt v8", () => {
   const vars = {
     questionnaire: "{}",
     selected_advantages: "- משלוח מהיר",
@@ -20,19 +24,36 @@ describe("vo_script prompt v7", () => {
   };
 
   it("is the latest version and receives description, speaker gender and hook line", () => {
-    expect(latestPromptVersion("vo_script")).toBe(7);
+    expect(latestPromptVersion("vo_script")).toBe(8);
     const { text, promptVersion } = renderPrompt("vo_script", {
       ...vars,
       demo_description: "גלילה בתפריט, הוספה לעגלה",
       persona_gender: "female",
       hook_line: "מי שעדיין עושה את זה ידנית, מפסיד",
     });
-    expect(promptVersion).toBe("vo_script@v7");
+    expect(promptVersion).toBe("vo_script@v8");
     expect(text).toContain("גלילה בתפריט, הוספה לעגלה");
     expect(text).toContain("SOFT grounding");
     expect(text).toContain("The speaker is female");
     expect(text).toContain("mid-twenties");
     expect(text).toContain("מי שעדיין עושה את זה ידנית, מפסיד");
+  });
+
+  /**
+   * רגע is banned outright (founder ruling, 2026-09-08): no longer offered as
+   * slang, no longer the "A restart" example, and the one place it may still
+   * appear is the sentence that forbids it.
+   */
+  it("bans רגע as a filler, restart or aside, and drops it from the slang list (v8+)", () => {
+    const { text } = renderPrompt("vo_script", {
+      ...vars,
+      demo_description: "(אין)",
+      persona_gender: "female",
+      hook_line: "(אין)",
+    });
+    expect(text).toContain("Never `רגע`");
+    expect(text.match(/רגע/g)).toHaveLength(1);
+    expect(text).not.toContain("וזה, רגע, זה פשוט הכל במסך אחד");
   });
 
   /**

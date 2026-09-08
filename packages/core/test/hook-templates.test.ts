@@ -118,6 +118,13 @@ describe("b_script prompt rendering", () => {
     expect(text).toContain("At most 7 Hebrew words and at most 40 characters");
   });
 
+  it("bans רגע as a filler, restart or aside (v16+)", () => {
+    const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(16);
+    expect(text).toContain("Never `רגע`");
+    expect(text.match(/רגע/g)).toHaveLength(1);
+  });
+
   it("refers to the product by its kind, never by a placeholder word (v11+)", () => {
     const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
     expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(11);
