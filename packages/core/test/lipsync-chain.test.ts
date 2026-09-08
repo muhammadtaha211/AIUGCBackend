@@ -885,9 +885,9 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
         audioRenderId: audioId,
         personaId: persona.id,
         openerClipId: opener.id,
-        hookText: "אחת שתיים שלוש ארבע חמש שש שבע שמונה",
+        hookText: "אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע",
       }),
-    ).rejects.toThrow(/8 words/);
+    ).rejects.toThrow(/9 words/);
     await drainAll();
   });
 

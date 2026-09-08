@@ -42,9 +42,9 @@ describe("hookTextError", () => {
     expect(hookTextWordCount("אחת שתיים — שלוש")).toBe(3);
   });
 
-  it("rejects the 8th word and accepts the 7th", () => {
-    expect(hookTextError("א ב ג ד ה ו ז ח")).toMatch(/8 words/);
-    expect(hookTextError("א ב ג ד ה ו ז")).toBeUndefined();
+  it("rejects the 9th word and accepts the 8th", () => {
+    expect(hookTextError("א ב ג ד ה ו ז ח ט")).toMatch(/9 words/);
+    expect(hookTextError("א ב ג ד ה ו ז ח")).toBeUndefined();
   });
 
   it("rejects the 41st character, counting spaces", () => {
@@ -69,7 +69,7 @@ describe("hookTextError", () => {
     expect(hookTextError("למה אף אחד לא סיפר לי?")).toBeUndefined();
     expect(hookTextError("משלוח חינם!")).toBeUndefined();
     // Still counted and capped like any other line.
-    expect(hookTextError("א ב ג ד ה ו ז ח?")).toMatch(/8 words/);
+    expect(hookTextError("א ב ג ד ה ו ז ח ט?")).toMatch(/9 words/);
   });
 
   it("rejects emoji and niqqud; a maqaf is fine", () => {
@@ -93,8 +93,11 @@ describe("hookTextError", () => {
     expect(hookTextError("ככה מוחקים את ChatGPT ב-2026")).toBeUndefined();
   });
 
-  it("exports the caps the prompts state", () => {
-    expect(HOOK_TEXT_MAX_WORDS).toBe(7);
+  // The word cap is deliberately one looser than the 7 the prompts aim at
+  // (2026-09-08, vault 0030); the character cap is the physical one and is the
+  // same number the prompts state.
+  it("exports the caps, the word one a notch above what the prompts aim at", () => {
+    expect(HOOK_TEXT_MAX_WORDS).toBe(8);
     expect(HOOK_TEXT_MAX_CHARS).toBe(40);
   });
 });
@@ -110,8 +113,9 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
     "חייבת לספר לכם על משהו שגיליתי השבוע ניסיתי את זה בספקנות ותוך יום הבנתי " +
     "שאין סיכוי שאני חוזרת אחורה קוראים לזה קרם הפנים ממליצה בחום";
   const HOOK = "חייבת לספר לכם על משהו";
-  /** Eight words — one over HOOK_TEXT_MAX_WORDS. */
-  const OVER_CAP = "חייבת לספר לכם על משהו שגיליתי השבוע ממש";
+  /** Nine words — one over HOOK_TEXT_MAX_WORDS, and 37 characters, so the word
+   *  cap is the only rule it breaks. */
+  const OVER_CAP = "אני לא יכולה להאמין מה קרה לי פה היום";
 
   function reply(object: Record<string, string>) {
     return { object, usage: { inputTokens: 900, outputTokens: 120 } };

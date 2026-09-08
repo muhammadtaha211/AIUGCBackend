@@ -15,7 +15,7 @@ benefit_captions      v1 v2                                 (latest v2)
 content_policy        v1                                    (latest v1)
 group_analysis_states v1                                    (latest v1, new 2026-08-25)
 hook_lines            v1..v7                                (latest v7)
-hook_text             v1 v2                                 (latest v2)
+hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
 plan_demo_steps       v1..v13                               (latest v13)
 tts_enhance           v1..v4                                (latest v4)
 vo_script             v1..v7                                (latest v7)
@@ -43,6 +43,13 @@ restart needed) is v14 with **one bullet** changed, carving an exception out of 
 blanket "No English" for a product name the naming policy already allows
 ([[0033-b-script-may-write-an-allowed-brand-name-in-latin]]). The `hook_text` rule's own "no
 English" is deliberately untouched.
+
+`hook_text` v3 (2026-09-08, same single `{{script}}` var as v2 — no restart needed) copies
+b_script v14's aim language into the extractor: "the first 4–6 words" and "7 is the hard ceiling,
+not the target", twice each, with the cap sentence "At most 7 Hebrew words and at most 40
+characters" kept verbatim. It landed alongside the validator going to **8** words, so both
+generators now aim a word below what `hookTextError` accepts
+([[0030-hook-text-falls-back-to-the-extractor-never-trims]], amended section).
 
 plan_demo_steps v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
 the file landed while two pre-change workers were live, and both had to be restarted in the same

@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-08
-method: "founder in chat, 2026-09-08, after reading the Vercel log: 'Item 10 — cause confirmed from the Vercel log: hook_text is 8 words — the cap is 7 (assertHookText). Implement the fix now.' The brief specified the fallback, the params fields, the prompt change and the explicit refusal to trim."
+method: "founder in chat, 2026-09-08, after reading the Vercel log: 'Item 10 — cause confirmed from the Vercel log: hook_text is 8 words — the cap is 7 (assertHookText). Implement the fix now.' The brief specified the fallback, the params fields, the prompt change and the explicit refusal to trim. Amended 2026-09-08 from a second founder brief the same day, after the same message reappeared from the edit route: the word cap becomes 8, the character cap stays 40, the prompts keep aiming below it."
 source: founder
 ---
 
@@ -67,6 +67,33 @@ The logged failure may therefore have been the edit save rather than the generat
 and the answer there cannot be another fallback, because the extractor is already the last
 step. It would have to be a retry, a relaxed cap, or an accepted longer line.
 
+## Amended 2026-09-08 — the word cap is 8; the aim stays 7
+
+The failure came back the same day, and the section above called it: `hook_text is 8 words — the
+cap is 7` was thrown from the **edit route** (`POST /api/scripts/[id]/text` → `deriveHookText`),
+the one path the fallback never covered. Founder ruling in chat, 2026-09-08:
+
+- **`HOOK_TEXT_MAX_WORDS` 7 → 8.** The word cap is a readability proxy, not a physical limit.
+- **`HOOK_TEXT_MAX_CHARS` stays 40.** That one _is_ the physical limit — what fits on one centred
+  burned row — so it does not move.
+- **The aim does not move.** `b_script` (v14+, live at v15) and the new `prompts/hook_text/v3.md`
+  both state "the first 4–6 words" and "7 is the hard ceiling, not the target" twice each, and
+  both keep the cap sentence "At most 7 Hebrew words and at most 40 characters" **verbatim**.
+  The validator is therefore one word looser than the generators — the principle `hook-text.ts`
+  already ran on for trailing punctuation: a generator stricter than its validator is safe.
+
+**Why a looser cap rather than another fallback.** On the generation path an over-cap line has
+somewhere to go — `generateBScript` re-derives it with the extractor. On the edit path the
+extractor **is** the step: `deriveHookText` is the last thing that runs, so there is nothing left
+to fall back _to_. That left exactly the three options this note named — a retry, a relaxed cap,
+or an accepted longer line. A retry re-rolls the same prompt against the same distribution that
+produced the failure ([[hook-text-rides-its-caps]]: 23 of 39 hooks sat exactly on the cap), and
+the trim was ruled out at the top of this note. The relaxed cap is the only one of the three that
+adds no call, no latency and no line that no rule governs.
+
+The generation-path fallback from the original decision is untouched and still runs; raising the
+cap only makes it rarer.
+
 ## Where it lives
 
 - `packages/core/src/pipelines/copy.ts` — `hookTextOrDerived` (the fallback and its two warns),
@@ -75,6 +102,25 @@ step. It would have to be a retry, a relaxed cap, or an accepted longer line.
 - `packages/core/test/hook-text.test.ts` — the three cases: fallback succeeds and marks params,
   double failure throws with no row, in-cap line makes no second call.
   `packages/core/test/hook-templates.test.ts` pins the v14 wording.
+
+The 2026-09-08 amendment:
+
+- `packages/core/src/hook-text.ts` — `HOOK_TEXT_MAX_WORDS = 8`, and the header comment that now
+  explains the split between the physical character cap and the proxy word cap.
+- `prompts/hook_text/v3.md` — v2 plus the b_script v14 aim language; the cap sentence unchanged.
+- `packages/core/test/hook-text.test.ts` — the 9th word is now the rejected one, and the
+  `OVER_CAP` fixture is nine words at 37 characters so the word cap is the only rule it breaks
+  (the old fixture was 8 words at exactly 40, which the raised cap would have made legal).
+  `packages/core/test/hook-templates.test.ts` pins the v3 wording the same way it pins v14's.
+- `packages/core/test/lipsync-chain.test.ts` and `apps/web/test/service-b-ui.test.ts` — the two
+  other places an 8-word fixture asserted a rejection. Both were 8-word lines **under** 40
+  characters, so the raised cap made them legal and the assertion stopped holding; both now use
+  a nine-word line. `lipsync-chain` is the one that failed rather than passing vacuously —
+  `createBRender` refuses an over-cap `hookText` at enqueue (`pipelines/sets.ts`).
+- `docs/04-integrations.md` — the prompt inventory's `≤7` stays (it describes what `b_script`
+  states); the note that the validator is one word looser sits with the constants instead.
+  `docs/06-cli-first.md` — the `render-b --hook-text` annotation goes to `≤8`, matching what
+  `aiugc render-b --help` already prints from the constant.
 
 ## Related
 

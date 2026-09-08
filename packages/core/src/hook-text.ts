@@ -5,12 +5,22 @@
  * "@aiugc/core/hook-text" subpath (plan-format is the precedent), so it must
  * never import server code.
  *
- * The caps are the prompt's caps: b_script (v9+) and hook_text emit under
- * them, and the pipeline rejects anything over — the string is burned into
- * the frame, so nothing silently trims it.
+ * The 40-character cap is the physical constraint: that is what fits on one
+ * centred burned row. The word cap is a readability proxy layered on top of
+ * it, and since 2026-09-08 it sits one word ABOVE the generators' —
+ * hook-text-rides-its-caps measured the model landing exactly on the ceiling,
+ * so b_script (v14+) and hook_text (v3+) keep aiming at 4–6 words with 7 as
+ * their stated ceiling while this validator accepts 8. A generator stricter
+ * than its validator is safe (the same principle the trailing-punctuation note
+ * below runs on), and the looser word cap is what covers the one path with no
+ * fallback left: the wizard's edit save, where the extractor is already the
+ * last step (vault 0030).
+ *
+ * Nothing over a cap is trimmed — the string is burned into the frame, so the
+ * pipeline rejects it instead.
  */
 
-export const HOOK_TEXT_MAX_WORDS = 7;
+export const HOOK_TEXT_MAX_WORDS = 8;
 export const HOOK_TEXT_MAX_CHARS = 40;
 
 /**

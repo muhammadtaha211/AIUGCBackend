@@ -8,9 +8,15 @@ source: db
 
 # `hook_text` does not approach its caps, it lands exactly on them
 
-The on-screen hook line is capped at 7 words and 40 characters
-(`packages/core/src/hook-text.ts`), and until 2026-09-08 an over-cap line threw away the whole
-generation. It turns out the model treats those caps as the target.
+The on-screen hook line was capped at 7 words and 40 characters
+(`packages/core/src/hook-text.ts`) when this was measured, and until 2026-09-08 an over-cap line
+threw away the whole generation. It turns out the model treats those caps as the target.
+
+> **Amended 2026-09-08:** this measurement is what moved the cap. Later the same day the founder
+> raised `HOOK_TEXT_MAX_WORDS` to **8**, left `HOOK_TEXT_MAX_CHARS` at 40, and left the prompts
+> aiming at 4–6 words with 7 as their stated ceiling
+> ([[0030-hook-text-falls-back-to-the-extractor-never-trims]], amended section). Every number
+> below is against the old 7-word cap and has **not** been re-measured.
 
 ## The distribution, 39 production `b_script` rows over 30 days
 

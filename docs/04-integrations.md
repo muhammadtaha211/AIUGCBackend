@@ -48,7 +48,11 @@ keyless (the e2e test relies on this).
   `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;
   v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses).
   The caps live in the client-safe `@aiugc/core/hook-text` (`HOOK_TEXT_MAX_WORDS`,
-  `HOOK_TEXT_MAX_CHARS`, `hookTextError`).
+  `HOOK_TEXT_MAX_CHARS`, `hookTextError`). Since 2026-09-08 the **validator** and the
+  **prompts** deliberately disagree by one word: `HOOK_TEXT_MAX_WORDS` is **8**, while every
+  prompt above still states 7 and aims at 4–6. The character cap is 40 on both sides — that one
+  is physical. See vault 0030 (amended section) for why the looser word cap is what covers the
+  edit route, which has no fallback left.
 - Word budgets are computed by the caller (`demo_seconds × words_per_second[voice]` from
   app_config, or `duration_preset × words_per_second[voice]` for Service B) and passed into the
   prompt as hard constraints. The live value is **`{"default": 2.1}`**, calibration output set

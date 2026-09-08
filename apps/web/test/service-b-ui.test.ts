@@ -166,9 +166,11 @@ describe("hookTextFieldError (core's rule, Hebrew words)", () => {
   });
 
   it("names the caps, in words and characters", () => {
-    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע שמונה")).toBe("עד 7 מילים.");
+    // Nine words at exactly 40 characters, so the word cap is the only rule it
+    // breaks. The cap went 7 → 8 on 2026-09-08 (vault 0030).
+    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע")).toBe("עד 8 מילים.");
     expect(hookTextFieldError("א".repeat(41))).toBe("עד 40 תווים.");
-    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע")).toBeUndefined();
+    expect(hookTextFieldError("אחת שתיים שלוש ארבע חמש שש שבע שמונה")).toBeUndefined();
   });
 
   it("refuses what cannot burn: emoji, niqqud, trailing punctuation, stray glyphs", () => {

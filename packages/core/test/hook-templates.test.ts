@@ -153,6 +153,20 @@ describe("hook_text prompt rendering", () => {
     expect(text).toContain("VERBATIM PREFIX");
     expect(text).toContain("Verbatim, not compressed");
   });
+
+  it("aims the extraction at 4-6 words and calls 7 a ceiling (v3+)", () => {
+    const { text, promptVersion } = renderPrompt("hook_text", {
+      script: "ניסיתי מיליון דברים ושום דבר לא עבד",
+    });
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(3);
+    // The same aim language b_script v14 carries, in the intro and in the
+    // rules. The validator accepts 8 words since 2026-09-08 (vault 0030), but
+    // the generators keep aiming below the ceiling — the cap sentence here is
+    // deliberately still 7, one below HOOK_TEXT_MAX_WORDS.
+    expect(text.match(/first 4–6 words/g)).toHaveLength(2);
+    expect(text.match(/7 is the hard ceiling, not the target/g)).toHaveLength(2);
+    expect(text).toContain("At most 7 Hebrew words and at most 40 characters");
+  });
 });
 
 describe("tts_enhance prompt rendering", () => {

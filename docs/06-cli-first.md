@@ -48,7 +48,7 @@ aiugc copy b-script --business <bizId> --persona <id> --structure <id>   # print
 aiugc script edit <scriptId> --text "..."              # b_script: re-derives the hook text into the new row
 aiugc tts <scriptId> && aiugc work --once && aiugc audio approve <id>
 aiugc render-b --business <bizId> --audio <id> --persona <personaId> \
-  --opener <clipId> --hook-text "ככה מזמינים בלי לחכות"   # the FINAL on-screen line (≤7 words, ≤40 chars)
+  --opener <clipId> --hook-text "ככה מזמינים בלי לחכות"   # the FINAL on-screen line (≤8 words, ≤40 chars)
 aiugc work --once                                      # lipsync (800ms lead-in) -> render
 aiugc qc list && aiugc qc approve <renderId>           # founder gate
 
