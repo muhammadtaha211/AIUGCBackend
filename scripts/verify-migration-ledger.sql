@@ -396,6 +396,21 @@ ORDER BY migration, layer DESC;
 -- half read true. No migration failed. Every structural assertion passed, which
 -- is the result that matters: the sequence replays cleanly from nothing.
 --
+-- 2026-09-08, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0035
+-- (the in-app feedback table): ledger read-back 36 rows, 0000-0035, NO GAPS and
+-- NO REPAIR NEEDED -- `db push` recorded 0035 itself, exactly as the REPAIR note
+-- below predicts. Structural layer: **25 true, 0 false, 1 NULL**, the NULL being
+-- 0020 as always. The 0035 row read true. Direct catalog check on the new table:
+-- relrowsecurity = true, 0 policies (the intended server-only shape), 2 indexes
+-- (pkey + feedback_created_idx), 2 FKs, 0 rows. Pre-flight before the push was
+-- `supabase migration list`: 0000-0034 local == remote, 0035 the only pending
+-- file, and `db push --dry-run` named that one file alone.
+--
+-- The push emitted one warning that is NOT a failure: "failed to cache
+-- migrations catalog ... docker". The CLI tries to build a pg-delta catalog in
+-- Docker AFTER applying, and there is no Docker on this machine. The apply
+-- itself printed "Applying migration 0035_feedback.sql..." and exited 0.
+
 -- 2026-08-26 (later the same day), NEW project, after `db push` applied 0031:
 -- ledger 32 rows 0000-0031 with no gaps. This split file, structural layer:
 -- 22 true + the expected 0020 NULL. Data rows: 0020 false, 0028 false, 0021

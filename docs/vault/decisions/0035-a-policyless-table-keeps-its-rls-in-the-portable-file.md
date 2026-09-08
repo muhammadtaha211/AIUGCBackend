@@ -40,6 +40,15 @@ A future migration that creates a table the tests need **and gives it a policy**
 `CREATE TABLE` is exactly the failure that row exists to catch. The absence of a policy is
 deliberately not asserted: a policy added later would be an addition, not evidence 0035 failed.
 
+## It is applied
+
+Pushed to production (`hyaqydcmwbnbaiqqufow`) on **2026-09-08**, on the founder's explicit
+instruction in chat, after a `migration list` + `--dry-run` pre-flight that showed 0035 as the only
+pending file. The one-file shape held where it matters: the ledger went to 36 rows (0000-0035, no
+gaps, no repair), and on the live table `pg_class.relrowsecurity` is **true** with **zero policies**
+— the server-only shape this note argued for, confirmed on Supabase rather than only on PGlite.
+Full read-back in `scripts/verify-migration-ledger.sql` §RESULTS.
+
 ## Related
 
 [[0018-rls-cannot-ride-in-a-portable-migration]] — the rule this bounds.
