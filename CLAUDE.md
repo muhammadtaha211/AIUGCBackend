@@ -93,7 +93,7 @@ Every task response must end with exactly this block, no exceptions, even for ti
 
 The manual test must be runnable by the founder without reading the code. If the task produced something not directly runnable (e.g., a schema migration), the test is how to verify it applied (query to run, expected rows/columns).
 
-Update the docs, including the vault with the changes and decisions and discoveries made in the session.
+Update the docs, including the vault and the state of play if needed with the changes and decisions and discoveries made in the session.
 
 ## Commands
 

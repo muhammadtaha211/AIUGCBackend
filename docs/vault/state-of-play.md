@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-05
+updated: 2026-09-09
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -49,8 +49,12 @@ alone produces that. §11 now carries the check.
 All four deaths surfaced only because the founder happened to be running a wizard test —
 that is the Sentry argument (queue item 7), now with four data points instead of two.
 
-`apps/admin` is also deployed and publicly reachable on its vercel.app URL, gated only
-by `requireAdmin` (the basic-auth second wall is believed unset — queue item 2).
+`apps/admin` is deployed on its vercel.app URL and now sits behind HTTP Basic Auth in front
+of `requireAdmin` — closed 2026-09-09, old queue item 2. Verified from outside the browser
+session: `GET /login` with no credentials -> 401 carrying `www-authenticate: Basic
+realm="admin"`; the same request with credentials -> the login page; `GET
+/api/admin/personas` with no credentials -> 401, not 403 — proof the Basic wall fires ahead
+of the Supabase gate, not behind it.
 
 **Render progress is now visible to the customer** (2026-09-02). The A wizard's render
 step has a real bar with the percentage on it; `/home` shows a live chip plus the percent
@@ -181,9 +185,11 @@ non-sensitive scopes.
 5. **The Service B format is decided** — recorded 2026-09-04 in
    [[0017-service-b-single-setting-selfie-talking-head]]. Single-setting selfie talking
    head, no image or composite step, physical products out; the optional founder-made opener clip was retired 2026-09-06 — the hook is a Remotion animation over the one HeyGen clip ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). **The engine is now built to it** (2026-09-05, queue item 14, commits
-   `2d446e6..b6c652a` on `main`, unpushed at the time of writing): b_script v9 + `hook_text`,
+   `2d446e6..b6c652a` on `main`, merged via PR #21 (`704ad25`, 2026-09-06) and pushed —
+   confirmed 2026-09-09): b_script v9 + `hook_text`,
    the lead-in, hook text on render params with the selfie guard, `serviceBTimeline` and the CLI — plus the opener half (opener on render params, the opener composition, `bank add-opener`), **retired 2026-09-06** and still in the tree ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). **The B wizard (16) is built too**
-   (2026-09-05, branch `service-b-wizard`, unmerged and unpushed at the time of writing).
+   (2026-09-05, branch `service-b-wizard`, merged to `main` via PR #21, `704ad25`,
+   2026-09-06, and pushed — confirmed 2026-09-09).
    **Built 2026-09-06** ([[0024-hook-effect-is-a-render-param-the-customer-picks]]): the animation-effects step replacing the opener step (none/zoom/focus/whip, Hebrew labels), the speech-tied caption handoff in `serviceBTimeline`, and the `hookEffect` name on the render route, `createBRender`, `buildServiceBProps` and `render-b --hook-effect`. Still NOT built: nothing on 0023's list. Admin registration (15) is retired with the opener bank. Three engine decisions were made in the chat
    that built it, all in the code and its comments: the talking head stays muted and the
    approved mp3 plays from `captionOffsetMs` (the repo's measured glitch reason won over
@@ -215,10 +221,14 @@ non-sensitive scopes.
    [[middleware-redirects-drop-refreshed-auth-cookies]]. Both exits now copy the rotated
    cookies onto the redirect they return. Still **code-read, never observed** — the test proves
    the cookies are carried, not that anyone was ever signed out.
-2. **Second wall on admin.** Set `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS` on the admin
-   Vercel project (`apps/admin/src/middleware.ts` supports it; `.env.example` calls it
-   production-recommended; believed unset) and verify `fra1` there while in the
-   dashboard. Cheap, and admin is publicly reachable today behind `requireAdmin` alone.
+2. ~~**Second wall on admin.**~~ — **closed 2026-09-09**: `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS`
+   set on the admin Vercel project (Production and Preview), redeployed. Verified from
+   outside the browser session: `GET /login` with no credentials -> 401 carrying
+   `www-authenticate: Basic realm="admin"`; the same request with credentials -> the login
+   page; `GET /api/admin/personas` with no credentials -> 401, not 403 — proof the Basic
+   wall fires ahead of the Supabase gate, not behind it. Credentials themselves were never
+   written down (CLAUDE.md's credential rule). **Still open: whether the admin project's
+   function region is `fra1`** — not confirmed this session.
 3. **`setAll` drops the no-store headers `@supabase/ssr` passes with rotated cookies.** All four
    hooks — `apps/web/src/middleware.ts:27`, `apps/admin/src/middleware.ts:45`, and both
    `lib/supabase/server.ts:17` — declare one parameter, so the `Cache-Control: private, no-store`
@@ -334,8 +344,7 @@ sequence (pipeline → outreach samples → self-serve app).
     has a known footgun that this would inherit. Until it lands, `aiugc bank add-opener`
     (and `persona add-image --kind selfie`) is the only way a clip reaches the bank, and
     the wizard's effect step lists exactly what that registered.
-16. ~~**The B wizard.**~~ — **built 2026-09-05** on branch `service-b-wizard` (unmerged,
-    unpushed): `persona → pointers → script → audio → opener effect → render`, one flow
+16. ~~**The B wizard.**~~ — **built 2026-09-05** on branch `service-b-wizard` (pushed and merged): `persona → pointers → script → audio → opener effect → render`, one flow
     for every business. Commits, in order: `e4cb08e` this file's 0032 correction;
     `de49627` the six steps, the pointers step, hook text on the script and edit
     responses; `44f4af5` `personaSelfie`, `personaThumbnail(service)`,
@@ -384,6 +393,11 @@ sequence (pipeline → outreach samples → self-serve app).
   investigation: everything it must describe is already in the privacy policy.
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing
   fix closed the silent variant for every writer, not just the CLI.
+- **Service B is not launch-ready on `auto_release_b` alone.** It is `true` (placeholder
+  value, unchanged since 2026-08-26, [[0004-service-b-config-is-provisional]]), so every
+  Service B render skips `qc_pending` and releases straight to the customer today — a good
+  founder eyeball pass on one render is not evidence the gate can stay off at self-serve
+  scale.
 
 ## Service B
 
@@ -394,7 +408,10 @@ does **not** settle. The one measurement it rests on is
 [[heygen-avatar-iv-idles-on-leading-silence]].
 
 The engine is built to it as of 2026-09-05 (queue item 14), and so is the web wizard (item
-16, branch `service-b-wizard`, unmerged). The wizard never resolves a default: the B catalog
+16, branch `service-b-wizard`, merged to `main` via PR #21, `704ad25`, 2026-09-06; two
+further direct merges from the same branch, `f176066` and `b6df318`, landed the same day).
+`main` is pushed — `git log main..origin/main` / `origin/main..main` are both empty. The
+wizard never resolves a default: the B catalog
 lists only personas with a usable selfie, the card shows that selfie, its id travels with
 the render, and `POST /renders` refuses an image that is not that persona's live
 `kind='selfie'` row — so core's selfie guard (which covers only a resolved default) is never
@@ -413,6 +430,15 @@ tried and zeroed the same day on the founder's verdict
 ([[0021-nothing-moves-at-the-service-b-seam]], [[service-b-seam-constants]]). **The seam is gone, not fixed**: on 2026-09-06 the founder retired the opener clip entirely — a Service B ad is one HeyGen clip with a Remotion animation hook (zoom hook first, `hookZoom` in `packages/remotion`, whoosh allowed) — [[0023-hook-is-a-remotion-animation-opener-clips-retired]]. The effects step, the caption handoff and the `hookEffect` param landed 2026-09-06 ([[0024-hook-effect-is-a-render-param-the-customer-picks]]): three animations plus "none". Open: deleting the opener-clip code, and a real recorded SFX to replace the two synthesized placeholders in `assets/sfx/`.
 
 All of the seam work — grade curve, alignment, soft cut — is **retired 2026-09-06** with the opener; the code stays in the tree and the measurements stay true ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). The limited-range tag and the handheld sway carry over to the single-clip product.
+
+**Founder eyeball verdict, 2026-09-09 (not a measurement):** the founder ran Service B end
+to end through the merged wizard and judged the resulting ad good by eye. The report did not
+say which persona, hook effect, or business it used, whether the take was a fresh paid HeyGen
+draw or a reused one, or whether the render reached a customer-visible release versus sitting
+in `qc_pending` — those specifics are unconfirmed. Checked independently this session:
+`app_config.auto_release_b = true` (unchanged since 2026-08-26) and `events` holds 0
+`qc_release`/`qc_reject` rows, so today every Service B render skips the QC queue and
+releases straight through — the founder's pass neither exercised nor changed that.
 
 `lipsync_resolution` and `auto_release_b` are **still placeholders**; `lipsync_motion_prompt`
 and the new `lipsync_expressiveness` are founder-chosen since 2026-09-06 (migration 0034,
