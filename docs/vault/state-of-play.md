@@ -104,9 +104,9 @@ kept (founder-verified 2026-09-01). The old project is deleted — org back to $
 preset, no build/output/install overrides (defaults are correct — core ships as TS
 source via `transpilePackages`), function region `fra1`, `ANTHROPIC_API_KEY` added,
 `tavnit.ai` attached and resolving (all founder-verified 2026-09-01). Still useful:
-`NEXT_PUBLIC_*` variables must be type Config, not Secret. **Unverified:** whether
-`SUPABASE_SERVICE_ROLE_KEY` is in the web project's env (see open decisions), and
-whether the pre-existing admin project has `fra1` set.
+`NEXT_PUBLIC_*` variables must be type Config, not Secret. **Both former unknowns are
+founder-confirmed 2026-09-10:** `SUPABASE_SERVICE_ROLE_KEY` **is** in the web project's
+env, and the admin project's function region **is** `fra1`.
 
 **Hetzner.** One server `tavnit-worker`, CPX32 (4 shared AMD vCPU, 8 GB, 160 GB NVMe),
 Nuremberg, Ubuntu 24.04. ~$41/month plus ~$0.72 for the primary IPv4, which bills
@@ -235,8 +235,8 @@ non-sensitive scopes.
    `www-authenticate: Basic realm="admin"`; the same request with credentials -> the login
    page; `GET /api/admin/personas` with no credentials -> 401, not 403 — proof the Basic
    wall fires ahead of the Supabase gate, not behind it. Credentials themselves were never
-   written down (CLAUDE.md's credential rule). **Still open: whether the admin project's
-   function region is `fra1`** — not confirmed this session.
+   written down (CLAUDE.md's credential rule). ~~Still open: whether the admin project's
+   function region is `fra1`.~~ **Closed 2026-09-10, founder-confirmed: it is `fra1`.**
 3. ~~**`setAll` drops the no-store headers `@supabase/ssr` passes with rotated cookies.**~~ —
    **closed 2026-09-10** on a fix plus a measurement, not on the inference it used to rest on.
    `3d47d3a` gave both middlewares the two-parameter `setAll`, an `authHeaders` local read at call
@@ -306,10 +306,15 @@ non-sensitive scopes.
    on `/reset-password`, unfixed).
    **Everything above was measured on `next dev` only.** Production masking, digests and
    `global-error`'s appearance without the dev overlay were not exercised.
-5. **`/login` wipes a draft the server threw away.** `login-form.tsx:45` calls `clearDraft()`
-   on any 200, but `/api/onboarding/complete` is idempotent by **owner, not content**: an
-   existing owner who fills the public wizard for a second product gets their old business
-   back and their new answers deleted, silently and unrecoverably.
+5. ~~**`/login` wipes a draft the server threw away.**~~ — **fixed 2026-09-10** in `4252201`
+   (its stray vault edits backed out in `b6b3dd4`). Every 200 from
+   `/api/onboarding/complete` now carries `stored`, and the draft is cleared only on
+   `stored === true`; an unparseable 200 counts as not stored, because **clearing on a response
+   you cannot interpret is the defect class, not a corner of it**. A kept draft rides to
+   `/home/new-business?draft=1` and is seeded once, then spent on success. The decision moved
+   into `apps/web/src/lib/onboarding.ts` to be testable; 15 new cases across two files, one of
+   which is the first `apps/web` test ever to import a route handler. **No mutation testing was
+   recorded** — the coverage is negative-case, not mutation-verified.
    [[login-clears-a-draft-the-server-never-stored]].
 6. ~~**Check the DRY_RUN contamination window.**~~ — **closed 2026-09-10, and the premise was
    wrong in the founder's favour.** Nine rows came back
@@ -337,8 +342,9 @@ non-sensitive scopes.
    **Widened the same day:** the first cut reported `status='dead'` only, so every
    `PermanentError` — `status='failed'`, which never retries and is the class that already
    burned ~₪6.50 of HeyGen on 2026-09-06 — was silent. Both now report, under separate Sentry
-   issues (`job dead: <type>` vs `job failed: <type>`). **That widening is not on the box yet**
-   — it needs `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`.
+   issues (`job dead: <type>` vs `job failed: <type>`). ~~That widening is not on the box yet.~~
+   **The box is up to date as of 2026-09-10, founder-confirmed — the widening is on it.**
+   Still founder-reported rather than observed from here, same caveat as the DSN above.
    Still not covered: the lease sweep's deaths, and any external kill (OOM, SIGKILL) — no code
    of ours runs. Diagnosis paths unchanged: `jobs.last_error` via
    `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only), box
@@ -348,10 +354,8 @@ non-sensitive scopes.
    own stdout is visible (the count in [[0016-worker-stays-on-transaction-pooler-6543]] is valid),
    but systemd's unit lifecycle lines (restarts, OOM kills) are not.
    `sudo usermod -aG systemd-journal aiugc` fixes it (takes effect on next login). Not yet run.
-9. **Take one Hetzner snapshot.** Unblocked: `af158cb` is deployed, three renders are
-   verified, and the bundle is confirmed outside `/tmp`. This is the known-good image —
-   capture it before the box drifts. One-off, not the +20%/month backup plan. One-off, not the
-   +20%/month backup plan.
+9. ~~**Take one Hetzner snapshot.**~~ — **closed 2026-09-10**, founder-confirmed: a second
+   snapshot was taken that day. One-off, not the +20%/month backup plan.
 10. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
     CPX41-class, ~€30/mo flat" predates the June 2026 price rise and understates by
     roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
@@ -460,18 +464,21 @@ sequence (pipeline → outreach samples → self-serve app).
 
 ## Open decisions
 
-- **Service-role key in `apps/web`.** Root `.env.example` (line 9) says "never the
-  service role key" for `apps/web/.env.local` — but the wizard signs storage URLs
-  server-side (analysis thumbs, twelve per page), and the dev machine's
-  `apps/web/.env.local` **does** contain `SUPABASE_SERVICE_ROLE_KEY` (variable names
-  checked 2026-09-01, values not read). The comment is stale against how web actually
-  runs. Open: whether the Vercel web env has the key — if any smoke-tested page
-  rendered signed thumbnails, it must. Check against `apps/web/.env.local` before
-  touching anything; do not fix the `.env.example` comment blind.
-- **Content policy.** Nothing reviews customer copy before an MP4 exists —
-  `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is
-  the only user. Strangers can reach the app now that Google sign-in is published, so
-  this no longer waits on a queue item.
+- ~~**Service-role key in `apps/web`.**~~ — **closed 2026-09-10, founder-confirmed:
+  `SUPABASE_SERVICE_ROLE_KEY` IS in the Vercel web project's env.** The consequence is that
+  root `.env.example:9` — "never the service role key" for `apps/web/.env.local` — is now
+  **confirmed stale against how web actually runs**, not merely suspected. The wizard signs
+  storage URLs server-side, so the key has to be there. **`.env.example` was deliberately not
+  edited**: what the comment should say instead is the founder's call, and the honest options
+  differ (drop the clause, or keep it and move the signing off the web tier).
+- ~~**Content policy.**~~ — **decided 2026-09-10: accepted, not fixed.**
+  [[0041-content-policy-is-accepted-not-fixed]]. Service A's live format is silent and its
+  captions are the customer's own words, so there is little to catch; where copy IS generated,
+  Anthropic refuses at generation and HeyGen moderates at render. **The correction that came
+  with it: "if HeyGen accepts it then I do too" does NOT cover Service A**, which never touches
+  HeyGen. Accepted rather than solved: terms section 6 forbids presenting personas as real
+  customers or testimonials and nothing enforces it but the founder noticing. Revisit on the
+  first non-founder signup, not on a date ([[live-account-census-2026-09-10]]).
 - ~~**`daily_caps` for stranger traffic.**~~ — **answered 2026-09-10, no values changed**:
   [[0040-the-hard-ceiling-moves-to-the-providers]]. The caps stay; the hard ceiling becomes prepaid
   balances / org spend limits at Anthropic, ElevenLabs and HeyGen, and the in-app platform cap is
@@ -483,10 +490,14 @@ sequence (pipeline → outreach samples → self-serve app).
   [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as
   עוסק פטור (קבלה / חשבונית עסקה) or convert first. No money moves today, so nothing is
   currently wrong; it is a configuration decision the gateway work must not skip.
-- **The reg. 2 מסמך הגדרות מאגר.** Privacy §11 now claims compliance with the 2017 Data
-  Security Regulations; the document those regulations require has never been written —
-  [[database-definitions-document-missing]]. A collation job, not an
-  investigation: everything it must describe is already in the privacy policy.
+- **The reg. 2 מסמך הגדרות מאגר — drafted 2026-09-10, duty NOT discharged.**
+  `docs/legal/database-definitions-document.md` exists (`ae8da4e`, then `79ec992`): 981 lines,
+  internal only, served and linked from nowhere. The collation job is done; what remains is
+  **60 `[חסר: …]` markers plus 15 bare `[חסר]` ones — 75 gaps that need the founder or
+  counsel, not more drafting**. [[database-definitions-document-missing]]. The draft turned up
+  two defects in _other_ documents, both recorded and neither fixed:
+  [[privacy-understates-what-the-edge-check-reads]] and
+  [[sentry-is-an-undisclosed-processor]].
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing
   fix closed the silent variant for every writer, not just the CLI.
 - **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true —

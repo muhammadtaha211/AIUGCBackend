@@ -8,6 +8,16 @@ source: code
 
 # The content-policy classifier has never run, and the docs say it does
 
+> **ACCEPTED, NOT FIXED — founder decision 2026-09-10:**
+> [[0041-content-policy-is-accepted-not-fixed]]. Everything below still describes the code
+> accurately; what changed is that it will not be wired. The reasoning in 0041 is worth reading with
+> this note, and it carries one correction that matters here: **"if HeyGen accepts it then I do too"
+> does not cover Service A**, which never touches HeyGen at all.
+>
+> Note also that line 70's "the founder plus two accounts" is a stale 2026-08-23 census against the
+> deleted project — live is six accounts, one admin, all the founder's
+> ([[live-account-census-2026-09-10]]).
+
 `contentPolicyCheck` (`packages/core/src/pipelines/copy.ts:491`) has **zero callers anywhere in the
 repo, including tests.** Repo-wide it has exactly two mentions: its own definition, and the prose at
 `docs/04-integrations.md:76-78` which states it

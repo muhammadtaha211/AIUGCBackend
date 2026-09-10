@@ -8,6 +8,55 @@ source: code
 
 # Signing in wipes a wizard draft the server threw away
 
+## FIXED 2026-09-10 (`4252201`, with its vault edits backed out in `b6b3dd4`)
+
+**The rule that landed is the defect CLASS, not this corner of it: never clear on a response you
+cannot interpret.** Everything else follows from that.
+
+`POST /api/onboarding/complete` now discriminates. Every 200 carries `stored`:
+`route.ts:100` returns `{ ok: true, businessId, stored: false }` from the existing-owner guard
+(`:91-102`) — before `setQuestionnaire` — and `:113` returns `stored: true` after the create path
+writes at `:111`. The two used to be indistinguishable, which is the whole defect. The 400s
+(`:65`, `:69`) carry no `stored` key at all.
+
+The decision moved out of the component into `apps/web/src/lib/onboarding.ts` so it could be
+unit-tested — there is no DOM here to render a component in. `postParkedDraft` (`:242-260`) is where
+`clearDraft()` now lives, at `:254`, reached **only** through the strict predicate `draftWasStored`
+(`:202-206`, module-private), which requires `body.stored === true` and nothing looser. An
+unparseable 200 goes through `.catch(() => null)` at `:252`, fails the predicate, and returns
+`"parked"` — draft kept.
+
+`login-form.tsx` no longer clears anything; `grep clearDraft` on it returns nothing. It awaits the
+handoff at `:47` and routes on it at `:50`: `"parked"` → `/home/new-business?draft=1` with the draft
+**kept**, anything else → `/home`. A non-200 or a thrown fetch is a third value, `"none"`, which
+also leaves the draft alone.
+
+`onboarding-flow.tsx` in `mode: "additional"` seeds once at mount from the marker (`:105` `seeded`
+ref, `:107-119`, via `additionalWizardDraft` → `loadDraft()`), and spends it at `:194` only after
+`completeAdditional` succeeds. The `useRef` is load-bearing rather than stylistic: the sidebar link
+to `/home/new-business` with no query is a same-route navigation that flips the prop true→false
+**without unmounting**, so reading the prop would strand the copy. It stays in-memory-only by
+design, per [[0015-signed-in-without-business-lands-on-new-business]].
+
+Guarded by two new test files, 15 cases: `apps/web/test/onboarding-draft.test.ts` (11) and
+`apps/web/test/onboarding-complete-route.test.ts` (4) — the first test in `apps/web` ever to import
+a route handler, which became possible when `apps/web/vitest.config.ts` supplied the `@/` alias
+(`9598b49`) and retired [[web-route-handlers-cannot-be-unit-tested]].
+
+**No mutation testing was done, or at least none was recorded.** Nothing in `4252201`'s message, in
+either test file, or anywhere in `apps/web` mentions mutants — this is stated explicitly because the
+vault has twice caught a commit message claiming mutation runs with no artefact behind them
+([[8a-wizard-shell-and-read-only-plan]], [[8d-demo-step-rework]]). What the tests honestly give is
+negative-case coverage: the route test asserts `setQuestionnaire` and `createBusiness` are never
+called on the `stored: false` path, and the draft test loops four malformed 200 bodies.
+
+**Two SHAs, not one.** `4252201` also carried two vault files it should not have — a `falsified/`
+note and a `status: superseded` stamp — and `b6b3dd4` reverted both byte for byte. The fix as it
+stands in the tree is the pair. (The vitest supersession above was written later, on the founder's
+explicit instruction.)
+
+---
+
 `login-form.tsx` finishes a leftover wizard draft after a password sign-in, and treats any 200 as
 "saved":
 

@@ -8,6 +8,34 @@ source: code + founder
 
 # Privacy §11 claims compliance with the 2017 Data Security Regs; the reg. 2 document does not exist
 
+## DRAFTED 2026-09-10 (`ae8da4e`, then `79ec992`) — the duty is NOT discharged
+
+`docs/legal/database-definitions-document.md` now exists: **981 lines**, Hebrew, internal only. It
+says so in its own opening (`:3-6`) and it is true — nothing outside `docs/` references it, it is
+served by no route and linked from no page.
+
+**What remains is not more drafting.** The document carries **60** `[חסר: …]` markers plus **15**
+bare `[חסר]` ones — 75 gaps in total — and every one of them needs the founder or counsel, not
+another pass over the prose. The collation job this note described is done; the answering is not.
+
+Two things the drafting turned up, both now their own notes because they are defects in other
+documents rather than gaps in this one:
+
+- [[privacy-understates-what-the-edge-check-reads]] — §6 claims the Vercel edge check reads the
+  login cookie only; it calls `getUser()` on every request and runs a `businesses` SELECT on `/` and
+  `/start`. `docs/legal-review.md:67` (P3) puts a question to counsel resting on that wrong fact.
+- [[sentry-is-an-undisclosed-processor]] — Sentry receives unsanitised `jobs.last_error`, which can
+  quote customer text, and appears in neither §6's recipient list nor the legal review. The draft
+  flagged it itself at `:680`.
+
+The document also carries the live account census (`:133-138`) and states its own supersession of
+the 2026-08-23 one (`:142-145`, repeated at `:941-944`) — [[live-account-census-2026-09-10]].
+
+**The compliance claim at privacy §11 is still live, and the document behind it is still unfinished.**
+The gap this note is about narrowed; it did not close.
+
+---
+
 ## What the page now says
 
 Added 2026-09-03 as the resolution of the P8 marker

@@ -1,12 +1,34 @@
 ---
 type: fact
-status: verified
+status: superseded
 verified: 2026-09-08
 method: 'scratch probe in apps/web/test: `await import("@/lib/service-b-ui")` under `pnpm --filter @aiugc/web exec vitest run` fails with `Failed to load url @/lib/service-b-ui (resolved id: @/lib/service-b-ui). Does the file exist?`; the same probe against `../src/app/api/businesses/[businessId]/renders/route` times out at 5000ms. Probe deleted after measuring.'
 source: code
 ---
 
 # No route handler in `apps/web` can be imported by a test — the `@/` alias does not resolve
+
+> **SUPERSEDED 2026-09-10.** Both halves of the claim are dead, and the "hang" was a misreading.
+>
+> `apps/web/vitest.config.ts` landed 2026-09-10 in `9598b49` and supplies the `@/` alias, so the
+> first reason is gone. The second — that a route module "hangs" — was **vitest's 5s default
+> `testTimeout` eating a slow module import**, not a hang. `apps/web/test/onboarding-complete-route.test.ts`
+> imports `/api/onboarding/complete` for real (`4252201`); its own comment at `:15-18` records the
+> import at ~2.7s, and a re-run on 2026-09-10 measured **collect 2.59s**, 4 passed.
+>
+> What survives, and is still worth reading below: **what a helper test does and does not prove**
+> (the arithmetic and the shape-selection rule — not the SQL, the auth gate, the ownership check or
+> signed-URL minting). The `*-ui.ts` shared-constant pattern is still the right default; it is no
+> longer the _only_ option.
+>
+> Note the route this note names is `api/businesses/[businessId]/renders/route`, not the one that
+> was measured. Nobody has re-probed the renders route — it pulls more of `@aiugc/core` behind it,
+> so its import cost is unknown, not known-fine.
+>
+> Two other notes still carry the dead claim and were left alone:
+> `docs/vault/facts/test-suite-inventory.md:46-51` ("No vitest config exists anywhere") and
+> `docs/vault/defects/middleware-redirects-drop-refreshed-auth-cookies.md:29-33` (the `vi.mock`
+> trick, no longer required).
 
 `apps/web` has **no vitest config file at all**; `"test": "vitest run"` runs on pure defaults. Vite
 does not read `tsconfig.json`'s `paths` without a plugin or an explicit `resolve.alias`, so the

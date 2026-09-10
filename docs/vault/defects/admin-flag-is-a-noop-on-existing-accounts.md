@@ -59,6 +59,12 @@ That is the _safe_ direction — the founder overpays and gets stopped, rather t
 rendering free. But it fails silently at exactly the moment it matters: setting up a second founder
 account, or promoting an account created earlier as a customer.
 
+> **This census is `status: superseded` as of 2026-09-10** — [[live-account-census-2026-09-10]].
+> It was measured 2026-08-23 against the Supabase project that has since been deleted (derived from
+> the date, which predates the 2026-08-27 env flip; this note never named a project). Live today is
+> **six accounts, one `admin`, all six the founder's own**. The paragraph is kept verbatim as the
+> record. **The trap itself is unaffected** — `ensureUser` still never upgrades a role.
+
 Live state, read-only: `hamodetaha.ht@gmail.com` and `muhammedtah211@gmail.com` are `admin`;
 `moeloefow@gmail.com` and `aiugc21111@gmail.com` are `customer`. Nothing in the current data looks
 like a victim of this, so **no known incident** — the note records the trap, not a wound.

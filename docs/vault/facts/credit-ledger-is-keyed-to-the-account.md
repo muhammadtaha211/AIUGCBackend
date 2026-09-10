@@ -40,6 +40,13 @@ whose grants arrived that way, and it can never be a balance.
 
 ## Current balances
 
+> **`status: superseded` as of 2026-09-10** — [[live-account-census-2026-09-10]]. This table was
+> measured 2026-08-23 against the Supabase project that has since been deleted (derived from the
+> date, which predates the 2026-08-27 env flip; this note never named a project). Live today is
+> **six accounts, one `admin`, all six the founder's own**, and these balances do not carry over.
+> Kept verbatim as the record. **The claim this note exists to make is unaffected** — a balance is
+> `sum(delta) WHERE user_id`, never `WHERE business_id`.
+
 | account                    | role     | balance |
 | -------------------------- | -------- | ------- |
 | `moeloefow@gmail.com`      | customer | 142     |
