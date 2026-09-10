@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { ownedBusinesses } from "@/lib/businesses";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { RendersLibrary } from "./renders-library";
 
@@ -17,11 +18,13 @@ export default async function RendersPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/start");
 
-  const { data: businesses } = await supabase
-    .from("businesses")
-    .select("id, name")
-    .order("created_at", { ascending: true });
-  if (!businesses || businesses.length === 0) redirect("/home/new-business");
+  // ownedBusinesses throws on a FAILED read rather than letting it collapse
+  // into "owns nothing" — see the note in @/lib/businesses. An empty list still
+  // means exactly what it always did.
+  const businesses = ownedBusinesses(
+    await supabase.from("businesses").select("id, name").order("created_at", { ascending: true }),
+  );
+  if (businesses.length === 0) redirect("/home/new-business");
 
   const cookieStore = await cookies();
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;

@@ -202,8 +202,12 @@ non-sensitive scopes.
    `app_config.lipsync_lead_in_ms` (code default 800, no seed) and pins it on
    `params.leadInMs`. Measured 2026-09-06 at three expressiveness levels: the head is still only to 0.56s and moves from 0.60s, before speech, so 800ms buys a 0.56s still window ([[heygen-head-moves-before-speech-onset]]) — the window the zoom hook now opens on ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). `GAP_MS = 250` was the reveal-to-speech gap of the retired cut.
 7. **[[0004-service-b-config-is-provisional]] is superseded by 0017** — but only on the
-   open-endedness. `lipsync_resolution` and `auto_release_b` stay placeholders; `lipsync_motion_prompt` and the new `lipsync_expressiveness` are founder-chosen since 2026-09-06 (migration 0034, [[0022-heygen-expressiveness-medium-generic-motion-prompt]]). `auto_release_b` still may not be flipped by a session. The note is marked
-   `status: superseded` and kept, not deleted.
+   open-endedness. `lipsync_motion_prompt` and the new `lipsync_expressiveness` are
+   founder-chosen since 2026-09-06 (migration 0034,
+   [[0022-heygen-expressiveness-medium-generic-motion-prompt]]), and **`auto_release_b` came out
+   of the placeholder list entirely on 2026-09-09** — ON is the founder's final decision,
+   [[0036-auto-release-b-is-always-on]]. `lipsync_resolution` is the only key still genuinely
+   provisional. The note is marked `status: superseded` and kept, not deleted.
 8. **Four stale provider references corrected 2026-09-04**, all in git: the
    `motion_prompt`/`expressiveness` caveat in `docs/04-integrations.md` (HeyGen's pages do
    **not** disagree — `developers.heygen.com/avatar-iv`, read 2026-09-04, says both apply to
@@ -240,13 +244,37 @@ non-sensitive scopes.
    `ad6d5ce` just put `Set-Cookie` on four more exits than before. Read a deployed response header
    before deciding how much this is worth.
    [[supabase-ssr-setall-cache-headers-are-ignored]].
-4. **A failed `businesses` query reads as "no businesses".** `middleware.ts:49` and
-   `home/page.tsx:71` both drop the query's `error`, so a transient PostgREST failure makes a
-   real owner look business-less. Since `03fc7f9` that lands them in the additional-business
-   wizard, whose completion posts `allowCreate` and skips the idempotency guard — a filled-in
-   questionnaire then creates a **second** business. Pre-existing class, new consequence.
-   [[a-failed-businesses-query-reads-as-no-businesses]] records the two closures considered
-   and deferred.
+4. ~~**A failed `businesses` query reads as "no businesses".**~~ — **all 7 sites closed
+   2026-09-09/10.** `middleware.ts` now reads
+   `error` and returns the pass-through (behaviour-preserving — `data: null` already fell
+   through; what it buys is that the exit is named, plus two new cases in
+   `apps/web/test/middleware.test.ts` — the failed read, and the signed-in-owner-with-no-business
+   at `/start` that nothing covered before), and `home/layout.tsx` reads `error` and logs it
+   (sidebar still empties, deliberately). The other five —
+   `home/page.tsx`, `home/a/new`, `home/b/new`, `home/demos` and `home/renders` (the
+   seventh site, added 2026-09-08 in `e33396f`) — **now throw**, through one helper
+   (`ownedBusinesses`, `apps/web/src/lib/businesses.ts`) rather than five copies, because the
+   copy is how the defect spread. They land on `apps/web/src/app/home/error.tsx`, written
+   2026-09-10: Hebrew, pane-scoped so the sidebar survives, retry runs `router.refresh()`
+   **and** `reset()` (`reset()` alone is a dead button for a failed server read).
+   Reproduced end to end against a **real** PostgREST error — an unauthenticated `businesses`
+   read returns `permission denied for table businesses`, not an empty list, which is what made
+   this defect reachable on any request whose JWT misses PostgREST.
+   **The duplicate-business path is still open and no error-handling fix reaches it**: it runs
+   `/start` → `OnboardingFlow` → `/home/new-business` → `allowCreate`, and neither hop
+   reads `businesses`. Closing it means either the `OnboardingFlow` target (rejected — founder
+   decision [[0015-signed-in-without-business-lands-on-new-business]]) or the `allowCreate` skip
+   (deliberate). **That is the only part of this item still open.**
+   **Next move, if it is worth one:** `app/error.tsx` or `global-error.tsx` — nothing outside
+   `/home` has a boundary, including `home/layout.tsx` itself, the marketing pages, `/start`
+   and `/login`. A `global-error.tsx` replaces the root layout, so it must re-declare
+   `<html lang="he" dir="rtl">` and the fonts itself.
+   [[a-failed-businesses-query-reads-as-no-businesses]] carries the boundary measurement.
+   New sibling from the same sweep: [[auth-getuser-errors-read-as-signed-out]] — the identical
+   "an error is not an empty result" shape on `auth.getUser()`, 17 call sites across both apps,
+   with the same duplicate-business ending reachable from a transient **auth** failure. Its two
+   API sites (`lib/api.ts:31`, `api/onboarding/complete/route.ts:27`) need no boundary and
+   answer 401 for what is really a 503 — the cheap half.
 5. **`/login` wipes a draft the server threw away.** `login-form.tsx:45` calls `clearDraft()`
    on any 200, but `/api/onboarding/complete` is idempotent by **owner, not content**: an
    existing owner who fills the public wizard for a second product gets their old business
@@ -282,8 +310,9 @@ non-sensitive scopes.
     [[service-a-render-wall-clock-on-the-box]]). Other sizing was derived from both.
 11. **The lint gate is red on the Windows desktop and proves nothing there.**
     `core.autocrlf=true` rewrites the whole tree to CRLF on checkout while prettier defaults to
-    `endOfLine: lf`, so `pnpm lint` reports ~648 files on a clean `main` — measured 2026-09-03
-    by running it on both `main` and a branch. Fix with a `.gitattributes` carrying
+    `endOfLine: lf`, so `pnpm lint` reports **709 files** on a clean `main` — re-measured
+    2026-09-09 (`npx prettier --check .`); it was ~648 on 2026-09-03, and the number only tracks
+    how many files exist. **Any task whose stop condition is "lint green" cannot be met here.** Fix with a `.gitattributes` carrying
     `* text=auto eol=lf` (the stored blobs are already LF, so there is no renormalize diff to
     review) or with `endOfLine: "auto"` in `.prettierrc`. Until then `pnpm lint` is not a
     signal on this machine; check a file by running prettier against its LF content.
@@ -393,11 +422,12 @@ sequence (pipeline → outreach samples → self-serve app).
   investigation: everything it must describe is already in the privacy policy.
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing
   fix closed the silent variant for every writer, not just the CLI.
-- **Service B is not launch-ready on `auto_release_b` alone.** It is `true` (placeholder
-  value, unchanged since 2026-08-26, [[0004-service-b-config-is-provisional]]), so every
-  Service B render skips `qc_pending` and releases straight to the customer today — a good
-  founder eyeball pass on one render is not evidence the gate can stay off at self-serve
-  scale.
+- **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true —
+  founder's final call, [[0036-auto-release-b-is-always-on]] — so every Service B render skips
+  `qc_pending` and reaches the customer unreviewed. The flag is settled; what is **not** settled
+  is whether anything else should stand in that space at self-serve scale. A founder eyeball pass
+  on one render is not evidence for that, and it happens after release, not before. See
+  [[content-policy-classifier-never-runs]], which is the other thing not standing there.
 
 ## Service B
 
@@ -436,17 +466,20 @@ to end through the merged wizard and judged the resulting ad good by eye. The re
 say which persona, hook effect, or business it used, whether the take was a fresh paid HeyGen
 draw or a reused one, or whether the render reached a customer-visible release versus sitting
 in `qc_pending` — those specifics are unconfirmed. Checked independently this session:
-`app_config.auto_release_b = true` (unchanged since 2026-08-26) and `events` holds 0
-`qc_release`/`qc_reject` rows, so today every Service B render skips the QC queue and
-releases straight through — the founder's pass neither exercised nor changed that.
+`app_config.auto_release_b = true` (unchanged since 2026-08-26, and settled permanently on
+2026-09-09 — [[0036-auto-release-b-is-always-on]]) and `events` holds 0
+`qc_release`/`qc_reject` rows, so every Service B render skips the QC queue and
+releases straight through — the founder's pass neither exercised nor changed that, and by
+decision nothing ever will.
 
-`lipsync_resolution` and `auto_release_b` are **still placeholders**; `lipsync_motion_prompt`
-and the new `lipsync_expressiveness` are founder-chosen since 2026-09-06 (migration 0034,
-[[0022-heygen-expressiveness-medium-generic-motion-prompt]]) — 0017 settles the format, not
-the engine, so
-[[0004-service-b-config-is-provisional]]'s instruction carries forward unchanged and
-`auto_release_b` still stays `true`. `poll_deadline_seconds` and `words_per_second` are the
-live Service A keys that matter.
+`lipsync_resolution` is the **only** remaining placeholder. `lipsync_motion_prompt` and the
+new `lipsync_expressiveness` are founder-chosen since 2026-09-06 (migration 0034,
+[[0022-heygen-expressiveness-medium-generic-motion-prompt]]), and `auto_release_b` is settled ON
+as of 2026-09-09 — [[0036-auto-release-b-is-always-on]], seeded by
+`0031_seed_unseeded_config.sql:75-77` and read at `pipelines/renders.ts:491-493`, the only
+consumer. 0017 settles the format, not the engine, so
+[[0004-service-b-config-is-provisional]]'s instruction carries forward for `lipsync_resolution`.
+`poll_deadline_seconds` and `words_per_second` are the live Service A keys that matter.
 
 ## Unfinished measurement
 

@@ -18,7 +18,11 @@ source: founder
 >   ([[0022-heygen-expressiveness-medium-generic-motion-prompt]]). Only `lipsync_resolution` and
 >   `auto_release_b` are still "whatever was lying around when Service B was parked" — do not treat
 >   those two as tuned.
-> - **`auto_release_b` still may not be flipped by a session.** 0017 changes nothing about it.
+> - **`auto_release_b` is no longer provisional at all** — **amended 2026-09-09** by
+>   [[0036-auto-release-b-is-always-on]]: ON is the founder's final decision, not a parked value.
+>   Filing it here alongside `lipsync_resolution` made a settled operating choice look undecided.
+>   It still may not be flipped by a session, and `lipsync_resolution` is now the only key in the
+>   list below that is genuinely "whatever was lying around".
 >
 > What 0017 _does_ retire is the open-endedness: "expect the revamp to replace them wholesale" now
 > has a note saying what the revamp is.

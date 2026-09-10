@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getImageProps } from "next/image";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { ownedBusinesses } from "@/lib/businesses";
 import { isStableCatalogUrl, loadPersonaCatalog } from "@/lib/persona-catalog";
 import {
   BUSINESS_COOKIE,
@@ -71,14 +72,19 @@ async function HomeContent() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/start");
 
-  const { data: businesses } = await supabase
-    .from("businesses")
-    .select("id, name, questionnaire")
-    .order("created_at", { ascending: true });
+  // ownedBusinesses throws on a FAILED read rather than letting it collapse
+  // into "owns nothing" — see the note in @/lib/businesses. An empty list still
+  // means exactly what it always did.
+  const businesses = ownedBusinesses(
+    await supabase
+      .from("businesses")
+      .select("id, name, questionnaire")
+      .order("created_at", { ascending: true }),
+  );
 
   // Signed in with no business (e.g. an interrupted signup): straight into the
   // questionnaire wizard — the dashboard has nothing to show yet.
-  if (!businesses || businesses.length === 0) redirect("/home/new-business");
+  if (businesses.length === 0) redirect("/home/new-business");
 
   const cookieStore = await cookies();
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;

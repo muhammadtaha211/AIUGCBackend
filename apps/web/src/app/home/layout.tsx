@@ -20,10 +20,16 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
   } = await supabase.auth.getUser();
   if (!user) redirect("/start");
 
-  const { data: businesses } = await supabase
+  // `error` is read, not just `data`: PostgREST returns data: null on failure,
+  // so the `?? []` below cannot tell a dropped connection from an account that
+  // owns nothing. The sidebar empties either way — that is the right frame for
+  // both, and a layout has no honest way to report a failure — but the log line
+  // is what separates them afterwards.
+  const { data: businesses, error } = await supabase
     .from("businesses")
     .select("id, name")
     .order("created_at", { ascending: true });
+  if (error) console.error("home/layout: businesses read failed", error);
 
   const cookieStore = await cookies();
   const selected = pickSelectedBusiness(businesses ?? [], cookieStore.get(BUSINESS_COOKIE)?.value);

@@ -46,7 +46,21 @@ export async function middleware(request: NextRequest) {
 
   if (user && (path === "/" || path === "/start")) {
     // RLS-scoped read: returns rows only for businesses this user owns.
-    const { data } = await supabase.from("businesses").select("id").limit(1);
+    const { data, error } = await supabase.from("businesses").select("id").limit(1);
+    // A failed read is not "owns nothing": it resolves data: null, which fails
+    // the same length check an empty [] fails — so the two are indistinguishable
+    // at the guard below. Fall through to `response` rather than route on a
+    // pooler blip. Naming the case stops a later `data ?? []` rewrite turning
+    // the guess back on, and the log is the only record that the read failed
+    // here at all (home/layout.tsx logs its own the same way).
+    if (error) {
+      console.error("middleware: businesses read failed", error);
+      return response;
+    }
+    // Keep `data &&`. The guard above narrows the type to non-null, but
+    // postgrest-js still resolves { data: null, error: null } for a
+    // 404-with-empty-body (PostgrestBuilder.ts:553-555), and .length on that
+    // would 500 both entry routes.
     if (data && data.length > 0) {
       return withAuthCookies(NextResponse.redirect(new URL("/home", request.url)));
     }

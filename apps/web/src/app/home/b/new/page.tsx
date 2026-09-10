@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { BWizard } from "@/components/b-wizard/b-wizard";
 import { NoCreditsCard } from "@/components/no-credits-card";
+import { ownedBusinesses } from "@/lib/businesses";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -21,11 +22,16 @@ export default async function NewBRenderPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/start");
 
-  const { data: businesses } = await supabase
-    .from("businesses")
-    .select("id, name, questionnaire")
-    .order("created_at", { ascending: true });
-  if (!businesses || businesses.length === 0) redirect("/home/new-business");
+  // ownedBusinesses throws on a FAILED read rather than letting it collapse
+  // into "owns nothing" — see the note in @/lib/businesses. An empty list still
+  // means exactly what it always did.
+  const businesses = ownedBusinesses(
+    await supabase
+      .from("businesses")
+      .select("id, name, questionnaire")
+      .order("created_at", { ascending: true }),
+  );
+  if (businesses.length === 0) redirect("/home/new-business");
 
   const cookieStore = await cookies();
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;
