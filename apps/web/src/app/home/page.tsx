@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getImageProps } from "next/image";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { authedUser } from "@/lib/auth-user";
 import { ownedBusinesses } from "@/lib/businesses";
 import { isStableCatalogUrl, loadPersonaCatalog } from "@/lib/persona-catalog";
 import {
@@ -67,9 +68,10 @@ function HomeSkeleton() {
 
 async function HomeContent() {
   const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // authedUser throws on a FAILED read rather than letting it collapse into
+  // "signed out" — see the note in @/lib/auth-user. A null user still means
+  // exactly what it always did.
+  const user = authedUser(await supabase.auth.getUser());
   if (!user) redirect("/start");
 
   // ownedBusinesses throws on a FAILED read rather than letting it collapse

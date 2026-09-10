@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { getDb, questionnaireSchema, schema } from "@aiugc/core";
+import { authedUser } from "@/lib/auth-user";
 import { questionnaireToDraft } from "@/lib/onboarding";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -21,9 +22,10 @@ import { SignOutButton } from "./sign-out-button";
  */
 export default async function SettingsPage() {
   const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // authedUser throws on a FAILED read rather than letting it collapse into
+  // "signed out" — see the note in @/lib/auth-user. A null user still means
+  // exactly what it always did.
+  const user = authedUser(await supabase.auth.getUser());
   if (!user) redirect("/start");
 
   const rows = await getDb()

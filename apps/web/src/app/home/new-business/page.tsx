@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { OnboardingFlow } from "@/components/onboarding/onboarding-flow";
+import { authedUser } from "@/lib/auth-user";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 /**
@@ -9,9 +10,10 @@ import { createServerSupabase } from "@/lib/supabase/server";
  */
 export default async function NewBusinessPage() {
   const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // authedUser throws on a FAILED read rather than letting it collapse into
+  // "signed out" — see the note in @/lib/auth-user. A null user still means
+  // exactly what it always did.
+  const user = authedUser(await supabase.auth.getUser());
   if (!user) redirect("/start");
 
   return (

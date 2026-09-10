@@ -8,6 +8,8 @@ import {
   schema,
   setQuestionnaire,
 } from "@aiugc/core";
+import { GENERIC_ERROR } from "@/lib/api-errors";
+import { authReadFailed } from "@/lib/auth-user";
 import { draftToQuestionnairePayload, emptyDraft, type OnboardingDraft } from "@/lib/onboarding";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -24,7 +26,19 @@ export async function POST(request: Request) {
   const supabase = await createServerSupabase();
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+  // 503, not 401 — same reasoning as requireUser in @/lib/api, and it matters
+  // more here: this is the route the onboarding wizard posts a filled-in
+  // questionnaire to. A 401 tells the browser the session died and the draft
+  // has nowhere to go; a 503 is "try again", which is what a GoTrue blip is.
+  // authReadFailed rather than a bare error check, because getUser resolves an
+  // AuthSessionMissingError for the ordinary signed-out case — which the public
+  // signup flow hits on every completion, and which IS a 401.
+  if (authReadFailed(authError)) {
+    console.error("onboarding/complete: auth read failed", authError);
+    return NextResponse.json({ ok: false, error: GENERIC_ERROR }, { status: 503 });
+  }
   if (!user) {
     return NextResponse.json({ ok: false, error: "צריך להתחבר קודם." }, { status: 401 });
   }

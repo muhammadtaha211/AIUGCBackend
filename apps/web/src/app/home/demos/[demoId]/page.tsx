@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { authedUser } from "@/lib/auth-user";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { DemoPlanEditor } from "./demo-plan-editor";
 
@@ -32,9 +33,10 @@ import { DemoPlanEditor } from "./demo-plan-editor";
 export default async function DemoPlanPage({ params }: { params: Promise<{ demoId: string }> }) {
   const { demoId } = await params;
   const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // authedUser throws on a FAILED read rather than letting it collapse into
+  // "signed out" — see the note in @/lib/auth-user. A null user still means
+  // exactly what it always did.
+  const user = authedUser(await supabase.auth.getUser());
   if (!user) redirect("/start");
 
   return (

@@ -22,10 +22,14 @@
  * was written up and inherited the exact shape from /home/demos. A page that
  * calls this cannot inherit it.
  *
- * NOT used by home/layout.tsx, deliberately. A layout is rendered by its
- * PARENT's error boundary, and there is no app/error.tsx — so a throw there
- * escapes to Next's built-in English screen instead of app/home/error.tsx. The
- * layout logs its failed read and empties the sidebar instead.
+ * NOT used by home/layout.tsx, deliberately — and since app/error.tsx was
+ * written the reason is no longer "nothing would catch it". A throw in the
+ * layout IS caught now (app/error.tsx; a layout is rendered by its PARENT's
+ * boundary), and the layout's auth read takes exactly that route. Its
+ * businesses read does not, because the two failures are not the same size: a
+ * failed auth read means we cannot tell who you are, a failed businesses read
+ * only empties the sidebar — and this layout also wraps /home/new-business,
+ * where an empty list is the point. It logs and carries on.
  */
 export function ownedBusinesses<T>(result: {
   data: T[] | null;

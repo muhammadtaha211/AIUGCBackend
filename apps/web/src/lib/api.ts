@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getAudioWithScript, getStepPlan, schema, type Db } from "@aiugc/core";
+import { authReadFailed } from "@/lib/auth-user";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { businessAccess, isUuid } from "@/lib/service-b";
 import { coreErrorMapping } from "@/lib/api-errors";
@@ -15,7 +16,7 @@ import { coreErrorMapping } from "@/lib/api-errors";
 // imports and is therefore unit-testable; re-exported so the 18 route files
 // that import them from "@/lib/api" keep working.
 export { GENERIC_ERROR, NOT_FOUND, INVALID_BODY } from "@/lib/api-errors";
-import { NOT_FOUND } from "@/lib/api-errors";
+import { GENERIC_ERROR, NOT_FOUND } from "@/lib/api-errors";
 
 /** Signed URLs are minted server-side only, always with this expiry. */
 export const SIGNED_URL_TTL_SECONDS = 3600;
@@ -28,7 +29,23 @@ export async function requireUser(): Promise<{ userId: string } | { response: Ne
   const supabase = await createServerSupabase();
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
+  // 503, not 401. A failed auth READ is not an absent session: 401 tells a
+  // retrying client that its session is gone and the way forward is to sign in
+  // again, when the truth is that GoTrue could not be reached and the way
+  // forward is to wait a moment.
+  //
+  // authReadFailed, not `if (error)`: getUser resolves an AuthSessionMissingError
+  // for the ordinary signed-out case, so a bare error check would answer 503 to
+  // every unauthenticated request — the 401 below is the right answer for those.
+  //
+  // Not authedUser(): a route handler has no error boundary above it, so a
+  // throw here would be Next's own unstyled 500 instead of this app's JSON.
+  if (authReadFailed(error)) {
+    console.error("requireUser: auth read failed", error);
+    return { response: jsonError(503, GENERIC_ERROR) };
+  }
   if (!user) return { response: jsonError(401, "צריך להתחבר קודם.") };
   return { userId: user.id };
 }

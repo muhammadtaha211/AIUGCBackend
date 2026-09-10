@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { authReadFailed } from "@/lib/admin";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/client";
 
 /**
@@ -56,7 +57,17 @@ export async function middleware(request: NextRequest) {
   // can happen for Server Components) — before the /login early-return.
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+  // Logged and NOT thrown, for the same reason as apps/web's middleware: there
+  // is no error boundary above middleware, so a throw is a 500 on every matched
+  // path including /login. A failed read leaves `user` null and deny() sends the
+  // founder to /login — wrong, but safe, and now recorded as a failure rather
+  // than passing for a sign-out. (The bare rethrow in GoTrueClient for a
+  // non-AuthError is uncaught here too; same note as apps/web.)
+  // authReadFailed, not `if (authError)`: getUser resolves an AuthSessionMissingError
+  // for the ordinary signed-out case, and this runs on /login too.
+  if (authReadFailed(authError)) console.error("admin middleware: auth read failed", authError);
 
   const path = request.nextUrl.pathname;
   if (path === "/login") return response;

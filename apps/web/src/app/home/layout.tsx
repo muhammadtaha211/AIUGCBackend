@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { authedUser } from "@/lib/auth-user";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { wizardGate } from "@/lib/wizard-gate";
@@ -15,11 +16,18 @@ import { Sidebar } from "./sidebar";
  */
 export default async function HomeLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // FATAL, unlike the businesses read below — the two policies in this file
+  // are deliberately opposite. A failed auth read means we cannot tell WHO you
+  // are, and the only thing this layout could do with that guess is evict a
+  // live session to /start. So it throws (via authedUser) and app/error.tsx
+  // renders the Hebrew card; a layout is caught by its PARENT's boundary,
+  // which is why that file had to exist before this line could.
+  const user = authedUser(await supabase.auth.getUser());
   if (!user) redirect("/start");
 
+  // DEGRADATION, unlike the auth read above: a failed businesses read only
+  // empties the sidebar, and this layout also wraps /home/new-business, where
+  // an empty list is the point. So it logs and carries on rather than throwing.
   // `error` is read, not just `data`: PostgREST returns data: null on failure,
   // so the `?? []` below cannot tell a dropped connection from an account that
   // owns nothing. The sidebar empties either way — that is the right frame for

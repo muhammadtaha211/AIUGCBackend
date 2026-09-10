@@ -17,6 +17,33 @@ export function adminAccess(requester: { role: "customer" | "admin" } | undefine
   return requester?.role === "admin" ? "ok" : "forbidden";
 }
 
+/**
+ * Whether an `auth.getUser()` error means the read FAILED, as opposed to
+ * answering "no valid session". auth-js populates `error` for both: measured
+ * 2026-09-10 against @supabase/auth-js 2.110.6, a request with no cookies
+ * resolves AuthSessionMissingError (status 400) and a bad JWT resolves
+ * AuthApiError (403) — those are verdicts. Only a non-Response failure or a
+ * 500-599 (AuthRetryableFetchError) and an unparseable body (AuthUnknownError)
+ * leave the question open. See lib/fetch.ts handleError, and the apps/web twin
+ * of this function in apps/web/src/lib/auth-user.ts, which carries the full
+ * measured table.
+ * docs/vault/defects/auth-getuser-errors-read-as-signed-out.md
+ *
+ * Duplicated rather than shared: apps/admin and apps/web have no common
+ * package, and a package for one predicate is not worth the moving part.
+ */
+const COULD_NOT_TELL = ["AuthRetryableFetchError", "AuthUnknownError"];
+
+export function authReadFailed(
+  // Both optional: the discriminator is `name`, but a parameter that declares
+  // ONLY an optional property is a weak type, and TypeScript then refuses any
+  // error object that happens not to carry a name — which is exactly the shape
+  // a hand-written double has.
+  error: { name?: string; message?: string } | null | undefined,
+): boolean {
+  return error != null && COULD_NOT_TELL.includes(error.name ?? "");
+}
+
 /** Route params arrive as raw strings — anything not a UUID is a plain 404. */
 export function isUuid(value: string): boolean {
   return z.string().uuid().safeParse(value).success;

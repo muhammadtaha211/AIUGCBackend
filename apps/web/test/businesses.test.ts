@@ -56,10 +56,13 @@ describe("ownedBusinesses", () => {
  */
 const HOME_DIR = fileURLToPath(new URL("../src/app/home", import.meta.url));
 
-/** layout.tsx must NOT throw: a layout is rendered by its PARENT's error
- *  boundary, and there is no app/error.tsx, so a throw there would escape
- *  app/home/error.tsx and reach Next's built-in English screen. It logs the
- *  error and empties the sidebar instead. */
+/** layout.tsx must NOT throw on THIS read. app/error.tsx exists now, so a
+ *  throw in the layout is caught (a layout is rendered by its PARENT's
+ *  boundary) — the layout's auth read uses that. A failed businesses read is
+ *  smaller than a failed auth read, though: it only empties the sidebar, and
+ *  this layout also wraps /home/new-business, where an empty list is the
+ *  point. It logs and carries on. See test/auth-user.test.ts for the other
+ *  half of the same file. */
 const MAY_NOT_THROW = ["layout.tsx"];
 
 function tsxFilesUnder(dir: string): string[] {
