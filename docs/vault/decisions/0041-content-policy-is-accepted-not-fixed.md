@@ -1,12 +1,19 @@
 ---
 type: decision
-status: verified
+status: superseded
+superseded_by: "[[0042-content-policy-is-wired-at-both-choke-points]]"
 verified: 2026-09-10
 method: "Founder decision in chat, 2026-09-10, accepting the risk recorded in [[content-policy-classifier-never-runs]] rather than closing it. Grounding read at 91e4470: the live Service A steps format is silent and its captions come from demo_step_plans labels + the questionnaire ([[0020-service-a-is-hook-and-steps-only]]); contentPolicyCheck (packages/core/src/pipelines/copy.ts:491) still has zero callers. Terms section 6 read at apps/web/src/app/(legal)/terms/page.tsx."
 source: founder
 ---
 
 # 0041 — Content policy is accepted, not fixed
+
+> **SUPERSEDED 2026-09-11 by [[0042-content-policy-is-wired-at-both-choke-points]].** The classifier
+> is now wired at `createSet` and `createBRender`. **Nothing below has been rewritten and nothing
+> below is wrong** — this decision was correct for the world it described, and it named the event
+> that would end it: the first signup by someone who is not the founder. That event arrived. Read
+> what follows for the reasoning, not for the current state of the code.
 
 `contentPolicyCheck` has never been called and will not be wired now. This is a decision to accept
 the exposure, not a plan to close it. [[content-policy-classifier-never-runs]] stays exactly as it

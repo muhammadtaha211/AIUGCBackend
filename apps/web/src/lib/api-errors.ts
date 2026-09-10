@@ -1,4 +1,4 @@
-import { AccountBudgetError, InsufficientCreditsError } from "@aiugc/core";
+import { AccountBudgetError, ContentPolicyError, InsufficientCreditsError } from "@aiugc/core";
 
 /**
  * Pure, unit-testable part of the HTTP error layer: the decision of which
@@ -36,6 +36,23 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
     error,
     mapped: true,
   });
+
+  // First, and by `instanceof` rather than by substring, on purpose. The rule
+  // above is that the first match wins, and this error's message carries a
+  // category string the classifier chose — free text from a model, which is
+  // exactly the kind of thing that could one day contain "not found" and get
+  // answered with a 404. A typed check cannot be shadowed and cannot shadow:
+  // nothing below tests for this class.
+  if (err instanceof ContentPolicyError) {
+    // 422, not 400: the request is well-formed and the customer is allowed to
+    // make it — the CONTENT is what is refused. Never surfaces `category` or
+    // `reason`: both are English strings a model wrote, and `reason` quotes the
+    // customer's own text back at them.
+    return hit(
+      422,
+      "התוכן לא עבר את בדיקת התוכן שלנו. עדכנו את השאלון או את הטקסט שנבחר ונסו שוב.",
+    );
+  }
 
   // The runaway-cost guards phrase their own refusal in Hebrew, in the
   // "system limit, contact support" register — pass it through rather than
