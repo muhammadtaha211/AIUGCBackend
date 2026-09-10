@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb, updatePlanSteps } from "@aiugc/core";
-import {
-  coreErrorResponse,
-  INVALID_BODY,
-  jsonError,
-  requirePlan,
-  requireUser,
-} from "@/lib/api";
+import { coreErrorResponse, INVALID_BODY, jsonError, requirePlan, requireUser } from "@/lib/api";
 import { planStepsRequestSchema, stepPlanResponse } from "@/lib/service-a";
 
 /**

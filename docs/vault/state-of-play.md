@@ -342,14 +342,27 @@ non-sensitive scopes.
     roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
     against three measured renders (verified 2026-09-02,
     [[service-a-render-wall-clock-on-the-box]]). Other sizing was derived from both.
-11. **The lint gate is red on the Windows desktop and proves nothing there.**
-    `core.autocrlf=true` rewrites the whole tree to CRLF on checkout while prettier defaults to
-    `endOfLine: lf`, so `pnpm lint` reports **709 files** on a clean `main` — re-measured
-    2026-09-09 (`npx prettier --check .`); it was ~648 on 2026-09-03, and the number only tracks
-    how many files exist. **Any task whose stop condition is "lint green" cannot be met here.** Fix with a `.gitattributes` carrying
-    `* text=auto eol=lf` (the stored blobs are already LF, so there is no renormalize diff to
-    review) or with `endOfLine: "auto"` in `.prettierrc`. Until then `pnpm lint` is not a
-    signal on this machine; check a file by running prettier against its LF content.
+11. **The lint gate is green. "Lint green" is a valid stop condition again. Closed 2026-09-10.**
+    `pnpm lint` exits 0 — "All matched files use Prettier code style!" — for the first time on
+    this machine. It took three changes, not the one this item predicted:
+    - A root `.gitattributes` with `* text=auto eol=lf` plus `-text` pins for the binary
+      extensions actually present (png, ico, jpg, webp, mp4, mp3, wav). This fixes every future
+      checkout and clone, but it does not touch files already on disk.
+    - The 286 CRLF files were converted in place. `git add --renormalize .` produced zero index
+      changes, exactly as "the stored blobs are already LF" predicted — which is precisely why it
+      also fixed nothing on its own.
+    - `.prettierignore` gained `.claude/worktrees/` (436 of the 718 failures were a sibling
+      session's nested worktree — prettier reads this file and never `.gitignore`), `prompts/`
+      (versioned prompt bytes are not prettier's to rewrite) and `docs/vault/.obsidian/`.
+
+    This item's diagnosis was right but incomplete: line endings were 274 of the 282 real-repo
+    failures, yet only 236 were line endings **alone**, so 46 files still failed once the tree
+    was LF. 32 of them were formatted; the numbers are in
+    [[crlf-was-masking-46-prettier-failures]] and the founder's calls in
+    [[0038-lint-is-a-real-stop-condition-again]]. `endOfLine: "auto"` was not used — it only
+    silences prettier while the files stay CRLF and makes formatting depend on which machine ran
+    it. Nothing about the Linux box changed; it checks out LF either way.
+
 12. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03 and
     deliberately left alone — none of it is load-bearing, all of it misleads a reader:
     - `docs/08` §8B `:495` "Testing mode needs no domain, no privacy policy and no terms",

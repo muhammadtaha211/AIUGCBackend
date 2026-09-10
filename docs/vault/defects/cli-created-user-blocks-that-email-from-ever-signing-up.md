@@ -54,10 +54,10 @@ select count(*) from public.users where email = 'founder@example.com';  -- 0, gi
 
 So whether this defect is loud or silent depends purely on letter case:
 
-| CLI wrote            | Person signs in as   | Outcome                                                            |
-| -------------------- | -------------------- | ------------------------------------------------------------------ |
-| `founder@x.com`      | `founder@x.com`      | **Loud** — trigger raises, `auth.users` insert rolls back, no login |
-| `Founder@X.com`      | `founder@x.com`      | **Silent** — no conflict; two rows for one person                   |
+| CLI wrote       | Person signs in as | Outcome                                                             |
+| --------------- | ------------------ | ------------------------------------------------------------------- |
+| `founder@x.com` | `founder@x.com`    | **Loud** — trigger raises, `auth.users` insert rolls back, no login |
+| `Founder@X.com` | `founder@x.com`    | **Silent** — no conflict; two rows for one person                   |
 
 The silent case is worse. Signup succeeds, but `businesses.owner_user_id` still points at the
 CLI's invented uuid while `auth.uid()` is the new one, so `businesses_select_own`
@@ -79,8 +79,8 @@ direction, which makes it the easier one to ship without noticing.
 
 Any email that was handed to `aiugc business create` before its owner ever signed up. On the new
 project that is exactly one address today — the founder's own, from the 2026-08-26 storage smoke
-test ([[../facts/new-project-pipeline-storage-roundtrip]]) — which would have made the *first
-real Google sign-in* fail, and looked like an OAuth misconfiguration rather than a stale row.
+test ([[../facts/new-project-pipeline-storage-roundtrip]]) — which would have made the _first
+real Google sign-in_ fail, and looked like an OAuth misconfiguration rather than a stale row.
 
 ## Not fixed
 

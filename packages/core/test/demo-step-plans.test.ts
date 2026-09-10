@@ -181,29 +181,33 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(moments[0]!.timestampMs).toBe(12_000);
   });
 
-  it("the canned plan reaches the minimum when index-even thinning would not", { timeout: 60_000 }, async () => {
-    // subsampleClusters thins by INDEX, so a cluster of states close together
-    // can spend most of the cap before the min-gap walk runs — and the
-    // minimum-step waiver counts a forward greedy over the legal pool, sees
-    // the states the thinning threw away, and refuses to forgive the
-    // shortfall. generateStepPlan then threw "dry-run plan violates its own
-    // rules" on the path the whole suite, `aiugc plan regress` keyless and a
-    // DRY_RUN worker all run. Timestamps are on the analyser's real grid
-    // (multiples of 200ms, never closer than 400ms) over a 21.6s recording.
-    const ts = [0, 3000, 4000, 5600, 10_000, 11_000, 12_600, 14_000, 20_000, 21_600];
-    const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר"];
-    const timeline = ts.map((t, i) =>
-      state({
-        timestampMs: t,
-        visibleText: [words[i]!],
-        actionType: i === ts.length - 1 ? "result" : "tap",
-      }),
-    );
-    const draft = await generateStepPlan(db, { timeline, questionnaire: QUESTIONNAIRE });
-    expect(draft.steps.length).toBeGreaterThanOrEqual(5);
-    // The ending is the one state the format cannot lose.
-    expect(draft.steps[draft.steps.length - 1]!.sourceIndex).toBe(ts.length - 1);
-  });
+  it(
+    "the canned plan reaches the minimum when index-even thinning would not",
+    { timeout: 60_000 },
+    async () => {
+      // subsampleClusters thins by INDEX, so a cluster of states close together
+      // can spend most of the cap before the min-gap walk runs — and the
+      // minimum-step waiver counts a forward greedy over the legal pool, sees
+      // the states the thinning threw away, and refuses to forgive the
+      // shortfall. generateStepPlan then threw "dry-run plan violates its own
+      // rules" on the path the whole suite, `aiugc plan regress` keyless and a
+      // DRY_RUN worker all run. Timestamps are on the analyser's real grid
+      // (multiples of 200ms, never closer than 400ms) over a 21.6s recording.
+      const ts = [0, 3000, 4000, 5600, 10_000, 11_000, 12_600, 14_000, 20_000, 21_600];
+      const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר"];
+      const timeline = ts.map((t, i) =>
+        state({
+          timestampMs: t,
+          visibleText: [words[i]!],
+          actionType: i === ts.length - 1 ? "result" : "tap",
+        }),
+      );
+      const draft = await generateStepPlan(db, { timeline, questionnaire: QUESTIONNAIRE });
+      expect(draft.steps.length).toBeGreaterThanOrEqual(5);
+      // The ending is the one state the format cannot lose.
+      expect(draft.steps[draft.steps.length - 1]!.sourceIndex).toBe(ts.length - 1);
+    },
+  );
 
   it("the minimum counts only states the ending rule allows", { timeout: 60_000 }, async () => {
     // Real recordings keep rolling after the success screen, and a state after
@@ -229,47 +233,65 @@ describe("plan_demo_steps (dry-run chain)", () => {
     expect(HEAVY_JOB_TYPES).not.toContain("plan_demo_steps");
   });
 
-  it("regenerating creates a NEW plan row — never mutates the old one", { timeout: 60_000 }, async () => {
-    const { planId: second } = await requestDemoPlan(db, demoId);
-    expect(second).not.toBe(planId);
-    await drainAll();
-    expect((await getStepPlan(db, second))?.status).toBe("ready");
-    expect((await getStepPlan(db, planId))?.status).toBe("ready");
-  });
+  it(
+    "regenerating creates a NEW plan row — never mutates the old one",
+    { timeout: 60_000 },
+    async () => {
+      const { planId: second } = await requestDemoPlan(db, demoId);
+      expect(second).not.toBe(planId);
+      await drainAll();
+      expect((await getStepPlan(db, second))?.status).toBe("ready");
+      expect((await getStepPlan(db, planId))?.status).toBe("ready");
+    },
+  );
 
-  it("a regenerate while one is still generating collapses onto the live job", { timeout: 60_000 }, async () => {
-    // Every press must not be a fresh paid enqueue: the route's budget gate
-    // reads usage that lags the queue, so uncollapsed presses outrun it.
-    const first = await requestDemoPlan(db, demoId);
-    const second = await requestDemoPlan(db, demoId);
-    expect(second.planId).toBe(first.planId);
-    expect(second.jobId).toBe(first.jobId);
-    await drainAll();
-    expect((await getStepPlan(db, first.planId))?.status).toBe("ready");
-  });
+  it(
+    "a regenerate while one is still generating collapses onto the live job",
+    { timeout: 60_000 },
+    async () => {
+      // Every press must not be a fresh paid enqueue: the route's budget gate
+      // reads usage that lags the queue, so uncollapsed presses outrun it.
+      const first = await requestDemoPlan(db, demoId);
+      const second = await requestDemoPlan(db, demoId);
+      expect(second.planId).toBe(first.planId);
+      expect(second.jobId).toBe(first.jobId);
+      await drainAll();
+      expect((await getStepPlan(db, first.planId))?.status).toBe("ready");
+    },
+  );
 
-  it("the job-level account-cap backstop fails a queued plan fast, in Hebrew", { timeout: 60_000 }, async () => {
-    // A customer (not admin-bypassed) account at its 0027 llm_tokens ceiling:
-    // the queued job must die as a fast PermanentError — never park, never
-    // spend — even though it was enqueued before the cap was hit.
-    const customer = await createBusiness(db, { ownerEmail: "capped@example.com", name: "עסק שמור" });
-    await setQuestionnaire(db, customer.id, QUESTIONNAIRE);
-    const demo = await createDemo(db, { businessId: customer.id, filePath: tempFile("capped.mp4") });
-    await drainAll(); // ingest -> analysis ready
+  it(
+    "the job-level account-cap backstop fails a queued plan fast, in Hebrew",
+    { timeout: 60_000 },
+    async () => {
+      // A customer (not admin-bypassed) account at its 0027 llm_tokens ceiling:
+      // the queued job must die as a fast PermanentError — never park, never
+      // spend — even though it was enqueued before the cap was hit.
+      const customer = await createBusiness(db, {
+        ownerEmail: "capped@example.com",
+        name: "עסק שמור",
+      });
+      await setQuestionnaire(db, customer.id, QUESTIONNAIRE);
+      const demo = await createDemo(db, {
+        businessId: customer.id,
+        filePath: tempFile("capped.mp4"),
+      });
+      await drainAll(); // ingest -> analysis ready
 
-    await recordUsage(db, {
-      provider: "anthropic",
-      kind: "llm_tokens",
-      quantity: 1_500_000,
-      businessId: customer.id,
-    });
+      await recordUsage(db, {
+        provider: "anthropic",
+        kind: "llm_tokens",
+        quantity: 1_500_000,
+        businessId: customer.id,
+      });
 
-    const { planId: cappedPlanId } = await requestDemoPlan(db, demo.id);
-    await drainAll();
-    const plan = await getStepPlan(db, cappedPlanId);
-    expect(plan?.status).toBe("failed");
-    expect(plan?.failReason).toMatch(/מכסת/);
-  });
+      const { planId: cappedPlanId } = await requestDemoPlan(db, demo.id);
+      await drainAll();
+      const plan = await getStepPlan(db, cappedPlanId);
+      expect(plan?.status).toBe("failed");
+      expect(plan?.failReason).toMatch(/מכסת/);
+    },
+  );
 });
 
 describe("plan lifecycle: edit, approve, fork", () => {
@@ -559,9 +581,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       }),
     ).toEqual([]);
     // Space that pair out and the same 4-step plan IS a violation.
-    const spread = bunched.map((s, i) =>
-      i === 4 ? state({ ...s, timestampMs: 8000 }) : s,
-    );
+    const spread = bunched.map((s, i) => (i === 4 ? state({ ...s, timestampMs: 8000 }) : s));
     expect(
       findPlanViolations(
         four.map((s) => (s.sourceIndex === 4 ? { ...s } : s)),
@@ -619,7 +639,12 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     const run: AnalysisState[] = [
       state({
         timestampMs: 54_600,
-        visibleText: ["עוד רגע לפני שמתחילים – בואו נשלי", "הפרטים האקדמיים קובעים איך נתאים לך את המערכת. אפשר לשנות ב", "Mohamed Taha", "סוג תואר"],
+        visibleText: [
+          "עוד רגע לפני שמתחילים – בואו נשלי",
+          "הפרטים האקדמיים קובעים איך נתאים לך את המערכת. אפשר לשנות ב",
+          "Mohamed Taha",
+          "סוג תואר",
+        ],
         actionType: "navigate",
       }),
       state({
@@ -638,7 +663,9 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       }),
     ];
     // The word the anchor clipped, found on the dups: no violation.
-    expect(findPlanViolations([{ sourceIndex: 0, label: "בואו נשלים" }], run, QUESTIONNAIRE, 8)).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "בואו נשלים" }], run, QUESTIONNAIRE, 8),
+    ).toEqual([]);
     // A word absent from the entire run still fails — pooling adds no slack.
     expect(
       findPlanViolations([{ sourceIndex: 0, label: "חוויה" }], run, QUESTIONNAIRE, 8).some((v) =>
@@ -651,17 +678,35 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     // State 72's run is itself alone; the screen says "מבחן מלא", never "מלאה".
     const tourState = state({
       timestampMs: 109_800,
-      visibleText: ["boteacher", "BRONZE · עוזר אקדמי אישי", "6/11", "מכונת המבחנים", "סימולציה של מבחן מלא על חומר הקורס, עם ציון בסוף – כדי", "שתגיע למבחן האמיתי בלי חן", "המשך", "חזור", "דלג על הכל"],
+      visibleText: [
+        "boteacher",
+        "BRONZE · עוזר אקדמי אישי",
+        "6/11",
+        "מכונת המבחנים",
+        "סימולציה של מבחן מלא על חומר הקורס, עם ציון בסוף – כדי",
+        "שתגיע למבחן האמיתי בלי חן",
+        "המשך",
+        "חזור",
+        "דלג על הכל",
+      ],
       actionType: "navigate",
     });
     expect(
-      findPlanViolations([{ sourceIndex: 0, label: "סימולציה מלאה" }], [tourState], QUESTIONNAIRE, 8).some(
-        (v) => v.includes("מלאה"),
-      ),
+      findPlanViolations(
+        [{ sourceIndex: 0, label: "סימולציה מלאה" }],
+        [tourState],
+        QUESTIONNAIRE,
+        8,
+      ).some((v) => v.includes("מלאה")),
     ).toBe(true);
     // Words genuinely on that screen pass, including across the · separator.
     expect(
-      findPlanViolations([{ sourceIndex: 0, label: "מכונת המבחנים" }], [tourState], QUESTIONNAIRE, 8),
+      findPlanViolations(
+        [{ sourceIndex: 0, label: "מכונת המבחנים" }],
+        [tourState],
+        QUESTIONNAIRE,
+        8,
+      ),
     ).toEqual([]);
   });
 
@@ -670,11 +715,17 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       state({ timestampMs: 0, visibleText: ['הלו"ז שלי', "BRONZE·עוזר אקדמי", "שָׁלוֹם"] }),
     ];
     // Hebrew gershayim (U+05F4) in the label vs ASCII quote on screen.
-    expect(findPlanViolations([{ sourceIndex: 0, label: "לו״ז" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "לו״ז" }], noisy, QUESTIONNAIRE, 8),
+    ).toEqual([]);
     // The OCR glued a · onto the word; whitespace splitting left it stuck.
-    expect(findPlanViolations([{ sourceIndex: 0, label: "עוזר" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "עוזר" }], noisy, QUESTIONNAIRE, 8),
+    ).toEqual([]);
     // Screen carries niqqud, the label does not.
-    expect(findPlanViolations([{ sourceIndex: 0, label: "שלום" }], noisy, QUESTIONNAIRE, 8)).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "שלום" }], noisy, QUESTIONNAIRE, 8),
+    ).toEqual([]);
   });
 
   it("words from demo_notes are allowed label words — an explained moment becomes copy", () => {
@@ -698,19 +749,37 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     // one word and cost a paid corrective re-request.
     const home = state({
       timestampMs: 2800,
-      visibleText: ["Create /", "Higgsfe", "https://boteacher.com", "Ask about this page", "Apps", "boteacher", "שבוע", "יום", "היום", "מרחב לנשום"],
+      visibleText: [
+        "Create /",
+        "Higgsfe",
+        "https://boteacher.com",
+        "Ask about this page",
+        "Apps",
+        "boteacher",
+        "שבוע",
+        "יום",
+        "היום",
+        "מרחב לנשום",
+      ],
       actionType: "navigate",
       legibility: "low",
     });
-    expect(findPlanViolations([{ sourceIndex: 0, label: "כנסו לboteacher" }], [home], QUESTIONNAIRE, 8)).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "כנסו לboteacher" }], [home], QUESTIONNAIRE, 8),
+    ).toEqual([]);
     // Prefixed forms cost nothing either — Hebrew glues ו onto verbs too.
-    expect(findPlanViolations([{ sourceIndex: 0, label: "ולחצו boteacher" }], [home], QUESTIONNAIRE, 8)).toEqual([]);
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "ולחצו boteacher" }], [home], QUESTIONNAIRE, 8),
+    ).toEqual([]);
     // A verb that is NOT on the list still fails: the allowlist is a list, not
     // a morphology rule.
     expect(
-      findPlanViolations([{ sourceIndex: 0, label: "הורידו boteacher" }], [home], QUESTIONNAIRE, 8).some(
-        (v) => v.includes("הורידו"),
-      ),
+      findPlanViolations(
+        [{ sourceIndex: 0, label: "הורידו boteacher" }],
+        [home],
+        QUESTIONNAIRE,
+        8,
+      ).some((v) => v.includes("הורידו")),
     ).toBe(true);
   });
 
@@ -730,8 +799,8 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     // validator already reads) — never in a caption the model invented.
     const bare: Questionnaire = { ...QUESTIONNAIRE, what_it_does: "יוצר קמפיינים" };
     expect(
-      findPlanViolations([{ sourceIndex: 0, label: "שמירה אוטומטית" }], timeline, bare, 8).some((v) =>
-        v.includes("אוטומטית"),
+      findPlanViolations([{ sourceIndex: 0, label: "שמירה אוטומטית" }], timeline, bare, 8).some(
+        (v) => v.includes("אוטומטית"),
       ),
     ).toBe(true);
     // No root or morphology matching either: the questionnaire saying
@@ -764,7 +833,12 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     const kinds: AnalysisState[] = [
       state({ timestampMs: 0, visibleText: ["התחברות"], screenKind: "login" }),
       state({ timestampMs: 1000, visibleText: ["דף הבית"], screenKind: "product" }),
-      state({ timestampMs: 2000, visibleText: ["שגיאה"], actionType: "result", screenKind: "error" }),
+      state({
+        timestampMs: 2000,
+        visibleText: ["שגיאה"],
+        actionType: "result",
+        screenKind: "error",
+      }),
       state({ timestampMs: 3000, visibleText: ["נשמר"] }), // v2-era: no screenKind
     ];
     // Login screens are never steps for the model.
@@ -853,7 +927,13 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       state({
         timestampMs: 0,
         actionType: "select",
-        visibleText: ["Takin Syllabus.txt", "זוהה סילבוס", "יעד ניתוב", "חומר קורס", "אישר ניתוב (1)"],
+        visibleText: [
+          "Takin Syllabus.txt",
+          "זוהה סילבוס",
+          "יעד ניתוב",
+          "חומר קורס",
+          "אישר ניתוב (1)",
+        ],
       }),
     ];
     const ok = (label: string) =>
@@ -1008,9 +1088,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     ).toEqual([]);
     // The same 10000ms plan on a recording long enough to do better IS flagged
     // — the waiver is about the timeline, never about the total.
-    expect(
-      shape(pick(0, 1, 5)).some((v) => v.includes("too SHORT")),
-    ).toBe(true);
+    expect(shape(pick(0, 1, 5)).some((v) => v.includes("too SHORT"))).toBe(true);
     // And the ceiling never gets the escape: a long plan can always drop steps.
     expect(
       findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, QUESTIONNAIRE, 8, {
@@ -1410,11 +1488,7 @@ describe("the one-beat test's calibration", () => {
     // The LATEST prompt, not a pinned version: the quoted entries have to
     // survive into whatever is actually being sent.
     const prompt = readFileSync(
-      path.join(
-        PROMPTS_DIR,
-        "plan_demo_steps",
-        `v${latestPromptVersion("plan_demo_steps")}.md`,
-      ),
+      path.join(PROMPTS_DIR, "plan_demo_steps", `v${latestPromptVersion("plan_demo_steps")}.md`),
       "utf8",
     );
     for (const entry of [...sharedEntries(11, 12), ...sharedEntries(2, 3)]) {
@@ -1611,10 +1685,17 @@ describe("step durations (the window model)", () => {
       state({ timestampMs: 30_000, actionType: "result" }),
     ];
     expect(
-      assembleSteps([{ sourceIndex: 0, label: "אחת" }, { sourceIndex: 1, label: "סוף" }], roomy2, {
-        ...DURATIONS,
-        byActionType: { tap: 900 },
-      })[0]!.durationMs,
+      assembleSteps(
+        [
+          { sourceIndex: 0, label: "אחת" },
+          { sourceIndex: 1, label: "סוף" },
+        ],
+        roomy2,
+        {
+          ...DURATIONS,
+          byActionType: { tap: 900 },
+        },
+      )[0]!.durationMs,
     ).toBe(1400);
 
     // Ceiling: a label nobody could read inside 4s, with all the room it wants.

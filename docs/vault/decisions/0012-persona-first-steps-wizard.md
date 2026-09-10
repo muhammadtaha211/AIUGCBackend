@@ -46,11 +46,11 @@ demo is ready, in which case it lands on the plan step.
 
 ## The bank at decision time (probe, 2026-09-02)
 
-| table            | rows                                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------------- |
-| `personas`       | 2 — Test (`f871ab6c…`, female), Tala (`b9853ad6…`, female)                                      |
+| table            | rows                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `personas`       | 2 — Test (`f871ab6c…`, female), Tala (`b9853ad6…`, female)                                       |
 | `persona_images` | 1 usable, on Test (after the repair in [[../defects/persona-image-upload-strands-pending-rows]]) |
-| `hook_clips`     | 2 — `a165cc7c…` inactive generic; `465f73c1…` **active and generic**                            |
+| `hook_clips`     | 2 — `a165cc7c…` inactive generic; `465f73c1…` **active and generic**                             |
 
 Consequence the founder must act on: **until `465f73c1…` is assigned to a persona in
 `/hooks`, the wizard shows no hooks for any persona**, and Tala does not appear in the picker

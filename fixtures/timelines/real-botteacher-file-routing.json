@@ -375,11 +375,7 @@
     {
       "timestampMs": 21400,
       "screenName": "עיבוד קבצים",
-      "visibleText": [
-        "Black Hole",
-        "מנתב קבצים",
-        "מעבד 1 קבצים..."
-      ],
+      "visibleText": ["Black Hole", "מנתב קבצים", "מעבד 1 קבצים..."],
       "action": "The platform is processing and routing the uploaded file.",
       "actionType": "idle",
       "screenKind": "loading",
@@ -690,11 +686,7 @@
     {
       "timestampMs": 35200,
       "screenName": "שפוך פה הכל",
-      "visibleText": [
-        "שפוך פה הכל",
-        "boteacher יעשה לך סדר",
-        "מבחן ללא פתרון לא יקלט לחערבת"
-      ],
+      "visibleText": ["שפוך פה הכל", "boteacher יעשה לך סדר", "מבחן ללא פתרון לא יקלט לחערבת"],
       "action": "User is viewing the upload zone with the cursor near the upload icon.",
       "actionType": "idle",
       "screenKind": "product",
@@ -764,11 +756,7 @@
     {
       "timestampMs": 39000,
       "screenName": "מנתב קבצים - עיבוד",
-      "visibleText": [
-        "ישירות לקורס זה",
-        "מנתב קבצים",
-        "מעבד 1 קבצים..."
-      ],
+      "visibleText": ["ישירות לקורס זה", "מנתב קבצים", "מעבד 1 קבצים..."],
       "action": "File processing has started and the screen transitions to a purple loading state showing file routing.",
       "actionType": "idle",
       "screenKind": "loading",
@@ -798,11 +786,7 @@
     {
       "timestampMs": 41600,
       "screenName": "מנתב קבצים - עיבוד",
-      "visibleText": [
-        "עדיין אין פרקים להצגה בקורס זה.",
-        "מנתב קבצים",
-        "מעבד 1 קבצים..."
-      ],
+      "visibleText": ["עדיין אין פרקים להצגה בקורס זה.", "מנתב קבצים", "מעבד 1 קבצים..."],
       "action": "File processing continues on the purple loading screen.",
       "actionType": "idle",
       "screenKind": "loading",
@@ -814,10 +798,7 @@
     {
       "timestampMs": 42800,
       "screenName": "מנתב קבצים - עיבוד",
-      "visibleText": [
-        "מנתב קבצים",
-        "מעבד 1 קבצים..."
-      ],
+      "visibleText": ["מנתב קבצים", "מעבד 1 קבצים..."],
       "action": "File processing is still ongoing, showing the same purple animated state.",
       "actionType": "idle",
       "screenKind": "loading",
@@ -829,13 +810,7 @@
     {
       "timestampMs": 45000,
       "screenName": "ניתוב הושלם",
-      "visibleText": [
-        "ניתוב הושלם",
-        "נותב לחומר ליקודי",
-        "3:16 AM",
-        "8/17/2026",
-        "ENG"
-      ],
+      "visibleText": ["ניתוב הושלם", "נותב לחומר ליקודי", "3:16 AM", "8/17/2026", "ENG"],
       "action": "File routing completed successfully with a confirmation message and a button to navigate to the indexed material.",
       "actionType": "result",
       "screenKind": "product",
@@ -847,11 +822,7 @@
     {
       "timestampMs": 47000,
       "screenName": "העלאת קבצים - שפוך פה הכל",
-      "visibleText": [
-        "שפוך פה הכל",
-        "boteacher יעשה לך סדר",
-        "מבחן ללא פתרון לא ייקלט למערכת"
-      ],
+      "visibleText": ["שפוך פה הכל", "boteacher יעשה לך סדר", "מבחן ללא פתרון לא ייקלט למערכת"],
       "action": "The upload screen is shown again after completion, ready for more files.",
       "actionType": "navigate",
       "screenKind": "product",
@@ -863,11 +834,7 @@
     {
       "timestampMs": 47600,
       "screenName": "העלאת קבצים - שפוך פה הכל",
-      "visibleText": [
-        "שפוך פה הכל",
-        "boteacher יעשה לך סדר",
-        "מבחן ללא פתרון לא ייקלט למערכת"
-      ],
+      "visibleText": ["שפוך פה הכל", "boteacher יעשה לך סדר", "מבחן ללא פתרון לא ייקלט למערכת"],
       "action": "Same upload screen displayed with a faint purple circular animation around the upload icon.",
       "actionType": "idle",
       "screenKind": "product",
@@ -1028,13 +995,7 @@
     {
       "timestampMs": 56600,
       "screenName": "שיעור פרטי - פרק 1",
-      "visibleText": [
-        "הפרק הזה",
-        "פרק 1",
-        "שיעור פרטי",
-        "סיכום",
-        "Type here to search"
-      ],
+      "visibleText": ["הפרק הזה", "פרק 1", "שיעור פרטי", "סיכום", "Type here to search"],
       "action": "User is clicking the 'שיעור פרטי' button.",
       "actionType": "tap",
       "screenKind": "product",
@@ -1046,9 +1007,7 @@
     {
       "timestampMs": 57200,
       "screenName": "מסך טעינה",
-      "visibleText": [
-        "Type here to search"
-      ],
+      "visibleText": ["Type here to search"],
       "action": "Screen is nearly black while loading after clicking the private lesson button.",
       "actionType": "idle",
       "screenKind": "loading",
@@ -1443,19 +1402,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [
-      1,
-      2,
-      3,
-      12,
-      36
-    ],
-    "dryRunSourceIndexes": [
-      0,
-      12,
-      20,
-      29,
-      36
-    ]
+    "sourceIndexes": [1, 2, 3, 12, 36],
+    "dryRunSourceIndexes": [0, 12, 20, 29, 36]
   }
 }

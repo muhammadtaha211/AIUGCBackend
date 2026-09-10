@@ -83,13 +83,29 @@ function ensureLavfiFixture(file: string, source: string, extraArgs: string[] = 
   const tmp = file.replace(/\.mp4$/, ".tmp.mp4");
   const result = spawnSync(
     "ffmpeg",
-    ["-y", "-f", "lavfi", "-i", source, ...extraArgs, "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "20", tmp],
+    [
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      source,
+      ...extraArgs,
+      "-pix_fmt",
+      "yuv420p",
+      "-c:v",
+      "libx264",
+      "-crf",
+      "20",
+      tmp,
+    ],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
   if (result.error || result.status !== 0) {
     rmSync(tmp, { force: true });
     const detail = result.error?.message ?? result.stderr?.toString().trim().slice(-300);
-    console.warn(`ffmpeg failed for ${file} (needed only for the steps preview/sample — is ffmpeg on PATH?): ${detail}`);
+    console.warn(
+      `ffmpeg failed for ${file} (needed only for the steps preview/sample — is ffmpeg on PATH?): ${detail}`,
+    );
     return;
   }
   renameSync(tmp, file);

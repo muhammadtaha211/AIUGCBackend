@@ -10,7 +10,7 @@ source: founder
 
 > **SUPERSEDED 2026-08-26 by [[0006-google-oauth-is-in-scope-for-launch]]**, the same day and the
 > same session. The founder reversed it: "Google: I want it working, not deferred." Kept verbatim
-> because the *reasoning* below is still the live constraint — the consent screen, the missing
+> because the _reasoning_ below is still the live constraint — the consent screen, the missing
 > privacy/terms pages and Google's verification queue did not go away, they became work to do
 > rather than a reason to skip. The "known consequence" section is also now resolved: the buttons
 > are gated behind `GOOGLE_SIGN_IN_ENABLED`.
@@ -44,7 +44,7 @@ code.
 ## Known consequence, not yet decided
 
 Both Google buttons still render unconditionally — `steps/step-signup.tsx:114-125` and
-`login/login-form.tsx:63-74`, each sitting *above* the email form. With the provider off, clicking
+`login/login-form.tsx:63-74`, each sitting _above_ the email form. With the provider off, clicking
 one does **not** show the Hebrew fallback at `auth.ts:78`: `signInWithOAuth` performs no network
 call, only `window.location.assign(...)`, so the browser leaves the app and Supabase returns the
 user to the Site URL root with error params nothing reads — a silent dead end with the wizard

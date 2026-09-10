@@ -24,7 +24,13 @@ type WizardNavProps = {
  * bar, because a seven-row rail would push the step itself below the fold.
  * The discs reuse the render timeline's visual language (lime = done/current).
  */
-export function WizardNav({ labels, current, onJump, locked = false, sticky = true }: WizardNavProps) {
+export function WizardNav({
+  labels,
+  current,
+  onJump,
+  locked = false,
+  sticky = true,
+}: WizardNavProps) {
   return (
     <nav aria-label="שלבי היצירה" className={sticky ? "lg:sticky lg:top-8" : undefined}>
       {/* Mobile */}

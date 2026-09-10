@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import { addDemoNote, getDb } from "@aiugc/core";
-import {
-  coreErrorResponse,
-  INVALID_BODY,
-  jsonError,
-  requireDemo,
-  requireUser,
-} from "@/lib/api";
+import { coreErrorResponse, INVALID_BODY, jsonError, requireDemo, requireUser } from "@/lib/api";
 import { demoNoteRequestSchema } from "@/lib/service-a";
 
 /**

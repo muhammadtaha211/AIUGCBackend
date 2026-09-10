@@ -3,3 +3,16 @@ dist/
 supabase/migrations/
 supabase/.temp/
 node_modules/
+
+# Nested Claude Code worktrees. Prettier reads this file only, never .gitignore,
+# so without this it walks into a sibling session's checkout and lint goes red
+# for reasons that have nothing to do with this tree.
+.claude/worktrees/
+
+# Versioned LLM prompts. The bytes ARE the version — prettier would rewrite
+# *emphasis* to _emphasis_ and re-pad tables, silently changing what v9 means.
+prompts/
+
+# Obsidian editor state. Obsidian rewrites these without a final newline every
+# time the vault is opened, so formatting them just goes red again.
+docs/vault/.obsidian/

@@ -19,10 +19,10 @@ untracked, and entirely regenerable — `supabase link` rewrites it.
 
 ## What changed
 
-| Command shape                                   | Before                       | After                                     |
-| ----------------------------------------------- | ---------------------------- | ----------------------------------------- |
-| `npx supabase <cmd>` (no `--db-url`)            | silently hit the OLD project | `LegacyProjectNotLinkedError`, exit 1     |
-| `npx supabase <cmd> --db-url <session pooler>`  | worked                       | works, unchanged                          |
+| Command shape                                  | Before                       | After                                 |
+| ---------------------------------------------- | ---------------------------- | ------------------------------------- |
+| `npx supabase <cmd>` (no `--db-url`)           | silently hit the OLD project | `LegacyProjectNotLinkedError`, exit 1 |
+| `npx supabase <cmd> --db-url <session pooler>` | worked                       | works, unchanged                      |
 
 Verified after removal: `migration list --db-url <new session pooler>` returns 32 rows with local
 and remote in agreement through `0031`. Nothing in the documented workflow needed the link state.

@@ -305,8 +305,7 @@ export function deriveJobProgress(opts: {
     const since = job.lockedAt ?? job.createdAt;
     // Defensive read off the checkpoint jsonb — anything but a 0-1 number
     // (older rows, other handlers' state shapes) simply doesn't surface.
-    const fraction = (job.state as { renderProgress?: unknown } | null | undefined)
-      ?.renderProgress;
+    const fraction = (job.state as { renderProgress?: unknown } | null | undefined)?.renderProgress;
     return {
       state: "running",
       elapsedMs: Math.max(0, opts.now.getTime() - since.getTime()),

@@ -14,13 +14,13 @@ database; the claim is about what the code can do, not about what any ledger cur
 Every writer of `credit_ledger`, exhaustively — all five live in
 `packages/core/src/pipelines/credits.ts`:
 
-| writer                   | delta                | who can reach it                                                                                     |
-| ------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------- |
-| `debitRender` (:67)      | negative             | createSet / createBRender, chargeable accounts                                                        |
-| `refundRenderIfNeeded` (:94) | mirrors a prior debit | render failure paths; one refund per render via the 0016 partial unique index — cannot net positive |
-| `expirePeriodRemainder` (:163) | negative       | renewal/cancel, `Math.max(0, …)` guarded                                                              |
-| `grantCredits` (:115)    | positive             | **founder only** — sole caller is `apps/admin/src/app/api/admin/grants/route.ts:24` behind `requireAdmin` |
-| `grantPeriod` (:127)     | positive             | **unreachable in production** — see below                                                             |
+| writer                         | delta                 | who can reach it                                                                                          |
+| ------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `debitRender` (:67)            | negative              | createSet / createBRender, chargeable accounts                                                            |
+| `refundRenderIfNeeded` (:94)   | mirrors a prior debit | render failure paths; one refund per render via the 0016 partial unique index — cannot net positive       |
+| `expirePeriodRemainder` (:163) | negative              | renewal/cancel, `Math.max(0, …)` guarded                                                                  |
+| `grantCredits` (:115)          | positive              | **founder only** — sole caller is `apps/admin/src/app/api/admin/grants/route.ts:24` behind `requireAdmin` |
+| `grantPeriod` (:127)           | positive              | **unreachable in production** — see below                                                                 |
 
 ## Why `grantPeriod` cannot fire
 

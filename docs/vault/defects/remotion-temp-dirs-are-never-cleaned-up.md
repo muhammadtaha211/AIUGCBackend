@@ -14,7 +14,7 @@ The **Fix shape** below landed, both halves: `bundle()` gets a repo-owned
 `outDir` (`<repo>/.work/remotion-bundle`), so every process overwrites the same directory and the
 one-dir-per-process accumulation stops; and `getBundle()` re-bundles when the memoized directory
 no longer exists on disk, because the cron mitigation this note's 2026-08-27 section describes
-turned out to *delete the live worker's bundle* and kill every render until restart — that
+turned out to _delete the live worker's bundle_ and kill every render until restart — that
 incident is its own note, [[tmp-cron-deletes-live-worker-bundle]]. Pinned by
 `packages/remotion/test/bundle-heal.test.ts`; `frame-delivery.test.ts` rendered for real from the
 new location, leaving nothing in `%TEMP%`.

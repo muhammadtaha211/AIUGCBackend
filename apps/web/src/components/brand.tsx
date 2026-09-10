@@ -10,14 +10,7 @@ import mark from "./brand-mark.png";
 export function Brand() {
   return (
     <span className="inline-flex items-center gap-2.5">
-      <img
-        src={mark.src}
-        alt=""
-        aria-hidden
-        width={24}
-        height={24}
-        className="block size-6"
-      />
+      <img src={mark.src} alt="" aria-hidden width={24} height={24} className="block size-6" />
       <span className="text-lg font-bold tracking-tight text-ink">תבנית</span>
     </span>
   );

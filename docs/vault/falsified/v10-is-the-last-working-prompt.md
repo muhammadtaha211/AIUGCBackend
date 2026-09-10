@@ -12,7 +12,7 @@ source: db
 
 Proposed 2026-08-20 by Claude in chat, on the basis that `real-botteacher-file-routing` (61 states,
 the production-shaped workload) completed 2 of 2 under v10 and 0 of 3 under v11/v12 plus the
-production v11 run — with a *different* violation each time. The reading was that v11's added
+production v11 run — with a _different_ violation each time. The reading was that v11's added
 instruction load (the one-beat merge rule plus the timing table) cost the model compliance headroom.
 
 The recommendation that followed: a v13 trimming instruction load should precede Phase 8b.
@@ -23,10 +23,10 @@ The recommendation that followed: a v13 trimming instruction load should precede
 — label words absent from `visibleText` plus a read-time overrun.
 
 | version | completions on file-routing |
-|---|---|
-| v10 | 2 / 3 |
-| v11 | 0 / 2 |
-| v12 | 2 / 4 |
+| ------- | --------------------------- |
+| v10     | 2 / 3                       |
+| v11     | 0 / 2                       |
+| v12     | 2 / 4                       |
 
 Fisher's exact on 2/3 vs 2/4 gives **p = 1.0**. One more draw either way flips the ordering. The
 2-of-2 was a small-sample artifact.

@@ -31,7 +31,7 @@ skip**, made the same day 0005 was written.
   Google buttons and the `או` divider above the email form. It defaults to `true`. The founder's
   requirement was one switch to flip if review comes back badly — the resolution of the open
   sub-decision 0005 left dangling.
-- **The reason the switch matters.** Until publishing status reads *In production*, an address not
+- **The reason the switch matters.** Until publishing status reads _In production_, an address not
   on the test-user list is refused by Google at the account chooser and returned with
   `error=access_denied`, which this app does not read — the user lands back on `/start` with no
   session and no message. See `docs/08-supabase-project-rebuild.md` §8B.
@@ -50,7 +50,7 @@ sequencing materially:
 - **One trap:** uploading a custom app **logo** triggers Google's brand review even with
   non-sensitive scopes. Leave it blank.
 - **Testing mode needs no domain, no privacy policy and no terms** — Google sign-in works against
-  `localhost` for up to 100 listed test users today. Those artefacts gate *publishing*, not use.
+  `localhost` for up to 100 listed test users today. Those artefacts gate _publishing_, not use.
 - `apps/web` has **no `/privacy` or `/terms` routes** and no such copy anywhere. Writing them, plus
   verifying `tavnit.ai` in Search Console, is what gates going public.
 - **A Vercel preview URL cannot serve as the authorized domain**: preview hostnames change per

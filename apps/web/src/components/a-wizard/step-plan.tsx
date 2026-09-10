@@ -496,10 +496,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
           if (view.kind === "failed") {
             return (
               <div className="mt-6">
-                <p
-                  role="alert"
-                  className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700"
-                >
+                <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
                   יצירת התוכנית נכשלה ולא תמשיך מעצמה.
                 </p>
                 {!quotaBlocked && (

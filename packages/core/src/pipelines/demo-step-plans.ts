@@ -237,19 +237,64 @@ const HEBREW_PREFIXES = new Set(["ו", "ה", "ב", "ל", "מ", "ש", "כ"]);
  * conservative: every addition weakens the anti-fabrication rule.
  */
 const FUNCTION_WORDS = new Set([
-  "של", "את", "עם", "על", "אל", "זה", "זו", "זאת", "זהו", "אז", "גם", "רק",
-  "כל", "לא", "יש", "אין", "עוד", "כבר", "או", "אם", "כי", "מה", "מי", "איך",
-  "כאן", "שם", "אחרי", "לפני", "בתוך", "עד", "ואז", "הנה", "ככה", "פשוט", "במקום",
+  "של",
+  "את",
+  "עם",
+  "על",
+  "אל",
+  "זה",
+  "זו",
+  "זאת",
+  "זהו",
+  "אז",
+  "גם",
+  "רק",
+  "כל",
+  "לא",
+  "יש",
+  "אין",
+  "עוד",
+  "כבר",
+  "או",
+  "אם",
+  "כי",
+  "מה",
+  "מי",
+  "איך",
+  "כאן",
+  "שם",
+  "אחרי",
+  "לפני",
+  "בתוך",
+  "עד",
+  "ואז",
+  "הנה",
+  "ככה",
+  "פשוט",
+  "במקום",
   // Pronouns and possessives. A caption addressed to the viewer needs them and
   // none of them can carry a product claim. The two-letter members are
   // reachable by prefix-stripping — "כלי" strips כ down to "לי" and passes —
   // which is the same 1-2 char slack window wordVariants already documents.
-  "הוא", "היא", "הם", "הן", "אתם", "שלי", "שלך", "שלכם", "לי", "לך", "לכם",
-  "אותו", "אותה", "אותם",
+  "הוא",
+  "היא",
+  "הם",
+  "הן",
+  "אתם",
+  "שלי",
+  "שלך",
+  "שלכם",
+  "לי",
+  "לך",
+  "לכם",
+  "אותו",
+  "אותה",
+  "אותם",
   // שלו/שלה close the half-added set: they strip to "לו"/"לה", which are not
   // members, so the singular third person false-rejected while the plural
   // "שלהם" passed by double-stripping down to "הם". An asymmetry nobody chose.
-  "שלו", "שלה",
+  "שלו",
+  "שלה",
 ]);
 
 /**
@@ -267,12 +312,15 @@ const FUNCTION_WORDS = new Set([
  * does not belong in here.
  */
 const INSTRUCTIONAL_VERBS = new Set([
-  "כנסו", "היכנסו", "הכנסו", // enter
+  "כנסו",
+  "היכנסו",
+  "הכנסו", // enter
   "לחצו", // click
   "בחרו", // choose
   "העלו", // upload
   "פתחו", // open
-  "הקלידו", "כתבו", // type
+  "הקלידו",
+  "כתבו", // type
   "גררו", // drag
   "סמנו", // mark
   "מלאו", // fill
@@ -286,10 +334,12 @@ const INSTRUCTIONAL_VERBS = new Set([
   // passed. The ה-prefixed spellings need no entries of their own — unlike
   // "היכנסו", which halts prefix-stripping at the yod, "האשרו" strips its ה
   // straight down to "אשרו" and matches.
-  "אשרו", "אישרו",
+  "אשרו",
+  "אישרו",
   // start/begin. Listed as the ה-initial surface form for the same reason
   // "היכנסו" is: stripping ה leaves "תחילו", which is not the base.
-  "התחילו", "התחלו",
+  "התחילו",
+  "התחלו",
 ]);
 
 /**
@@ -502,9 +552,7 @@ export function findPlanViolations(
       .filter(
         ({ s }) => s.actionType === "result" && s.legibility !== "unreadable" && !isSkippedKind(s),
       );
-    const valid = steps.filter(
-      (s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex],
-    );
+    const valid = steps.filter((s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex]);
     // `notes` waives the rule: the analysis may have typed error screens as
     // "result" (the timeline then OFFERS a result state that is not a genuine
     // success), and a plan cannot be forced to end on one. The model may end
@@ -978,8 +1026,10 @@ function dryRunPlan(
     sourceIndex: index,
     // First non-empty screen text; no exclamation marks even when the screen
     // shouts — the voice rule holds.
-    label: (state.visibleText.map((t) => t.replace(/!/g, "").trim()).find(Boolean) ??
-      questionnaire.product_name)
+    label: (
+      state.visibleText.map((t) => t.replace(/!/g, "").trim()).find(Boolean) ??
+      questionnaire.product_name
+    )
       .split(/\s+/)
       .slice(0, 4)
       .join(" "),
@@ -1051,11 +1101,17 @@ export async function generateStepPlan(
     // writer chose. Holding a mechanical stub to a band that exists to size
     // AUTHORED Hebrew would mean tuning the stub, not the format. The band is
     // unit-tested directly and enforced on every model plan.
-    const violations = findPlanViolations(canned.steps, opts.timeline, opts.questionnaire, maxSteps, {
-      minSteps,
-      notes: canned.notes,
-      minStepMs: durations.minMs,
-    });
+    const violations = findPlanViolations(
+      canned.steps,
+      opts.timeline,
+      opts.questionnaire,
+      maxSteps,
+      {
+        minSteps,
+        notes: canned.notes,
+        minStepMs: durations.minMs,
+      },
+    );
     if (violations.length > 0) {
       throw new Error(`dry-run plan violates its own rules: ${violations.join("; ")}`);
     }
@@ -1133,12 +1189,18 @@ export async function generateStepPlan(
   const correctivePrompt = (previous: PlanOutput, violations: string[]): string =>
     `${text}\n\nYour previous plan was:\n${JSON.stringify(previous, null, 2)}\n\nIt violated these rules:\n${violations
       .map((v) => `- ${v}`)
-      .join("\n")}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire, or the customer's demo description) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`;
+      .join(
+        "\n",
+      )}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire, or the customer's demo description) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`;
 
   let output = await callOnce(text);
   let violations = validate(output);
   const rounds: string[][] = [violations];
-  for (let corrective = 0; violations.length > 0 && corrective < MAX_CORRECTIVE_CALLS; corrective++) {
+  for (
+    let corrective = 0;
+    violations.length > 0 && corrective < MAX_CORRECTIVE_CALLS;
+    corrective++
+  ) {
     output = await callOnce(correctivePrompt(output, violations));
     violations = validate(output);
     rounds.push(violations);
@@ -1374,7 +1436,9 @@ export async function updatePlanSteps(
     // The picker filters unreadable states out of the UI; the server mirrors
     // it — an unreadable frame can never be shown, whoever selected it.
     if (timeline[step.sourceIndex]!.legibility === "unreadable") {
-      throw new Error(`sourceIndex ${step.sourceIndex} is an unreadable state — it cannot be shown`);
+      throw new Error(
+        `sourceIndex ${step.sourceIndex} is an unreadable state — it cannot be shown`,
+      );
     }
     if (!step.label.trim()) throw new Error(`step ${step.sourceIndex} has an empty label`);
     if (step.label.length > MAX_LABEL_CHARS) {

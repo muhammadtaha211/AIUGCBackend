@@ -38,7 +38,7 @@ its column default (`customer`). It never upgrades an existing row — that is t
   gets `customer` accounts, and the later write has to be an `UPDATE`, not an `INSERT`. If
   `public.users` is written **first**, the trigger's insert is a no-op and the intended role
   survives — **but only when the ids match.** Corrected 2026-08-26: writing `public.users` first
-  with a *generated* uuid (which is what `ensureUser` does) makes the trigger's insert not a
+  with a _generated_ uuid (which is what `ensureUser` does) makes the trigger's insert not a
   no-op but a hard failure on `users_email_unique`, taking the `auth.users` insert down with it.
   See [[../defects/cli-created-user-blocks-that-email-from-ever-signing-up]].
 - This is the same mechanism behind

@@ -11,12 +11,12 @@ source: code
 Selection pins aside (the harness conflates drift with failure —
 [[timeline-fixtures]]), the GENERATION outcome per fixture:
 
-| fixture                          | outcome after 3 calls                                                                     |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| `real-botteacher-six-word-label` | **COMPLETED** — valid plan, Hebrew refilm note with zero index references (the v13 rule)  |
-| `real-botteacher-study-app`      | failed: two fabricated words (`עוזר`, `אישי`) survived every corrective call              |
-| `real-botteacher-file-routing`   | failed: loading-screen pick + a 2800ms pair + **14800ms total, 200ms under the floor**    |
-| `dry-run-campaign-app`           | failed: fabricated words + three sub-3000ms pairs + **14500ms total, 500ms under**        |
+| fixture                          | outcome after 3 calls                                                                    |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `real-botteacher-six-word-label` | **COMPLETED** — valid plan, Hebrew refilm note with zero index references (the v13 rule) |
+| `real-botteacher-study-app`      | failed: two fabricated words (`עוזר`, `אישי`) survived every corrective call             |
+| `real-botteacher-file-routing`   | failed: loading-screen pick + a 2800ms pair + **14800ms total, 200ms under the floor**   |
+| `dry-run-campaign-app`           | failed: fabricated words + three sub-3000ms pairs + **14500ms total, 500ms under**       |
 
 ~11 model calls, ~₪2-3.
 

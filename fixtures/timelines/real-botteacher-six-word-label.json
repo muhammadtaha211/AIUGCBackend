@@ -53,13 +53,7 @@
       "screenKind": "other",
       "screenName": "Browser new tab",
       "timestampMs": 0,
-      "visibleText": [
-        "Higgs",
-        "Create",
-        "muhar",
-        "G",
-        "+"
-      ],
+      "visibleText": ["Higgs", "Create", "muhar", "G", "+"],
       "salienceNote": null,
       "sameStateAsPrevious": false
     },
@@ -71,14 +65,7 @@
       "screenKind": "other",
       "screenName": "Browser new tab",
       "timestampMs": 400,
-      "visibleText": [
-        "Create",
-        "Higgs",
-        "Create",
-        "G",
-        "+",
-        "ps"
-      ],
+      "visibleText": ["Create", "Higgs", "Create", "G", "+", "ps"],
       "salienceNote": null,
       "sameStateAsPrevious": true
     },
@@ -1324,9 +1311,7 @@
       "screenKind": "loading",
       "screenName": "מסך טעינה",
       "timestampMs": 81000,
-      "visibleText": [
-        "טוען"
-      ],
+      "visibleText": ["טוען"],
       "salienceNote": null,
       "sameStateAsPrevious": false
     },
@@ -1338,9 +1323,7 @@
       "screenKind": "loading",
       "screenName": "מסך טעינה - טוען את סביבת הלמידה",
       "timestampMs": 82000,
-      "visibleText": [
-        "טוען את סביבת הלמידה ..."
-      ],
+      "visibleText": ["טוען את סביבת הלמידה ..."],
       "salienceNote": "The loading screen shows an animated circular progress indicator around the BotTeacher logo.",
       "sameStateAsPrevious": false
     },
@@ -1352,9 +1335,7 @@
       "screenKind": "loading",
       "screenName": "מסך טעינה - טוען את סביבת הלמידה",
       "timestampMs": 82800,
-      "visibleText": [
-        "טוען את סביבת הלמידה ..."
-      ],
+      "visibleText": ["טוען את סביבת הלמידה ..."],
       "salienceNote": null,
       "sameStateAsPrevious": true
     },
@@ -2023,21 +2004,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [
-      42,
-      47,
-      48,
-      60,
-      74,
-      79
-    ],
-    "dryRunSourceIndexes": [
-      42,
-      47,
-      48,
-      60,
-      74,
-      79
-    ]
+    "sourceIndexes": [42, 47, 48, 60, 74, 79],
+    "dryRunSourceIndexes": [42, 47, 48, 60, 74, 79]
   }
 }

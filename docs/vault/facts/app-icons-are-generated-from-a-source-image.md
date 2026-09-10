@@ -12,12 +12,12 @@ source: code
 source (`~/Desktop/AIUGC notes/favicon.*`, which has changed format several times —
 png, jpg, jfif):
 
-| File            | Size            | Corners                      |
-| --------------- | --------------- | ---------------------------- |
-| `favicon.ico`   | 16 + 32 + 48 px | transparent, 20% radius      |
-| `icon.png`      | 512 px          | transparent, 20% radius      |
-| `apple-icon.png`| 180 px          | **opaque, square**           |
-| `brand-mark.png`| 256 px          | transparent, 20% radius, **art inset to 76%** |
+| File             | Size            | Corners                                       |
+| ---------------- | --------------- | --------------------------------------------- |
+| `favicon.ico`    | 16 + 32 + 48 px | transparent, 20% radius                       |
+| `icon.png`       | 512 px          | transparent, 20% radius                       |
+| `apple-icon.png` | 180 px          | **opaque, square**                            |
+| `brand-mark.png` | 256 px          | transparent, 20% radius, **art inset to 76%** |
 
 `apple-icon.png` is deliberately not rounded: iOS applies its own corner mask and paints
 any transparency black, so rounding it here double-rounds it and puts black wedges in the

@@ -46,13 +46,7 @@
       "legibility": "low",
       "screenName": "Browser - New Tab",
       "timestampMs": 400,
-      "visibleText": [
-        "Create",
-        "Higgs",
-        "Create",
-        "G",
-        "+"
-      ],
+      "visibleText": ["Create", "Higgs", "Create", "G", "+"],
       "salienceNote": null,
       "sameStateAsPrevious": false
     },
@@ -1483,9 +1477,7 @@
       "legibility": "unreadable",
       "screenName": "BotTeacher - מסך ביניים / טעינה",
       "timestampMs": 80800,
-      "visibleText": [
-        "גורל"
-      ],
+      "visibleText": ["גורל"],
       "salienceNote": null,
       "sameStateAsPrevious": false
     },
@@ -1496,9 +1488,7 @@
       "legibility": "high",
       "screenName": "BotTeacher - מסך טעינה",
       "timestampMs": 82200,
-      "visibleText": [
-        "טוען את סביבת הלמידה"
-      ],
+      "visibleText": ["טוען את סביבת הלמידה"],
       "salienceNote": "The loading screen shows an animated starfield with an orbiting circle around the academic logo, presenting 'loading the learning environment' as a splash state.",
       "sameStateAsPrevious": false
     },
@@ -2007,24 +1997,8 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [
-      1,
-      13,
-      36,
-      42,
-      49,
-      56,
-      78,
-      79
-    ],
+    "sourceIndexes": [1, 13, 36, 42, 49, 56, 78, 79],
     "allowNotes": true,
-    "dryRunSourceIndexes": [
-      1,
-      16,
-      40,
-      45,
-      51,
-      79
-    ]
+    "dryRunSourceIndexes": [1, 16, 40, 45, 51, 79]
   }
 }

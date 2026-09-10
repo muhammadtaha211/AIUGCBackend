@@ -1,0 +1,14 @@
+# Line endings: the working tree matches the repo — LF everywhere, every machine.
+# Git for Windows ships core.autocrlf=true, which checks text files out as CRLF
+# while the blobs stay LF. That is why `prettier --check .` (pnpm lint) failed on
+# every text file locally and passed nowhere. eol=lf overrides autocrlf on checkout.
+* text=auto eol=lf
+
+# Real binaries in this repo — pinned, not left to git's content detection.
+*.png  -text
+*.ico  -text
+*.jpg  -text
+*.webp -text
+*.mp4  -text
+*.mp3  -text
+*.wav  -text

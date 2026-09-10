@@ -38,7 +38,9 @@ export default async function ForgotPasswordPage({
         <div className="w-full max-w-md">
           <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-8">
             <h1 className="text-2xl font-semibold tracking-tight text-ink">איפוס סיסמה</h1>
-            <p className="mt-2 text-[15px] text-ink/65">נשלח קישור למייל, ומשם בוחרים סיסמה חדשה.</p>
+            <p className="mt-2 text-[15px] text-ink/65">
+              נשלח קישור למייל, ומשם בוחרים סיסמה חדשה.
+            </p>
 
             <ForgotPasswordForm linkExpired={error === "expired"} />
           </div>

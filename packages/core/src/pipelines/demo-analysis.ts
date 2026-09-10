@@ -203,11 +203,21 @@ export function legibilityVerdict(
 ): LegibilityVerdict {
   const unreadable = unreadableFraction(states);
   if (unreadable > thresholds.unreadableMax) {
-    return { ok: false, axis: "unreadable", fraction: unreadable, threshold: thresholds.unreadableMax };
+    return {
+      ok: false,
+      axis: "unreadable",
+      fraction: unreadable,
+      threshold: thresholds.unreadableMax,
+    };
   }
   const illegible = illegibleFraction(states);
   if (illegible > thresholds.illegibleMax) {
-    return { ok: false, axis: "illegible", fraction: illegible, threshold: thresholds.illegibleMax };
+    return {
+      ok: false,
+      axis: "illegible",
+      fraction: illegible,
+      threshold: thresholds.illegibleMax,
+    };
   }
   return { ok: true };
 }
@@ -246,18 +256,138 @@ const REFILM_MESSAGE =
  */
 function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
   const states: Omit<AnalysisState, "thumbPath">[] = [
-    { timestampMs: 0, screenName: "מסך פתיחה", visibleText: ["ברוכים הבאים"], action: "האפליקציה נפתחת", actionType: "idle", screenKind: "loading", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 1000, screenName: "התחברות", visibleText: ["התחברות", "אימייל", "סיסמה"], action: "מסך ההתחברות מוצג", actionType: "navigate", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 2000, screenName: "התחברות", visibleText: ["התחברות", "אימייל"], action: "הקלדת אימייל", actionType: "type", screenKind: "login", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 3000, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי", "פרויקט חדש"], action: "מעבר למסך הבית", actionType: "navigate", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 4000, screenName: "מסך הבית", visibleText: ["הפרויקטים שלי"], action: "אותו מסך, כמעט ללא שינוי", actionType: "idle", screenKind: "product", sameStateAsPrevious: true, legibility: "high", salienceNote: null },
-    { timestampMs: 6000, screenName: "פרויקט חדש", visibleText: ["פרויקט חדש", "שם הפרויקט"], action: "לחיצה על פרויקט חדש", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 9000, screenName: "פרויקט חדש", visibleText: ["שם הפרויקט", "קמפיין קיץ"], action: "הקלדת שם הפרויקט", actionType: "type", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 12000, screenName: "בחירת תבנית", visibleText: ["בחרו תבנית", "מודעה", "פוסט"], action: "בחירת תבנית מהרשימה", actionType: "select", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: "בחירת תבניות מוכנות — לא מוזכר בשאלון" },
-    { timestampMs: 13500, screenName: "עורך", visibleText: [], action: "גלילה בעורך — ברק על המסך", actionType: "scroll", screenKind: "product", sameStateAsPrevious: false, legibility: "low", salienceNote: null },
-    { timestampMs: 14500, screenName: "לא ברור", visibleText: [], action: "המסך לא קריא בפריים הזה", actionType: "idle", screenKind: "other", sameStateAsPrevious: false, legibility: "unreadable", salienceNote: null },
-    { timestampMs: 15500, screenName: "עורך", visibleText: ["שמירה", "תצוגה מקדימה"], action: "לחיצה על שמירה", actionType: "tap", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
-    { timestampMs: 18500, screenName: "הצלחה", visibleText: ["הקמפיין נוצר!", "שיתוף"], action: "מסך ההצלחה — הפרויקט מוכן", actionType: "result", screenKind: "product", sameStateAsPrevious: false, legibility: "high", salienceNote: null },
+    {
+      timestampMs: 0,
+      screenName: "מסך פתיחה",
+      visibleText: ["ברוכים הבאים"],
+      action: "האפליקציה נפתחת",
+      actionType: "idle",
+      screenKind: "loading",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 1000,
+      screenName: "התחברות",
+      visibleText: ["התחברות", "אימייל", "סיסמה"],
+      action: "מסך ההתחברות מוצג",
+      actionType: "navigate",
+      screenKind: "login",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 2000,
+      screenName: "התחברות",
+      visibleText: ["התחברות", "אימייל"],
+      action: "הקלדת אימייל",
+      actionType: "type",
+      screenKind: "login",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 3000,
+      screenName: "מסך הבית",
+      visibleText: ["הפרויקטים שלי", "פרויקט חדש"],
+      action: "מעבר למסך הבית",
+      actionType: "navigate",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 4000,
+      screenName: "מסך הבית",
+      visibleText: ["הפרויקטים שלי"],
+      action: "אותו מסך, כמעט ללא שינוי",
+      actionType: "idle",
+      screenKind: "product",
+      sameStateAsPrevious: true,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 6000,
+      screenName: "פרויקט חדש",
+      visibleText: ["פרויקט חדש", "שם הפרויקט"],
+      action: "לחיצה על פרויקט חדש",
+      actionType: "tap",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 9000,
+      screenName: "פרויקט חדש",
+      visibleText: ["שם הפרויקט", "קמפיין קיץ"],
+      action: "הקלדת שם הפרויקט",
+      actionType: "type",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 12000,
+      screenName: "בחירת תבנית",
+      visibleText: ["בחרו תבנית", "מודעה", "פוסט"],
+      action: "בחירת תבנית מהרשימה",
+      actionType: "select",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: "בחירת תבניות מוכנות — לא מוזכר בשאלון",
+    },
+    {
+      timestampMs: 13500,
+      screenName: "עורך",
+      visibleText: [],
+      action: "גלילה בעורך — ברק על המסך",
+      actionType: "scroll",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "low",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 14500,
+      screenName: "לא ברור",
+      visibleText: [],
+      action: "המסך לא קריא בפריים הזה",
+      actionType: "idle",
+      screenKind: "other",
+      sameStateAsPrevious: false,
+      legibility: "unreadable",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 15500,
+      screenName: "עורך",
+      visibleText: ["שמירה", "תצוגה מקדימה"],
+      action: "לחיצה על שמירה",
+      actionType: "tap",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 18500,
+      screenName: "הצלחה",
+      visibleText: ["הקמפיין נוצר!", "שיתוף"],
+      action: "מסך ההצלחה — הפרויקט מוכן",
+      actionType: "result",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+    },
   ];
   return states.map((s) => ({ ...s, thumbPath: thumbPathAt(s.timestampMs) }));
 }
@@ -352,10 +482,7 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
 
   // Computed once, ever: a retry (or a duplicate job) after a finished
   // analysis is a success no-op, not a second spend.
-  const readyRows = await ctx.db
-    .select()
-    .from(demoAnalyses)
-    .where(eq(demoAnalyses.demoId, demoId));
+  const readyRows = await ctx.db.select().from(demoAnalyses).where(eq(demoAnalyses.demoId, demoId));
   if (readyRows.some((r) => r.status === "ready")) return { kind: "done" };
 
   // One analysis row per job: reuse the row this job checkpointed, so retries
@@ -392,7 +519,11 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       // composites) so the picker and the e2e test see real paths.
       const timeline = dryRunTimeline((ms) => `assets/${thumbKey(ms)}`);
       for (const state of timeline) {
-        await storage.put("assets", thumbKey(state.timestampMs), Buffer.from("DRY_RUN state thumb"));
+        await storage.put(
+          "assets",
+          thumbKey(state.timestampMs),
+          Buffer.from("DRY_RUN state thumb"),
+        );
       }
       await setAnalysis({
         status: "ready",
@@ -579,9 +710,7 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
           const retrySalvaged = salvageBatchFrames(retry, batch.length);
           salvaged = retrySalvaged.map((f, i) => f ?? salvaged[i]!);
         }
-        const droppedMs = batch
-          .filter((_, i) => !salvaged[i])
-          .map((c) => c.representativeMs);
+        const droppedMs = batch.filter((_, i) => !salvaged[i]).map((c) => c.representativeMs);
         if (droppedMs.length > 0) {
           // Degrade, don't die: losing a few states out of eighty is nothing;
           // losing the whole analysis is expensive. The fraction gate below
@@ -595,9 +724,7 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
         await saveCheckpoint();
       }),
     );
-    const rejections = settled.filter(
-      (r): r is PromiseRejectedResult => r.status === "rejected",
-    );
+    const rejections = settled.filter((r): r is PromiseRejectedResult => r.status === "rejected");
     if (rejections.length > 0) {
       // Prefer parking over failing when both occurred in one parallel round.
       const budget = rejections.find((r) => r.reason instanceof BudgetError);

@@ -328,9 +328,7 @@ describe("handlePlanDemoSteps diagnostics (0029)", () => {
     expect(rounds).toHaveLength(3);
     for (const round of rounds) expect(round.length).toBeGreaterThan(0);
     // The handler passed demos.description through to the prompt.
-    expect((generateObject.mock.calls[0]![0] as { prompt: string }).prompt).toContain(
-      "תיאור הדמו",
-    );
+    expect((generateObject.mock.calls[0]![0] as { prompt: string }).prompt).toContain("תיאור הדמו");
   });
 
   it("a success writes the rounds too, with an empty final round", async () => {

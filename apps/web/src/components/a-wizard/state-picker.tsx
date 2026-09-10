@@ -241,9 +241,7 @@ export function InventoryPanel({
   return (
     <div className="mt-4 rounded-xl border border-ink/[0.08] bg-ink/[0.02] p-4">
       <p className="text-sm font-medium text-ink">מאגר המסכים מהסרטון</p>
-      <p className="mt-0.5 text-[13px] text-ink/60">
-        לחצו על מסך כדי להוסיף אותו כצעד לתוכנית.
-      </p>
+      <p className="mt-0.5 text-[13px] text-ink/60">לחצו על מסך כדי להוסיף אותו כצעד לתוכנית.</p>
 
       {error && (
         <div className="mt-3">
@@ -470,7 +468,11 @@ function PickedPanel({
     <div className="flex items-start gap-3 rounded-lg border border-accent/40 bg-white p-3">
       {thumbUrl ? (
         // Signed, short-lived URL — next/image optimization would break it.
-        <img src={thumbUrl} alt="" className="aspect-[9/16] w-16 shrink-0 rounded-md object-cover" />
+        <img
+          src={thumbUrl}
+          alt=""
+          className="aspect-[9/16] w-16 shrink-0 rounded-md object-cover"
+        />
       ) : (
         <span className="aspect-[9/16] w-16 shrink-0 animate-pulse rounded-md bg-ink/10" />
       )}

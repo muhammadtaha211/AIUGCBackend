@@ -6,10 +6,10 @@
 ---
 type: fact | decision | falsified | defect | phase
 status: verified | carried | unknown | superseded
-verified: 2026-08-23          # date of last actual measurement, not last edit
+verified: 2026-08-23 # date of last actual measurement, not last edit
 method: "select value from app_config where key='daily_caps'"
 source: db | code | browser | founder | inference
-supersedes: "[[old-note]]"    # optional
+supersedes: "[[old-note]]" # optional
 ---
 ```
 

@@ -1,12 +1,19 @@
 ---
 type: fact
-status: verified
+status: superseded
 verified: 2026-09-10
 method: "`npx prettier --check .` from the repo root reports 709 files. Split with `npx prettier --check . 2>&1 | grep -c '^\\[warn\\] .claude/worktrees/'` — 436 of the 709 are inside a nested git worktree that .prettierignore does not exclude, leaving 273 real repo files. The same split measured ~90 minutes earlier in the same session gave 427 / 282: the total held at 709 while both halves moved by nine, because another session was working in that worktree. `git worktree list` confirms .claude/worktrees/inspiring-mcclintock-411e2f is a live worktree at 9543cc3."
 source: code
 ---
 
 # The repo-wide prettier count is 709, and that number is not a baseline
+
+> **Superseded 2026-09-10** by [[crlf-was-masking-46-prettier-failures]] and
+> [[0038-lint-is-a-real-stop-condition-again]]. Both causes named below were fixed the same
+> day: a root `.gitattributes` plus an in-place conversion took the working tree to LF, and
+> `.claude/worktrees/` went into `.prettierignore`. `prettier --check .` now reports zero
+> files, so the count IS a usable regression check and the per-file workaround below is no
+> longer needed. The reasoning was correct while it stood.
 
 `pnpm lint` (`prettier --check .`) can never be green here — `core.autocrlf=true` means
 hundreds of files fail on line endings alone, which CLAUDE.md already records. What is new

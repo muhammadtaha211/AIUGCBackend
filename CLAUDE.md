@@ -95,6 +95,8 @@ The manual test must be runnable by the founder without reading the code. If the
 
 Update the docs, including the vault and the state of play if needed with the changes and decisions and discoveries made in the session.
 
+If the changes made in the session require a box restart or anything done on the box to take effect, say so in the very beginning of the "Next Step" section of the report.
+
 ## Commands
 
 Populate this section as scripts land, and keep it current.
