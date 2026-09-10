@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-09
+updated: 2026-09-10
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -265,16 +265,40 @@ non-sensitive scopes.
    reads `businesses`. Closing it means either the `OnboardingFlow` target (rejected — founder
    decision [[0015-signed-in-without-business-lands-on-new-business]]) or the `allowCreate` skip
    (deliberate). **That is the only part of this item still open.**
-   **Next move, if it is worth one:** `app/error.tsx` or `global-error.tsx` — nothing outside
-   `/home` has a boundary, including `home/layout.tsx` itself, the marketing pages, `/start`
-   and `/login`. A `global-error.tsx` replaces the root layout, so it must re-declare
-   `<html lang="he" dir="rtl">` and the fonts itself.
    [[a-failed-businesses-query-reads-as-no-businesses]] carries the boundary measurement.
-   New sibling from the same sweep: [[auth-getuser-errors-read-as-signed-out]] — the identical
-   "an error is not an empty result" shape on `auth.getUser()`, 17 call sites across both apps,
-   with the same duplicate-business ending reachable from a transient **auth** failure. Its two
-   API sites (`lib/api.ts:31`, `api/onboarding/complete/route.ts:27`) need no boundary and
-   answer 401 for what is really a 503 — the cheap half.
+   **The boundaries the "next move" called for were written 2026-09-10** — see item 4b.
+   4b. ~~**A failed `auth.getUser()` reads as "signed out".**~~ — **closed 2026-09-10, 15 of
+   17 sites**, together with the two boundaries item 4 asked for:
+   `apps/web/src/app/error.tsx` (the root boundary — **dark**, because a page that threw
+   rendered no `theme-light` wrapper) and `apps/web/src/app/global-error.tsx` (its own
+   `<html lang="he" dir="rtl">`, system fonts, for a ROOT-LAYOUT throw, which skips
+   `app/error.tsx` entirely).
+   **Read this before touching any `getUser` call:** the obvious fix, `if (error) throw`,
+   is WRONG and was caught by measurement before it shipped. auth-js resolves
+   `AuthSessionMissingError` for an ordinary signed-out request, so that guard would have
+   shown the error card to every logged-out visitor, answered 503 to every unauthenticated
+   API call, and logged once per anonymous pageview in the middleware. The measured table is
+   [[getuser-resolves-an-error-when-signed-out]]; the predicate that came out of it is
+   `authReadFailed` (`apps/web/src/lib/auth-user.ts`, twinned in
+   `apps/admin/src/lib/admin.ts`), which throws only on `AuthRetryableFetchError` and
+   `AuthUnknownError`.
+   The nine `/home` pages and `home/layout.tsx` throw through `authedUser`; both
+   middlewares log and do not throw (no boundary above middleware — a throw is a 500 on every
+   matched route); the three API sites answer **503** instead of 401/403.
+   `redirect()` was re-verified under the new root boundary — still 307, and `notFound()`
+   still 404. apps/web is at **328 tests** (was 298), with a convention guard that reddens on
+   a new `/home` page carrying the old shape; 18 mutations, 0 survivors. Also fixed in
+   passing: apps/web had no vitest config, so `@/` did not resolve in tests.
+   Two sites left alone on purpose, both browser clients:
+   `components/onboarding/onboarding-flow.tsx:108` (fail-safe) and
+   `apps/admin/src/app/login/login-form.tsx:36` (founder-only — but it tells the founder
+   "wrong credentials" when the truth is that we could not check).
+   [[auth-getuser-errors-read-as-signed-out]]. Two new notes came out of it:
+   [[apps-admin-has-no-error-boundary]] (deliberately not fixed — it is why `adminSession`
+   still swallows) and [[a-failed-getsession-reads-as-an-expired-reset-link]] (the same shape
+   on `/reset-password`, unfixed).
+   **Everything above was measured on `next dev` only.** Production masking, digests and
+   `global-error`'s appearance without the dev overlay were not exercised.
 5. **`/login` wipes a draft the server threw away.** `login-form.tsx:45` calls `clearDraft()`
    on any 200, but `/api/onboarding/complete` is idempotent by **owner, not content**: an
    existing owner who fills the public wizard for a second product gets their old business

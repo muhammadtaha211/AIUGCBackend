@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AWizard } from "@/components/a-wizard/a-wizard";
 import { NoCreditsCard } from "@/components/no-credits-card";
+import { authedUser } from "@/lib/auth-user";
 import { ownedBusinesses } from "@/lib/businesses";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
@@ -18,9 +19,10 @@ import { wizardGate } from "@/lib/wizard-gate";
  */
 export default async function NewARenderPage() {
   const supabase = await createServerSupabase();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // authedUser throws on a FAILED read rather than letting it collapse into
+  // "signed out" — see the note in @/lib/auth-user. A null user still means
+  // exactly what it always did.
+  const user = authedUser(await supabase.auth.getUser());
   if (!user) redirect("/start");
 
   // ownedBusinesses throws on a FAILED read rather than letting it collapse

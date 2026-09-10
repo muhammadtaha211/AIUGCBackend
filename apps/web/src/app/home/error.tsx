@@ -16,10 +16,14 @@ import { Button } from "@/components/ui/button";
  * home/page.tsx and every nested segment — /home/a/new, /home/b/new, the
  * libraries — because none of them declares a boundary of its own.
  *
- * Its one blind spot is home/layout.tsx ITSELF. A layout is rendered by its
- * PARENT's boundary, and there is no app/error.tsx, so a throw in the layout
- * still reaches the default screen. That is why the layout logs its failed
- * businesses read instead of throwing on it.
+ * Its one blind spot is home/layout.tsx ITSELF: a layout is rendered by its
+ * PARENT's boundary. That used to mean a throw there reached Next's default
+ * English screen; since app/error.tsx was written it means the layout's throw
+ * lands one level up, on the dark card, with the dashboard chrome gone —
+ * which is the honest picture when the shell itself is what failed. The
+ * layout throws on its auth read for exactly that reason and still only logs
+ * its businesses read, which is degradation rather than a failure to identify
+ * the customer.
  *
  * Keep the imports lean: this module is fetched and evaluated on every /home
  * page load whether or not anything throws, even though it renders nothing

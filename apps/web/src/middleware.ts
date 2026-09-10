@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { authReadFailed } from "@/lib/auth-user";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/client";
 
 /**
@@ -36,7 +37,27 @@ export async function middleware(request: NextRequest) {
 
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+  // Logged and NOT thrown, unlike the same call in the /home pages. Middleware
+  // sits above every route with no error boundary anywhere near it, so a throw
+  // here is a 500 on every matched path — the whole site, including /login,
+  // which is the one page someone locked out needs. Today's behaviour is kept
+  // on purpose: a failed read leaves `user` null, /home bounces to /start, and
+  // the log is the only thing that separates that from a real sign-out.
+  //
+  // authReadFailed, not `if (authError)`: getUser resolves an AuthSessionMissingError
+  // for the ordinary signed-out case, and this middleware runs on every public
+  // page — a bare error check would log once per anonymous pageview.
+  //
+  // Reading the error is not sufficient here and cannot be made so in this file.
+  // GoTrueClient's catch ends in a bare `throw error` for anything that is not
+  // an AuthError — a cookie adapter throwing inside _useSession — and that path
+  // REJECTS instead of populating `error`. In a page it reaches the boundary;
+  // here it is the 500 this comment exists to avoid. Closing it means deciding
+  // what a can't-tell-who-you-are request should be served, which is a separate
+  // call from this one.
+  if (authReadFailed(authError)) console.error("middleware: auth read failed", authError);
 
   const path = request.nextUrl.pathname;
 

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   adminAccess,
+  authReadFailed,
   canChangeRole,
   coverCrop,
   createPersonaSchema,
@@ -203,5 +204,34 @@ describe("coverCrop (client-side center-crop math)", () => {
 
   it("uses the whole frame when the aspect already matches", () => {
     expect(coverCrop(2160, 3840, 1080, 1920)).toEqual({ sx: 0, sy: 0, sw: 2160, sh: 3840 });
+  });
+});
+
+/**
+ * The admin twin of apps/web's authedUser split. auth-js populates `error` for
+ * an ordinary signed-out request too (AuthSessionMissingError), so
+ * `if (error)` would have answered 503 to every unauthenticated admin API call
+ * and logged on every anonymous hit of /login. Only the two classes auth-js
+ * raises when nothing was established count as a failed read.
+ * docs/vault/defects/auth-getuser-errors-read-as-signed-out.md
+ */
+describe("authReadFailed", () => {
+  it("is false when there is no error", () => {
+    expect(authReadFailed(null)).toBe(false);
+    expect(authReadFailed(undefined)).toBe(false);
+  });
+
+  it("is false for the errors that answer 'no valid session'", () => {
+    expect(authReadFailed({ name: "AuthSessionMissingError" })).toBe(false);
+    expect(authReadFailed({ name: "AuthApiError" })).toBe(false);
+  });
+
+  it("is true for the errors that leave the question open", () => {
+    expect(authReadFailed({ name: "AuthRetryableFetchError" })).toBe(true);
+    expect(authReadFailed({ name: "AuthUnknownError" })).toBe(true);
+  });
+
+  it("is false for an unnamed error rather than throwing on one", () => {
+    expect(authReadFailed({})).toBe(false);
   });
 });

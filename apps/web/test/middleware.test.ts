@@ -36,6 +36,7 @@ const ROTATED = [
 
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
+  authError: null as { name: string; message: string } | null,
   businessRows: [] as { id: string }[],
   businessError: null as { message: string } | null,
 }));
@@ -54,7 +55,9 @@ vi.mock("@supabase/ssr", () => ({
     auth: {
       getUser: async () => {
         options.cookies.setAll(ROTATED);
-        return { data: { user: state.user } };
+        // auth-js's own union: a failed read resolves user: null WITH an error,
+        // which is byte-for-byte what a signed-out request resolves without one.
+        return { data: { user: state.user }, error: state.authError };
       },
     },
     from: () => ({
@@ -104,6 +107,7 @@ function expectRotationCarried(res: NextResponse) {
 
 beforeEach(() => {
   state.user = null;
+  state.authError = null;
   state.businessRows = [];
   // Not optional: a leaked businessError turns the /start -> /home case's read
   // into data: null and kills that redirect, but only once someone reorders or
@@ -175,6 +179,53 @@ describe("middleware carries the refreshed auth cookies onto every exit", () => 
 
     expect(res.headers.get("location")).toBeNull();
     expectRotationCarried(res);
+  });
+
+  /**
+   * The failed AUTH read. Like the businesses case above, the routing half is
+   * behaviour-preserving and that is the whole decision: middleware has no
+   * error boundary above it, so a throw here would be a 500 on every matched
+   * route — including /login, the one page someone locked out needs. The
+   * bounce to /start therefore stays, and the log is the only thing that
+   * separates a GoTrue blip from a real sign-out afterwards. Delete the
+   * `if (authReadFailed(...))` line and this goes red.
+   * See docs/vault/defects/auth-getuser-errors-read-as-signed-out.md.
+   */
+  it("still bounces /home to /start when the auth read fails, but says so", async () => {
+    state.authError = { name: "AuthRetryableFetchError", message: "fetch failed" };
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const res = await run("/home");
+
+      expect(res.headers.get("location")).toBe("http://localhost:3000/start");
+      expect(logged).toHaveBeenCalledTimes(1);
+      expectRotationCarried(res);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  /**
+   * The other error — and the one that made `if (authError)` the wrong guard.
+   * auth-js resolves AuthSessionMissingError for an ORDINARY signed-out
+   * request (measured 2026-09-10; see the fact note), and this middleware runs
+   * on every public page, so a bare error check would have logged an error for
+   * every anonymous pageview on the site. Nothing is logged here on purpose.
+   */
+  it("says nothing when the reason there is no user is that nobody is signed in", async () => {
+    state.authError = { name: "AuthSessionMissingError", message: "Auth session missing!" };
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const res = await run("/");
+
+      expect(res.headers.get("location")).toBeNull();
+      expect(logged).not.toHaveBeenCalled();
+      expectRotationCarried(res);
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("still keeps them on the pass-through that was already correct", async () => {
