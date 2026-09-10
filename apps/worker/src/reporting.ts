@@ -1,10 +1,10 @@
 import * as Sentry from "@sentry/node";
-import { getEnv, logger, type DeadJob } from "@aiugc/core";
+import { getEnv, logger, type TerminalJob } from "@aiugc/core";
 
 /**
  * Error reporting for the one process with no supervisor and no dashboard.
  * Before this existed, a crash wrote one pino line to stdout and exited, and a
- * dead job wrote nothing at all — the founder found out both ways by noticing
+ * terminal job wrote nothing at all — the founder found out both ways by noticing
  * jobs had stopped moving (docs/vault/defects/worker-exits-on-a-dropped-connection.md,
  * at least 16 deaths).
  *
@@ -40,23 +40,33 @@ const FLUSH_TIMEOUT_MS = 2000;
 logger.info(reportingEnabled ? "error reporting on" : "error reporting off — SENTRY_DSN not set");
 
 /**
- * One event per job that exhausted its attempts. `lastError` is the whole
- * point: the route from "a job died" to why, without opening the DB. Grouped
- * by job type so a flapping provider is one issue, not fifty.
+ * One event per job that has ended for good, in either of the two ways that
+ * happens: `dead` (a transient failure exhausted max_attempts) and `failed` (a
+ * permanent error, which never retries). `lastError` is the whole point: the
+ * route from "a job ended" to why, without opening the DB.
+ *
+ * The status is in the TITLE, not only the tag, so the two never group into one
+ * issue — an exhausted retry is a flaky provider, a permanent failure is a bug
+ * or bad input, and they are answered differently. Within each, grouped by job
+ * type so a flapping provider is one issue, not fifty.
+ *
+ * Reading `attempts: 0` on a `failed` event is not a bug: attempts counts
+ * consumed retry budget, and a permanent error consumes none even though the
+ * handler ran.
  */
-export function reportDeadJob(dead: DeadJob): void {
+export function reportTerminalJob(job: TerminalJob): void {
   if (!reportingEnabled) return;
   try {
-    Sentry.captureMessage(`job dead: ${dead.type}`, {
+    Sentry.captureMessage(`job ${job.status}: ${job.type}`, {
       level: "error",
       // workerId so a local run with a DSN can never be mistaken for the box's
       // (`local` vs `hetzner`) — two lanes share this process and the CLI runs
       // the same lanes against the same DB.
-      tags: { jobType: dead.type, workerId: getEnv().WORKER_ID },
+      tags: { jobType: job.type, workerId: getEnv().WORKER_ID, terminal: job.status },
       extra: {
-        jobId: dead.jobId,
-        attempts: dead.attempts,
-        lastError: dead.lastError,
+        jobId: job.jobId,
+        attempts: job.attempts,
+        lastError: job.lastError,
       },
     });
   } catch {

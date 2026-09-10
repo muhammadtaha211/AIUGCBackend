@@ -16,6 +16,26 @@ source: founder
 1. a job reaching `status='dead'`, carrying `jobId`, `type`, `attempts` and `jobs.last_error`;
 2. the fatal crash path — the three `exit(1)` sites in `apps/worker/src/index.ts`.
 
+> **Amended the same day, 2026-09-10 — (1) was too narrow, and the narrowness cost money.**
+> `status='dead'` is only one of the two terminal statuses; `failPermanent` writes `'failed'`,
+> which never retries, and that path reported nothing. It is also the expensive one — the
+> handler can already have paid a provider before throwing. Two lipsync jobs on 2026-09-06 each
+> logged a HeyGen charge and then settled `failed`: ~₪6.50 gone with no event, and a 2026-09-10
+> smoke test reproduced the silence exactly. Capture site (1) is now **any terminal write inside
+> `runJob`** — `dead`, and `failed` from either a `PermanentError` or a job type with no
+> registered handler. Still two capture functions, still nothing else.
+>
+> The hook is renamed to match: `DeadJob` → `TerminalJob` (with a `status` field),
+> `WorkerLaneOptions.onJobDead` → `onJobTerminal`, `reportDeadJob` → `reportTerminalJob`. The
+> old names asserted that exhausted-attempts was the only reported ending, which is the same
+> false framing the docs carried and the reason the hole survived review.
+>
+> **The two do not share a Sentry issue.** The title carries the status (`job dead: <type>` vs
+> `job failed: <type>`) and a `terminal` tag repeats it, because an exhausted retry is a flaky
+> provider and a permanent failure is a bug or bad input — different problems, answered
+> differently. Rejected: one title with only a tag to tell them apart, which groups them into a
+> single issue and buries whichever is rarer.
+
 `SENTRY_DSN` unset stays a first-class configuration: nothing initialises, both capture
 functions are no-ops, and the worker logs `error reporting off — SENTRY_DSN not set` at
 startup. Turning it on is one env line and a restart — no deploy, no code change.
@@ -25,10 +45,10 @@ startup. Turning it on is one env line and a restart — no deploy, no code chan
 - `packages/core` is imported by `apps/web` and `apps/admin`, which run on Vercel. A node-only
   SDK in core would be pulled toward their bundles for no benefit
   ([[vercel-route-handlers-cannot-write-work-dir]] is the same boundary biting from the other
-  side). So core learns about a death through a **plain function type** —
-  `WorkerLaneOptions.onJobDead` — and never imports a reporter.
-- `aiugc work --once` runs the identical lanes from the CLI. It passes no `onJobDead` and never
-  loads the SDK, so the CLI is silent **by construction** rather than by configuration.
+  side). So core learns that a job has ended through a **plain function type** —
+  `WorkerLaneOptions.onJobTerminal` — and never imports a reporter.
+- `aiugc work --once` runs the identical lanes from the CLI. It passes no `onJobTerminal` and
+  never loads the SDK, so the CLI is silent **by construction** rather than by configuration.
 - Web/admin reporting was explicitly deferred by the founder in the same instruction. Not an
   oversight — do not "finish the job" by wiring it without asking.
 

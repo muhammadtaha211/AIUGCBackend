@@ -2,7 +2,7 @@
 type: fact
 status: verified
 verified: 2026-09-10
-method: "probes in apps/worker/.work (deleted after the run, reproduced by the commands below): a local HTTP server standing in for Sentry's ingest, driven by the real apps/worker/src/index.ts and by core's runLane; plus `npm view @sentry/node version dependencies`"
+method: "probes in apps/worker/.work (deleted after the run, reproduced by the commands below): a local HTTP server standing in for Sentry's ingest, driven by the real apps/worker/src/index.ts and by core's runLane for both terminal statuses; plus `npm view @sentry/node version dependencies` and a read of claim/failPermanent/failTransient for the attempts question. Covers ENVELOPE CONTENTS only — not Sentry-side grouping, and not the 2026-09-06 cost figure, which is founder-reported in chat and flagged below as an open discrepancy."
 source: code
 ---
 
@@ -16,20 +16,29 @@ where it is, and [[worker-exits-on-a-dropped-connection]] for what it was built 
 
 ## Measured, not assumed
 
-| Question                                                          | Measured behaviour                                                                                          |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `Sentry.flush()` with no client initialised                       | resolves **`false` in ~8ms** — never throws, never hangs                                                    |
-| `Sentry.flush(1000)` against a server that never answers          | resolves **`false` at ~1030ms** — honours the timeout, does not reject                                      |
-| `init({defaultIntegrations:false, registerEsmLoaderHooks:false})` | events still deliver in full: tags, `extra`, `level` all arrive                                             |
-| real `index.ts`, **no** DSN, DB pointed at a dead port            | logs `error reporting off — SENTRY_DSN not set`, exits 1, **0 envelopes**                                   |
-| real `index.ts`, **local** DSN, same dead DB                      | logs `error reporting on`, exits 1, **1 envelope**: `fatal — connect ECONNREFUSED`                          |
-| real job dying through `runLane` with `onJobDead`                 | **1 envelope**: `job dead: flaky`, `level error`, tag `jobType`, extra `{jobId, attempts, lastError}`       |
-| `Sentry.init` with a malformed DSN (5 shapes tried)               | **never throws** — prints `Invalid Sentry Dsn: …` once and returns a client that silently drops every event |
+| Question                                                          | Measured behaviour                                                                                                                                               |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Sentry.flush()` with no client initialised                       | resolves **`false` in ~8ms** — never throws, never hangs                                                                                                         |
+| `Sentry.flush(1000)` against a server that never answers          | resolves **`false` at ~1030ms** — honours the timeout, does not reject                                                                                           |
+| `init({defaultIntegrations:false, registerEsmLoaderHooks:false})` | events still deliver in full: tags, `extra`, `level` all arrive                                                                                                  |
+| real `index.ts`, **no** DSN, DB pointed at a dead port            | logs `error reporting off — SENTRY_DSN not set`, exits 1, **0 envelopes**                                                                                        |
+| real `index.ts`, **local** DSN, same dead DB                      | logs `error reporting on`, exits 1, **1 envelope**: `fatal — connect ECONNREFUSED`                                                                               |
+| a transient job exhausting attempts through `runLane`             | **1 envelope**: title `job dead: flaky`, tag `terminal=dead`, extra `{jobId, attempts: 1, lastError}`                                                            |
+| a `PermanentError` job through the same lane (2026-09-10)         | **1 envelope**: title `job failed: perm`, tag `terminal=failed`, extra `{jobId, attempts: 0, lastError}` — the two titles differ (see the grouping caveat below) |
+| `Sentry.init` with a malformed DSN (5 shapes tried)               | **never throws** — prints `Invalid Sentry Dsn: …` once and returns a client that silently drops every event                                                      |
 
 The flush numbers are why the crash path is safe: it cannot hang on a dead Sentry, and it
 costs nothing when reporting is off. The two `index.ts` rows are the whole acceptance test —
 the crash event is delivered **before** `exit(1)`, which is the thing that does not work if
 you call `captureException` and exit immediately.
+
+**What the rig cannot see: grouping.** The stand-in below is a local HTTP server, so every row
+above is a statement about the _envelope_ — what was sent. Issue grouping happens in a real
+Sentry project, and `reportTerminalJob` passes no `fingerprint`, so it falls to Sentry's own
+default, which keys on the message. Distinct titles are therefore _expected_ to produce
+distinct issues, and that is why the status is in the title — but it is **inference, not
+measurement**, and nothing in this repo has yet observed a real Sentry project. Confirm it the
+first time both kinds fire in production.
 
 ## Reproducing it without a Sentry account
 
@@ -42,11 +51,45 @@ enqueues and then runs the janitor (retention deletes) and the reaper.
 
 ## The gap, on purpose
 
-Only the **retry-exhaustion** death reports. `recoverExpiredLeases` also writes `dead`, in
+**Amended later the same day, 2026-09-10 — one of the two gaps below was not "on purpose", it was a hole.**
+Until then only the retry-exhaustion `dead` reported, and `status='failed'` — every
+`PermanentError` — reported nothing. **Founder-reported in chat, 2026-09-10** (not measured
+here): two lipsync jobs on 2026-09-06 each logged a HeyGen charge and then settled `failed`,
+~₪6.50 burned in silence, and a smoke-test job (max_attempts 1, non-existent videoRenderId)
+settled `failed` with `last_error "video render … not found"` and produced no event. The
+silence is verified here; the cost is not. **Open discrepancy worth a look:**
+[[heygen-motion-prompt-two-draws]] (verified 2026-09-06) records a same-day pair refused by
+HeyGen for zero API credits at 325 agorot each — 2 × 325 = the same ₪6.50 — but says those
+`usage_events` rows were "none real". If that is the same pair, the incident may have cost
+nothing and the recorded rows are the defect; if it is a different pair, that note is
+incomplete. Not resolved.
+
+Either way the silence was real, and both terminal statuses now report, under separate Sentry
+titles — [[0037-the-worker-reports-to-sentry-the-web-apps-do-not]] §Amendment.
+
+What is still silent, and genuinely on purpose: `recoverExpiredLeases` also writes `dead`, in
 one set-based `UPDATE` returning a count rather than rows, so there is no per-job hook to
 fire — and that path was out of scope to change. In practice the lease-expiry death follows
-a worker death, and the worker death now reports on its own; an external kill (OOM, SIGKILL)
+a worker death, and the worker death reports on its own; an external kill (OOM, SIGKILL)
 still reports neither, because no code of ours runs.
+
+## `attempts: 0` on a `failed` event is correct
+
+Measured 2026-09-10: `claim()` writes only
+status/locked_at/locked_by/updated_at, and `failPermanent` writes only
+status/error_class/last_error/updated_at. Neither touches `attempts`, whose only writers are
+`failTransient` (`job.attempts + 1`) and `recoverExpiredLeases` (`attempts + 1`). So a job
+that ran once and threw a `PermanentError` ends at `attempts: 0` — the column counts consumed
+retry budget, not executions, exactly as `docs/02-jobs.md` §Job anatomy says ("claims don't
+count; failures do").
+
+Nothing in the code is misled by it. All three pipelines that branch on terminal-ness
+(`renders.ts:1043`, `demo-analysis.ts:741`, `demo-step-plans.ts:1310`) test
+`err instanceof PermanentError` **before** ever calling `isLastAttempt`, so the refund path
+never consults `attempts` on the permanent branch. Nothing in `apps/cli`, `apps/web` or
+`apps/admin` reads `attempts` at all. The only thing it misleads is a **human** reading the
+Sentry event, where `attempts: 0` on a job that demonstrably ran looks like it never started —
+which is why `reportTerminalJob`'s doc comment says so out loud.
 
 ## Import cost
 

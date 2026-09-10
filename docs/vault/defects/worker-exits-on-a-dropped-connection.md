@@ -126,8 +126,12 @@ it, so nothing is reported anywhere. The founder finds out by noticing jobs have
 
 > **Fixed 2026-09-10 — the reporting half only.** `@sentry/node` is now a dependency of
 > `apps/worker` (and only apps/worker), initialised in `apps/worker/src/reporting.ts` when
-> `SENTRY_DSN` is non-empty, and both the fatal path and a job written `dead` now emit an event —
-> the crash event flushed before `exit(1)`, because Sentry's transport is async
+> `SENTRY_DSN` is non-empty, and both the fatal path and any job written to a **terminal**
+> status now emit an event — `dead` (attempts exhausted) and `failed` (a permanent error, or a
+> job type with no registered handler) alike. (The first cut, `ef716a2`, reported `dead` only;
+> `failed` was added later the same day, after that gap was found to be the money-losing one —
+> see the amendments in the two notes below.) The crash event is flushed before `exit(1)`,
+> because Sentry's transport is async
 > ([[worker-sentry-reporting]], [[0037-the-worker-reports-to-sentry-the-web-apps-do-not]]).
 > The paragraph above stays verbatim as the record of what was true until then. **Nothing about
 > the crash itself changed**: the worker still exits on a fatal, still has no `--watch`, and is

@@ -15,7 +15,7 @@ import {
   WORKER_HEARTBEAT_STALE_MS,
 } from "../src/jobs/queue";
 import { ensureReaperJob } from "../src/jobs/schedule";
-import { runJob, runLane, type DeadJob } from "../src/jobs/worker";
+import { runJob, runLane, type TerminalJob } from "../src/jobs/worker";
 
 describe("job queue", () => {
   it("enqueue is idempotent on idempotency_key", async () => {
@@ -74,15 +74,15 @@ describe("job queue", () => {
 
     // apps/worker passes its Sentry reporter here; it must fire on the death
     // and not on the retry before it.
-    const dead: DeadJob[] = [];
+    const terminal: TerminalJob[] = [];
 
     const first = await claim(db, { workerId: "w" });
-    await runJob(db, first!, handlers, (d) => dead.push(d));
+    await runJob(db, first!, handlers, (t) => terminal.push(t));
     let row = (await db.select().from(jobs).where(eq(jobs.id, first!.id)))[0]!;
     expect(row.status).toBe("queued");
     expect(row.attempts).toBe(1);
     expect(row.runAt.getTime()).toBeGreaterThan(Date.now());
-    expect(dead).toEqual([]);
+    expect(terminal).toEqual([]);
 
     // Force it runnable again, fail again -> dead (maxAttempts = 2).
     await db
@@ -90,17 +90,18 @@ describe("job queue", () => {
       .set({ runAt: new Date(Date.now() - 1000) })
       .where(eq(jobs.id, row.id));
     const secondClaim = await claim(db, { workerId: "w" });
-    await runJob(db, secondClaim!, handlers, (d) => dead.push(d));
+    await runJob(db, secondClaim!, handlers, (t) => terminal.push(t));
     row = (await db.select().from(jobs).where(eq(jobs.id, row.id)))[0]!;
     expect(row.status).toBe("dead");
     expect(row.lastError).toContain("503");
 
     // Exactly once, and carrying the diagnostic the founder needs — the report
     // must agree with the row it describes.
-    expect(dead).toHaveLength(1);
-    expect(dead[0]).toEqual({
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]).toEqual({
       jobId: row.id,
       type: "flaky",
+      status: "dead",
       attempts: row.attempts,
       lastError: row.lastError,
     });
@@ -113,7 +114,7 @@ describe("job queue", () => {
     await enqueue(db, { type: "flaky", idempotencyKey: "flaky:2", maxAttempts: 1 });
 
     const job = await claim(db, { workerId: "w" });
-    const dead: DeadJob[] = [];
+    const terminal: TerminalJob[] = [];
     // One attempt allowed, so the handler's throw would kill it — except the
     // `dead` write never lands (dead DB). The row stays `running` and the lease
     // sweep owns it; reporting a death that was never written would send the
@@ -133,31 +134,70 @@ describe("job queue", () => {
           throw new Error("provider 503");
         },
       },
-      (d) => dead.push(d),
+      (t) => terminal.push(t),
     );
 
     const row = (await db.select().from(jobs).where(eq(jobs.id, job!.id)))[0]!;
     expect(row.status).toBe("running");
-    expect(dead).toEqual([]);
+    expect(terminal).toEqual([]);
 
     await pg.close();
   });
 
-  it("permanent failures fail immediately without retry", async () => {
+  it("permanent failures fail immediately without retry, and are reported", async () => {
     const { db, pg } = await createTestDb();
     await enqueue(db, { type: "bad_input", idempotencyKey: "bad:1" });
 
+    const terminal: TerminalJob[] = [];
     const job = await claim(db, { workerId: "w" });
-    await runJob(db, job!, {
-      bad_input: async () => {
-        throw new PermanentError("הסרטון קצר מדי"); // human-readable, user-facing
+    await runJob(
+      db,
+      job!,
+      {
+        bad_input: async () => {
+          throw new PermanentError("הסרטון קצר מדי"); // human-readable, user-facing
+        },
       },
-    });
+      (t) => terminal.push(t),
+    );
 
     const row = (await db.select().from(jobs).where(eq(jobs.id, job!.id)))[0]!;
     expect(row.status).toBe("failed");
     expect(row.errorClass).toBe("permanent");
     expect(row.attempts).toBe(0);
+
+    // `failed` is terminal and never retries, so it reports like `dead` does —
+    // this is the class that burned two HeyGen charges in silence on
+    // 2026-09-06. `status` must differ so the two never share a Sentry issue,
+    // and `attempts` must match the row: a permanent error consumes no retry
+    // budget, so 0 is correct even though the handler ran.
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]).toEqual({
+      jobId: row.id,
+      type: "bad_input",
+      status: "failed",
+      attempts: 0,
+      lastError: row.lastError,
+    });
+
+    await pg.close();
+  });
+
+  it("a job whose type has no handler is reported too — nothing else mentions it", async () => {
+    const { db, pg } = await createTestDb();
+    await enqueue(db, { type: "typo_type", idempotencyKey: "nohandler:1" });
+
+    const terminal: TerminalJob[] = [];
+    const job = await claim(db, { workerId: "w" });
+    // Empty registry: no handler ran, so no domain row was touched and no
+    // customer-facing state changed. Without a report this job is invisible.
+    await runJob(db, job!, {}, (t) => terminal.push(t));
+
+    const row = (await db.select().from(jobs).where(eq(jobs.id, job!.id)))[0]!;
+    expect(row.status).toBe("failed");
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]!.status).toBe("failed");
+    expect(terminal[0]!.lastError).toContain("no handler registered");
 
     await pg.close();
   });

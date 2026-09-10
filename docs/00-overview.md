@@ -111,14 +111,20 @@ changing policy is an UPDATE, not a deploy.
 ## Observability
 
 - **Sentry** (`@sentry/node`, `apps/worker` only — [02-jobs.md](02-jobs.md) §Worker): one event
-  per job written `dead` (with `jobs.last_error`) and one per fatal crash, flushed before the
-  `exit(1)`. Opt-in on `SENTRY_DSN`; unset means nothing initialises and the worker says so at
-  startup. Web routes are **not** wired — a separate decision, not an oversight.
+  per job that ends for good — `dead` **or** `failed` — carrying `jobs.last_error`, and one per
+  fatal crash, flushed before the `exit(1)`. Opt-in on `SENTRY_DSN`; unset means nothing
+  initialises and the worker says so at startup. Web routes are **not** wired — a separate
+  decision, not an oversight.
 - **pino structured logs** with `jobId`/`jobType` on every job line; the janitor emits a daily
   digest line (deletes, refunds).
-- **Dead jobs** (`status='dead'`) are the alert condition: at this scale, a daily glance at
-  `aiugc status` or a Studio filter is sufficient; with a `SENTRY_DSN` set, a Sentry event also
-  fires per dead job — for the retry-exhaustion death, not the lease sweep's.
+- **Terminal jobs are the alert condition — both kinds.** `status='dead'` is a transient failure
+  that exhausted `max_attempts`; `status='failed'` is a permanent error, which never retries.
+  **`failed` is the more common and the more expensive of the two**: the handler may already have
+  paid a provider before throwing, which is how two lipsync jobs burned a HeyGen charge each on
+  2026-09-06. Watching only `dead` misses exactly the class that costs money. At this scale a
+  daily glance at `aiugc status` or a Studio filter covers both; with a `SENTRY_DSN` set, an
+  event also fires per terminal job, under a separate issue per kind. Still not covered: the
+  lease sweep's deaths.
 - PostHog stays a web-app concern at launch (`events` table already captures stars server-side).
 
 ## Handover §8 checklist — where each question is answered

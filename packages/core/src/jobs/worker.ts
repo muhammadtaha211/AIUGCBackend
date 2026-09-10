@@ -29,14 +29,48 @@ export type JobHandler = (job: Job, ctx: JobContext) => Promise<JobResult>;
 export type HandlerRegistry = Record<string, JobHandler>;
 
 /**
- * What a caller needs to report a death without going back to the DB —
- * `lastError` above all, which is the only route from "a job died" to why.
+ * What a caller needs to report a job that has ended for good, without going
+ * back to the DB — `lastError` above all, which is the only route from "a job
+ * ended" to why. There are exactly two such endings and they are different
+ * problems: `dead` is a transient failure that exhausted `max_attempts`,
+ * `failed` is a permanent error, which never retries at all.
+ *
+ * `attempts` is always the value that was WRITTEN to the row, so an event can
+ * never disagree with the row it describes. On the `failed` path that means
+ * the row's own count, unincremented — `attempts` counts consumed retry
+ * budget, not executions, and a permanent error consumes none.
  */
-export interface DeadJob {
+export interface TerminalJob {
   jobId: string;
   type: string;
+  status: "dead" | "failed";
   attempts: number;
   lastError: string;
+}
+
+/**
+ * Hand a terminal job to the caller's reporter. Swallows everything: reporting
+ * is out-of-band on a path that must never gain a failure mode of its own.
+ */
+function reportTerminal(
+  onJobTerminal: ((job: TerminalJob) => void) | undefined,
+  log: Logger,
+  terminal: TerminalJob,
+): void {
+  try {
+    const reported: unknown = onJobTerminal?.(terminal);
+    // `=> void` does not stop an async callback — TypeScript assigns a
+    // `() => Promise<void>` to it happily — and an unawaited rejection would
+    // land on index.ts's unhandledRejection handler, i.e. kill the worker.
+    // Catch that shape too; the catch below only sees a synchronous throw.
+    if (reported && typeof (reported as PromiseLike<void>).then === "function") {
+      void Promise.resolve(reported).catch((asyncErr: unknown) => {
+        log.warn({ err: asyncErr }, "terminal-job report failed");
+      });
+    }
+  } catch (reportErr) {
+    log.warn({ err: reportErr }, "terminal-job report failed");
+  }
 }
 
 /** Run one claimed job through its handler and settle its status. */
@@ -44,13 +78,23 @@ export async function runJob(
   db: Db,
   job: Job,
   handlers: HandlerRegistry,
-  onJobDead?: (dead: DeadJob) => void,
+  onJobTerminal?: (job: TerminalJob) => void,
 ): Promise<void> {
   const log = logger.child({ jobId: job.id, jobType: job.type });
   const handler = handlers[job.type];
   if (!handler) {
+    const message = `no handler registered for job type "${job.type}"`;
     try {
-      await failPermanent(db, job.id, `no handler registered for job type "${job.type}"`);
+      await failPermanent(db, job.id, message);
+      // Terminal too, and the most invisible of the three: no handler ran, so
+      // no domain row was touched and nothing else will ever mention this job.
+      reportTerminal(onJobTerminal, log, {
+        jobId: job.id,
+        type: job.type,
+        status: "failed",
+        attempts: job.attempts,
+        lastError: message,
+      });
     } catch (writeErr) {
       // `err` key on purpose: pino only serializes Errors under that key.
       log.error({ err: writeErr }, "recovery write failed — lease sweep will reclaim the job");
@@ -81,6 +125,19 @@ export async function runJob(
       if (err instanceof PermanentError) {
         await failPermanent(db, job.id, message);
         log.warn({ err }, "job failed permanently");
+        // `failed` is terminal exactly like `dead`, and costs more: a permanent
+        // error never retries, and the handler may already have paid a provider
+        // before throwing (two lipsync jobs burned a HeyGen charge each on
+        // 2026-09-06 and settled here in silence). AFTER the write, like the
+        // dead path — a settle that threw leaves the row `running` for the
+        // sweep, and nothing has ended.
+        reportTerminal(onJobTerminal, log, {
+          jobId: job.id,
+          type: job.type,
+          status: "failed",
+          attempts: job.attempts,
+          lastError: message,
+        });
       } else if (err instanceof BudgetError) {
         await parkForBudget(db, job.id, message, err.resumeAt);
         log.warn({ resumeAt: err.resumeAt }, "job parked: budget cap");
@@ -94,26 +151,13 @@ export async function runJob(
         // like every other out-of-band call on this path — a reporting fault
         // must not become a job fault (apps/worker passes its Sentry hook).
         if (isLastAttempt(job)) {
-          try {
-            const reported: unknown = onJobDead?.({
-              jobId: job.id,
-              type: job.type,
-              attempts: job.attempts + 1,
-              lastError: message,
-            });
-            // `=> void` does not stop an async callback — TypeScript assigns a
-            // `() => Promise<void>` to it happily — and an unawaited rejection
-            // would land on index.ts's unhandledRejection handler, i.e. kill
-            // the worker. Catch that shape too; the local catch below only
-            // sees a synchronous throw.
-            if (reported && typeof (reported as PromiseLike<void>).then === "function") {
-              void Promise.resolve(reported).catch((asyncErr: unknown) => {
-                log.warn({ err: asyncErr }, "dead-job report failed");
-              });
-            }
-          } catch (reportErr) {
-            log.warn({ err: reportErr }, "dead-job report failed");
-          }
+          reportTerminal(onJobTerminal, log, {
+            jobId: job.id,
+            type: job.type,
+            status: "dead",
+            attempts: job.attempts + 1,
+            lastError: message,
+          });
         }
       }
     } catch (writeErr) {
@@ -137,15 +181,18 @@ export interface WorkerLaneOptions {
   drainAndExit?: boolean;
   signal?: AbortSignal;
   /**
-   * Called once per job that has just been written `dead`. apps/worker passes
-   * its Sentry reporter here; the CLI passes nothing, so `aiugc work --once`
-   * stays silent. A plain function type on purpose — core is bundled by the
-   * Next.js apps and must never import a node-only reporting SDK. Note this
-   * covers the retry-exhaustion death only: the lease sweep
+   * Called once per job that has just been written to a terminal status —
+   * `dead` (attempts exhausted) or `failed` (a permanent error, including a
+   * job whose type has no registered handler). apps/worker passes its Sentry
+   * reporter here; the CLI passes nothing, so `aiugc work --once` stays
+   * silent. A plain function type on purpose — core is bundled by the Next.js
+   * apps and must never import a node-only reporting SDK.
+   *
+   * One terminal write is still not covered: the lease sweep
    * (`recoverExpiredLeases`) also writes `dead`, in one set-based UPDATE that
-   * returns a count, and is not reported.
+   * returns a count rather than rows, so it has no per-job hook to fire.
    */
-  onJobDead?: (dead: DeadJob) => void;
+  onJobTerminal?: (job: TerminalJob) => void;
 }
 
 /**
@@ -195,7 +242,7 @@ export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
       await sleep(pollIntervalMs, opts.signal);
       continue;
     }
-    await runJob(db, job, opts.handlers, opts.onJobDead);
+    await runJob(db, job, opts.handlers, opts.onJobTerminal);
   }
 }
 

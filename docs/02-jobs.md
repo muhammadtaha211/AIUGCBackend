@@ -31,7 +31,7 @@ founder's `aiugc work` and the server worker can run against the same database s
 
 | Class                            | Trigger                                 | Behavior                                                                                                                                                                                                                                                          |
 | -------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately; message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`)                                                                                                                                 |
+| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately as `failed` — terminal, never retried — plus a Sentry event carrying `last_error` when the worker has a `SENTRY_DSN` (§Worker); message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`)  |
 | `TransientError` / unknown throw | 5xx, 429, timeouts, network             | exponential backoff `min(30s·2^(n-1), 15m) + jitter`; after `max_attempts` (default 5) → `dead`, plus a Sentry event carrying `last_error` when the worker has a `SENTRY_DSN` (§Worker); a dying render/lipsync job fails + refunds its render in the same breath |
 | `BudgetError`                    | rolling-24h spend cap hit (`budget.ts`) | park: back to `queued` with `run_at` pushed (default +1h), **no attempt consumed**                                                                                                                                                                                |
 
@@ -56,8 +56,9 @@ was a 313s `render_video`) is requeued **with an attempt consumed**, mirroring
 and goes `dead`, into the reaper's fail-and-refund path, instead of looping. The sweep is
 lane-level on purpose: a stuck job can only be healed from outside the job system's
 `running` state. A death that happens **here** is not reported to Sentry: the sweep is one
-set-based `UPDATE` that returns a count, not rows, so it has no per-job hook to fire —
-only the retry-exhaustion death in `runJob` does (§Worker).
+set-based `UPDATE` that returns a count, not rows, so it has no per-job hook to fire. Only the
+terminal writes inside `runJob` report — `dead` and `failed` alike (§Worker); this sweep is the
+one terminal write left silent.
 
 ## Idempotency per external call
 
@@ -117,19 +118,30 @@ built): a second worker box just works — SKIP LOCKED already handles it.
 **Error reporting** (`apps/worker/src/reporting.ts`, `@sentry/node`). The worker has no
 supervisor and nothing watching it, so it reports two things and only two:
 
-- **a job written `dead`** — `runJob` calls `WorkerLaneOptions.onJobDead` after the
-  `failTransient` write lands, with `jobId`, `type`, `attempts` and `last_error`. Fired from
-  core through a plain function type: `@sentry/node` is a dependency of `apps/worker` alone,
-  because `packages/core` is bundled by the Next.js apps and must not pull a node-only SDK
-  into them. After the write on purpose — a settle that threw leaves the row `running` for
-  the sweep, and nothing has died. Not fired for the lease sweep's deaths (§Failure taxonomy).
+- **a job written to a terminal status** — `runJob` calls `WorkerLaneOptions.onJobTerminal`
+  after the settle write lands, with `jobId`, `type`, `status`, `attempts` and `last_error`.
+  Fired from core through a plain function type: `@sentry/node` is a dependency of
+  `apps/worker` alone, because `packages/core` is bundled by the Next.js apps and must not
+  pull a node-only SDK into them. After the write on purpose — a settle that threw leaves the
+  row `running` for the sweep, and nothing has ended. Both terminal statuses fire:
+  - `dead` — `failTransient` exhausted `max_attempts`. `attempts` is the incremented value.
+  - `failed` — a `PermanentError`, **or** a job whose type has no registered handler. Never
+    retries, and the handler may already have paid a provider before throwing, so this is the
+    expensive kind. `attempts` is the row's own count, which is `0` for a first-run permanent
+    error — it counts consumed retry budget, and a permanent error consumes none.
+
+  The two get **different Sentry titles** (`job dead: <type>` vs `job failed: <type>`) plus a
+  `terminal` tag, so they never collapse into one issue: an exhausted retry is a flaky
+  provider, a permanent failure is a bug or bad input. Not fired for the lease sweep's deaths
+  (§Failure taxonomy).
+
 - **the fatal crash path** — the three `exit(1)` sites in `index.ts`. Sentry's transport is
   async, so the event is flushed (≤2.25s, raced and swallowed) before the exit; a flush that
   stalls or rejects must never make the crash slower to fail.
 
 Reporting is opt-in and silence is supported: with no `SENTRY_DSN` nothing initialises, the
 worker logs `error reporting off — SENTRY_DSN not set` at startup, and both functions are
-no-ops. `aiugc work --once` passes no `onJobDead` and never loads the SDK, so the CLI stays
+no-ops. `aiugc work --once` passes no `onJobTerminal` and never loads the SDK, so the CLI stays
 silent by construction. `apps/web`/`apps/admin` are not wired — a separate decision.
 
 Two things to know before turning it on:

@@ -286,20 +286,24 @@ non-sensitive scopes.
    `select id, type, status, locked_by, finished_at from jobs where locked_by like
 'local:%' order by finished_at desc;` — anything dated after the box went live is
    stub output wearing a success status. An open check, not a known problem.
-7. **Sentry DSN on the worker.** ~~Moved out of "someday"~~ — **code landed 2026-09-10, and
-   what is left is one env line.** `@sentry/node` is in `apps/worker` (only there), reporting
-   a job written `dead` with its `jobs.last_error` and the fatal crash path, the crash event
-   flushed before `exit(1)` ([[0037-the-worker-reports-to-sentry-the-web-apps-do-not]],
-   [[worker-sentry-reporting]]). It is **off until a DSN exists**: create a Sentry project,
-   put `SENTRY_DSN=…` in `~/AIUGCBackend/apps/worker/.env` on the box, and
-   `sudo systemctl restart aiugc-worker`; confirm with
-   `journalctl -u aiugc-worker -o cat | grep "error reporting"` → `error reporting on`.
-   Until that line exists nothing changes: renders went dead 5/5 on 08-28, 09-01 and again on
-   09-02, and every one surfaced only because the founder happened to be running a wizard
-   test. Vercel logs still show nothing (all render work is on the box); the cause still lives
-   in `jobs.last_error`, readable with `packages/core/.work/diag-failed-render.ts` (gitignored,
-   session pooler, read-only) and box logs with `journalctl -u aiugc-worker -o cat`.
-   Not covered: the lease sweep's deaths, and any external kill.
+7. **Sentry on the worker.** ~~DSN~~ — **code DONE; box state founder-reported, not verified
+   here.** Code landed 2026-09-10 (`b492b97`, PR #25 — verified with `git show --stat`). The
+   founder reported in chat the same day that the DSN is on the box and the journal reads
+   `error reporting on`; nothing in this repo has observed the box or a real Sentry project, and
+   by this repo's own warning that line alone is not proof — a malformed DSN also prints it
+   (grep `Invalid Sentry Dsn` too, and confirm a real event landed). `@sentry/node`
+   is in `apps/worker` (only there), reporting every terminal job with its `jobs.last_error`
+   and the fatal crash path, the crash event flushed before `exit(1)`
+   ([[0037-the-worker-reports-to-sentry-the-web-apps-do-not]], [[worker-sentry-reporting]]).
+   **Widened the same day:** the first cut reported `status='dead'` only, so every
+   `PermanentError` — `status='failed'`, which never retries and is the class that already
+   burned ~₪6.50 of HeyGen on 2026-09-06 — was silent. Both now report, under separate Sentry
+   issues (`job dead: <type>` vs `job failed: <type>`). **That widening is not on the box yet**
+   — it needs `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`.
+   Still not covered: the lease sweep's deaths, and any external kill (OOM, SIGKILL) — no code
+   of ours runs. Diagnosis paths unchanged: `jobs.last_error` via
+   `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only), box
+   logs via `journalctl -u aiugc-worker -o cat`.
 8. **Grant `aiugc` full journal visibility on the box.** `journalctl` as that user currently
    prints "You are currently not seeing messages from other users and the system" — the worker's
    own stdout is visible (the count in [[0016-worker-stays-on-transaction-pooler-6543]] is valid),

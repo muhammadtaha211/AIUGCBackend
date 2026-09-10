@@ -9,7 +9,7 @@ import {
   logger,
 } from "@aiugc/core";
 import { superviseLane } from "./lanes";
-import { reportDeadJob, reportFatal } from "./reporting";
+import { reportFatal, reportTerminalJob } from "./reporting";
 
 // A crash must leave a pino line, not a bare Node stack — the worker has no
 // supervisor, so this log line is what survives on the box. fatal() before
@@ -62,14 +62,14 @@ async function main(): Promise<void> {
       handlers,
       types: HEAVY_JOB_TYPES,
       signal: abort.signal,
-      onJobDead: reportDeadJob,
+      onJobTerminal: reportTerminalJob,
     }),
     superviseLane(db, {
       workerId: `${workerId}:light`,
       handlers,
       types: lightTypes,
       signal: abort.signal,
-      onJobDead: reportDeadJob,
+      onJobTerminal: reportTerminalJob,
     }),
   ]);
   clearInterval(daily);
