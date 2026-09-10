@@ -96,6 +96,14 @@ yet** — the first live plan after 2026-08-25 stamps it.
 The asymmetry is the hazard: a prompt file edit goes live instantly against a process running the
 old variable set, and the failure mode is a thrown error on the next paid call.
 
+**"Immediately" means "on a machine that already has the file", and this section is silent about
+which machines do** — which is how it gets misread into
+[[the-worker-box-is-untouched-by-prompt-changes]]. Prompt files are git-tracked, so the Hetzner box
+has a version only after `docs/07-worker-box.md` §11, and `generate_copy` is a worker job type, so
+the box reads them. Both halves together are the actual trap: a `git pull` without the restart puts
+a new template live against old code. See
+[[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]].
+
 ## Related
 
 - [[v10-is-the-last-working-prompt]]

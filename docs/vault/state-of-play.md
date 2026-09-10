@@ -146,14 +146,13 @@ discovery, but six production jobs were claimed locally that day** — and a wor
 at 07:49 cannot have claimed at 04:49, so there was an **earlier local worker as well**.
 The mechanism has no code guard: [[local-workers-compete-with-the-box-for-production-jobs]].
 
-**The box does not deploy itself, and nothing says when it is behind.** Verified
-2026-09-06: it sat on `4e000e3` while `origin/main` was 14 commits ahead through PRs #21
-and #22, so the wizard stored `hookEffect: "zoom"` and the worker rendered an ad with no
-effect at all — no error, no failed job, just a wrong video
-([[worker-box-was-14-commits-behind-2026-09-06]]). Vercel redeploys on push; the box is
-`git pull` + restart by hand. **After any merge that touches `packages/core`,
-`packages/remotion` or `apps/worker`, deploy the box and check `git log -1 --oneline` on
-it.** Note for the next deploy: `sudo` on the box needs a password, so an unattended
+**The box does not deploy itself, and nothing says when it is behind.** The rule now lives
+in [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]] — three deploy axes, what
+the box actually runs, why `prompts/` is box-side too, why pulling without restarting is
+worse than doing neither, and gating the restart on `status = 'running'` being empty. Read
+it rather than the summary that used to sit here. The incident that forced it:
+[[worker-box-was-14-commits-behind-2026-09-06]]. Note for the next deploy: `sudo` on the
+box needs a password, so an unattended
 session cannot run `systemctl restart`; `kill -TERM $(systemctl show aiugc-worker -p
 MainPID --value)` is equivalent because the unit is `User=aiugc` with `Restart=always`.
 Measured 2026-09-06: the stop took ~80s (systemd's stop timeout — the worker never calls

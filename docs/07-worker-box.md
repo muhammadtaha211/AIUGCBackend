@@ -317,6 +317,14 @@ cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-wo
 
 That is the entire deploy pipeline, per decision #10.
 
+**When to run it, and what not to skip, is `docs/vault/decisions/0039-three-deploy-axes-and-the-box-is-the-one-that-forgets.md`.**
+Three things from it that this runbook does not say on its own: `prompts/` changes are box-side too,
+because `generate_copy` is a worker job type; **never `git pull` without the restart**, since
+`renderPrompt` re-reads the template on every call and a new `{{var}}` then throws on the next paid
+call; and gate the restart on `select id, type, status, locked_by, locked_at from jobs where status
+= 'running';` coming back empty, because a restart mid-render costs the customer up to
+`JOB_LEASE_MS` (30 min) of dead air before the retry.
+
 **Then verify the artifact, not the symptom:**
 
 ```
