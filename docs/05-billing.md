@@ -206,12 +206,20 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   immediately before the paid call; a breach parks the job (`BudgetError`, no attempt burned),
   resumes when the window frees, **and writes a `platform_budget_tripped` events row** — with
   account caps absorbing legitimate load, a platform trip means something is broken, not that we
-  are busy. Watch it in the admin events feed (or `select * from events where kind =
-'platform_budget_tripped'`).
+  are busy. **Nothing surfaces it.** Corrected 2026-09-10: there is no admin events feed — `events`
+  has never held a row, `apps/admin` has four surfaces (feedback, hooks, personas, users) and none
+  of them queries the table, and the worker's Sentry reporting fires only on terminal statuses while
+  a parked job is not terminal. `select * from events where kind = 'platform_budget_tripped'` is the
+  only real half of this. Today a platform trip is discovered by a customer complaining about a
+  stuck wizard — see `docs/vault/decisions/0040-the-hard-ceiling-moves-to-the-providers.md`.
 - **Max-park-age valve** (`MAX_BUDGET_PARK_MS`, 6h, reaper sweep) — a render whose job has sat
   budget-parked past the threshold is failed and refunded through `failRenderAndRefund` instead
   of holding the customer's money indefinitely. A safety valve, not a policy: it works under any
-  cap design.
+  cap design. **It is also render-only, verified 2026-09-10**: `findOverparkedRenders`
+  (`janitor.ts:54-68`) is gated on `jobs.type IN ('render_video','lipsync')` plus an inner join to
+  `video_renders`, and is the only reader of `jobs.error_class = 'budget'` in the tree. A
+  budget-parked `synth_tts` — or `analyze_demo`, `plan_demo_steps`, copy or composite job — has **no
+  exit**: it re-queues at +1h indefinitely, with `audio_renders` left on `generating`.
 - **Audio previews are free but capped** — `audio_preview_daily_limit` (20/24h), also keyed on the
   owner account. TTS is absorbed cost of sale (~₪0.10/1k chars) and a cap beats a debit; absorbed
   does not mean unbounded.

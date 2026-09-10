@@ -472,7 +472,12 @@ sequence (pipeline → outreach samples → self-serve app).
   `defects/content-policy-classifier-never-runs.md`. Acceptable while the founder is
   the only user. Strangers can reach the app now that Google sign-in is published, so
   this no longer waits on a queue item.
-- **`daily_caps` for stranger traffic.** An `app_config` UPDATE, not a deploy.
+- ~~**`daily_caps` for stranger traffic.**~~ — **answered 2026-09-10, no values changed**:
+  [[0040-the-hard-ceiling-moves-to-the-providers]]. The caps stay; the hard ceiling becomes prepaid
+  balances / org spend limits at Anthropic, ElevenLabs and HeyGen, and the in-app platform cap is
+  demoted to a high circuit breaker. What is still owed is the LLM pair's shape —
+  `per_account.llm_tokens` is 75% of the platform cap, so **two** ordinary heavy users trip it —
+  and that change is a **migration**, not the hand `UPDATE` this line used to call for.
 - **Invoice document type before billing ships.** The billing plan issues חשבונית מס;
   the operator is עוסק פטור and cannot —
   [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as

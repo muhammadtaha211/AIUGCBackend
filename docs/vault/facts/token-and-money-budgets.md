@@ -12,10 +12,10 @@ source: db
 
 ## Caps
 
-| Cap                      | Value                   | Notes                                                                                                                                                                                      |
-| ------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform `llm_tokens`    | 2,000,000 / 24h rolling | **No role bypass by design** — a capacity ceiling. A trip parks jobs for everyone.                                                                                                         |
-| `per_account.llm_tokens` | 1,500,000               | Raised by hand from 500,000 on 2026-08-21. **Prod diverges from migration 0027 — a migration is owed.** Summed across every business the owner holds. Admin-role bypass at `budget.ts:87`. |
+| Cap                      | Value                   | Notes                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform `llm_tokens`    | 2,000,000 / 24h rolling | **No role bypass by design** — a capacity ceiling. A trip parks jobs for everyone.                                                                                                                                                                                                                                                                                                                                    |
+| `per_account.llm_tokens` | 1,500,000               | Raised by hand from 500,000 on 2026-08-21. ~~**Prod diverges from migration 0027 — a migration is owed.**~~ **Corrected 2026-09-10: it does not.** `0027_llm_caps_account_first.sql:24` seeds `'1500000'` and matches live; the literal was retro-edited 2026-08-26 in `f9bb5a7` ([[migration-0027-still-seeds-the-old-llm-cap]]). Summed across every business the owner holds. Admin-role bypass at `budget.ts:87`. |
 
 `dailyCapsSchema.per_account` is a plain `z.object` (`config.ts:49`), i.e. **strip mode, not
 `.strict()`**. Two precisions, because the original wording had both backwards:
@@ -48,6 +48,9 @@ The per-account cap also has a blind spot worth knowing before trusting its numb
 
 - Platform 24h usage: **192,290 of 2,000,000 (9.6%)**, ~1.81M headroom — 2026-08-23 03:38 UTC.
   (Was 899,599 / 45.0% on 2026-08-22. It is a rolling window; this number ages in hours, not days.)
+  **This is a snapshot, not a maximum.** The 192,290 figure gets quoted as "the busiest window ever
+  recorded"; it is not — the 899,599 on the next line is 4.7× larger and is the largest recorded.
+  Cite the larger one when sizing a cap ([[0040-the-hard-ceiling-moves-to-the-providers]]).
 - BotTeacher / RonDiron / MyTor share one owner ledger (`moeloefow@gmail.com`, role `customer`):
   **142 credits** — unchanged, re-confirmed 2026-08-23. The founder's admin account
   (`hamodetaha.ht`) owns Ola Beauty / sdf / Matchn and holds 10; the newer customer
