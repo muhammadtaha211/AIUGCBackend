@@ -97,6 +97,8 @@ Update the docs, including the vault and the state of play if needed with the ch
 
 If the changes made in the session require a box restart or anything done on the box to take effect, say so in the very beginning of the "Next Step" section of the report.
 
+If a supabase migration needs to be applied, apply it yourself , and if you can't for some reason, clearly state that in the "Next step" section of the report.
+
 ## Commands
 
 Populate this section as scripts land, and keep it current.
