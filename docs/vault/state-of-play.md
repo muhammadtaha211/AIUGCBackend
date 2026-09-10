@@ -136,10 +136,15 @@ Fine-grained tokens). Deploy-key alternative rejected: [[0008-github-pat-over-de
 **The desktop worker must stay stopped.** Both workers can safely claim from one queue
 (`SKIP LOCKED`), but the desktop's `.env` carries `DRY_RUN=1` and the box's deliberately
 does not. A desktop worker claiming a real customer job reports success and writes
-placeholder files. Start it only deliberately. (Whether it briefly did exactly that
-around 2026-08-27 is an open check — queue item 6.) Two of them were found alive on
-2026-09-06 (started 07:49 and 07:54, `DRY_RUN=1`, polling the production queue beside the
-live box) and were stopped; nothing was claimed at the time.
+placeholder files. Start it only deliberately. **Measured 2026-09-10 (queue item 6, now
+closed):** local workers claimed **nine** production jobs — two on 2026-08-26/27 and seven
+on 2026-09-06 — and they were **not** in DRY_RUN, so the damage was real billable work,
+not placeholder output ([[local-workers-claimed-nine-production-jobs]]). Two workers were
+found alive on 2026-09-06 (started 07:49 and 07:54, `DRY_RUN=1`, polling the production
+queue beside the live box) and were stopped; **nothing was claimed at the moment of
+discovery, but six production jobs were claimed locally that day** — and a worker started
+at 07:49 cannot have claimed at 04:49, so there was an **earlier local worker as well**.
+The mechanism has no code guard: [[local-workers-compete-with-the-box-for-production-jobs]].
 
 **The box does not deploy itself, and nothing says when it is behind.** Verified
 2026-09-06: it sat on `4e000e3` while `origin/main` was 14 commits ahead through PRs #21
@@ -307,12 +312,20 @@ non-sensitive scopes.
    existing owner who fills the public wizard for a second product gets their old business
    back and their new answers deleted, silently and unrecoverably.
    [[login-clears-a-draft-the-server-never-stored]].
-6. **Check the DRY_RUN contamination window.** The desktop worker (DRY_RUN=1) may have
-   run briefly alongside the box around 2026-08-27. Any job it claimed reported SUCCESS
-   while writing placeholder files. One query settles it:
-   `select id, type, status, locked_by, finished_at from jobs where locked_by like
-'local:%' order by finished_at desc;` — anything dated after the box went live is
-   stub output wearing a success status. An open check, not a known problem.
+6. ~~**Check the DRY_RUN contamination window.**~~ — **closed 2026-09-10, and the premise was
+   wrong in the founder's favour.** Nine rows came back
+   ([[local-workers-claimed-nine-production-jobs]]). Those workers were **not** in DRY_RUN:
+   `Insufficient credit. This operation requires 'api' credits` is a real HeyGen refusal and
+   DRY_RUN never calls HeyGen. So placeholder files wearing a success status never happened; live
+   local workers doing real billable work against production did. Blast radius nil — every affected
+   `video_renders` row is `role='admin'`, business Tavnit. **The recorded query did not run**: it
+   selected `finished_at` and `jobs` has no such column. The working form orders on
+   `coalesce(locked_at, created_at)` and selects `locked_at`/`updated_at` — it is in the fact note,
+   with the caveat that `locked_by like 'local:%'` also misses `cli:%`, which is `DRY_RUN=1` too.
+   **The mechanism is NOT closed** and is now its own note:
+   [[local-workers-compete-with-the-box-for-production-jobs]] — `SKIP LOCKED` lets a desktop worker
+   silently compete with the box, the only guard is the founder remembering, and that has failed
+   twice. ₪6.50 with zero customers; the same failure with customers costs a deliverable.
 7. **Sentry on the worker.** ~~DSN~~ — **code DONE; box state founder-reported, not verified
    here.** Code landed 2026-09-10 (`b492b97`, PR #25 — verified with `git show --stat`). The
    founder reported in chat the same day that the DSN is on the box and the journal reads

@@ -25,6 +25,19 @@ source: founder
 > `runJob`** — `dead`, and `failed` from either a `PermanentError` or a job type with no
 > registered handler. Still two capture functions, still nothing else.
 >
+> **Two corrections to that paragraph, measured 2026-09-10, neither of which touches the decision.**
+> First, **which machine**: both jobs were claimed by `local:heavy` — a worker on the founder's
+> desktop, not the Hetzner box ([[local-workers-claimed-nine-production-jobs]]). Nothing here ever
+> said which, and the reflex reading is the box. Second, **"logged a HeyGen charge" is stronger
+> than the evidence**: `recordUsage` runs at `pipelines/renders.ts:317-324`, right after
+> `provider.submit()` succeeds, so what exists is a submit-time **estimate**
+> (`cost_estimate_agorot` 325 × 2 = 650). HeyGen's insufficient-credit refusal arrives later, in
+> the poll branch at `:339-342`. So ~₪6.50 is a
+> recorded estimate for an operation HeyGen refused, and it is not established that money moved
+> (see [[worker-sentry-reporting]] §"The gap, on purpose" and [[heygen-motion-prompt-two-draws]]).
+> **The argument for widening is unaffected**: a `PermanentError` thrown after a paid submit is the
+> expensive class whether or not this particular pair was billed, and the silence was real.
+>
 > The hook is renamed to match: `DeadJob` → `TerminalJob` (with a `status` field),
 > `WorkerLaneOptions.onJobDead` → `onJobTerminal`, `reportDeadJob` → `reportTerminalJob`. The
 > old names asserted that exhausted-attempts was the only reported ending, which is the same

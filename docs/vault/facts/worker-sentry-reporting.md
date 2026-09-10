@@ -64,6 +64,25 @@ HeyGen for zero API credits at 325 agorot each — 2 × 325 = the same ₪6.50 �
 nothing and the recorded rows are the defect; if it is a different pair, that note is
 incomplete. Not resolved.
 
+> **Resolved 2026-09-10 — it is the same pair, and the first branch is the right one.** Measured in
+> the Supabase SQL editor: the two `failed` `lipsync` jobs of 2026-09-06 04:49 carry
+> `last_error = "lipsync failed: Insufficient credit. This operation requires 'api' credits."` —
+> the same refusal string [[heygen-motion-prompt-two-draws]] recorded — and their `usage_events`
+> rows are `heygen` / `gpu_seconds` / quantity 13 / `cost_estimate_agorot` **325 each**, 650 agorot
+> together. The code says why both can be true at once: `recordUsage` fires at
+> `packages/core/src/pipelines/renders.ts:317-324`, immediately after `provider.submit()` returns a
+> `providerJobId` — the estimate is written at **submit** time. The refusal arrives later, in the
+> poll branch at `:339-342`, and only then becomes a `PermanentError`. So the row is an estimate for
+> an operation HeyGen went on to refuse, not a confirmation of a charge. **The ₪6.50 figure is a
+> recorded estimate; it is not established that any money was spent**, and
+> [[heygen-motion-prompt-two-draws]]'s "none real" stands.
+>
+> **This changes nothing about the widening**, which is the point of this note: the silence was real
+> either way, and a `PermanentError` thrown after a paid submit is exactly the class that has to
+> report. It also fixes an attribution nothing here ever carried: both jobs were claimed by
+> `local:heavy` — a worker on the founder's desktop, not the Hetzner box
+> ([[local-workers-claimed-nine-production-jobs]]).
+
 Either way the silence was real, and both terminal statuses now report, under separate Sentry
 titles — [[0037-the-worker-reports-to-sentry-the-web-apps-do-not]] §Amendment.
 
