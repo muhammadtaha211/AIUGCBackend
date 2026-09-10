@@ -34,11 +34,25 @@ const ROTATED = [
   { name: "sb-test-stale.2", value: "", options: { path: "/", maxAge: 0 } },
 ];
 
+/**
+ * The second argument @supabase/ssr hands `setAll` — verbatim from
+ * applyServerStorage (dist/main/cookies.js:447-449), the flush path a server
+ * client's refresh actually takes. Responses that set auth cookies must not be
+ * cached, or a CDN serves one user's session token to the next
+ * (dist/main/types.d.ts:21-25).
+ */
+const ROTATION_HEADERS = {
+  "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
+  Expires: "0",
+  Pragma: "no-cache",
+};
+
 const state = vi.hoisted(() => ({
   user: null as { id: string } | null,
   authError: null as { name: string; message: string } | null,
   businessRows: [] as { id: string }[],
   businessError: null as { message: string } | null,
+  rotationHeaders: {} as Record<string, string>,
 }));
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -50,11 +64,13 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: (
     _url: string,
     _key: string,
-    options: { cookies: { setAll: (c: typeof ROTATED) => void } },
+    options: {
+      cookies: { setAll: (c: typeof ROTATED, headers: Record<string, string>) => void };
+    },
   ) => ({
     auth: {
       getUser: async () => {
-        options.cookies.setAll(ROTATED);
+        options.cookies.setAll(ROTATED, state.rotationHeaders);
         // auth-js's own union: a failed read resolves user: null WITH an error,
         // which is byte-for-byte what a signed-out request resolves without one.
         return { data: { user: state.user }, error: state.authError };
@@ -105,10 +121,18 @@ function expectRotationCarried(res: NextResponse) {
   }
 }
 
+/** Every no-store header `setAll` was handed, on whatever response left. */
+function expectNoStoreCarried(res: NextResponse) {
+  for (const [key, value] of Object.entries(ROTATION_HEADERS)) {
+    expect(res.headers.get(key), `no ${key} header`).toBe(value);
+  }
+}
+
 beforeEach(() => {
   state.user = null;
   state.authError = null;
   state.businessRows = [];
+  state.rotationHeaders = ROTATION_HEADERS;
   // Not optional: a leaked businessError turns the /start -> /home case's read
   // into data: null and kills that redirect, but only once someone reorders or
   // shuffles the tests.
@@ -234,6 +258,65 @@ describe("middleware carries the refreshed auth cookies onto every exit", () => 
     const res = await run("/home");
 
     expect(res.headers.get("location")).toBeNull();
+    expectRotationCarried(res);
+  });
+});
+
+/**
+ * `setAll` takes a SECOND argument — a header map the library expects on the
+ * same response as the cookies, because a response carrying Set-Cookie for a
+ * session must not be cached by a CDN. The hook declared one parameter and
+ * TypeScript said nothing: a shorter function is assignable, so the map was
+ * silently discarded on every exit.
+ * See docs/vault/defects/supabase-ssr-setall-cache-headers-are-ignored.md.
+ *
+ * These pin the map to the same three exits the cookies already ride, and pin
+ * the guard that keeps it off responses that were handed nothing.
+ */
+describe("middleware carries the no-store headers onto every exit", () => {
+  it("stamps them on the pass-through", async () => {
+    state.user = { id: "11111111-1111-4111-8111-111111111111" };
+
+    const res = await run("/home");
+
+    expect(res.headers.get("location")).toBeNull();
+    expectNoStoreCarried(res);
+  });
+
+  it("stamps them on the signed-out /home -> /start redirect", async () => {
+    const res = await run("/home");
+
+    expect(res.headers.get("location")).toBe("http://localhost:3000/start");
+    expectNoStoreCarried(res);
+  });
+
+  it("stamps them on the owner's /start -> /home redirect", async () => {
+    state.user = { id: "11111111-1111-4111-8111-111111111111" };
+    state.businessRows = [{ id: "22222222-2222-4222-8222-222222222222" }];
+
+    const res = await run("/start");
+
+    expect(res.headers.get("location")).toBe("http://localhost:3000/home");
+    expectNoStoreCarried(res);
+  });
+
+  /**
+   * The guard, and the reason the write is not unconditional. `setItem`,
+   * `removeItem` and `clearAuthCookiesAtScopes` all call `setAll` with `{}`
+   * (cookies.js:240,293 and clearAuthCookiesAtScopes.js:65). Stamping no-store
+   * from one of those would take the signed-out marketing homepage — served
+   * from the edge today — off the CDN for nothing. The cookies still have to
+   * ride: an empty header map says nothing about them.
+   */
+  it("adds no Cache-Control at all when the header map is empty", async () => {
+    state.rotationHeaders = {};
+
+    const res = await run("/");
+
+    expect(res.headers.get("location")).toBeNull();
+    for (const key of Object.keys(ROTATION_HEADERS)) {
+      expect(res.headers.get(key), `${key} should not be set`).toBeNull();
+    }
     expectRotationCarried(res);
   });
 });

@@ -29,12 +29,20 @@ export async function middleware(request: NextRequest) {
 
   let response = NextResponse.next({ request });
 
+  // The no-store headers @supabase/ssr hands `setAll` alongside the rotated
+  // cookies (types.d.ts:21-25). They belong on the same response as the
+  // cookies — a cached Set-Cookie serves one user's session token to the next
+  // — so they are held in a local for the same reason `response` is: `setAll`
+  // replaces the response object, and deny() returns neither.
+  let authHeaders: Record<string, string> = {};
+
   // deny() returns a response that is not `response`, so it has to carry the
   // cookies `setAll` just rotated onto it — dropping them leaves the browser
-  // presenting a spent refresh token. Reads `response` at call time: `setAll`
-  // reassigns it, possibly after the users read.
+  // presenting a spent refresh token. Reads `response` and `authHeaders` at
+  // call time: `setAll` reassigns both, possibly after the users read.
   const withAuthCookies = (target: NextResponse) => {
     for (const cookie of response.cookies.getAll()) target.cookies.set(cookie);
+    for (const [key, value] of Object.entries(authHeaders)) target.headers.set(key, value);
     return target;
   };
 
@@ -43,12 +51,18 @@ export async function middleware(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headers) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options),
         );
+        // Only a call that carries headers updates the map: setItem, removeItem
+        // and clearAuthCookiesAtScopes all pass `{}`. The write below is outside
+        // the guard so that headers captured by an earlier call land on the
+        // response this call just replaced.
+        if (Object.keys(headers).length > 0) authHeaders = headers;
+        Object.entries(authHeaders).forEach(([key, value]) => response.headers.set(key, value));
       },
     },
   });
