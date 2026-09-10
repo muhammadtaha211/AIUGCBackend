@@ -259,6 +259,11 @@ Everything else the migrations produce already matched the old project — `dail
 7200 from `0022`, `per_account.llm_tokens` 1500000 from `0027`, `credit_costs` from
 `0017`/`0026`/`0028`.
 
+> Those two `daily_caps` figures describe the rebuild **as it was on 2026-08-26** and are left as
+> the record of it. They are no longer the current values: `0036` (2026-09-11) set the platform caps
+> to 16x their per-account pairs — `gpu_seconds` 32000 — and tightened `per_account.llm_tokens` to 500000. A rebuild today replays `0027` and then `0036` and lands on the new values. See
+> `docs/05-billing.md` §Quotas and caps.
+
 **Works:** `select count(*) from app_config;` returns 13 (12 after `0031`, plus `lipsync_expressiveness` from `0034`), `select value from app_config where key = 'auto_release_b';` returns `true`, and `lipsync_expressiveness` returns `"medium"`.
 `select value from app_config where key = 'auto_release_b';` returns `true`.
 

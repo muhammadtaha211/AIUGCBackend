@@ -22,9 +22,14 @@ describe("migrations", () => {
     // recorded in a migration, never a hand UPDATE.
     // 0027: the llm cap is pinned exactly, so the next hand-raise in the SQL
     // editor cannot drift from the migrations silently.
+    // 0036 (2026-09-11) moved four of these five: the platform caps became a
+    // runaway detector at 16x their per_account pair, and per_account.llm_tokens
+    // was tightened 1_500_000 -> 500_000. The full seven-value assertion lives
+    // in daily-caps.test.ts; this one stays partial because it is the
+    // migrations-apply-cleanly test, not the caps test.
     expect(caps[0]?.value).toMatchObject({
-      gpu_seconds: 7_200,
-      per_account: { tts_chars: 25_000, gpu_seconds: 2_000, llm_tokens: 1_500_000 },
+      gpu_seconds: 32_000,
+      per_account: { tts_chars: 25_000, gpu_seconds: 2_000, llm_tokens: 500_000 },
     });
 
     await pg.close();

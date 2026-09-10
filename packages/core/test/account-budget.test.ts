@@ -114,8 +114,13 @@ describe("per-account TTS cap", { timeout: 60_000 }, () => {
     const { db, pg } = await createTestDb();
     const business = await businessFor(db, "platform@test.local");
 
-    // Under the per-account cap, over the platform cap (100k, seeded).
-    for (let i = 0; i < 5; i++) {
+    // Under the per-account cap (25k), over the platform cap. 0036 raised the
+    // platform cap to 400k — 16x its per_account pair — so it now takes 17
+    // accounts each spending nearly a full day's allowance, where it used to
+    // take 5. That arithmetic IS the change: the platform cap is a runaway
+    // detector now, not a budget, and 17 simultaneous heavy accounts is the
+    // kind of thing it exists to catch.
+    for (let i = 0; i < 17; i++) {
       const other = await businessFor(db, `other-${i}@test.local`);
       await burn(db, other.id, 24_000);
     }
@@ -130,14 +135,14 @@ describe("per-account TTS cap", { timeout: 60_000 }, () => {
       .from(schema.events)
       .where(eq(schema.events.kind, PLATFORM_BUDGET_TRIPPED));
     expect(trail).toHaveLength(1);
-    expect(trail[0]!.payload).toMatchObject({ kind: "tts_chars", cap: 100_000 });
+    expect(trail[0]!.payload).toMatchObject({ kind: "tts_chars", cap: 400_000 });
     await pg.close();
   });
 });
 
 describe("per-account LLM cap (0027 — account-first)", { timeout: 60_000 }, () => {
-  /** The shipped per-account cap (0027, retro-edited to the 2026-08-21 prod hand-raise). */
-  const PER_ACCOUNT_LLM_TOKENS = 1_500_000;
+  /** The shipped per-account cap. 0027 seeded 1_500_000; 0036 tightened it. */
+  const PER_ACCOUNT_LLM_TOKENS = 500_000;
 
   async function burnLlm(db: Db, businessId: string, tokens: number) {
     await recordUsage(db, {
