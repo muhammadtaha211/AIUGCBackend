@@ -1,12 +1,51 @@
 ---
 type: defect
 status: verified
-verified: 2026-09-10
-method: "Read at 91e4470. `grep -ni sentry apps/web/src/app/(legal)/privacy/page.tsx` -> zero hits; `grep -ni sentry docs/legal-review.md` -> zero hits. Sentry is wired: apps/worker/src/reporting.ts:57-71 sends `lastError: job.lastError` at :69. jobs.last_error is unsanitised err.message — packages/core/src/jobs/worker.ts:119-120, persisted at jobs/queue.ts:172, :194, :212; providers slice up to 500 chars of raw response body into it (providers/lipsync.ts:140, elevenlabs.ts:53, imagegen.ts:78). docs/02-jobs.md:155-158 carries the warning."
+verified: 2026-09-11
+method: "fix verified: the same two greps that were zero on 2026-09-10 — `grep -ni sentry apps/web/src/app/(legal)/privacy/page.tsx docs/legal-review.md` — now return hits in both. `pnpm lint` (prettier --check .) exits 0 and the web typecheck passes. The original 2026-09-10 measurement is preserved verbatim below, and every file:line in it still resolves."
 source: code
 ---
 
 # Sentry receives customer-derived text and is named in no privacy disclosure
+
+## FIXED 2026-09-11 — the disclosure only; `last_error` is still unsanitised, on purpose
+
+**Fixed.** `/privacy` §6 now carries a `דיווח תקלות` sub-section naming Sentry, what reaches it
+(job id, type, attempt count and the error text; on a crash, the technical fault and its location
+in our code), that the error text is **not filtered** and may quote the customer's own content, and
+that the uploaded video, the finished videos and login details are not sent. `docs/legal-review.md`
+gained row **P10** and one owed-list bullet; the reg. 2 draft's transfer-basis cell for Sentry
+(`docs/legal/database-definitions-document.md:680`) no longer reads "not in the recipient list".
+
+It went in as its own `SubTitle` rather than a fourth bullet under `תשתית ואחסון`, because §3 and
+§8 both say "ספקי התשתית שלנו (סעיף 6)" — filing Sentry there would have made §3 claim it logs IPs
+and browser details, and §8 claim it holds backups. Neither is true, and both would have been new
+false statements on the page.
+
+**Not fixed, deliberately.** `jobs.last_error` is untouched: still `err.message` verbatim, still
+carrying up to 500 characters of a provider's raw response body, still shipped in the Sentry
+`extra`. That is the observability trade recorded at `docs/02-jobs.md:155-158` — the field is
+worth having precisely because it is verbatim — and changing it is a separate decision with its own
+cost. What changed is that the trade is now disclosed instead of silent.
+
+**Two things this note's analysis below did not carry, and the public text had to.** The crash path
+(`apps/worker/src/reporting.ts:85-96`) sends `captureException` — an exception type, message and
+stack frames — which no "job id, type, error text" enumeration describes. And a provider is not the
+only way customer text gets in: `packages/core/src/pipelines/copy.ts:184-186` throws a message
+embedding the whole generated hook line, with no third party involved. So the page says the error
+message is not filtered, rather than blaming an external provider for it.
+
+**Still open.** No country is claimed for Sentry, so §7 gained one clause putting the error-reporting
+service outside Israel on the same necessity-plus-consent footing as the US vendors, and the
+region stays the open question in P10 and the owed list. The one DSN in the checkout reads as
+Sentry's EU region, but it sits in the root `.env`, which the worker's `dotenv` never loads, and the
+box's own env file is not in the repo (`docs/07-worker-box.md:174-185`) — so the repo establishes a
+region for the desktop's stored key, not for the project the box reports to. Two markers in the reg.
+2 draft were left standing by instruction and are now stale: `:612`'s heading
+(`### Sentry — **אינו מגולה במדיניות הפרטיות**`) and the `[חסר]` at `:627`, whose "not in the
+recipient list" half is answered.
+
+---
 
 ## The gap
 

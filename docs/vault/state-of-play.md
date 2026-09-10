@@ -495,9 +495,11 @@ sequence (pipeline → outreach samples → self-serve app).
   internal only, served and linked from nowhere. The collation job is done; what remains is
   **60 `[חסר: …]` markers plus 15 bare `[חסר]` ones — 75 gaps that need the founder or
   counsel, not more drafting**. [[database-definitions-document-missing]]. The draft turned up
-  two defects in _other_ documents, both recorded and neither fixed:
-  [[privacy-understates-what-the-edge-check-reads]] and
-  [[sentry-is-an-undisclosed-processor]].
+  two defects in _other_ documents, both recorded:
+  [[privacy-understates-what-the-edge-check-reads]], still unfixed, and
+  [[sentry-is-an-undisclosed-processor]], whose disclosure half was fixed 2026-09-11 —
+  `/privacy` §6 names Sentry now; `last_error` stays unsanitised on purpose, and its data region
+  is still unread.
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing
   fix closed the silent variant for every writer, not just the CLI.
 - **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true —
