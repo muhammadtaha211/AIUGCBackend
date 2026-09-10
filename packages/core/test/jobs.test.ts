@@ -15,7 +15,7 @@ import {
   WORKER_HEARTBEAT_STALE_MS,
 } from "../src/jobs/queue";
 import { ensureReaperJob } from "../src/jobs/schedule";
-import { runJob, runLane } from "../src/jobs/worker";
+import { runJob, runLane, type DeadJob } from "../src/jobs/worker";
 
 describe("job queue", () => {
   it("enqueue is idempotent on idempotency_key", async () => {
@@ -72,12 +72,17 @@ describe("job queue", () => {
       },
     };
 
+    // apps/worker passes its Sentry reporter here; it must fire on the death
+    // and not on the retry before it.
+    const dead: DeadJob[] = [];
+
     const first = await claim(db, { workerId: "w" });
-    await runJob(db, first!, handlers);
+    await runJob(db, first!, handlers, (d) => dead.push(d));
     let row = (await db.select().from(jobs).where(eq(jobs.id, first!.id)))[0]!;
     expect(row.status).toBe("queued");
     expect(row.attempts).toBe(1);
     expect(row.runAt.getTime()).toBeGreaterThan(Date.now());
+    expect(dead).toEqual([]);
 
     // Force it runnable again, fail again -> dead (maxAttempts = 2).
     await db
@@ -85,10 +90,55 @@ describe("job queue", () => {
       .set({ runAt: new Date(Date.now() - 1000) })
       .where(eq(jobs.id, row.id));
     const secondClaim = await claim(db, { workerId: "w" });
-    await runJob(db, secondClaim!, handlers);
+    await runJob(db, secondClaim!, handlers, (d) => dead.push(d));
     row = (await db.select().from(jobs).where(eq(jobs.id, row.id)))[0]!;
     expect(row.status).toBe("dead");
     expect(row.lastError).toContain("503");
+
+    // Exactly once, and carrying the diagnostic the founder needs — the report
+    // must agree with the row it describes.
+    expect(dead).toHaveLength(1);
+    expect(dead[0]).toEqual({
+      jobId: row.id,
+      type: "flaky",
+      attempts: row.attempts,
+      lastError: row.lastError,
+    });
+
+    await pg.close();
+  });
+
+  it("a settle write that throws reports no death — the row is still running", async () => {
+    const { db, pg } = await createTestDb();
+    await enqueue(db, { type: "flaky", idempotencyKey: "flaky:2", maxAttempts: 1 });
+
+    const job = await claim(db, { workerId: "w" });
+    const dead: DeadJob[] = [];
+    // One attempt allowed, so the handler's throw would kill it — except the
+    // `dead` write never lands (dead DB). The row stays `running` and the lease
+    // sweep owns it; reporting a death that was never written would send the
+    // founder after a job that is about to be retried.
+    const deadDb = {
+      ...db,
+      update: () => {
+        throw new Error("connection closed mid-settle");
+      },
+    } as unknown as typeof db;
+
+    await runJob(
+      deadDb,
+      job!,
+      {
+        flaky: async () => {
+          throw new Error("provider 503");
+        },
+      },
+      (d) => dead.push(d),
+    );
+
+    const row = (await db.select().from(jobs).where(eq(jobs.id, job!.id)))[0]!;
+    expect(row.status).toBe("running");
+    expect(dead).toEqual([]);
 
     await pg.close();
   });

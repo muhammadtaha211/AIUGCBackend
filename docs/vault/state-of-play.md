@@ -310,14 +310,20 @@ non-sensitive scopes.
    `select id, type, status, locked_by, finished_at from jobs where locked_by like
 'local:%' order by finished_at desc;` — anything dated after the box went live is
    stub output wearing a success status. An open check, not a known problem.
-7. **Sentry DSN on the worker.** Moved out of "someday": renders went dead 5/5 on
-   08-28, 09-01 and again on 09-02, and every one surfaced only because the founder
-   happened to be running a wizard test. `status='dead'` is the alert condition, the DSN
-   is wired and unset, and the worker runs on a machine nobody is looking at. The
-   founder also had no route to the diagnosis — Vercel logs show nothing (all render
-   work is on the box) and the real cause lives in `jobs.last_error`. Read it with
-   `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only);
-   box logs are `journalctl -u aiugc-worker -o cat`.
+7. **Sentry DSN on the worker.** ~~Moved out of "someday"~~ — **code landed 2026-09-10, and
+   what is left is one env line.** `@sentry/node` is in `apps/worker` (only there), reporting
+   a job written `dead` with its `jobs.last_error` and the fatal crash path, the crash event
+   flushed before `exit(1)` ([[0037-the-worker-reports-to-sentry-the-web-apps-do-not]],
+   [[worker-sentry-reporting]]). It is **off until a DSN exists**: create a Sentry project,
+   put `SENTRY_DSN=…` in `~/AIUGCBackend/apps/worker/.env` on the box, and
+   `sudo systemctl restart aiugc-worker`; confirm with
+   `journalctl -u aiugc-worker -o cat | grep "error reporting"` → `error reporting on`.
+   Until that line exists nothing changes: renders went dead 5/5 on 08-28, 09-01 and again on
+   09-02, and every one surfaced only because the founder happened to be running a wizard
+   test. Vercel logs still show nothing (all render work is on the box); the cause still lives
+   in `jobs.last_error`, readable with `packages/core/.work/diag-failed-render.ts` (gitignored,
+   session pooler, read-only) and box logs with `journalctl -u aiugc-worker -o cat`.
+   Not covered: the lease sweep's deaths, and any external kill.
 8. **Grant `aiugc` full journal visibility on the box.** `journalctl` as that user currently
    prints "You are currently not seeing messages from other users and the system" — the worker's
    own stdout is visible (the count in [[0016-worker-stays-on-transaction-pooler-6543]] is valid),

@@ -29,11 +29,11 @@ founder's `aiugc work` and the server worker can run against the same database s
 
 ## Failure taxonomy
 
-| Class                            | Trigger                                 | Behavior                                                                                                                                                                           |
-| -------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately; message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`)                                                  |
-| `TransientError` / unknown throw | 5xx, 429, timeouts, network             | exponential backoff `min(30s·2^(n-1), 15m) + jitter`; after `max_attempts` (default 5) → `dead` + Sentry; a dying render/lipsync job fails + refunds its render in the same breath |
-| `BudgetError`                    | rolling-24h spend cap hit (`budget.ts`) | park: back to `queued` with `run_at` pushed (default +1h), **no attempt consumed**                                                                                                 |
+| Class                            | Trigger                                 | Behavior                                                                                                                                                                                                                                                          |
+| -------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PermanentError`                 | validation, 4xx, human-fixable problems | fail immediately; message is user-facing (Hebrew where the user sees it); domain row gets the reason (e.g. `demos.reject_reason`)                                                                                                                                 |
+| `TransientError` / unknown throw | 5xx, 429, timeouts, network             | exponential backoff `min(30s·2^(n-1), 15m) + jitter`; after `max_attempts` (default 5) → `dead`, plus a Sentry event carrying `last_error` when the worker has a `SENTRY_DSN` (§Worker); a dying render/lipsync job fails + refunds its render in the same breath |
+| `BudgetError`                    | rolling-24h spend cap hit (`budget.ts`) | park: back to `queued` with `run_at` pushed (default +1h), **no attempt consumed**                                                                                                                                                                                |
 
 Handlers that own a domain row mirror terminal failures onto it (demo → `rejected`,
 audio_render → `failed`, video_render → `failed` + **credit refund**). For renders this
@@ -55,7 +55,9 @@ was a 313s `render_video`) is requeued **with an attempt consumed**, mirroring
 `failTransient`'s arithmetic — a job that reliably kills its worker exhausts its attempts
 and goes `dead`, into the reaper's fail-and-refund path, instead of looping. The sweep is
 lane-level on purpose: a stuck job can only be healed from outside the job system's
-`running` state.
+`running` state. A death that happens **here** is not reported to Sentry: the sweep is one
+set-based `UPDATE` that returns a count, not rows, so it has no per-job hook to fire —
+only the retry-exhaustion death in `runJob` does (§Worker).
 
 ## Idempotency per external call
 
@@ -111,6 +113,42 @@ serves Service B's audio; the length fit and `planAOutro` are reachable only fro
 
 `aiugc work [--once]` runs the identical lanes inline for the CLI phase. Scaling path (not
 built): a second worker box just works — SKIP LOCKED already handles it.
+
+**Error reporting** (`apps/worker/src/reporting.ts`, `@sentry/node`). The worker has no
+supervisor and nothing watching it, so it reports two things and only two:
+
+- **a job written `dead`** — `runJob` calls `WorkerLaneOptions.onJobDead` after the
+  `failTransient` write lands, with `jobId`, `type`, `attempts` and `last_error`. Fired from
+  core through a plain function type: `@sentry/node` is a dependency of `apps/worker` alone,
+  because `packages/core` is bundled by the Next.js apps and must not pull a node-only SDK
+  into them. After the write on purpose — a settle that threw leaves the row `running` for
+  the sweep, and nothing has died. Not fired for the lease sweep's deaths (§Failure taxonomy).
+- **the fatal crash path** — the three `exit(1)` sites in `index.ts`. Sentry's transport is
+  async, so the event is flushed (≤2.25s, raced and swallowed) before the exit; a flush that
+  stalls or rejects must never make the crash slower to fail.
+
+Reporting is opt-in and silence is supported: with no `SENTRY_DSN` nothing initialises, the
+worker logs `error reporting off — SENTRY_DSN not set` at startup, and both functions are
+no-ops. `aiugc work --once` passes no `onJobDead` and never loads the SDK, so the CLI stays
+silent by construction. `apps/web`/`apps/admin` are not wired — a separate decision.
+
+Two things to know before turning it on:
+
+- **A crash loop is an event every ~5s.** systemd's `Restart=always`
+  ([07-worker-box.md](07-worker-box.md)) turns a persistent fault — a wrong `DATABASE_URL`, a
+  DNS failure — into a restart loop, and now each turn of it reports. Nothing here rate-limits
+  that; the fix is a per-key rate limit in Sentry (Settings → Client Keys), which needs no
+  deploy. Left server-side on purpose: a client-side limiter is more machinery on the one path
+  that must stay simple.
+- **`last_error` leaves the box.** It is `err.message` only — never a stack, never the job
+  payload — but it is not sanitised, so a provider error quoting customer text goes with it.
+  That is the deliberate trade: without `last_error` the event says a job died and gives no
+  route to why, which is the gap this exists to close.
+- **A malformed DSN reads as working.** `Sentry.init` does not throw on a bad DSN — measured:
+  it prints `Invalid Sentry Dsn: …` once and returns a client that silently drops everything,
+  so the startup line still says `error reporting on`. A truncated paste therefore looks
+  healthy. `grep "error reporting"` is not proof on its own; grep for `Invalid Sentry Dsn`
+  too, and confirm a real event landed before trusting it ([[worker-sentry-reporting]]).
 
 ## Remotion render budget
 

@@ -7,6 +7,7 @@ import {
   complete,
   failPermanent,
   failTransient,
+  isLastAttempt,
   parkForBudget,
   recoverExpiredLeases,
   reschedule,
@@ -27,8 +28,24 @@ export type JobHandler = (job: Job, ctx: JobContext) => Promise<JobResult>;
 
 export type HandlerRegistry = Record<string, JobHandler>;
 
+/**
+ * What a caller needs to report a death without going back to the DB —
+ * `lastError` above all, which is the only route from "a job died" to why.
+ */
+export interface DeadJob {
+  jobId: string;
+  type: string;
+  attempts: number;
+  lastError: string;
+}
+
 /** Run one claimed job through its handler and settle its status. */
-export async function runJob(db: Db, job: Job, handlers: HandlerRegistry): Promise<void> {
+export async function runJob(
+  db: Db,
+  job: Job,
+  handlers: HandlerRegistry,
+  onJobDead?: (dead: DeadJob) => void,
+): Promise<void> {
   const log = logger.child({ jobId: job.id, jobType: job.type });
   const handler = handlers[job.type];
   if (!handler) {
@@ -70,6 +87,34 @@ export async function runJob(db: Db, job: Job, handlers: HandlerRegistry): Promi
       } else {
         await failTransient(db, job, message);
         log.warn({ err, attempts: job.attempts + 1 }, "job failed transiently");
+        // The same predicate failTransient just used, on the same snapshot, so
+        // the two can never disagree about whether that was the last attempt.
+        // AFTER the write on purpose: a settle that threw leaves the row
+        // `running` for the lease sweep, and nothing has died yet. Swallowed
+        // like every other out-of-band call on this path — a reporting fault
+        // must not become a job fault (apps/worker passes its Sentry hook).
+        if (isLastAttempt(job)) {
+          try {
+            const reported: unknown = onJobDead?.({
+              jobId: job.id,
+              type: job.type,
+              attempts: job.attempts + 1,
+              lastError: message,
+            });
+            // `=> void` does not stop an async callback — TypeScript assigns a
+            // `() => Promise<void>` to it happily — and an unawaited rejection
+            // would land on index.ts's unhandledRejection handler, i.e. kill
+            // the worker. Catch that shape too; the local catch below only
+            // sees a synchronous throw.
+            if (reported && typeof (reported as PromiseLike<void>).then === "function") {
+              void Promise.resolve(reported).catch((asyncErr: unknown) => {
+                log.warn({ err: asyncErr }, "dead-job report failed");
+              });
+            }
+          } catch (reportErr) {
+            log.warn({ err: reportErr }, "dead-job report failed");
+          }
+        }
       }
     } catch (writeErr) {
       // writeErr as a string: pino only serializes Errors under the `err` key,
@@ -91,6 +136,16 @@ export interface WorkerLaneOptions {
   /** Process until the queue is empty, then return (CLI `work --once`). */
   drainAndExit?: boolean;
   signal?: AbortSignal;
+  /**
+   * Called once per job that has just been written `dead`. apps/worker passes
+   * its Sentry reporter here; the CLI passes nothing, so `aiugc work --once`
+   * stays silent. A plain function type on purpose — core is bundled by the
+   * Next.js apps and must never import a node-only reporting SDK. Note this
+   * covers the retry-exhaustion death only: the lease sweep
+   * (`recoverExpiredLeases`) also writes `dead`, in one set-based UPDATE that
+   * returns a count, and is not reported.
+   */
+  onJobDead?: (dead: DeadJob) => void;
 }
 
 /**
@@ -140,7 +195,7 @@ export async function runLane(db: Db, opts: WorkerLaneOptions): Promise<void> {
       await sleep(pollIntervalMs, opts.signal);
       continue;
     }
-    await runJob(db, job, opts.handlers);
+    await runJob(db, job, opts.handlers, opts.onJobDead);
   }
 }
 

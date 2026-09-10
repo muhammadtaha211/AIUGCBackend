@@ -180,16 +180,26 @@ ANTHROPIC_API_KEY=PASTE-FROM-DESKTOP-ENV
 ELEVENLABS_API_KEY=PASTE-FROM-DESKTOP-ENV
 FAL_KEY=PASTE-FROM-DESKTOP-ENV
 HEYGEN_API_KEY=PASTE-FROM-DESKTOP-ENV
+SENTRY_DSN=PASTE-DSN-FROM-SENTRY-PROJECT-SETTINGS
 WORKER_ID=hetzner
 ```
 
-Two lines that are different from the desktop **on purpose**:
+Three lines that are different from the desktop **on purpose**:
 
 - **`WORKER_ID=hetzner`, never `local`.** `jobs.locked_by` is the queue's only record of _which
   machine_ claimed a job, and both of this week's incident investigations pivoted on it — a box
   claiming as `local:*` would be indistinguishable from the desktop forever.
 - **No `DRY_RUN` line at all.** `DRY_RUN=1` stubs every provider call; on the box it would
   "succeed" at everything while producing placeholder files.
+- **`SENTRY_DSN` set, not blank.** This is the one line that turns error reporting on
+  ([02-jobs.md](02-jobs.md) §Worker) — the box is the machine nobody is looking at, and a blank
+  DSN there means a dead job and a crash both stay invisible, which is how the worker died 16
+  times unnoticed. Blank or absent is still a valid configuration (that is the desktop's), and
+  the startup line says which you got: `error reporting on` or
+  `error reporting off — SENTRY_DSN not set`. Confirm with
+  `journalctl -u aiugc-worker -o cat | grep "error reporting"`. One caveat that belongs with
+  `Restart=always` below: a persistent fault becomes a restart loop, and each turn now reports —
+  set a per-key rate limit in Sentry (Settings → Client Keys) before leaving it unattended.
 
 Save (Ctrl-O, Enter) and exit (Ctrl-X), then lock it down:
 
