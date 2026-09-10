@@ -34,6 +34,47 @@ the 2026-08-23 one (`:142-145`, repeated at `:941-944`) — [[live-account-censu
 **The compliance claim at privacy §11 is still live, and the document behind it is still unfinished.**
 The gap this note is about narrowed; it did not close.
 
+## TRIAGED 2026-09-11 — every gap now has an owner and a question; **none of them is answered**
+
+The markers were extracted, classified and written up as
+[`docs/legal/reg2-open-questions.md`](../../legal/reg2-open-questions.md) — a working companion to
+the reg. 2 document, not a legal document, and internal like the document itself.
+
+**The duty is not discharged and this changes nothing about that.** What changed is that "75 gaps"
+is now 73 direct questions with a named owner each, ordered so the founder can start at the top of
+his own list without reading the 981 lines again.
+
+|                                                                                              |              |
+| -------------------------------------------------------------------------------------------- | ------------ |
+| `[חסר` occurrences (`grep -o … \| wc -l`)                                                    | **75**       |
+| Self-referential — the conventions legend at `:63`, and the prose at `:69` naming the symbol | **2**        |
+| **Real gap markers**                                                                         | **73**       |
+| Closed from the repo                                                                         | **0**        |
+| Remaining: FOUNDER / COUNSEL / VENDOR                                                        | 34 / 23 / 16 |
+
+**Zero closed from the repo, and that is the expected result rather than a failure of the pass.**
+The document defines its own marker at `:63` as _"מידע שהמאגר אינו מכיל, ומי יכול לספק אותו"_ —
+information the repo does not contain, and who can supply it. Everything the repo could answer was
+already written in as `[נמדד]` or `[מוסק]` with a pointer, so what is left is by construction what
+the repo cannot answer: business facts, founder decisions, live-database and dashboard measurements,
+legal positions and vendor terms. Closing one from reasoning rather than a `file:line` would be
+exactly the failure mode the document was built to avoid. **`grep -c` still returns 75.**
+
+**Two markers now contain a claim the repo has since falsified.** Neither became answerable, so
+neither was closed, and **the document itself was not edited** — the only edits that pass was
+permitted to make there were repo closures. Both are called out at the top of the worksheet:
+
+- `:627` asserts Sentry appears in neither `privacy` §6 nor `docs/legal-review.md`. Both halves are
+  now false — `apps/web/src/app/(legal)/privacy/page.tsx:212-214` carries a `דיווח תקלות`
+  sub-section and `docs/legal-review.md:74` is row P10. The disclosure decision the marker asks for
+  has been taken; its transfer-basis half has not, which is why it stays open under COUNSEL.
+- `:558` asks for the §6/§7-versus-middleware contradiction to be resolved one way or the other. The
+  page was corrected on 2026-09-11 (`702742a`, and [[privacy-understates-what-the-edge-check-reads]]);
+  `middleware.ts` was deliberately not touched. The legal half — whether the edge check is a
+  transfer needing the reg. 2 basis — is still open. **§5 of the reg. 2 document still describes the
+  pre-correction page at `:561-564`** and needs a follow-up edit that pass was not authorised to
+  make.
+
 ---
 
 ## What the page now says
