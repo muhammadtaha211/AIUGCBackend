@@ -233,16 +233,19 @@ non-sensitive scopes.
    wall fires ahead of the Supabase gate, not behind it. Credentials themselves were never
    written down (CLAUDE.md's credential rule). **Still open: whether the admin project's
    function region is `fra1`** — not confirmed this session.
-3. **`setAll` drops the no-store headers `@supabase/ssr` passes with rotated cookies.** All four
-   hooks — `apps/web/src/middleware.ts:27`, `apps/admin/src/middleware.ts:45`, and both
-   `lib/supabase/server.ts:17` — declare one parameter, so the `Cache-Control: private, no-store`
-   / `Expires: 0` / `Pragma: no-cache` map the library passes alongside a rotated session is
-   discarded; TypeScript cannot catch it, because a shorter function is assignable. The library's
-   stated risk is a cached auth response serving one user's session token to another. Believed
-   inert today — Next marks cookie-reading routes dynamic, and Vercel is not believed to cache
-   middleware responses — but that mitigation is **inference, never measured**, and `c925d4a` /
-   `ad6d5ce` just put `Set-Cookie` on four more exits than before. Read a deployed response header
-   before deciding how much this is worth.
+3. ~~**`setAll` drops the no-store headers `@supabase/ssr` passes with rotated cookies.**~~ —
+   **closed 2026-09-10** on a fix plus a measurement, not on the inference it used to rest on.
+   `3d47d3a` gave both middlewares the two-parameter `setAll`, an `authHeaders` local read at call
+   time, and four new cases in `apps/web/test/middleware.test.ts` (7 tests → 11, mutation-tested).
+   **The mitigation this item carried was falsified**: "Vercel is not believed to cache middleware
+   responses" is false — `/` and `/start` measured `PRERENDER` → `HIT` with `Age` growing to 39s
+   against production while signed out. What actually protects the marketing pages is that
+   `applyServerStorage` early-returns before `setAll` when there is nothing to write
+   (`cookies.js:425-427`), so an anonymous request never reaches the hook. **Two line numbers in
+   the text this replaced no longer resolve** — `apps/web/src/middleware.ts:27` is now `:37` and
+   `apps/admin/src/middleware.ts:45` is now `:54`; both moved in `3d47d3a`. Left deliberately: the
+   two `lib/supabase/server.ts:17` hooks (reasoned, unverified — they write into `cookies()`, which
+   cannot set headers) and a test for the admin half (no `vitest.config.ts` there, so no `@/`).
    [[supabase-ssr-setall-cache-headers-are-ignored]].
 4. ~~**A failed `businesses` query reads as "no businesses".**~~ — **all 7 sites closed
    2026-09-09/10.** `middleware.ts` now reads
