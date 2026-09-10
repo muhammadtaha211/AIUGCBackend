@@ -1,4 +1,5 @@
 import { desc, eq, like, sql } from "drizzle-orm";
+import { getEnv } from "../config";
 import type { Db } from "../db";
 import { jobs } from "../db/schema";
 
@@ -45,15 +46,75 @@ export async function enqueue(
 }
 
 /**
+ * The live Supabase project. Not a secret — it is the public half of every
+ * NEXT_PUBLIC_SUPABASE_URL — and matching on it beats a hostname pattern,
+ * which the session pooler, the transaction pooler and the direct connection
+ * all spell differently while carrying this same ref.
+ */
+export const PRODUCTION_PROJECT_REF = "hyaqydcmwbnbaiqqufow";
+
+/**
+ * The two worker-id prefixes this repo hands a developer machine. `local` is
+ * the WORKER_ID default (config.ts:16) and what every desktop .env pins;
+ * `cli` is hardcoded by `aiugc work` (apps/cli/src/index.ts:920, :926), which
+ * never reads WORKER_ID at all. The lane suffix (`:heavy` / `:light`) is
+ * appended by the callers, so match the host segment, not the whole string.
+ *
+ * A DENY list, deliberately, not an allowlist of known boxes: a second real
+ * worker box is a scaling path the founder should be able to take by setting
+ * WORKER_ID and starting it, with no change here.
+ */
+const LOCAL_WORKER_HOSTS = ["local", "cli"];
+
+export function isLocalWorkerId(workerId: string): boolean {
+  return LOCAL_WORKER_HOSTS.includes(workerId.split(":")[0] ?? "");
+}
+
+export function isProductionDatabaseUrl(databaseUrl: string | undefined): boolean {
+  return databaseUrl !== undefined && databaseUrl.includes(PRODUCTION_PROJECT_REF);
+}
+
+/**
  * Atomically claim the next runnable job (oldest run_at first).
  * FOR UPDATE SKIP LOCKED makes this safe with multiple workers — which is a
  * real scenario: the founder's `aiugc work` and the server worker can run
  * against the same database at the same time.
+ *
+ * Two machines it is NOT safe with, and this is where they are turned away —
+ * see docs/vault/defects/local-workers-compete-with-the-box-for-production-jobs.md
+ * and the nine measured occurrences in
+ * docs/vault/facts/local-workers-claimed-nine-production-jobs.md:
+ *
+ * - A worker on a developer machine (`local:*`, `cli:*`) against production.
+ * - ANY worker in DRY_RUN against production, whatever its id. That is the one
+ *   that writes a placeholder file and marks the render succeeded — the damage
+ *   the measured occurrences happened to miss only because those workers were
+ *   live and there were no customers.
+ *
+ * Refusing returns `undefined`, the empty-queue shape, and NEVER throws: the
+ * box runs under systemd `Restart=always`, so a throw would turn one bad env
+ * var into a restart every few seconds. An empty queue is something every
+ * caller already handles — `runLane` sleeps a poll interval, and drain mode
+ * (`work --once`) returns, so a refused CLI drain exits instead of spinning.
  */
 export async function claim(
   db: Db,
   opts: { workerId: string; types?: readonly string[] },
 ): Promise<Job | undefined> {
+  const env = getEnv();
+  if (isProductionDatabaseUrl(env.DATABASE_URL)) {
+    const localWorker = isLocalWorkerId(opts.workerId);
+    if (localWorker || env.DRY_RUN) {
+      console.error(
+        `claim refused: DATABASE_URL points at the production project ${PRODUCTION_PROJECT_REF}` +
+          ` and this worker must not claim from it — workerId=${opts.workerId}` +
+          ` (local worker: ${localWorker}), DRY_RUN=${env.DRY_RUN}.` +
+          ` Nothing was claimed; the production queue belongs to the box.`,
+      );
+      return undefined;
+    }
+  }
+
   const typeFilter =
     opts.types && opts.types.length > 0
       ? sql` and type = any(array[${sql.join(
