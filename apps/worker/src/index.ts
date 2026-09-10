@@ -9,20 +9,26 @@ import {
   logger,
 } from "@aiugc/core";
 import { superviseLane } from "./lanes";
+import { reportDeadJob, reportFatal } from "./reporting";
 
 // A crash must leave a pino line, not a bare Node stack — the worker has no
-// supervisor or error reporting, so this log line is all the founder gets.
-// exit(1) straight after fatal() is safe even though pino's default
-// destination is async (SonicBoom sync:false): fatal() flushSync()es before
-// returning (pino levels.js) and pino's process-exit hook flushes again.
-// pino.final was removed in v7 for exactly this reason — do not "fix" this.
+// supervisor, so this log line is what survives on the box. fatal() before
+// anything else, and exit(1) is still safe on pino's async default destination
+// (SonicBoom sync:false): fatal() flushSync()es before returning (pino
+// levels.js) and pino's process-exit hook flushes again. pino.final was removed
+// in v7 for exactly this reason — do not "fix" this.
+//
+// The exit is no longer immediate: Sentry's transport is async, so the event is
+// dropped unless it is flushed first (reportFatal, ≤2.25s, and a no-op when
+// SENTRY_DSN is unset — an unreported crash exits as fast as it always did).
+// `.finally` and not `.then`, so a flush that somehow rejects still exits.
 process.on("unhandledRejection", (err) => {
   logger.fatal({ err }, "unhandled rejection — exiting");
-  process.exit(1);
+  void reportFatal(err, "unhandled rejection").finally(() => process.exit(1));
 });
 process.on("uncaughtException", (err) => {
   logger.fatal({ err }, "uncaught exception — exiting");
-  process.exit(1);
+  void reportFatal(err, "uncaught exception").finally(() => process.exit(1));
 });
 
 /**
@@ -56,12 +62,14 @@ async function main(): Promise<void> {
       handlers,
       types: HEAVY_JOB_TYPES,
       signal: abort.signal,
+      onJobDead: reportDeadJob,
     }),
     superviseLane(db, {
       workerId: `${workerId}:light`,
       handlers,
       types: lightTypes,
       signal: abort.signal,
+      onJobDead: reportDeadJob,
     }),
   ]);
   clearInterval(daily);
@@ -70,5 +78,5 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   logger.error({ err }, "worker crashed");
-  process.exit(1);
+  void reportFatal(err, "worker crashed").finally(() => process.exit(1));
 });

@@ -110,11 +110,15 @@ changing policy is an UPDATE, not a deploy.
 
 ## Observability
 
-- **Sentry** in the worker (wrap `runJob` failures) and later in web routes — `SENTRY_DSN` env.
+- **Sentry** (`@sentry/node`, `apps/worker` only — [02-jobs.md](02-jobs.md) §Worker): one event
+  per job written `dead` (with `jobs.last_error`) and one per fatal crash, flushed before the
+  `exit(1)`. Opt-in on `SENTRY_DSN`; unset means nothing initialises and the worker says so at
+  startup. Web routes are **not** wired — a separate decision, not an oversight.
 - **pino structured logs** with `jobId`/`jobType` on every job line; the janitor emits a daily
   digest line (deletes, refunds).
 - **Dead jobs** (`status='dead'`) are the alert condition: at this scale, a daily glance at
-  `aiugc status` or a Studio filter is sufficient; a Sentry event fires per dead job when wired.
+  `aiugc status` or a Studio filter is sufficient; with a `SENTRY_DSN` set, a Sentry event also
+  fires per dead job — for the retry-exhaustion death, not the lease sweep's.
 - PostHog stays a web-app concern at launch (`events` table already captures stars server-side).
 
 ## Handover §8 checklist — where each question is answered

@@ -124,6 +124,15 @@ terminal.** The queue keeps accepting jobs; nothing drains them; the wizard spin
 `packages/core/src/config.ts:11`, but **no `@sentry` package is installed** and nothing initialises
 it, so nothing is reported anywhere. The founder finds out by noticing jobs have stopped moving.
 
+> **Fixed 2026-09-10 — the reporting half only.** `@sentry/node` is now a dependency of
+> `apps/worker` (and only apps/worker), initialised in `apps/worker/src/reporting.ts` when
+> `SENTRY_DSN` is non-empty, and both the fatal path and a job written `dead` now emit an event —
+> the crash event flushed before `exit(1)`, because Sentry's transport is async
+> ([[worker-sentry-reporting]], [[0037-the-worker-reports-to-sentry-the-web-apps-do-not]]).
+> The paragraph above stays verbatim as the record of what was true until then. **Nothing about
+> the crash itself changed**: the worker still exits on a fatal, still has no `--watch`, and is
+> still restarted only by systemd on the box. This makes the death visible, not survivable.
+
 ## It has happened twice, and both times it cost money
 
 I first looked for jobs stuck at `status = 'running'` and found none — but that is the wrong
