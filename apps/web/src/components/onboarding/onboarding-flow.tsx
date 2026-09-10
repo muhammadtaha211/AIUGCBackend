@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
+  additionalWizardDraft,
   clearDraft,
   emptyDraft,
   loadDraft,
@@ -82,16 +83,41 @@ type OnboardingFlowProps = {
    * in-memory only and the final step creates another business (allowCreate).
    */
   mode?: "signup" | "additional";
+  /**
+   * "additional" only: open with the questionnaire /login could not store,
+   * which it left in localStorage and flagged with `?draft=1`.
+   */
+  seedFromDraft?: boolean;
 };
 
-export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
+export function OnboardingFlow({ mode = "signup", seedFromDraft = false }: OnboardingFlowProps) {
   const router = useRouter();
   const [draft, setDraft] = useState<OnboardingDraft>(emptyDraft);
-  const [hydrated, setHydrated] = useState(mode === "additional");
+  // Seeding needs a frame, the same way the public wizard's saved draft does —
+  // start unhydrated so step 0 never flashes before the answers arrive.
+  const [hydrated, setHydrated] = useState(mode === "additional" && !seedFromDraft);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  // Pinned at mount, and read instead of the prop everywhere below. The
+  // sidebar's "הוספת עסק" link points at /home/new-business with no query, so
+  // clicking it FROM this page is a same-route navigation that flips the prop
+  // true -> false without unmounting: reading the prop in the effect would
+  // re-seed to emptyDraft and wipe whatever the customer had typed.
+  const seeded = useRef(seedFromDraft);
 
   useEffect(() => {
-    if (mode === "additional") return;
+    if (mode === "additional") {
+      // Read ONCE, here, at mount — and never written back. This wizard keeps
+      // its state in memory BY DESIGN (docs/vault/decisions/0015-signed-in-
+      // without-business-lands-on-new-business.md): no saveDraft, so nothing
+      // the customer types here outlives the tab. Do not "fix" this into a
+      // persisted wizard. What DOES come back on a reload is the seed itself —
+      // /login left that questionnaire in localStorage and only a created
+      // business spends it (completeAdditional), so a refresh re-opens on the
+      // parked answers rather than on an empty wizard.
+      setDraft(additionalWizardDraft(seeded.current));
+      setHydrated(true);
+      return;
+    }
     const saved = loadDraft();
     if (saved) setDraft(saved);
 
@@ -161,6 +187,11 @@ export function OnboardingFlow({ mode = "signup" }: OnboardingFlowProps) {
   async function completeAdditional(): Promise<string | null> {
     const result = await postDraft(draft, true);
     if ("error" in result) return result.error;
+    // The parked draft is a business now — this is where it is spent. Guarded,
+    // so an ordinary "הוסף עסק" never deletes someone's public-wizard draft;
+    // `seeded`, not the prop, so a navigation that dropped the marker cannot
+    // strand the copy in localStorage.
+    if (seeded.current) clearDraft();
     document.cookie = `${BUSINESS_COOKIE}=${result.businessId}; path=/; max-age=31536000`;
     router.push("/home");
     // The push alone re-fetches only the page segment: home/layout.tsx (the

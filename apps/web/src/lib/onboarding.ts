@@ -185,3 +185,88 @@ export function clearDraft(): void {
     // Nothing to clean up if storage is unavailable.
   }
 }
+
+/**
+ * Did /api/onboarding/complete actually write the draft we just posted?
+ *
+ * That route is idempotent by OWNER, not by content: an existing owner gets a
+ * 200 with their old business and `stored: false`, and the questionnaire in
+ * the request is dropped. So a 200 alone is not permission to clear anything.
+ *
+ * Anything this cannot read — a body that is not JSON, a null, a `stored` of
+ * the wrong type, a shape from a deploy that predates the field — is false ON
+ * PURPOSE. Clearing a draft on a response we did not understand is the defect
+ * class this exists to close, not a corner of it:
+ * docs/vault/defects/login-clears-a-draft-the-server-never-stored.md.
+ */
+function draftWasStored(body: unknown): boolean {
+  return (
+    typeof body === "object" && body !== null && (body as { stored?: unknown }).stored === true
+  );
+}
+
+/**
+ * What happened to the draft a sign-in was holding:
+ * - `stored` — the server wrote these answers; the localStorage copy is gone.
+ * - `parked` — a 200 that stored nothing (an existing owner), or one we could
+ *   not read. The copy is KEPT and belongs to the "הוסף עסק" wizard, the only
+ *   place that can turn it into the second business this route declined to
+ *   create.
+ * - `none` — nothing to hand over: no draft, or the post never came back with
+ *   a 200. The draft, if there was one, is untouched.
+ */
+export type DraftHandoff = "stored" | "parked" | "none";
+
+/**
+ * The marker /login puts on /home/new-business when it parks a draft there.
+ * Exported so the side that writes the URL and the side that reads it cannot
+ * drift — a rename on one of them alone opens the wizard empty and orphans the
+ * questionnaire in localStorage, which nothing would report.
+ */
+export const DRAFT_WAITING_PARAM = "draft";
+
+/**
+ * Finish a wizard draft left over from before the account existed, now that
+ * the caller has a session. Lives here, not in login-form.tsx, so the decision
+ * can be tested — this repo has no DOM to render a component in
+ * (docs/vault/falsified/web-route-handlers-cannot-be-unit-tested.md — the
+ * route half of that note is dead, the no-DOM half is not).
+ *
+ * Only a 200 decides anything. A rejected post keeps the old behaviour — the
+ * draft stays and the sign-in still lands on /home. Note what that does and
+ * does not cover: questionnaireSchema validates the ANSWERS, never `step`, so
+ * a draft is rejected when one of them is still blank, not because the wizard
+ * was abandoned early. Someone who answered through the audience step and
+ * walked away has a complete questionnaire and does get handed to the wizard.
+ */
+export async function postParkedDraft(): Promise<DraftHandoff> {
+  const draft = loadDraft();
+  if (!draft) return "none";
+  try {
+    const response = await fetch("/api/onboarding/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    if (!response.ok) return "none";
+    const body = (await response.json().catch(() => null)) as unknown;
+    if (!draftWasStored(body)) return "parked";
+    clearDraft();
+    return "stored";
+  } catch {
+    // Leave the draft in place; /home works without it.
+    return "none";
+  }
+}
+
+/**
+ * The opening answers for the signed-in "הוסף עסק" wizard. Seeded from the
+ * localStorage draft only when /login parked one there (it arrives as
+ * `?draft=1` on /home/new-business); without that marker the wizard opens
+ * empty, so an ordinary "add a business" never picks up a stale public-wizard
+ * draft. Read once, at mount — that wizard keeps its state in memory by design
+ * (docs/vault/decisions/0015-signed-in-without-business-lands-on-new-business.md).
+ */
+export function additionalWizardDraft(seedFromDraft: boolean): OnboardingDraft {
+  return (seedFromDraft ? loadDraft() : null) ?? emptyDraft;
+}

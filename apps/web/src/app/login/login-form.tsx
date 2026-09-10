@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { GoogleG } from "@/components/ui/icons";
 import { GOOGLE_SIGN_IN_ENABLED, signIn, signUpWithGoogle } from "@/lib/auth";
-import { clearDraft, loadDraft } from "@/lib/onboarding";
+import { DRAFT_WAITING_PARAM, postParkedDraft } from "@/lib/onboarding";
 
 /** `initialError` seeds the inline message — a Google failure sent here by
  *  /auth/callback. Any later submit replaces it. */
@@ -33,21 +33,21 @@ export function LoginForm({ initialError = null }: { initialError?: string | nul
       return;
     }
     // A wizard draft left from before the account existed: finish it now.
-    // The server is idempotent — existing owners just get their business back.
-    const draft = loadDraft();
-    if (draft) {
-      try {
-        const response = await fetch("/api/onboarding/complete", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(draft),
-        });
-        if (response.ok) clearDraft();
-      } catch {
-        // Leave the draft in place; /home works without it.
-      }
-    }
-    router.push("/home");
+    //
+    // A 200 does NOT mean it was saved. The route is idempotent by OWNER, not
+    // by content: someone who already has a business gets that business back
+    // and `stored: false`, and the answers they just filled in were never
+    // written. Clearing on any 200 destroyed exactly that questionnaire —
+    // docs/vault/defects/login-clears-a-draft-the-server-never-stored.md.
+    //
+    // "parked" also covers a 200 whose body we could not read. That is the
+    // rule, not an edge case: never clear a draft on a response we did not
+    // understand. The draft is the only copy of those answers; the response is
+    // a guess about them.
+    const handoff = await postParkedDraft();
+    // The marker is read by /home/new-business/page.tsx, which opens the
+    // "הוסף עסק" wizard with the kept answers already filled in.
+    router.push(handoff === "parked" ? `/home/new-business?${DRAFT_WAITING_PARAM}=1` : "/home");
   }
 
   async function handleGoogle() {

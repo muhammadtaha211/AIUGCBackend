@@ -21,6 +21,12 @@ const INVALID_MESSAGE = "חסרים פרטים בשאלון — חזרו למס�
  * existing owner gets their business back and nothing is created — unless the
  * body carries allowCreate: true (the signed-in "הוסף עסק" wizard), which
  * creates an additional business for the same owner.
+ *
+ * Every 200 carries `stored`: true when THESE answers were written, false when
+ * the idempotent guard handed back a business that already existed and the
+ * posted questionnaire was dropped. The two are indistinguishable without it,
+ * and a caller that reads a 200 as "saved" deletes a questionnaire nobody
+ * kept — docs/vault/defects/login-clears-a-draft-the-server-never-stored.md.
  */
 export async function POST(request: Request) {
   const supabase = await createServerSupabase();
@@ -89,7 +95,9 @@ export async function POST(request: Request) {
         .where(eq(businesses.ownerUserId, user.id))
         .limit(1);
       if (owned[0]) {
-        return NextResponse.json({ ok: true, businessId: owned[0].id });
+        // stored: false — this returns BEFORE setQuestionnaire below, so the
+        // answers in this request were never written anywhere.
+        return NextResponse.json({ ok: true, businessId: owned[0].id, stored: false });
       }
     }
 
@@ -102,7 +110,7 @@ export async function POST(request: Request) {
     });
     await setQuestionnaire(db, business.id, questionnaire);
 
-    return NextResponse.json({ ok: true, businessId: business.id });
+    return NextResponse.json({ ok: true, businessId: business.id, stored: true });
   } catch (err) {
     console.error("onboarding/complete failed", err);
     return NextResponse.json(
