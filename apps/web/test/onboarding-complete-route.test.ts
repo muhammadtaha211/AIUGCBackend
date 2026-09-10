@@ -12,10 +12,10 @@ import type { OnboardingDraft } from "../src/lib/onboarding";
  * `stored` is what tells the two 200s apart. These cases pin it, pin that the
  * dropped path really does drop, and pin that allowCreate is untouched.
  *
- * First test in apps/web to import a route handler: possible since the vitest
- * config landed the `@/` alias (2026-09-10), which
- * docs/vault/facts/web-route-handlers-cannot-be-unit-tested.md predates and
- * docs/vault/falsified/web-route-handlers-cannot-be-unit-tested.md retires.
+ * First test in apps/web to import a route handler. It became possible when
+ * apps/web/vitest.config.ts landed the `@/` alias (commit 9598b49, 2026-09-10);
+ * measured import cost is ~2.7s, which is why it used to look like a hang
+ * against vitest's 5s default testTimeout.
  */
 
 const fixture = vi.hoisted(() => ({
@@ -59,7 +59,7 @@ vi.mock("@aiugc/core", async (importOriginal) => {
   // questionnaireSchema, schema and normalizeEmail stay real. The fake throws
   // the WHERE predicate away, though, so nothing here proves the guard is
   // scoped to the owner — these cases pin the branch and the response shape,
-  // not the SQL (docs/vault/falsified/web-route-handlers-cannot-be-unit-tested.md).
+  // not the SQL, the RLS or the auth gate.
   return {
     ...actual,
     getDb: () => db,

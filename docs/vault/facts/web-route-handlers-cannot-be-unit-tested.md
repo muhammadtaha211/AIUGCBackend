@@ -1,19 +1,12 @@
 ---
 type: fact
-status: superseded
+status: verified
 verified: 2026-09-08
 method: 'scratch probe in apps/web/test: `await import("@/lib/service-b-ui")` under `pnpm --filter @aiugc/web exec vitest run` fails with `Failed to load url @/lib/service-b-ui (resolved id: @/lib/service-b-ui). Does the file exist?`; the same probe against `../src/app/api/businesses/[businessId]/renders/route` times out at 5000ms. Probe deleted after measuring.'
 source: code
 ---
 
 # No route handler in `apps/web` can be imported by a test — the `@/` alias does not resolve
-
-> **SUPERSEDED 2026-09-10 by [[web-route-handlers-cannot-be-unit-tested]] in `falsified/`.** Both
-> reasons below are gone: `apps/web/vitest.config.ts` (commit `9598b49`, 2026-09-10) supplies the
-> `@/` alias, and the "hang" was the 5s default test timeout eating a ~2.7s module import, not a
-> block. `apps/web/test/onboarding-complete-route.test.ts` imports the real `POST` and passes.
-> Kept verbatim because the guidance under **What this means for testing an API route** still holds
-> — such a test proves the branch and the response shape, never the SQL, RLS or the auth gate.
 
 `apps/web` has **no vitest config file at all**; `"test": "vitest run"` runs on pure defaults. Vite
 does not read `tsconfig.json`'s `paths` without a plugin or an explicit `resolve.alias`, so the

@@ -17,9 +17,9 @@ import {
  * docs/vault/defects/login-clears-a-draft-the-server-never-stored.md
  *
  * These cases live against `postParkedDraft` because login-form.tsx is a React
- * component and there is no DOM to render one in
- * (docs/vault/falsified/web-route-handlers-cannot-be-unit-tested.md); the component
- * keeps only the router.push the handoff decides.
+ * component and vitest runs here on the node environment — no jsdom, no
+ * @testing-library, nothing to render one into. The component keeps only the
+ * router.push the handoff decides.
  */
 
 /** A draft as it looks after every wizard step was answered. */

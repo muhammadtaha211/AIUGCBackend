@@ -228,9 +228,9 @@ export const DRAFT_WAITING_PARAM = "draft";
 /**
  * Finish a wizard draft left over from before the account existed, now that
  * the caller has a session. Lives here, not in login-form.tsx, so the decision
- * can be tested — this repo has no DOM to render a component in
- * (docs/vault/falsified/web-route-handlers-cannot-be-unit-tested.md — the
- * route half of that note is dead, the no-DOM half is not).
+ * can be tested — this repo's vitest runs on the node environment with no
+ * jsdom and no @testing-library anywhere in the monorepo, so there is nothing
+ * to render a component into.
  *
  * Only a 200 decides anything. A rejected post keeps the old behaviour — the
  * draft stays and the sign-in still lands on /home. Note what that does and
