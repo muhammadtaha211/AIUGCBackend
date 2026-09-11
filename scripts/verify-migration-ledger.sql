@@ -34,8 +34,8 @@
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
 -- expect 27 true + 1 NULL (0036 added one row on 2026-09-11, 0037 another the
--- same day). NOTE: the 0037 row reads FALSE until the founder applies it — it is
--- committed unapplied on purpose.
+-- same day). 0037 was applied to production on 2026-09-11 and its row reads
+-- true — see RESULTS.
 -- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
@@ -472,6 +472,52 @@ ORDER BY migration, layer DESC;
 -- Docker AFTER applying, and there is no Docker on this machine. The apply
 -- itself printed "Applying migration 0035_feedback.sql..." and exited 0.
 --
+-- 2026-09-11, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0037
+-- (events.notified_at + the partial alert index), on the founder's explicit
+-- instruction for this one push: ledger read-back **38 rows, 0000-0037, NO GAPS
+-- and NO REPAIR NEEDED** -- `db push` recorded 0037 itself, the FOURTH time in a
+-- row the REPAIR note above has predicted correctly. Pre-flight was
+-- `supabase migration list` (0000-0036 local == remote, 0037 the only row with
+-- an empty remote) and `db push --dry-run`, which named
+-- `0037_events_notified_at.sql` alone. The 0037 structural row above was then
+-- run on its own against production and read **true** -- both halves, including
+-- the index PREDICATE, not just the index's existence.
+--
+-- Post-apply read-back went through the drizzle model, not this file:
+-- `apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-events-notified-at.ts`
+-- returned nine `ok` lines and PASS -- column type `timestamp with time zone`,
+-- nullable YES, the predicate naming both alert kinds, and the two queries the
+-- worker's sweep actually runs.
+--
+-- The same Docker catalog-cache warning as 0035 and 0036 appeared and is not a
+-- failure ("failed to cache migrations catalog ... docker" -- the CLI tries to
+-- build a pg-delta catalog in Docker AFTER applying, and there is no Docker on
+-- this machine). The apply printed "Applying migration
+-- 0037_events_notified_at.sql..." and exited 0.
+--
+-- **Two notes on HOW it was applied, both of which correct CLAUDE.md.**
+-- First, `npx -y supabase` was NOT used and is no longer the right recipe:
+-- `supabase` is a root devDependency (2.109.1), so the pinned local binary at
+-- node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/.../bin/supabase.exe was
+-- spawned directly. CLAUDE.md:132 says "no Supabase CLI is installed -- npx
+-- fetches it", which is stale. Spawning the .exe rather than the .cmd shim also
+-- avoids shell:true on Windows, which would have put the connection string
+-- through cmd.exe quoting. Second, the connection string was read out of `.env`
+-- inside a throwaway wrapper that SCRUBBED the URL, password, host and user out
+-- of every byte the CLI wrote before printing it -- the credential rule's
+-- "verify by connecting, report the outcome" applied to a tool that may quote
+-- its own DSN in an error.
+--
+-- **The `events` table is EMPTY -- 0 rows, of every kind, measured the same
+-- minute.** `select count(*) from events` returned 0, and so did the two
+-- filtered counts (unnotified alert kinds, already-notified). So no event kind
+-- has ever fired in this project: not `platform_budget_tripped`, not
+-- `qc_release`/`qc_reject` (which state-of-play already recorded as zero), not
+-- `content_policy_flag`, not `refund_resolved_to_ancestor`. Two consequences
+-- worth keeping. The migration is a pure DDL no-op on data -- there was nothing
+-- to backfill and nothing that could have been mis-marked. And the alert sweep
+-- will read an empty partial index every 60s until something actually happens,
+-- which is the intended steady state rather than evidence it is not running.
 -- 2026-09-11, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0036
 -- (daily_caps -> runaway detector), on the founder's explicit instruction for
 -- this one push: ledger read-back **37 rows, 0000-0036, NO GAPS and NO REPAIR
