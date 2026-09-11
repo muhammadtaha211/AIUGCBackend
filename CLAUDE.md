@@ -107,14 +107,22 @@ Populate this section as scripts land, and keep it current.
 pnpm dev            # web app (onboarding) — http://localhost:3000
 pnpm dev:admin      # admin app (founder console) — http://localhost:3001
 pnpm typecheck      # all packages
-pnpm test           # core tests (PGlite, no Docker)
 pnpm lint / format  # prettier
+
+# THE TEST GATE — these five, one at a time. Not `pnpm test`. See below before changing.
+pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false
+pnpm --filter @aiugc/core     exec vitest run --fileParallelism=false  # PGlite, no Docker
+pnpm --filter @aiugc/worker   exec vitest run --fileParallelism=false
+pnpm --filter @aiugc/web      exec vitest run --fileParallelism=false
+pnpm --filter @aiugc/admin    exec vitest run --fileParallelism=false
 
 pnpm --filter @aiugc/remotion studio          # live composition preview (Remotion Studio)
 pnpm --filter @aiugc/remotion render:sample   # ServiceB sample -> packages/remotion/out/sample.mp4
 pnpm --filter @aiugc/remotion render:sample:a # RETIRED "full" ServiceA composition (hook line + avatar ending) -> out/sample-a.mp4; the live format is render:sample:steps
 pnpm --filter @aiugc/remotion render:sample:b-opener # RETIRED (vault 0023): the opener effect over a lavfi clip -> out/sample-b-opener.mp4; the live hook is the zoom animation, mocked with packages/core/.work/b-final-rerender.ts
 ```
+
+**`pnpm test` is not the test gate — those five serial runs are, and the difference is load-bearing.** The root script is `pnpm -r test`, which fans all five packages out four at a time (pnpm 9 defaults: `--sort` on, `--workspace-concurrency 4`) with each run itself file-parallel, and that OOMs this machine — so do not collapse the five back into one line. `--fileParallelism=false` only reaches vitest after `exec`; after `--` pnpm 9 eats it (`ERROR Unknown option: 'fileParallelism'`). `@aiugc/cli` has no tests. Measurement and mechanism: `docs/vault/facts/pnpm-r-test-ooms-this-machine.md`.
 
 Never run `next build` while `pnpm dev` is serving — the build replaces `.next` and the running dev server starts 404-ing its own chunks (symptom: every page stuck on its loading state, DevTools shows 404 on `/_next/static/chunks/main-app.js`). Recovery: stop dev, delete `apps/web/.next`, start dev again.
 
