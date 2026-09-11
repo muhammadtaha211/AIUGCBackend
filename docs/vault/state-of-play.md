@@ -43,11 +43,10 @@ history. History of the two incidents that bought it:
 [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]],
 [[bundle-fix-reached-the-worker-box]], [[tmp-cron-deletes-live-worker-bundle]].
 
-## What changed this session — branch `launch/resend-parkvalve-alerts`, NOT MERGED
+## What changed this session — `launch/resend-parkvalve-alerts`, MERGED as PR #29
 
-Cut from `origin/main` at **`d4c79ef`** (PR #28), which is one merge ahead of the `5a52ded` the
-section below records — that section was written before its own commit was merged. Four commits, one
-per task, plus this handover.
+Cut from `origin/main` at `d4c79ef` (PR #28), merged back as **PR #29 (`9de62d0`)**. Four commits,
+one per task, plus the handover — and one follow-up commit recording the 0037 apply.
 
 | commit    | what                                                                                        |
 | --------- | ------------------------------------------------------------------------------------------- |
@@ -56,19 +55,19 @@ per task, plus this handover.
 | `ba6a239` | the budget-park valve now ends non-render work; `packages/core/test/park-valve.test.ts`     |
 | `5c13ead` | the auth-email alert — migration **0037**, `core/src/alerts.ts`, vault `0044`, 0037 amended |
 
-**Migration 0037 (`events.notified_at` + a partial alert index) is committed and NOT APPLIED.** The
-founder applies it. `npx -y supabase db push --db-url <session pooler>` after a read-only
-`migration list` + `db push --dry-run` pre-flight; `db push` records the version itself, so no
-`migration repair` — the fourth time that prediction is being made. Read it back with
-`apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-events-notified-at.ts`, which goes
-through the drizzle model rather than raw SQL. **Nothing in this branch works until it is applied**:
-the sweep will log `alert sweep failed` once a minute and swallow it.
+**Migration 0037 (`events.notified_at` + a partial alert index) IS APPLIED** — pushed to production
+2026-09-11 on the founder's explicit instruction for that one push, and `db push` recorded the
+version itself, so no `migration repair` (fourth time that prediction has held). Ledger read-back:
+**38 rows, 0000–0037, no gaps.** Post-apply read-back went through the drizzle model, not raw SQL —
+`apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-events-notified-at.ts` returned PASS.
+Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.
 
-**The box needs a deploy for the valve and the alert sweep to run** — both live in code the worker
-executes. The web half (the disclosure, the route, the classifier) ships with Vercel on merge.
+**The box is the only thing left.** The park valve and the alert sweep both live in worker code, so
+neither runs until the box is deployed at the merged tip. The web half (the disclosure, the route,
+the classifier) ships with Vercel on merge.
 
-Two queue items are closed by this branch (1 and 5) and are struck through rather than deleted,
-because the branch is unmerged. Delete them once the PR lands.
+**Two queue items were closed by this branch and are gone from the queue** — the Resend disclosure
+and the budget-park exit. The queue is renumbered accordingly.
 
 ## What changed this session (2026-09-11)
 
@@ -111,10 +110,16 @@ Everything in this section is **founder-reported from a dashboard**, not observe
 unless a line says otherwise.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0036 applied, ledger clean, 37 rows, no gaps** — 0036 pushed 2026-09-11 on the
-founder's explicit instruction for that one push; `db push` recorded it itself, so no
-`migration repair` was needed (third time running that the prediction held). Proof block:
-`scripts/verify-migration-ledger.sql` §RESULTS.
+**Migrations 0000–0037 applied, ledger clean, 38 rows, no gaps** — 0036 and then 0037 both pushed
+2026-09-11, each on the founder's explicit instruction for that one push; `db push` recorded both
+itself, so no `migration repair` was needed (third and fourth time running that the prediction
+held). Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.
+**`events` is EMPTY — 0 rows, every kind, measured 2026-09-11 right after the 0037 apply.** No event
+kind has ever fired in this project: not `platform_budget_tripped`, not `qc_release`/`qc_reject`,
+not `content_policy_flag`, not `refund_resolved_to_ancestor`. So the alert sweep reads an empty
+partial index every 60s, which is the intended steady state and not evidence it is broken.
+**`npx -y supabase` is no longer the right recipe** — `supabase` is a root devDependency (2.109.1)
+and the pinned local binary was spawned directly. `CLAUDE.md:132` still says no CLI is installed.
 Auth: Email provider on, Google enabled, **Confirm email ON since 2026-09-11**, Site URL
 `https://tavnit.ai`, `https://tavnit.ai/auth/callback` on the redirect allowlist.
 Custom SMTP configured; **Rate Limits raised to 100 emails/hour**. All five Hebrew auth templates
@@ -125,10 +130,11 @@ complete. Region **Ireland (EU)**. DNS at Namecheap: DKIM `TXT resend._domainkey
 **CNAME**s (`rsend`, `send`) — _not_ a TXT SPF record; DMARC `TXT _dmarc` = `v=DMARC1; p=none;`.
 Receiving off (no MX). Free tier **3,000/month AND 100/day**.
 **The 100/day is the real ceiling, not the 100/hour** — see [[auth-email-runs-through-resend]].
-It was disclosed nowhere until `3a3deda` on `launch/resend-parkvalve-alerts` (unmerged at the
-time of writing): [[resend-is-an-undisclosed-processor]] carries the dated FIXED block. **The
-transfer basis is still open** — an Irish sending region says nothing about US access by a US
-company, and the page deliberately claims no basis.
+It was disclosed nowhere until `3a3deda` (merged in PR #29):
+[[resend-is-an-undisclosed-processor]] carries the dated FIXED block. **The transfer basis is still
+open** — an Irish sending region says nothing about US access by a US company, and the page
+deliberately claims no basis. That question is filed unanswered in
+`docs/legal/reg2-open-questions.md:131` (COUNSEL) and `:167` (VENDOR).
 
 **The box.** `aiugc-worker.service`, `Restart=always`, `WORKER_ID=hetzner`. At `b8af879` after the
 2026-09-11 deploy (`git pull && pnpm install && sudo systemctl restart aiugc-worker`).
@@ -171,58 +177,53 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
 
 ## The queue
 
-1. ~~**Resend is an undisclosed processor.**~~ **DONE on `launch/resend-parkvalve-alerts`
-   (`3a3deda`), UNMERGED at the time of writing.** Privacy §6 gained a `שליחת מיילים` sub-section
-   (`privacy/page.tsx:220-226`), `docs/legal-review.md` row P11 (`:75`) + an owed-list bullet
-   (`:118`), and `legal.tsx:54 UPDATED` moved to `"11.09.2026"`. **§7 was NOT touched and the page
-   asserts no transfer basis** — that question is filed unanswered in
-   `docs/legal/reg2-open-questions.md:131` (COUNSEL) and `:167` (VENDOR). Leave this item here until
-   the PR is merged, then delete it.
-2. **Correct `docs/08` §8A.1.** `:429-438` asserts `signUp` has **no** `emailRedirectTo` and the
+1. **Correct `docs/08` §8A.1.** `:429-438` asserts `signUp` has **no** `emailRedirectTo` and the
    table row `:443` says a one-line change is needed. Both false — `auth.ts:78` has passed it since
    `02f58bb`. Cheap, and it has now caused a real error once (see Corrections). §8A.2 cross-references
    the falsehood rather than rewriting it, so the correction is one reviewed edit.
-3. **Fix the `bans רגע` flaky test.** 12.0% per run of its file, by construction. Worth doing before
+2. **Fix the `bans רגע` flaky test.** 12.0% per run of its file, by construction. Worth doing before
    it reddens a gate at a bad moment and someone "fixes" it by weakening the ban — which is the wrong
    fix twice over, because the real question is whether a curated hook may contain a word the prompt
    bans. [[ban-rule-test-collides-with-a-curated-hook]].
-4. **Record the real test gate command in CLAUDE.md.** `:110` says `pnpm test  # core tests`; it is
+3. **Record the real test gate command in CLAUDE.md.** `:110` says `pnpm test  # core tests`; it is
    `pnpm -r test`, fans out to five packages, and OOMs this machine. Every prompt written for this
    repo uses "tests green" as its stop condition, so as written the stop condition is unrunnable.
    [[pnpm-r-test-ooms-this-machine]] has the five serial commands.
-5. ~~**A budget-parked non-render job has no exit.**~~ **DONE on
-   `launch/resend-parkvalve-alerts` (`ba6a239`), UNMERGED.** `failOverparkedWork`
-   (`pipelines/janitor.ts:208`, called from the reaper at `:276`) ends the job AND lands its domain
-   row, for an allowlist of four: `analyze_demo`, `plan_demo_steps`, `synth_tts`,
-   `generate_composite`. `MAX_BUDGET_PARK_MS` is unchanged and the render valve is untouched. No
-   refund — proven per type, none of the four carries a credit debit. Leave until merged, then
-   delete.
-6. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
+4. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
    runs (the key IS in Vercel's web env; the wizard signs storage URLs server-side). Deliberately not
    edited: what it should say instead is the founder's call, and the honest options differ — drop the
    clause, or keep it and move the signing off the web tier.
-7. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
+5. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
    `:168`, not the `:111` this queue said for weeks. "Hetzner CPX41-class, ~€30/mo flat" predates the
    June 2026 price rise and understates by roughly half; "~2–6 min wall time per video" is 2–5× too
    slow against three measured renders ([[service-a-render-wall-clock-on-the-box]]).
-8. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
+6. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
    `copy.ts:675-680` for the `content_policy_flag` insert, which is `:706-711`. Left alone because
    this session was docs-only. Trivial, but see Corrections for why this class keeps recurring.
-9. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
+7. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
    load-bearing; all of it misleads. `docs/08` §8B `:495`, `:501`, `:514`, `:547`, `:608`, `:672`;
    `0006` `:34`, `:52`, `:54`; `0005` `:14`, `:30`. **Every one of those line numbers predates this
    session's §8A.2 insertion, which added 151 lines at `:472` — so all the `docs/08` cites above are
    now ~151 low. Re-grep, do not trust them.**
-10. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
-    still points at" — **false since 2026-08-27**; all five env files point at
-    `hyaqydcmwbnbaiqqufow`, and the old project is deleted. Same line's "ledger clean at 0000–0030"
-    is stale at 0000–0036. `CLAUDE.md:130` is current and correct.
+8. **Correct `CLAUDE.md:130`'s apply recipe.** It says "no Supabase CLI is installed — npx fetches
+   it", which is **false**: `supabase` is a root devDependency (2.109.1) and the pinned binary lives
+   at `node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/…/bin/supabase.exe`. The 0037 apply on
+   2026-09-11 spawned that `.exe` directly rather than `npx -y supabase` — deliberately, because
+   spawning the `.cmd` shim on Windows needs `shell: true`, which would put the connection string
+   through cmd.exe quoting. Same line also still says `db push` "records the version itself", which
+   held for a fourth time and is correct.
+9. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
+   still points at" — **false since 2026-08-27**; all five env files point at
+   `hyaqydcmwbnbaiqqufow`, and the old project is deleted. Same line's "ledger clean at 0000–0030"
+   is stale at 0000–0037. `CLAUDE.md:130` is **not** current either — see item 8.
 
-Items 1–4 first because each is cheap and each is a trap for the _next_ session rather than a
-feature. 5 is the only real code defect left and is now low-probability. 7–10 are docs corrections
-ordered by how likely a reader is to act on the wrong thing. **Reg. 2 used to be item 5 and is no
-longer in this queue** — it was not done and it was not dropped: it is deferred indefinitely by
-founder decision, [[0043-the-reg-2-definitions-document-is-deferred-by-decision]]. See Open
+Items 1–3 first because each is cheap and each is a trap for the _next_ session rather than a
+feature. 4–9 are corrections ordered by how likely a reader is to act on the wrong thing. There
+is no open code defect in this queue any more.
+
+**Three items left this queue on 2026-09-11, and they left in two different ways.** The Resend
+disclosure and the budget-park exit were **DONE** (PR #29). Reg. 2 was **DEFERRED** — not done,
+not dropped, decided: [[0043-the-reg-2-definitions-document-is-deferred-by-decision]]. See Open
 decisions below.
 
 ## Open decisions
@@ -262,6 +263,13 @@ decisions below.
   failure mode is reasoned from two published limits, not observed.
 
 ## Corrections worth not repeating
+
+- **"`npx -y supabase` because no CLI is installed" was false, and the Windows shim makes it worse.**
+  `supabase` has been a root devDependency the whole time (2.109.1). The 0037 apply spawned the
+  pinned `.exe` directly: spawning the `.cmd` shim needs `shell: true` on Node 20+, and a shell
+  would put the connection string through cmd.exe quoting, where a special character in the password
+  is either a leak or a break. `spawn` on a bare `.cmd` without a shell fails `EINVAL` — that is the
+  symptom, and the fix is the `.exe`, not `shell: true`. Queue item 8.
 
 - **This file's own "What changed this session" section was stale before it was read.** It records
   `origin/main` as `5a52ded` and lists its own handover commit as uncommitted; by the time the next
