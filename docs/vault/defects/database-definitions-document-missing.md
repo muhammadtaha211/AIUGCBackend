@@ -58,7 +58,15 @@ information the repo does not contain, and who can supply it. Everything the rep
 already written in as `[נמדד]` or `[מוסק]` with a pointer, so what is left is by construction what
 the repo cannot answer: business facts, founder decisions, live-database and dashboard measurements,
 legal positions and vendor terms. Closing one from reasoning rather than a `file:line` would be
-exactly the failure mode the document was built to avoid. **`grep -c` still returns 75.**
+exactly the failure mode the document was built to avoid. **75 raw marker occurrences remain.**
+
+> **Corrected 2026-09-11 — the count and the command were both wrong.** `grep -c` counts _lines_,
+> not occurrences, and returns **71**: four lines (`:672`, `:673`, `:679`, `:680`) carry two markers
+> each. The occurrence count needs `grep -o "\[חסר" … | wc -l`, which returns **75**. And 75 is not
+> the number of gaps: `:63` is the legend row that _defines_ the marker and `:69` is a prose mention
+> of it, so the real count is **73 gaps** — 60 of the `[חסר: …]` form and 15 bare `[חסר]`, minus the
+> two self-referential hits. Quote **73 gaps / 75 raw hits / 71 matching lines**, and never `grep -c`
+> for this.
 
 **Two markers now contain a claim the repo has since falsified.** Neither became answerable, so
 neither was closed, and **the document itself was not edited** — the only edits that pass was

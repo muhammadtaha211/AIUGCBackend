@@ -91,7 +91,8 @@ see [[token-and-money-budgets]].
 (its own header comment at `pricing.ts:6-9`, and `config.ts:63`). That is why `creditCostsSchema`
 lives there rather than in `config.ts`, and it constrains what the module may import.
 
-**Admin accounts pay nothing.** `packages/core/src/pipelines/sets.ts:483` sets
+**Admin accounts pay nothing.** `packages/core/src/pipelines/sets.ts:745` (re-read 2026-09-11;
+was `:483`) sets
 `chargeable = !(await isAdminOwned(db, businessId))`, and `sets.ts:240` skips the debit when
 `chargeable` is false. Flipping a customer account to admin would zero its render debits and
 corrupt the ledger.

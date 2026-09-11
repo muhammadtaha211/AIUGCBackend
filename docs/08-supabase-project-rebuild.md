@@ -471,6 +471,161 @@ means launch is blocked on the DNS work above.
 
 ---
 
+### 8A.2 — Custom SMTP and the Hebrew auth templates (live since 2026-09-11)
+
+§8A.1 above weighs confirmation on against off. **It is ON in production as of 2026-09-11**, so this
+section is no longer a trade-off — it is what a rebuild has to reproduce. Everything here was
+configured in the Supabase dashboard only; nothing in the repo reproduced it before this section
+existed, which meant a rebuild shipped English auth email to Hebrew customers.
+
+Two corrections to §8A.1 before the values, so a reader does not act on them:
+
+- **"`auth.ts:42` calls `signUp(…)` with no `emailRedirectTo`" is false**, and so is the table row
+  "Code change needed | … One line (`emailRedirectTo`)". `apps/web/src/lib/auth.ts:78` has passed
+  ``emailRedirectTo: `${window.location.origin}/auth/callback` `` since commit `02f58bb`. The
+  confirmation click does not dead-end. §8A.1 is queued for correction; it is left as-is here so the
+  correction is one reviewed edit rather than a drive-by.
+- §8A.1 says custom SMTP needs "**SPF** and **DKIM** records". With Resend, SPF is delivered by two
+  **CNAME** records, not a TXT SPF record. See below.
+
+#### SMTP settings — Authentication → SMTP Settings
+
+| Field        | Value                                                                      |
+| ------------ | -------------------------------------------------------------------------- |
+| Host         | `smtp.resend.com`                                                          |
+| Port         | `465`                                                                      |
+| Username     | `resend` — the literal string, not an address                              |
+| Password     | a Resend API key — **not in this repo and never will be** (see note below) |
+| Sender email | `noreply@tavnit.ai`                                                        |
+| Sender name  | `תבנית`                                                                    |
+
+**The key is not recoverable from here.** Mint a fresh API key in the Resend dashboard and paste it
+into this field. Do not write it into this file, a script, a commit message or a task report — the
+credential rule in `CLAUDE.md` covers exactly this, and it has already cost two rotations.
+
+#### Resend — the provider side
+
+Account holds the domain `tavnit.ai`, **verified**, region **Ireland (EU)**. DNS lives at Namecheap:
+
+| Record                         | Type      | Purpose                                       |
+| ------------------------------ | --------- | --------------------------------------------- |
+| `resend._domainkey`            | **TXT**   | DKIM                                          |
+| `rsend`, `send`                | **CNAME** | sending / SPF — two CNAMEs, **not** a TXT SPF |
+| `_dmarc` = `v=DMARC1; p=none;` | **TXT**   | DMARC, monitor-only policy                    |
+
+Receiving is deliberately **off** — no MX records. Nothing reads mail at this domain.
+
+**The two ceilings, and the smaller one wins.** Authentication → Rate Limits was raised to
+**100 emails/hour** on 2026-09-11, now that custom SMTP makes it separately configurable. That would
+permit 2,400/day. Resend's free tier cuts at **100/day** and 3,000/month. The real ceiling on auth
+email is therefore **100/day at the provider**, not 100/hour at Supabase — do not read the Supabase
+number as available headroom. Reasoned from the two published limits, not observed: once the daily
+100 is spent, Resend refuses, the confirmation email stops arriving, and a signup cannot complete.
+Nothing alerts on it, and it would present as "signups mysteriously stopped working" late in a busy
+day.
+
+**Redirect URLs** must include `https://tavnit.ai/auth/callback` (§8A step 1 covers the rest).
+
+#### The templates — Authentication → Email Templates
+
+Paste each body with the subject shown. The `dir` attributes are **bidi fixes, not decoration**: the
+outer `dir="rtl"` makes Hebrew read correctly across mail clients, and the two inner `dir="ltr"`
+spans stop a Latin email address and a numeric code from being reordered mid-line. Keep the Go
+template variables (`{{ .ConfirmationURL }}`, `{{ .NewEmail }}`, `{{ .Token }}`) byte-for-byte.
+
+**Which of these actually fire today** — verified against the tree 2026-09-11, not against the
+dashboard:
+
+| Template                         | Reachable from the app?                                                                                                                                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Confirm signup                   | **Yes — the one that fires.** `auth.ts:68-78`, email+password signup. Google OAuth does not send it.                                                                                                        |
+| Invite user                      | Dashboard-only. No app code sends an invite.                                                                                                                                                                |
+| Magic link                       | **Not wired.** `apps/web/src` has no `signInWithOtp` call.                                                                                                                                                  |
+| Change email address             | **Not reachable.** The only `auth.updateUser` call in `apps/web/src` is `auth.ts:144` and it sets a password; `home/settings/page.tsx:66-68` shows the address read-only with no edit control.              |
+| The `{{ .Token }}` code template | **Unverified which slot this is.** The variable and the body (a bare code) read as Supabase's Reauthentication template; no app code calls `reauthenticate`. Confirm in the dashboard before relying on it. |
+
+**Not among the five, and load-bearing:** the **Reset Password / recovery** template. It is
+reachable (`auth.ts:108-118` → `/auth/recovery`, `auth.ts:128-139` verifies the token) and §8A step 1
+above already pins its required body — `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`
+— because the default link form is spent by mail-security scanners before the user clicks. **Whether
+that template was translated to Hebrew in the 2026-09-11 pass is UNVERIFIED**; the five bodies below
+do not include it. A rebuild must paste the token_hash form from §8A step 1 regardless of language,
+or recovery breaks for exactly the `name@business.co.il` audience this product sells to.
+
+---
+
+Subject `אישור כתובת המייל`
+
+```html
+<div dir="rtl" style="text-align: right;">
+  <h2>אישור כתובת המייל</h2>
+
+  <p>לחצו על הקישור למטה כדי לאשר את כתובת המייל ולסיים את ההרשמה.</p>
+  <p><a href="{{ .ConfirmationURL }}">אישור הכתובת</a></p>
+</div>
+```
+
+Subject `הוזמנתם לתבנית`
+
+```html
+<div dir="rtl" style="text-align: right;">
+  <h2>הוזמנתם לתבנית</h2>
+
+  <p>הוזמנתם לפתוח חשבון. לחצו על הקישור למטה כדי לאשר את ההזמנה.</p>
+  <p><a href="{{ .ConfirmationURL }}">אישור ההזמנה</a></p>
+</div>
+```
+
+Subject `קישור הכניסה שלכם`
+
+```html
+<div dir="rtl" style="text-align: right;">
+  <h2>קישור הכניסה שלכם</h2>
+
+  <p>לחצו על הקישור למטה כדי להיכנס. הקישור תקף לזמן קצר וניתן להשתמש בו פעם אחת בלבד.</p>
+  <p><a href="{{ .ConfirmationURL }}">כניסה לחשבון</a></p>
+</div>
+```
+
+Subject `אישור כתובת המייל החדשה`
+
+```html
+<div dir="rtl" style="text-align: right;">
+  <h2>אישור כתובת המייל החדשה</h2>
+
+  <p>
+    לחצו על הקישור למטה כדי לאשר את <span dir="ltr">{{ .NewEmail }}</span> ככתובת המייל החדשה שלכם.
+  </p>
+  <p><a href="{{ .ConfirmationURL }}">אישור הכתובת החדשה</a></p>
+
+  <p>אם לא ביקשתם את השינוי הזה, אפשר להתעלם מהמייל.</p>
+</div>
+```
+
+Subject `קוד האימות שלכם`
+
+```html
+<div dir="rtl" style="text-align: right;">
+  <h2>קוד האימות שלכם</h2>
+
+  <p>השתמשו בקוד הבא כדי לאמת את הזהות שלכם. הקוד תקף לזמן קצר.</p>
+
+  <p dir="ltr" style="text-align: center; font-size: 28px; font-weight: bold; letter-spacing: 4px;">
+    {{ .Token }}
+  </p>
+</div>
+```
+
+#### What was proven end to end, once
+
+2026-09-11, founder-reported: signup refused immediate sign-in and showed the Hebrew "we sent a
+confirmation email" line; the email arrived; the link landed on `/start` and middleware forwarded to
+`/home`. That transit proves three things at once — the PKCE exchange works, a session is created,
+and the account had a `businesses` row (the middleware's `businesses` query is what forwards owners).
+The confirmation-ON onboarding path had never been exercised on this app before. It now has, once.
+
+---
+
 ## 8B. Google OAuth — full setup
 
 **Status: in scope for launch** (founder decision 2026-08-26 —

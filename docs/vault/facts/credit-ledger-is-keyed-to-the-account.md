@@ -56,7 +56,8 @@ whose grants arrived that way, and it can never be a balance.
 
 `moeloefow` owns BotTeacher, RonDiron and MyTor; `aiugc21111` owns Tavnit and jobnet.co.il;
 `hamodetaha.ht` (the founder) owns Ola Beauty, sdf and Matchn. Both admin accounts bypass credits
-entirely at `packages/core/src/pipelines/sets.ts:483`, so their balances are decorative.
+entirely at `packages/core/src/pipelines/sets.ts:745` (re-read 2026-09-11; was `:483`), so their
+balances are decorative.
 
 ## A negative balance is structurally impossible
 

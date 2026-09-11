@@ -111,6 +111,26 @@ the same `recordUsage` path as every other copy call, with `businessId` threaded
 to the per-account cap and does not land in the blind spot
 ([[per-account-cap-blind-spot]]).
 
+## Correction 2026-09-11 — this note's own line cites shifted when it landed
+
+The `method` field above was written from a read at `702742a`, the tip _before_ the wiring commit.
+`c442447` then added 30 lines to `copy.ts` above the function, so every `copy.ts` cite recorded in
+this note was 30 lines stale the moment it was committed. Re-read at `2828fd3`:
+
+| `method` says     | actually                                                 |
+| ----------------- | -------------------------------------------------------- |
+| `copy.ts:662`     | **`copy.ts:692`** (`contentPolicyCheck`)                 |
+| `copy.ts:675-680` | **`copy.ts:706-711`** (the `content_policy_flag` insert) |
+| `copy.ts:24-41`   | unverified — not re-read                                 |
+
+`renders.ts:491-492` (the Service A QC bypass, cited in the gate table) **is** still correct.
+The in-code comment at `packages/core/src/pipelines/sets.ts:241` carries the same stale
+`copy.ts:675-680` and was deliberately not edited in this docs-only pass — it is queued.
+
+The general rule, worth more than the three numbers: **a commit that records a line cite for a file
+it is also editing must take the cite from its own result, not from its parent.** The same mistake
+is recorded from the other side in [[content-policy-classifier-never-runs]].
+
 ## Related
 
 - [[0041-content-policy-is-accepted-not-fixed]] — superseded by this note; its reasoning is correct

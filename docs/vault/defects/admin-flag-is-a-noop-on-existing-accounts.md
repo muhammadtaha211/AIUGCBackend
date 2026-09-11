@@ -50,7 +50,12 @@ The bug runs in one direction only: **it can leave an account as `customer` that
 
 A wrongly-`customer` founder account then:
 
-- is charged credits — `sets.ts:483` computes `chargeable = !(await isAdminOwned(...))`
+- is charged credits — `sets.ts:745` computes `chargeable = !(await isAdminOwned(...))`
+  (re-read 2026-09-11; it was `sets.ts:483` when this note was written). `isAdminOwned` itself is
+  `packages/core/src/pipelines/businesses.ts:232-236`. A **third** bypass arrived 2026-09-11:
+  `sets.ts:204` skips the content-policy classifier for admin-owned businesses
+  ([[0042-content-policy-is-wired-at-both-choke-points]]), so a stuck-as-customer account now also
+  gets classified where the founder's own would not.
 - is subject to the per-account daily cap — `budget.ts:87` returns early only for admins
 - is blocked by the wizard gate at zero balance — `apps/web/src/lib/wizard-gate.ts:24`
 - gets watermarked output

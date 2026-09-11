@@ -12,10 +12,36 @@ source: db
 
 ## Caps
 
-| Cap                      | Value                   | Notes                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platform `llm_tokens`    | 2,000,000 / 24h rolling | **No role bypass by design** — a capacity ceiling. A trip parks jobs for everyone.                                                                                                                                                                                                                                                                                                                                    |
-| `per_account.llm_tokens` | 1,500,000               | Raised by hand from 500,000 on 2026-08-21. ~~**Prod diverges from migration 0027 — a migration is owed.**~~ **Corrected 2026-09-10: it does not.** `0027_llm_caps_account_first.sql:24` seeds `'1500000'` and matches live; the literal was retro-edited 2026-08-26 in `f9bb5a7` ([[migration-0027-still-seeds-the-old-llm-cap]]). Summed across every business the owner holds. Admin-role bypass at `budget.ts:87`. |
+**Changed by migration 0036 on 2026-09-11** — [[0040-the-hard-ceiling-moves-to-the-providers]],
+[[daily-caps-were-hand-edited-before-0036]]. Values below are the migration's literals
+(`supabase/migrations/0036_daily_caps_runaway_detector.sql`), repo-verified 2026-09-11; the live row
+was confirmed by read-back through `packages/core/scripts/verify-daily-caps.ts`, founder-reported.
+
+| Cap                       | Value (since 0036) | Was       | Notes                                                                                                                                                                                                                                       |
+| ------------------------- | ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform `llm_tokens`     | 8,000,000 / 24h    | 2,000,000 | **No role bypass by design.** A trip **parks** jobs for everyone, so it is sized as a runaway detector, not a budget.                                                                                                                       |
+| Platform `tts_chars`      | 400,000 / 24h      | 100,000   | 16× its per-account pair.                                                                                                                                                                                                                   |
+| Platform `gpu_seconds`    | 32,000 / 24h       | 7,200     | 16× its per-account pair.                                                                                                                                                                                                                   |
+| Platform `images`         | 400 / 24h          | 100       | **No per-account pair**, so the 16× rule does not apply; raised 4× so it does not become the effective ceiling alone.                                                                                                                       |
+| `per_account.llm_tokens`  | **500,000**        | 1,500,000 | The only per-account value 0036 moved. At 1.5M one account could legitimately consume 75% of the platform's daily budget and two heavy users tripped it. Summed across every business the owner holds. Admin-role bypass at `budget.ts:87`. |
+| `per_account.tts_chars`   | 25,000             | 25,000    | Untouched.                                                                                                                                                                                                                                  |
+| `per_account.gpu_seconds` | 2,000              | 2,000     | Untouched.                                                                                                                                                                                                                                  |
+
+**The 16× rule** is what makes these re-derivable: every platform cap that has a per-account pair is
+exactly 16× it, so sixteen simultaneously-maxed accounts are needed to trip a breaker whose failure
+mode is parking jobs forever. `images` is the exception — no pair.
+
+**The two levels are not the same kind of number.** `per_account` throws `AccountBudgetError` before
+anything is enqueued — an immediate Hebrew rejection, safe to trip. The platform cap throws
+`BudgetError`, which **parks** the job at +1h; the 6h valve (`MAX_BUDGET_PARK_MS`,
+`pipelines/janitor.ts:25`) only reaches `render_video` and `lipsync`, so a parked `synth_tts` or
+`analyze_demo` re-queues forever with its row stuck mid-state. That asymmetry is why the platform
+numbers are high and the per-account ones are not.
+
+~~**Prod diverges from migration 0027 — a migration is owed.**~~ **Corrected 2026-09-10: it does
+not**, and 0036 has since superseded the value anyway. `0027_llm_caps_account_first.sql:24` still
+seeds `'1500000'` and 0027 runs _before_ 0036, so a rebuilt database replays 1,500,000 and then
+0036 lowers it to 500,000 — the lineage is intact ([[migration-0027-still-seeds-the-old-llm-cap]]).
 
 `dailyCapsSchema.per_account` is a plain `z.object` (`config.ts:49`), i.e. **strip mode, not
 `.strict()`**. Two precisions, because the original wording had both backwards:
@@ -61,5 +87,6 @@ The per-account cap also has a blind spot worth knowing before trusting its numb
 ## Rules
 
 No upload without an explicit per-upload go from the founder, stating the cost. No `plan regress`
-without a go. Don't touch `app_config`. Don't flip BotTeacher to admin — `sets.ts:483` sets
+without a go. Don't touch `app_config`. Don't flip BotTeacher to admin — `sets.ts:745` (re-read
+2026-09-11; was `:483`) sets
 `chargeable = false` for admins, which would zero render debits and corrupt the ledger.

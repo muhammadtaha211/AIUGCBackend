@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-10
+updated: 2026-09-11
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -12,616 +12,268 @@ note: >
 
 # State of play
 
-Read this first in a new session. It holds what the repo cannot: external state,
-decisions made in conversation, and the ordered queue.
+Read this first in a new session. It holds what the repo cannot: external state, decisions made in
+conversation, and the ordered queue. **If this file and the repo disagree, the repo wins.**
 
 ## Where things stand
 
-**The product is live end to end.** `tavnit.ai` is owned, attached in Vercel, resolving,
-and serving `apps/web` (founder-verified 2026-09-01). A **full Service A wizard run was
-completed against the live deployed app** the same night — demo upload through to a
-finished MP4, rendered on the Hetzner box, quality confirmed by eye. That run closes the
-old queue item 1: the Vercel-tracing fix (`4f85ae9`) is proven on Linux in production —
-a full run to MP4 necessarily exercised hook-line generation (inference from "full run";
-the route was not hit in isolation). Full story of that bug:
-[[computed-path-reads-are-invisible-to-vercel-tracing]].
+**The product is live end to end.** `tavnit.ai` serves `apps/web` on Vercel; a full Service A wizard
+run went from demo upload to a finished MP4 on the Hetzner box. Google sign-in is public, `/privacy`
+and `/terms` are shipped, `apps/admin` sits behind HTTP Basic in front of `requireAdmin`. The Service
+B engine and its wizard are built and merged; the first real B wizard render was 2026-09-05. Service
+B format and engine decisions are all in `decisions/` — start at
+[[0017-service-b-single-setting-selfie-talking-head]],
+[[0023-hook-is-a-remotion-animation-opener-clips-retired]] and
+[[0024-hook-effect-is-a-render-param-the-customer-picks]], and read CLAUDE.md's Service B paragraph
+rather than a summary here.
 
-The night also surfaced an outage that was **not** closed that night, though this file
-said it was: **every box render since 2026-08-27 was dead** — the §9 `/tmp` cron was
-deleting the live worker's memoized webpack bundle ([[tmp-cron-deletes-live-worker-bundle]],
-cause-verified via `crontab -l`; fixed in the repo by a repo-owned `outDir` + re-bundle
-heal, commit `9543cc3`).
+**Email confirmation is ON as of 2026-09-11** — the one live behaviour change a new session is most
+likely to trip over. Every new signup now depends on an email being delivered through Resend, and the
+real ceiling is 100/day at the provider: [[auth-email-runs-through-resend]].
 
-**Corrected 2026-09-02: the fix did not reach the box on 09-01.** A fourth render died the
-same death on 09-02 with a fresh `/tmp` bundle path, which `9543cc3` cannot produce. The
-box was sitting at `48584e7` — the merge's _other_ parent, which does not contain the fix
-— and the 09-01 "proof" render succeeded only because the restart made the OLD code
-mkdtemp a fresh `/tmp` bundle, which the cron then ate ~19h later. Full autopsy:
-[[bundle-fix-reached-the-worker-box]]. **A real §11 deploy ran 2026-09-02** (`48584e7 →
-af158cb`, `packages/remotion/src/render.ts` +35 and `bundle-heal.test.ts` created — those
-files arriving is itself the proof the box never had them), worker restarted, three renders
-released, and the bundle verified living outside `/tmp`. **Closed.**
+**The rule that cost two incidents, and the first time it paid.** Verify the deployed **artifact**,
+not the symptom: `git log -1` on the box, never "a render worked afterwards" — a restart alone
+produces that. `docs/07-worker-box.md` §11 carries the check.
+**2026-09-11 it was run on a real deploy and PASSED** (founder-reported, and the strongest external
+evidence this file holds): `git log -1` on the box returned `b8af879` — the PR #26 merge — with
+`HEAD -> main, origin/main, origin/HEAD` on it, and its two parents are `ab0245e` (the main the
+branch was cut from) and `d56f702` (the branch tip). That proves the deployed artifact _is_ the
+merged branch, by lineage rather than by symptom. First artifact-confirmed box deploy in this repo's
+history. History of the two incidents that bought it:
+[[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]],
+[[bundle-fix-reached-the-worker-box]], [[tmp-cron-deletes-live-worker-bundle]].
 
-The rule this cost two incidents to learn: **verify the deployed artifact, not the
-symptom.** `git log -1 --oneline` on the box, not "a render worked afterwards" — a restart
-alone produces that. §11 now carries the check.
+## What changed this session (2026-09-11)
 
-All four deaths surfaced only because the founder happened to be running a wizard test —
-that is the Sentry argument (queue item 7), now with four data points instead of two.
+Branch `overnight/launch-blockers`, six commits, merged to `main` in **two** PRs — #26 (`b8af879`,
+the five work commits) and #27 (`5a52ded`, the `2828fd3` docs commit). `origin/main` is `5a52ded`.
 
-`apps/admin` is deployed on its vercel.app URL and now sits behind HTTP Basic Auth in front
-of `requireAdmin` — closed 2026-09-09, old queue item 2. Verified from outside the browser
-session: `GET /login` with no credentials -> 401 carrying `www-authenticate: Basic
-realm="admin"`; the same request with credentials -> the login page; `GET
-/api/admin/personas` with no credentials -> 401, not 403 — proof the Basic wall fires ahead
-of the Supabase gate, not behind it.
+| commit    | what                                                                                            |
+| --------- | ----------------------------------------------------------------------------------------------- |
+| `702742a` | privacy §6 describes what the edge check actually reads; `docs/legal-review.md` P3 rewrite      |
+| `b39bb2c` | **the local/DRY_RUN worker claim guard** — `packages/core/src/jobs/queue.ts`                    |
+| `3080b73` | migration 0036 (`daily_caps` → runaway detector) + `packages/core/scripts/verify-daily-caps.ts` |
+| `c442447` | content policy wired at `createSet` and `createBRender`; vault 0042, 0041 superseded            |
+| `d56f702` | `docs/legal/reg2-open-questions.md` — the reg. 2 triage worksheet                               |
+| `2828fd3` | records the 0036 apply, and that it was a DATA no-op                                            |
 
-**Render progress is now visible to the customer** (2026-09-02). The A wizard's render
-step has a real bar with the percentage on it; `/home` shows a live chip plus the percent
-inside the in-flight tile, and deliberately no bar. Shape and the three rounds that
-produced it: [[0010-where-render-progress-is-shown]]. The retry-backoff copy that used to
-appear mid-render is gone on purpose: [[0009-retry-backoff-is-invisible-to-the-customer]].
-The `/home` content pane also renders at `zoom: 0.95`
-([[0011-dashboard-content-renders-at-95-percent]] — including the coordinate-space hazard
-that creates for any future pointer math under `/home`). Whether 0.95 is the right constant
-is still unmeasured against the founder's own viewport.
+`2b8e6ee` (privacy §6 names Sentry) is **not** in that range — it landed 37 seconds before
+`ab0245e`, the commit the branch was cut from. Same night's work, different side of the cut.
 
-The worker box is live; the pipeline does not depend on the founder's desktop being awake.
+**`b39bb2c` closes a mechanism this file used to describe as unguarded.** A worker whose
+`DATABASE_URL` points at the production project now **refuses to claim** if it is a `local:*`/`cli:*`
+worker or if `DRY_RUN` is set, and says so. `aiugc work --once` exits rather than spinning.
+[[local-workers-compete-with-the-box-for-production-jobs]] is the note; its "the only guard is the
+founder remembering" line is now historical.
 
-**Google sign-in is live to the public** (2026-09-03) — old queue item 1, closed. `/privacy`
-and `/terms` shipped, `tavnit.ai` is verified in Search Console, and the founder published
-the OAuth app; status reads _In production_ with no review, and a Google account that is
-**not** on the test-user list signed in on `tavnit.ai` the same day. That lifts the hard gate
-the 0006 amendment put on ANY traffic.
+**Uncommitted at the time of writing** — this session's own bookkeeping, all docs/vault:
+`docs/08-supabase-project-rebuild.md` (new §8A.2), four vault notes newly written, and cite/claim
+corrections across seven existing ones. Nothing in `packages/` or `apps/` is touched.
 
-That first stranger sign-in also exposed two holes in what happens _after_ Google returns.
-Both are fixed, merged to `main` (fast-forward, tip `c4cbf60`), and deployed to production by
-Vercel on 2026-09-03. Founder-smoke-tested there the same day:
-`/auth/callback?error=access_denied&error_description=test` -> `/login` with the Hebrew message;
-a Google sign-in with a zero-business account -> `/home/new-business`; the finished-wizard path ->
-`/home`. Not exercised: a genuine failed `exchangeCodeForSession` (as opposed to GoTrue returning
-error params with no code) — see the callback note's Fixed section.
+**Local `main` is 8 commits behind `origin/main`** (`git branch -vv` → `behind 8`). Nothing is
+unpushed — `origin/main..main` is empty — but a session that reads local `main` reads `ab0245e`.
+Fast-forward it before trusting it.
 
-- A signed-in user with **no business** had no way off the public wizard: the middleware
-  forwards only owners, so they sat on `/start` with nothing saying they were signed in.
-  They now go to `/home/new-business` —
-  [[0015-signed-in-without-business-lands-on-new-business]].
-- A **failed** round-trip still died silently at `/auth/callback`, which discarded the
-  exchange result and ignored provider error params. It now lands on `/login` with a Hebrew
-  message — [[auth-round-trips-that-miss-the-callback-die-silently]].
+**The box is one merge behind `origin/main`**: it is at `b8af879`, which does not contain `2828fd3`.
+That commit is docs-only, so there is no functional drift — but "the box is at merged main" is no
+longer literally true, and the next deploy should say `5a52ded`.
 
 ## External state — not in the repo
 
-**Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro plan, Micro
-compute. Migrations 0000–0033 applied (0032 and 0033 by the founder in the dashboard on
-2026-09-05, then `supabase migration repair --status applied 0032 0033`), ledger clean —
-24 true + 0020 NULL on the structural layer. Auth: Email provider on, "Confirm
-email" OFF, Google enabled. Site URL is `https://tavnit.ai`;
-`https://tavnit.ai/auth/callback` is on the redirect allowlist; the localhost entry was
-kept (founder-verified 2026-09-01). The old project is deleted — org back to $25/month.
+Everything in this section is **founder-reported from a dashboard**, not observed from this repo,
+unless a line says otherwise.
 
-**Vercel.** `apps/web` project off this monorepo: Root Directory `apps/web`, Next.js
-preset, no build/output/install overrides (defaults are correct — core ships as TS
-source via `transpilePackages`), function region `fra1`, `ANTHROPIC_API_KEY` added,
-`tavnit.ai` attached and resolving (all founder-verified 2026-09-01). Still useful:
-`NEXT_PUBLIC_*` variables must be type Config, not Secret. **Both former unknowns are
-founder-confirmed 2026-09-10:** `SUPABASE_SERVICE_ROLE_KEY` **is** in the web project's
-env, and the admin project's function region **is** `fra1`.
+**Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
+**Migrations 0000–0036 applied, ledger clean, 37 rows, no gaps** — 0036 pushed 2026-09-11 on the
+founder's explicit instruction for that one push; `db push` recorded it itself, so no
+`migration repair` was needed (third time running that the prediction held). Proof block:
+`scripts/verify-migration-ledger.sql` §RESULTS.
+Auth: Email provider on, Google enabled, **Confirm email ON since 2026-09-11**, Site URL
+`https://tavnit.ai`, `https://tavnit.ai/auth/callback` on the redirect allowlist.
+Custom SMTP configured; **Rate Limits raised to 100 emails/hour**. All five Hebrew auth templates
+were written in the dashboard and are now reproduced in `docs/08` §8A.2.
 
-**Hetzner.** One server `tavnit-worker`, CPX32 (4 shared AMD vCPU, 8 GB, 160 GB NVMe),
-Nuremberg, Ubuntu 24.04. ~$41/month plus ~$0.72 for the primary IPv4, which bills
-whether or not attached. Reasoning and rescale rules: [[0007-worker-box-instance]]. **A
-powered-off server still bills in full — only deletion stops the meter.**
+**Resend — a new vendor and a new processor.** Account created, `tavnit.ai` verified, propagation
+complete. Region **Ireland (EU)**. DNS at Namecheap: DKIM `TXT resend._domainkey`; sending via two
+**CNAME**s (`rsend`, `send`) — _not_ a TXT SPF record; DMARC `TXT _dmarc` = `v=DMARC1; p=none;`.
+Receiving off (no MX). Free tier **3,000/month AND 100/day**.
+**The 100/day is the real ceiling, not the 100/hour** — see [[auth-email-runs-through-resend]].
+It is disclosed nowhere: [[resend-is-an-undisclosed-processor]], queue item 1.
 
-**The box itself.** `aiugc-worker.service` enabled, `Restart=always`,
-`WORKER_ID=hetzner`. At `af158cb` after the 2026-09-02 §11 deploy — the one that actually
-carried the bundle fix; the 09-01 deploy did not (see above). Worker restarted and
-claiming. **Rendering re-verified on this build:** three live wizard renders released
-2026-09-02 between 02:36 and 03:02, 0 retries each, ~65s
-([[service-a-render-wall-clock-on-the-box]]). **The bundle outage is closed** — verified on
-the box the same night by where the bundle physically is, not by a render succeeding:
-`.work/remotion-bundle` exists and `/tmp/remotion-webpack-bundle-*` is empty, so the §9
-cron cannot reach it ([[tmp-cron-deletes-live-worker-bundle]]). `ufw` active, OpenSSH only. SSH is
-key-only from the founder's Windows desktop and no second key pair exists — losing that
-key means a console root reset. Logs: `journalctl -u aiugc-worker -o cat`. Deploys:
-`docs/07-worker-box.md` §11. The §9 cron is **verified** via `crontab -l` (exact line in
-[[tmp-cron-deletes-live-worker-bundle]]) and stays — as a backstop for
-`remotion-v4.0.499-assets*` shells only; the bundle is out of its blast radius now.
+**The box.** `aiugc-worker.service`, `Restart=always`, `WORKER_ID=hetzner`. At `b8af879` after the
+2026-09-11 deploy (`git pull && pnpm install && sudo systemctl restart aiugc-worker`).
+**`sudo usermod -aG systemd-journal aiugc` HAS been run** (2026-09-10) — systemd unit lifecycle
+lines, restarts and OOM kills are now visible to `journalctl` as that user. Old queue item 8 closed.
+**Sentry is confirmed active by test, not by a log line**: a job was inserted knowing it would fail
+and the founder received the email. That satisfies this repo's own warning that
+`error reporting on` also prints for a malformed DSN. Old queue item 7 closed.
+`ufw` active, OpenSSH only, key-only SSH from one Windows desktop with no second key pair. `sudo`
+needs a password, so an unattended session cannot `systemctl restart`; `kill -TERM $(systemctl show
+aiugc-worker -p MainPID --value)` is equivalent. Deploys: `docs/07-worker-box.md` §11.
 
-**GitHub.** A fine-grained PAT with **no expiration**, scoped to `AIUGCBackend`,
-Contents: read-only, plaintext in `~/.git-credentials` on the box. Nothing will ever
-remind anyone it exists; revocable only at GitHub (Settings → Developer settings →
-Fine-grained tokens). Deploy-key alternative rejected: [[0008-github-pat-over-deploy-key]].
+**Vercel.** `apps/web` off this monorepo: Root Directory `apps/web`, Next.js preset, no overrides,
+region `fra1`, `ANTHROPIC_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` both present. Admin project is
+also `fra1`. `NEXT_PUBLIC_*` variables must be type Config, not Secret.
 
-**The desktop worker must stay stopped.** Both workers can safely claim from one queue
-(`SKIP LOCKED`), but the desktop's `.env` carries `DRY_RUN=1` and the box's deliberately
-does not. A desktop worker claiming a real customer job reports success and writes
-placeholder files. Start it only deliberately. **Measured 2026-09-10 (queue item 6, now
-closed):** local workers claimed **nine** production jobs — two on 2026-08-26/27 and seven
-on 2026-09-06 — and they were **not** in DRY_RUN, so the damage was real billable work,
-not placeholder output ([[local-workers-claimed-nine-production-jobs]]). Two workers were
-found alive on 2026-09-06 (started 07:49 and 07:54, `DRY_RUN=1`, polling the production
-queue beside the live box) and were stopped; **nothing was claimed at the moment of
-discovery, but six production jobs were claimed locally that day** — and a worker started
-at 07:49 cannot have claimed at 04:49, so there was an **earlier local worker as well**.
-The mechanism has no code guard: [[local-workers-compete-with-the-box-for-production-jobs]].
+**Hetzner.** One server `tavnit-worker`, CPX32, Nuremberg, Ubuntu 24.04, ~$41/mo + ~$0.72 IPv4.
+A powered-off server still bills in full — only deletion stops the meter.
+[[0007-worker-box-instance]]. Two snapshots taken (2026-09-10).
 
-**The box does not deploy itself, and nothing says when it is behind.** The rule now lives
-in [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]] — three deploy axes, what
-the box actually runs, why `prompts/` is box-side too, why pulling without restarting is
-worse than doing neither, and gating the restart on `status = 'running'` being empty. Read
-it rather than the summary that used to sit here. The incident that forced it:
-[[worker-box-was-14-commits-behind-2026-09-06]]. Note for the next deploy: `sudo` on the
-box needs a password, so an unattended
-session cannot run `systemctl restart`; `kill -TERM $(systemctl show aiugc-worker -p
-MainPID --value)` is equivalent because the unit is `User=aiugc` with `Restart=always`.
-Measured 2026-09-06: the stop took ~80s (systemd's stop timeout — the worker never calls
-`closeDb()` or `process.exit(0)`, so its postgres sockets hold the process open), then it
-came back on a fresh PID.
+**GitHub.** Fine-grained PAT, **no expiration**, scoped to `AIUGCBackend`, Contents read-only,
+plaintext in `~/.git-credentials` on the box. Nothing will remind anyone it exists; revocable only at
+GitHub. [[0008-github-pat-over-deploy-key]].
 
-**Google OAuth is published — status _In production_.** The founder published it
-2026-09-03, having verified `tavnit.ai` in Search Console a few days earlier (exact date
-not recorded) and shipped `/privacy` and `/terms`. Scopes `openid`/`email`/`profile` —
-all non-sensitive, so publishing was a form, not a review, exactly as
-[[0006-google-oauth-is-in-scope-for-launch]] said. **Measured 2026-09-03:** a Google
-account **not** on the test-user list signed in on `tavnit.ai` — it ended on `/start`
-looking signed out, and `/home` → `/home/new-business` is what proved the session
-existed. Do NOT upload a custom app logo: it triggers Google's brand review even with
-non-sensitive scopes.
+**Google OAuth** is published, status _In production_, scopes `openid`/`email`/`profile`. Do NOT
+upload a custom app logo — it triggers brand review even with non-sensitive scopes.
 
-## Decisions made in conversation — not yet fully in the repo
+## Decisions made in conversation — not yet in the repo
 
-1. **`GOOGLE_SIGN_IN_ENABLED` stays `true`** — recorded 2026-09-01 as an amendment in
-   [[0006-google-oauth-is-in-scope-for-launch]]. Its consequence, that **OAuth publishing
-   was a hard gate on ANY traffic**, is spent: the app is published.
-   `docs/08-supabase-project-rebuild.md` §8B now points at the amendment instead of
-   advising the flag be set `false` for a public window.
-2. **Where `apps/admin` lives — proposed `admin.tavnit.ai`, never decided.** Admin is
-   deployed and publicly reachable on its vercel.app URL today. Should live:
-   `decisions/` when settled.
-3. **The orphaned a-sets routes were deleted, not guarded** (`497fc24`, in git).
-   Reasoning worth keeping: the base route predated the BalanceProvider design and
-   returned no post-debit balance, so a future voiced flow has to rewrite it regardless
-   — it was a stale draft, not a reusable asset.
-4. **`debitRender`'s non-positive-cost hole: deliberately not fixed.** The note is in
-   the tree ([[debit-render-accepts-non-positive-cost]]); the decision is that it stays
-   a note for now.
-5. **The Service B format is decided** — recorded 2026-09-04 in
-   [[0017-service-b-single-setting-selfie-talking-head]]. Single-setting selfie talking
-   head, no image or composite step, physical products out; the optional founder-made opener clip was retired 2026-09-06 — the hook is a Remotion animation over the one HeyGen clip ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). **The engine is now built to it** (2026-09-05, queue item 14, commits
-   `2d446e6..b6c652a` on `main`, merged via PR #21 (`704ad25`, 2026-09-06) and pushed —
-   confirmed 2026-09-09): b_script v9 + `hook_text`,
-   the lead-in, hook text on render params with the selfie guard, `serviceBTimeline` and the CLI — plus the opener half (opener on render params, the opener composition, `bank add-opener`), **retired 2026-09-06** and still in the tree ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). **The B wizard (16) is built too**
-   (2026-09-05, branch `service-b-wizard`, merged to `main` via PR #21, `704ad25`,
-   2026-09-06, and pushed — confirmed 2026-09-09).
-   **Built 2026-09-06** ([[0024-hook-effect-is-a-render-param-the-customer-picks]]): the animation-effects step replacing the opener step (none/zoom/focus/whip, Hebrew labels), the speech-tied caption handoff in `serviceBTimeline`, and the `hookEffect` name on the render route, `createBRender`, `buildServiceBProps` and `render-b --hook-effect`. Still NOT built: nothing on 0023's list. Admin registration (15) is retired with the opener bank. Three engine decisions were made in the chat
-   that built it, all in the code and its comments: the talking head stays muted and the
-   approved mp3 plays from `captionOffsetMs` (the repo's measured glitch reason won over
-   the brief); the `kind='selfie'` guard applies to any render resolved from a persona
-   DEFAULT, opener or not (explicit image / composite bypass); a non-selfie default throws
-   a plain Hebrew `Error`.
-6. **HeyGen Avatar IV needs leading silence to start on a still frame** — recorded in
-   [[heygen-avatar-iv-idles-on-leading-silence]]. Founder hand test, ~800ms, one persona,
-   by eye. **Now in the repo** (2026-09-05): `handleLipsync` prepends
-   `app_config.lipsync_lead_in_ms` (code default 800, no seed) and pins it on
-   `params.leadInMs`. Measured 2026-09-06 at three expressiveness levels: the head is still only to 0.56s and moves from 0.60s, before speech, so 800ms buys a 0.56s still window ([[heygen-head-moves-before-speech-onset]]) — the window the zoom hook now opens on ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). `GAP_MS = 250` was the reveal-to-speech gap of the retired cut.
-7. **[[0004-service-b-config-is-provisional]] is superseded by 0017** — but only on the
-   open-endedness. `lipsync_motion_prompt` and the new `lipsync_expressiveness` are
-   founder-chosen since 2026-09-06 (migration 0034,
-   [[0022-heygen-expressiveness-medium-generic-motion-prompt]]), and **`auto_release_b` came out
-   of the placeholder list entirely on 2026-09-09** — ON is the founder's final decision,
-   [[0036-auto-release-b-is-always-on]]. `lipsync_resolution` is the only key still genuinely
-   provisional. The note is marked `status: superseded` and kept, not deleted.
-8. **Four stale provider references corrected 2026-09-04**, all in git: the
-   `motion_prompt`/`expressiveness` caveat in `docs/04-integrations.md` (HeyGen's pages do
-   **not** disagree — `developers.heygen.com/avatar-iv`, read 2026-09-04, says both apply to
-   arbitrary images; the new limit recorded there is that gesture **timing** is not
-   promptable), the "only InfiniteTalk source" wording in
-   `packages/core/src/db/schema.ts` and `docs/01-schema.md` (provider renamed, image+audio-only
-   constraint kept), and the 30s comment in `b-wizard.tsx` (the frame ceiling is gone; 30s
-   stays off **pending the founder**, not because it would fail). 30s was **not** re-enabled.
+1. **Where `apps/admin` lives — proposed `admin.tavnit.ai`, never decided.** Admin is deployed and
+   publicly reachable on its vercel.app URL today. Should land in `decisions/` when settled.
+2. **`debitRender`'s non-positive-cost hole: deliberately not fixed.** The note is in the tree
+   ([[debit-render-accepts-non-positive-cost]]); the decision is that it stays a note.
+3. **The orphaned a-sets routes were deleted, not guarded** (`497fc24`). Reasoning worth keeping:
+   the base route predated the BalanceProvider design and returned no post-debit balance, so a
+   future voiced flow rewrites it regardless — a stale draft, not a reusable asset.
+4. **Resend's transfer basis is an open question, not a resolved one.** EU sending region ≠ no US
+   access; Resend is a US company. Do not write "EU, therefore covered by §7's German clause" onto
+   a legal page. Belongs to counsel, tracked in `docs/legal/reg2-open-questions.md`.
 
 ## The queue
 
-1. ~~**Copy the auth cookies onto the middleware's redirects.**~~ — **fixed 2026-09-03** in
-   `c925d4a` (web, guarded by `apps/web/test/middleware.test.ts`) and `ad6d5ce` (the same drop
-   in admin's `deny()`); defect note updated:
-   [[middleware-redirects-drop-refreshed-auth-cookies]]. Both exits now copy the rotated
-   cookies onto the redirect they return. Still **code-read, never observed** — the test proves
-   the cookies are carried, not that anyone was ever signed out.
-2. ~~**Second wall on admin.**~~ — **closed 2026-09-09**: `ADMIN_BASIC_USER`/`ADMIN_BASIC_PASS`
-   set on the admin Vercel project (Production and Preview), redeployed. Verified from
-   outside the browser session: `GET /login` with no credentials -> 401 carrying
-   `www-authenticate: Basic realm="admin"`; the same request with credentials -> the login
-   page; `GET /api/admin/personas` with no credentials -> 401, not 403 — proof the Basic
-   wall fires ahead of the Supabase gate, not behind it. Credentials themselves were never
-   written down (CLAUDE.md's credential rule). ~~Still open: whether the admin project's
-   function region is `fra1`.~~ **Closed 2026-09-10, founder-confirmed: it is `fra1`.**
-3. ~~**`setAll` drops the no-store headers `@supabase/ssr` passes with rotated cookies.**~~ —
-   **closed 2026-09-10** on a fix plus a measurement, not on the inference it used to rest on.
-   `3d47d3a` gave both middlewares the two-parameter `setAll`, an `authHeaders` local read at call
-   time, and four new cases in `apps/web/test/middleware.test.ts` (7 tests → 11, mutation-tested).
-   **The mitigation this item carried was falsified**: "Vercel is not believed to cache middleware
-   responses" is false — `/` and `/start` measured `PRERENDER` → `HIT` with `Age` growing to 39s
-   against production while signed out. What actually protects the marketing pages is that
-   `applyServerStorage` early-returns before `setAll` when there is nothing to write
-   (`cookies.js:425-427`), so an anonymous request never reaches the hook. **Two line numbers in
-   the text this replaced no longer resolve** — `apps/web/src/middleware.ts:27` is now `:37` and
-   `apps/admin/src/middleware.ts:45` is now `:54`; both moved in `3d47d3a`. Left deliberately: the
-   two `lib/supabase/server.ts:17` hooks (reasoned, unverified — they write into `cookies()`, which
-   cannot set headers) and a test for the admin half (no `vitest.config.ts` there, so no `@/`).
-   [[supabase-ssr-setall-cache-headers-are-ignored]].
-4. ~~**A failed `businesses` query reads as "no businesses".**~~ — **all 7 sites closed
-   2026-09-09/10.** `middleware.ts` now reads
-   `error` and returns the pass-through (behaviour-preserving — `data: null` already fell
-   through; what it buys is that the exit is named, plus two new cases in
-   `apps/web/test/middleware.test.ts` — the failed read, and the signed-in-owner-with-no-business
-   at `/start` that nothing covered before), and `home/layout.tsx` reads `error` and logs it
-   (sidebar still empties, deliberately). The other five —
-   `home/page.tsx`, `home/a/new`, `home/b/new`, `home/demos` and `home/renders` (the
-   seventh site, added 2026-09-08 in `e33396f`) — **now throw**, through one helper
-   (`ownedBusinesses`, `apps/web/src/lib/businesses.ts`) rather than five copies, because the
-   copy is how the defect spread. They land on `apps/web/src/app/home/error.tsx`, written
-   2026-09-10: Hebrew, pane-scoped so the sidebar survives, retry runs `router.refresh()`
-   **and** `reset()` (`reset()` alone is a dead button for a failed server read).
-   Reproduced end to end against a **real** PostgREST error — an unauthenticated `businesses`
-   read returns `permission denied for table businesses`, not an empty list, which is what made
-   this defect reachable on any request whose JWT misses PostgREST.
-   **The duplicate-business path is still open and no error-handling fix reaches it**: it runs
-   `/start` → `OnboardingFlow` → `/home/new-business` → `allowCreate`, and neither hop
-   reads `businesses`. Closing it means either the `OnboardingFlow` target (rejected — founder
-   decision [[0015-signed-in-without-business-lands-on-new-business]]) or the `allowCreate` skip
-   (deliberate). **That is the only part of this item still open.**
-   [[a-failed-businesses-query-reads-as-no-businesses]] carries the boundary measurement.
-   **The boundaries the "next move" called for were written 2026-09-10** — see item 4b.
-   4b. ~~**A failed `auth.getUser()` reads as "signed out".**~~ — **closed 2026-09-10, 15 of
-   17 sites**, together with the two boundaries item 4 asked for:
-   `apps/web/src/app/error.tsx` (the root boundary — **dark**, because a page that threw
-   rendered no `theme-light` wrapper) and `apps/web/src/app/global-error.tsx` (its own
-   `<html lang="he" dir="rtl">`, system fonts, for a ROOT-LAYOUT throw, which skips
-   `app/error.tsx` entirely).
-   **Read this before touching any `getUser` call:** the obvious fix, `if (error) throw`,
-   is WRONG and was caught by measurement before it shipped. auth-js resolves
-   `AuthSessionMissingError` for an ordinary signed-out request, so that guard would have
-   shown the error card to every logged-out visitor, answered 503 to every unauthenticated
-   API call, and logged once per anonymous pageview in the middleware. The measured table is
-   [[getuser-resolves-an-error-when-signed-out]]; the predicate that came out of it is
-   `authReadFailed` (`apps/web/src/lib/auth-user.ts`, twinned in
-   `apps/admin/src/lib/admin.ts`), which throws only on `AuthRetryableFetchError` and
-   `AuthUnknownError`.
-   The nine `/home` pages and `home/layout.tsx` throw through `authedUser`; both
-   middlewares log and do not throw (no boundary above middleware — a throw is a 500 on every
-   matched route); the three API sites answer **503** instead of 401/403.
-   `redirect()` was re-verified under the new root boundary — still 307, and `notFound()`
-   still 404. apps/web is at **328 tests** (was 298), with a convention guard that reddens on
-   a new `/home` page carrying the old shape; 18 mutations, 0 survivors. Also fixed in
-   passing: apps/web had no vitest config, so `@/` did not resolve in tests.
-   Two sites left alone on purpose, both browser clients:
-   `components/onboarding/onboarding-flow.tsx:108` (fail-safe) and
-   `apps/admin/src/app/login/login-form.tsx:36` (founder-only — but it tells the founder
-   "wrong credentials" when the truth is that we could not check).
-   [[auth-getuser-errors-read-as-signed-out]]. Two new notes came out of it:
-   [[apps-admin-has-no-error-boundary]] (deliberately not fixed — it is why `adminSession`
-   still swallows) and [[a-failed-getsession-reads-as-an-expired-reset-link]] (the same shape
-   on `/reset-password`, unfixed).
-   **Everything above was measured on `next dev` only.** Production masking, digests and
-   `global-error`'s appearance without the dev overlay were not exercised.
-5. ~~**`/login` wipes a draft the server threw away.**~~ — **fixed 2026-09-10** in `4252201`
-   (its stray vault edits backed out in `b6b3dd4`). Every 200 from
-   `/api/onboarding/complete` now carries `stored`, and the draft is cleared only on
-   `stored === true`; an unparseable 200 counts as not stored, because **clearing on a response
-   you cannot interpret is the defect class, not a corner of it**. A kept draft rides to
-   `/home/new-business?draft=1` and is seeded once, then spent on success. The decision moved
-   into `apps/web/src/lib/onboarding.ts` to be testable; 15 new cases across two files, one of
-   which is the first `apps/web` test ever to import a route handler. **No mutation testing was
-   recorded** — the coverage is negative-case, not mutation-verified.
-   [[login-clears-a-draft-the-server-never-stored]].
-6. ~~**Check the DRY_RUN contamination window.**~~ — **closed 2026-09-10, and the premise was
-   wrong in the founder's favour.** Nine rows came back
-   ([[local-workers-claimed-nine-production-jobs]]). Those workers were **not** in DRY_RUN:
-   `Insufficient credit. This operation requires 'api' credits` is a real HeyGen refusal and
-   DRY_RUN never calls HeyGen. So placeholder files wearing a success status never happened; live
-   local workers doing real billable work against production did. Blast radius nil — every affected
-   `video_renders` row is `role='admin'`, business Tavnit. **The recorded query did not run**: it
-   selected `finished_at` and `jobs` has no such column. The working form orders on
-   `coalesce(locked_at, created_at)` and selects `locked_at`/`updated_at` — it is in the fact note,
-   with the caveat that `locked_by like 'local:%'` also misses `cli:%`, which is `DRY_RUN=1` too.
-   **The mechanism is NOT closed** and is now its own note:
-   [[local-workers-compete-with-the-box-for-production-jobs]] — `SKIP LOCKED` lets a desktop worker
-   silently compete with the box, the only guard is the founder remembering, and that has failed
-   twice. ₪6.50 with zero customers; the same failure with customers costs a deliverable.
-7. **Sentry on the worker.** ~~DSN~~ — **code DONE; box state founder-reported, not verified
-   here.** Code landed 2026-09-10 (`b492b97`, PR #25 — verified with `git show --stat`). The
-   founder reported in chat the same day that the DSN is on the box and the journal reads
-   `error reporting on`; nothing in this repo has observed the box or a real Sentry project, and
-   by this repo's own warning that line alone is not proof — a malformed DSN also prints it
-   (grep `Invalid Sentry Dsn` too, and confirm a real event landed). `@sentry/node`
-   is in `apps/worker` (only there), reporting every terminal job with its `jobs.last_error`
-   and the fatal crash path, the crash event flushed before `exit(1)`
-   ([[0037-the-worker-reports-to-sentry-the-web-apps-do-not]], [[worker-sentry-reporting]]).
-   **Widened the same day:** the first cut reported `status='dead'` only, so every
-   `PermanentError` — `status='failed'`, which never retries and is the class that already
-   burned ~₪6.50 of HeyGen on 2026-09-06 — was silent. Both now report, under separate Sentry
-   issues (`job dead: <type>` vs `job failed: <type>`). ~~That widening is not on the box yet.~~
-   **The box is up to date as of 2026-09-10, founder-confirmed — the widening is on it.**
-   Still founder-reported rather than observed from here, same caveat as the DSN above.
-   Still not covered: the lease sweep's deaths, and any external kill (OOM, SIGKILL) — no code
-   of ours runs. Diagnosis paths unchanged: `jobs.last_error` via
-   `packages/core/.work/diag-failed-render.ts` (gitignored, session pooler, read-only), box
-   logs via `journalctl -u aiugc-worker -o cat`.
-8. **Grant `aiugc` full journal visibility on the box.** `journalctl` as that user currently
-   prints "You are currently not seeing messages from other users and the system" — the worker's
-   own stdout is visible (the count in [[0016-worker-stays-on-transaction-pooler-6543]] is valid),
-   but systemd's unit lifecycle lines (restarts, OOM kills) are not.
-   `sudo usermod -aG systemd-journal aiugc` fixes it (takes effect on next login). Not yet run.
-9. ~~**Take one Hetzner snapshot.**~~ — **closed 2026-09-10**, founder-confirmed: a second
-   snapshot was taken that day. One-off, not the +20%/month backup plan.
-10. **Correct `docs/02-jobs.md:111`.** Two wrong numbers on one line. "Hetzner
-    CPX41-class, ~€30/mo flat" predates the June 2026 price rise and understates by
-    roughly half (verified 2026-09-01); "~2–6 min wall time per video" is 2–5× too slow
-    against three measured renders (verified 2026-09-02,
-    [[service-a-render-wall-clock-on-the-box]]). Other sizing was derived from both.
-11. **The lint gate is green. "Lint green" is a valid stop condition again. Closed 2026-09-10.**
-    `pnpm lint` exits 0 — "All matched files use Prettier code style!" — for the first time on
-    this machine. It took three changes, not the one this item predicted:
-    - A root `.gitattributes` with `* text=auto eol=lf` plus `-text` pins for the binary
-      extensions actually present (png, ico, jpg, webp, mp4, mp3, wav). This fixes every future
-      checkout and clone, but it does not touch files already on disk.
-    - The 286 CRLF files were converted in place. `git add --renormalize .` produced zero index
-      changes, exactly as "the stored blobs are already LF" predicted — which is precisely why it
-      also fixed nothing on its own.
-    - `.prettierignore` gained `.claude/worktrees/` (436 of the 718 failures were a sibling
-      session's nested worktree — prettier reads this file and never `.gitignore`), `prompts/`
-      (versioned prompt bytes are not prettier's to rewrite) and `docs/vault/.obsidian/`.
+1. **Resend is an undisclosed processor.** Exactly the gap closed for Sentry hours earlier the same
+   day, re-created by adding a vendor. It holds customer email addresses and, with confirmation ON,
+   signup **cannot complete** without it — a stronger dependency than Sentry's. Absent from privacy
+   §6 and from `docs/legal-review.md`. The EU region makes it the easier of the two to justify; the
+   disclosure still has to exist. Bump `legal.tsx:54 UPDATED` while there — it still reads
+   `"03.09.2026"` despite two §6 edits on 2026-09-11. [[resend-is-an-undisclosed-processor]].
+2. **Correct `docs/08` §8A.1.** `:429-438` asserts `signUp` has **no** `emailRedirectTo` and the
+   table row `:443` says a one-line change is needed. Both false — `auth.ts:78` has passed it since
+   `02f58bb`. Cheap, and it has now caused a real error once (see Corrections). §8A.2 cross-references
+   the falsehood rather than rewriting it, so the correction is one reviewed edit.
+3. **Fix the `bans רגע` flaky test.** 12.0% per run of its file, by construction. Worth doing before
+   it reddens a gate at a bad moment and someone "fixes" it by weakening the ban — which is the wrong
+   fix twice over, because the real question is whether a curated hook may contain a word the prompt
+   bans. [[ban-rule-test-collides-with-a-curated-hook]].
+4. **Record the real test gate command in CLAUDE.md.** `:110` says `pnpm test  # core tests`; it is
+   `pnpm -r test`, fans out to five packages, and OOMs this machine. Every prompt written for this
+   repo uses "tests green" as its stop condition, so as written the stop condition is unrunnable.
+   [[pnpm-r-test-ooms-this-machine]] has the five serial commands.
+5. **The reg. 2 worksheet's open questions.** `docs/legal/reg2-open-questions.md`, bucketed
+   FOUNDER / COUNSEL / VENDOR. The collation is done; the answering is owed and needs a person.
+   **73 real gaps** (see Corrections for why not 75). [[database-definitions-document-missing]].
+6. **A budget-parked non-render job has no exit.** The 6h valve (`MAX_BUDGET_PARK_MS`,
+   `pipelines/janitor.ts:25`) reaches only `render_video` and `lipsync`, so a parked `synth_tts` or
+   `analyze_demo` re-queues at +1h forever with its row stuck mid-state and the wizard spinning.
+   0036 makes the platform cap nearly unreachable, which shrinks the odds; it does not fix the
+   mechanism.
+7. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
+   runs (the key IS in Vercel's web env; the wizard signs storage URLs server-side). Deliberately not
+   edited: what it should say instead is the founder's call, and the honest options differ — drop the
+   clause, or keep it and move the signing off the web tier.
+8. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
+   `:168`, not the `:111` this queue said for weeks. "Hetzner CPX41-class, ~€30/mo flat" predates the
+   June 2026 price rise and understates by roughly half; "~2–6 min wall time per video" is 2–5× too
+   slow against three measured renders ([[service-a-render-wall-clock-on-the-box]]).
+9. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
+   `copy.ts:675-680` for the `content_policy_flag` insert, which is `:706-711`. Left alone because
+   this session was docs-only. Trivial, but see Corrections for why this class keeps recurring.
+10. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
+    load-bearing; all of it misleads. `docs/08` §8B `:495`, `:501`, `:514`, `:547`, `:608`, `:672`;
+    `0006` `:34`, `:52`, `:54`; `0005` `:14`, `:30`. **Every one of those line numbers predates this
+    session's §8A.2 insertion, which added 151 lines at `:472` — so all the `docs/08` cites above are
+    now ~151 low. Re-grep, do not trust them.**
+11. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
+    still points at" — **false since 2026-08-27**; all five env files point at
+    `hyaqydcmwbnbaiqqufow`, and the old project is deleted. Same line's "ledger clean at 0000–0030"
+    is stale at 0000–0036. `CLAUDE.md:130` is current and correct.
 
-    This item's diagnosis was right but incomplete: line endings were 274 of the 282 real-repo
-    failures, yet only 236 were line endings **alone**, so 46 files still failed once the tree
-    was LF. 32 of them were formatted; the numbers are in
-    [[crlf-was-masking-46-prettier-failures]] and the founder's calls in
-    [[0038-lint-is-a-real-stop-condition-again]]. `endOfLine: "auto"` was not used — it only
-    silences prettier while the files stay CRLF and makes formatting depend on which machine ran
-    it. Nothing about the Linux box changed; it checks out LF either way.
-
-12. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03 and
-    deliberately left alone — none of it is load-bearing, all of it misleads a reader:
-    - `docs/08` §8B `:495` "Testing mode needs no domain, no privacy policy and no terms",
-      `:501` the mode table labelled `**Testing** (today)` on the wrong column, `:514` "up to
-      99 other addresses", `:547` "App domain / privacy policy / terms: leave blank for now",
-      `:608` step 6 (test-user list, 7-day expiry), `:672` the heading "What still has to be
-      written" over a table whose every row now reads Exists or Verified.
-    - `docs/08` §8A.1 `:424` asserts `signUp` has **no** `emailRedirectTo` — false
-      (`auth.ts:78`) — and `:438` "Code change needed | ... One line (`emailRedirectTo`)"
-      contradicts the defect note that records the fix commit `02f58bb`.
-    - `0006` `:34` still says `access_denied` is "which this app does not read" (false since
-      `5646529`), `:52` and `:54` describe the pre-publish world in the present tense.
-      `0005` `:14`, `:30` likewise, including "Google's verification queue", which `0006`
-      itself falsified.
-    - Drifted line cites: `docs/08:378`, `:424`, `:429` (`auth.ts:42`/`:46`/`:56`), `:476`
-      and `0006:44` (`auth.ts:71-74`), `docs/08:600` (`auth.ts:73`), `0005:41`
-      (`auth.ts:69-85`), `0005:48` (`auth.ts:78`).
-
-**Items 13–16 are the Service B revamp**, built to
-[[0017-service-b-single-setting-selfie-talking-head]]. The planned order was 13 → 14 →
-15 → 16; it went 13 → 14 → 16; 15 (admin registration for the opener bank) died with the bank on 2026-09-06 ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). 0023's list — the animation-effects step, the caption handoff rule, the effect render param — was built on 2026-09-06 ([[0024-hook-effect-is-a-render-param-the-customer-picks]]). They
-sit **after** everything above, including the cheap docs-only item 12, because Service B
-is explicitly parked until Service A is finished and none of this is on the validation
-sequence (pipeline → outreach samples → self-serve app).
-
-13. ~~**Schema 0032 for the selfie format.**~~ — **done**: 0032 (`selfie` kind,
-    `opener_clips`) and 0033 (its RLS) are in the tree and applied on live (see the
-    Supabase paragraph above and item 14). The original brief, kept for the record: a
-    `selfie` value
-    for `persona_images.kind` (today `'preview' | 'background'`,
-    `packages/core/src/db/schema.ts:286` — and **not only a migration**: the two literals
-    are enforced at `apps/admin/src/lib/admin.ts:65` and used to filter at
-    `apps/web/src/lib/service-b.ts:61,68-69`), and the opener-clip bank — one row per
-    (selfie image × effect) carrying the play-ready file path, `reveal_at_ms` and a text
-    safe area. Read [[0013-hook-clips-near-9-16-not-exact-1080x1920]] first: the Service A
-    bank's registration constraints are the precedent, and its `text_safe_area`-required-at-
-    register rule is the one to copy. Reversibility gate applies — the new project is
-    production now.
-14. ~~**The engine: core + Remotion + CLI.**~~ — **built 2026-09-05**, one commit per step
-    (`2d446e6` b_script v9 + hook_text, `cccd5f8` lead-in, `9635c7d` render params +
-    selfie guard, `cf4a3ad` timeline + composition, `3996446` CLI, `c925898` docs; then `0d7a19e` prettier over the new
-    lines and `b6c652a` the six-lens review's fixes).
-    `b_script` parses with its own `bScriptOutput`; `scriptOutput` stays shared with
-    `vo_script` untouched. The FINAL hook text is copied into `video_renders.params` at
-    enqueue. Verified: core suite + `render:sample:b-opener` rendered for real and its
-    frames checked by eye (hold, cut, caption onset). **Not verified**: any CLI command
-    against the live DB. 0032 and 0033 **are applied** there — the founder ran them in the
-    dashboard on 2026-09-05, the ledger reads 24 true + 0020 NULL on the structural layer,
-    and `supabase migration repair --status applied 0032 0033` was run — so
-    `bank add-opener` ran against live on 2026-09-05 (opener f8f7b2cc…, rendered by the wizard as video_renders 1397ffcd…); both commands are **retired 2026-09-06** with the opener bank ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]).
-15. ~~**Admin registration for the opener bank**~~ — **retired 2026-09-06** with the opener bank ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Animation effects are code in `packages/remotion` (`hookZoom` first, 'none' an option), not a bank — nothing to register. `persona add-image --kind selfie` stays the way a selfie reaches a persona; `aiugc bank add-opener` is retired.
-    The founder-facing side: upload a play-ready clip against a (selfie image × effect)
-    pair, set `reveal_at_ms`, place the text safe area. Check
-    [[admin-hook-upload-persona-footgun]] before reusing the Service A upload path — it
-    has a known footgun that this would inherit. Until it lands, `aiugc bank add-opener`
-    (and `persona add-image --kind selfie`) is the only way a clip reaches the bank, and
-    the wizard's effect step lists exactly what that registered.
-16. ~~**The B wizard.**~~ — **built 2026-09-05** on branch `service-b-wizard` (pushed and merged): `persona → pointers → script → audio → opener effect → render`, one flow
-    for every business. Commits, in order: `e4cb08e` this file's 0032 correction;
-    `de49627` the six steps, the pointers step, hook text on the script and edit
-    responses; `44f4af5` `personaSelfie`, `personaThumbnail(service)`,
-    `loadPersonaCatalog(service)`, `?withSelfie=1`, and the `/home` preload (B's card set
-    only — both wizards are one click away); `10da873` the effect step and
-    `GET /api/personas/[personaId]/openers`; `f6333c9` the render body (`personaImageId`
-    required, `compositeId` gone) and the route's selfie and opener checks; `8e37d2c`
-    tests; `3832a0b` the removal; `6754f35` prettier. Verified: web typecheck and the 8
-    web test files (249 tests); the new routes compile on the dev server (401 JSON
-    unauthenticated). **Verified 2026-09-05**: the wizard rendered a real opener end to end (video_renders 1397ffcd…, opener f8f7b2cc… via `bank add-opener`), and further paid HeyGen draws followed on 2026-09-06 ([[heygen-motion-prompt-two-draws]]). The opener step it exercised is retired the same day ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). (item 15, or `bank add-opener`).
-    **Deleted surfaces** (delete, don't guard — the a-sets precedent): `StepImage`,
-    `StepComposite`, `POST /api/businesses/[businessId]/composites`,
-    `GET|approve|regenerate /api/composites/[id]`, `GET /api/personas/[personaId]/images`,
-    `requireComposite`, `canUseComposites` / `photoError` / `PHOTO_EXTENSIONS` /
-    `MAX_PHOTO_BYTES` / `backgroundImages`, `PersonaImage` / `CompositeState` /
-    `clientPhotoError`, and the two composite lines in `api-errors.ts`, with their tests.
-    **Resurrection pointer: `8e37d2c`** is the last commit that carries all of them.
-    `packages/core`'s composites pipeline and schema are untouched (a physical-product
-    service is parked as its own thing — 0017). One behaviour change outside B:
-    `GET /api/personas` without a flag now returns the A catalog (hook-matrix personas),
-    not the whole catalog — nothing called it bare.
+Items 1–4 first because each is cheap and each is a trap for the _next_ session rather than a
+feature. 5 is the only one that needs a person who is not the founder. 6 is the only real code
+defect left and is now low-probability. 8–11 are docs corrections ordered by how likely a reader is
+to act on the wrong thing.
 
 ## Open decisions
 
-- ~~**Service-role key in `apps/web`.**~~ — **closed 2026-09-10, founder-confirmed:
-  `SUPABASE_SERVICE_ROLE_KEY` IS in the Vercel web project's env.** The consequence is that
-  root `.env.example:9` — "never the service role key" for `apps/web/.env.local` — is now
-  **confirmed stale against how web actually runs**, not merely suspected. The wizard signs
-  storage URLs server-side, so the key has to be there. **`.env.example` was deliberately not
-  edited**: what the comment should say instead is the founder's call, and the honest options
-  differ (drop the clause, or keep it and move the signing off the web tier).
-- ~~**Content policy.**~~ — **decided 2026-09-10: accepted, not fixed.**
-  [[0041-content-policy-is-accepted-not-fixed]]. Service A's live format is silent and its
-  captions are the customer's own words, so there is little to catch; where copy IS generated,
-  Anthropic refuses at generation and HeyGen moderates at render. **The correction that came
-  with it: "if HeyGen accepts it then I do too" does NOT cover Service A**, which never touches
-  HeyGen. Accepted rather than solved: terms section 6 forbids presenting personas as real
-  customers or testimonials and nothing enforces it but the founder noticing. Revisit on the
-  first non-founder signup, not on a date ([[live-account-census-2026-09-10]]).
-- ~~**`daily_caps` for stranger traffic.**~~ — **answered 2026-09-10, no values changed**:
-  [[0040-the-hard-ceiling-moves-to-the-providers]]. The caps stay; the hard ceiling becomes prepaid
-  balances / org spend limits at Anthropic, ElevenLabs and HeyGen, and the in-app platform cap is
-  demoted to a high circuit breaker. What is still owed is the LLM pair's shape —
-  `per_account.llm_tokens` is 75% of the platform cap, so **two** ordinary heavy users trip it —
-  and that change is a **migration**, not the hand `UPDATE` this line used to call for.
-- **Invoice document type before billing ships.** The billing plan issues חשבונית מס;
-  the operator is עוסק פטור and cannot —
-  [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as
-  עוסק פטור (קבלה / חשבונית עסקה) or convert first. No money moves today, so nothing is
-  currently wrong; it is a configuration decision the gateway work must not skip.
-- **The reg. 2 מסמך הגדרות מאגר — drafted 2026-09-10, duty NOT discharged.**
-  `docs/legal/database-definitions-document.md` exists (`ae8da4e`, then `79ec992`): 981 lines,
-  internal only, served and linked from nowhere. The collation job is done; what remains is
-  **60 `[חסר: …]` markers plus 15 bare `[חסר]` ones — 75 gaps that need the founder or
-  counsel, not more drafting**. [[database-definitions-document-missing]]. The draft turned up
-  two defects in _other_ documents, both recorded:
-  [[privacy-understates-what-the-edge-check-reads]], still unfixed, and
-  [[sentry-is-an-undisclosed-processor]], whose disclosure half was fixed 2026-09-11 —
-  `/privacy` §6 names Sentry now; `last_error` stays unsanitised on purpose, and its data region
-  is still unread.
-- **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing
-  fix closed the silent variant for every writer, not just the CLI.
-- **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true —
-  founder's final call, [[0036-auto-release-b-is-always-on]] — so every Service B render skips
-  `qc_pending` and reaches the customer unreviewed. The flag is settled; what is **not** settled
-  is whether anything else should stand in that space at self-serve scale. A founder eyeball pass
-  on one render is not evidence for that, and it happens after release, not before. See
-  [[content-policy-classifier-never-runs]], which is the other thing not standing there.
-
-## Service B
-
-Still parked until Service A is finished — but the revamp now has a **shape**, decided
-2026-09-03/04: [[0017-service-b-single-setting-selfie-talking-head]]. Read that note before
-touching anything Service B; it settles the format (flow, one background per persona, where the final hook text lives, HeyGen stays); its opener-clip half is retired 2026-09-06 — read [[0023-hook-is-a-remotion-animation-opener-clips-retired]] with it: the hook is a Remotion animation over the one HeyGen clip. and lists what it deliberately
-does **not** settle. The one measurement it rests on is
-[[heygen-avatar-iv-idles-on-leading-silence]].
-
-The engine is built to it as of 2026-09-05 (queue item 14), and so is the web wizard (item
-16, branch `service-b-wizard`, merged to `main` via PR #21, `704ad25`, 2026-09-06; two
-further direct merges from the same branch, `f176066` and `b6df318`, landed the same day).
-`main` is pushed — `git log main..origin/main` / `origin/main..main` are both empty. The
-wizard never resolves a default: the B catalog
-lists only personas with a usable selfie, the card shows that selfie, its id travels with
-the render, and `POST /renders` refuses an image that is not that persona's live
-`kind='selfie'` row — so core's selfie guard (which covers only a resolved default) is never
-the thing standing between a customer and a standing head. **The wizard rendered its first real
-opener on 2026-09-05** (video_renders 1397ffcd…, opener f8f7b2cc…, registered through
-`bank add-opener`). The founder rejected the result on four counts — the 2.4s frozen hold, the
-dissolve + punch-in, a colour step at the cut, a dead-still camera — and the same day the
-dissolve and punch-in were deleted, the HeyGen colour tag corrected
-([[heygen-output-is-limited-range]]), a measured colour grade and a handheld camera path
-added ([[handheld-sway-constants]]), and the opener's own faults recorded
-([[opener-bank-clip-dup-frames-and-tight-trim]]). The hold was then killed on the founder's
-verdict ([[0019-hook-text-outlives-the-reveal]]); the constants note keeps the measurements
-([[service-b-timeline-constants]], first-render section). On 2026-09-06 a per-channel colour-grade
-curve and a pixel alignment were added, and a 4-frame soft cut plus a 1.5s alignment ease were
-tried and zeroed the same day on the founder's verdict
-([[0021-nothing-moves-at-the-service-b-seam]], [[service-b-seam-constants]]). **The seam is gone, not fixed**: on 2026-09-06 the founder retired the opener clip entirely — a Service B ad is one HeyGen clip with a Remotion animation hook (zoom hook first, `hookZoom` in `packages/remotion`, whoosh allowed) — [[0023-hook-is-a-remotion-animation-opener-clips-retired]]. The effects step, the caption handoff and the `hookEffect` param landed 2026-09-06 ([[0024-hook-effect-is-a-render-param-the-customer-picks]]): three animations plus "none". Open: deleting the opener-clip code, and a real recorded SFX to replace the two synthesized placeholders in `assets/sfx/`.
-
-All of the seam work — grade curve, alignment, soft cut — is **retired 2026-09-06** with the opener; the code stays in the tree and the measurements stay true ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). The limited-range tag and the handheld sway carry over to the single-clip product.
-
-**Founder eyeball verdict, 2026-09-09 (not a measurement):** the founder ran Service B end
-to end through the merged wizard and judged the resulting ad good by eye. The report did not
-say which persona, hook effect, or business it used, whether the take was a fresh paid HeyGen
-draw or a reused one, or whether the render reached a customer-visible release versus sitting
-in `qc_pending` — those specifics are unconfirmed. Checked independently this session:
-`app_config.auto_release_b = true` (unchanged since 2026-08-26, and settled permanently on
-2026-09-09 — [[0036-auto-release-b-is-always-on]]) and `events` holds 0
-`qc_release`/`qc_reject` rows, so every Service B render skips the QC queue and
-releases straight through — the founder's pass neither exercised nor changed that, and by
-decision nothing ever will.
-
-`lipsync_resolution` is the **only** remaining placeholder. `lipsync_motion_prompt` and the
-new `lipsync_expressiveness` are founder-chosen since 2026-09-06 (migration 0034,
-[[0022-heygen-expressiveness-medium-generic-motion-prompt]]), and `auto_release_b` is settled ON
-as of 2026-09-09 — [[0036-auto-release-b-is-always-on]], seeded by
-`0031_seed_unseeded_config.sql:75-77` and read at `pipelines/renders.ts:491-493`, the only
-consumer. 0017 settles the format, not the engine, so
-[[0004-service-b-config-is-provisional]]'s instruction carries forward for `lipsync_resolution`.
-`poll_deadline_seconds` and `words_per_second` are the live Service A keys that matter.
+- **Invoice document type before billing ships.** The billing plan issues חשבונית מס; the operator is
+  עוסק פטור and cannot — [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as
+  עוסק פטור (קבלה / חשבונית עסקה) or convert first. No money moves today, so nothing is currently
+  wrong; it is a configuration decision the gateway work must not skip.
+- **The reg. 2 מסמך הגדרות מאגר — drafted, duty NOT discharged.**
+  `docs/legal/database-definitions-document.md`, 981 lines, internal only, linked from nowhere. The
+  collation is done; **73 gaps** need the founder or counsel, not more drafting. Worksheet is
+  `docs/legal/reg2-open-questions.md` (queue 5).
+- **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing fix closed the
+  silent variant for every writer, not just the CLI.
+- **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true
+  ([[0036-auto-release-b-is-always-on]]), so every Service B render skips `qc_pending`. The flag is
+  settled; what is **not** settled is whether anything else should stand in that space at self-serve
+  scale. As of `c442447` one thing now does — the content-policy classifier
+  ([[0042-content-policy-is-wired-at-both-choke-points]]) — which is a change from the world
+  [[content-policy-classifier-never-runs]] described. A founder eyeball pass on one render is not
+  evidence, and it happens after release.
+- **`lipsync_resolution`** is the only `app_config` key still genuinely provisional
+  ([[0004-service-b-config-is-provisional]], `status: superseded` on the open-endedness only).
 
 ## Unfinished measurement
 
-Neither blocks anything; both get more expensive to recover later.
-
-- ~~The wizard render's duration~~ — **taken 2026-09-02**, three live renders, mean 66.1s:
-  [[service-a-render-wall-clock-on-the-box]]. It shows `docs/02-jobs.md:111`'s "~2–6 min
-  per video" to be 2–5× too slow, so that line and its stale box price are now one fix
-  (queue item 10).
-- **No cold render has been measured on the box** — one including the ~92 MB Chrome
-  Headless Shell download. Matters only if the box is rebuilt from scratch rather than
-  from the queue-item-9 snapshot.
+- **No cold render has been measured on the box** — one including the ~92 MB Chrome Headless Shell
+  download. Matters only if the box is rebuilt from scratch rather than from a snapshot.
+- **What Supabase does with a provider rejection** once Resend's 100/day is spent. The described
+  failure mode is reasoned from two published limits, not observed.
 
 ## Corrections worth not repeating
 
 Recorded because each cost real time, and each came from asserting rather than checking.
 
-- **"The Date-param bug never appeared locally because the local worker claims jobs
-  near-instantly" — plausible, not established.** The desktop worker was only briefly up
-  around 2026-08-27 and no local wizard run has been deliberately tested since; the
-  explanation holds at most for that narrow window. The defect note
-  ([[raw-sql-date-params-crash-postgres-js]]) was corrected 2026-09-01 to say so. Do
-  not state it as fact, and do not invent an alternative.
-- **"Add `tavnit.ai` as an authorized origin in Google Console" — wrong field, wrong
-  time.** This file's own previous queue said it. `docs/08` §8B step 3 is explicit that
-  _Authorized JavaScript origins_ stays **empty** (server-side code flow); the field
-  that needs `tavnit.ai` is _Authorized **domains**_, at step 7, at publish, alongside
-  the privacy and terms URLs. Pasting into origins is a box that does nothing.
-- **An acceptance gate passed against code that existed nowhere but that box.**
-  `docs/07-worker-box.md` §12 step 3 was first cleared with an uncommitted `sed` edit.
-  When a gate passes, confirm the tree is clean before believing the result.
-- **A number reported without its conditions gets attached to the wrong ones.** The 45s
-  render figure was assumed to come from concurrency 2; it was 4. Record the conditions
-  in the same breath as the number.
+- **`emailRedirectTo` was already done, and was asserted missing twice in one session.**
+  `auth.ts:78` has passed it since `02f58bb`. The source of the error was `docs/08` §8A.1, which
+  still says otherwise — **and this file's own item 12 already recorded that docs/08 was wrong and
+  named the fix commit.** The assertion was made anyway, by reading past it. That is the
+  repo-beats-docs rule failing in exactly the direction it exists to prevent: the correction existed,
+  in this file, and lost to the doc. Now queue item 2.
+- **A commit that fixes a line cite while editing the cited file invalidates its own cite.**
+  `c442447` re-read `contentPolicyCheck` at its parent (`copy.ts:662`), then added 30 lines above it
+  — so the moment it landed the function was at `:692`, and every cite written _inside_ that commit
+  was already wrong: the defect note's correction block, `0042`'s `method` field, and the in-code
+  comment at `sets.ts:241`. **Take the cite from your own result, not from your parent.**
+- **Line cites drift silently and en masse.** Swept 2026-09-11: `renders.ts:427-428` → `:491-492`;
+  `copy.ts:491` → `:692`; `docs/04-integrations.md:76-78` → `:104-118`; `sets.ts:302` → `:438`;
+  `renders.ts:770` → `:1008`; `copy.ts:505` → `:706`; `cli/src/index.ts:670-675` → `:840-845`;
+  `docs/02-jobs.md:111` → `:168`. **And a cite can be stale in a way the correction misses**: four
+  notes cite `sets.ts:483` for `chargeable = !(await isAdminOwned(...))`. The brief that flagged them
+  said the fix was `businesses.ts:232-236` — that is where `isAdminOwned` is _defined_, but the line
+  those notes describe now lives at `sets.ts:745`. Sweeping to `businesses.ts` would have replaced a
+  stale cite with a wrong one.
+- **`grep -c` counts lines, not occurrences.** The reg. 2 gap count was quoted as 75 for weeks.
+  `grep -c` returns **71** (four lines carry two markers); `grep -o … | wc -l` returns **75**; and
+  two of those 75 are the legend defining the marker and a prose mention of it. **73 real gaps.**
+- **A vault note may already exist for the thing you are about to write.** The `bans רגע` flake was
+  handed over as "record this so it is not blamed on the overnight commits" — it had already been
+  recorded on 2026-09-08 in `bcfe8b9`. Grep `docs/vault/` before writing, per CONVENTIONS.
+- **A number reported without its conditions gets attached to the wrong ones.** The 45s render
+  figure was assumed to come from concurrency 2; it was 4.
+- **A mitigation became an outage.** The §9 cron written to contain the temp-dir leak deleted the
+  live worker's bundle and killed every render for four days
+  ([[tmp-cron-deletes-live-worker-bundle]]). Never point a janitor at a directory a long-lived
+  process serves from.
 - **A constant tuned on the founder's hardware silently became a system requirement.**
-  `RENDER_CONCURRENCY = 6` — see [[render-concurrency-hardcoded-above-core-count]].
-- **A mitigation became an outage.** The §9 cron written to contain the temp-dir leak
-  deleted the live worker's bundle and killed every render for four days —
-  [[tmp-cron-deletes-live-worker-bundle]]. Never point a janitor at a directory a
-  long-lived process serves from.
-- The worker box was assumed to exist because `docs/00-overview.md` describes one. Docs
-  describing a plan read identically to docs describing reality.
-- `words_per_second`: old project 2.1 (calibration output), migration seed 2.2 (a
-  guess). 2.1 is correct.
-- There are **35** migration files, 0000–0034. 0000–0033 are applied on live (0032/0033 from the dashboard on 2026-09-05, ledger repaired); 0034 (`lipsync_expressiveness`, [[0022-heygen-expressiveness-medium-generic-motion-prompt]]) landed 2026-09-06 — record whether it has been pushed.: 0032 (`opener_clips`) and
-  0033 (its RLS) went in from the dashboard on 2026-09-05 and the ledger was repaired to
-  match. This file said "still at 0031 / unapplied" in three places until then — the
-  vault-correction commit `e4cb08e` fixed item 14, and the step-7 docs commit the other two.
-- `scripts/verify-migration-ledger.sql` cannot fully pass on a fresh database — two
-  checks assert old-project row IDs. Structural layer: 24 true and one NULL for 0020;
-  the NULL is correct. (It was 22 before the 0032/0033 rows were added.)
-- `/start` proves nothing about auth — it redirects unconditionally and discards
+  `RENDER_CONCURRENCY = 6` — [[render-concurrency-hardcoded-above-core-count]].
+- **An acceptance gate passed against code that existed nowhere but that box.** When a gate passes,
+  confirm the tree is clean before believing the result.
+- **A credential was echoed in session output three times.** CLAUDE.md's rule now covers it: verify
+  by connecting, report the outcome, never the value.
+- **"Add `tavnit.ai` as an authorized origin in Google Console" — wrong field.** _Authorized
+  JavaScript origins_ stays **empty** (server-side code flow); the field that needs `tavnit.ai` is
+  _Authorized **domains**_, at publish.
+- **`/start` proves nothing about auth** — it redirects unconditionally and discards
   `exchangeCodeForSession`'s result. `/home` is the only real gate.
-- A credential was echoed in session output three times. The CLAUDE.md rule now covers
-  it: verify by connecting, report the outcome, never the value.
-- The a-sets route "is deployed" was wrong — at the time nothing was deployed at all.
-  (Both routes deleted 2026-08-31; git keeps them.)
-- 269f2ce removed the CALLERS from `step-render.tsx`, not the route files. Right in
-  substance, wrong in mechanism.
-- "Billing is unwired, so account caps are the only bound" was backwards — the credit
-  balance is the bound and it is _tighter_ because billing is unwired. See
-  [[no-self-serve-credit-grant-path]].
+- **"Billing is unwired, so account caps are the only bound" was backwards** — the credit balance is
+  the bound, and it is _tighter_ because billing is unwired. [[no-self-serve-credit-grant-path]].
+- `words_per_second`: old project 2.1 (calibration output), migration seed 2.2 (a guess). 2.1 is
+  correct.
+- `scripts/verify-migration-ledger.sql` cannot fully pass on a fresh database — two checks assert
+  old-project row IDs.
 
 ---
 
