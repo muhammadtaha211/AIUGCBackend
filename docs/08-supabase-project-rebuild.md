@@ -328,8 +328,8 @@ Then **Authentication → URL Configuration**:
 
 - **Site URL**: `http://localhost:3000` for now; flip it to the Vercel domain when one exists.
 - **Redirect URLs**: add `http://localhost:3000/auth/callback`. Not used by the password flow
-  today, but it is what the confirmation link needs if you ever turn Confirm-email on _and_ the
-  one-line code change in §8A.1 lands. Also add `http://localhost:3000/auth/recovery` — the
+  today, but it is what the confirmation link needs with Confirm-email on — and it is ON in
+  production as of 2026-09-11 (§8A.2). Also add `http://localhost:3000/auth/recovery` — the
   password-recovery flow (added 2026-08-27) sends its email link back through it, and without the
   entry GoTrue silently delivers the link to the Site URL root, where nothing reads it.
 - **Emails → Reset Password template** (recommended): replace the default link with
@@ -426,21 +426,21 @@ existing account (`docs/vault/defects/admin-flag-is-a-noop-on-existing-accounts.
 
 Both positions are defensible; this section is the trade-off, not a recommendation.
 
-**What the code does today.** `apps/web/src/lib/auth.ts:42` calls `signUp({ email, password })`
-with **no `emailRedirectTo`**. So with confirmation ON, Supabase's confirmation link returns the
-user to the **Site URL root**, and `apps/web/src/app/page.tsx` is a static marketing page that
-never reads `searchParams` — the only route that exchanges a code is `/auth/callback`, and nothing
-sends it there. The click therefore appears to do nothing: no session, no message, no error. The
-user is not stuck (the Hebrew copy at `auth.ts:46` already tells them to go and sign in at
-`/login`, and that works), but the confirmation click itself is a dead end. Making it land
-properly is a one-line change — add
-``emailRedirectTo: `${window.location.origin}/auth/callback` `` to that call — and needs no new
-route, because `/auth/callback` already handles a PKCE `code`.
+**What the code does today.** `apps/web/src/lib/auth.ts:124` calls `signUp`, and that call has
+passed ``emailRedirectTo: `${window.location.origin}/auth/callback` `` since commit `02f58bb`
+(2026-08-27) — today at `auth.ts:132`. **No code change is needed to turn confirmation on.** The
+confirmation link lands on `/auth/callback`, which exchanges the PKCE `code`
+(`apps/web/src/app/auth/callback/route.ts:23`). Were that option ever dropped the link would
+return to the **Site URL root**, and `apps/web/src/app/page.tsx` is a static marketing page that
+never reads `searchParams` — the click would then do nothing at all: no session, no message, no
+error. That is the dead end the option exists to prevent, and why it should not be removed. With
+confirmation ON the Hebrew copy at `auth.ts:146` tells the user to confirm and then sign in at
+`/login`.
 
 |                                | **Confirm email OFF**                                                               | **Confirm email ON**                                                                                     |
 | ------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Signup UX                      | One step. Session immediately, wizard auto-posts the draft, lands on `/home`.       | Two steps, split across an email client. Draft survives in `localStorage`; user must return and sign in. |
-| Code change needed             | None.                                                                               | One line (`emailRedirectTo`), or the confirmation click dead-ends.                                       |
+| Code change needed             | None.                                                                               | None — `emailRedirectTo` has shipped since `02f58bb` (`auth.ts:132`).                                    |
 | Email delivery is a dependency | No. Nothing is sent at signup.                                                      | **Yes** — signup is blocked on an email arriving.                                                        |
 | Address is proven real         | No. Typos create accounts nobody can reach; anyone can sign up as anyone's address. | Yes.                                                                                                     |
 | Password reset                 | Already depends on email whenever you build it.                                     | Same.                                                                                                    |
@@ -466,8 +466,8 @@ Realistically a couple of hours if the domain already exists and you control its
 if the domain is new or the provider wants review. None of it is application code.
 
 **The asymmetry worth noting:** turning confirmation OFF now and ON later costs nothing structural
-— existing accounts stay valid, and the `emailRedirectTo` line can land whenever. Turning it ON now
-means launch is blocked on the DNS work above.
+— existing accounts stay valid, and `emailRedirectTo` already ships (`auth.ts:132`, `02f58bb`).
+Turning it ON now means launch is blocked on the DNS work above.
 
 ---
 
@@ -478,13 +478,8 @@ section is no longer a trade-off — it is what a rebuild has to reproduce. Ever
 configured in the Supabase dashboard only; nothing in the repo reproduced it before this section
 existed, which meant a rebuild shipped English auth email to Hebrew customers.
 
-Two corrections to §8A.1 before the values, so a reader does not act on them:
+One correction to §8A.1 before the values, so a reader does not act on it:
 
-- **"`auth.ts:42` calls `signUp(…)` with no `emailRedirectTo`" is false**, and so is the table row
-  "Code change needed | … One line (`emailRedirectTo`)". `apps/web/src/lib/auth.ts:78` has passed
-  ``emailRedirectTo: `${window.location.origin}/auth/callback` `` since commit `02f58bb`. The
-  confirmation click does not dead-end. §8A.1 is queued for correction; it is left as-is here so the
-  correction is one reviewed edit rather than a drive-by.
 - §8A.1 says custom SMTP needs "**SPF** and **DKIM** records". With Resend, SPF is delivered by two
   **CNAME** records, not a TXT SPF record. See below.
 
