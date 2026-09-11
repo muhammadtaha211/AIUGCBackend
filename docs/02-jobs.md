@@ -165,8 +165,14 @@ Two things to know before turning it on:
 ## Remotion render budget
 
 - 1080×1920 @ 30fps, H.264. A 30–60s ad ≈ 900–1800 frames.
-- On an 8-vCPU box (Hetzner CPX41-class, ~€30/mo flat): **~2–6 min wall time per video**,
-  concurrency 1. At side-income scale (say 300 renders/mo ≈ 25h CPU) one box is ~10× headroom.
+- On the box (Hetzner CPX32, 4 shared vCPU — ~$41/mo + ~$0.72/mo IPv4, founder-reported from the
+  Hetzner console at creation, never checked against an invoice): **~66s wall time per video**.
+  Measured mean 66.1s over three consecutive live wizard renders of real customer footage,
+  2026-09-02 on `af158cb`, range 64.9–68.5s, run one at a time so heavy-lane **job** concurrency
+  was 1 — not to be confused with Remotion's frame concurrency, which is 4 on this box. Demo
+  length was not captured and render time scales with output duration, so this is one point on a
+  line, not a constant ([[service-a-render-wall-clock-on-the-box]]). At 300 renders/mo that is
+  ~5.5h of box time.
 - Target ceiling: <10 min per video; alert (dead job) beyond `max_attempts`.
 - Remotion license: **free** — company ≤3 people (verified). Remotion Lambda explicitly
   deferred until volume demands parallel rendering; the render contract

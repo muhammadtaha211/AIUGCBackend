@@ -37,10 +37,12 @@ queue wait was ~0 — nothing else was competing for the heavy lane.
 
 ## What it corrects
 
-`docs/02-jobs.md:111` sizes a full customer render at **"~2–6 min wall time per video"**.
-Measured, it is roughly **one minute** — 2× to 5× faster than the doc claims. That line has
-not been edited; it is also wrong about the box price (queue item 9 in
-`state-of-play.md`), so both belong in the same one-line fix.
+`docs/02-jobs.md` sized a full customer render at **"~2–6 min wall time per video"**. Measured,
+it is roughly **one minute** — 2× to 5× faster than the doc claimed. **Corrected 2026-09-11**
+at `docs/02-jobs.md:168-175`, together with the two other wrong numbers on the same line: the
+box was described as "8-vCPU … CPX41-class, ~€30/mo flat" and is a CPX32 at 4 shared vCPU,
+~$41/mo + ~$0.72 IPv4. (This note previously cited that line as `:111`, which had been stale for
+weeks — the content had moved to `:168`.)
 
 The practical consequence is on the customer-facing wait, not on capacity: a minute is
 short enough that the render step's progress bar is watched to completion rather than
