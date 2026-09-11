@@ -69,3 +69,26 @@ button buys nothing, and the real consequence is that **publishing the OAuth app
 gate on ANY traffic**, not just on Google users. This overrides `docs/08-supabase-project-rebuild.md`
 §8B's recommendation to keep the flag `false` for any public window. The constant is already
 `true` in `apps/web/src/lib/auth.ts`; no code change — the decision is that it does not move.
+
+## Amendment 2026-09-11 — the app is published, and two claims above have expired
+
+Publishing status has read _In production_ since **2026-09-03**. The body above is kept as
+written; this records what it no longer describes.
+
+- **`:34-37` — "Until publishing status reads _In production_, an address not on the test-user
+  list is refused…" no longer describes anything live.** The app is published, so no address is
+  refused for being off the list. The bullet's second half was fixed independently on the same
+  day: `/auth/callback` now reads `error` / `error_code` / `error_description` and sends the
+  customer to `/login` with a Hebrew message, instead of dropping them on `/start` with no session
+  and no message.
+- **`:54-55` — "`apps/web` has **no `/privacy` or `/terms` routes**" is false.** Both ship, at
+  `apps/web/src/app/(legal)/privacy/` and `.../terms/`. That gate is closed, and closing it is
+  what made step 7 possible.
+- `:52-53`'s Testing-mode facts remain historically accurate; they are simply no longer the mode
+  this app is in.
+- `:44` cites `auth.ts:71-74` for the scope-free `signInWithOAuth` call. The cite has drifted —
+  the call is at `apps/web/src/lib/auth.ts:222` today. The claim it supports (no `scopes` key, so
+  Google's `openid`/`email`/`profile` defaults, all non-sensitive) still holds.
+
+Nothing here retracts the decision: Google was put in scope for launch and it shipped.
+`docs/08-supabase-project-rebuild.md` §8B carries the published state.

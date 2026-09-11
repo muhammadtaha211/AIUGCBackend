@@ -624,7 +624,10 @@ The confirmation-ON onboarding path had never been exercised on this app before.
 ## 8B. Google OAuth — full setup
 
 **Status: in scope for launch** (founder decision 2026-08-26 —
-`docs/vault/decisions/0006-google-oauth-is-in-scope-for-launch.md`).
+`docs/vault/decisions/0006-google-oauth-is-in-scope-for-launch.md`). **This app was published on
+2026-09-03; its publishing status reads _In production_ and any Google account can sign in.**
+Everything below still walks through Testing mode because this document is the rebuild recipe —
+that is a procedure to repeat, not a description of where this project stands.
 
 ### Read this first: there is no verification review for this app
 
@@ -653,21 +656,22 @@ Two consequences worth knowing before you start:
 
 ### What each mode actually requires
 
-|                                               | **Testing** (today)                               | **In production** (public launch)          |
-| --------------------------------------------- | ------------------------------------------------- | ------------------------------------------ |
-| Who can sign in                               | Only addresses on the test-user list, max **100** | Anyone with a Google account               |
-| Test-user sessions                            | Refresh tokens expire after **7 days**            | Normal                                     |
-| App name, support email, developer contact    | Required                                          | Required                                   |
-| App logo                                      | Leave blank                                       | Leave blank (a logo forces a brand review) |
-| Home page URL                                 | Not required                                      | **Required**                               |
-| Privacy policy URL                            | Not required                                      | **Required**                               |
-| Terms of service URL                          | Not required                                      | Optional                                   |
-| Authorized domain, verified in Search Console | Not required                                      | **Required**                               |
-| Verification review                           | None                                              | **None** — non-sensitive scopes only       |
+|                                               | **Testing** (where a rebuild starts)              | **In production** (this app, since 2026-09-03) |
+| --------------------------------------------- | ------------------------------------------------- | ---------------------------------------------- |
+| Who can sign in                               | Only addresses on the test-user list, max **100** | Anyone with a Google account                   |
+| Test-user sessions                            | Refresh tokens expire after **7 days**            | Normal                                         |
+| App name, support email, developer contact    | Required                                          | Required                                       |
+| App logo                                      | Leave blank                                       | Leave blank (a logo forces a brand review)     |
+| Home page URL                                 | Not required                                      | **Required**                                   |
+| Privacy policy URL                            | Not required                                      | **Required**                                   |
+| Terms of service URL                          | Not required                                      | Optional                                       |
+| Authorized domain, verified in Search Console | Not required                                      | **Required**                                   |
+| Verification review                           | None                                              | **None** — non-sensitive scopes only           |
 
-**The domain is a prerequisite for going public, not for using Google.** This does not block you
-today: steps 1–6 give you working Google sign-in for yourself and up to 99 other addresses, with
-nothing hosted anywhere. Only step 7 waits on `tavnit.ai` being live.
+**The domain is a prerequisite for going public, not for using Google.** It does not block a
+rebuild: steps 1–6 give working Google sign-in for yourself and up to 99 other addresses, with
+nothing hosted anywhere. Only step 7 needs `tavnit.ai` live — which it is, and which is why step 7
+was taken on 2026-09-03.
 
 ### Does a Vercel preview URL work as the authorized domain? No — use `tavnit.ai`
 
@@ -770,6 +774,9 @@ every 7 days, so a test account needs re-authenticating weekly.
 
 At this point Google sign-in works end to end for those addresses. Verify it now (below) rather
 than waiting for step 7.
+
+**On the live app this list gates nobody** — it was published at step 7 on 2026-09-03, and in
+production any Google account can sign in. The step stays because a rebuild starts in Testing.
 
 ### Verifying it — the gate is `/home`, same as §8A
 
