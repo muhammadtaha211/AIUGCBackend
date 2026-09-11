@@ -3,7 +3,7 @@
     {
       "id": "hook",
       "intent": "Draw the eye to the product itself. Short, present tense, as if holding it up.",
-      "example": "תראו רגע את זה"
+      "example": "תראו את זה רגע"
     },
     {
       "id": "react",

@@ -118,11 +118,22 @@ describe("b_script prompt rendering", () => {
     expect(text).toContain("At most 7 Hebrew words and at most 40 characters");
   });
 
-  it("bans רגע as a filler, restart or aside (v16+)", () => {
+  /**
+   * v17 corrected the rule's intent: the ban targets the hesitation tick, not the
+   * word. So this asserts the rule TEXT is present and still draws the distinction.
+   * It deliberately does NOT count occurrences of רגע in the rendered prompt —
+   * `hook_options` interpolates a random 3 of 25 curated openers, one of which is
+   * `תראי את זה רגע`, so a count measured the draw rather than the rule and failed
+   * 12% of runs (docs/vault/defects/ban-rule-test-collides-with-a-curated-hook.md).
+   */
+  it("bans רגע as a hesitation tick while allowing the natural use (v17+)", () => {
     const { text, promptVersion } = renderPrompt("b_script", bScriptVars(hooks));
-    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(16);
-    expect(text).toContain("Never `רגע`");
-    expect(text.match(/רגע/g)).toHaveLength(1);
+    expect(Number(promptVersion.split("@v")[1])).toBeGreaterThanOrEqual(17);
+    // Whitespace-collapsed: these are prose bullets that prettier re-wraps, so a
+    // raw substring would break on a reflow rather than on the rule going missing.
+    const flat = text.replace(/\s+/g, " ");
+    expect(flat).toContain("Never `רגע` as a hesitation tick");
+    expect(flat).toContain("The tick is what is banned, not the word");
   });
 
   it("refers to the product by its kind, never by a placeholder word (v11+)", () => {

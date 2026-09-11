@@ -78,3 +78,28 @@ page, `0035`). Left alone: choosing between the two fixes is a copy decision, no
 The second reading matters: the ban's own wording is "it must not appear in a script", while the
 hook library is offering the model a hook containing it. That may be the actual defect, with the red
 test being the symptom that surfaced it.
+
+## FIXED 2026-09-11 — and the last paragraph above was right
+
+Put to the founder as a choice between the two fixes above. **He chose neither.** The ban was never
+about the word: it targets the **hesitation tick**, the filler insertion that in Hebrew surfaces as
+`רגע` and reads as fake casualness. `רגע` carrying its own meaning in a sentence is legitimate and
+always was — so v16's trailing "it must not appear in a script" **overshot the intent**, and had
+been overshooting on every live generation since `f40bc72`. The rule was the defect; this flake was
+the symptom, exactly as the paragraph above guessed.
+
+What shipped ([[0046-the-rega-ban-targets-the-hesitation-tick-not-the-word]]):
+
+- `b_script` **v17** and `vo_script` **v9** state the distinction, with one Hebrew example of each
+  use and identical wording, so the two prompts cannot diverge.
+- Both banks **keep** the word and are reordered — `hook-templates.ts:25` → `תראי את זה רגע`,
+  `show-and-react.json:6` → `תראו את זה רגע`.
+- The `/רגע/g` count assertion is **deleted** in both tests, not rescoped: once the word is
+  legitimate copy, counting it measures the hook draw rather than the rule. Both now assert the
+  **rule text**. The 12.0% flake ends as a consequence.
+
+A second collision this note did not know about was found in the same pass and is covered:
+`seed/structures/show-and-react.json:6` (`תראו רגע את זה`, the hook beat of "show and react")
+reaches the same rendered prompt in production via `copy.ts`'s `skeleton` var. It never affected
+this test — `hook-templates.test.ts:55` pins `skeleton` to a literal — so the 12.0% figure above
+stands unchanged.
