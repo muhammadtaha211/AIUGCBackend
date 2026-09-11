@@ -76,7 +76,7 @@ Invoke the `/karpathy-guidelines` skill at the beginning of every coding task an
 - Secrets only via env vars; never commit keys, never log full prompts/scripts containing customer data at info level.
 - **Never echo a credential in output — including while proving one works.** Not in a report, not in a summary, not in a shell command the founder can read back, not as "here's the value that authenticated". A credential that appears anywhere in a transcript is burned and has to be rotated. Verify by connecting and report the _outcome_: "session pooler authenticated", "auth failed for that user". If a password's exact form is the thing in question — brackets, encoding, trailing whitespace — say which form worked, never what it was ("the bracketed form fails, the bare form authenticates"). Read secrets out of the env file inside the script that uses them; never paste one into a command line. The founder flagged 2026-08-26 as the **second** occurrence — the DB password was printed in a task report while demonstrating that the brackets around it were not part of the value, and had to be rotated. Twice is why this is its own rule and not a clause in the one above.
 - Don't add spend: no code path that calls a paid API in a loop without an explicit cap.
-- Migrations are gated by reversibility, not by the word "production" — there are two Supabase projects now. The new, still-empty one: run `npx -y supabase db push` against it as often as you like; while it holds no data and nothing points at it, any mistake is undone by deleting and recreating the project in three minutes (`docs/08-supabase-project-rebuild.md` §1). The old project (`mtpmrqltldfwhziyyzdu`): its contents are test data and it is being deleted, but until then it is what every `.env` still points at — so it keeps the old regime, never `db push`, never `migration repair`, never ad-hoc DDL. The new project joins that regime at the env flip (`docs/08-supabase-project-rebuild.md` §8): the moment `NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_URL` in the web app or on Vercel, or `DATABASE_URL` on the Hetzner worker box (`docs/07-worker-box.md`), points at it, it is production and the gate covers it too. The ledger has been clean at 0000–0030 since 2026-08-26, so a push now genuinely runs — that makes the gate more necessary, not less.
+- Migrations are gated by reversibility, not by the word "production" — and nothing is reversible any more, so the gate covers everything. There is **one** Supabase project, `hyaqydcmwbnbaiqqufow`; it holds real data and all five `.env` files point at it (`.env`, `apps/web/.env.local`, `apps/admin/.env.local`, `apps/worker/.env`, `apps/cli/.env` — verified 2026-09-11, with no reference to the old ref left anywhere outside `docs/`). The old project (`mtpmrqltldfwhziyyzdu`) is deleted (founder-reported), and the "still-empty, so delete and recreate it in three minutes" escape hatch this line used to offer died at the env flip on **2026-08-27** (`docs/08-supabase-project-rebuild.md` §8). So: never `db push`, never `migration repair`, never ad-hoc DDL — except on the founder's explicit instruction for that one push. The ledger is clean at **0000–0037** (38 files in `supabase/migrations/`, no gaps), so a push genuinely runs; that makes the gate more necessary, not less.
 
 ### 3. End of task — mandatory protocol
 
@@ -107,14 +107,22 @@ Populate this section as scripts land, and keep it current.
 pnpm dev            # web app (onboarding) — http://localhost:3000
 pnpm dev:admin      # admin app (founder console) — http://localhost:3001
 pnpm typecheck      # all packages
-pnpm test           # core tests (PGlite, no Docker)
 pnpm lint / format  # prettier
+
+# THE TEST GATE — these five, one at a time. Not `pnpm test`. See below before changing.
+pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false
+pnpm --filter @aiugc/core     exec vitest run --fileParallelism=false  # PGlite, no Docker
+pnpm --filter @aiugc/worker   exec vitest run --fileParallelism=false
+pnpm --filter @aiugc/web      exec vitest run --fileParallelism=false
+pnpm --filter @aiugc/admin    exec vitest run --fileParallelism=false
 
 pnpm --filter @aiugc/remotion studio          # live composition preview (Remotion Studio)
 pnpm --filter @aiugc/remotion render:sample   # ServiceB sample -> packages/remotion/out/sample.mp4
 pnpm --filter @aiugc/remotion render:sample:a # RETIRED "full" ServiceA composition (hook line + avatar ending) -> out/sample-a.mp4; the live format is render:sample:steps
 pnpm --filter @aiugc/remotion render:sample:b-opener # RETIRED (vault 0023): the opener effect over a lavfi clip -> out/sample-b-opener.mp4; the live hook is the zoom animation, mocked with packages/core/.work/b-final-rerender.ts
 ```
+
+**`pnpm test` is not the test gate — those five serial runs are, and the difference is load-bearing.** The root script is `pnpm -r test`, which fans all five packages out four at a time (pnpm 9 defaults: `--sort` on, `--workspace-concurrency 4`) with each run itself file-parallel, and that OOMs this machine — so do not collapse the five back into one line. `--fileParallelism=false` only reaches vitest after `exec`; after `--` pnpm 9 eats it (`ERROR Unknown option: 'fileParallelism'`). `@aiugc/cli` has no tests. Measurement and mechanism: `docs/vault/facts/pnpm-r-test-ooms-this-machine.md`.
 
 Never run `next build` while `pnpm dev` is serving — the build replaces `.next` and the running dev server starts 404-ing its own chunks (symptom: every page stuck on its loading state, DevTools shows 404 on `/_next/static/chunks/main-app.js`). Recovery: stop dev, delete `apps/web/.next`, start dev again.
 

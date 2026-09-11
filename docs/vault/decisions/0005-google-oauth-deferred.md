@@ -14,6 +14,10 @@ source: founder
 > privacy/terms pages and Google's verification queue did not go away, they became work to do
 > rather than a reason to skip. The "known consequence" section is also now resolved: the buttons
 > are gated behind `GOOGLE_SIGN_IN_ENABLED`.
+>
+> **Two claims in this banner and in the body below have since been falsified** — the verification
+> queue never applied to this app, and the privacy/terms pages now exist. Both are kept as written;
+> see the 2026-09-11 amendment at the foot of this note.
 
 Launch ships with **email + password only**. Google sign-in is not configured on the new project
 and will not be before launch.
@@ -53,3 +57,22 @@ founder has not made yet**; it was surfaced on 2026-08-26 and deliberately left 
 
 Related: [[../defects/cli-created-user-blocks-that-email-from-ever-signing-up]] — the pre-flight
 that any signup verification has to run first.
+
+## Amendment 2026-09-11 — the verification queue this note feared never applied
+
+This note is `status: superseded` and its body and banner are kept verbatim, per CONVENTIONS'
+falsification rule. Two of its claims are now known to be wrong; they are recorded here rather
+than edited above.
+
+- **There was never a verification review for this app.** `:29-30` ("**Google's own verification
+  before external users can sign in at all**… only listed test users (max 100, 7-day sessions)")
+  and the banner's "Google's verification queue" at `:14` both describe a queue that does not
+  apply here: the app requests only `openid`, `email` and `profile`, all **non-sensitive**, and
+  review queues apply to sensitive and restricted scopes. Established 2026-08-27, one day after
+  this note was written ([[0006-google-oauth-is-in-scope-for-launch]] `:47-49`). Publishing moved
+  the app to _In production_ on click, on **2026-09-03**.
+- **The banner's "missing privacy/terms pages" are no longer missing** — both ship, at
+  `apps/web/src/app/(legal)/privacy/` and `.../terms/`.
+
+What this note was kept for still stands in shape: standing Google up was real work rather than
+an API key. It was simply less work, and less waiting, than this note believed.

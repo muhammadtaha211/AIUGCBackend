@@ -328,8 +328,8 @@ Then **Authentication → URL Configuration**:
 
 - **Site URL**: `http://localhost:3000` for now; flip it to the Vercel domain when one exists.
 - **Redirect URLs**: add `http://localhost:3000/auth/callback`. Not used by the password flow
-  today, but it is what the confirmation link needs if you ever turn Confirm-email on _and_ the
-  one-line code change in §8A.1 lands. Also add `http://localhost:3000/auth/recovery` — the
+  today, but it is what the confirmation link needs with Confirm-email on — and it is ON in
+  production as of 2026-09-11 (§8A.2). Also add `http://localhost:3000/auth/recovery` — the
   password-recovery flow (added 2026-08-27) sends its email link back through it, and without the
   entry GoTrue silently delivers the link to the Site URL root, where nothing reads it.
 - **Emails → Reset Password template** (recommended): replace the default link with
@@ -426,21 +426,21 @@ existing account (`docs/vault/defects/admin-flag-is-a-noop-on-existing-accounts.
 
 Both positions are defensible; this section is the trade-off, not a recommendation.
 
-**What the code does today.** `apps/web/src/lib/auth.ts:42` calls `signUp({ email, password })`
-with **no `emailRedirectTo`**. So with confirmation ON, Supabase's confirmation link returns the
-user to the **Site URL root**, and `apps/web/src/app/page.tsx` is a static marketing page that
-never reads `searchParams` — the only route that exchanges a code is `/auth/callback`, and nothing
-sends it there. The click therefore appears to do nothing: no session, no message, no error. The
-user is not stuck (the Hebrew copy at `auth.ts:46` already tells them to go and sign in at
-`/login`, and that works), but the confirmation click itself is a dead end. Making it land
-properly is a one-line change — add
-``emailRedirectTo: `${window.location.origin}/auth/callback` `` to that call — and needs no new
-route, because `/auth/callback` already handles a PKCE `code`.
+**What the code does today.** `apps/web/src/lib/auth.ts:124` calls `signUp`, and that call has
+passed ``emailRedirectTo: `${window.location.origin}/auth/callback` `` since commit `02f58bb`
+(2026-08-27) — today at `auth.ts:132`. **No code change is needed to turn confirmation on.** The
+confirmation link lands on `/auth/callback`, which exchanges the PKCE `code`
+(`apps/web/src/app/auth/callback/route.ts:23`). Were that option ever dropped the link would
+return to the **Site URL root**, and `apps/web/src/app/page.tsx` is a static marketing page that
+never reads `searchParams` — the click would then do nothing at all: no session, no message, no
+error. That is the dead end the option exists to prevent, and why it should not be removed. With
+confirmation ON the Hebrew copy at `auth.ts:146` tells the user to confirm and then sign in at
+`/login`.
 
 |                                | **Confirm email OFF**                                                               | **Confirm email ON**                                                                                     |
 | ------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Signup UX                      | One step. Session immediately, wizard auto-posts the draft, lands on `/home`.       | Two steps, split across an email client. Draft survives in `localStorage`; user must return and sign in. |
-| Code change needed             | None.                                                                               | One line (`emailRedirectTo`), or the confirmation click dead-ends.                                       |
+| Code change needed             | None.                                                                               | None — `emailRedirectTo` has shipped since `02f58bb` (`auth.ts:132`).                                    |
 | Email delivery is a dependency | No. Nothing is sent at signup.                                                      | **Yes** — signup is blocked on an email arriving.                                                        |
 | Address is proven real         | No. Typos create accounts nobody can reach; anyone can sign up as anyone's address. | Yes.                                                                                                     |
 | Password reset                 | Already depends on email whenever you build it.                                     | Same.                                                                                                    |
@@ -466,8 +466,8 @@ Realistically a couple of hours if the domain already exists and you control its
 if the domain is new or the provider wants review. None of it is application code.
 
 **The asymmetry worth noting:** turning confirmation OFF now and ON later costs nothing structural
-— existing accounts stay valid, and the `emailRedirectTo` line can land whenever. Turning it ON now
-means launch is blocked on the DNS work above.
+— existing accounts stay valid, and `emailRedirectTo` already ships (`auth.ts:132`, `02f58bb`).
+Turning it ON now means launch is blocked on the DNS work above.
 
 ---
 
@@ -478,13 +478,8 @@ section is no longer a trade-off — it is what a rebuild has to reproduce. Ever
 configured in the Supabase dashboard only; nothing in the repo reproduced it before this section
 existed, which meant a rebuild shipped English auth email to Hebrew customers.
 
-Two corrections to §8A.1 before the values, so a reader does not act on them:
+One correction to §8A.1 before the values, so a reader does not act on it:
 
-- **"`auth.ts:42` calls `signUp(…)` with no `emailRedirectTo`" is false**, and so is the table row
-  "Code change needed | … One line (`emailRedirectTo`)". `apps/web/src/lib/auth.ts:78` has passed
-  ``emailRedirectTo: `${window.location.origin}/auth/callback` `` since commit `02f58bb`. The
-  confirmation click does not dead-end. §8A.1 is queued for correction; it is left as-is here so the
-  correction is one reviewed edit rather than a drive-by.
 - §8A.1 says custom SMTP needs "**SPF** and **DKIM** records". With Resend, SPF is delivered by two
   **CNAME** records, not a TXT SPF record. See below.
 
@@ -629,7 +624,10 @@ The confirmation-ON onboarding path had never been exercised on this app before.
 ## 8B. Google OAuth — full setup
 
 **Status: in scope for launch** (founder decision 2026-08-26 —
-`docs/vault/decisions/0006-google-oauth-is-in-scope-for-launch.md`).
+`docs/vault/decisions/0006-google-oauth-is-in-scope-for-launch.md`). **This app was published on
+2026-09-03; its publishing status reads _In production_ and any Google account can sign in.**
+Everything below still walks through Testing mode because this document is the rebuild recipe —
+that is a procedure to repeat, not a description of where this project stands.
 
 ### Read this first: there is no verification review for this app
 
@@ -658,21 +656,22 @@ Two consequences worth knowing before you start:
 
 ### What each mode actually requires
 
-|                                               | **Testing** (today)                               | **In production** (public launch)          |
-| --------------------------------------------- | ------------------------------------------------- | ------------------------------------------ |
-| Who can sign in                               | Only addresses on the test-user list, max **100** | Anyone with a Google account               |
-| Test-user sessions                            | Refresh tokens expire after **7 days**            | Normal                                     |
-| App name, support email, developer contact    | Required                                          | Required                                   |
-| App logo                                      | Leave blank                                       | Leave blank (a logo forces a brand review) |
-| Home page URL                                 | Not required                                      | **Required**                               |
-| Privacy policy URL                            | Not required                                      | **Required**                               |
-| Terms of service URL                          | Not required                                      | Optional                                   |
-| Authorized domain, verified in Search Console | Not required                                      | **Required**                               |
-| Verification review                           | None                                              | **None** — non-sensitive scopes only       |
+|                                               | **Testing** (where a rebuild starts)              | **In production** (this app, since 2026-09-03) |
+| --------------------------------------------- | ------------------------------------------------- | ---------------------------------------------- |
+| Who can sign in                               | Only addresses on the test-user list, max **100** | Anyone with a Google account                   |
+| Test-user sessions                            | Refresh tokens expire after **7 days**            | Normal                                         |
+| App name, support email, developer contact    | Required                                          | Required                                       |
+| App logo                                      | Leave blank                                       | Leave blank (a logo forces a brand review)     |
+| Home page URL                                 | Not required                                      | **Required**                                   |
+| Privacy policy URL                            | Not required                                      | **Required**                                   |
+| Terms of service URL                          | Not required                                      | Optional                                       |
+| Authorized domain, verified in Search Console | Not required                                      | **Required**                                   |
+| Verification review                           | None                                              | **None** — non-sensitive scopes only           |
 
-**The domain is a prerequisite for going public, not for using Google.** This does not block you
-today: steps 1–6 give you working Google sign-in for yourself and up to 99 other addresses, with
-nothing hosted anywhere. Only step 7 waits on `tavnit.ai` being live.
+**The domain is a prerequisite for going public, not for using Google.** It does not block a
+rebuild: steps 1–6 give working Google sign-in for yourself and up to 99 other addresses, with
+nothing hosted anywhere. Only step 7 needs `tavnit.ai` live — which it is, and which is why step 7
+was taken on 2026-09-03.
 
 ### Does a Vercel preview URL work as the authorized domain? No — use `tavnit.ai`
 
@@ -775,6 +774,9 @@ every 7 days, so a test account needs re-authenticating weekly.
 
 At this point Google sign-in works end to end for those addresses. Verify it now (below) rather
 than waiting for step 7.
+
+**On the live app this list gates nobody** — it was published at step 7 on 2026-09-03, and in
+production any Google account can sign in. The step stays because a rebuild starts in Testing.
 
 ### Verifying it — the gate is `/home`, same as §8A
 

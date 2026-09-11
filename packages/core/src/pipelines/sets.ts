@@ -238,7 +238,7 @@ async function assertContentPolicy(
     return;
   }
   // contentPolicyCheck writes the `content_policy_flag` event itself
-  // (`copy.ts:675-680`); refusing is this function's half.
+  // (`copy.ts:706-710`); refusing is this function's half.
   if (verdict.flagged) throw new ContentPolicyError(verdict.category, verdict.reason);
 }
 
@@ -337,7 +337,7 @@ export async function createSet(
   // Customer-supplied text, checked before anything is charged. The hook lines
   // are the customer's own words: the hook studio lets them edit a line and
   // burn it onto the video, and an edit writes a NEW `scripts` row
-  // (copy.ts:715-737), so these ids carry the FINAL text.
+  // (copy.ts:745-767), so these ids carry the FINAL text.
   await assertContentPolicy(db, opts.businessId, [
     {
       label: "משפטי הפתיחה שייצרבו על המסך",

@@ -49,11 +49,18 @@ No `vitest.config.*` sets `fileParallelism` or `pool`; the only config in the tr
 `apps/web/vitest.config.ts`, which sets the `@` → `./src` alias and nothing else. So the flag must be
 typed every time.
 
-## Where this is still written wrong
+## Where this was written wrong — fixed 2026-09-11
 
-`CLAUDE.md:110` documents the script as `pnpm test  # core tests (PGlite, no Docker)`. That is
-doubly misleading: it fans out to **five** packages, not core alone, and it says nothing about the
-concurrency that makes it unusable here. Correcting that line is queued.
+`CLAUDE.md:110` used to document the script as `pnpm test  # core tests (PGlite, no Docker)`, which
+was doubly misleading: it fans out to **five** packages, not core alone, and it said nothing about
+the concurrency that makes it unusable here. The five commands above are now the gate in CLAUDE.md
+itself (`:112-117`, with the reasoning at `:125`), so a prompt that says "tests green" resolves to
+something runnable.
+
+Still wrong elsewhere, and not corrected here: `facts/test-suite-inventory.md:53` says `pnpm test`
+"fans out to **four** independent runners" — it is five; `apps/worker` gained a `test` script on
+2026-08-26, three days after that note's `verified: 2026-08-23`. Its `:46-49` ("No vitest config
+exists anywhere") is stale for the same reason — `apps/web/vitest.config.ts` exists.
 
 ## Scope
 
