@@ -61,6 +61,16 @@ example. Both files drop that bullet entirely from their imperfections list and 
 either file. The DRY_RUN stand-in scripts in `copy.ts` (`generateBScript`, `generateVoScript`)
 never contained `רגע`, so neither needed a fix.
 
+> **Corrected 2026-09-11.** "Appears nowhere else in **either file**" is wrong, and the error is
+> load-bearing: both tests match `/רגע/g` against the **rendered** prompt, not the template file on
+> disk. `b_script` interpolates `{{hook_options}}` from a random 3-of-25 draw of curated openers, and
+> one of them — `packages/core/src/hook-templates.ts:25`, `"תראי רגע את זה"` — contains the word, so
+> `hook-templates.test.ts:125` fails on **12.0%** of runs (`3/25`).
+> [[ban-rule-test-collides-with-a-curated-hook]] has the mechanism and the arithmetic. The
+> `vo-prompt.test.ts` twin pins every variable to a literal and is genuinely deterministic; only the
+> `b_script` one flakes. `hook-templates.ts` was never audited for the ban — it is not in `f40bc72`'s
+> file list.
+
 plan_demo_steps v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
 the file landed while two pre-change workers were live, and both had to be restarted in the same
 session. Its other change deletes v12's "keep five and write the uncapped ones long" route, which

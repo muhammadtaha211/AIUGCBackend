@@ -39,9 +39,22 @@ the way: **`content_policy_flag` had no test anywhere.**
   not cover that case and was deliberately not edited — 0042 records it as a remaining gap.
 - Nothing surfaces either event: `events` has never held a row and there is no admin events feed.
 
-**Two line numbers in the body are stale** and are left as written rather than silently corrected —
-`contentPolicyCheck` is `copy.ts:662`, not `:491`, and the Service A QC bypass is
-`renders.ts:491-492`, not `:428`. Both were re-read on 2026-09-11.
+**Three line numbers in the body are stale** and are left as written rather than silently corrected.
+Re-read on 2026-09-11 at `2828fd3`:
+
+| body says                       | actually                                       |
+| ------------------------------- | ---------------------------------------------- |
+| `copy.ts:491`                   | **`copy.ts:692`** — see the warning below      |
+| `renders.ts:428`                | `renders.ts:491-492` (the Service A QC bypass) |
+| `docs/04-integrations.md:76-78` | `docs/04-integrations.md:104-118`              |
+
+**Warning, and it is the useful part of this note now: the fix commit invalidated its own cite.**
+This block first read `copy.ts:662`, which was correct at `c442447^`. `c442447` then added 30 lines
+to `copy.ts` _above_ the function, so the moment it landed, `contentPolicyCheck` was at **`:692`** and
+every cite written inside that commit — this block, `0042`'s `method` field, and the in-code comment
+at `sets.ts:241` pointing at `copy.ts:675-680` (really `:706-711`) — was off by 30. A commit that
+records a line cite for a file it is also editing must take the cite from its own result, not from
+its parent.
 
 ---
 
@@ -74,7 +87,7 @@ This is the part that matters. Trace every gate that could catch bad copy:
 | ---------------------------- | --------------------------------------------------------------------------------------------- |
 | `contentPolicyCheck`         | never called                                                                                  |
 | Service B QC queue           | `auto_release_b` is `true` — bypassed (CLAUDE.md decision #8, amended)                        |
-| Service A QC queue           | bypassed **unconditionally** — `renders.ts:428` is `render.service === "a" \|\| autoReleaseB` |
+| Service A QC queue           | bypassed **unconditionally** — `renders.ts:492` is `render.service === "a" \|\| autoReleaseB` |
 | `events.content_policy_flag` | 0 rows, because nothing writes it ([[events-table-is-empty]])                                 |
 
 So for Service A — the self-serve steps product — **nothing automated and nobody human sees the
