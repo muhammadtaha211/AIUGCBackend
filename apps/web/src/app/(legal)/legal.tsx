@@ -51,4 +51,4 @@ export function Numbered({ children }: { children: React.ReactNode }) {
 }
 
 export const CONTACT_EMAIL = "tavnit.support@gmail.com";
-export const UPDATED = "03.09.2026";
+export const UPDATED = "11.09.2026";
