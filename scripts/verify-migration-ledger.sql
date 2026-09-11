@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035 and 0036 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033 and 0035-0037 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,7 +33,9 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect 26 true + 1 NULL (0036 added one row on 2026-09-11).
+-- expect 27 true + 1 NULL (0036 added one row on 2026-09-11, 0037 another the
+-- same day). NOTE: the 0037 row reads FALSE until the founder applies it — it is
+-- committed unapplied on purpose.
 -- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
@@ -339,6 +341,35 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     AND value #>> '{per_account,gpu_seconds}' = '2000')),
   'seeded config: all seven daily_caps values'),
 
+-- 0037: events.notified_at, the "already reported" marker that makes the
+-- worker's alert sweep safe to poll, plus the partial index it runs on. BOTH
+-- halves are asserted, and the index half is the one worth having: a hand-paste
+-- that stopped after the ALTER leaves a working sweep that scans a
+-- forever-growing table every 60 seconds, which is slow rather than broken and
+-- would therefore never announce itself.
+--
+-- The predicate is asserted by CONTENT, not by the index's existence: it repeats
+-- ALERT_EVENT_KINDS (packages/core/src/alerts.ts) as an immutable literal
+-- because a partial index cannot read an array from the application, so the two
+-- can drift. A false on the kind checks means the list gained a member and this
+-- index was not rebuilt.
+--
+-- This row cannot see whether the drizzle model AGREES with the column. For
+-- that, run the read-back that goes through the code's own schema:
+--   apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-events-notified-at.ts
+('0037', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'events'
+      AND column_name = 'notified_at' AND data_type = 'timestamp with time zone'
+      AND is_nullable = 'YES')
+  AND EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'events'
+      AND indexname = 'events_unnotified_alerts_idx'
+      AND indexdef ILIKE '%notified_at IS NULL%'
+      AND indexdef LIKE '%platform_budget_tripped%'
+      AND indexdef LIKE '%auth_email_send_failed%')),
+  'events.notified_at + the partial alert index, predicate included'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -397,7 +428,7 @@ ORDER BY migration, layer DESC;
 --   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 0030
 --
 -- That command is the 2026-08-26 backfill of the old ledger, kept as written.
--- 0032/0033 and 0035 are NOT in it. `db push` records them itself and needs no
+-- 0032/0033, 0035 and 0037 are NOT in it. `db push` records them itself and needs no
 -- repair; only a hand-paste into the SQL editor does, and then only once the
 -- row(s) above for what you pasted read true:
 --

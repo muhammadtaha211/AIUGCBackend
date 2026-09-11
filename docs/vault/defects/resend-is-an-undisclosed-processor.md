@@ -2,11 +2,42 @@
 type: defect
 status: verified
 verified: 2026-09-11
-method: "grep -rni resend across the repo at 2828fd3: zero hits in apps/web/src/app/(legal)/privacy/page.tsx and zero in docs/legal-review.md (the only hits are the docs/08 rebuild recipe, which names Resend as one of five candidate SMTP providers and, since this session, records it as the configured one). Privacy §6 read in full at apps/web/src/app/(legal)/privacy/page.tsx:160-237 — it names ten third parties and Resend is not among them. Provider-side facts (account, domain verification, EU region, DNS records, plan limits) are founder-reported from the Resend and Namecheap dashboards, not observable from this repo."
+method: 'Fix verified against this session''s own result, not against the parent: `grep -n ''שליחת מיילים'' apps/web/src/app/(legal)/privacy/page.tsx` -> :220 AFTER prettier ran, and `grep -n Resend` on the four touched files -> privacy/page.tsx:223, docs/legal-review.md:75 (row P11) and :118 (owed list), docs/legal/reg2-open-questions.md:119 (COUNSEL) and :155 (VENDOR). legal.tsx:54 reads "11.09.2026". ORIGINAL FINDING (2026-09-11, unchanged below): grep -rni resend across the repo at 2828fd3 returned zero hits in privacy/page.tsx and zero in docs/legal-review.md. Provider-side facts (account, domain verification, EU sending region, US incorporation, DNS records, plan limits) stay founder-reported from the Resend and Namecheap dashboards and are NOT observable from this repo.'
 source: code
 ---
 
 # Resend holds customer email addresses and is named in no privacy disclosure
+
+## FIXED 2026-09-11 — the disclosure only; the transfer basis is still counsel's
+
+**Fixed.** `/privacy` §6 now carries a `שליחת מיילים` sub-section —
+`apps/web/src/app/(legal)/privacy/page.tsx:220-226` — naming Resend, the two mails the app actually
+sends (signup confirmation and password reset, the reachable set `docs/08-supabase-project-rebuild.md`
+§8A.2 verified against the tree), that it receives the email address and the body of the message
+including the one-time link, **that opening an account now depends on the send**, and that the password,
+the uploaded video, the finished videos and the questionnaire are not sent. `docs/legal-review.md`
+gained row **P11** (`:75`) and one owed-list bullet (`:118`). `legal.tsx:54` `UPDATED` moved from
+`"03.09.2026"` to `"11.09.2026"`, which also closes the stale-date item at `:54-56` below — it covers
+`2b8e6ee`, `702742a` and this edit, and it moves the date on `/terms` too, since both pages read the
+same constant.
+
+It went in as its own `SubTitle`, on the same reasoning `2b8e6ee` used for Sentry: §3 and §8 both say
+"ספקי התשתית שלנו (סעיף 6)", so filing Resend under `תשתית ואחסון` would have made §3 claim it logs
+IPs and §8 claim it holds backups.
+
+**Not fixed, deliberately — and this is the half that matters.** §7 was **not touched**, and the page
+asserts **no transfer basis** for Resend. It states the sending region as a fact (Ireland) and, in the
+same sentence, that Resend is an American company, precisely so a later reader cannot take "Ireland"
+for "EU vendor, therefore covered by §7's convention clause". That question is now filed where it
+belongs: `docs/legal/reg2-open-questions.md:131` (COUNSEL — which basis, and whether an EU sending
+region says anything about US access) and `:167` (VENDOR — the reg. 3 undertaking and the retention of
+the message body). Both rows carry `—` in the `line` column and change no count: the reg. 2 document
+still has no Resend marker, and adding one is a document edit this pass did not make
+(`reg2-open-questions.md:37-42` records that).
+
+Still not established, unchanged from below: Resend's retention of the message body.
+
+---
 
 Custom SMTP went live on 2026-09-11: every Supabase auth email — today that means the signup
 confirmation, which is now **required** — is relayed through **Resend**. Resend therefore receives,

@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { getEnv, logger, type TerminalJob } from "@aiugc/core";
+import { getEnv, logger, type AlertEvent, type TerminalJob } from "@aiugc/core";
 
 /**
  * Error reporting for the one process with no supervisor and no dashboard.
@@ -67,6 +67,40 @@ export function reportTerminalJob(job: TerminalJob): void {
         jobId: job.jobId,
         attempts: job.attempts,
         lastError: job.lastError,
+      },
+    });
+  } catch {
+    // A reporting fault must never become a worker fault.
+  }
+}
+
+/**
+ * One event per alert-worthy `events` row the web app could not report itself —
+ * today an `auth_email_send_failed`, written by a Vercel function that must
+ * never load the Sentry SDK (decision 0037). The worker is the only process with
+ * a DSN, so it polls and reports on the web app's behalf.
+ *
+ * The KIND is in the TITLE, not only the tag, for the same reason `job dead` and
+ * `job failed` are separate titles: two kinds that group into one issue bury
+ * whichever is rarer, and these two are answered completely differently — a
+ * tripped platform cap is a runaway loop or a leaked key, a failed auth email is
+ * a provider ceiling and a blocked signup.
+ *
+ * `last24h` is the whole point of the extra: it turns "a signup failed" into
+ * "the 17th today", which is the difference between a blip and the ceiling — in
+ * the email itself, without opening the database.
+ */
+export function reportAlertEvent(event: AlertEvent): void {
+  if (!reportingEnabled) return;
+  try {
+    Sentry.captureMessage(`alert: ${event.kind}`, {
+      level: "error",
+      tags: { alertKind: event.kind, workerId: getEnv().WORKER_ID },
+      extra: {
+        eventId: event.id,
+        createdAt: event.createdAt.toISOString(),
+        last24h: event.last24h,
+        payload: event.payload,
       },
     });
   } catch {

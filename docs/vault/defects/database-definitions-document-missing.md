@@ -8,6 +8,34 @@ source: code + founder
 
 # Privacy §11 claims compliance with the 2017 Data Security Regs; the reg. 2 document does not exist
 
+## DEFERRED 2026-09-11 — by founder decision, and this note stays open on purpose
+
+**This defect is not being fixed, and that is now a recorded decision rather than an absence of one.**
+The founder deferred the reg. 2 document indefinitely on 2026-09-11, with no date, and accepted
+responsibility for the consequences: [[../decisions/0043-the-reg-2-definitions-document-is-deferred-by-decision]].
+
+Nothing below is retracted. The gap this note describes — `/privacy` §11 claiming compliance in
+public while the document behind it is unfinished — is **exactly** what the decision carries. The
+note keeps `type: defect` and stays open because an accepted risk is still a risk; what it must not
+be read as any more is queued work.
+
+Two numbers in this note moved when the decision landed, and neither is an error in it:
+
+- **981 lines is now 990.** `0043` added a dated STATUS blockquote to the head of
+  `docs/legal/database-definitions-document.md`. The body is untouched.
+- **The worksheet is 167 lines, not 155.** Same reason — its own STATUS block at `:10-20` — plus two
+  Resend rows added the same day (`:131` COUNSEL, `:167` VENDOR) that carry `—` in the `line` column
+  because the document has no Resend marker to point at.
+
+**The 73 / 75 / 71 counts are unchanged.** No marker was added, answered, edited or renumbered.
+
+One stale cross-reference in this note, left as it is because correcting it is a separate concern:
+`:118` below says "Queue item 1 opens the service to strangers". Queue item 1 in
+`docs/vault/state-of-play.md` has not been that item for some time, and reg. 2 is no longer in that
+queue at all.
+
+---
+
 ## DRAFTED 2026-09-10 (`ae8da4e`, then `79ec992`) — the duty is NOT discharged
 
 `docs/legal/database-definitions-document.md` now exists: **981 lines**, Hebrew, internal only. It

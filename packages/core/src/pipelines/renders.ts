@@ -935,6 +935,23 @@ export const RENDER_FAILED_MESSAGE = "יצירת הסרטון נכשלה — נ�
 export const RENDER_PARK_EXPIRED_MESSAGE =
   "יצירת הסרטון התעכבה מעבר לסביר בגלל תקלה אצלנו — נסו שוב מאוחר יותר.";
 
+/**
+ * The same valve, for the work that is NOT a render — a parked analysis, step
+ * plan, audio preview or composite (janitor.ts). It lives beside its sibling so
+ * the two park messages are edited together, but it never reaches
+ * video_renders.error: its targets are demo_analyses.fail_reason,
+ * demo_step_plans.fail_reason, audio_renders.error and composites.error, so the
+ * closed set documented above is unchanged.
+ *
+ * One string for four job types on purpose. The customer is told the same true
+ * thing in every case — the wait outlived what we will make them wait — and
+ * which of our internal steps it was is not information they can act on. Naming
+ * the step would also make this the only place in the codebase where a park
+ * message has to be kept in step with a job-type list.
+ */
+export const WORK_PARK_EXPIRED_MESSAGE =
+  "העיבוד התעכב מעבר לסביר בגלל תקלה אצלנו — נסו שוב מאוחר יותר.";
+
 /** events.kind: a dying render's refund landed on an ancestor's debit. */
 export const REFUND_RESOLVED_TO_ANCESTOR = "refund_resolved_to_ancestor";
 

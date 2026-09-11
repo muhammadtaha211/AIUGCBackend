@@ -53,6 +53,44 @@ source: founder
 functions are no-ops, and the worker logs `error reporting off — SENTRY_DSN not set` at
 startup. Turning it on is one env line and a restart — no deploy, no code change.
 
+## Amended 2026-09-11 — a SECOND reporting path exists, and the boundary is intact
+
+There are now two ways something reaches Sentry, and only one of them is a callback.
+
+| path            | writer                                         | how it reaches Sentry                                                               |
+| --------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| a job ends      | `runJob` in `packages/core/src/jobs/worker.ts` | the `onJobTerminal` callback above, in-process, synchronous                         |
+| an `events` row | `apps/web` (a Vercel function)                 | the worker POLLS `events` and reports on its behalf — `apps/worker/src/index.ts:60` |
+
+**The boundary this decision exists to hold is unchanged.** `apps/web` still never loads
+`@sentry/node`; it writes a row and returns. `packages/core` still never imports a reporting SDK —
+`packages/core/src/alerts.ts` knows only how to READ the queue (`pendingAlertEvents`, `:127`) and
+MARK it drained (`markEventsNotified`, `:171`). The sweep lives in `apps/worker/src/index.ts` and
+**not** in core's lanes, so `aiugc work --once` stays silent BY CONSTRUCTION exactly as this
+decision requires, rather than by remembering not to configure it.
+
+**This is the option the table below REJECTS, chosen for a different writer.** The row reads:
+"Worker polls the `jobs` table for `dead` rows — rejected — needs a 'reported' marker (a migration)
+or re-reports everything on restart." The objection was right, and migration 0037
+(`supabase/migrations/0037_events_notified_at.sql`) is the marker it named:
+`events.notified_at`, plus a partial index over the unnotified rows of the alert kinds. It is
+rejected there and chosen here because the WRITER is on the other side of the SDK boundary — a job
+ends inside the worker's own process, where a callback is free, while a failed signup happens in a
+Vercel function that can never report anything itself. Polling is the price of that, and the
+migration is what makes polling safe.
+
+**What is reported, and what is not.** `ALERT_EVENT_KINDS` (`alerts.ts:107`) is an allowlist of two:
+`platform_budget_tripped` and the new `auth_email_send_failed` (`alerts.ts:35`). Every other
+`events` kind — `qc_release`, `refund_resolved_to_ancestor`, `content_policy_flag`, the rest — costs
+nothing and can never turn into mail. The kind is in the TITLE (`alert: <kind>`,
+`apps/worker/src/reporting.ts:93`) for the same reason `job dead` and `job failed` are separate
+titles.
+
+`SENTRY_DSN` unset is still first-class: `reportAlertEvent` returns immediately, the sweep still
+marks the rows, and nothing initialises.
+
+---
+
 ## Why the boundary is at apps/worker
 
 - `packages/core` is imported by `apps/web` and `apps/admin`, which run on Vercel. A node-only

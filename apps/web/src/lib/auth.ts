@@ -4,6 +4,7 @@
  * Every failure surfaces as a Hebrew message the forms can show inline.
  */
 
+import type { AuthEmailFailureReason } from "@aiugc/core";
 import { isAuthApiError } from "@supabase/supabase-js";
 import { createClient } from "./supabase/client";
 
@@ -65,6 +66,59 @@ function hebrewAuthError(error: unknown): string {
   }
 }
 
+/**
+ * Shown when the confirmation email could not be sent. It points at Google
+ * sign-in because that path does not touch Resend at all — Supabase sends no
+ * mail for an OAuth signup — and it is the majority path anyway.
+ */
+export const AUTH_EMAIL_SEND_FAILED_MESSAGE =
+  "לא הצלחנו לשלוח כרגע את מייל האישור, אז אי אפשר לסיים הרשמה עם אימייל. אפשר להיכנס עם Google, או לנסות שוב בעוד כמה דקות.";
+
+/**
+ * Did this signup fail because the confirmation email was not sent?
+ *
+ * Keyed on `AuthApiError.code`, checked against the `ErrorCode` union in the
+ * INSTALLED `@supabase/auth-js` (2.110.6,
+ * `dist/main/lib/error-codes.d.ts`) rather than on a remembered string:
+ *
+ * - **`unexpected_failure`** — GoTrue's 500 catch-all. There is no
+ *   email-send-specific member in that union at all: it has `sms_send_failed`
+ *   and **no email twin**, so a custom-SMTP refusal has nowhere else to land.
+ *   The `status >= 500` guard keeps it to the server-side class; it is still
+ *   the broadest of the two, and a Supabase-side fault unrelated to mail would
+ *   also match. That over-reach is accepted — it is still "signup is broken",
+ *   which is the thing worth being told.
+ * - **`over_email_send_rate_limit`** — GoTrue refused to hand the mail to SMTP
+ *   at all. Not the provider ceiling the founder is watching for (that is
+ *   Resend's 100/day, and it surfaces as the first code), but the same outcome
+ *   for the customer.
+ *
+ * Everything else returns undefined and keeps its existing message, including
+ * every validation failure: `user_already_exists`, `email_exists`,
+ * `weak_password`, `validation_failed`, `email_address_invalid`,
+ * `signup_disabled` and `email_provider_disabled`. None of those is a send that
+ * failed, and misreading one as the ceiling would be worse than silence.
+ */
+export function authEmailSendFailure(error: unknown): AuthEmailFailureReason | undefined {
+  if (!isAuthApiError(error)) return undefined;
+  if (error.code === "over_email_send_rate_limit") return "over_email_send_rate_limit";
+  if (error.code === "unexpected_failure" && error.status >= 500) return "unexpected_failure";
+  return undefined;
+}
+
+/**
+ * Tell the server an auth email did not go out. Fire-and-forget and swallowed:
+ * the alert must never be able to fail the signup or change what the user sees.
+ */
+function reportAuthEmailFailure(reason: AuthEmailFailureReason): void {
+  void fetch("/api/auth-email-failed", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 export async function signUp(email: string, password: string): Promise<AuthResult> {
   try {
     const { data, error } = await createClient().auth.signUp({
@@ -73,11 +127,20 @@ export async function signUp(email: string, password: string): Promise<AuthResul
       // Without this the confirmation link returns to the Site URL root, and
       // `/` is a static marketing page that never reads searchParams — so the
       // click silently does nothing. /auth/callback already exchanges the PKCE
-      // code. Confirm-email is OFF for launch, so this is latent today and
-      // deliberately correct for the day it is turned on.
+      // code. Confirm-email has been ON in production since 2026-09-11, so this
+      // is now load-bearing on every email signup, not latent.
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
-    if (error) return { ok: false, error: hebrewAuthError(error) };
+    if (error) {
+      // Ordered before hebrewAuthError so the two codes above get the
+      // Google-sign-in message instead of "too many attempts" or the generic.
+      const sendFailure = authEmailSendFailure(error);
+      if (sendFailure) {
+        reportAuthEmailFailure(sendFailure);
+        return { ok: false, error: AUTH_EMAIL_SEND_FAILED_MESSAGE };
+      }
+      return { ok: false, error: hebrewAuthError(error) };
+    }
     if (!data.session) {
       // Email confirmation is enabled in the dashboard — no session yet.
       return { ok: false, error: "שלחנו מייל אישור. אשרו אותו ואז היכנסו דרך מסך הכניסה." };

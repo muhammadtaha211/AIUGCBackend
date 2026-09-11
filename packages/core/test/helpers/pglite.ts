@@ -50,6 +50,7 @@ export const PORTABLE_MIGRATIONS = [
   "0034_lipsync_expressiveness_medium.sql",
   "0035_feedback.sql",
   "0036_daily_caps_runaway_detector.sql",
+  "0037_events_notified_at.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

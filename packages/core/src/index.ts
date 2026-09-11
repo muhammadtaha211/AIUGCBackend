@@ -1,3 +1,4 @@
+export * from "./alerts";
 export * from "./appConfig";
 export * from "./b-script-words";
 export * from "./budget";

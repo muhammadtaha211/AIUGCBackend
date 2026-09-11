@@ -650,9 +650,21 @@ export const events = pgTable(
     subjectType: text("subject_type"),
     subjectId: uuid("subject_id"),
     payload: jsonb("payload").notNull().default({}),
+    // 0037: when the worker's alert sweep reported this row out of band. NULL
+    // on every row that is not an ALERT_EVENT_KINDS kind, and on those, NULL
+    // means "not reported yet" (alerts.ts). The partial index below is what
+    // keeps the every-tick sweep an empty index scan on a table that only grows.
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("events_kind_created_idx").on(t.kind, t.createdAt)],
+  (t) => [
+    index("events_kind_created_idx").on(t.kind, t.createdAt),
+    index("events_unnotified_alerts_idx")
+      .on(t.createdAt)
+      .where(
+        sql`${t.notifiedAt} is null and ${t.kind} in ('platform_budget_tripped', 'auth_email_send_failed')`,
+      ),
+  ],
 );
 
 // In-app "צור קשר" (/home/feedback): one message from a signed-in customer,

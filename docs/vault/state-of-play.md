@@ -43,6 +43,33 @@ history. History of the two incidents that bought it:
 [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]],
 [[bundle-fix-reached-the-worker-box]], [[tmp-cron-deletes-live-worker-bundle]].
 
+## What changed this session — branch `launch/resend-parkvalve-alerts`, NOT MERGED
+
+Cut from `origin/main` at **`d4c79ef`** (PR #28), which is one merge ahead of the `5a52ded` the
+section below records — that section was written before its own commit was merged. Four commits, one
+per task, plus this handover.
+
+| commit    | what                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------- |
+| `3a3deda` | privacy §6 discloses Resend; `legal-review.md` P11; `UPDATED` -> 11.09.2026                 |
+| `692c3dd` | reg. 2 is deferred BY DECISION — vault `0043`, out of the queue, into Open decisions        |
+| `ba6a239` | the budget-park valve now ends non-render work; `packages/core/test/park-valve.test.ts`     |
+| `5c13ead` | the auth-email alert — migration **0037**, `core/src/alerts.ts`, vault `0044`, 0037 amended |
+
+**Migration 0037 (`events.notified_at` + a partial alert index) is committed and NOT APPLIED.** The
+founder applies it. `npx -y supabase db push --db-url <session pooler>` after a read-only
+`migration list` + `db push --dry-run` pre-flight; `db push` records the version itself, so no
+`migration repair` — the fourth time that prediction is being made. Read it back with
+`apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-events-notified-at.ts`, which goes
+through the drizzle model rather than raw SQL. **Nothing in this branch works until it is applied**:
+the sweep will log `alert sweep failed` once a minute and swallow it.
+
+**The box needs a deploy for the valve and the alert sweep to run** — both live in code the worker
+executes. The web half (the disclosure, the route, the classifier) ships with Vercel on merge.
+
+Two queue items are closed by this branch (1 and 5) and are struck through rather than deleted,
+because the branch is unmerged. Delete them once the PR lands.
+
 ## What changed this session (2026-09-11)
 
 Branch `overnight/launch-blockers`, six commits, merged to `main` in **two** PRs — #26 (`b8af879`,
@@ -98,7 +125,10 @@ complete. Region **Ireland (EU)**. DNS at Namecheap: DKIM `TXT resend._domainkey
 **CNAME**s (`rsend`, `send`) — _not_ a TXT SPF record; DMARC `TXT _dmarc` = `v=DMARC1; p=none;`.
 Receiving off (no MX). Free tier **3,000/month AND 100/day**.
 **The 100/day is the real ceiling, not the 100/hour** — see [[auth-email-runs-through-resend]].
-It is disclosed nowhere: [[resend-is-an-undisclosed-processor]], queue item 1.
+It was disclosed nowhere until `3a3deda` on `launch/resend-parkvalve-alerts` (unmerged at the
+time of writing): [[resend-is-an-undisclosed-processor]] carries the dated FIXED block. **The
+transfer basis is still open** — an Irish sending region says nothing about US access by a US
+company, and the page deliberately claims no basis.
 
 **The box.** `aiugc-worker.service`, `Restart=always`, `WORKER_ID=hetzner`. At `b8af879` after the
 2026-09-11 deploy (`git pull && pnpm install && sudo systemctl restart aiugc-worker`).
@@ -141,12 +171,13 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
 
 ## The queue
 
-1. **Resend is an undisclosed processor.** Exactly the gap closed for Sentry hours earlier the same
-   day, re-created by adding a vendor. It holds customer email addresses and, with confirmation ON,
-   signup **cannot complete** without it — a stronger dependency than Sentry's. Absent from privacy
-   §6 and from `docs/legal-review.md`. The EU region makes it the easier of the two to justify; the
-   disclosure still has to exist. Bump `legal.tsx:54 UPDATED` while there — it still reads
-   `"03.09.2026"` despite two §6 edits on 2026-09-11. [[resend-is-an-undisclosed-processor]].
+1. ~~**Resend is an undisclosed processor.**~~ **DONE on `launch/resend-parkvalve-alerts`
+   (`3a3deda`), UNMERGED at the time of writing.** Privacy §6 gained a `שליחת מיילים` sub-section
+   (`privacy/page.tsx:220-226`), `docs/legal-review.md` row P11 (`:75`) + an owed-list bullet
+   (`:118`), and `legal.tsx:54 UPDATED` moved to `"11.09.2026"`. **§7 was NOT touched and the page
+   asserts no transfer basis** — that question is filed unanswered in
+   `docs/legal/reg2-open-questions.md:131` (COUNSEL) and `:167` (VENDOR). Leave this item here until
+   the PR is merged, then delete it.
 2. **Correct `docs/08` §8A.1.** `:429-438` asserts `signUp` has **no** `emailRedirectTo` and the
    table row `:443` says a one-line change is needed. Both false — `auth.ts:78` has passed it since
    `02f58bb`. Cheap, and it has now caused a real error once (see Corrections). §8A.2 cross-references
@@ -159,39 +190,40 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
    `pnpm -r test`, fans out to five packages, and OOMs this machine. Every prompt written for this
    repo uses "tests green" as its stop condition, so as written the stop condition is unrunnable.
    [[pnpm-r-test-ooms-this-machine]] has the five serial commands.
-5. **The reg. 2 worksheet's open questions.** `docs/legal/reg2-open-questions.md`, bucketed
-   FOUNDER / COUNSEL / VENDOR. The collation is done; the answering is owed and needs a person.
-   **73 real gaps** (see Corrections for why not 75). [[database-definitions-document-missing]].
-6. **A budget-parked non-render job has no exit.** The 6h valve (`MAX_BUDGET_PARK_MS`,
-   `pipelines/janitor.ts:25`) reaches only `render_video` and `lipsync`, so a parked `synth_tts` or
-   `analyze_demo` re-queues at +1h forever with its row stuck mid-state and the wizard spinning.
-   0036 makes the platform cap nearly unreachable, which shrinks the odds; it does not fix the
-   mechanism.
-7. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
+5. ~~**A budget-parked non-render job has no exit.**~~ **DONE on
+   `launch/resend-parkvalve-alerts` (`ba6a239`), UNMERGED.** `failOverparkedWork`
+   (`pipelines/janitor.ts:208`, called from the reaper at `:276`) ends the job AND lands its domain
+   row, for an allowlist of four: `analyze_demo`, `plan_demo_steps`, `synth_tts`,
+   `generate_composite`. `MAX_BUDGET_PARK_MS` is unchanged and the render valve is untouched. No
+   refund — proven per type, none of the four carries a credit debit. Leave until merged, then
+   delete.
+6. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
    runs (the key IS in Vercel's web env; the wizard signs storage URLs server-side). Deliberately not
    edited: what it should say instead is the founder's call, and the honest options differ — drop the
    clause, or keep it and move the signing off the web tier.
-8. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
+7. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
    `:168`, not the `:111` this queue said for weeks. "Hetzner CPX41-class, ~€30/mo flat" predates the
    June 2026 price rise and understates by roughly half; "~2–6 min wall time per video" is 2–5× too
    slow against three measured renders ([[service-a-render-wall-clock-on-the-box]]).
-9. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
+8. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
    `copy.ts:675-680` for the `content_policy_flag` insert, which is `:706-711`. Left alone because
    this session was docs-only. Trivial, but see Corrections for why this class keeps recurring.
-10. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
-    load-bearing; all of it misleads. `docs/08` §8B `:495`, `:501`, `:514`, `:547`, `:608`, `:672`;
-    `0006` `:34`, `:52`, `:54`; `0005` `:14`, `:30`. **Every one of those line numbers predates this
-    session's §8A.2 insertion, which added 151 lines at `:472` — so all the `docs/08` cites above are
-    now ~151 low. Re-grep, do not trust them.**
-11. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
+9. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
+   load-bearing; all of it misleads. `docs/08` §8B `:495`, `:501`, `:514`, `:547`, `:608`, `:672`;
+   `0006` `:34`, `:52`, `:54`; `0005` `:14`, `:30`. **Every one of those line numbers predates this
+   session's §8A.2 insertion, which added 151 lines at `:472` — so all the `docs/08` cites above are
+   now ~151 low. Re-grep, do not trust them.**
+10. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
     still points at" — **false since 2026-08-27**; all five env files point at
     `hyaqydcmwbnbaiqqufow`, and the old project is deleted. Same line's "ledger clean at 0000–0030"
     is stale at 0000–0036. `CLAUDE.md:130` is current and correct.
 
 Items 1–4 first because each is cheap and each is a trap for the _next_ session rather than a
-feature. 5 is the only one that needs a person who is not the founder. 6 is the only real code
-defect left and is now low-probability. 8–11 are docs corrections ordered by how likely a reader is
-to act on the wrong thing.
+feature. 5 is the only real code defect left and is now low-probability. 7–10 are docs corrections
+ordered by how likely a reader is to act on the wrong thing. **Reg. 2 used to be item 5 and is no
+longer in this queue** — it was not done and it was not dropped: it is deferred indefinitely by
+founder decision, [[0043-the-reg-2-definitions-document-is-deferred-by-decision]]. See Open
+decisions below.
 
 ## Open decisions
 
@@ -199,10 +231,17 @@ to act on the wrong thing.
   עוסק פטור and cannot — [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as
   עוסק פטור (קבלה / חשבונית עסקה) or convert first. No money moves today, so nothing is currently
   wrong; it is a configuration decision the gateway work must not skip.
-- **The reg. 2 מסמך הגדרות מאגר — drafted, duty NOT discharged.**
-  `docs/legal/database-definitions-document.md`, 981 lines, internal only, linked from nowhere. The
-  collation is done; **73 gaps** need the founder or counsel, not more drafting. Worksheet is
-  `docs/legal/reg2-open-questions.md` (queue 5).
+- **The reg. 2 מסמך הגדרות מאגר — DEFERRED INDEFINITELY by founder decision, 2026-09-11.** Not
+  pending, not owed-and-unstarted: decided, with the consequences accepted explicitly, and a lawyer
+  to be engaged when the founder sees fit. This is no longer a queue item — do not put it back, and
+  do not open it as unfinished work. [[0043-the-reg-2-definitions-document-is-deferred-by-decision]]
+  is the decision and carries what stands behind it:
+  `docs/legal/database-definitions-document.md` (990 lines, Hebrew, drafted, served by no route — 981
+  until 0043 put a STATUS blockquote at its head, which is why the older notes say 981),
+  **73 real gaps** bucketed FOUNDER 34 / COUNSEL 23 / VENDOR 16 in
+  `docs/legal/reg2-open-questions.md`, of which 39 need a person who is not the founder. What the
+  decision does NOT do: retract `/privacy` §11's live compliance claim, or say the duty does not
+  apply. [[database-definitions-document-missing]] stays open by choice.
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing fix closed the
   silent variant for every writer, not just the CLI.
 - **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true
@@ -223,6 +262,20 @@ to act on the wrong thing.
   failure mode is reasoned from two published limits, not observed.
 
 ## Corrections worth not repeating
+
+- **This file's own "What changed this session" section was stale before it was read.** It records
+  `origin/main` as `5a52ded` and lists its own handover commit as uncommitted; by the time the next
+  session fetched, `origin/main` was `d4c79ef` — PR #28, which merged exactly that commit. Nothing
+  was wrong when written. **Fetch and read `origin/main`, never this file, for where main is.**
+- **The reg. 2 STATUS block moved this file's own cites, inside the commit that wrote them.** The
+  12-line block added at `reg2-open-questions.md:10` pushed the two Resend rows `3a3deda` had just
+  cited at `:119`/`:155` down to `:131`/`:167`, and the 9-line block at the head of
+  `database-definitions-document.md` turned `wc -l` 981 into 990. Both were caught and corrected in
+  `692c3dd` — the same class as `c442447`, one commit later, in the opposite file. **Take the cite
+  from your own result AFTER prettier has run, not before.**
+- **`grep -c` on the reg. 2 markers, again.** Reconfirmed 2026-09-11 against the current tree:
+  **73 gaps / 75 raw hits / 71 matching lines.** Adding worksheet rows that carry `—` in the `line`
+  column changes none of them, because the counts count MARKERS, not questions.
 
 Recorded because each cost real time, and each came from asserting rather than checking.
 
