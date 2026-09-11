@@ -10,7 +10,7 @@ source: code
 
 ```
 analyze_demo          v1 v2 v3                              (latest v3)
-b_script              v1..v16                               (latest v16, new 2026-09-08)
+b_script              v1..v17                               (latest v17, new 2026-09-11)
 benefit_captions      v1 v2                                 (latest v2)
 content_policy        v1                                    (latest v1)
 group_analysis_states v1                                    (latest v1, new 2026-08-25)
@@ -18,7 +18,7 @@ hook_lines            v1..v7                                (latest v7)
 hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
 plan_demo_steps       v1..v13                               (latest v13)
 tts_enhance           v1..v4                                (latest v4)
-vo_script             v1..v8                                (latest v8, new 2026-09-08)
+vo_script             v1..v9                                (latest v9, new 2026-09-11)
 ```
 
 b_script v9 (2026-09-05) is v8's vars and rules with the output changed to the JSON
@@ -70,6 +70,20 @@ never contained `רגע`, so neither needed a fix.
 > `vo-prompt.test.ts` twin pins every variable to a literal and is genuinely deterministic; only the
 > `b_script` one flakes. `hook-templates.ts` was never audited for the ban — it is not in `f40bc72`'s
 > file list.
+
+b_script **v17** and vo_script **v9** (2026-09-11, same vars as v16/v8 — **no restart needed for
+the prompt files themselves**) correct the rule rather than the copy. The ban was never about the
+word: it targets the **hesitation tick**, and v16/v8's trailing "it must not appear in a script"
+overshot that, suppressing legitimate copy in the live prompt on every generation since `f40bc72`.
+Both files now state the distinction with one Hebrew example of each use, identically worded so the
+two prompts cannot diverge. Both tests drop the `/רגע/g` count — meaningless once the word is
+legitimate — and assert the **rule text** instead, which also ends the 12.0% flake above.
+[[0046-the-rega-ban-targets-the-hesitation-tick-not-the-word]].
+
+**The same commit does need a deploy and a restart, for a different reason:**
+`packages/core/src/hook-templates.ts` is compiled into the worker and web bundles, and its curated
+opener changed (`תראי רגע את זה` → `תראי את זה רגע`). The prompt-file half would have been
+restart-free on its own.
 
 plan_demo_steps v13 (2026-08-25) adds `{{demo_description}}` — the new-var restart trap below fired in the flesh:
 the file landed while two pre-change workers were live, and both had to be restarted in the same
