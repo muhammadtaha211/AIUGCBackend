@@ -281,7 +281,10 @@ describe("plan_demo_steps (dry-run chain)", () => {
       await recordUsage(db, {
         provider: "anthropic",
         kind: "llm_tokens",
-        quantity: 1_500_000,
+        // Exactly the per-account cap: 0027 seeded 1_500_000, 0036 tightened it
+        // to 500_000. Burning the cap exactly is the point — it proves the
+        // queued-job backstop, so it moves with the cap.
+        quantity: 500_000,
         businessId: customer.id,
       });
 

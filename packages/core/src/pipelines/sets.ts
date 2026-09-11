@@ -1,4 +1,4 @@
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
 import { snapToWordGap, type CaptionChunk } from "../captions";
@@ -10,6 +10,7 @@ import {
   events,
   openerClips,
   personaImages,
+  scripts,
   sets,
   videoRenders,
 } from "../db/schema";
@@ -23,6 +24,7 @@ import {
 } from "../hook-geometry";
 import { hookTextError } from "../hook-text";
 import { enqueue } from "../jobs/queue";
+import { logger } from "../logger";
 import {
   creditCostsSchema,
   quoteEndingReroll,
@@ -33,7 +35,8 @@ import {
 } from "../pricing";
 import { lipsyncExpressivenessSchema, type LipsyncExpressiveness } from "../providers/lipsync";
 import { businessOwnerId, creditBalance, debitRender, InsufficientCreditsError } from "./credits";
-import { isAdminOwned } from "./businesses";
+import { getBusiness, isAdminOwned } from "./businesses";
+import { CONTENT_POLICY_CHECK_FAILED, contentPolicyCheck, ContentPolicyError } from "./copy";
 import { getStepPlan } from "./demo-step-plans";
 
 /**
@@ -166,6 +169,91 @@ export async function planAOutro(
   };
 }
 
+/**
+ * The one automated gate between a customer's own words and a finished video.
+ *
+ * Nothing else looks at this text. Service A never touches HeyGen — no
+ * lip-sync, no provider moderation anywhere in its path — and it bypasses QC
+ * unconditionally (`renders.ts:491-492`); Service B releases without QC too,
+ * because `auto_release_b` is permanently true (vault 0036). So no human and no
+ * provider sees a Service A or Service B ad before the customer does.
+ *
+ * Wired 2026-09-11. Vault 0042 supersedes 0041, which decided not to wire it —
+ * on a census of six accounts that were all the founder's own, and which named
+ * its own expiry: the first signup by someone who is not the founder.
+ *
+ * Called after every free gate and before the transaction that debits, so a
+ * refused render never charges, and a malformed or unaffordable request never
+ * pays for a classifier call.
+ *
+ * FAILS OPEN, deliberately and as a trade-off worth stating: a classifier that
+ * errors — Anthropic down, a timeout, output that will not parse — records that
+ * it did not run and lets the render through. A classifier outage must not take
+ * the product down, and the exposure it guards is small. The cost is that the
+ * gate is exactly as available as Anthropic is.
+ */
+async function assertContentPolicy(
+  db: Db,
+  businessId: string,
+  extra: { label: string; text?: string | null }[],
+): Promise<void> {
+  // The same bypass as credits, watermarks and the per-account cap
+  // (`budget.ts:85-87`): the founder's own businesses render cold-outreach
+  // samples in volume, and the gate is for strangers. First, so an admin path
+  // does not even read the questionnaire.
+  if (await isAdminOwned(db, businessId)) return;
+
+  // The questionnaire is on both paths, so it is read here rather than twice at
+  // the call sites. Not requireQuestionnaire: an absent questionnaire is not
+  // this gate's error to throw.
+  const business = await getBusiness(db, businessId);
+  const parts = [
+    {
+      label: "שאלון העסק",
+      text: business.questionnaire ? JSON.stringify(business.questionnaire, null, 2) : undefined,
+    },
+    ...extra,
+  ];
+
+  // prompts/content_policy/v1.md takes ONE variable, `{{text}}`, described as
+  // "advertiser-provided content (questionnaire and/or ad script, Hebrew)" — so
+  // the input is one labelled blob, not a structure.
+  const text = parts
+    .map((p) => ({ label: p.label, text: p.text?.trim() }))
+    .filter((p): p is { label: string; text: string } => Boolean(p.text))
+    .map((p) => `${p.label}:\n${p.text}`)
+    .join("\n\n");
+  if (!text) return;
+
+  let verdict: Awaited<ReturnType<typeof contentPolicyCheck>>;
+  try {
+    verdict = await contentPolicyCheck(db, { businessId, text });
+  } catch (err) {
+    await db.insert(events).values({
+      kind: CONTENT_POLICY_CHECK_FAILED,
+      businessId,
+      payload: { error: err instanceof Error ? err.message : String(err) },
+    });
+    logger.warn({ err, businessId }, "content policy check failed — letting the render through");
+    return;
+  }
+  // contentPolicyCheck writes the `content_policy_flag` event itself
+  // (`copy.ts:675-680`); refusing is this function's half.
+  if (verdict.flagged) throw new ContentPolicyError(verdict.category, verdict.reason);
+}
+
+/** The text behind a set of script ids, in the order the ids were given. */
+async function scriptTexts(db: Db, ids: string[]): Promise<string[]> {
+  const wanted = ids.filter(Boolean);
+  if (wanted.length === 0) return [];
+  const rows = await db
+    .select({ id: scripts.id, text: scripts.text })
+    .from(scripts)
+    .where(inArray(scripts.id, wanted));
+  const byId = new Map(rows.map((r) => [r.id, r.text]));
+  return wanted.map((id) => byId.get(id)).filter((t): t is string => Boolean(t));
+}
+
 export async function createSet(
   db: Db,
   opts: { businessId: string; demoId: string; grid: SetGrid; parentVariantId?: string },
@@ -245,6 +333,21 @@ export async function createSet(
           })
         : await quoteSilentASet(db, { businessId: opts.businessId, demo });
   assertAffordable(quote, cells.length);
+
+  // Customer-supplied text, checked before anything is charged. The hook lines
+  // are the customer's own words: the hook studio lets them edit a line and
+  // burn it onto the video, and an edit writes a NEW `scripts` row
+  // (copy.ts:715-737), so these ids carry the FINAL text.
+  await assertContentPolicy(db, opts.businessId, [
+    {
+      label: "משפטי הפתיחה שייצרבו על המסך",
+      text: (await scriptTexts(db, grid.hookLineScriptIds)).join("\n"),
+    },
+    {
+      label: "תסריט הכיתובים",
+      text: (await scriptTexts(db, grid.captionScriptId ? [grid.captionScriptId] : []))[0],
+    },
+  ]);
 
   // One transaction: the set, its renders, their debits and their jobs commit
   // together or not at all. A job can never see a render row that isn't there,
@@ -556,6 +659,17 @@ export async function createBRender(
     audioRenderId: opts.audioRenderId,
   });
   assertAffordable(quote, 1);
+
+  // Same gate, different inputs: Service B's on-screen text is the hookText
+  // copied into params at enqueue (vault 0017), and its spoken text is the
+  // approved script behind the audio render.
+  await assertContentPolicy(db, opts.businessId, [
+    { label: "הטקסט שייצרב על המסך", text: hookText },
+    {
+      label: "תסריט הדמות",
+      text: (await scriptTexts(db, audio[0].scriptId ? [audio[0].scriptId] : []))[0],
+    },
+  ]);
 
   // Same all-or-nothing envelope as createSet: render, debit and job together.
   return db.transaction(async (tx) => {

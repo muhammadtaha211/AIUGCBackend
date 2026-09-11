@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AccountBudgetError, InsufficientCreditsError } from "@aiugc/core";
+import { AccountBudgetError, ContentPolicyError, InsufficientCreditsError } from "@aiugc/core";
 import { coreErrorMapping, GENERIC_ERROR, INVALID_BODY, NOT_FOUND } from "../src/lib/api-errors";
 
 /**
@@ -163,5 +163,30 @@ describe("coreErrorMapping — credits and the fallthrough", () => {
   it("handles a non-Error throw without crashing", () => {
     expect(coreErrorMapping("just a string").mapped).toBe(false);
     expect(coreErrorMapping(undefined).status).toBe(500);
+  });
+});
+
+describe("coreErrorMapping — the content-policy gate", () => {
+  it("maps a refusal to its own 422, not a generic failure", () => {
+    const err = new ContentPolicyError("Medical or health claims", "מבטיח ריפוי מלא");
+    expect(coreErrorMapping(err)).toEqual({
+      status: 422,
+      error: "התוכן לא עבר את בדיקת התוכן שלנו. עדכנו את השאלון או את הטקסט שנבחר ונסו שוב.",
+      mapped: true,
+    });
+  });
+
+  it("never leaks the classifier's category or the quoted text to the customer", () => {
+    const err = new ContentPolicyError("Scams, misleading claims, or impersonation", "מבטיח ריפוי");
+    const result = coreErrorMapping(err);
+    expect(result.error).not.toContain("Scams");
+    expect(result.error).not.toContain("מבטיח ריפוי");
+  });
+
+  it("is matched by class, so a category that reads like another branch cannot steal it", () => {
+    // `category` is free text from a model. A substring mapper placed below the
+    // /not found/ line would answer this one with a 404.
+    const err = new ContentPolicyError("product not found in any legal catalogue");
+    expect(coreErrorMapping(err).status).toBe(422);
   });
 });

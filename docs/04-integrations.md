@@ -101,10 +101,21 @@ keyless (the e2e test relies on this).
   park the job**: a parked job never fails, `useJobPoll` only gives up after consecutive
   _failures_, and the wizard would spin forever (same split as the per-account caps in
   [05-billing.md](05-billing.md) §Quotas and caps).
-- **Content policy (Service A)**: `contentPolicyCheck()` runs the `content_policy` classifier
-  over the questionnaire + final script **before render** in the self-serve flow; a flag blocks
-  the render and writes a `content_policy_flag` event for founder review. Service B is covered
-  by the QC gate itself.
+- **Content policy (both services)**: `contentPolicyCheck()` runs at the two functions that create
+  renders — `createSet` (Service A) and `createBRender` (Service B), which do **not** share a path —
+  after every free gate and **before the credit debit**, so a refused render never charges and an
+  unaffordable request never pays for a classifier call. It is sent one Hebrew blob, matching the
+  prompt's single `{{text}}` variable: the questionnaire, the FINAL on-screen text (Service B's
+  `hookText`, Service A's hook lines read from the `scripts` rows the grid names) and the script
+  where one exists. A flag throws `ContentPolicyError` — 422 plus a Hebrew line in
+  `apps/web/src/lib/api-errors.ts` — and writes a `content_policy_flag` event. A classifier ERROR
+  **fails open**: it writes `content_policy_check_failed` and lets the render through, so an
+  Anthropic outage cannot take the product down. Founder-owned businesses (`role='admin'`) skip it,
+  like credits and the per-account cap; DRY_RUN short-circuits it like every other provider call.
+  **Wired 2026-09-11** (`docs/vault/decisions/0042-content-policy-is-wired-at-both-choke-points.md`);
+  before that it had never been called at all, and this paragraph described behaviour that did not
+  happen. **Service B is NOT covered by a QC gate** — `auto_release_b` is permanently true (vault 0036) and Service A bypasses QC unconditionally (`renders.ts:491-492`), so this check is the only
+  thing standing there.
 - DRY_RUN: pipelines return canned Hebrew copy (the provider itself always calls the API).
 
 ### Hook lines (Service A) — how a v7 batch is generated and shown

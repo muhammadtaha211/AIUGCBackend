@@ -11,6 +11,33 @@ source: founder
 Nothing in `app_config` changed. This note exists so that when the values do change, they change
 for the right reason.
 
+## ACTIONED 2026-09-11 — the LLM-pair finding below is now implemented
+
+The values did change, and this note's §"The LLM pair is the wrong shape" is the reason they did.
+Founder decision 2026-09-10, written as
+`supabase/migrations/0036_daily_caps_runaway_detector.sql` (**not applied to production by the
+session that wrote it** — the apply is the founder's).
+
+|               | platform (was → now)      | per_account (was → now) |
+| ------------- | ------------------------- | ----------------------- |
+| `tts_chars`   | 100,000 → **400,000**     | 25,000 → 25,000         |
+| `llm_tokens`  | 2,000,000 → **8,000,000** | 1,500,000 → **500,000** |
+| `gpu_seconds` | 7,200 → **32,000**        | 2,000 → 2,000           |
+| `images`      | 100 → **400**             | none, and none added    |
+
+Exactly one per-account value moved — `llm_tokens`, the outlier this note named. Every platform cap
+is now exactly **16x** its per-account pair, so "accounts needed to trip it" is 16 at every unit
+instead of 4 / 3.6 / **1.33**. `images` has no per-account pair and is not covered by the rule.
+
+The three rules this note set for whoever changed the values were all followed: it is a migration
+and not a hand `UPDATE`; the read-back goes through the zod schema
+(`packages/core/scripts/verify-daily-caps.ts`, plus `packages/core/test/daily-caps.test.ts` against
+PGlite); and the struck-through third rule stayed struck — `0027`'s literal was **not** retro-edited
+a second time, because `0036` runs after it and a rebuild replays to the new value by construction.
+
+The calibration in `0036`'s header is labelled REASONED and rests on the same two stale figures this
+note flags below. Nothing was re-measured; the migration says so in its own header.
+
 ## The decision
 
 **The in-app caps stay where they are. The hard ceiling moves to the providers** — prepaid balances

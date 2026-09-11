@@ -1,12 +1,38 @@
 ---
 type: defect
 status: verified
-verified: 2026-09-10
-method: "Read at 91e4470. apps/web/src/app/(legal)/privacy/page.tsx:175 claims the edge check reads the login cookie only; apps/web/src/middleware.ts:54-57 calls supabase.auth.getUser() (a round trip to the Auth server) on every matched request, and :86 runs `supabase.from('businesses').select('id').limit(1)` inside the `path === '/' || path === '/start'` branch opened at :84. Matcher at :109-111 excludes only _next/static, _next/image, favicon.ico and image extensions; no `export const runtime` in the file. docs/legal-review.md:67 is item P3."
+verified: 2026-09-11
+method: "Original finding read at 91e4470. Re-read at ab0245e on 2026-09-11 before the fix: apps/web/src/middleware.ts:54-57 still calls supabase.auth.getUser() (a round trip to the Auth server) on every matched request, :86 still runs `supabase.from('businesses').select('id').limit(1)` inside the `path === '/' || path === '/start'` branch opened at :84, the matcher at :109-111 still excludes only _next/static, _next/image, favicon.ico and image extensions, and there is still no `export const runtime` in the file. Fix verified by grep: `עוגיית ההתחברות בלבד` returns nothing in apps/web/src/app/(legal)/privacy/page.tsx. docs/legal-review.md:67 is item P3."
 source: code
 ---
 
 # /privacy says the edge check reads "the login cookie only". It runs a database query.
+
+## FIXED 2026-09-11 (option (a) — the copy was corrected, the middleware was not)
+
+Of the three options this note recorded, **(a) correct §6 to describe what the edge actually does**
+was taken. The §6 Vercel bullet now says the check verifies the session against the authentication
+server on every request, and that on the home page and the service's entry page it also runs a
+query limited to the visitor's own data to see whether a business is already registered to them —
+reading one id and nothing more. The corrected sentence is
+`apps/web/src/app/(legal)/privacy/page.tsx:173-177`, inside the Vercel bullet at `:171-178`.
+
+**(b) — moving the `businesses` read off the edge — was deliberately NOT taken.** It is the only
+option that reduces what crosses the border, and it remains available; it is a behaviour change to
+`middleware.ts` and therefore the founder's call, not a copy fix. `apps/web/src/middleware.ts` is
+byte-for-byte unchanged by this fix.
+
+**(c)** is partly discharged as a side effect: `docs/legal-review.md:67` (P3) no longer puts the
+false premise to counsel. Its Position column now states the session verification and the
+RLS-scoped `SELECT`, and its question asks about both. The question itself is left open — this
+note's author did not answer it.
+
+The §7 claim in P3's old Position ("§7 says so too") was checked against the page and is false in
+the direction that costs nothing: §7 cross-references the §6 bullet
+(`page.tsx:243`, `…ובדיקת ההתחברות עשויה להתבצע בשרת קצה הקרוב אליכם (סעיף 6)`) instead of
+restating the characterisation, so correcting §6 corrected §7 with it. **§7 was not edited.**
+
+---
 
 ## What the page claims
 

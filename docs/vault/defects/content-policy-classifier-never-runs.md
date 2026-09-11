@@ -1,22 +1,49 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "grep -rn contentPolicyCheck across packages and apps (one hit: the definition); git log -S contentPolicyCheck --oneline (two commits, Init and this vault commit)"
+verified: 2026-09-11
+method: "Original finding: grep -rn contentPolicyCheck across packages and apps (one hit, the definition); git log -S contentPolicyCheck --oneline (two commits, Init and the vault commit). Re-read 2026-09-11 at 702742a — still zero callers immediately before the fix, and the line numbers cited in the body had drifted (contentPolicyCheck is copy.ts:662, the Service A QC bypass is renders.ts:491-492). Fix verified by packages/core/test/content-policy-gate.test.ts, 11 tests green."
 source: code
 ---
 
 # The content-policy classifier has never run, and the docs say it does
 
-> **ACCEPTED, NOT FIXED — founder decision 2026-09-10:**
-> [[0041-content-policy-is-accepted-not-fixed]]. Everything below still describes the code
-> accurately; what changed is that it will not be wired. The reasoning in 0041 is worth reading with
-> this note, and it carries one correction that matters here: **"if HeyGen accepts it then I do too"
-> does not cover Service A**, which never touches HeyGen at all.
+## FIXED 2026-09-11 — it now runs at both render choke points
+
+> **The banner here previously said ACCEPTED, NOT FIXED (founder decision 2026-09-10,
+> [[0041-content-policy-is-accepted-not-fixed]]). That decision is superseded by
+> [[0042-content-policy-is-wired-at-both-choke-points]] on the event 0041 itself named as its own
+> expiry — the first signup by someone who is not the founder. 0041's reasoning is not wrong and has
+> not been rewritten; its premise expired.**
 >
-> Note also that line 70's "the founder plus two accounts" is a stale 2026-08-23 census against the
-> deleted project — live is six accounts, one admin, all the founder's
-> ([[live-account-census-2026-09-10]]).
+> The old banner also flagged that line 70's "the founder plus two accounts" is a stale 2026-08-23
+> census against the deleted project — live is six accounts, one admin, all the founder's
+> ([[live-account-census-2026-09-10]]). That is still true of the body below.
+
+`contentPolicyCheck` is called from `createSet` (Service A) and `createBRender` (Service B) — the
+two functions that create renders, and they are two because `createBRender` does not go through
+`createSet`. Both calls sit after every free gate and **before the transaction that debits**, so a
+refused render never charges. A flag throws `ContentPolicyError` (422 plus a Hebrew line in
+`apps/web/src/lib/api-errors.ts`); a classifier ERROR **fails open**, writing a
+`content_policy_check_failed` event and letting the render through. Founder-owned businesses skip
+the check, like credits and the per-account cap.
+
+`packages/core/test/content-policy-gate.test.ts` pins it and closes this note's other finding along
+the way: **`content_policy_flag` had no test anywhere.**
+
+**Three findings below survive the fix, unchanged:**
+
+- The gate table is still accurate. Neither QC queue stands between customer text and a rendered
+  ad, so this check is the only thing there.
+- Terms §6's persona-as-testimonial rule still has nothing enforcing it. The classifier prompt does
+  not cover that case and was deliberately not edited — 0042 records it as a remaining gap.
+- Nothing surfaces either event: `events` has never held a row and there is no admin events feed.
+
+**Two line numbers in the body are stale** and are left as written rather than silently corrected —
+`contentPolicyCheck` is `copy.ts:662`, not `:491`, and the Service A QC bypass is
+`renders.ts:491-492`, not `:428`. Both were re-read on 2026-09-11.
+
+---
 
 `contentPolicyCheck` (`packages/core/src/pipelines/copy.ts:491`) has **zero callers anywhere in the
 repo, including tests.** Repo-wide it has exactly two mentions: its own definition, and the prose at

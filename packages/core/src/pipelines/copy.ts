@@ -653,6 +653,36 @@ async function deriveHookTextWithVersion(
 // Content policy (Service A — B is covered by the founder QC gate)
 // ---------------------------------------------------------------------------
 
+/**
+ * events.kind written when the classifier was asked and could not answer — the
+ * render went out UNCHECKED. The opposite of `content_policy_flag`, which
+ * contentPolicyCheck writes itself when it does reach a verdict. Without this
+ * row a classifier outage is indistinguishable from a clean run.
+ */
+export const CONTENT_POLICY_CHECK_FAILED = "content_policy_check_failed";
+
+/**
+ * The classifier refused the content. Typed, like InsufficientCreditsError, so
+ * the web layer maps it on `instanceof` rather than on a message substring.
+ *
+ * `reason` quotes the offending part of the customer's own text and is
+ * deliberately kept OUT of the Error message: messages travel further than
+ * fields — into logs, and on the job path into `jobs.last_error`, which the
+ * worker ships to Sentry unsanitised (vault 0037, legal-review P10). Whoever
+ * wants it reads the field.
+ */
+export class ContentPolicyError extends Error {
+  readonly category?: string;
+  readonly reason?: string;
+
+  constructor(category?: string, reason?: string) {
+    super(`content policy refused the request${category ? `: ${category}` : ""}`);
+    this.name = "ContentPolicyError";
+    this.category = category;
+    this.reason = reason;
+  }
+}
+
 const policyOutput = z.object({
   flagged: z.boolean(),
   category: z.string().nullable(),

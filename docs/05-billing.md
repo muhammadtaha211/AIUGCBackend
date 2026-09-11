@@ -185,13 +185,18 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   nobody walks the whole flow (upload, scripts, previews — all of which cost us money) only to be
   refused at the last screen. Spam control, not enforcement: the 402 at confirm is the real
   boundary.
-- **Per-ACCOUNT caps** (`daily_caps.per_account`, migrations 0018 + 0022) — **the real
+- **Per-ACCOUNT caps** (`daily_caps.per_account`, migrations 0018 + 0022 + 0027, tightened by 0036) — **the real
   mechanism, checked first**, keyed on `users.id`. `tts_chars: 25000` ≈ 2000 seconds of Hebrew
   speech a day (~50 full previews, ~₪7.50/account/day). `gpu_seconds: 2000` mirrors that ceiling
   on purpose — every lip-synced second is a second of approved TTS audio, so an account cannot
   legitimately lip-sync more than it can synthesize in the same window (~65 thirty-second
   renders/day, ~₪500/account/day worst case; the busiest day ever recorded across ALL accounts
-  is 127 gpu-seconds). GPU is checked **pre-debit at confirm** (`createBRender`, and `createSet`
+  is 127 gpu-seconds). `llm_tokens: 500000` — **tightened from 1,500,000 by 0036**, which is the
+  one per-account value that changed: at 1.5M a single account could legitimately consume 75% of
+  the whole platform's daily LLM budget and two ordinary heavy users tripped it. 500k is roughly
+  three demo uploads plus several plan generations in a day, calibrated on figures that are
+  REASONED, not measured, and stale past the 14-day rule — see 0036's header. GPU is checked
+  **pre-debit at confirm** (`createBRender`, and `createSet`
   when the outro decision is avatar) with an in-handler backstop in `handleLipsync` for the
   confirm-to-execution window — the backstop fails-and-refunds, never parks. Keyed on the
   account and not the business because business creation is self-serve and unlimited — a
@@ -200,9 +205,16 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   because `useJobPoll` only gives up after consecutive _failures_ and a parked job never fails.
 - **Platform-wide daily caps** — a **runaway backstop only**, for what no account cap can stop
   (a loop across accounts, a leaked key): rolling-24h sums of `usage_events` vs
-  `app_config.daily_caps`. `gpu_seconds: 7200` (2h of video/day, ~₪1,800 worst case), set in
-  **migration 0022, never a hand `UPDATE`** — the live value had drifted to a hand-set,
-  recorded-nowhere 36,000 and that drift is the reason for the rule. Checked in handlers
+  `app_config.daily_caps`, set in **migrations, never a hand `UPDATE`** — the live `gpu_seconds`
+  had once drifted to a hand-set, recorded-nowhere 36,000, and that drift is the reason for the
+  rule. **0036 (2026-09-11) made every platform cap exactly 16x its per-account pair** —
+  `tts_chars: 400000`, `llm_tokens: 8000000`, `gpu_seconds: 32000` (~8.9h of video/day, ~₪8,000
+  worst case at 25 agorot/s), plus `images: 400`, which has no per-account pair and is not covered
+  by the rule. Sixteen accounts each spending a full day's allowance is what it now takes to reach
+  the ceiling, which is the point: the parking behaviour below makes this cap unsafe to trip, so it
+  has to be a runaway detector and not a budget
+  (`docs/vault/decisions/0040-the-hard-ceiling-moves-to-the-providers.md`, implemented by
+  `supabase/migrations/0036_daily_caps_runaway_detector.sql`). Checked in handlers
   immediately before the paid call; a breach parks the job (`BudgetError`, no attempt burned),
   resumes when the window frees, **and writes a `platform_budget_tripped` events row** — with
   account caps absorbing legitimate load, a platform trip means something is broken, not that we

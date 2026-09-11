@@ -1,7 +1,7 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033 and 0035 actually landed in a
--- given database. (0031 and 0034 have never had a row here.)
+-- Proves that migrations 0008-0030, 0032-0033, 0035 and 0036 actually landed in
+-- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
 -- production's supabase_migrations.schema_migrations recorded only 0000-0007
@@ -33,7 +33,8 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect 25 true + 1 NULL. The old production database read all 26 of its rows
+-- expect 26 true + 1 NULL (0036 added one row on 2026-09-11).
+-- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
 --
@@ -226,15 +227,20 @@ WITH checks(migration, layer, applied, note) AS (VALUES
   WHERE key = 'credit_costs'
     AND value ->> 'a_steps_credits' = '5')), 'seeded config: a_steps_credits'),
 
--- 0027: daily_caps per_account.llm_tokens = 1500000. The file's literal was
--- retro-edited on 2026-08-26 to match the 2026-08-21 hand-raise (500000 ->
--- 1500000), so file and live value agree. False with the key PRESENT = prod
--- moved again — reconcile before repairing.
+-- 0027: daily_caps per_account.llm_tokens. Its literal was retro-edited on
+-- 2026-08-26 to match the 2026-08-21 hand-raise (500000 -> 1500000). **0036
+-- then set it to 500000 for good, so the VALUE can no longer prove 0027 ran** —
+-- 0036 overwrites exactly the byte 0027 wrote, and this row asserted that byte
+-- until 2026-09-11. What survives is the KEY: 0027 is what put
+-- `per_account.llm_tokens` into the row at all (0018 seeded per_account with
+-- tts_chars only, 0022 added gpu_seconds). False here means the key is gone,
+-- which throws on every budget read in the product. The current VALUE is
+-- asserted by the 0036 row below, which is now its only check.
 ('0027', 'structural', (SELECT EXISTS (
   SELECT 1 FROM app_config
   WHERE key = 'daily_caps'
-    AND value #>> '{per_account,llm_tokens}' = '1500000')),
-  'seeded config: per_account.llm_tokens'),
+    AND value #>> '{per_account,llm_tokens}' IS NOT NULL)),
+  'seeded config: per_account.llm_tokens key present'),
 
 -- 0028 structural half: the stray a_analysis_legibility_threshold key is gone
 -- from credit_costs. Necessary but weak alone — also absent if the stray write
@@ -308,6 +314,30 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relname = 'feedback' AND c.relrowsecurity)),
   'table + created_at index + RLS enabled'),
+
+-- 0036: daily_caps becomes a runaway detector — every platform cap raised to
+-- 16x its per_account pair, and per_account.llm_tokens tightened 1500000 ->
+-- 500000 (the outlier vault 0040 named). Asserts ALL SEVEN VALUES rather than
+-- the row's existence, because the hazard here is precisely a row that looks
+-- changed while the cap has not moved: nothing validates writes to app_config,
+-- and dailyCapsSchema is a plain z.object at both levels, so a mistyped key is
+-- stripped on read and the cap never moves.
+--
+-- A false here means the migration did not land, OR prod was hand-edited after
+-- it did. Reconcile before repairing. This row cannot see a stripped key at
+-- all — for that, run the read-back that goes through the zod schema:
+--   apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-daily-caps.ts
+('0036', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM app_config
+  WHERE key = 'daily_caps'
+    AND value ->> 'images' = '400'
+    AND value ->> 'tts_chars' = '400000'
+    AND value ->> 'llm_tokens' = '8000000'
+    AND value ->> 'gpu_seconds' = '32000'
+    AND value #>> '{per_account,tts_chars}' = '25000'
+    AND value #>> '{per_account,llm_tokens}' = '500000'
+    AND value #>> '{per_account,gpu_seconds}' = '2000')),
+  'seeded config: all seven daily_caps values'),
 
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
