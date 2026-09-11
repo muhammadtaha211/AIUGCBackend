@@ -15,8 +15,17 @@ for the right reason.
 
 The values did change, and this note's §"The LLM pair is the wrong shape" is the reason they did.
 Founder decision 2026-09-10, written as
-`supabase/migrations/0036_daily_caps_runaway_detector.sql` (**not applied to production by the
-session that wrote it** — the apply is the founder's).
+`supabase/migrations/0036_daily_caps_runaway_detector.sql` and **applied to production on
+2026-09-11** on the founder's explicit instruction for that one push — ledger 37 rows, `0000`–`0036`,
+no gaps, no repair needed; post-apply read-back through `dailyCapsSchema` returned all seven values
+`ok`. Proof in `scripts/verify-migration-ledger.sql` §RESULTS.
+
+**The push was a DATA no-op, and that is the finding.** Measured the same day, immediately before it:
+the live row already held all seven target values while the ledger had no `0036` row — so the caps
+had been moved **by hand in the SQL editor**, which is precisely the drift `0022`'s header exists to
+prevent and precisely what the "Rules for whoever changes the values" section below told whoever
+changed them not to do. The migration moved no value; it moved the **lineage**, so a rebuilt database
+now reproduces these caps instead of coming up on the old ones.
 
 |               | platform (was → now)      | per_account (was → now) |
 | ------------- | ------------------------- | ----------------------- |
