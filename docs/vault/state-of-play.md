@@ -43,6 +43,28 @@ history. History of the two incidents that bought it:
 [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]],
 [[bundle-fix-reached-the-worker-box]], [[tmp-cron-deletes-live-worker-bundle]].
 
+### Verifying a deploy without the box
+
+There is now a **second** way to confirm the box's code, and it needs no SSH, no founder report and
+no write of any kind. It is weaker than `git log -1` — it identifies _behaviour_, not a commit — but
+it is available from this machine at any time, which `git log -1` is not.
+
+Pick a query that exists ONLY in the code you just merged, then watch it tick:
+
+```sql
+select calls from pg_stat_statements where query like '%<a fragment unique to the new query>%';
+```
+
+Sample it, idle past one interval of whatever loop should be running it, sample again. A rising
+count is a process that is not you executing code that did not exist before the merge. Pair it with
+`pg_stat_user_indexes.idx_scan` for an index the same migration created — if the two move in
+lockstep, the planner is using the index too, which a bare `CREATE INDEX` read-back cannot show.
+
+Used 2026-09-11 to confirm the PR #29 deploy. **Caveats, both real:** `pg_stat_statements` is
+cumulative since the last reset, so only the DELTA means anything — an absolute count includes every
+read-back you ran yourself. And it proves a _behaviour_ shipped, not that the box is at a given SHA;
+if you need the SHA, it is still `git log -1` on the box (`docs/07-worker-box.md` §11).
+
 ## What changed this session — `launch/resend-parkvalve-alerts`, MERGED as PR #29
 
 Cut from `origin/main` at `d4c79ef` (PR #28), merged back as **PR #29 (`9de62d0`)**. Four commits,
@@ -62,9 +84,31 @@ version itself, so no `migration repair` (fourth time that prediction has held).
 `apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-events-notified-at.ts` returned PASS.
 Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.
 
-**The box is the only thing left.** The park valve and the alert sweep both live in worker code, so
-neither runs until the box is deployed at the merged tip. The web half (the disclosure, the route,
-the classifier) ships with Vercel on merge.
+**The box is deployed, and for once that is MEASURED rather than founder-reported.** The park valve
+and the alert sweep both live in worker code, so neither ran until the box was deployed at the merged
+tip; the founder deployed it 2026-09-11 ~18:15 UTC. Confirmed from here, read-only, without touching
+the box: the alert sweep's `SELECT` over `events.notified_at` exists ONLY in post-#29 code, and its
+`pg_stat_statements.calls` rose **5 -> 7 across 140 idle seconds** (60s sweep interval), with
+`events_unnotified_alerts_idx.idx_scan` rising 5 -> 7 in lockstep and `reap_dead_renders.locked_at`
+advancing 18:18:35 -> 18:20:37. A process that is not this machine is executing a query that did not
+exist before the merge. The exact method is under **Verifying a deploy without the box** above.
+The web half (the
+disclosure, the route, the classifier) shipped with Vercel on merge.
+
+**What both new mechanisms are actually looking at, measured 2026-09-11 after the deploy.** Both are
+running against nothing, and that is the intended steady state, not a fault:
+
+| measured                                    | value                                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `events` rows, all kinds                    | **0** — no event kind has ever fired in this project                                   |
+| jobs ever parked for budget (`error_class`) | **0** — the park valve has never had anything to end                                   |
+| `reap_dead_renders` cadence on the box      | self-rescheduling, **60s**, `locked_by = hetzner:light`                                |
+| non-succeeded jobs                          | 3 dead `render_video` (the 2026-08/09 bundle bug), 2 `lipsync` failed on HeyGen credit |
+
+So the alert sweep reads an empty partial index every 60s and the valve sweeps an empty set — both
+by design. A future session that finds silence here should NOT read it as "the feature is broken".
+The first real proof either one works end to end has to be provoked; the founder's manual test does
+it with one `recordAuthEmailFailure` call.
 
 **Two queue items were closed by this branch and are gone from the queue** — the Resend disclosure
 and the budget-park exit. The queue is renumbered accordingly.
