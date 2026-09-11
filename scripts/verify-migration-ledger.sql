@@ -440,6 +440,28 @@ ORDER BY migration, layer DESC;
 -- migrations catalog ... docker". The CLI tries to build a pg-delta catalog in
 -- Docker AFTER applying, and there is no Docker on this machine. The apply
 -- itself printed "Applying migration 0035_feedback.sql..." and exited 0.
+--
+-- 2026-09-11, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0036
+-- (daily_caps -> runaway detector), on the founder's explicit instruction for
+-- this one push: ledger read-back **37 rows, 0000-0036, NO GAPS and NO REPAIR
+-- NEEDED** -- `db push` recorded 0036 itself, the third time in a row the REPAIR
+-- note below has predicted correctly. Pre-flight was `supabase migration list`
+-- (0000-0035 local == remote, 0036 the only row with an empty remote) and
+-- `db push --dry-run` (named `0036_daily_caps_runaway_detector.sql` alone).
+-- Post-apply read-back went through the zod schema, not this file --
+-- `apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-daily-caps.ts`
+-- returned all seven values ok and PASS, with no stripped-key warning.
+-- The same Docker catalog-cache warning as 0035 appeared and is not a failure;
+-- the apply printed "Applying migration 0036_daily_caps_runaway_detector.sql..."
+-- and exited 0.
+--
+-- **0036 was a DATA no-op and that is worth recording.** The seven values were
+-- already live when it ran: the read-back above returned PASS *before* the push,
+-- measured the same day, while the ledger had no 0036 row -- so the caps had
+-- been moved by hand in the SQL editor, exactly the drift 0022's header exists
+-- to prevent. The push changed no value; what it changed is that the lineage now
+-- records them, so a rebuilt database reproduces the caps instead of coming up
+-- on the old ones. This is the reason the rule says migration, not hand UPDATE.
 
 -- 2026-08-26 (later the same day), NEW project, after `db push` applied 0031:
 -- ledger 32 rows 0000-0031 with no gaps. This split file, structural layer:
