@@ -164,7 +164,9 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
 
 ## The queue
 
-1. **Correct the `רגע` ban rule — DECIDED 2026-09-11, not yet built. Its own branch and PR.**
+1. **Correct the `רגע` ban rule — DECIDED and BUILT 2026-09-11 on `fix/rega-ban-rule` (`ecf50c5`,
+   pushed, PR not opened). What remains is the founder's: open the PR, run the prod CLI step, and
+   deploy/restart the box.** Kept here until all three are done.
    The ban was never about the word: it targets the **hesitation tick**, the filler insertion that
    in Hebrew surfaces as `רגע` and reads as fake casualness. `רגע` occurring naturally inside a
    sentence is legitimate and always was. So v16's wording (`prompts/b_script/v16.md:134`, "it must
