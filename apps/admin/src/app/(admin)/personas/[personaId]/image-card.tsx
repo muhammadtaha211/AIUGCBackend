@@ -1,7 +1,9 @@
 "use client";
 
+import type { PersonaImageKind } from "@aiugc/core";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { PERSONA_IMAGE_KIND_LABELS, PERSONA_IMAGE_KINDS } from "@/lib/admin";
 import { apiFetch } from "@/lib/use-api";
 
 type ImageCardProps = {
@@ -56,7 +58,9 @@ export function ImageCard({ image }: ImageCardProps) {
         <img src={image.url} alt={label || "תמונת ייחוס"} className="size-full object-cover" />
         <div className="absolute start-1.5 top-1.5 flex flex-wrap gap-1">
           <span className="rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-gray-200">
-            {image.kind === "preview" ? "תצוגה" : "רקע"}
+            {/* kind is text with no DB check, so an unknown value shows itself
+                rather than being mislabelled as one of the three. */}
+            {PERSONA_IMAGE_KIND_LABELS[image.kind as PersonaImageKind] ?? image.kind}
           </span>
           {image.isDefault && (
             <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-ink">
@@ -83,14 +87,21 @@ export function ImageCard({ image }: ImageCardProps) {
         />
 
         <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px]">
-          <button
-            type="button"
+          {/* Three kinds, so a toggle no longer says it: 'selfie' is the
+              Service B render source (apps/web/src/lib/service-b.ts). */}
+          <select
+            value={image.kind}
             disabled={busy}
-            onClick={() => patch({ kind: image.kind === "preview" ? "background" : "preview" })}
-            className="text-gray-400 hover:text-white disabled:opacity-50"
+            onChange={(event) => void patch({ kind: event.target.value })}
+            aria-label="סוג"
+            className="h-6 rounded border border-white/10 bg-white/5 px-1 text-[11px] text-gray-300 focus:border-accent focus:outline-none disabled:opacity-50"
           >
-            {image.kind === "preview" ? "הפוך לרקע" : "הפוך לתצוגה"}
-          </button>
+            {PERSONA_IMAGE_KINDS.map((value) => (
+              <option key={value} value={value}>
+                {PERSONA_IMAGE_KIND_LABELS[value]}
+              </option>
+            ))}
+          </select>
           {!image.isDefault && !image.retired && (
             <button
               type="button"

@@ -1,9 +1,15 @@
 "use client";
 
+import type { PersonaImageKind } from "@aiugc/core";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { coverCrop, REFERENCE_IMAGE } from "@/lib/admin";
+import {
+  coverCrop,
+  PERSONA_IMAGE_KIND_LABELS,
+  PERSONA_IMAGE_KINDS,
+  REFERENCE_IMAGE,
+} from "@/lib/admin";
 import { apiFetch } from "@/lib/use-api";
 
 /**
@@ -40,6 +46,10 @@ export function UploadImage({ personaId }: { personaId: string }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [prepared, setPrepared] = useState<{ blob: Blob; previewUrl: string } | null>(null);
+  // Service B's render source is the common upload now, so 'selfie' opens
+  // selected. The ROUTE still defaults to the column's 'background' when no
+  // kind is sent — only this initial selection is opinionated.
+  const [kind, setKind] = useState<PersonaImageKind>("selfie");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +79,7 @@ export function UploadImage({ personaId }: { personaId: string }) {
     setError(null);
     const form = new FormData();
     form.append("image", prepared.blob, "image.jpg");
+    form.append("kind", kind);
     const result = await apiFetch<{ imageId: string }>(`/api/admin/personas/${personaId}/images`, {
       method: "POST",
       body: form,
@@ -96,6 +107,21 @@ export function UploadImage({ personaId }: { personaId: string }) {
             onChange={onPick}
             className="text-sm text-gray-400 file:me-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-gray-200 hover:file:bg-white/15"
           />
+          <label className="flex w-56 flex-col gap-1.5 text-sm font-medium text-gray-200">
+            סוג
+            <select
+              value={kind}
+              disabled={busy}
+              onChange={(event) => setKind(event.target.value as PersonaImageKind)}
+              className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+            >
+              {PERSONA_IMAGE_KINDS.map((value) => (
+                <option key={value} value={value}>
+                  {PERSONA_IMAGE_KIND_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          </label>
           {prepared && (
             <div className="flex gap-2">
               <Button type="button" onClick={upload} loading={busy}>

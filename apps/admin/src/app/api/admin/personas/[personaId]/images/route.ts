@@ -2,13 +2,14 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { addPersonaImage, getDb, schema } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, NOT_FOUND, requireAdmin } from "@/lib/api";
-import { referenceImageError, imageDimensions, isUuid } from "@/lib/admin";
+import { referenceImageError, imageDimensions, isUuid, uploadKindSchema } from "@/lib/admin";
 
 /**
  * Reference-image upload. Multipart form: "image" (the client sends a
  * center-cropped 1080x1920 JPEG, but the bytes are re-validated here — never
- * trust the client). Stored through the extended addPersonaImage, which keeps
- * the storage.put()/contentTypeForKey path — no temp files.
+ * trust the client) and an optional "kind" — absent leaves the column default.
+ * Stored through the extended addPersonaImage, which keeps the
+ * storage.put()/contentTypeForKey path — no temp files.
  */
 export async function POST(
   request: Request,
@@ -31,6 +32,8 @@ export async function POST(
     const form = await request.formData().catch(() => null);
     const image = form?.get("image");
     if (!(image instanceof File)) return jsonError(400, INVALID_BODY);
+    const kind = uploadKindSchema.safeParse(form?.get("kind"));
+    if (!kind.success) return jsonError(400, INVALID_BODY);
 
     const bytes = Buffer.from(await image.arrayBuffer());
     const invalid = referenceImageError(bytes);
@@ -40,6 +43,7 @@ export async function POST(
       personaId,
       bytes,
       extension: imageDimensions(bytes)!.extension,
+      kind: kind.data,
     });
     return NextResponse.json({ imageId: added.id });
   } catch (err) {
