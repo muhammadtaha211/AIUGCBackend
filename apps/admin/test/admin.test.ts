@@ -11,9 +11,12 @@ import {
   grantSchema,
   imageDimensions,
   imagePatchSchema,
+  PERSONA_IMAGE_KIND_LABELS,
+  PERSONA_IMAGE_KINDS,
   personaPatchSchema,
   referenceImageError,
   roleChangeSchema,
+  uploadKindSchema,
 } from "../src/lib/admin";
 
 describe("adminAccess (role gate)", () => {
@@ -78,6 +81,19 @@ describe("request body schemas", () => {
     expect(imagePatchSchema.safeParse({ kind: "portrait" }).success).toBe(false);
   });
 
+  // 0032 added 'selfie' as a value without DDL (the column is text with no
+  // check), so this enum was the only thing keeping the Service B render
+  // source out of the admin app — the card select PATCHes through it.
+  it("imagePatch accepts all three kinds and still rejects garbage", () => {
+    for (const kind of ["preview", "background", "selfie"]) {
+      expect(imagePatchSchema.safeParse({ kind }).success, kind).toBe(true);
+    }
+    expect(imagePatchSchema.safeParse({ kind: "selfies" }).success).toBe(false);
+    expect(imagePatchSchema.safeParse({ kind: "" }).success).toBe(false);
+    expect(imagePatchSchema.safeParse({ kind: null }).success).toBe(false);
+    expect(imagePatchSchema.safeParse({ kind: 1 }).success).toBe(false);
+  });
+
   it("grant requires a positive integer amount and a non-empty note", () => {
     const base = { userId: "11111111-1111-4111-8111-111111111111", note: "פיצוי" };
     expect(grantSchema.safeParse({ ...base, credits: 10 }).success).toBe(true);
@@ -91,6 +107,50 @@ describe("request body schemas", () => {
     expect(roleChangeSchema.safeParse({ role: "admin" }).success).toBe(true);
     expect(roleChangeSchema.safeParse({ role: "customer" }).success).toBe(true);
     expect(roleChangeSchema.safeParse({ role: "owner" }).success).toBe(false);
+  });
+});
+
+/**
+ * The upload form's optional kind. It reads a raw FormData entry, so the three
+ * ways "the founder did not pick one" arrive — the field absent (undefined),
+ * an empty value (""), or form.get() on a missing key (null) — must all come
+ * back as undefined, which is what makes addPersonaImage omit the column and
+ * leave 0009's 'background' default in place.
+ */
+describe("uploadKindSchema (multipart kind field)", () => {
+  it("treats absent, null and empty as undefined", () => {
+    for (const absent of [undefined, null, ""]) {
+      const parsed = uploadKindSchema.safeParse(absent);
+      expect(parsed.success, String(absent)).toBe(true);
+      expect(parsed.success && parsed.data, String(absent)).toBeUndefined();
+    }
+  });
+
+  it("passes each known kind through unchanged", () => {
+    for (const kind of ["preview", "background", "selfie"]) {
+      const parsed = uploadKindSchema.safeParse(kind);
+      expect(parsed.success && parsed.data, kind).toBe(kind);
+    }
+  });
+
+  // The selects render PERSONA_IMAGE_KINDS and label each option out of the
+  // Record, so the two structures must hold the same set — otherwise the
+  // founder is offered a kind the schemas answer 400 on (or a kind exists that
+  // no select offers). A fourth kind in core surfaces here as well as in tsc.
+  it("offers exactly the kinds the schemas accept", () => {
+    for (const kind of PERSONA_IMAGE_KINDS) {
+      expect(imagePatchSchema.safeParse({ kind }).success, kind).toBe(true);
+      expect(uploadKindSchema.safeParse(kind).success, kind).toBe(true);
+    }
+    expect(Object.keys(PERSONA_IMAGE_KIND_LABELS).sort()).toEqual([...PERSONA_IMAGE_KINDS].sort());
+  });
+
+  it("rejects an unknown value and a non-string form entry", () => {
+    expect(uploadKindSchema.safeParse("portrait").success).toBe(false);
+    expect(uploadKindSchema.safeParse("SELFIE").success).toBe(false);
+    expect(uploadKindSchema.safeParse(" selfie").success).toBe(false);
+    // form.get("kind") answers File when a file was posted under that name.
+    expect(uploadKindSchema.safeParse(new File([], "kind.jpg")).success).toBe(false);
   });
 });
 

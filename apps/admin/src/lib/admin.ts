@@ -1,3 +1,4 @@
+import type { PersonaImageKind } from "@aiugc/core";
 import { z } from "zod";
 
 /**
@@ -85,11 +86,44 @@ export function canChangeRole(sessionUserId: string, targetUserId: string): bool
   return sessionUserId !== targetUserId;
 }
 
-/** One PATCH per image action: label edit, kind toggle, retire, make-default. */
+/**
+ * The persona-image kinds. ONE list: it feeds both schemas below AND the
+ * options both admin selects render, so the offered set and the accepted set
+ * cannot disagree. `satisfies` ties it to core's PersonaImageKind
+ * (packages/core/src/pipelines/bank.ts) so the two cannot silently drift: a
+ * kind core drops fails here, and a kind core adds is a missing key on the
+ * labels Record below. 'selfie' is the Service B render source — without it
+ * settable from the admin app a character needs SQL to finish.
+ */
+export const PERSONA_IMAGE_KINDS = [
+  "preview",
+  "background",
+  "selfie",
+] as const satisfies readonly PersonaImageKind[];
+
+/** Badge and select vocabulary, shared by the image card and the upload form. */
+export const PERSONA_IMAGE_KIND_LABELS: Record<PersonaImageKind, string> = {
+  preview: "תצוגה",
+  background: "רקע",
+  selfie: "סלפי",
+};
+
+/**
+ * The optional `kind` field on the images upload form. Absent, null or "" →
+ * undefined, so addPersonaImage omits the column and its 'background' default
+ * (0009_persona_image_kind.sql) still applies; anything else must be a known
+ * kind. Raw FormData values arrive as `File | string | null`.
+ */
+export const uploadKindSchema = z.preprocess(
+  (value) => (value === "" || value === null ? undefined : value),
+  z.enum(PERSONA_IMAGE_KINDS).optional(),
+);
+
+/** One PATCH per image action: label edit, kind change, retire, make-default. */
 export const imagePatchSchema = z
   .object({
     label: z.string().trim().max(200).nullable().optional(),
-    kind: z.enum(["preview", "background"]).optional(),
+    kind: z.enum(PERSONA_IMAGE_KINDS).optional(),
     retired: z.boolean().optional(),
     makeDefault: z.literal(true).optional(),
   })
