@@ -65,88 +65,30 @@ cumulative since the last reset, so only the DELTA means anything — an absolut
 read-back you ran yourself. And it proves a _behaviour_ shipped, not that the box is at a given SHA;
 if you need the SHA, it is still `git log -1` on the box (`docs/07-worker-box.md` §11).
 
-## What changed this session — `launch/resend-parkvalve-alerts`, MERGED as PR #29
+## Recent merges
 
-Cut from `origin/main` at `d4c79ef` (PR #28), merged back as **PR #29 (`9de62d0`)**. Four commits,
-one per task, plus the handover — and one follow-up commit recording the 0037 apply.
+`origin/main` was `fa1a012` when this was written — **fetch and read `origin/main`, never this
+line.** Newest first: **#30** `fa1a012` records the 0037 apply and the measured box deploy ·
+**#29** `9de62d0` Resend disclosed in privacy §6, reg. 2 deferred by decision
+([[0043-the-reg-2-definitions-document-is-deferred-by-decision]]), the budget-park valve now ends
+non-render work, the auth-email alert + migration 0037
+([[0044-the-auth-email-alert-fires-on-hit-never-on-a-threshold]]) · **#28** `d4c79ef` handover ·
+**#26/#27** `b8af879`/`5a52ded` the local/DRY_RUN worker claim guard, migration 0036, content
+policy wired at both choke points, the reg. 2 worksheet.
 
-| commit    | what                                                                                        |
-| --------- | ------------------------------------------------------------------------------------------- |
-| `3a3deda` | privacy §6 discloses Resend; `legal-review.md` P11; `UPDATED` -> 11.09.2026                 |
-| `692c3dd` | reg. 2 is deferred BY DECISION — vault `0043`, out of the queue, into Open decisions        |
-| `ba6a239` | the budget-park valve now ends non-render work; `packages/core/test/park-valve.test.ts`     |
-| `5c13ead` | the auth-email alert — migration **0037**, `core/src/alerts.ts`, vault `0044`, 0037 amended |
+**A worker whose `DATABASE_URL` points at production now refuses to claim** if it is a
+`local:*`/`cli:*` worker or if `DRY_RUN` is set (`b39bb2c`, `packages/core/src/jobs/queue.ts`);
+`aiugc work --once` exits rather than spinning.
+[[local-workers-compete-with-the-box-for-production-jobs]]'s "the only guard is the founder
+remembering" line is now historical.
 
-**Migration 0037 (`events.notified_at` + a partial alert index) IS APPLIED** — pushed to production
-2026-09-11 on the founder's explicit instruction for that one push, and `db push` recorded the
-version itself, so no `migration repair` (fourth time that prediction has held). Ledger read-back:
-**38 rows, 0000–0037, no gaps.** Post-apply read-back went through the drizzle model, not raw SQL —
-`apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-events-notified-at.ts` returned PASS.
-Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.
-
-**The box is deployed, and for once that is MEASURED rather than founder-reported.** The park valve
-and the alert sweep both live in worker code, so neither ran until the box was deployed at the merged
-tip; the founder deployed it 2026-09-11 ~18:15 UTC. Confirmed from here, read-only, without touching
-the box: the alert sweep's `SELECT` over `events.notified_at` exists ONLY in post-#29 code, and its
-`pg_stat_statements.calls` rose **5 -> 7 across 140 idle seconds** (60s sweep interval), with
-`events_unnotified_alerts_idx.idx_scan` rising 5 -> 7 in lockstep and `reap_dead_renders.locked_at`
-advancing 18:18:35 -> 18:20:37. A process that is not this machine is executing a query that did not
-exist before the merge. The exact method is under **Verifying a deploy without the box** above.
-The web half (the
-disclosure, the route, the classifier) shipped with Vercel on merge.
-
-**What both new mechanisms are actually looking at, measured 2026-09-11 after the deploy.** Both are
-running against nothing, and that is the intended steady state, not a fault:
-
-| measured                                    | value                                                                                  |
-| ------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `events` rows, all kinds                    | **0** — no event kind has ever fired in this project                                   |
-| jobs ever parked for budget (`error_class`) | **0** — the park valve has never had anything to end                                   |
-| `reap_dead_renders` cadence on the box      | self-rescheduling, **60s**, `locked_by = hetzner:light`                                |
-| non-succeeded jobs                          | 3 dead `render_video` (the 2026-08/09 bundle bug), 2 `lipsync` failed on HeyGen credit |
-
-So the alert sweep reads an empty partial index every 60s and the valve sweeps an empty set — both
-by design. A future session that finds silence here should NOT read it as "the feature is broken".
-The first real proof either one works end to end has to be provoked; the founder's manual test does
-it with one `recordAuthEmailFailure` call.
-
-**Two queue items were closed by this branch and are gone from the queue** — the Resend disclosure
-and the budget-park exit. The queue is renumbered accordingly.
-
-## What changed this session (2026-09-11)
-
-Branch `overnight/launch-blockers`, six commits, merged to `main` in **two** PRs — #26 (`b8af879`,
-the five work commits) and #27 (`5a52ded`, the `2828fd3` docs commit). `origin/main` is `5a52ded`.
-
-| commit    | what                                                                                            |
-| --------- | ----------------------------------------------------------------------------------------------- |
-| `702742a` | privacy §6 describes what the edge check actually reads; `docs/legal-review.md` P3 rewrite      |
-| `b39bb2c` | **the local/DRY_RUN worker claim guard** — `packages/core/src/jobs/queue.ts`                    |
-| `3080b73` | migration 0036 (`daily_caps` → runaway detector) + `packages/core/scripts/verify-daily-caps.ts` |
-| `c442447` | content policy wired at `createSet` and `createBRender`; vault 0042, 0041 superseded            |
-| `d56f702` | `docs/legal/reg2-open-questions.md` — the reg. 2 triage worksheet                               |
-| `2828fd3` | records the 0036 apply, and that it was a DATA no-op                                            |
-
-`2b8e6ee` (privacy §6 names Sentry) is **not** in that range — it landed 37 seconds before
-`ab0245e`, the commit the branch was cut from. Same night's work, different side of the cut.
-
-**`b39bb2c` closes a mechanism this file used to describe as unguarded.** A worker whose
-`DATABASE_URL` points at the production project now **refuses to claim** if it is a `local:*`/`cli:*`
-worker or if `DRY_RUN` is set, and says so. `aiugc work --once` exits rather than spinning.
-[[local-workers-compete-with-the-box-for-production-jobs]] is the note; its "the only guard is the
-founder remembering" line is now historical.
-
-**Uncommitted at the time of writing** — this session's own bookkeeping, all docs/vault:
-`docs/08-supabase-project-rebuild.md` (new §8A.2), four vault notes newly written, and cite/claim
-corrections across seven existing ones. Nothing in `packages/` or `apps/` is touched.
-
-**Local `main` is 8 commits behind `origin/main`** (`git branch -vv` → `behind 8`). Nothing is
-unpushed — `origin/main..main` is empty — but a session that reads local `main` reads `ab0245e`.
-Fast-forward it before trusting it.
-
-**The box is one merge behind `origin/main`**: it is at `b8af879`, which does not contain `2828fd3`.
-That commit is docs-only, so there is no functional drift — but "the box is at merged main" is no
-longer literally true, and the next deploy should say `5a52ded`.
+**Both new mechanisms run against nothing, and that is the intended steady state.** `events` holds
+**0** rows of every kind — no event kind has ever fired in this project — and **0** jobs have ever
+been parked for budget. So the alert sweep reads an empty partial index every 60s and the valve
+sweeps an empty set. A session that finds silence here must NOT read it as "the feature is broken";
+the first real proof has to be provoked, and the founder's manual test does it with one
+`recordAuthEmailFailure` call. Non-succeeded jobs: 3 dead `render_video` (the 2026-08/09 bundle
+bug), 2 `lipsync` failed on HeyGen credit.
 
 ## External state — not in the repo
 
@@ -163,7 +105,8 @@ kind has ever fired in this project: not `platform_budget_tripped`, not `qc_rele
 not `content_policy_flag`, not `refund_resolved_to_ancestor`. So the alert sweep reads an empty
 partial index every 60s, which is the intended steady state and not evidence it is broken.
 **`npx -y supabase` is no longer the right recipe** — `supabase` is a root devDependency (2.109.1)
-and the pinned local binary was spawned directly. `CLAUDE.md:132` still says no CLI is installed.
+and the pinned local binary was spawned directly. `CLAUDE.md:138` still says no CLI is installed
+(queue item 3; it was `:130`/`:132` before the test gate landed above it).
 Auth: Email provider on, Google enabled, **Confirm email ON since 2026-09-11**, Site URL
 `https://tavnit.ai`, `https://tavnit.ai/auth/callback` on the redirect allowlist.
 Custom SMTP configured; **Rate Limits raised to 100 emails/hour**. All five Hebrew auth templates
@@ -221,54 +164,72 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
 
 ## The queue
 
-1. **Correct `docs/08` §8A.1.** `:429-438` asserts `signUp` has **no** `emailRedirectTo` and the
-   table row `:443` says a one-line change is needed. Both false — `auth.ts:78` has passed it since
-   `02f58bb`. Cheap, and it has now caused a real error once (see Corrections). §8A.2 cross-references
-   the falsehood rather than rewriting it, so the correction is one reviewed edit.
-2. **Fix the `bans רגע` flaky test.** 12.0% per run of its file, by construction. Worth doing before
-   it reddens a gate at a bad moment and someone "fixes" it by weakening the ban — which is the wrong
-   fix twice over, because the real question is whether a curated hook may contain a word the prompt
-   bans. [[ban-rule-test-collides-with-a-curated-hook]].
-3. **Record the real test gate command in CLAUDE.md.** `:110` says `pnpm test  # core tests`; it is
-   `pnpm -r test`, fans out to five packages, and OOMs this machine. Every prompt written for this
-   repo uses "tests green" as its stop condition, so as written the stop condition is unrunnable.
-   [[pnpm-r-test-ooms-this-machine]] has the five serial commands.
-4. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
-   runs (the key IS in Vercel's web env; the wizard signs storage URLs server-side). Deliberately not
-   edited: what it should say instead is the founder's call, and the honest options differ — drop the
-   clause, or keep it and move the signing off the web tier.
-5. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
-   `:168`, not the `:111` this queue said for weeks. "Hetzner CPX41-class, ~€30/mo flat" predates the
-   June 2026 price rise and understates by roughly half; "~2–6 min wall time per video" is 2–5× too
-   slow against three measured renders ([[service-a-render-wall-clock-on-the-box]]).
-6. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
-   `copy.ts:675-680` for the `content_policy_flag` insert, which is `:706-711`. Left alone because
-   this session was docs-only. Trivial, but see Corrections for why this class keeps recurring.
-7. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
-   load-bearing; all of it misleads. `docs/08` §8B `:495`, `:501`, `:514`, `:547`, `:608`, `:672`;
-   `0006` `:34`, `:52`, `:54`; `0005` `:14`, `:30`. **Every one of those line numbers predates this
-   session's §8A.2 insertion, which added 151 lines at `:472` — so all the `docs/08` cites above are
-   now ~151 low. Re-grep, do not trust them.**
-8. **Correct `CLAUDE.md:130`'s apply recipe.** It says "no Supabase CLI is installed — npx fetches
-   it", which is **false**: `supabase` is a root devDependency (2.109.1) and the pinned binary lives
-   at `node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/…/bin/supabase.exe`. The 0037 apply on
-   2026-09-11 spawned that `.exe` directly rather than `npx -y supabase` — deliberately, because
-   spawning the `.cmd` shim on Windows needs `shell: true`, which would put the connection string
-   through cmd.exe quoting. Same line also still says `db push` "records the version itself", which
-   held for a fourth time and is correct.
-9. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
-   still points at" — **false since 2026-08-27**; all five env files point at
-   `hyaqydcmwbnbaiqqufow`, and the old project is deleted. Same line's "ledger clean at 0000–0030"
-   is stale at 0000–0037. `CLAUDE.md:130` is **not** current either — see item 8.
+1. **Correct the `רגע` ban rule — DECIDED 2026-09-11, not yet built. Its own branch and PR.**
+   The ban was never about the word: it targets the **hesitation tick**, the filler insertion that
+   in Hebrew surfaces as `רגע` and reads as fake casualness. `רגע` occurring naturally inside a
+   sentence is legitimate and always was. So v16's wording (`prompts/b_script/v16.md:134`, "it must
+   not appear in a script") **overshot the intent, and has been overshooting in the LIVE prompt on
+   every generation since `f40bc72`** — suppressing legitimate copy. This is a production
+   copy-quality bug, not a test bug. Founder's instructions:
+   - **v17 of `b_script`**: the bullet must distinguish the filler use from the natural use and
+     carry **one Hebrew example of each**, or the model over-applies it as it has been. Follow
+     [[0033-b-script-may-write-an-allowed-brand-name-in-latin]]'s shape, and write a decision note
+     recording that 0033's pattern applied again, with the correction of intent stated plainly:
+     v16 overshot, it was never a token ban.
+   - **The `vo_script` twin carries the same rule — confirmed 2026-09-11**: `prompts/vo_script/v8.md:168`
+     is the identical "**Never `רגע`** as a filler, a restart, or an aside". It gets the same
+     correction **in the same commit**; the two prompts must not state different rules. (Worth one
+     thought first: `vo_script` serves the Service A voiceover, retired 2026-09-05.)
+   - **The test:** do NOT merely scope the assertion to the prompt file. Once `רגע` is legitimate
+     copy, counting its occurrences is meaningless in either file. **Delete the count assertion**
+     (`packages/core/test/hook-templates.test.ts:125`, and its twin
+     `packages/core/test/vo-prompt.test.ts:55`) and replace it with one asserting the **rule text**
+     is present — a real signal (the rule went missing) instead of a fake one (the word appeared).
+     That also ends the 12.0% flake.
+   - **Both curated banks keep the word, both get reordered** — `רגע` at the end of the clause is
+     more natural than mid-sentence. `packages/core/src/hook-templates.ts:25` → `תראי את זה רגע`.
+     `seed/structures/show-and-react.json:6` → `תראו את זה רגע` (plural preserved; the word stays,
+     it is that structure's thesis).
+   - **STOP before the prod step.** Per [[0028-scripts-end-on-a-closer-from-a-curated-bank]] the
+     seed file is not the live source, so the structure-bank change needs
+     `aiugc bank seed-structures --update` against production — **the founder runs that himself**.
+     A prompt version bump also needs a worker/web restart before it takes effect
+     ([[prompt-versions-on-disk]]).
+     [[ban-rule-test-collides-with-a-curated-hook]] is the defect note. It predates the ruling and
+     frames this as a choice between two fixes; the founder chose neither and corrected the rule.
+2. **Audit the 12 `getStorage()` call sites in `apps/web` for the ownership check.** One line per
+   site: which route, what it checks, and whether a caller can reach it with an id they do not own.
+   This is the invariant [[0045-the-web-tier-holds-the-service-role-key]] rests on, and that note
+   says plainly it is **UNVERIFIED**. A site that fails is a real defect and gets a defect note; if
+   **several** fail, that is what reopens the `storage.objects`-policies / worker-signing
+   alternatives. The sites are tabulated in 0045.
+3. **Correct `CLAUDE.md:138`'s apply recipe.** It says "no Supabase CLI is installed — npx fetches
+   it", which is **false**: `supabase` is a root devDependency (`package.json:18`, `^2.109.1`) and
+   the pinned binary is on disk at
+   `node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/…/bin/supabase.exe`. The 0037 apply
+   spawned that `.exe` directly — deliberately, because spawning the `.cmd` shim on Windows needs
+   `shell: true`, which would put the connection string through cmd.exe quoting. The same line
+   still says "0031–0036 have been pushed since" and needs 0037 added. Its `db push` "records the
+   version itself" claim held a fourth time and is correct. (This was `:130`; recording the test
+   gate on 2026-09-11 moved it to `:138`.)
+4. **Sweep the stale `apps/web/src/lib/auth.ts` cites.** `5c13ead` inserted ~54 lines above
+   `signUp` on 2026-09-11 and pushed everything below it down. All verified 2026-09-11:
+   `docs/08` `:383` (`auth.ts:42` / `:56` → the calls are `:124` / `:156`) and `:631`
+   (`auth.ts:71-74` → `signInWithOAuth` is `:222`);
+   [[auth-email-runs-through-resend]] `:5` and
+   [[auth-round-trips-that-miss-the-callback-die-silently]] `:24` (both `auth.ts:78` → `:132`);
+   `0005` `:41` (`auth.ts:69-85` → `:222`) and `:48` (`auth.ts:78` → the Hebrew OAuth fallback
+   is `:229`). **Do not touch `0006:26`** — "the missing `emailRedirectTo` is fixed anyway" is
+   historically correct there.
 
-Items 1–3 first because each is cheap and each is a trap for the _next_ session rather than a
-feature. 4–9 are corrections ordered by how likely a reader is to act on the wrong thing. There
-is no open code defect in this queue any more.
+Item 1 is a live production copy-quality bug and outranks everything. Item 2 is the only one that
+can surface a security defect. 3–4 are cite corrections, ordered by how likely a reader is to act
+on the wrong thing. There is no open code defect in this queue.
 
-**Three items left this queue on 2026-09-11, and they left in two different ways.** The Resend
-disclosure and the budget-park exit were **DONE** (PR #29). Reg. 2 was **DEFERRED** — not done,
-not dropped, decided: [[0043-the-reg-2-definitions-document-is-deferred-by-decision]]. See Open
-decisions below.
+**Seven items left this queue on 2026-09-11, all DONE** (PR from `docs/queue-corrections`): docs/08
+§8A.1's `emailRedirectTo` falsehood, the CLAUDE.md test gate, `.env.example`'s service-role clause
+(+ [[0045-the-web-tier-holds-the-service-role-key]]), `docs/02-jobs.md`'s render-budget numbers,
+`sets.ts`'s stale `copy.ts` cites, the pre-publication OAuth passages, and `CLAUDE.md:79`.
 
 ## Open decisions
 
@@ -313,7 +274,7 @@ decisions below.
   pinned `.exe` directly: spawning the `.cmd` shim needs `shell: true` on Node 20+, and a shell
   would put the connection string through cmd.exe quoting, where a special character in the password
   is either a leak or a break. `spawn` on a bare `.cmd` without a shell fails `EINVAL` — that is the
-  symptom, and the fix is the `.exe`, not `shell: true`. Queue item 8.
+  symptom, and the fix is the `.exe`, not `shell: true`. Queue item 3.
 
 - **This file's own "What changed this session" section was stale before it was read.** It records
   `origin/main` as `5a52ded` and lists its own handover commit as uncommitted; by the time the next
@@ -333,10 +294,32 @@ Recorded because each cost real time, and each came from asserting rather than c
 
 - **`emailRedirectTo` was already done, and was asserted missing twice in one session.**
   `auth.ts:78` has passed it since `02f58bb`. The source of the error was `docs/08` §8A.1, which
-  still says otherwise — **and this file's own item 12 already recorded that docs/08 was wrong and
-  named the fix commit.** The assertion was made anyway, by reading past it. That is the
+  said otherwise at the time — **and this file's own queue already recorded that docs/08 was wrong
+  and named the fix commit.** The assertion was made anyway, by reading past it. That is the
   repo-beats-docs rule failing in exactly the direction it exists to prevent: the correction existed,
-  in this file, and lost to the doc. Now queue item 2.
+  in this file, and lost to the doc. **FIXED 2026-09-11** in `docs/08` — and the fix-side cite in
+  this very bullet had itself gone stale by then: see the next entry.
+- **A brief's own ground truth can be the stale half.** The queue handed `auth.ts:78` to the
+  session fixing docs/08 §8A.1 as the _correct_ cite. It was correct from `5646529` until
+  `5c13ead` inserted the Resend classifier above it on 2026-09-11 — sixteen hours before the fix
+  ran. The line is `:132`. A session trusting the brief would have written a fresh stale cite while
+  removing one. **The brief is the least current thing in the room; re-grep even the part that is
+  telling you the truth.**
+- **"Two wrong numbers on one line" was three.** `docs/02-jobs.md:168` also said "8-vCPU"; the box
+  is a CPX32 with 4. Neither the queue nor the fact note that justified the fix had noticed. **Count
+  the errors on the line yourself — an inherited count is a claim, not an inventory.**
+- **A correction of a correction was off by one.** The queue said `sets.ts:241` should point at
+  `copy.ts:706-711`; the insert is `:706-710` (`:711` is the `return {` after it closes). Third
+  time this particular cite has been wrong. Same commit found a _second_ stale cite nobody had
+  flagged, `sets.ts:340` → `copy.ts:715-737`, really `:745-767`.
+- **A uniform drift estimate is a guess.** The queue said every `docs/08` §8B cite was "~151 low"
+  after a 151-line insertion. Measured, the drift was **+160, +161 and +179** depending on position,
+  because other edits had landed too — and one cited passage had already been fixed on 2026-09-03.
+  **An insertion's size does not predict a cite's drift; only a grep does.**
+- **`facts/test-suite-inventory.md:53` says `pnpm test` "fans out to four independent runners".**
+  It is five — `apps/worker` gained a `test` script on 2026-08-26, three days after that note's
+  `verified:` date. Its `:46-49` ("No vitest config exists anywhere") is stale the same way:
+  `apps/web/vitest.config.ts` exists. Not corrected; noted.
 - **A commit that fixes a line cite while editing the cited file invalidates its own cite.**
   `c442447` re-read `contentPolicyCheck` at its parent (`copy.ts:662`), then added 30 lines above it
   — so the moment it landed the function was at `:692`, and every cite written _inside_ that commit
