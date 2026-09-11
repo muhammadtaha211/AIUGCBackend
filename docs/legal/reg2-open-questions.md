@@ -7,6 +7,18 @@ Like the reg. 2 document itself it is **internal**: served by no route, linked f
 
 Extracted 2026-09-11 against the document as it then stood.
 
+## STATUS 2026-09-11 — DEFERRED INDEFINITELY, by decision
+
+**Nobody is working through this worksheet, and that is a decision, not a backlog.** The founder
+deferred the reg. 2 document indefinitely on 2026-09-11, with no date, and accepted responsibility
+for the consequences; he will engage a lawyer to fill the gaps when he sees fit.
+`docs/vault/decisions/0043-the-reg-2-definitions-document-is-deferred-by-decision.md` is the record.
+
+Nothing below is retracted, answered or pruned. The collation stands exactly as extracted so that a
+resumed pass costs a lawyer's time and not another drafting pass. **Do not read an unanswered row as
+an oversight, and do not re-open this as pending work** — if you think it should be re-opened, that
+is a conversation with the founder, not a task.
+
 ## Counts
 
 |                                                 |                                                                                      |

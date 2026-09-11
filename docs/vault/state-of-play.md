@@ -159,39 +159,38 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
    `pnpm -r test`, fans out to five packages, and OOMs this machine. Every prompt written for this
    repo uses "tests green" as its stop condition, so as written the stop condition is unrunnable.
    [[pnpm-r-test-ooms-this-machine]] has the five serial commands.
-5. **The reg. 2 worksheet's open questions.** `docs/legal/reg2-open-questions.md`, bucketed
-   FOUNDER / COUNSEL / VENDOR. The collation is done; the answering is owed and needs a person.
-   **73 real gaps** (see Corrections for why not 75). [[database-definitions-document-missing]].
-6. **A budget-parked non-render job has no exit.** The 6h valve (`MAX_BUDGET_PARK_MS`,
+5. **A budget-parked non-render job has no exit.** The 6h valve (`MAX_BUDGET_PARK_MS`,
    `pipelines/janitor.ts:25`) reaches only `render_video` and `lipsync`, so a parked `synth_tts` or
    `analyze_demo` re-queues at +1h forever with its row stuck mid-state and the wizard spinning.
    0036 makes the platform cap nearly unreachable, which shrinks the odds; it does not fix the
    mechanism.
-7. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
+6. **`.env.example:9`** — "never the service role key" is confirmed stale against how web actually
    runs (the key IS in Vercel's web env; the wizard signs storage URLs server-side). Deliberately not
    edited: what it should say instead is the founder's call, and the honest options differ — drop the
    clause, or keep it and move the signing off the web tier.
-8. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
+7. **Correct `docs/02-jobs.md`.** Two wrong numbers on one line — and **the line has moved**: it is
    `:168`, not the `:111` this queue said for weeks. "Hetzner CPX41-class, ~€30/mo flat" predates the
    June 2026 price rise and understates by roughly half; "~2–6 min wall time per video" is 2–5× too
    slow against three measured renders ([[service-a-render-wall-clock-on-the-box]]).
-9. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
+8. **Correct the stale in-code cite at `packages/core/src/pipelines/sets.ts:241`** — it points at
    `copy.ts:675-680` for the `content_policy_flag` insert, which is `:706-711`. Left alone because
    this session was docs-only. Trivial, but see Corrections for why this class keeps recurring.
-10. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
-    load-bearing; all of it misleads. `docs/08` §8B `:495`, `:501`, `:514`, `:547`, `:608`, `:672`;
-    `0006` `:34`, `:52`, `:54`; `0005` `:14`, `:30`. **Every one of those line numbers predates this
-    session's §8A.2 insertion, which added 151 lines at `:472` — so all the `docs/08` cites above are
-    now ~151 low. Re-grep, do not trust them.**
-11. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
+9. **Docs-only cleanup: the pre-publication OAuth passages.** Found 2026-09-03, still open. None is
+   load-bearing; all of it misleads. `docs/08` §8B `:495`, `:501`, `:514`, `:547`, `:608`, `:672`;
+   `0006` `:34`, `:52`, `:54`; `0005` `:14`, `:30`. **Every one of those line numbers predates this
+   session's §8A.2 insertion, which added 151 lines at `:472` — so all the `docs/08` cites above are
+   now ~151 low. Re-grep, do not trust them.**
+10. **Correct `CLAUDE.md:79`.** It says the old project `mtpmrqltldfwhziyyzdu` "is what every `.env`
     still points at" — **false since 2026-08-27**; all five env files point at
     `hyaqydcmwbnbaiqqufow`, and the old project is deleted. Same line's "ledger clean at 0000–0030"
     is stale at 0000–0036. `CLAUDE.md:130` is current and correct.
 
 Items 1–4 first because each is cheap and each is a trap for the _next_ session rather than a
-feature. 5 is the only one that needs a person who is not the founder. 6 is the only real code
-defect left and is now low-probability. 8–11 are docs corrections ordered by how likely a reader is
-to act on the wrong thing.
+feature. 5 is the only real code defect left and is now low-probability. 7–10 are docs corrections
+ordered by how likely a reader is to act on the wrong thing. **Reg. 2 used to be item 5 and is no
+longer in this queue** — it was not done and it was not dropped: it is deferred indefinitely by
+founder decision, [[0043-the-reg-2-definitions-document-is-deferred-by-decision]]. See Open
+decisions below.
 
 ## Open decisions
 
@@ -199,10 +198,17 @@ to act on the wrong thing.
   עוסק פטור and cannot — [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as
   עוסק פטור (קבלה / חשבונית עסקה) or convert first. No money moves today, so nothing is currently
   wrong; it is a configuration decision the gateway work must not skip.
-- **The reg. 2 מסמך הגדרות מאגר — drafted, duty NOT discharged.**
-  `docs/legal/database-definitions-document.md`, 981 lines, internal only, linked from nowhere. The
-  collation is done; **73 gaps** need the founder or counsel, not more drafting. Worksheet is
-  `docs/legal/reg2-open-questions.md` (queue 5).
+- **The reg. 2 מסמך הגדרות מאגר — DEFERRED INDEFINITELY by founder decision, 2026-09-11.** Not
+  pending, not owed-and-unstarted: decided, with the consequences accepted explicitly, and a lawyer
+  to be engaged when the founder sees fit. This is no longer a queue item — do not put it back, and
+  do not open it as unfinished work. [[0043-the-reg-2-definitions-document-is-deferred-by-decision]]
+  is the decision and carries what stands behind it:
+  `docs/legal/database-definitions-document.md` (990 lines, Hebrew, drafted, served by no route — 981
+  until 0043 put a STATUS blockquote at its head, which is why the older notes say 981),
+  **73 real gaps** bucketed FOUNDER 34 / COUNSEL 23 / VENDOR 16 in
+  `docs/legal/reg2-open-questions.md`, of which 39 need a person who is not the founder. What the
+  decision does NOT do: retract `/privacy` §11's live compliance claim, or say the duty does not
+  apply. [[database-definitions-document-missing]] stays open by choice.
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the casing fix closed the
   silent variant for every writer, not just the CLI.
 - **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true

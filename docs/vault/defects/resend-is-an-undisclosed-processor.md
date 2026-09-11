@@ -29,11 +29,11 @@ IPs and §8 claim it holds backups.
 asserts **no transfer basis** for Resend. It states the sending region as a fact (Ireland) and, in the
 same sentence, that Resend is an American company, precisely so a later reader cannot take "Ireland"
 for "EU vendor, therefore covered by §7's convention clause". That question is now filed where it
-belongs: `docs/legal/reg2-open-questions.md:119` (COUNSEL — which basis, and whether an EU sending
-region says anything about US access) and `:155` (VENDOR — the reg. 3 undertaking and the retention of
+belongs: `docs/legal/reg2-open-questions.md:131` (COUNSEL — which basis, and whether an EU sending
+region says anything about US access) and `:167` (VENDOR — the reg. 3 undertaking and the retention of
 the message body). Both rows carry `—` in the `line` column and change no count: the reg. 2 document
 still has no Resend marker, and adding one is a document edit this pass did not make
-(`reg2-open-questions.md:25-30` records that).
+(`reg2-open-questions.md:37-42` records that).
 
 Still not established, unchanged from below: Resend's retention of the message body.
 

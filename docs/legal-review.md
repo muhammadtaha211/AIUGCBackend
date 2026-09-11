@@ -93,8 +93,16 @@ Grades: [R] official Reshumot / gov.il publication fetched; [M] two independent 
 
 ## Facts and actions the founder still owes
 
-- Write a מסמך הגדרות מאגר (Data Security Regs reg. 2 applies even to an individually-managed
-  database).
+- ~~Write a מסמך הגדרות מאגר (Data Security Regs reg. 2 applies even to an individually-managed
+  database).~~ **DEFERRED INDEFINITELY by founder decision, 2026-09-11 — not pending.** The draft
+  exists (`docs/legal/database-definitions-document.md`, 981 lines, internal) and every gap in it is
+  restated with an owner in `docs/legal/reg2-open-questions.md`; the founder will engage counsel to
+  fill them when he sees fit and has accepted responsibility for carrying the exposure meanwhile.
+  The decision is
+  [`docs/vault/decisions/0043-…`](vault/decisions/0043-the-reg-2-definitions-document-is-deferred-by-decision.md).
+  It retracts nothing: privacy §11's compliance claim stays live, and the reg. 2 duty is not
+  disclaimed. Counsel reading this file should treat the reg. 2 work as scoped and waiting, not as
+  something the operator believes is done.
 - Confirm each US vendor's DPA/terms contains the written undertakings reg. 3 requires (Anthropic,
   ElevenLabs, HeyGen, fal.ai) and their retention / no-training terms; fal.ai sub-processors.
 - Whether the ElevenLabs voices are library or custom (affects T6).
