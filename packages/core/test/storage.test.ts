@@ -11,11 +11,16 @@ import { contentTypeForKey, SupabaseStorage } from "../src/storage";
  * HeyGen rejects signed URLs served with that type. These tests pin the
  * extension -> MIME mapping and that put() actually sends it (plus the
  * upsert-by-default behaviour job retries rely on).
+ *
+ * The second block pins the other thing the caller cannot see: whether a
+ * download filename reaches createSignedUrl, and that nothing is sent when
+ * none was asked for.
  */
 
 type UploadCall = { bucket: string; key: string; options: unknown };
+type SignCall = { bucket: string; key: string; expiresIn: number; options: unknown };
 
-function stubClient(calls: UploadCall[]): SupabaseClient {
+function stubClient(calls: UploadCall[], signCalls: SignCall[] = []): SupabaseClient {
   return {
     storage: {
       from(bucket: string) {
@@ -23,6 +28,10 @@ function stubClient(calls: UploadCall[]): SupabaseClient {
           async upload(key: string, _body: unknown, options: unknown) {
             calls.push({ bucket, key, options });
             return { data: { path: key }, error: null };
+          },
+          async createSignedUrl(key: string, expiresIn: number, options: unknown) {
+            signCalls.push({ bucket, key, expiresIn, options });
+            return { data: { signedUrl: `https://stub/${key}?token=stub` }, error: null };
           },
         };
       },
@@ -99,6 +108,29 @@ describe("storage content types", () => {
         bucket: "renders",
         key: "biz/audio/abc/audio.mp3",
         options: { contentType: "audio/mpeg", upsert: false },
+      },
+    ]);
+  });
+});
+
+describe("signed urls", () => {
+  it("forwards a download filename, and sends no options without one", async () => {
+    const signCalls: SignCall[] = [];
+    const storage = new SupabaseStorage(stubClient([], signCalls));
+    const stored = "renders/biz/video/abc/final.mp4";
+
+    // What the <video> element plays: no options object at all.
+    await storage.signedUrl(stored, 3600);
+    // What the download link points at: the same object, named for the saver.
+    await storage.signedUrl(stored, 3600, { download: "tavnit-2026-09-13-1397ffcd.mp4" });
+
+    expect(signCalls).toEqual([
+      { bucket: "renders", key: "biz/video/abc/final.mp4", expiresIn: 3600, options: undefined },
+      {
+        bucket: "renders",
+        key: "biz/video/abc/final.mp4",
+        expiresIn: 3600,
+        options: { download: "tavnit-2026-09-13-1397ffcd.mp4" },
       },
     ]);
   });

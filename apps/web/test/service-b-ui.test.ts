@@ -16,6 +16,7 @@ import {
   pointersChanged,
   RENDER_PAGE_SIZE,
   RENDER_STATUS_LABELS,
+  renderDownloadFilename,
   renderRequestBody,
   rendersPageCount,
   rendersPageParam,
@@ -368,6 +369,36 @@ describe("the /home/renders library's paging (route + page must agree)", () => {
   it("offers one page when there is nothing to show — never 'page 1 of 0'", () => {
     expect(rendersPageCount(0)).toBe(1);
     expect(rendersPageCount(1)).toBe(1);
+  });
+});
+
+describe("renderDownloadFilename (what the browser saves the file as)", () => {
+  it("names the file from the render's day and the head of its id", () => {
+    expect(
+      renderDownloadFilename({
+        id: "1397ffcd-0b2a-4f31-9c76-2a4d0e7b5c11",
+        createdAt: new Date("2026-09-05T11:42:00.000Z"),
+      }),
+    ).toBe("tavnit-2026-09-05-1397ffcd.mp4");
+  });
+
+  it("takes the createdAt the wire sends (a string) the same way", () => {
+    expect(
+      renderDownloadFilename({
+        id: "abcdef12-3456-7890-abcd-ef1234567890",
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+    ).toBe("tavnit-2026-01-02-abcdef12.mp4");
+  });
+
+  it("is ASCII — it rides in a Content-Disposition header", () => {
+    const name = renderDownloadFilename({
+      id: "00000000-1111-2222-3333-444444444444",
+      createdAt: new Date("2026-12-31T22:00:00.000Z"),
+    });
+    // eslint-disable-next-line no-control-regex
+    expect(name).toMatch(/^[\x20-\x7e]+$/);
+    expect(name).not.toMatch(/\s/);
   });
 });
 

@@ -289,10 +289,28 @@ export type AudioState = {
   scriptChanged?: boolean;
 };
 
+/**
+ * The name a finished render saves under. ASCII only and no spaces: it travels
+ * in Content-Disposition, and a Hebrew filename there needs RFC 5987 encoding
+ * we have not verified the storage host applies.
+ *
+ * The date is UTC (the render row's created_at, as the DB stored it) so the
+ * name is the same wherever it is computed — the route runs in fra1, a test
+ * runs on the founder's machine, and a local-time format would differ by one
+ * day for a render made late at night in Israel.
+ */
+export function renderDownloadFilename(render: { id: string; createdAt: Date | string }): string {
+  const day = new Date(render.createdAt).toISOString().slice(0, 10);
+  return `tavnit-${day}-${render.id.slice(0, 8)}.mp4`;
+}
+
 export type RenderState = {
   id: string;
   status: string;
   videoUrl?: string;
+  /** The same file signed as an attachment (renderDownloadFilename), minted by
+   *  GET /api/renders/[id] alongside videoUrl. Absent until it arrives. */
+  downloadUrl?: string;
   /** Set when status is "failed" — the render's own displayable Hebrew reason. */
   failureReason?: string;
   /** True only when the refund actually happened (refunded_at set server-side). */

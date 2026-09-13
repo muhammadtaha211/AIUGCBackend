@@ -8,6 +8,7 @@ import {
   type JobProgress,
 } from "@aiugc/core";
 import { coreErrorResponse, requireRender, requireUser, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
+import { renderDownloadFilename } from "@/lib/service-b-ui";
 
 /**
  * Poll a render. Status passes through core's states; the video (and thumb)
@@ -27,6 +28,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const body: {
       status: string;
       videoUrl?: string;
+      /** The same object signed as an attachment, so the browser saves it
+       *  instead of navigating to it. Separate from videoUrl on purpose: a
+       *  ?download= URL would make the <video> element's own request an
+       *  attachment too. The storage adapter owns the mechanism — the player
+       *  component never learns which backend it is on. */
+      downloadUrl?: string;
       thumbUrl?: string;
       failureReason?: string;
       refunded?: boolean;
@@ -51,6 +58,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       const storage = getStorage();
       if (render.filePath) {
         body.videoUrl = await storage.signedUrl(render.filePath, SIGNED_URL_TTL_SECONDS);
+        body.downloadUrl = await storage.signedUrl(render.filePath, SIGNED_URL_TTL_SECONDS, {
+          download: renderDownloadFilename(render),
+        });
       }
       if (render.thumbPath) {
         body.thumbUrl = await storage.signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS);
