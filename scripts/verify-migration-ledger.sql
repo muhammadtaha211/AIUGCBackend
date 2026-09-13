@@ -33,11 +33,28 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect 28 true + 1 NULL (0036 added one row on 2026-09-11, 0037 another the
--- same day, 0038 one more on 2026-09-13). 0037 was applied to production on
--- 2026-09-11 and its row reads true — see RESULTS. **0038 has NOT been applied
--- yet**, so against production today its row reads FALSE and that is expected,
--- not a finding; it turns true when the founder pushes it.
+-- expect, of 29 rows: **27 true, 1 false (0022), 1 NULL (0020)**. Two of those
+-- three need saying out loud, because neither is a finding:
+--
+--   * **0020 is NULL on every database** — see its own comment below.
+--   * **0022 reads FALSE on any database that has also run 0036, which is all of
+--     them.** 0022 asserts platform `gpu_seconds = 7200`; 0036 raised it to
+--     32000 on 2026-09-11 and nobody came back to this row. The row is
+--     SUPERSEDED, not failing, and 0036's own row asserts all seven caps
+--     including that one. Measured 2026-09-13 by replaying PORTABLE_MIGRATIONS
+--     into PGlite and running this file over it. Left as it is deliberately:
+--     relaxing or re-pinning 0022's predicate is a judgement call about what
+--     0022 is still supposed to prove, not a count fix. Until then, treat a
+--     false on 0022 ALONE as expected and every other false as real.
+--     (This paragraph is why the count above is not "28 true" — it said
+--     "27 true + 1 NULL" from 2026-09-11 to 2026-09-13, which was already one
+--     out for the same reason.)
+--
+-- Row history: 0036 added one row on 2026-09-11, 0037 another the same day,
+-- 0038 one more on 2026-09-13. 0037 was applied to production on 2026-09-11 and
+-- its row reads true — see RESULTS. **0038 has NOT been applied yet**, so
+-- against production today its row ALSO reads FALSE and that too is expected; it
+-- turns true when the founder pushes it.
 -- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
@@ -171,9 +188,10 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- is nothing a fresh database can assert. NULL, not true: a true here would be
 -- an assertion this file cannot make. The proof lives in the 'data' row below.
 -- A NULL on this row is therefore the CORRECT result on every database — the
--- expected structural read-out is 28 true plus this one NULL on a FRESH database
--- (this said 24 until 2026-09-13 — it had gone stale at every row added since
--- 0032; the header at the top of this file is the count to trust), and a NULL here
+-- expected structural read-out is 27 true, one false (0022) and this one NULL on
+-- a FRESH database (this said 24 until 2026-09-13 — it had gone stale at every
+-- row added since 0032; the header at the top of this file is the count to
+-- trust, and it explains the 0022 false), and a NULL here
 -- is not a failed check and needs no investigation. Only the 0020 'data' row
 -- (meaningful on the old production database alone) can say whether the
 -- backfill actually ran.
