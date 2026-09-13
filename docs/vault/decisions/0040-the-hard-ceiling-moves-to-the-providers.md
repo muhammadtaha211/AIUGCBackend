@@ -168,9 +168,15 @@ The surfaces:
   six, 2.1× a clean run, and [[analyze-demo-cost]] attributes that premium to a worker crash and a
   lease sweep, not to analysis. Never quote a single figure without the range.
 - **Copy generation**, including `plan_demo_steps` retry rounds.
-- **Audio previews** — free, capped at 20/24h (`audio_preview_daily_limit`, an `app_config` row, not
-  a code constant), counting **attempts** in `audio_renders` over 24h and keyed on the **owner
-  account** rather than the business, because business creation is self-serve and unlimited.
+- **Audio previews** — free, capped at ~~20/24h~~ **50/24h** (`audio_preview_daily_limit`, an
+  `app_config` row, not a code constant), counting **attempts** in `audio_renders` over 24h and keyed
+  on the **owner account** rather than the business, because business creation is self-serve and
+  unlimited. **AMENDED 2026-09-13**: the cap moved to 50 —
+  `supabase/migrations/0038_audio_preview_limit_50.sql`, written and **applied to production** that
+  same day, read back through the code's own parse as the number 50. The credit question this section defers
+  was also answered for this one surface: **charging credits per preview was considered and
+  rejected**, reasoned not measured. Both in
+  [[0047-audio-preview-attempt-cap-moves-to-50]]. The other two surfaces stay deferred.
 
 The founder's stated intent is to go through every one of them at payments time, and will probably
 charge for `analyze_demo`.
@@ -182,3 +188,4 @@ charge for `analyze_demo`.
 - [[events-table-is-empty]] — why the event trail is not an alerting mechanism.
 - [[analyze-demo-cost]] — the range, and why the outlier is an outlier.
 - [[no-self-serve-credit-grant-path]] — the other half of the billing picture.
+- [[0047-audio-preview-attempt-cap-moves-to-50]] — the preview cap is 50, and previews stay free.

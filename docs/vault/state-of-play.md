@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-11
+updated: 2026-09-13
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -102,17 +102,26 @@ Everything in this section is **founder-reported from a dashboard**, not observe
 unless a line says otherwise.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0037 applied, ledger clean, 38 rows, no gaps** — 0036 and then 0037 both pushed
-2026-09-11, each on the founder's explicit instruction for that one push; `db push` recorded both
-itself, so no `migration repair` was needed (third and fourth time running that the prediction
-held). Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.
+**Migrations 0000–0038 applied, ledger clean, 39 rows, no gaps, nothing pending** — 0036 and 0037
+both pushed 2026-09-11 and **0038 on 2026-09-13**, each on the founder's explicit instruction for
+that one push; `db push` recorded every one itself, so no `migration repair` was needed (fifth time
+running that the prediction held). Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.
+**0038 raised `audio_preview_daily_limit` 20 → 50** ([[0047-audio-preview-attempt-cap-moves-to-50]],
+reasoned not measured); the live row was read back through the code's own parse as the number 50, and
+no restart or deploy was needed because `requestAudio` reads it live on every call.
+**The ledger file's own expected counts were measured against production for the first time on
+2026-09-13: 27 true, 1 false, 1 NULL of 29 structural rows.** The single false is **0022**, which
+asserts platform `gpu_seconds = 7200` — a value 0036 raised to 32000 on 2026-09-11 without anyone
+revisiting the row. It has been false on every database since, and the file's header count was one
+out for two days before this run caught it. **A false on 0022 alone is expected; every other false is
+real.** The predicate was deliberately left alone — 0036's row already asserts all seven caps.
 **`events` is EMPTY — 0 rows, every kind, measured 2026-09-11 right after the 0037 apply.** No event
 kind has ever fired in this project: not `platform_budget_tripped`, not `qc_release`/`qc_reject`,
 not `content_policy_flag`, not `refund_resolved_to_ancestor`. So the alert sweep reads an empty
 partial index every 60s, which is the intended steady state and not evidence it is broken.
 **`npx -y supabase` is no longer the right recipe** — `supabase` is a root devDependency (2.109.1)
-and the pinned local binary was spawned directly. `CLAUDE.md:138` still says no CLI is installed
-(queue item 3; it was `:130`/`:132` before the test gate landed above it).
+and the pinned local binary is spawned directly. `CLAUDE.md:138` was corrected to say so on
+2026-09-13 (old queue item 3, closed), and the 0038 apply used the corrected recipe.
 Auth: Email provider on, Google enabled, **Confirm email ON since 2026-09-11**, Site URL
 `https://tavnit.ai`, `https://tavnit.ai/auth/callback` on the redirect allowlist.
 Custom SMTP configured; **Rate Limits raised to 100 emails/hour**. All five Hebrew auth templates
@@ -211,15 +220,14 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
    says plainly it is **UNVERIFIED**. A site that fails is a real defect and gets a defect note; if
    **several** fail, that is what reopens the `storage.objects`-policies / worker-signing
    alternatives. The sites are tabulated in 0045.
-3. **Correct `CLAUDE.md:138`'s apply recipe.** It says "no Supabase CLI is installed — npx fetches
-   it", which is **false**: `supabase` is a root devDependency (`package.json:18`, `^2.109.1`) and
-   the pinned binary is on disk at
-   `node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/…/bin/supabase.exe`. The 0037 apply
-   spawned that `.exe` directly — deliberately, because spawning the `.cmd` shim on Windows needs
-   `shell: true`, which would put the connection string through cmd.exe quoting. The same line
-   still says "0031–0036 have been pushed since" and needs 0037 added. Its `db push` "records the
-   version itself" claim held a fourth time and is correct. (This was `:130`; recording the test
-   gate on 2026-09-11 moved it to `:138`.)
+3. ~~**Correct `CLAUDE.md:138`'s apply recipe.**~~ **DONE 2026-09-13**, in the 0038 commit. The
+   "no Supabase CLI is installed — npx fetches it" claim is gone (it was false: `supabase` is a root
+   devDependency, `package.json:18`, `^2.109.1`), the line now names the pinned
+   `…/bin/supabase.exe` and says why the `.exe` and not the `.cmd` shim (spawning a `.cmd` on
+   Node 20+ needs `shell: true`, which would put the connection string through cmd.exe quoting), and
+   the pushed-migrations enumeration is current through 0038 with 0037 added. The `db push` "records
+   the version itself" claim held a **fifth** time. The 0038 apply used that recipe, which is the
+   evidence it is the right one.
 4. **Sweep the stale `apps/web/src/lib/auth.ts` cites.** `5c13ead` inserted ~54 lines above
    `signUp` on 2026-09-11 and pushed everything below it down. All verified 2026-09-11:
    `docs/08` `:383` (`auth.ts:42` / `:56` → the calls are `:124` / `:156`) and `:631`

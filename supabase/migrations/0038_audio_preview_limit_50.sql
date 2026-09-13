@@ -1,0 +1,59 @@
+-- Hand-written. Portable SQL: applies to any Postgres (Supabase, PGlite, plain PG).
+
+-- audio_preview_daily_limit: 20 -> 50. The free-preview ATTEMPT cap stops
+-- binding long before the money cap does.
+--
+-- Founder decision 2026-09-13, recorded in
+-- docs/vault/decisions/0047-audio-preview-attempt-cap-moves-to-50.md.
+--
+-- BEFORE: 20   AFTER: 50
+--
+-- THE TWO CEILINGS, AND WHY THEY SHOULD MEET IN ROUGHLY THE SAME PLACE
+-- requestAudio (packages/core/src/pipelines/tts.ts:75-94) checks two ceilings
+-- in a row, both keyed on the OWNER ACCOUNT, and they bound different things:
+--   1. audio_preview_daily_limit — a count of audio_renders rows in 24h. This
+--      is the QUEUE bound: it stops one account flooding the TTS queue for
+--      everyone else. It is not about money; TTS is absorbed cost of sale and
+--      is never debited.
+--   2. per_account.tts_chars (25000/24h, migration 0036) — CHARACTERS actually
+--      synthesized. This is the MONEY bound.
+-- docs/05-billing.md:207-208 puts 25000 chars at roughly 50 full previews a day.
+-- So at 20 the attempt count binds first, by a factor of about 2.5 — a customer
+-- regenerating one script to get it right hits the attempt cap on a day they
+-- are spending 150+ credits on renders, while the cap that exists to protect
+-- the money has barely moved. At 50 the two ceilings meet at roughly the same
+-- place, which is where a queue bound and a money bound belong: whichever one
+-- trips should tell you something, and today the one that trips tells you only
+-- that it was set too low.
+--
+-- REASONED, NOT MEASURED. No usage data was consulted — no query was run
+-- against audio_renders, and nobody has ever been observed hitting 20. The 50
+-- comes from the ~50-previews estimate in docs/05-billing.md, which is itself
+-- an estimate. This is an argument, not a measurement. Revisit with real
+-- usage_events / audio_renders counts once billing is wired.
+--
+-- A MIGRATION AND NOT A HAND UPDATE
+-- 0001_extras_and_seed.sql:47 seeds '20', and a fresh or rebuilt database still
+-- comes up on 20; this file is what lifts it. A hand UPDATE in the SQL editor
+-- would move production and leave the seed lineage behind — exactly the drift
+-- 0036's header records, where the caps had already been hand-moved and the
+-- migration landed as a data no-op
+-- (docs/vault/defects/daily-caps-were-hand-edited-before-0036.md). 0001's
+-- literal is deliberately NOT retro-edited: rewriting an applied migration is a
+-- founder call, and the one time it was done it needed the founder's explicit
+-- reasoning to justify it
+-- (docs/vault/defects/migration-0027-still-seeds-the-old-llm-cap.md).
+--
+-- UNCONDITIONAL, deliberately. 0031 guards its UPDATEs on the old value so a
+-- later founder flip is not undone; this one must not, because 50 IS the
+-- founder's decision — if production has drifted to some third value by hand,
+-- the right outcome is still 50, not a silent no-op that reads as success.
+--
+-- Verify by READ-BACK, never by "the UPDATE succeeded":
+--   select value from app_config where key = 'audio_preview_daily_limit';
+-- The value is a bare jsonb number and tts.ts:76 parses it with
+-- z.number().int(), so a string '"50"' would throw at the next preview rather
+-- than here.
+UPDATE "app_config"
+SET "value" = '50'::jsonb, "updated_at" = now()
+WHERE "key" = 'audio_preview_daily_limit';
