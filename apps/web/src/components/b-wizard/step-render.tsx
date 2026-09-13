@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
+import { RenderPlayer } from "@/components/render-player";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
 import { useBalance } from "@/app/home/balance-context";
@@ -134,6 +135,7 @@ export function StepRender({
   } = useJobPoll<{
     status: string;
     videoUrl?: string;
+    downloadUrl?: string;
     failureReason?: string;
     refunded?: boolean;
     balance?: number;
@@ -150,6 +152,7 @@ export function StepRender({
         ...render,
         status: body.status,
         videoUrl: body.videoUrl,
+        downloadUrl: body.downloadUrl,
         failureReason: body.failureReason,
         refunded: body.refunded,
       });
@@ -304,11 +307,11 @@ export function StepRender({
       <div>
         <StepHeader title="הסרטון מוכן 🎉" sub="אפשר לצפות, להוריד ולפרסם." />
         {render.videoUrl && (
-          <video
-            src={render.videoUrl}
-            controls
-            playsInline
-            className="mx-auto mt-6 aspect-[9/16] w-full max-w-60 rounded-xl border border-ink/10 bg-black"
+          <RenderPlayer
+            videoUrl={render.videoUrl}
+            downloadUrl={render.downloadUrl}
+            className="mx-auto mt-6 w-full max-w-60"
+            frameClassName="border-ink/10"
           />
         )}
         <Link href="/home" className="mt-7 block">

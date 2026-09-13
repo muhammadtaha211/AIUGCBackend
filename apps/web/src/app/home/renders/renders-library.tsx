@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { RenderPlayer } from "@/components/render-player";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
 import { rendersPageCount, SERVICE_LABELS, type RenderRow } from "@/lib/service-b-ui";
@@ -19,7 +20,11 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
   const [renders, setRenders] = useState<RenderRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<{ id: string; videoUrl?: string } | null>(null);
+  const [playing, setPlaying] = useState<{
+    id: string;
+    videoUrl?: string;
+    downloadUrl?: string;
+  } | null>(null);
   /** The modal's own failure. Kept apart from the list's: this surface has no
    *  poll and no focus refetch, so an error written by a click would otherwise
    *  sit over the grid until a page turn. */
@@ -67,11 +72,17 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
   async function play(renderId: string) {
     setPlaying({ id: renderId });
     setPlayError(null);
-    const result = await apiFetch<{ status: string; videoUrl?: string }>(
+    const result = await apiFetch<{ status: string; videoUrl?: string; downloadUrl?: string }>(
       `/api/renders/${renderId}`,
     );
     if (result.ok && result.body.videoUrl) {
-      setPlaying({ id: renderId, videoUrl: result.body.videoUrl });
+      // Both URLs come from this one response — the download is never a
+      // second request.
+      setPlaying({
+        id: renderId,
+        videoUrl: result.body.videoUrl,
+        downloadUrl: result.body.downloadUrl,
+      });
     } else {
       setPlaying(null);
       setPlayError(result.ok ? "הסרטון עדיין לא זמין לצפייה." : result.error);
@@ -170,42 +181,12 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
           onClick={() => setPlaying(null)}
         >
           <div className="w-full max-w-xs" onClick={(event) => event.stopPropagation()}>
-            {playing.videoUrl ? (
-              <video
-                src={playing.videoUrl}
-                controls
-                autoPlay
-                playsInline
-                className="aspect-[9/16] w-full rounded-xl border border-white/10 bg-black"
-              />
-            ) : (
-              <div className="flex aspect-[9/16] w-full items-center justify-center rounded-xl border border-white/10 bg-white/5">
-                <Spinner className="size-6 text-gray-400" />
-              </div>
-            )}
-            {/* The download lives HERE, not on the tile: the URL is signed
-                per-open and a fresh one costs a round trip, so a tile-level
-                link would either open a popup after an await (blocked) or
-                need 24 URLs minted for a page nobody may download from. The
-                modal already holds the exact URL the video is playing.
-                The label says "open to download", not "download", because
-                `download` is a same-origin-only hint: on a cross-origin
-                storage URL every browser ignores it and navigates instead,
-                so what the customer actually gets is the file in a tab, to
-                save from there. Forcing a real attachment would mean
-                appending Supabase's ?download= to the signed URL, which
-                teaches this component which storage backend it is on. */}
-            {playing.videoUrl && (
-              <a
-                href={playing.videoUrl}
-                download
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 block w-full rounded-lg bg-accent px-4 py-2.5 text-center text-sm font-semibold text-ink transition-colors duration-150 hover:bg-accent-deep"
-              >
-                פתיחת הסרטון להורדה
-              </a>
-            )}
+            <RenderPlayer
+              videoUrl={playing.videoUrl}
+              downloadUrl={playing.downloadUrl}
+              autoPlay
+              frameClassName="border-white/10"
+            />
             <button
               type="button"
               onClick={() => setPlaying(null)}

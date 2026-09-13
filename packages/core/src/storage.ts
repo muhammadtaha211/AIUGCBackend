@@ -63,7 +63,20 @@ export interface Storage {
   ): Promise<string>;
   download(storagePath: string, localFile: string): Promise<void>;
   remove(storagePath: string): Promise<void>;
-  signedUrl(storagePath: string, expiresInSeconds: number): Promise<string>;
+  /**
+   * `options.download` names the file the browser saves — the object is then
+   * served as an attachment under that name. Only the backend knows how to
+   * ask for that, which is why it lives here and not in the caller: a route
+   * that appended a provider's query parameter itself would be choosing a
+   * storage backend from the web tier.
+   *
+   * A backend that cannot carry a Content-Disposition ignores it.
+   */
+  signedUrl(
+    storagePath: string,
+    expiresInSeconds: number,
+    options?: { download?: string },
+  ): Promise<string>;
   /**
    * URL for an object in the PUBLIC catalog bucket — stable (no expiry, no
    * token), so browsers/CDNs/next-image can cache it. Pure URL construction,
@@ -146,6 +159,8 @@ class LocalStorage implements Storage {
     rmSync(path.join(LOCAL_STORAGE_DIR, bucket, key), { force: true });
   }
 
+  // Takes neither the expiry nor the download option: a file:// URL has no
+  // expiry and no Content-Disposition to put a filename in.
   async signedUrl(storagePath: string): Promise<string> {
     const { bucket, key } = splitPath(storagePath);
     const src = path.join(LOCAL_STORAGE_DIR, bucket, key);
@@ -208,11 +223,21 @@ export class SupabaseStorage implements Storage {
     if (error) throw new Error(`storage remove failed (${storagePath}): ${error.message}`);
   }
 
-  async signedUrl(storagePath: string, expiresInSeconds: number): Promise<string> {
+  async signedUrl(
+    storagePath: string,
+    expiresInSeconds: number,
+    options?: { download?: string },
+  ): Promise<string> {
     const { bucket, key } = splitPath(storagePath);
     const { data, error } = await this.client.storage
       .from(bucket)
-      .createSignedUrl(key, expiresInSeconds);
+      // No options object at all without a download name, so the URL a <video>
+      // element plays stays byte-for-byte what it has always been.
+      .createSignedUrl(
+        key,
+        expiresInSeconds,
+        options?.download ? { download: options.download } : undefined,
+      );
     if (error) {
       if (isMissingObject(error)) throw missingObjectError(storagePath);
       throw new Error(`signed url failed (${storagePath}): ${error.message}`);

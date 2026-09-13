@@ -58,5 +58,10 @@ Decision deferred until Supabase egress actually shows up on a bill (at V0 scale
   check on the referencing row. Persona catalog images are the one exception: public copies in
   `catalog` (0007's RLS already declares them readable by any signed-in user), served via
   `storage.publicUrl(path)` so browsers/CDNs/next-image can cache them.
+- A signed URL can also name the file the browser saves:
+  `storage.signedUrl(path, expiresIn, { download })` serves the object as an attachment under that
+  name. One caller — `GET /api/renders/[id]`, which returns it as `downloadUrl` beside the playable
+  `videoUrl`. The two cannot be one URL: the attachment header would apply to the `<video>`
+  element's own request (`docs/vault/decisions/0047-finished-renders-play-in-one-component.md`).
 - The worker and CLI use the service role key.
 - fal.ai receives 1-hour signed URLs for the source image + audio inputs (see 04).

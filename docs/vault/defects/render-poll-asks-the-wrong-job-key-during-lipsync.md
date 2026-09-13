@@ -2,7 +2,7 @@
 type: defect
 status: verified
 verified: 2026-09-02
-method: "code trace of the two enqueue sites (packages/core/src/pipelines/sets.ts:252,448 -> lipsync:<id>; packages/core/src/pipelines/renders.ts:313,322-327 -> render:<id>, enqueued only at the END of handleLipsync) against the key asked for in apps/web/src/app/api/renders/[id]/route.ts:45-48"
+method: "code trace of the two enqueue sites (packages/core/src/pipelines/sets.ts:252,448 -> lipsync:<id>; packages/core/src/pipelines/renders.ts:313,322-327 -> render:<id>, enqueued only at the END of handleLipsync) against the key asked for in apps/web/src/app/api/renders/[id]/route.ts:52-55"
 source: code
 ---
 
@@ -13,7 +13,7 @@ A render can have two jobs, and only one exists at a time. `createBRender` enque
 (`sets.ts:252`). `render:<renderId>` is not enqueued until `handleLipsync` finishes
 (`renders.ts:313` -> `enqueueRenderVideo`, `renders.ts:322-327`).
 
-`apps/web/src/app/api/renders/[id]/route.ts:45-48` always asks `getJobProgress` for
+`apps/web/src/app/api/renders/[id]/route.ts:52-55` always asks `getJobProgress` for
 `render:<id>`. So for the whole HeyGen phase — the long one — the poll returns
 `{ state: "missing" }`, which is indistinguishable from a purged or never-enqueued job.
 `handleLipsync` also never writes `video_renders.status`, so the row sits at the schema

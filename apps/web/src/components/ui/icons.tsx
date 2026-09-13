@@ -53,6 +53,49 @@ export function Play({ className = "size-4" }: IconProps) {
   );
 }
 
+/** Download arrow into a tray. A media action, so LTR like Play above. */
+export function Download({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path
+        d="M8 2v7.2m0 0L5.3 6.5M8 9.2l2.7-2.7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M2.8 10.8v1.4c0 .55.45 1 1 1h8.4c.55 0 1-.45 1-1v-1.4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** Remix — a shuffle: the same material re-cut. Media direction, so LTR. */
+export function Remix({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <path
+        d="M2 4.3h2.1c.75 0 1.45.38 1.85 1l2.6 4.1c.4.62 1.1 1 1.85 1h1.9M2 11.4h2.1c.75 0 1.45-.38 1.85-1l.6-.95m2.1-3.3.55-.85c.4-.62 1.1-1 1.85-1h1.3"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m12.2 2.7 1.6 1.6-1.6 1.6M12.2 8.8l1.6 1.6-1.6 1.6"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function Stop({ className = "size-4" }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}>
