@@ -8,6 +8,23 @@ source: code + founder
 
 # The billing plan issues חשבונית מס; an עוסק פטור cannot
 
+## Resolution 2026-09-13 — ship as עוסק פטור ([[../decisions/0046-billing-ships-as-osek-patur]])
+
+The founder took the first branch of "Fix shape" below: **ship billing as עוסק פטור**, documents
+= קבלה automatically per successful charge and חשבונית עסקה on request, with conversion to
+עוסק מורשה as a later business event before the payment that crosses the ceiling. The billing doc
+moved and the terms did not, exactly as this note argued — `docs/05-billing.md` §"Gateway choice"
+was amended in the same commit, so the `:19` and `:23-25` cites in the table below are now
+historical rather than live.
+
+**Item 1 of "Fix shape" stays open.** A decision does not discharge a configuration dependency:
+whichever documents vendor is chosen still has to be set to issue קבלה / חשבונית עסקה and not
+חשבונית מס, and that lands when the gateway adapter and the merchant account exist.
+[[../decisions/0046-billing-ships-as-osek-patur]] carries the runbook that moves it across
+conversion.
+
+---
+
 ## The contradiction
 
 As of 2026-09-03 the operator's dealer status is public text on both legal pages: **עוסק פטור**

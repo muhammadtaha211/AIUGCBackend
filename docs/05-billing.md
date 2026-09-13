@@ -12,28 +12,46 @@ Stripe doesn't onboard Israeli businesses and a merchant of record is the wrong 
 domestic customer base (~5% fees, foreign checkout, no חשבונית מס). Comparison of the local
 candidates:
 
-|                                            | Grow (Meshulam)                                 | PayPlus                 | Cardcom           | Sumit                              |
-| ------------------------------------------ | ----------------------------------------------- | ----------------------- | ----------------- | ---------------------------------- |
-| Recurring card billing (הוראת קבע)         | ✔ hosted pages                                  | ✔ REST API              | ✔ tokens          | ✔ built-in                         |
-| Server callbacks                           | ✔                                               | ✔                       | ✔                 | ✔                                  |
-| Invoicing (חשבונית מס קבלה)                | via Green Invoice integration — auto per charge | add-on module           | built-in          | built-in (it's an accounting SaaS) |
-| Fees                                       | ~1.4–2.5%                                       | similar                 | similar           | similar + SaaS fee                 |
-| Fit for a solo Hebrew-first micro-business | **very common choice**                          | more developer-oriented | veteran, older DX | fewest vendors                     |
+|                                                                       | Grow (Meshulam)                                 | PayPlus                 | Cardcom           | Sumit                              |
+| --------------------------------------------------------------------- | ----------------------------------------------- | ----------------------- | ----------------- | ---------------------------------- |
+| Recurring card billing (הוראת קבע)                                    | ✔ hosted pages                                  | ✔ REST API              | ✔ tokens          | ✔ built-in                         |
+| Server callbacks                                                      | ✔                                               | ✔                       | ✔                 | ✔                                  |
+| Documents (קבלה / חשבונית עסקה now; חשבונית מס-קבלה after conversion) | via Green Invoice integration — auto per charge | add-on module           | built-in          | built-in (it's an accounting SaaS) |
+| Fees                                                                  | ~1.4–2.5%                                       | similar                 | similar           | similar + SaaS fee                 |
+| Fit for a solo Hebrew-first micro-business                            | **very common choice**                          | more developer-oriented | veteran, older DX | fewest vendors                     |
 
-**Reference: Grow + its Green Invoice integration.** Hosted payment page collects the card and
-creates the recurring authorization; invoices are auto-issued per charge by the integration —
-zero invoice code on our side (Green Invoice API is the fallback if the integration doesn't
-cover a case). The whole design is behind `interface BillingGateway { chargeRecurring() }`, so
-switching to PayPlus/Cardcom/Sumit during merchant onboarding is one adapter class. Final vendor
-confirmation happens when the founder opens the merchant account — deliberately not a code
-dependency.
+**Reference: Grow + its Green Invoice integration — now a requirement list, not a pick.** The
+reference shape is unchanged: a hosted payment page collects the card and creates the recurring
+authorization, and documents are auto-issued per charge by the documents vendor (Green Invoice is
+now branded **Morning**) — zero document code on our side. What is no longer assumed is that a
+given vendor does it the way this design needs. Renewal scheduling stays ours — the worker's daily
+job charges a stored token through the gateway's API — so the gateway must support (a) a hosted
+page that returns a reusable token, (b) an API-initiated charge on that token for an arbitrary
+amount, (c) signed server callbacks carrying a unique event id, and (d) a sandbox with test cards.
+A vendor whose recurring runs only on its own scheduler does not fit. The table above lists Grow's
+recurring as hosted pages, which may not satisfy (b) — a question for the onboarding call
+([`0046`](vault/decisions/0046-billing-ships-as-osek-patur.md)). The whole design is behind
+`interface BillingGateway { chargeRecurring() }`, so switching to PayPlus/Cardcom/Sumit during
+merchant onboarding is one adapter class. Final vendor confirmation happens when the founder opens
+the merchant account — deliberately not a code dependency.
 
-**Document type depends on dealer status.** This section assumes חשבונית מס. The operator is
-registered as **עוסק פטור** and cannot issue one — it issues קבלה / חשבונית עסקה, which is what
-the live terms §8 promises. Whichever vendor is chosen, its invoicing integration must be
-configured to match the status in force when billing ships, and the plan above only becomes
-correct on conversion to עוסק מורשה:
+**Billing ships as עוסק פטור** ([`0046`](vault/decisions/0046-billing-ships-as-osek-patur.md)) —
+documents at launch are **קבלה** automatically per successful charge and **חשבונית עסקה** on
+request, which is what the live terms §8 promises, and whichever documents vendor is chosen must be
+configured that way before the first charge. Conversion to עוסק מורשה happens later, before the
+payment that crosses the ceiling; only then does חשבונית מס-קבלה become the right document and this
+section's original assumption correct — the contradiction this closes is
 [`docs/vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md`](vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md).
+
+### Conversion to עוסק מורשה — runbook
+
+Seven steps, in order, written out in full in
+[`0046`](vault/decisions/0046-billing-ships-as-osek-patur.md): verify the current ceiling on gov.il
+and set the configured value; register as מורשה at VAT; switch the documents vendor account to
+מורשה / חשבונית מס-קבלה; `UPDATE` the `vat_rate` config (to be added with the gateway adapter, not
+before); email subscribers 30 days ahead with the penalty-free cancellation right; update terms §1
+and §8; confirm the gateway charge amount is net × (1 + `vat_rate`). Plan prices are **net** — on
+conversion VAT is added on top, not absorbed.
 
 ## Subscription lifecycle
 
