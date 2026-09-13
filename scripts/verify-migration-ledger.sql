@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033 and 0035-0037 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033 and 0035-0038 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,9 +33,11 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect 27 true + 1 NULL (0036 added one row on 2026-09-11, 0037 another the
--- same day). 0037 was applied to production on 2026-09-11 and its row reads
--- true — see RESULTS.
+-- expect 28 true + 1 NULL (0036 added one row on 2026-09-11, 0037 another the
+-- same day, 0038 one more on 2026-09-13). 0037 was applied to production on
+-- 2026-09-11 and its row reads true — see RESULTS. **0038 has NOT been applied
+-- yet**, so against production today its row reads FALSE and that is expected,
+-- not a finding; it turns true when the founder pushes it.
 -- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
@@ -169,7 +171,9 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- is nothing a fresh database can assert. NULL, not true: a true here would be
 -- an assertion this file cannot make. The proof lives in the 'data' row below.
 -- A NULL on this row is therefore the CORRECT result on every database — the
--- expected structural read-out is 24 true plus this one NULL, and a NULL here
+-- expected structural read-out is 28 true plus this one NULL on a FRESH database
+-- (this said 24 until 2026-09-13 — it had gone stale at every row added since
+-- 0032; the header at the top of this file is the count to trust), and a NULL here
 -- is not a failed check and needs no investigation. Only the 0020 'data' row
 -- (meaningful on the old production database alone) can say whether the
 -- backfill actually ran.
@@ -369,6 +373,28 @@ WITH checks(migration, layer, applied, note) AS (VALUES
       AND indexdef LIKE '%platform_budget_tripped%'
       AND indexdef LIKE '%auth_email_send_failed%')),
   'events.notified_at + the partial alert index, predicate included'),
+
+-- 0038: audio_preview_daily_limit 20 -> 50, the free-preview attempt cap.
+-- Asserts the ACTUAL VALUE, not the row's existence — 0001 seeds this key, so
+-- the row exists in every environment and existence proves nothing about
+-- whether 0038 ran. Same hazard as 0036: nothing validates writes to
+-- app_config, so a row that looks touched while the number has not moved is the
+-- failure this row is here to catch.
+--
+-- Compared as jsonb (`value = '50'::jsonb`) rather than through `->>` like the
+-- object-valued rows above, because this key holds a bare scalar and jsonb
+-- equality is TYPE-AWARE: it rejects a hand-pasted '"50"' (a JSON string),
+-- which `->>` would render as the text 50 and pass. That matters here —
+-- tts.ts:76 parses the row with z.number().int(), so a string would satisfy a
+-- looser check and then throw at the next customer preview instead.
+--
+-- A false here means the migration did not land, OR prod was hand-edited after
+-- it did. Reconcile before repairing.
+('0038', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM app_config
+  WHERE key = 'audio_preview_daily_limit'
+    AND value = '50'::jsonb)),
+  'seeded config: audio_preview_daily_limit is the number 50'),
 
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or

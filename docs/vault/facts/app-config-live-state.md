@@ -43,6 +43,21 @@ Consequence, and the reason this was re-measured: with the flag off, `handleSynt
 English audio tags. Only the **other 12 rows** in the table below are still as of 2026-09-07; this
 one row is as of 2026-09-08.
 
+## Pending — `audio_preview_daily_limit` becomes 50, but has NOT yet (2026-09-13)
+
+**The table below still says 20 and that is correct as of this line.** Founder decision 2026-09-13
+raised the free-preview attempt cap to **50**, written as
+`supabase/migrations/0038_audio_preview_limit_50.sql` and **not applied** — the founder pushes it
+after review ([[0047-audio-preview-attempt-cap-moves-to-50]]). Nobody has queried the live row since;
+this paragraph is a **code read of the migration file**, not a re-measurement, and the table row must
+not be edited to 50 until someone runs the probe below and sees 50 come back.
+
+Noted in the same pass, from the same code read: the "only `daily_caps` is read the throwing way"
+sentence further down is **incomplete**. `audio_preview_daily_limit` is read with the throwing
+`getConfigValue` too (`packages/core/src/pipelines/tts.ts:76`, with `z.number().int()`), so a missing
+row — or a row holding a JSON string instead of a number — fails the customer's preview rather than
+falling back to a constant.
+
 ## What changed since the last check (2026-08-23)
 
 - **`tts_enhance` flipped `false` → `true`** — founder, in chat, 2026-09-07. (And back to `false` by

@@ -250,9 +250,16 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   `video_renders`, and is the only reader of `jobs.error_class = 'budget'` in the tree. A
   budget-parked `synth_tts` — or `analyze_demo`, `plan_demo_steps`, copy or composite job — has **no
   exit**: it re-queues at +1h indefinitely, with `audio_renders` left on `generating`.
-- **Audio previews are free but capped** — `audio_preview_daily_limit` (20/24h), also keyed on the
+- **Audio previews are free but capped** — `audio_preview_daily_limit` (**50/24h, raised from 20 by
+  migration 0038**, founder decision 2026-09-13 —
+  [vault 0047](vault/decisions/0047-audio-preview-attempt-cap-moves-to-50.md)), also keyed on the
   owner account. TTS is absorbed cost of sale (~₪0.10/1k chars) and a cap beats a debit; absorbed
-  does not mean unbounded.
+  does not mean unbounded. This is the **queue** bound, not the money bound: `per_account.tts_chars`
+  above is the money bound, and the ~50-previews figure it implies is where the 50 comes from, so the
+  two ceilings now meet in roughly the same place instead of the attempt count binding 2.5× earlier.
+  **Reasoned, not measured** — no usage data was consulted; revisit with real `audio_renders` counts
+  once billing is wired. Charging credits per preview was considered and rejected in the same
+  decision.
 - **Paid overage is the escalation path, not built** — letting an account keep generating past the
   free allowance by debiting credits is the better long-term answer, but it breaks the
   two-debit-sites invariant and no real user has hit the ceiling. Revisit only when telemetry says

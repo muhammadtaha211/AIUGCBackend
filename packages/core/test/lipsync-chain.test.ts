@@ -184,8 +184,9 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     });
     businessId = business.id;
     // Every render here requests its own audio preview for one owner, and the
-    // file passed the seeded per-account cap (20/24h) when the opener tests
-    // landed. The cap is an abuse ceiling, not what this file tests.
+    // file passed the seeded per-account cap when the opener tests landed —
+    // 20/24h then, 50/24h since 0038. The cap is an abuse ceiling, not what
+    // this file tests.
     await db
       .update(dbSchema.appConfig)
       .set({ value: 1000 })

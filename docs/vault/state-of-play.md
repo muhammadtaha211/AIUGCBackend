@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-11
+updated: 2026-09-13
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -100,6 +100,10 @@ unless a line says otherwise.
 2026-09-11, each on the founder's explicit instruction for that one push; `db push` recorded both
 itself, so no `migration repair` was needed (third and fourth time running that the prediction
 held). Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.
+**0038 is written and NOT applied (2026-09-13)** — `audio_preview_daily_limit` 20 → 50, founder
+decision [[0047-audio-preview-attempt-cap-moves-to-50]], reasoned not measured. The founder pushes it
+after review, so until then the live row still reads **20** and 0038's ledger row reads false by
+design. Nothing else in the repo is waiting on a push.
 **`events` is EMPTY — 0 rows, every kind, measured 2026-09-11 right after the 0037 apply.** No event
 kind has ever fired in this project: not `platform_budget_tripped`, not `qc_release`/`qc_reject`,
 not `content_policy_flag`, not `refund_resolved_to_ancestor`. So the alert sweep reads an empty
