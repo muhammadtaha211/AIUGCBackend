@@ -76,6 +76,12 @@ non-render work, the auth-email alert + migration 0037
 **#26/#27** `b8af879`/`5a52ded` the local/DRY_RUN worker claim guard, migration 0036, content
 policy wired at both choke points, the reg. 2 worksheet.
 
+**Pushed, not merged: `feat/render-player`.** Every finished render now plays in one
+`RenderPlayer` — native controls with the browser's ⋮ menu emptied, a real הורדה (an attachment
+URL the storage adapter mints) and a disabled רמיקס/בקרוב — across both modals and both wizards'
+released step. Nothing was seen in a browser; the ⋮ and the save-in-place are founder checks.
+[[decisions/0047-finished-renders-play-in-one-component]].
+
 **A worker whose `DATABASE_URL` points at production now refuses to claim** if it is a
 `local:*`/`cli:*` worker or if `DRY_RUN` is set (`b39bb2c`, `packages/core/src/jobs/queue.ts`);
 `aiugc work --once` exits rather than spinning.

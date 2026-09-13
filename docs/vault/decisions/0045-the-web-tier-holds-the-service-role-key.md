@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-11
-method: "grep -rn 'getStorage()' apps/web/src --include=*.ts --include=*.tsx (12 call sites, 11 files); packages/core/src/storage.ts:259-270 is the factory; grep -rln 'storage.objects' supabase/migrations/ returns nothing across 0000-0037; git log -S 'never the service role key' -- .env.example returns exactly one commit, 29ace1e (2026-07-23)"
+method: "grep -rn 'getStorage()' apps/web/src --include=*.ts --include=*.tsx (12 call sites, 11 files); packages/core/src/storage.ts:284-295 is the factory; grep -rln 'storage.objects' supabase/migrations/ returns nothing across 0000-0037; git log -S 'never the service role key' -- .env.example returns exactly one commit, 29ace1e (2026-07-23)"
 source: founder
 ---
 
@@ -13,7 +13,7 @@ deliberate as of 2026-09-11. Until this note, nothing had ever ruled on it.
 
 ## What the web tier holds, and what it bypasses
 
-`getStorage()` (`packages/core/src/storage.ts:259-270`) **is** the service-role client factory: given
+`getStorage()` (`packages/core/src/storage.ts:284-295`) **is** the service-role client factory: given
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` it returns a `SupabaseStorage` built on
 `createClient(url, serviceRoleKey)`, and falls back to `LocalStorage` only when they are absent.
 `apps/web` never names the variable — it imports `getStorage` from `@aiugc/core` — so a grep for
@@ -71,7 +71,7 @@ The 12 sites, for whoever runs it:
 | `app/api/demos/[id]/video/route.ts`                         | `:33`          |
 | `app/api/hooks/route.ts`                                    | `:51`          |
 | `app/api/personas/[personaId]/openers/route.ts`             | `:72`          |
-| `app/api/renders/[id]/route.ts`                             | `:51`          |
+| `app/api/renders/[id]/route.ts`                             | `:58`          |
 | `lib/persona-catalog.ts`                                    | `:69`          |
 
 All paths relative to `apps/web/src/`.

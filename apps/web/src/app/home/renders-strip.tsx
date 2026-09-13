@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { RenderPlayer } from "@/components/render-player";
 import { Spinner } from "@/components/ui/icons";
 import { renderWaitView } from "@/lib/service-a-ui";
 import {
@@ -43,7 +44,11 @@ function LiveDot({ paused }: { paused: boolean }) {
 export function RendersStrip({ businessId }: { businessId: string }) {
   const [renders, setRenders] = useState<RenderRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<{ id: string; videoUrl?: string } | null>(null);
+  const [playing, setPlaying] = useState<{
+    id: string;
+    videoUrl?: string;
+    downloadUrl?: string;
+  } | null>(null);
 
   const refetch = useCallback(async () => {
     const result = await apiFetch<{ renders: RenderRow[] }>(
@@ -84,11 +89,17 @@ export function RendersStrip({ businessId }: { businessId: string }) {
   /** Fetch a fresh signed video URL on every open — never reuse a stale one. */
   async function play(renderId: string) {
     setPlaying({ id: renderId });
-    const result = await apiFetch<{ status: string; videoUrl?: string }>(
+    const result = await apiFetch<{ status: string; videoUrl?: string; downloadUrl?: string }>(
       `/api/renders/${renderId}`,
     );
     if (result.ok && result.body.videoUrl) {
-      setPlaying({ id: renderId, videoUrl: result.body.videoUrl });
+      // Both URLs come from this one response — the download is never a
+      // second request.
+      setPlaying({
+        id: renderId,
+        videoUrl: result.body.videoUrl,
+        downloadUrl: result.body.downloadUrl,
+      });
     } else {
       setPlaying(null);
       setError(result.ok ? "הסרטון עדיין לא זמין לצפייה." : result.error);
@@ -178,19 +189,12 @@ export function RendersStrip({ businessId }: { businessId: string }) {
           onClick={() => setPlaying(null)}
         >
           <div className="w-full max-w-xs" onClick={(event) => event.stopPropagation()}>
-            {playing.videoUrl ? (
-              <video
-                src={playing.videoUrl}
-                controls
-                autoPlay
-                playsInline
-                className="aspect-[9/16] w-full rounded-xl border border-white/10 bg-black"
-              />
-            ) : (
-              <div className="flex aspect-[9/16] w-full items-center justify-center rounded-xl border border-white/10 bg-white/5">
-                <Spinner className="size-6 text-gray-400" />
-              </div>
-            )}
+            <RenderPlayer
+              videoUrl={playing.videoUrl}
+              downloadUrl={playing.downloadUrl}
+              autoPlay
+              frameClassName="border-white/10"
+            />
             <button
               type="button"
               onClick={() => setPlaying(null)}

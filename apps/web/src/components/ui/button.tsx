@@ -23,6 +23,17 @@ const SIZE = {
   lg: "h-12 px-6 text-base",
 };
 
+const BASE =
+  "inline-flex select-none items-center justify-center gap-2 rounded-lg transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-50";
+
+/**
+ * The primary look for the one element that cannot be a <button>: the render
+ * download link, since `download` only works on an <a>. Exported rather than
+ * copied so the two cannot drift. The `disabled:` rules in BASE never fire on
+ * an anchor — an inert link carries its own dimming.
+ */
+export const PRIMARY_BUTTON_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.md}`;
+
 export function Button({
   variant = "primary",
   size = "md",
@@ -36,7 +47,7 @@ export function Button({
     <button
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={`inline-flex select-none items-center justify-center gap-2 rounded-lg transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-50 ${VARIANT[variant]} ${SIZE[size]} ${className}`}
+      className={`${BASE} ${VARIANT[variant]} ${SIZE[size]} ${className}`}
       {...rest}
     >
       {loading && <Spinner className="size-4" />}
