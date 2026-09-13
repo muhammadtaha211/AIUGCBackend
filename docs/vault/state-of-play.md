@@ -85,16 +85,16 @@ permanently-disabled button is a promise the product does not keep. Nothing was 
 browser; the ⋮ and the save-in-place are still founder checks.
 [[decisions/0047-finished-renders-play-in-one-component]].
 
-**Pushed, not merged, and it OWES A MIGRATION: `feat/demo-analysis-credit`.** The steps flat splits
+**Pushed, not merged — its migration is already in production: `feat/demo-analysis-credit`.** The steps flat splits
 — `a_steps_credits` 5 → 3 for the render, new `a_demo_analysis_credits` 2 for the demo analysis,
 charged **once per demo** on the first render of it that is actually paid for. First render of a
 demo still totals 5; every later render of the same demo is 3.
 [[decisions/0048-the-demo-analysis-is-charged-once-per-demo]] has the mechanism, the accepted edges
-and the deploy order. **The order is not optional and is the thing to check before anything else:
-migration 0039 goes to production BEFORE the branch merges and deploys**, because
-`creditCostsSchema` makes the new key required and every quote path — steps, full, silent and
-Service B — throws on a row that lacks it. Two commits, `9d16ed2` and `2cc3c1f`; gate green
-(typecheck 0, lint 0, 76 + 559 + 7 + 369 + 39 tests).
+and the deploy order. **Migration 0039 is APPLIED (2026-09-13); what is left is the merge.** The
+order mattered because `creditCostsSchema` makes the new key required and every quote path — steps,
+full, silent and Service B — throws on a row that lacks it; that half is done, and the remaining gap
+(new row, old code) only underprices steps at 3 until the merge. Gate green (typecheck 0, lint 0,
+76 + 559 + 7 + 369 + 39 tests).
 
 **A worker whose `DATABASE_URL` points at production now refuses to claim** if it is a
 `local:*`/`cli:*` worker or if `DRY_RUN` is set (`b39bb2c`, `packages/core/src/jobs/queue.ts`);
@@ -116,12 +116,18 @@ Everything in this section is **founder-reported from a dashboard**, not observe
 unless a line says otherwise.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0038 applied, ledger clean, 39 rows, no gaps — but 0039 is now WRITTEN AND
-PENDING** (`supabase/migrations/0039_demo_analysis_credits.sql`, on `feat/demo-analysis-credit`,
-deliberately not applied by the session that wrote it). It is the first migration in a while that
-the code **cannot** deploy ahead of: apply it, read back
-`select value from app_config where key = 'credit_costs'` and expect `a_steps_credits` 3 and
-`a_demo_analysis_credits` 2 as bare jsonb numbers, then merge. 0036 and 0037
+**Migrations 0000–0039 applied, ledger clean, 40 rows, no gaps, nothing pending** — **0039 was
+pushed 2026-09-13** on the founder's explicit instruction for that one push, by the session that
+wrote it; `db push` recorded it itself, the sixth time running that no `migration repair` was
+needed. The read-back went through `getConfigValue(db, 'credit_costs', creditCostsSchema)` — the
+exact call every quote path makes — and returned `a_steps_credits` **3** and
+`a_demo_analysis_credits` **2**, both `jsonb_typeof` = `number`, on a row of 10 keys with the other
+eight rates untouched (20 checks, PASS; `scripts/verify-migration-ledger.sql` §RESULTS).
+**`feat/demo-analysis-credit` is NOT merged yet, and that ordering is deliberate and safe**: the
+deployed `creditCostsSchema` is a plain `z.object`, so it strips the key it does not know about and
+the only live effect until the merge is that a steps render prices at **3 instead of 5** — an
+undercharge window, not an outage. The reverse order is the one that breaks everything.
+0036 and 0037
 both pushed 2026-09-11 and **0038 on 2026-09-13**, each on the founder's explicit instruction for
 that one push; `db push` recorded every one itself, so no `migration repair` was needed (fifth time
 running that the prediction held). Proof block: `scripts/verify-migration-ledger.sql` §RESULTS.

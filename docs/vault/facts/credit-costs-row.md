@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-08-23
-method: "select value from app_config where key='credit_costs'; then grep -rn <each key> packages/core/src apps/*/src. The 2026-09-13 amendment below is NOT a re-measurement: it records the SHAPE migration 0039 writes, read from the migration file and from packages/core/src/pricing.ts, not from the database."
+verified: 2026-09-13
+method: "Re-measured 2026-09-13 right after migration 0039 was pushed to production: packages/core/.work/verify-0039-applied.ts (read-only, 20 checks, PASS) read the row through getConfigValue(db,'credit_costs',creditCostsSchema) — the exact call every quote path makes — and asserted jsonb_typeof, the key count and each of the other eight rates. Key reachability is the older measurement: grep -rn <each key> packages/core/src apps/*/src packages/remotion/src, 2026-08-23, plus the tenth key added 2026-09-13."
 source: db
 ---
 
@@ -23,14 +23,15 @@ source: db
 }
 ```
 
-> **Amended 2026-09-13 — two of these values are the migration's, not the database's.**
-> `a_steps_credits` went **5 → 3** and `a_demo_analysis_credits: 2` is **new**, both written by
-> `supabase/migrations/0039_demo_analysis_credits.sql` ([[0048-the-demo-analysis-is-charged-once-per-demo]]).
-> At the time of writing **0039 has not been applied** — the founder applies it before the code
-> deploys, because `creditCostsSchema` makes the new key required and every quote path throws
-> without it. So the ten-key block above is what the row will hold; the last time it was actually
-> read back was 2026-08-23, when it held nine keys with `a_steps_credits: 5`. Re-read it after the
-> push: `select value from app_config where key = 'credit_costs';`
+> **Changed 2026-09-13, applied and read back the same day.** `a_steps_credits` went **5 → 3** and
+> `a_demo_analysis_credits: 2` is **new**, both written by
+> `supabase/migrations/0039_demo_analysis_credits.sql`
+> ([[0048-the-demo-analysis-is-charged-once-per-demo]]) and pushed to production on the founder's
+> explicit instruction for that one push. The block above is the row as it actually reads: ten keys,
+> both new values `jsonb_typeof` = `number`, the other eight rates untouched by the `||` merge.
+> The proof is `packages/core/.work/verify-0039-applied.ts` (read-only, 20 checks, PASS) and
+> `scripts/verify-migration-ledger.sql` §RESULTS. Re-read at any time with
+> `select value from app_config where key = 'credit_costs';`
 
 **No unread keys** — all ten are read by `packages/core/src/pricing.ts` and nothing else touches
 them (grepped one key at a time across `packages/core/src`, `apps/*/src`, `packages/remotion/src`;

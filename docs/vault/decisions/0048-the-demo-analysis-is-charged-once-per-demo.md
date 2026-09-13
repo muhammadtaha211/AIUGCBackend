@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-13
-method: "Founder decision in chat, 2026-09-13 ('implement, do not re-litigate'). Written as supabase/migrations/0039_demo_analysis_credits.sql, which is NOT yet applied — the founder applies it before the code deploys. Code as landed on feat/demo-analysis-credit: packages/core/src/pricing.ts (creditCostsSchema gains a_demo_analysis_credits, quoteServiceASteps takes firstPaidRenderOfDemo); packages/core/src/pipelines/sets.ts (demoHasPaidRender, RenderQuote.analysisCreditsOncePerSet, quoteTotal exported, createSet's demo row lock + first-cell debit); packages/core/src/pipelines/credits.ts:79-104 (refundRenderIfNeeded refunds the row's own delta); packages/core/src/pipelines/renders.ts:1004-1043 (failRenderAndRefund, and resolveDebitBearingRender above it). Cost basis: docs/vault/facts/analyze-demo-cost.md, verified 2026-08-23 and NOT re-measured for this change. Proved by packages/core/test/credits-wiring.test.ts (describe 'the demo analysis is charged once per demo', 6 cases) and packages/core/test/pricing.test.ts."
+method: "Founder decision in chat, 2026-09-13 ('implement, do not re-litigate'). Written as supabase/migrations/0039_demo_analysis_credits.sql and APPLIED to production 2026-09-13 on the founder's explicit instruction for that one push, ahead of the code deploy; post-apply read-back through getConfigValue(db,'credit_costs',creditCostsSchema) returned a_steps_credits 3 and a_demo_analysis_credits 2, ledger 40 rows 0000-0039 no gaps, no repair needed (packages/core/.work/verify-0039-applied.ts, 20 checks, PASS). Code as landed on feat/demo-analysis-credit: packages/core/src/pricing.ts (creditCostsSchema gains a_demo_analysis_credits, quoteServiceASteps takes firstPaidRenderOfDemo); packages/core/src/pipelines/sets.ts (demoHasPaidRender, RenderQuote.analysisCreditsOncePerSet, quoteTotal exported, createSet's demo row lock + first-cell debit); packages/core/src/pipelines/credits.ts:79-104 (refundRenderIfNeeded refunds the row's own delta); packages/core/src/pipelines/renders.ts:1004-1043 (failRenderAndRefund, and resolveDebitBearingRender above it). Cost basis: docs/vault/facts/analyze-demo-cost.md, verified 2026-08-23 and NOT re-measured for this change. Proved by packages/core/test/credits-wiring.test.ts (describe 'the demo analysis is charged once per demo', 6 cases) and packages/core/test/pricing.test.ts."
 source: founder + code
 supersedes: "[[credit-costs-row]] (the a_steps_credits = 5 line)"
 ---
@@ -170,7 +170,10 @@ Revisit with a fresh `aiugc costs` run once real steps traffic exists.
 row that lacks it does not mis-price — it **throws**, and steps, full, silent and Service B stop
 together. Same hazard 0026's header named and [[credit-costs-row]] calls "a hand-edit that drops a
 key breaks every format at once". **Migration 0039 is applied to production first; the commit
-deploys second.**
+deploys second.** Done in that order on 2026-09-13: 0039 went to production before the branch
+merged. The gap it leaves — new row, old code — is the benign direction, because the deployed
+schema is a plain `z.object` that strips the key it does not know; steps simply prices at 3 until
+the merge. The reverse gap is the one that throws.
 
 Required rather than optional deliberately: an optional key would default the analysis to a silent
 zero, which is precisely the failure `creditCostsSchema` exists to prevent.

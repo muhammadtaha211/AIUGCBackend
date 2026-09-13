@@ -56,11 +56,10 @@
 -- Row history: 0036 added one row on 2026-09-11, 0037 another the same day,
 -- 0038 one more on 2026-09-13 and 0039 the same day. 0037 and 0038 were both
 -- applied to production on the day their row was written and both read true —
--- see RESULTS. **0039's row has never been run against anything**: it was
--- written with the migration, which the founder applies. It also changed a row
--- that was already here — 0026 no longer asserts a VALUE, because 0039 owns
--- a_steps_credits now; that is where the 28th true comes from, not from a new
--- row alone.
+-- see RESULTS. **0039 was applied to production 2026-09-13 too, and its row read
+-- true** — see RESULTS. It also changed a row that was already here: 0026 no
+-- longer asserts a VALUE, because 0039 owns a_steps_credits now; that is where
+-- the 28th true comes from, not from a new row alone.
 -- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
@@ -516,9 +515,10 @@ ORDER BY migration, layer DESC;
 --   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 0030
 --
 -- That command is the 2026-08-26 backfill of the old ledger, kept as written.
--- 0032/0033, 0035, 0036, 0037 and 0038 are NOT in it (0036 and 0038 were missing
--- from this sentence until 2026-09-13). `db push` records them itself and needs no
--- repair — five times running now; only a hand-paste into the SQL editor does,
+-- 0032/0033, 0035, 0036, 0037, 0038 and 0039 are NOT in it (0036 and 0038 were
+-- missing from this sentence until 2026-09-13, and 0039 was added the same day
+-- it was pushed). `db push` records them itself and needs no
+-- repair — SIX times running now; only a hand-paste into the SQL editor does,
 -- and then only once the row(s) above for what you pasted read true:
 --
 --   npx -y supabase migration repair --status applied 0032 0033 --db-url <session pooler url>
@@ -529,6 +529,44 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-09-13 (later the same day), production (hyaqydcmwbnbaiqqufow), after
+-- `db push` applied 0039 (credit_costs: a_steps_credits 5 -> 3, new
+-- a_demo_analysis_credits 2), on the founder's explicit instruction for this one
+-- push: ledger read-back **40 rows, 0000-0039, NO GAPS, nothing unapplied and NO
+-- REPAIR NEEDED** -- `db push` recorded 0039 itself, the SIXTH time in a row the
+-- REPAIR note above has predicted correctly. Pre-flight was `migration list`
+-- (0000-0038 local == remote, 0039 the only row with an empty remote) and
+-- `db push --dry-run`, which named 0039_demo_analysis_credits.sql alone. Same
+-- Docker catalog-cache warning as 0035-0038, and not a failure; the apply printed
+-- "Applying migration 0039_demo_analysis_credits.sql..." and exited 0.
+--
+-- Applied by a session, not by hand, and the pinned local binary was spawned
+-- directly (node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/.../supabase.exe)
+-- through a throwaway wrapper that read DATABASE_URL out of `.env` itself, swapped
+-- :6543/ for :5432/, and SCRUBBED the URL, password, host and user out of every
+-- byte the CLI wrote before printing it -- the credential rule applied to a tool
+-- that quotes its own DSN in errors.
+--
+-- Post-apply read-back went through the CODE'S OWN PARSE
+-- (packages/core/.work/verify-0039-applied.ts, read-only, 20 checks, PASS):
+-- getConfigValue(db, 'credit_costs', creditCostsSchema) -- the exact call every
+-- quote path makes -- returned a_steps_credits 3 and a_demo_analysis_credits 2,
+-- `jsonb_typeof` said **number** for both (so no hand-pasted '"3"' that would
+-- satisfy `->>` and then throw at the next customer quote), the row holds
+-- **10 keys** with the other eight rates at their 0017 values (the `||` merge
+-- clobbered nothing), and quoteServiceASteps returned 3 for a reused demo and 5
+-- itemised as steps 3 + analysis 2 for a first paid render. Both rows this file
+-- carries for the change -- 0026 (key presence) and 0039 (both values) -- read
+-- **true** against production.
+--
+-- **The code was NOT deployed at this point, deliberately, and the gap is
+-- benign in exactly one direction.** The migration goes first because
+-- creditCostsSchema makes the new key required; the reverse gap -- old row, new
+-- code -- throws on every quote path. This gap is the safe one: the DEPLOYED
+-- schema is a plain z.object, so it strips the key it does not know about, and
+-- the only live effect is that a steps render prices at 3 instead of 5 until the
+-- branch merges. An undercharge window, not an outage.
 --
 -- 2026-09-13, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0038
 -- (audio_preview_daily_limit 20 -> 50), on the founder's explicit instruction for
