@@ -44,13 +44,16 @@ throws (`billing.ts:26-31`).
 ## What this means
 
 A self-serve stranger's balance is 0 until the founder manually grants credits or billing is
-actually wired. Any chargeable render quote is ≥ its floor (`a_minimum_credits` = 5 since 0017,
-`a_steps_credits` = 5 since 0026), so `assertAffordable`
-(`packages/core/src/pipelines/sets.ts:579-583`) refuses before a single row is written. **The
+actually wired. Any chargeable render quote is positive (`a_minimum_credits` = 5 since 0017;
+`a_steps_credits` = 3 since **0039**, which on a demo's first paid render is joined by
+`a_demo_analysis_credits` = 2 for the same 5 the steps flat used to be on its own —
+[[0048-the-demo-analysis-is-charged-once-per-demo]]), so `assertAffordable`
+(`packages/core/src/pipelines/sets.ts`, re-cited 2026-09-13; the `:579-583` here was already stale)
+refuses before a single row is written. **The
 credit balance is the binding bound on stranger spend; the per-account daily caps are the
 backstop, not the bound.** This holds for every present route and every future one that debits
 through `createSet`/`createBRender` — which are deliberately the only two debit sites
-(`sets.ts:530-531` comment).
+(the comment above `quoteRerollForRender` in `sets.ts`).
 
 Balance mechanics: [[credit-ledger-is-keyed-to-the-account]]. The one crack in the wall —
 non-positive costs flowing through `debitRender` if `credit_costs` is ever mistyped —

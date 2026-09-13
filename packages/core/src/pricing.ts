@@ -33,6 +33,12 @@ export const creditCostsSchema = z.object({
   a_remix_assembly_credits: z.number(),
   /** Steps-format Service A render. Flat, and floor-exempt (see quoteServiceASteps). */
   a_steps_credits: z.number(),
+  /**
+   * The demo analysis, charged ONCE per demo — on the first render of that
+   * demo that actually takes the customer's money, never on the analysis
+   * itself. Flat, and floor-exempt for the same reason a_steps_credits is.
+   */
+  a_demo_analysis_credits: z.number(),
 });
 
 export type CreditCosts = z.infer<typeof creditCostsSchema>;
@@ -43,7 +49,7 @@ export type CreditCosts = z.infer<typeof creditCostsSchema>;
  * UNROUNDED: they explain the number, they don't reproduce it.
  */
 export interface QuoteComponent {
-  kind: "assembly" | "demo" | "outro" | "lipsync" | "reroll" | "remix" | "steps";
+  kind: "assembly" | "demo" | "outro" | "lipsync" | "reroll" | "remix" | "steps" | "analysis";
   credits: number;
   /** Seconds billed, for per-second components. Absent on flats. */
   seconds?: number;
@@ -139,16 +145,33 @@ export function quoteEndingReroll(opts: { sliceSeconds: number; costs: CreditCos
 }
 
 /**
- * Steps-format Service A: one analysis amortised over unlimited variants plus
- * one Remotion render — near-constant marginal cost, so the price is a flat.
- * The full-format quote (assembly + demo-per-second) would bill the UPLOADED
- * duration: a 3-minute recording would price ~31 credits for a ~20s output, at
- * a rate calibrated to subsidise a TTS funnel this format doesn't use. The
- * floor is deliberately not applied: the flat IS the whole price, and a floor
- * would silently override tuning it below a_minimum_credits.
+ * Steps-format Service A: one Remotion render, plus the demo analysis on the
+ * first render that pays for it. The full-format quote (assembly +
+ * demo-per-second) would bill the UPLOADED duration: a 3-minute recording
+ * would price ~31 credits for a ~20s output, at a rate calibrated to subsidise
+ * a TTS funnel this format doesn't use.
+ *
+ * The analysis used to be amortised INTO the flat, which made every variant
+ * pay for it again — the exact opposite of the reuse the format is built for.
+ * It is now its own part, added once per demo: `firstPaidRenderOfDemo` is a
+ * fact about the LEDGER (see demoHasPaidRender in pipelines/sets.ts), not
+ * about this wizard run, so a demo analysed yesterday and abandoned pays the
+ * same today as one uploaded and rendered straight through. The analysis is
+ * never debited on its own — a failed analysis costs the customer nothing.
+ *
+ * BOTH parts are floor-exempt: the flats ARE the whole price, and a floor
+ * would silently override tuning either below a_minimum_credits. One ceil over
+ * the sum, as everywhere else.
  */
-export function quoteServiceASteps(opts: { costs: CreditCosts }): Quote {
-  return settle([{ kind: "steps", credits: opts.costs.a_steps_credits }], 0);
+export function quoteServiceASteps(opts: {
+  costs: CreditCosts;
+  firstPaidRenderOfDemo: boolean;
+}): Quote {
+  const components: QuoteComponent[] = [{ kind: "steps", credits: opts.costs.a_steps_credits }];
+  if (opts.firstPaidRenderOfDemo) {
+    components.push({ kind: "analysis", credits: opts.costs.a_demo_analysis_credits });
+  }
+  return settle(components, 0);
 }
 
 /**

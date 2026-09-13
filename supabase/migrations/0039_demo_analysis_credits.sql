@@ -1,0 +1,73 @@
+-- Hand-written. Portable SQL: applies to any Postgres (Supabase, PGlite, plain PG).
+
+-- credit_costs: a_steps_credits 5 -> 3, and a NEW key a_demo_analysis_credits
+-- = 2. The first paid render of a demo still totals 5; every later render of
+-- the SAME demo costs 3.
+--
+-- Founder decision 2026-09-13, recorded in
+-- docs/vault/decisions/0048-the-demo-analysis-is-charged-once-per-demo.md.
+--
+-- BEFORE: {"a_steps_credits": 5}
+-- AFTER:  {"a_steps_credits": 3, "a_demo_analysis_credits": 2}
+--
+-- ⚠️ DEPLOY ORDER — APPLY THIS BEFORE THE COMMIT DEPLOYS.
+-- creditCostsSchema (packages/core/src/pricing.ts) makes a_demo_analysis_credits
+-- REQUIRED, like every other key, and quoteContext (pipelines/sets.ts) parses
+-- the whole row on EVERY quote path. So a build carrying the schema key against
+-- a row that does not have it does not mis-price — it throws, and steps, full,
+-- silent and Service B all stop together. Exactly the hazard 0026's own header
+-- names ("0026 must be applied before any build carrying the schema key
+-- deploys") and the one docs/vault/facts/credit-costs-row.md calls "a hand-edit
+-- that drops a key breaks every format at once". Migration first, deploy second.
+--
+-- WHY THE ANALYSIS BECOMES ITS OWN PART
+-- 0026 amortised the analysis INTO the flat, so every variant of a demo paid
+-- for it again — the opposite of the reuse the steps format exists for. One
+-- demo is analysed once; the second, fifth and twentieth ad off that recording
+-- cost us a Remotion render and nothing else. Splitting the flat lets the price
+-- say that: 3 for the render, 2 for the analysis, the 2 charged once per DEMO.
+--
+-- WHY 2 COVERS IT
+-- docs/vault/facts/analyze-demo-cost.md measured six analyze_demo jobs against
+-- usage_events: a CLEAN run (attempts = 0, four of the six) costs ₪2.04–₪2.56,
+-- mean ₪2.28, and the one 3-attempt run cost ₪4.35 — a worker crash, not a
+-- flaky analysis. That note is `verified: 2026-08-23`, which is PAST the 14-day
+-- re-measure rule in docs/vault/CONVENTIONS.md; it was not re-measured for this
+-- change, and it is the only cost figure behind the 2. At the credit prices
+-- being modelled, 2 credits covers a clean analysis with the retry tail inside
+-- the first render's total rather than beside it.
+--
+-- CHARGED AT RENDER, NEVER AT ANALYSIS
+-- The debit sites are unchanged — createSet and createBRender, still the only
+-- two. Nothing is debited when a demo is analysed, so a failed or rejected
+-- analysis costs the customer nothing and needs no refund path. "First paid
+-- render" is a fact about the LEDGER (demoHasPaidRender in pipelines/sets.ts):
+-- a demo analysed yesterday, abandoned, and reused today pays the same as one
+-- uploaded and rendered straight through.
+--
+-- UNCONDITIONAL, deliberately — the same reasoning as 0038. 0026 guards on
+-- `NOT (value ? 'a_steps_credits')` so a re-run cannot reset a hand-tuned
+-- value; this one must not, because 3 and 2 ARE the founder's decision. If
+-- production has drifted to some third value by hand, the right outcome is
+-- still 3 and 2, not a silent no-op that reads as success. `||` still merges
+-- rather than rewriting the row, so the other seven rates — which may have been
+-- hand-tuned since 0017 seeded them — are untouched.
+--
+-- 0017's and 0026's seed literals are deliberately NOT retro-edited: a fresh or
+-- rebuilt database still comes up on the old shape (a_steps_credits 5, no
+-- a_demo_analysis_credits at all), and THIS file is what lifts it. Rewriting an
+-- applied migration is a founder call, and the one time it was done it needed
+-- his explicit reasoning
+-- (docs/vault/defects/migration-0027-still-seeds-the-old-llm-cap.md).
+--
+-- Verify by READ-BACK, never by "the UPDATE succeeded" — creditCostsSchema is a
+-- plain z.object, so it STRIPS on read and a misplaced key would survive in the
+-- row forever unseen (that is what 0028 had to clean up):
+--   select value from app_config where key = 'credit_costs';
+-- Expect a_steps_credits 3 and a_demo_analysis_credits 2, both as bare jsonb
+-- numbers — a hand-pasted '"2"' parses as a string and z.number() throws at the
+-- next quote rather than here.
+UPDATE "app_config"
+SET "value" = "value" || '{"a_steps_credits": 3, "a_demo_analysis_credits": 2}'::jsonb,
+    "updated_at" = now()
+WHERE "key" = 'credit_costs';

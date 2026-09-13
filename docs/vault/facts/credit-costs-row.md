@@ -2,7 +2,7 @@
 type: fact
 status: verified
 verified: 2026-08-23
-method: "select value from app_config where key='credit_costs'; then grep -rn <each key> packages/core/src apps/*/src"
+method: "select value from app_config where key='credit_costs'; then grep -rn <each key> packages/core/src apps/*/src. The 2026-09-13 amendment below is NOT a re-measurement: it records the SHAPE migration 0039 writes, read from the migration file and from packages/core/src/pricing.ts, not from the database."
 source: db
 ---
 
@@ -18,43 +18,69 @@ source: db
   "b_minimum_credits": 0,
   "a_ending_reroll_per_second": 1,
   "a_remix_assembly_credits": 2,
-  "a_steps_credits": 5
+  "a_steps_credits": 3,
+  "a_demo_analysis_credits": 2
 }
 ```
 
-**No unread keys** — all nine are read by `packages/core/src/pricing.ts` and nothing else touches
-them (grepped one key at a time across `packages/core/src`, `apps/*/src`, `packages/remotion/src`).
+> **Amended 2026-09-13 — two of these values are the migration's, not the database's.**
+> `a_steps_credits` went **5 → 3** and `a_demo_analysis_credits: 2` is **new**, both written by
+> `supabase/migrations/0039_demo_analysis_credits.sql` ([[0048-the-demo-analysis-is-charged-once-per-demo]]).
+> At the time of writing **0039 has not been applied** — the founder applies it before the code
+> deploys, because `creditCostsSchema` makes the new key required and every quote path throws
+> without it. So the ten-key block above is what the row will hold; the last time it was actually
+> read back was 2026-08-23, when it held nine keys with `a_steps_credits: 5`. Re-read it after the
+> push: `select value from app_config where key = 'credit_costs';`
+
+**No unread keys** — all ten are read by `packages/core/src/pricing.ts` and nothing else touches
+them (grepped one key at a time across `packages/core/src`, `apps/*/src`, `packages/remotion/src`;
+the tenth was added 2026-09-13 and is read at `quoteServiceASteps`).
 
 **But two are unreachable in production.** `a_ending_reroll_per_second` is priced only by
 `quoteEndingReroll`, whose sole caller is `quoteRerollForRender`
-(`packages/core/src/pipelines/sets.ts:533`) — which has **no callers at all** outside its own
-export. `a_remix_assembly_credits` is priced only by `quoteAssemblyRemix`, called from nothing but
+(`packages/core/src/pipelines/sets.ts:898`, re-measured 2026-09-13; it has been cited at `:533`)
+— which has **no callers at all** outside its own export. `a_remix_assembly_credits` is priced only by `quoteAssemblyRemix`, called from nothing but
 `packages/core/test/pricing.test.ts`. Tuning either key today changes nothing a customer can
 reach.
 
+Cites re-measured 2026-09-13 against `packages/core/src/pricing.ts` — the whole table shifted when
+0048 added the tenth key, which is the normal fate of a line cite in this repo.
+
 | key                          | priced by            | what it buys                                           |
 | ---------------------------- | -------------------- | ------------------------------------------------------ |
-| `a_assembly_flat`            | `pricing.ts:98`      | full-format Service A, per render                      |
-| `a_demo_per_second`          | `pricing.ts:99-103`  | full-format Service A, × the **uploaded** demo seconds |
-| `a_outro_per_second`         | `pricing.ts:104-108` | avatar ending only; 0 when the ending is a freeze      |
-| `a_minimum_credits`          | `pricing.ts:110`     | floor on the full-format quote                         |
-| `b_per_second`               | `pricing.ts:118`     | Service B, × the approved VO's measured seconds        |
-| `b_minimum_credits`          | `pricing.ts:119`     | floor on Service B — `0`, i.e. inactive                |
-| `a_ending_reroll_per_second` | `pricing.ts:129-136` | ending re-roll; floor-exempt                           |
-| `a_remix_assembly_credits`   | `pricing.ts:162`     | hook / hook-line / rect remix; floor-exempt            |
-| `a_steps_credits`            | `pricing.ts:151`     | **the whole steps-format price**; floor-exempt         |
+| `a_assembly_flat`            | `pricing.ts:104`     | full-format Service A, per render                      |
+| `a_demo_per_second`          | `pricing.ts:105-109` | full-format Service A, × the **uploaded** demo seconds |
+| `a_outro_per_second`         | `pricing.ts:110-114` | avatar ending only; 0 when the ending is a freeze      |
+| `a_minimum_credits`          | `pricing.ts:116`     | floor on the full-format quote                         |
+| `b_per_second`               | `pricing.ts:124`     | Service B, × the approved VO's measured seconds        |
+| `b_minimum_credits`          | `pricing.ts:125`     | floor on Service B — `0`, i.e. inactive                |
+| `a_ending_reroll_per_second` | `pricing.ts:136-140` | ending re-roll; floor-exempt                           |
+| `a_remix_assembly_credits`   | `pricing.ts:185`     | hook / hook-line / rect remix; floor-exempt            |
+| `a_steps_credits`            | `pricing.ts:170`     | one steps-format RENDER; floor-exempt                  |
+| `a_demo_analysis_credits`    | `pricing.ts:172`     | the demo analysis, ONCE per demo; floor-exempt         |
 
-## A steps render is a flat 5 credits
+## A steps render is 3 credits, and the first render of a demo is 5
 
-`quoteServiceASteps` (`packages/core/src/pricing.ts:150-152`) returns one component and passes `0`
-as the floor, so demo length changes nothing. That is deliberate and the comment above it says why:
-the full-format quote bills the **uploaded** duration, so a 3-minute recording would price ~31
-credits for a ~20s output.
+**Changed 2026-09-13** ([[0048-the-demo-analysis-is-charged-once-per-demo]]). It was a single flat
+of 5 from 0026 until then, and the six observed production debits below are all from that era.
 
-The debit is written at `packages/core/src/pipelines/sets.ts:240-247`, inside `createSet`'s per-cell
-loop — one ledger row per render, never per set, because refunds key on the render id. The wizard
-only ever sends a 1×1 grid, so per-set and per-render coincide today. A multi-cell steps grid would
-be 5×N.
+`quoteServiceASteps` returns the `steps` component always, adds an `analysis` component when the
+caller passes `firstPaidRenderOfDemo: true`, and passes `0` as the floor for both — so demo length
+still changes nothing. That is deliberate and the comment above it says why: the full-format quote
+bills the **uploaded** duration, so a 3-minute recording would price ~31 credits for a ~20s output.
+
+`firstPaidRenderOfDemo` comes from **one** place, `demoHasPaidRender` in
+`packages/core/src/pipelines/sets.ts`: a demo has a paid render iff some `video_renders` row of that
+demo (through `sets.demo_id`) carries a `debit_render` ledger row with no `refund_failed` row on the
+same `ref_id`. The ledger, **not** `video_renders.refunded_at` — an ancestor refund leaves the
+row that gave the money back with a null `refunded_at`, so the column would answer this question
+wrong. 0048 has the full reasoning.
+
+The debit is still written inside `createSet`'s per-cell loop — one ledger row per render, never per
+set, because refunds key on the render id. The once-per-set analysis is **added to the first cell's
+row**, which is why that row is larger and no third row appears. The wizard only ever sends a 1×1
+grid, so per-set and per-render coincide today; a fresh demo's N-cell steps grid would be
+`5, 3, 3, …` and a reused demo's would be `3×N`.
 
 **Observed, not just derived.** Joining `credit_ledger.ref_id` to `video_renders`, all ten
 `debit_render` rows in production resolve, and the split is exactly what the code predicts:
@@ -65,11 +91,12 @@ be 5×N.
 | 2026-08-18 → 2026-08-22 (6) | **−5 every time**  | `steps`                               |
 
 Six steps renders, six −5 debits, no exceptions. The length-priced rows above them are the reason
-the flat exists.
+the flat exists. **All six predate the 2026-09-13 split** — under it the same six renders, off six
+distinct demos, would still be −5 each; off ONE demo they would be −5 then −3 five times.
 
 ## Three traps
 
-**`creditCostsSchema` is a plain `z.object`** (`packages/core/src/pricing.ts:24-36`) — strip mode,
+**`creditCostsSchema` is a plain `z.object`** (`packages/core/src/pricing.ts`) — strip mode,
 not strict. Two things follow, and both are commonly stated backwards:
 
 - **Stripping happens on READ, not on write.** Nothing validates writes to `app_config` at all. A
@@ -91,10 +118,11 @@ see [[token-and-money-budgets]].
 (its own header comment at `pricing.ts:6-9`, and `config.ts:63`). That is why `creditCostsSchema`
 lives there rather than in `config.ts`, and it constrains what the module may import.
 
-**Admin accounts pay nothing.** `packages/core/src/pipelines/sets.ts:745` (re-read 2026-09-11;
-was `:483`) sets
-`chargeable = !(await isAdminOwned(db, businessId))`, and `sets.ts:240` skips the debit when
-`chargeable` is false. Flipping a customer account to admin would zero its render debits and
+**Admin accounts pay nothing.** `quoteContext` in `packages/core/src/pipelines/sets.ts` (re-read
+2026-09-13; the line has been `:483`, then `:745`, and moves again with every edit above it — grep
+the expression, not a number) sets
+`chargeable = !(await isAdminOwned(db, businessId))`, and `createSet`'s per-cell loop skips the
+debit when `chargeable` is false. Flipping a customer account to admin would zero its render debits and
 corrupt the ledger.
 
 `isAdminOwned` is consulted on a second, unrelated path too — `apps/web/src/lib/wizard-gate.ts:24`,
@@ -110,3 +138,5 @@ SQL editor, that is the failure to expect.
 
 - [[credit-ledger-is-keyed-to-the-account]] — why a per-business sum is not a balance
 - [[app-config-live-state]]
+- [[0048-the-demo-analysis-is-charged-once-per-demo]] — why the steps flat split, and the predicate
+- [[analyze-demo-cost]] — the ₪2.04–₪2.56 `a_demo_analysis_credits` is reasoned from

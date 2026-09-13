@@ -101,7 +101,7 @@ function. A second place that computes a price is a bug, not an optimisation.
 
 ```
 quoteServiceA({ demoSeconds, outroMode, outroSeconds, costs })
-quoteServiceASteps({ costs })
+quoteServiceASteps({ costs, firstPaidRenderOfDemo })
 quoteServiceB({ durationMs, costs })
 quoteEndingReroll({ sliceSeconds, costs })
 quoteAssemblyRemix({ costs })
@@ -112,7 +112,7 @@ Never ceil per component — a 34s demo with a 6.5s ending quotes 15 that way an
 and any drift between the displayed quote and the debit is the failure this module exists to
 prevent.
 
-### `credit_costs` (app_config, migrations 0017 + 0026)
+### `credit_costs` (app_config, migrations 0017 + 0026 + 0039)
 
 ```json
 {
@@ -124,13 +124,15 @@ prevent.
   "b_minimum_credits": 0,
   "a_ending_reroll_per_second": 1,
   "a_remix_assembly_credits": 2,
-  "a_steps_credits": 5
+  "a_steps_credits": 3,
+  "a_demo_analysis_credits": 2
 }
 ```
 
 **Every key is required by `creditCostsSchema`** — restoring this row from an older copy of this
-block (without `a_steps_credits`) makes every quote path throw. 0026 must be applied before any
-build carrying the schema key deploys.
+block (without `a_steps_credits`, or without `a_demo_analysis_credits`) makes every quote path
+throw. The migration that adds a key must be applied before any build carrying the schema key
+deploys: that was true of 0026 and it is true of 0039.
 
 Rates are `z.number()`, **not** `.int()` — whole-credit-per-second steps make tuning impossible.
 The charge is always an integer because of the single ceil. Tuning any of this is an `UPDATE` on
@@ -145,11 +147,34 @@ this row, never a deploy; the code does not know which pricing model won.
   clip, the hook line, or the text rect re-runs assembly and nothing else, at near-zero marginal
   cost. It still goes through `createSet`, so a naive floor would silently price it like a fresh
   video and kill the volume play.
-- `a_steps_credits` (0026) is the **flat price of a steps-format render**, also floor-exempt:
-  one analysis amortised over unlimited variants plus one Remotion render is near-constant
-  marginal cost. The full-format quote would bill the UPLOADED duration — a 3-minute recording
-  would price ~31 credits for a ~20s output, at a rate calibrated to subsidise a TTS funnel the
-  steps format doesn't use.
+- `a_steps_credits` (0026, **lowered 5 → 3 by 0039**) is the flat price of one steps-format
+  **render**, floor-exempt. The full-format quote would bill the UPLOADED duration — a 3-minute
+  recording would price ~31 credits for a ~20s output, at a rate calibrated to subsidise a TTS
+  funnel the steps format doesn't use.
+- `a_demo_analysis_credits` (0039) is the demo analysis, **charged once per demo** and also
+  floor-exempt. 0026 folded the analysis into the flat and called it "amortised over unlimited
+  variants", which it never was: the flat is per render, so every variant paid for the analysis
+  again — the opposite of the reuse the format exists for. Split, the price says what happens. **The
+  first render of a demo still totals 5**; every later render of the same demo is 3.
+  - **"First" is a fact about the LEDGER, not the wizard run.** `demoHasPaidRender`
+    (`pipelines/sets.ts`): a demo has a paid render iff some `video_renders` row of that demo
+    (through `sets.demo_id`) carries a `debit_render` row with no `refund_failed` row on the same
+    `ref_id`. Not `video_renders.refunded_at` — an ancestor refund (the QC chain) leaves the row
+    that gave the money back with a null column. So a demo analysed yesterday, abandoned and reused
+    today pays exactly what a fresh upload pays, and a first render that failed and was refunded
+    leaves the demo unpaid, as it should.
+  - **Charged at render, never at analysis.** Nothing is debited when a demo is analysed, so a
+    failed analysis costs the customer nothing and needs no refund path — and `createSet` /
+    `createBRender` stay the only two debit sites. The platform eats the analysis of every demo
+    nobody renders from; that is the price of not billing for work the customer never saw a price
+    for.
+  - **It rides on the FIRST cell's debit**, so a set of N cells still writes N ledger rows and the
+    first is simply larger (`5, 3, 3, …`). Refunds are unchanged: each row gives back its own delta.
+    Inside `createSet`'s transaction the demo row is locked `FOR UPDATE` before the predicate is
+    re-read, so two confirms racing on one demo cannot both charge the analysis.
+  - The 2 is reasoned from `docs/vault/facts/analyze-demo-cost.md` (₪2.04–₪2.56 for a clean run,
+    `verified: 2026-08-23` and **not** re-measured for this change).
+    Full reasoning: [`0048`](vault/decisions/0048-the-demo-analysis-is-charged-once-per-demo.md).
 
 ### Semantics (`credits.ts` + `sets.ts`)
 
@@ -160,7 +185,8 @@ this row, never a deploy; the code does not know which pricing model won.
   exact quote at the advisory (audio is approved first, so `planAOutro` runs pre-confirm and the
   ending is known) → single debit at confirm.
 - **Debit per render, inside a transaction** — a Set of 6 cells writes 6 rows, each `ref`ing its
-  render (per-render keeps refunds exact). The set row, the render rows, the debits and the jobs
+  render (per-render keeps refunds exact). The one once-per-set charge — the demo analysis above —
+  is ADDED to the first row rather than given a row of its own, precisely so this stays true. The set row, the render rows, the debits and the jobs
   commit together or not at all.
 - **Atomic** — the balance is re-read inside the transaction behind a row lock on the owner
   account, so two tabs confirming at once serialize instead of overdrawing.

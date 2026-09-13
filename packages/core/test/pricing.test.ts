@@ -24,7 +24,8 @@ const HYBRID: CreditCosts = {
   b_minimum_credits: 0,
   a_ending_reroll_per_second: 1,
   a_remix_assembly_credits: 2,
-  a_steps_credits: 5,
+  a_steps_credits: 3,
+  a_demo_analysis_credits: 2,
 };
 
 /** Model (i): marginal cost only — a flat plus the outro seconds. */
@@ -53,6 +54,14 @@ describe("creditCostsSchema", () => {
     expect(creditCostsSchema.safeParse({ a_render: 1, b_render: 15 }).success).toBe(false);
     const { a_remix_assembly_credits: _dropped, ...missingKey } = HYBRID;
     expect(creditCostsSchema.safeParse(missingKey).success).toBe(false);
+  });
+
+  it("rejects a row missing a_demo_analysis_credits — a silently-zero price is the failure", () => {
+    // 0039 adds the key REQUIRED, like every other one. A row restored from an
+    // older copy of the docs/05 block parses as an error, loudly, instead of
+    // pricing the analysis at nothing forever.
+    const { a_demo_analysis_credits: _dropped, ...pre0039 } = HYBRID;
+    expect(creditCostsSchema.safeParse(pre0039).success).toBe(false);
   });
 });
 
@@ -220,15 +229,34 @@ describe("quoteServiceASteps", () => {
   it("is the flat key — never the uploaded duration", () => {
     // A 3-minute recording under the full-format quote would price ~31
     // credits for a ~20s output; the steps flat doesn't look at the demo.
-    const quote = quoteServiceASteps({ costs: HYBRID });
-    expect(quote.credits).toBe(5);
-    expect(quote.components).toEqual([{ kind: "steps", credits: 5 }]);
+    const quote = quoteServiceASteps({ costs: HYBRID, firstPaidRenderOfDemo: false });
+    expect(quote.credits).toBe(3);
+    expect(quote.components).toEqual([{ kind: "steps", credits: 3 }]);
   });
 
-  it("is floor-exempt — the flat IS the price, tuning it below the floor works", () => {
-    const quote = quoteServiceASteps({ costs: { ...HYBRID, a_steps_credits: 3 } });
+  it("adds the analysis on the first paid render of a demo — 3 + 2 = 5", () => {
+    const quote = quoteServiceASteps({ costs: HYBRID, firstPaidRenderOfDemo: true });
+    expect(quote.credits).toBe(5);
+    expect(quote.components).toEqual([
+      { kind: "steps", credits: 3 },
+      { kind: "analysis", credits: 2 },
+    ]);
+  });
+
+  it("is floor-exempt on BOTH parts — the flats ARE the price", () => {
+    const costs = { ...HYBRID, a_steps_credits: 1, a_demo_analysis_credits: 1 };
+    expect(quoteServiceASteps({ costs, firstPaidRenderOfDemo: true }).credits).toBe(2);
+    expect(quoteServiceASteps({ costs, firstPaidRenderOfDemo: true }).minimumApplied).toBe(false);
+    expect(quoteServiceASteps({ costs, firstPaidRenderOfDemo: false }).credits).toBe(1);
+  });
+
+  it("ceils ONCE over the sum — two fractional flats must not each round up", () => {
+    // 1.4 + 1.4 = 2.8 -> 3. Ceiling per component would quote 4, and the
+    // displayed integer and the debited integer would part ways.
+    const costs = { ...HYBRID, a_steps_credits: 1.4, a_demo_analysis_credits: 1.4 };
+    const quote = quoteServiceASteps({ costs, firstPaidRenderOfDemo: true });
+    expect(quote.subtotal).toBeCloseTo(2.8, 10);
     expect(quote.credits).toBe(3);
-    expect(quote.minimumApplied).toBe(false);
   });
 });
 

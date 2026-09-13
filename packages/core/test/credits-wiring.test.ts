@@ -28,7 +28,14 @@ import {
   RENDER_RETRIES_EXHAUSTED_MESSAGE,
 } from "../src/pipelines/renders";
 import { rejectRender } from "../src/pipelines/qc";
-import { createBRender, createSet, quoteASet, quoteBRender } from "../src/pipelines/sets";
+import {
+  createBRender,
+  createSet,
+  demoHasPaidRender,
+  quoteASet,
+  quoteBRender,
+  quoteStepsASet,
+} from "../src/pipelines/sets";
 import { getStorage, setStorage } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
 import { tempStorage } from "./helpers/storage";
@@ -119,6 +126,53 @@ async function debitsFor(videoRenderId: string) {
     .where(
       sql`${dbSchema.creditLedger.refId} = ${videoRenderId} and ${dbSchema.creditLedger.reason} = 'debit_render'`,
     );
+}
+
+/** The one debited integer for a render — the assertion every steps test makes. */
+async function debitDelta(videoRenderId: string): Promise<number> {
+  const rows = await debitsFor(videoRenderId);
+  expect(rows).toHaveLength(1);
+  return rows[0]!.delta;
+}
+
+/**
+ * A demo that can be rendered from: uploaded, analysed, planned, plan approved.
+ * Each call is a NEW demo — which is the whole point here, since the analysis
+ * charge is keyed on the demo and nothing else.
+ */
+async function stepsDemo(owner = businessId): Promise<{ demoId: string; planId: string }> {
+  const demo = await createDemo(db, {
+    businessId: owner,
+    filePath: tempFile(`steps-${crypto.randomUUID()}.mp4`),
+  });
+  await drainAll(); // analyze_demo
+  const { planId } = await requestDemoPlan(db, demo.id);
+  await drainAll(); // plan_demo_steps
+  await approvePlan(db, planId);
+  return { demoId: demo.id, planId };
+}
+
+/** One steps-format set: N hook lines over the one bank clip = N cells. */
+async function stepsSet(
+  demo: { demoId: string; planId: string },
+  hookLineScriptIds: string[],
+  owner = businessId,
+) {
+  return createSet(db, {
+    businessId: owner,
+    demoId: demo.demoId,
+    grid: {
+      hookClipIds: [hookClipId],
+      hookLineScriptIds,
+      mode: "silent",
+      format: "steps",
+      stepPlanId: demo.planId,
+    },
+  });
+}
+
+async function newHookLine(owner = businessId): Promise<string> {
+  return (await generateHookLines(db, { businessId: owner, n: 1 }))[0]!.id;
 }
 
 beforeAll(async () => {
@@ -285,32 +339,34 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     await drainAll();
     await approvePlan(db, planId);
 
-    const second = await generateHookLines(db, { businessId, n: 1 });
+    // Every voiced case above paid for a render of THIS demo and none was
+    // refunded, so the analysis is long since bought: 3 a cell, not 5.
+    expect(await demoHasPaidRender(db, demoId)).toBe(true);
+
+    const second = await newHookLine();
     const before = await creditBalance(db, ownerUserId);
     const { renders } = await createSet(db, {
       businessId,
       demoId,
       grid: {
         hookClipIds: [hookClipId],
-        hookLineScriptIds: [hookLineId, second[0]!.id],
+        hookLineScriptIds: [hookLineId, second],
         mode: "silent",
         format: "steps",
         stepPlanId: planId,
       },
     });
     expect(renders).toHaveLength(2);
-    // a_steps_credits (5), per render — NOT the full-format duration quote,
+    // a_steps_credits (3), per render — NOT the full-format duration quote,
     // which would price this 20s demo at 6 (and a 3-minute one at ~31).
     for (const render of renders) {
-      const debits = await debitsFor(render.id);
-      expect(debits).toHaveLength(1);
-      expect(debits[0]!.delta).toBe(-5);
+      expect(await debitDelta(render.id)).toBe(-3);
     }
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 10);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 6);
 
     // A dying steps render refunds exactly the flat, keyed on the render id.
     expect(await failRenderAndRefund(db, renders[0]!.id, "בדיקה")).toBe(true);
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 3);
     await drainAll();
   });
 
@@ -371,6 +427,176 @@ describe("insufficient balance", { timeout: 120_000 }, () => {
     expect((await db.select().from(dbSchema.videoRenders)).length).toBe(before.renders);
     expect((await db.select().from(dbSchema.jobs)).length).toBe(before.jobs);
     expect((await db.select().from(dbSchema.creditLedger)).length).toBe(before.ledger);
+  });
+});
+
+/**
+ * a_demo_analysis_credits (migration 0039): the analysis is paid for ONCE per
+ * demo, on the first render of it that actually takes money. 3 for the render,
+ * 2 for the analysis — so the first render of a demo totals 5, as it always
+ * did, and every later one costs 3.
+ */
+describe("the demo analysis is charged once per demo", { timeout: 240_000 }, () => {
+  // Its own float, so no case here depends on what an earlier describe left
+  // behind or on the order vitest runs them in.
+  beforeAll(async () => {
+    await grantCredits(db, { userId: ownerUserId, credits: 200, note: "analysis tests" });
+  });
+
+  it("first paid render of a demo debits 5 — as ONE row, not two", async () => {
+    const demo = await stepsDemo();
+    expect(await demoHasPaidRender(db, demo.demoId)).toBe(false);
+
+    const quote = await quoteStepsASet(db, businessId, demo.demoId);
+    expect(quote.creditsPerRender).toBe(3);
+    expect(quote.analysisCreditsOncePerSet).toBe(2);
+    expect(quote.components).toEqual([
+      { kind: "steps", credits: 3 },
+      { kind: "analysis", credits: 2 },
+    ]);
+
+    const before = await creditBalance(db, ownerUserId);
+    const { renders } = await stepsSet(demo, [await newHookLine()]);
+    // One ledger row per render is the invariant refunds key on — the
+    // analysis makes the first row larger, it does not add a second row.
+    expect(await debitDelta(renders[0]!.id)).toBe(-5);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
+  });
+
+  it("every later render of the SAME demo debits 3 — the analysis is bought", async () => {
+    const demo = await stepsDemo();
+    const first = await stepsSet(demo, [await newHookLine()]);
+    expect(await debitDelta(first.renders[0]!.id)).toBe(-5);
+
+    expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
+    const quote = await quoteStepsASet(db, businessId, demo.demoId);
+    expect(quote.creditsPerRender).toBe(3);
+    expect(quote.analysisCreditsOncePerSet).toBe(0);
+    expect(quote.components).toEqual([{ kind: "steps", credits: 3 }]);
+
+    const before = await creditBalance(db, ownerUserId);
+    const second = await stepsSet(demo, [await newHookLine()]);
+    expect(await debitDelta(second.renders[0]!.id)).toBe(-3);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 3);
+  });
+
+  it("a 2-cell set: 5 on the first cell, 3 on the second — and cell two refunds 3", async () => {
+    const demo = await stepsDemo();
+    const before = await creditBalance(db, ownerUserId);
+    const { renders } = await stepsSet(demo, [await newHookLine(), await newHookLine()]);
+
+    expect(renders).toHaveLength(2);
+    expect(await debitDelta(renders[0]!.id)).toBe(-5);
+    expect(await debitDelta(renders[1]!.id)).toBe(-3);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 8);
+
+    // A refund gives back the row's own delta, which is why the analysis
+    // rides on one cell instead of being spread across them.
+    expect(await failRenderAndRefund(db, renders[1]!.id, "בדיקה")).toBe(true);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
+    // The set still holds a paid render, so a third variant is still 3.
+    expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
+    await drainAll();
+  });
+
+  it("a demo whose only debits were refunded reads as unpaid, and pays 5 again", async () => {
+    const demo = await stepsDemo();
+    const first = await stepsSet(demo, [await newHookLine()]);
+    expect(await debitDelta(first.renders[0]!.id)).toBe(-5);
+
+    // The render dies and the money goes back — the customer paid nothing for
+    // this demo, so the next render must not inherit a bought analysis.
+    expect(await failRenderAndRefund(db, first.renders[0]!.id, "בדיקה")).toBe(true);
+    expect(await demoHasPaidRender(db, demo.demoId)).toBe(false);
+
+    const before = await creditBalance(db, ownerUserId);
+    const second = await stepsSet(demo, [await newHookLine()]);
+    expect(await debitDelta(second.renders[0]!.id)).toBe(-5);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
+    await drainAll();
+  });
+
+  it("a demo paid for by a FULL-format render has already bought its analysis", async () => {
+    // The predicate is about the ledger, not about the format: the same
+    // analysis backs both, and it has been paid for either way.
+    const demo = await stepsDemo();
+    const script = await generateVoScript(db, {
+      businessId,
+      demoId: demo.demoId,
+      selectedAdvantages: [],
+      personaId,
+    });
+    const audio = await fabricateApprovedAudio(script.id, 20_000);
+    await createSet(db, {
+      businessId,
+      demoId: demo.demoId,
+      grid: {
+        hookClipIds: [hookClipId],
+        hookLineScriptIds: [await newHookLine()],
+        mode: "voiced",
+        audioRenderId: audio.id,
+        personaId,
+      },
+    });
+
+    expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
+    const { renders } = await stepsSet(demo, [await newHookLine()]);
+    expect(await debitDelta(renders[0]!.id)).toBe(-3);
+  });
+
+  it("refunding the cell that CARRIED the analysis leaves the demo paid — by design", async () => {
+    // The edge the founder named and accepted: the analysis rides on cell one,
+    // so when cell one dies and a sibling survives, the refund gives the
+    // analysis back and the surviving sibling keeps the demo marked paid, so
+    // nothing ever re-charges it. The platform eats one analysis on its OWN
+    // failure. Pinned here so it stays a decision instead of becoming a
+    // surprise — see docs/vault/decisions/0048.
+    const demo = await stepsDemo();
+    const { renders } = await stepsSet(demo, [await newHookLine(), await newHookLine()]);
+    expect(await debitDelta(renders[0]!.id)).toBe(-5);
+    expect(await debitDelta(renders[1]!.id)).toBe(-3);
+
+    const before = await creditBalance(db, ownerUserId);
+    // Cell ONE — the bearer — dies. Its whole row comes back, analysis included.
+    expect(await failRenderAndRefund(db, renders[0]!.id, "בדיקה")).toBe(true);
+    expect(await creditBalance(db, ownerUserId)).toBe(before + 5);
+
+    // Cell two's debit stands, so the demo is still paid and the next variant
+    // is 3 — the analysis for this demo is collected zero times in total.
+    expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
+    const next = await stepsSet(demo, [await newHookLine()]);
+    expect(await debitDelta(next.renders[0]!.id)).toBe(-3);
+    await drainAll();
+  });
+
+  it("admin bypass: no analysis charge, no ledger row at all", async () => {
+    const founder = await createBusiness(db, {
+      ownerEmail: "analysis-founder@example.com",
+      name: "עסק של המייסד",
+      ownerRole: "admin",
+    });
+    await setQuestionnaire(db, founder.id, {
+      category: "local_service",
+      product_name: "עסק של המייסד",
+      what_it_does: "דגימות לפנייה קרה",
+      advantages: ["א"],
+      target_audience: "כולם",
+      tone: "friendly",
+    });
+    const demo = await stepsDemo(founder.id);
+
+    const quote = await quoteStepsASet(db, founder.id, demo.demoId);
+    expect(quote.chargeable).toBe(false);
+    // The analysis part is still QUOTED — it is a price, and the bypass is
+    // applied by quoteTotal, not by pretending the price is zero.
+    expect(quote.analysisCreditsOncePerSet).toBe(2);
+
+    const { renders } = await stepsSet(demo, [await newHookLine(founder.id)], founder.id);
+    expect(await debitsFor(renders[0]!.id)).toHaveLength(0);
+    expect(await creditBalance(db, founder.ownerUserId)).toBe(0);
+    // ...and the demo is STILL unpaid, so a customer-owned demo is not
+    // silently marked bought by a founder sample.
+    expect(await demoHasPaidRender(db, demo.demoId)).toBe(false);
   });
 });
 
