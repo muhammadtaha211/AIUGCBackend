@@ -23,7 +23,12 @@ import {
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { useBalance } from "@/app/home/balance-context";
-import { hasShortfall, shortfallLine, type QuoteView } from "@/lib/quote-ui";
+import {
+  hasShortfall,
+  shortfallLine,
+  stepsPriceBreakdown,
+  type StepsQuoteView,
+} from "@/lib/quote-ui";
 import type { AStepsCreateResponse } from "@/lib/service-a";
 import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
@@ -67,7 +72,7 @@ export function StepARender({
   onFatal,
 }: StepARenderProps) {
   /** undefined = not loaded yet; null = admin bypass (nothing is charged). */
-  const [quote, setQuote] = useState<QuoteView | undefined>(undefined);
+  const [quote, setQuote] = useState<StepsQuoteView | undefined>(undefined);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [createError, setCreateError] = useState<{ message: string; retryable: boolean } | null>(
     null,
@@ -82,8 +87,11 @@ export function StepARender({
 
   async function loadQuote() {
     setQuoteError(null);
-    const result = await apiFetch<{ quote: QuoteView }>(
-      `/api/businesses/${businessId}/a-sets/steps/quote`,
+    // The demo decides the price: its analysis is paid for once, on the first
+    // render of it that is charged. Without this id the route would quote a
+    // brand-new recording and overstate a reused one by the analysis part.
+    const result = await apiFetch<{ quote: StepsQuoteView }>(
+      `/api/businesses/${businessId}/a-sets/steps/quote?demoId=${encodeURIComponent(demoId)}`,
     );
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
@@ -165,6 +173,9 @@ export function StepARender({
 
   // Before enqueue: the summary + the price + explicit confirm. Back allowed.
   if (render === null) {
+    // null on a recording that has already been paid for once, and on the
+    // admin bypass — both of which want the plain number and nothing else.
+    const breakdown = quote === undefined ? null : stepsPriceBreakdown(quote);
     return (
       <div>
         <StepHeader
@@ -201,10 +212,15 @@ export function StepARender({
               {stepsShapeSummary(plan, hook.durationMs)}
             </p>
 
-            {/* Balance only — the price rides on the confirm button itself
-                (stepsConfirmLabel). Absent entirely on the admin bypass. */}
+            {/* The price rides on the confirm button itself
+                (stepsConfirmLabel); this is the balance, plus — only on a
+                recording nobody has rendered from yet — what the number on the
+                button is made of. Absent entirely on the admin bypass. */}
             {quote && !hasShortfall(quote) && (
-              <p className="mt-3 text-[13px] text-ink/60">{stepsBalanceLine(quote)}</p>
+              <>
+                {breakdown && <p className="mt-3 text-[13px] text-ink/70">{breakdown}</p>}
+                <p className="mt-2 text-[13px] text-ink/60">{stepsBalanceLine(quote)}</p>
+              </>
             )}
             {hasShortfall(quote) && (
               <p
@@ -310,6 +326,13 @@ export function StepARender({
             size="lg"
             className="flex-1"
             onClick={() => {
+              // The quote goes with it. A failed render that was REFUNDED can
+              // have flipped this demo back to unpaid — it was the only thing
+              // holding it paid — and then the analysis is owed again and the
+              // real price is higher than the cached one on the button.
+              // createSet re-quotes server-side either way, so leaving the
+              // stale number up would show 3 and debit 5.
+              setQuote(undefined);
               setRender(null); // back to the summary screen; confirm re-enqueues
             }}
           >

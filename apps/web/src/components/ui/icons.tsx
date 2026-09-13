@@ -74,28 +74,6 @@ export function Download({ className = "size-4" }: IconProps) {
   );
 }
 
-/** Remix — a shuffle: the same material re-cut. Media direction, so LTR. */
-export function Remix({ className = "size-4" }: IconProps) {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
-      <path
-        d="M2 4.3h2.1c.75 0 1.45.38 1.85 1l2.6 4.1c.4.62 1.1 1 1.85 1h1.9M2 11.4h2.1c.75 0 1.45-.38 1.85-1l.6-.95m2.1-3.3.55-.85c.4-.62 1.1-1 1.85-1h1.3"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m12.2 2.7 1.6 1.6-1.6 1.6M12.2 8.8l1.6 1.6-1.6 1.6"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 export function Stop({ className = "size-4" }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className={className}>

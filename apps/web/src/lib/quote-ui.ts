@@ -13,6 +13,19 @@
  */
 export type QuoteView = { credits: number; balance: number; shortfall: number } | null;
 
+/**
+ * The steps quote, which carries its own breakdown: `credits` is what the
+ * confirm costs, `render` the per-render flat, and `analysis` the demo
+ * analysis — charged ONCE per demo, on the first render of it that is paid
+ * for, so it is 0 on every recording the customer has already made an ad from.
+ */
+export type StepsQuoteView =
+  | (NonNullable<QuoteView> & {
+      render: number;
+      analysis: number;
+    })
+  | null;
+
 const formatSeconds = (seconds: number): string => `${Math.round(seconds * 10) / 10}`;
 
 /** THE price sentence for B and voiced A. The steps format deliberately does
@@ -67,6 +80,42 @@ export function bShapeSummary(voSeconds: number): string {
 
 export function hasShortfall(quote: QuoteView): boolean {
   return quote !== null && quote.shortfall > 0;
+}
+
+/**
+ * Why the confirm button says 5 and not 3: the first ad off a new recording
+ * also pays for analysing it. `null` = nothing to explain — either the admin
+ * bypass, or a recording that has already been paid for once, where the price
+ * IS the plain number on the button and a breakdown would only add noise.
+ *
+ * The second sentence is the format's whole pitch, said at the one moment the
+ * customer is looking at the number: the analysis is bought once, the variants
+ * after it are not.
+ */
+export function stepsPriceBreakdown(quote: StepsQuoteView): string | null {
+  if (quote === null || quote.analysis <= 0) return null;
+  return `${quote.credits} קרדיטים: ${quote.render} לסרטון + ${quote.analysis} על ניתוח ההקלטה. כל מודעה נוספת מאותה הקלטה תעלה ${quote.render}.`;
+}
+
+/**
+ * The demo step's reuse nudge. The number is the analysis part of a quote for
+ * a demo that does not exist yet (the quote route with no `demoId`) — never a
+ * literal here, because the price is config and moves without a deploy.
+ * `null` = the admin bypass, or a row that quotes no analysis at all: then the
+ * sentence is the original one, about time only.
+ *
+ * `במודעה הראשונה שתיצרו ממנו` is load-bearing and was not in the first draft.
+ * The exemption is keyed on a PAID render, but the list this sentence points at
+ * shows every READY demo — analysed, not necessarily rendered from. Without the
+ * clause, "pick it from the list" reads as a promise to save the credits, which
+ * for an uploaded-but-never-rendered demo is false, and the render step would
+ * then contradict it with a quote of 3 + 2.
+ */
+export function newDemoNudge(analysisCredits: number | null): string {
+  if (analysisCredits === null || analysisCredits <= 0) {
+    return "כל סרטון חדש עובר ניתוח מלא שלוקח כמה דקות — אם כבר העליתם את הסרטון, בחרו אותו מהרשימה למעלה.";
+  }
+  return `כל סרטון חדש עובר ניתוח מלא שלוקח כמה דקות, ועולה ${analysisCredits} קרדיטים נוספים במודעה הראשונה שתיצרו ממנו — אם כבר העליתם את הסרטון, בחרו אותו מהרשימה למעלה.`;
 }
 
 /**

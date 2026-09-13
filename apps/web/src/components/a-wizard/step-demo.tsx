@@ -20,6 +20,7 @@ import {
   type DemoSummary,
   type ReadyDemoDuration,
 } from "@/lib/service-a-ui";
+import { newDemoNudge, type StepsQuoteView } from "@/lib/quote-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
 type StepDemoProps = {
@@ -237,6 +238,30 @@ export function StepDemo({
       cancelled = true;
     };
   }, [pickerShowing, businessId, page]);
+
+  /**
+   * What a NEW recording costs on top of the render — the analysis, which is
+   * paid for once per demo. Fetched with NO demoId on purpose: that is the
+   * quote route's "a demo that does not exist yet", and it is the only place
+   * this number may come from, since it is config and moves without a deploy.
+   * null until it lands, and on the admin bypass; the nudge then says what it
+   * always said, about time alone.
+   */
+  const [newDemoCredits, setNewDemoCredits] = useState<number | null>(null);
+  useEffect(() => {
+    if (!pickerShowing) return;
+    let cancelled = false;
+    void (async () => {
+      const result = await apiFetch<{ quote: StepsQuoteView }>(
+        `/api/businesses/${businessId}/a-sets/steps/quote`,
+      );
+      if (cancelled || !result.ok) return;
+      setNewDemoCredits(result.body.quote?.analysis ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pickerShowing, businessId]);
 
   /** Reuse: the saved description prefills the field and stays editable. */
   function selectPrevious(row: DemoSummary) {
@@ -623,10 +648,7 @@ export function StepDemo({
         </span>
       </button>
       {readyTotal !== null && readyTotal > 0 && (
-        <p className="mt-2 text-[13px] text-ink/55">
-          כל סרטון חדש עובר ניתוח מלא שלוקח כמה דקות — אם כבר העליתם את הסרטון, בחרו אותו מהרשימה
-          למעלה.
-        </p>
+        <p className="mt-2 text-[13px] text-ink/55">{newDemoNudge(newDemoCredits)}</p>
       )}
     </>
   );
