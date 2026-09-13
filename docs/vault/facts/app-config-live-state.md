@@ -14,7 +14,7 @@ reads through `getConfigValueOr` falls back to its code constant — see
 
 | key                         | value                                                                                                                |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `audio_preview_daily_limit` | `20`                                                                                                                 |
+| `audio_preview_daily_limit` | `50`                                                                                                                 |
 | `auto_release_b`            | `true`                                                                                                               |
 | `credit_costs`              | see [[credit-costs-row]]                                                                                             |
 | `daily_caps`                | see [[token-and-money-budgets]]                                                                                      |
@@ -43,16 +43,25 @@ Consequence, and the reason this was re-measured: with the flag off, `handleSynt
 English audio tags. Only the **other 12 rows** in the table below are still as of 2026-09-07; this
 one row is as of 2026-09-08.
 
-## Pending — `audio_preview_daily_limit` becomes 50, but has NOT yet (2026-09-13)
+## Correction — `audio_preview_daily_limit` is `50` (2026-09-13)
 
-**The table below still says 20 and that is correct as of this line.** Founder decision 2026-09-13
-raised the free-preview attempt cap to **50**, written as
-`supabase/migrations/0038_audio_preview_limit_50.sql` and **not applied** — the founder pushes it
-after review ([[0047-audio-preview-attempt-cap-moves-to-50]]). Nobody has queried the live row since;
-this paragraph is a **code read of the migration file**, not a re-measurement, and the table row must
-not be edited to 50 until someone runs the probe below and sees 50 come back.
+Founder decision 2026-09-13 raised the free-preview attempt cap from 20 to **50**
+([[0047-audio-preview-attempt-cap-moves-to-50]]). `supabase/migrations/0038_audio_preview_limit_50.sql`
+was applied to production the same day on the founder's explicit instruction for that one push, and
+the table above is updated **because it was re-measured, not because the migration says so**:
 
-Noted in the same pass, from the same code read: the "only `daily_caps` is read the throwing way"
+```
+apps/cli/node_modules/.bin/tsx packages/core/.work/verify-0038.ts   # throwaway, gitignored
+```
+
+which calls `getConfigValue(db, "audio_preview_daily_limit", z.number().int())` — the exact call
+`packages/core/src/pipelines/tts.ts:76` makes — and got **50** back. Going through the code's parse
+rather than a raw `SELECT` is the point for a bare jsonb scalar: a row holding the JSON string `"50"`
+prints identically to the number `50` in most SQL output and then throws at the next customer
+preview. Only **this one row** is as of 2026-09-13; the rest of the table is still as of 2026-09-07,
+except `tts_enhance` (2026-09-08, above).
+
+Noted in the same pass: the "only `daily_caps` is read the throwing way"
 sentence further down is **incomplete**. `audio_preview_daily_limit` is read with the throwing
 `getConfigValue` too (`packages/core/src/pipelines/tts.ts:76`, with `z.number().int()`), so a missing
 row — or a row holding a JSON string instead of a number — fails the customer's preview rather than

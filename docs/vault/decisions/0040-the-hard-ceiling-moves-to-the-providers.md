@@ -172,8 +172,8 @@ The surfaces:
   `app_config` row, not a code constant), counting **attempts** in `audio_renders` over 24h and keyed
   on the **owner account** rather than the business, because business creation is self-serve and
   unlimited. **AMENDED 2026-09-13**: the cap moved to 50 —
-  `supabase/migrations/0038_audio_preview_limit_50.sql`, written that day and **not yet applied**, so
-  the live row still reads 20 until the founder pushes it. The credit question this section defers
+  `supabase/migrations/0038_audio_preview_limit_50.sql`, written and **applied to production** that
+  same day, read back through the code's own parse as the number 50. The credit question this section defers
   was also answered for this one surface: **charging credits per preview was considered and
   rejected**, reasoned not measured. Both in
   [[0047-audio-preview-attempt-cap-moves-to-50]]. The other two surfaces stay deferred.

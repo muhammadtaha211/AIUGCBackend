@@ -251,7 +251,7 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   budget-parked `synth_tts` — or `analyze_demo`, `plan_demo_steps`, copy or composite job — has **no
   exit**: it re-queues at +1h indefinitely, with `audio_renders` left on `generating`.
 - **Audio previews are free but capped** — `audio_preview_daily_limit` (**50/24h, raised from 20 by
-  migration 0038**, founder decision 2026-09-13 —
+  migration 0038, applied 2026-09-13**, founder decision the same day —
   [vault 0047](vault/decisions/0047-audio-preview-attempt-cap-moves-to-50.md)), also keyed on the
   owner account. TTS is absorbed cost of sale (~₪0.10/1k chars) and a cap beats a debit; absorbed
   does not mean unbounded. This is the **queue** bound, not the money bound: `per_account.tts_chars`

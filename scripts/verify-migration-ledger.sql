@@ -41,8 +41,10 @@
 --     them.** 0022 asserts platform `gpu_seconds = 7200`; 0036 raised it to
 --     32000 on 2026-09-11 and nobody came back to this row. The row is
 --     SUPERSEDED, not failing, and 0036's own row asserts all seven caps
---     including that one. Measured 2026-09-13 by replaying PORTABLE_MIGRATIONS
---     into PGlite and running this file over it. Left as it is deliberately:
+--     including that one. Measured 2026-09-13 twice — by replaying
+--     PORTABLE_MIGRATIONS into PGlite, and then by running this file against
+--     PRODUCTION, which returned exactly 27 true / 1 false / 1 NULL with 0022
+--     the only false. Left as it is deliberately:
 --     relaxing or re-pinning 0022's predicate is a judgement call about what
 --     0022 is still supposed to prove, not a count fix. Until then, treat a
 --     false on 0022 ALONE as expected and every other false as real.
@@ -51,10 +53,8 @@
 --     out for the same reason.)
 --
 -- Row history: 0036 added one row on 2026-09-11, 0037 another the same day,
--- 0038 one more on 2026-09-13. 0037 was applied to production on 2026-09-11 and
--- its row reads true — see RESULTS. **0038 has NOT been applied yet**, so
--- against production today its row ALSO reads FALSE and that too is expected; it
--- turns true when the founder pushes it.
+-- 0038 one more on 2026-09-13. 0037 and 0038 were both applied to production on
+-- the day their row was written and both read true — see RESULTS.
 -- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
@@ -472,9 +472,10 @@ ORDER BY migration, layer DESC;
 --   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 0030
 --
 -- That command is the 2026-08-26 backfill of the old ledger, kept as written.
--- 0032/0033, 0035 and 0037 are NOT in it. `db push` records them itself and needs no
--- repair; only a hand-paste into the SQL editor does, and then only once the
--- row(s) above for what you pasted read true:
+-- 0032/0033, 0035, 0036, 0037 and 0038 are NOT in it (0036 and 0038 were missing
+-- from this sentence until 2026-09-13). `db push` records them itself and needs no
+-- repair — five times running now; only a hand-paste into the SQL editor does,
+-- and then only once the row(s) above for what you pasted read true:
 --
 --   npx -y supabase migration repair --status applied 0032 0033 --db-url <session pooler url>
 --   npx -y supabase migration repair --status applied 0035 --db-url <session pooler url>
@@ -484,6 +485,38 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-09-13, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0038
+-- (audio_preview_daily_limit 20 -> 50), on the founder's explicit instruction for
+-- this one push: ledger read-back **39 rows, 0000-0038, NO GAPS, nothing
+-- unapplied and NO REPAIR NEEDED** -- `db push` recorded 0038 itself, the FIFTH
+-- time in a row the REPAIR note above has predicted correctly. Pre-flight was
+-- `migration list` (0000-0037 local == remote, 0038 the only row with an empty
+-- remote) and `db push --dry-run`, which named 0038_audio_preview_limit_50.sql
+-- alone. Same Docker catalog-cache warning as 0035-0037, and not a failure; the
+-- apply printed "Applying migration 0038_audio_preview_limit_50.sql..." and
+-- exited 0.
+--
+-- Post-apply read-back went through the CODE'S OWN PARSE, not this file and not
+-- a raw SELECT: getConfigValue(db, 'audio_preview_daily_limit', z.number().int())
+-- -- the exact call pipelines/tts.ts:76 makes -- returned **50** and PASSED. That
+-- is the check that matters for a bare jsonb scalar, because a row holding the
+-- JSON string "50" prints identically to the number 50 in most SQL output and
+-- then throws at the next customer preview instead.
+--
+-- **This file was then run against production in full, and that run is the first
+-- one that ever measured its own expected counts: 29 structural rows, 27 true,
+-- 1 false, 1 NULL.** The 0038 row read TRUE. The single false is **0022**, and it
+-- is not a finding: 0022 asserts platform gpu_seconds = 7200, which 0036 raised
+-- to 32000 on 2026-09-11 without anyone revisiting the row. It has therefore been
+-- false on every database since that day, and the header's count said "27 true +
+-- 1 NULL" for 28 rows -- already one out -- for two days before this run caught
+-- it. 0022's predicate is deliberately NOT changed here; 0036's own row asserts
+-- all seven caps including that one. Data layer the same minute: 0020 **true**
+-- (real heygen rows exist and no mislabeled fal row remains -- the first time
+-- that row has passed on this project, it read false on the rebuilt database in
+-- 2026-08-26's run), 0021 true, 0028 false exactly as its note predicts on any
+-- database that is not the old production one.
 --
 -- 2026-08-26, OLD production project (mtpmrqltldfwhziyyzdu): all 23 checks read
 -- true in the pre-split version of this file (twice — founder run in the SQL

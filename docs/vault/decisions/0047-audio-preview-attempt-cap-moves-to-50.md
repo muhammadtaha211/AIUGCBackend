@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-13
-method: "Founder decision in chat, 2026-09-13, reasoned and explicitly NOT measured — no query was run against audio_renders or usage_events, and no account has ever been observed hitting 20. Written as supabase/migrations/0038_audio_preview_limit_50.sql, NOT YET APPLIED. Code read at 280c4ff: packages/core/src/pipelines/tts.ts:75-94 (the two ceilings, both keyed on the owner account); packages/core/src/appConfig.ts:7-11 (getConfigValue throws on a missing row); supabase/migrations/0001_extras_and_seed.sql:47 (the '20' seed a fresh database still replays); supabase/migrations/0036_daily_caps_runaway_detector.sql (per_account.tts_chars 25000, untouched by 0036); docs/05-billing.md:207-208 (the ~50-previews estimate the number is taken from); packages/core/src/pipelines/sets.ts:786-793 (the two-debit-sites rule); apps/web/src/lib/wizard-gate.ts:27-32 and apps/web/src/app/home/b/new/page.tsx:43 (the zero-balance wizard door); apps/web/src/app/api/scripts/[id]/audio/route.ts (auth + ownership, NO balance check)."
+method: "Founder decision in chat, 2026-09-13, reasoned and explicitly NOT measured — no query was run against audio_renders or usage_events, and no account has ever been observed hitting 20. Written as supabase/migrations/0038_audio_preview_limit_50.sql and APPLIED to production 2026-09-13 on the founder's explicit instruction for that one push; post-apply read-back through getConfigValue(db,'audio_preview_daily_limit',z.number().int()) returned 50, ledger 39 rows 0000-0038 no gaps, no repair needed. Code read at 280c4ff: packages/core/src/pipelines/tts.ts:75-94 (the two ceilings, both keyed on the owner account); packages/core/src/appConfig.ts:7-11 (getConfigValue throws on a missing row); supabase/migrations/0001_extras_and_seed.sql:47 (the '20' seed a fresh database still replays); supabase/migrations/0036_daily_caps_runaway_detector.sql (per_account.tts_chars 25000, untouched by 0036); docs/05-billing.md:207-208 (the ~50-previews estimate the number is taken from); packages/core/src/pipelines/sets.ts:786-793 (the two-debit-sites rule); apps/web/src/lib/wizard-gate.ts:27-32 and apps/web/src/app/home/b/new/page.tsx:43 (the zero-balance wizard door); apps/web/src/app/api/scripts/[id]/audio/route.ts (auth + ownership, NO balance check)."
 source: founder + code
 ---
 
@@ -93,9 +93,17 @@ and the migration landed as a data no-op. 0001's literal is deliberately **not**
 rewriting an applied migration is a founder call, and the one time it happened it took the founder's
 own reasoning to justify it ([[../defects/migration-0027-still-seeds-the-old-llm-cap]]).
 
-**0038 is written and NOT applied.** The founder pushes it after review; until then the live row
-reads 20 ([[app-config-live-state]] carries the pending marker), and 0038's row in
-`scripts/verify-migration-ledger.sql` reads false by design.
+**0038 was applied to production on 2026-09-13**, on the founder's explicit instruction for that one
+push (the CLAUDE.md migration gate), the same day it was written. Pre-flight `migration list` showed
+0000–0037 local == remote with 0038 the only unapplied row, `db push --dry-run` named that file
+alone, and the push exited 0 with the ledger at **39 rows, 0000–0038, no gaps and no repair needed**
+— `db push` recorded the version itself, the fifth time running. Read-back went through
+`getConfigValue(db, "audio_preview_daily_limit", z.number().int())`, the exact call `tts.ts:76`
+makes, and returned **50**; a raw `SELECT` would not have distinguished the number from the JSON
+string `"50"`, which is the one way this row can be wrong and only surface at a customer's next
+preview. The full ledger file then read **27 true, 1 false, 1 NULL** against production with 0038
+true — see [[app-config-live-state]] and `scripts/verify-migration-ledger.sql` §RESULTS. No worker
+restart and no deploy were needed: `requestAudio` reads the row live on every call.
 
 ## Related
 
