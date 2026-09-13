@@ -220,8 +220,14 @@ export function StepAudio({
         <div className="mt-6">
           <div className="rounded-xl border border-ink/[0.08] bg-white p-4">
             {audio.audioUrl && (
+              // The preview is free of charge and exists only as the approval
+              // gate, so the browser's download item is removed — the mp3 is
+              // not offered as a deliverable. This is friction, not a control:
+              // the signed URL is still in the DOM. The real ceilings are the
+              // two caps in requestAudio (packages/core/src/pipelines/tts.ts).
               <audio
                 controls
+                controlsList="nodownload"
                 src={audio.audioUrl}
                 onError={() => setPlaybackBroken(true)}
                 className="w-full"
