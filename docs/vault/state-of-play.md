@@ -229,6 +229,8 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
    `0005` `:41` (`auth.ts:69-85` → `:222`) and `:48` (`auth.ts:78` → the Hebrew OAuth fallback
    is `:229`). **Do not touch `0006:26`** — "the missing `emailRedirectTo` is fixed anyway" is
    historically correct there.
+5. **Ceiling alert + `vat_rate` config — build with the gateway adapter, not before; spec in
+   [[0046-billing-ships-as-osek-patur]].**
 
 Item 1 is a live production copy-quality bug and outranks everything. Item 2 is the only one that
 can surface a security defect. 3–4 are cite corrections, ordered by how likely a reader is to act
@@ -241,10 +243,8 @@ on the wrong thing. There is no open code defect in this queue.
 
 ## Open decisions
 
-- **Invoice document type before billing ships.** The billing plan issues חשבונית מס; the operator is
-  עוסק פטור and cannot — [[invoicing-plan-cannot-issue-for-an-osek-patur]]. Either ship billing as
-  עוסק פטור (קבלה / חשבונית עסקה) or convert first. No money moves today, so nothing is currently
-  wrong; it is a configuration decision the gateway work must not skip.
+- **Invoice document type before billing ships** — DECIDED 2026-09-13 —
+  [[0046-billing-ships-as-osek-patur]].
 - **The reg. 2 מסמך הגדרות מאגר — DEFERRED INDEFINITELY by founder decision, 2026-09-11.** Not
   pending, not owed-and-unstarted: decided, with the consequences accepted explicitly, and a lawyer
   to be engaged when the founder sees fit. This is no longer a queue item — do not put it back, and
