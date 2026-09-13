@@ -2,7 +2,7 @@
 type: fact
 status: verified
 verified: 2026-09-13
-method: "Re-measured 2026-09-13 right after migration 0039 was pushed to production: packages/core/.work/verify-0039-applied.ts (read-only, 20 checks, PASS) read the row through getConfigValue(db,'credit_costs',creditCostsSchema) — the exact call every quote path makes — and asserted jsonb_typeof, the key count and each of the other eight rates. Key reachability is the older measurement: grep -rn <each key> packages/core/src apps/*/src packages/remotion/src, 2026-08-23, plus the tenth key added 2026-09-13."
+method: "Re-measured 2026-09-13 right after migration 0039 was pushed to production: packages/core/scripts/verify-credit-costs.ts (read-only, 16 checks, PASS) read the row through getConfigValue(db,'credit_costs',creditCostsSchema) — the exact call every quote path makes — and asserted jsonb_typeof, the key count and each of the other eight rates. Key reachability is the older measurement: grep -rn <each key> packages/core/src apps/*/src packages/remotion/src, 2026-08-23, plus the tenth key added 2026-09-13."
 source: db
 ---
 
@@ -29,7 +29,7 @@ source: db
 > ([[0048-the-demo-analysis-is-charged-once-per-demo]]) and pushed to production on the founder's
 > explicit instruction for that one push. The block above is the row as it actually reads: ten keys,
 > both new values `jsonb_typeof` = `number`, the other eight rates untouched by the `||` merge.
-> The proof is `packages/core/.work/verify-0039-applied.ts` (read-only, 20 checks, PASS) and
+> The proof is `packages/core/scripts/verify-credit-costs.ts` (read-only, 16 checks, PASS) and
 > `scripts/verify-migration-ledger.sql` §RESULTS. Re-read at any time with
 > `select value from app_config where key = 'credit_costs';`
 

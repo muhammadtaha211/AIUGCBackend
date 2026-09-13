@@ -549,7 +549,7 @@ ORDER BY migration, layer DESC;
 -- that quotes its own DSN in errors.
 --
 -- Post-apply read-back went through the CODE'S OWN PARSE
--- (packages/core/.work/verify-0039-applied.ts, read-only, 20 checks, PASS):
+-- (packages/core/scripts/verify-credit-costs.ts, read-only, 16 checks, PASS):
 -- getConfigValue(db, 'credit_costs', creditCostsSchema) -- the exact call every
 -- quote path makes -- returned a_steps_credits 3 and a_demo_analysis_credits 2,
 -- `jsonb_typeof` said **number** for both (so no hand-pasted '"3"' that would
