@@ -1,7 +1,7 @@
 "use client";
 
-import { Button, PRIMARY_BUTTON_CLASS } from "@/components/ui/button";
-import { Download, Remix, Spinner } from "@/components/ui/icons";
+import { PRIMARY_BUTTON_CLASS } from "@/components/ui/button";
+import { Download, Spinner } from "@/components/ui/icons";
 
 type RenderPlayerProps = {
   /** The signed playback URL. Undefined = still being fetched — both modals
@@ -10,8 +10,6 @@ type RenderPlayerProps = {
   /** The same object signed as an attachment, from GET /api/renders/[id]. */
   downloadUrl?: string;
   autoPlay?: boolean;
-  /** Absent = remix is the disabled "בקרוב" placeholder. */
-  onRemix?: () => void;
   /** The player's outer box — width and margins, which differ per surface. */
   className?: string;
   /** The video box itself. Only the border differs (the modals sit on a black
@@ -30,14 +28,13 @@ type RenderPlayerProps = {
  * `noplaybackrate` and `disablePictureInPicture` empty what is left, so the
  * menu has nothing to open.
  *
- * The action row renders whether or not the URLs have arrived. Gating it would
- * let it appear a beat later and shove the page under a waiting cursor.
+ * The action renders whether or not the URL has arrived. Gating it would let
+ * it appear a beat later and shove the page under a waiting cursor.
  */
 export function RenderPlayer({
   videoUrl,
   downloadUrl,
   autoPlay = false,
-  onRemix,
   className = "",
   frameClassName = "",
 }: RenderPlayerProps) {
@@ -60,13 +57,11 @@ export function RenderPlayer({
         </div>
       )}
 
-      {/* Download first: the primary action, and in RTL the first child reads
-          first. min-w-36 is a wrap threshold, not a size: below ~144px a button
-          clips "רמיקס בקרוב", so the pair drops to two full-width rows instead
-          of squeezing. One row above ~296px, so the modals (max-w-xs) keep it
-          side by side and the wizards' 240px player stacks — as does the modal
-          on a phone narrow enough that the backdrop's padding eats into it. */}
-      <div className="mt-3 flex flex-wrap gap-2">
+      {/* One action. The disabled רמיקס/בקרוב that used to sit beside it is
+          gone — remix is not being built, and a permanently-disabled button is
+          a promise the product does not keep. That also retires the min-w-36
+          wrap threshold, which existed so the PAIR could drop to two rows. */}
+      <div className="mt-3">
         <a
           href={downloadUrl}
           download
@@ -74,24 +69,13 @@ export function RenderPlayer({
           // link, so there is nothing to click or tab to. `disabled:` styles
           // never fire on an anchor, hence the explicit inert look.
           aria-disabled={downloadUrl === undefined || undefined}
-          className={`${PRIMARY_BUTTON_CLASS} min-w-36 flex-1 ${
+          className={`${PRIMARY_BUTTON_CLASS} w-full ${
             downloadUrl === undefined ? "pointer-events-none opacity-50" : ""
           }`}
         >
           <Download />
           הורדה
         </a>
-        <Button
-          type="button"
-          variant="secondary"
-          className="min-w-36 flex-1"
-          disabled={onRemix === undefined}
-          onClick={onRemix}
-        >
-          <Remix />
-          רמיקס
-          {onRemix === undefined && <span className="text-[11px] opacity-70">בקרוב</span>}
-        </Button>
       </div>
     </div>
   );

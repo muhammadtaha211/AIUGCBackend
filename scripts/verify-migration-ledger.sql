@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033 and 0035-0038 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033 and 0035-0039 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -10,7 +10,7 @@
 --
 -- STRICTLY READ-ONLY: one SELECT over system catalogs and existing rows.
 -- Written as a single statement on purpose — the Supabase SQL editor shows only
--- the last statement's result, so 29 separate SELECTs would display one row.
+-- the last statement's result, so 30 separate SELECTs would display one row.
 --
 -- ---------------------------------------------------------------------------
 -- TWO LAYERS. Check the one that matches the database you are pointed at.
@@ -33,7 +33,7 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 29 rows: **27 true, 1 false (0022), 1 NULL (0020)**. Two of those
+-- expect, of 30 rows: **28 true, 1 false (0022), 1 NULL (0020)**. Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -48,13 +48,18 @@
 --     relaxing or re-pinning 0022's predicate is a judgement call about what
 --     0022 is still supposed to prove, not a count fix. Until then, treat a
 --     false on 0022 ALONE as expected and every other false as real.
---     (This paragraph is why the count above is not "28 true" — it said
---     "27 true + 1 NULL" from 2026-09-11 to 2026-09-13, which was already one
---     out for the same reason.)
+--     (This paragraph is why the count above is one short of the row count —
+--     it said "27 true + 1 NULL" of 29 from 2026-09-11 to 2026-09-13, which was
+--     already one out for the same reason. 0039 moved both halves: 30 rows, and
+--     28 of them true.)
 --
 -- Row history: 0036 added one row on 2026-09-11, 0037 another the same day,
--- 0038 one more on 2026-09-13. 0037 and 0038 were both applied to production on
--- the day their row was written and both read true — see RESULTS.
+-- 0038 one more on 2026-09-13 and 0039 the same day. 0037 and 0038 were both
+-- applied to production on the day their row was written and both read true —
+-- see RESULTS. **0039 was applied to production 2026-09-13 too, and its row read
+-- true** — see RESULTS. It also changed a row that was already here: 0026 no
+-- longer asserts a VALUE, because 0039 owns a_steps_credits now; that is where
+-- the 28th true comes from, not from a new row alone.
 -- The old production database read all 26 of its rows
 -- true (see RESULTS); it predates 0032-0033 and 0035 and is deleted, so the
 -- three rows added for them have nothing to say about it.
@@ -243,13 +248,28 @@ WITH checks(migration, layer, applied, note) AS (VALUES
   WHERE table_schema = 'public' AND table_name = 'demo_step_plans'
     AND column_name = 'notes')), 'column exists'),
 
--- 0026: credit_costs gains a_steps_credits = 5. The migration itself sanctions
--- tuning ("tuning it below 5 works"), so false with the key PRESENT = tuned
--- after application, not unapplied.
+-- 0026: credit_costs gains a_steps_credits. **The VALUE can no longer prove
+-- 0026 ran** — 0039 set it to 3 on 2026-09-13, overwriting exactly the byte
+-- 0026 wrote, and this row asserted that byte (= '5') until then. Same shape as
+-- 0027 below, and fixed the same way rather than left to rot like 0022: what
+-- survives is the KEY. 0026 is what put `a_steps_credits` into the row at all
+-- (0017 rewrote the row without it), so false here means the key is gone — a
+-- state in which every quote path throws, since creditCostsSchema requires it.
+-- 0039's row asserts both live values.
+--
+-- **TRUE here no longer proves 0026 RAN.** 0039 is unconditional and writes
+-- `a_steps_credits` itself, so on any database 0039 has touched this row is true
+-- whether or not 0026 was ever applied — it is implied by the 0039 row rather
+-- than independent of it. That is accepted, not overlooked: once a later
+-- migration overwrites the only byte 0026 wrote, no predicate over the data can
+-- distinguish the two, and 0026's entire content is a `NOT (value ? ...)`-guarded
+-- no-op on such a database anyway, so marking it applied costs nothing. Same
+-- shape as 0027 below. Do NOT read this row as evidence when repairing a ledger
+-- whose 0026 history is genuinely in doubt.
 ('0026', 'structural', (SELECT EXISTS (
   SELECT 1 FROM app_config
   WHERE key = 'credit_costs'
-    AND value ->> 'a_steps_credits' = '5')), 'seeded config: a_steps_credits'),
+    AND value ? 'a_steps_credits')), 'seeded config: a_steps_credits key present'),
 
 -- 0027: daily_caps per_account.llm_tokens. Its literal was retro-edited on
 -- 2026-08-26 to match the 2026-08-21 hand-raise (500000 -> 1500000). **0036
@@ -414,6 +434,29 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     AND value = '50'::jsonb)),
   'seeded config: audio_preview_daily_limit is the number 50'),
 
+-- 0039: the steps flat splits — a_steps_credits 5 -> 3 and a NEW key
+-- a_demo_analysis_credits = 2, the demo analysis charged once per demo.
+-- Asserts BOTH values, because either half alone is a live failure and they
+-- are not the same failure: a missing a_demo_analysis_credits makes
+-- creditCostsSchema throw on EVERY quote path (steps, full, silent and Service
+-- B stop together), while a_steps_credits still at 5 prices every render of an
+-- already-paid demo at the old flat and makes the first one cost 7.
+--
+-- Compared through `->` as jsonb rather than `->>` as text, so a hand-pasted
+-- '"3"' (a JSON string) is rejected here instead of passing and then throwing
+-- at the next customer quote — z.number() does not accept it. Same reasoning as
+-- 0038's `value = '50'::jsonb`.
+--
+-- 0039 is UNCONDITIONAL, so a false here means it did not land, or prod was
+-- hand-edited after it did. Reconcile before repairing. Note 0026's row above
+-- no longer asserts a value at all: 0039 is what owns a_steps_credits now.
+('0039', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM app_config
+  WHERE key = 'credit_costs'
+    AND value -> 'a_steps_credits' = '3'::jsonb
+    AND value -> 'a_demo_analysis_credits' = '2'::jsonb)),
+  'seeded config: a_steps_credits 3 AND a_demo_analysis_credits 2'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -472,9 +515,10 @@ ORDER BY migration, layer DESC;
 --   supabase migration repair --status applied 0008 0009 0010 0011 0012 0013 0014 0015 0016 0017 0018 0019 0020 0021 0022 0023 0024 0025 0026 0027 0028 0029 0030
 --
 -- That command is the 2026-08-26 backfill of the old ledger, kept as written.
--- 0032/0033, 0035, 0036, 0037 and 0038 are NOT in it (0036 and 0038 were missing
--- from this sentence until 2026-09-13). `db push` records them itself and needs no
--- repair — five times running now; only a hand-paste into the SQL editor does,
+-- 0032/0033, 0035, 0036, 0037, 0038 and 0039 are NOT in it (0036 and 0038 were
+-- missing from this sentence until 2026-09-13, and 0039 was added the same day
+-- it was pushed). `db push` records them itself and needs no
+-- repair — SIX times running now; only a hand-paste into the SQL editor does,
 -- and then only once the row(s) above for what you pasted read true:
 --
 --   npx -y supabase migration repair --status applied 0032 0033 --db-url <session pooler url>
@@ -485,6 +529,44 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-09-13 (later the same day), production (hyaqydcmwbnbaiqqufow), after
+-- `db push` applied 0039 (credit_costs: a_steps_credits 5 -> 3, new
+-- a_demo_analysis_credits 2), on the founder's explicit instruction for this one
+-- push: ledger read-back **40 rows, 0000-0039, NO GAPS, nothing unapplied and NO
+-- REPAIR NEEDED** -- `db push` recorded 0039 itself, the SIXTH time in a row the
+-- REPAIR note above has predicted correctly. Pre-flight was `migration list`
+-- (0000-0038 local == remote, 0039 the only row with an empty remote) and
+-- `db push --dry-run`, which named 0039_demo_analysis_credits.sql alone. Same
+-- Docker catalog-cache warning as 0035-0038, and not a failure; the apply printed
+-- "Applying migration 0039_demo_analysis_credits.sql..." and exited 0.
+--
+-- Applied by a session, not by hand, and the pinned local binary was spawned
+-- directly (node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/.../supabase.exe)
+-- through a throwaway wrapper that read DATABASE_URL out of `.env` itself, swapped
+-- :6543/ for :5432/, and SCRUBBED the URL, password, host and user out of every
+-- byte the CLI wrote before printing it -- the credential rule applied to a tool
+-- that quotes its own DSN in errors.
+--
+-- Post-apply read-back went through the CODE'S OWN PARSE
+-- (packages/core/scripts/verify-credit-costs.ts, read-only, 16 checks, PASS):
+-- getConfigValue(db, 'credit_costs', creditCostsSchema) -- the exact call every
+-- quote path makes -- returned a_steps_credits 3 and a_demo_analysis_credits 2,
+-- `jsonb_typeof` said **number** for both (so no hand-pasted '"3"' that would
+-- satisfy `->>` and then throw at the next customer quote), the row holds
+-- **10 keys** with the other eight rates at their 0017 values (the `||` merge
+-- clobbered nothing), and quoteServiceASteps returned 3 for a reused demo and 5
+-- itemised as steps 3 + analysis 2 for a first paid render. Both rows this file
+-- carries for the change -- 0026 (key presence) and 0039 (both values) -- read
+-- **true** against production.
+--
+-- **The code was NOT deployed at this point, deliberately, and the gap is
+-- benign in exactly one direction.** The migration goes first because
+-- creditCostsSchema makes the new key required; the reverse gap -- old row, new
+-- code -- throws on every quote path. This gap is the safe one: the DEPLOYED
+-- schema is a plain z.object, so it strips the key it does not know about, and
+-- the only live effect is that a steps render prices at 3 instead of 5 until the
+-- branch merges. An undercharge window, not an outage.
 --
 -- 2026-09-13, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0038
 -- (audio_preview_daily_limit 20 -> 50), on the founder's explicit instruction for

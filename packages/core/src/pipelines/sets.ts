@@ -1,4 +1,5 @@
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, isNull, like } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { getConfigValue, getConfigValueOr } from "../appConfig";
 import { snapToWordGap, type CaptionChunk } from "../captions";
@@ -6,6 +7,7 @@ import type { Db } from "../db";
 import {
   audioRenders,
   composites,
+  creditLedger,
   demos,
   events,
   openerClips,
@@ -324,7 +326,7 @@ export async function createSet(
   // so they fall back to the assembly flat + demo seconds.
   const quote =
     format === "steps"
-      ? await quoteStepsASet(db, opts.businessId)
+      ? await quoteStepsASet(db, opts.businessId, opts.demoId)
       : grid.audioRenderId
         ? await quoteASet(db, {
             businessId: opts.businessId,
@@ -353,6 +355,20 @@ export async function createSet(
   // together or not at all. A job can never see a render row that isn't there,
   // and a debit can never outlive the render it paid for.
   return db.transaction(async (tx) => {
+    // The analysis part, decided HERE and not from the advisory quote above:
+    // two confirms racing on one demo would both have read "first" outside the
+    // transaction. The lock serializes them, and the loser's re-read — taken
+    // after the lock is granted, so it sees the winner's committed debit —
+    // comes back "already paid". `quote` supplies the PRICE; the lock decides
+    // whether this set owes it.
+    let analysisCredits = 0;
+    if (format === "steps" && quote.chargeable) {
+      await tx.select({ id: demos.id }).from(demos).where(eq(demos.id, opts.demoId)).for("update");
+      if (!(await demoHasPaidRender(tx as Db, opts.demoId))) {
+        analysisCredits = quote.analysisCreditsOncePerSet;
+      }
+    }
+
     const setRows = await tx
       .insert(sets)
       .values({
@@ -366,19 +382,22 @@ export async function createSet(
     const set = setRows[0]!;
 
     const renders = [];
-    for (const params of cells) {
+    for (const [index, params] of cells.entries()) {
       const inserted = await tx
         .insert(videoRenders)
         .values({ setId: set.id, businessId: opts.businessId, service: "a", params })
         .returning();
       const render = inserted[0]!;
       renders.push(render);
-      // Per render, never per set — refunds key on the render id.
+      // Per render, never per set — refunds key on the render id. The
+      // once-per-set analysis rides on the FIRST cell: still one row per
+      // render, that one simply larger, so a refund of any cell gives back
+      // exactly what that cell took.
       if (quote.chargeable) {
         await debitRender(tx as Db, {
           businessId: opts.businessId,
           videoRenderId: render.id,
-          cost: quote.creditsPerRender,
+          cost: quote.creditsPerRender + (index === 0 ? analysisCredits : 0),
         });
       }
       // Avatar ending: lip-sync the VO tail first; handleLipsync chains render_video.
@@ -400,11 +419,68 @@ export async function createSet(
   });
 }
 
-/** Steps format: the flat — one amortised analysis + one Remotion render. */
-export async function quoteStepsASet(db: Db, businessId: string): Promise<RenderQuote> {
+/**
+ * Has this demo ever cost the customer money? THE predicate behind
+ * `a_demo_analysis_credits` — the analysis is charged once per demo, on the
+ * first render of it that is actually paid for.
+ *
+ * A fact about the LEDGER, not about a wizard run: a demo analysed yesterday,
+ * abandoned and reused today reads exactly like one uploaded and rendered
+ * straight through. "Paid" = a `debit_render` row against a render of this
+ * demo with no `refund_failed` row on the same ref — the same pairing
+ * `refundRenderIfNeeded` writes and the 0016 unique indexes make one-to-one.
+ * Deliberately NOT `video_renders.refunded_at`: the routes read that column
+ * because it marks the render the CUSTOMER is looking at, and when a refund
+ * lands on an ancestor (QC regeneration) the row that actually gave the money
+ * back keeps a null `refunded_at`. For "did this demo ever keep money", only
+ * the ledger is truthful.
+ *
+ * Service B renders have no set and so no demo; the joins drop them.
+ */
+export async function demoHasPaidRender(db: Db, demoId: string): Promise<boolean> {
+  const refund = alias(creditLedger, "refund");
+  const rows = await db
+    .select({ id: creditLedger.id })
+    .from(creditLedger)
+    .innerJoin(videoRenders, eq(videoRenders.id, creditLedger.refId))
+    .innerJoin(sets, eq(sets.id, videoRenders.setId))
+    .leftJoin(refund, and(eq(refund.refId, creditLedger.refId), eq(refund.reason, "refund_failed")))
+    .where(and(eq(sets.demoId, demoId), eq(creditLedger.reason, "debit_render"), isNull(refund.id)))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
+ * Steps format: the per-render flat, plus the demo analysis when this set will
+ * be the first paid render of its demo. Two settled quotes off ONE costs
+ * snapshot, differenced — the same idiom (and the same reason) as
+ * `quoteASet`'s `outroCredits`: components are summed and ceiled once, so a
+ * component is not a price, and the number the customer is shown for the
+ * analysis has to be the number the ledger moves.
+ */
+export async function quoteStepsASet(
+  db: Db,
+  businessId: string,
+  /**
+   * `null` = a demo that does not exist yet — what a NEW recording will cost,
+   * which is the upload step's question. Not optional: a caller that forgets
+   * the demo would otherwise silently quote the cheap price for a demo that
+   * owes an analysis, or the dear one for a demo that has already paid.
+   */
+  demoId: string | null,
+): Promise<RenderQuote> {
   const { chargeable, costs, balance } = await quoteContext(db, businessId);
-  const quote = quoteServiceASteps({ costs });
-  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+  // A demo that does not exist has no paid render, by definition.
+  const firstPaidRenderOfDemo = demoId === null || !(await demoHasPaidRender(db, demoId));
+  const perRender = quoteServiceASteps({ costs, firstPaidRenderOfDemo: false });
+  const quote = quoteServiceASteps({ costs, firstPaidRenderOfDemo });
+  return {
+    creditsPerRender: perRender.credits,
+    analysisCreditsOncePerSet: quote.credits - perRender.credits,
+    components: quote.components,
+    chargeable,
+    balance,
+  };
 }
 
 /** Silent Service A: no VO, so no ending — assembly flat + demo seconds only. */
@@ -419,7 +495,13 @@ async function quoteSilentASet(
     outroSeconds: 0,
     costs,
   });
-  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+  return {
+    creditsPerRender: quote.credits,
+    analysisCreditsOncePerSet: 0,
+    components: quote.components,
+    chargeable,
+    balance,
+  };
 }
 
 /** Winner loop: star a variant — also the platform's format-performance data. */
@@ -725,6 +807,14 @@ export async function createBRender(
 export interface RenderQuote {
   /** Per render. A Set of N cells costs N x this. */
   creditsPerRender: number;
+  /**
+   * Charged ONCE for the whole SET, not per cell — it rides on the FIRST
+   * cell's debit, so that one ledger row is larger and every sibling is the
+   * bare `creditsPerRender`. Today this is only the demo analysis on a steps
+   * set's first paid render of its demo; 0 everywhere else, including on the
+   * admin bypass, where `quoteTotal` zeroes the whole thing anyway.
+   */
+  analysisCreditsOncePerSet: number;
   /** Named parts behind the integer, so the UI can explain it without recomputing. */
   components: QuoteComponent[];
   /** false = admin-owned; nothing is debited and nothing is watermarked. */
@@ -732,9 +822,16 @@ export interface RenderQuote {
   balance: number;
 }
 
-/** Total for a Set; 0 when the account is on the admin bypass. */
-function quoteTotal(quote: RenderQuote, cellCount: number): number {
-  return quote.chargeable ? quote.creditsPerRender * cellCount : 0;
+/**
+ * Total for a Set; 0 when the account is on the admin bypass. Exported so the
+ * web tier displays the number it will be charged instead of adding the parts
+ * up itself — the once-per-set part is exactly the kind of arithmetic that
+ * drifts when two places do it.
+ */
+export function quoteTotal(quote: RenderQuote, cellCount: number): number {
+  return quote.chargeable
+    ? quote.creditsPerRender * cellCount + quote.analysisCreditsOncePerSet
+    : 0;
 }
 
 function shortfallOf(quote: RenderQuote, cellCount: number): number {
@@ -776,6 +873,7 @@ export async function quoteASet(
   const withoutEnding = quoteServiceA({ demoSeconds, outroMode: "none", outroSeconds: 0, costs });
   return {
     creditsPerRender: quote.credits,
+    analysisCreditsOncePerSet: 0,
     components: quote.components,
     outroCredits: quote.credits - withoutEnding.credits,
     chargeable,
@@ -815,7 +913,13 @@ export async function quoteRerollForRender(
     sliceSeconds: (audio.durationMs - params.voSliceMs) / 1000,
     costs,
   });
-  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+  return {
+    creditsPerRender: quote.credits,
+    analysisCreditsOncePerSet: 0,
+    components: quote.components,
+    chargeable,
+    balance,
+  };
 }
 
 /** Price a Service B render from the approved VO's measured length. */
@@ -829,7 +933,13 @@ export async function quoteBRender(
   )[0];
   if (!audio) throw new Error(`audio render ${opts.audioRenderId} not found`);
   const quote = quoteServiceB({ durationMs: audio.durationMs ?? 0, costs });
-  return { creditsPerRender: quote.credits, components: quote.components, chargeable, balance };
+  return {
+    creditsPerRender: quote.credits,
+    analysisCreditsOncePerSet: 0,
+    components: quote.components,
+    chargeable,
+    balance,
+  };
 }
 
 /**
