@@ -8,6 +8,8 @@
     "Prefix-stripping gets הקמפיין down to קמפיין, which is still not קמפיינים, so the",
     "anti-fabrication rule rejects it. That is Hebrew plural morphology, not a bug: widening",
     "wordVariants far enough to bridge it would let real invented claims through.",
+    "  2026-09-15 (decision 0049): reason (b) no longer rejects anything — the provenance rule is a",
+    "  highlight now, so הקמפיין would be MARKED on the step, not refused. (c) still stands.",
     "",
     "(c) STALE TARGET. expected.sourceIndexes selects 5, 6 and 7, which sit 1500ms apart. The",
     "read-time rule (added in 1ea1d94, AFTER this expectation was pinned) gives a step only the",

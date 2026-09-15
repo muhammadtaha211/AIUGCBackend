@@ -19,7 +19,11 @@ import { enqueue } from "../src/jobs/queue";
 import { runLane } from "../src/jobs/worker";
 import { createBusiness, setQuestionnaire, type Questionnaire } from "../src/pipelines/businesses";
 import type { AnalysisState } from "../src/pipelines/demo-analysis";
-import { generateStepPlan, PlanViolationError } from "../src/pipelines/demo-step-plans";
+import {
+  generateStepPlan,
+  PlanViolationError,
+  updatePlanSteps,
+} from "../src/pipelines/demo-step-plans";
 import { createTestDb } from "./helpers/pglite";
 
 /**
@@ -131,6 +135,17 @@ const FIXED = {
   usage: { inputTokens: 1100, outputTokens: 180 },
 };
 
+/** FIXED with step 0's label replaced by a word that is on no screen, in no
+ *  questionnaire field and (with no description) nowhere else — the
+ *  highlight's one true positive in this file. */
+const OFF_SCREEN = {
+  ...FIXED,
+  object: {
+    ...FIXED.object,
+    steps: [{ sourceIndex: 0, label: "הפרטים" }, ...FIXED.object.steps.slice(1)],
+  },
+};
+
 let db: Db;
 let pg: { close(): Promise<void> };
 
@@ -164,6 +179,9 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     // The violation names the candidates and the mechanical fix.
     expect(retryPrompt).toContain("success candidates are at sourceIndex 5");
     expect(retryPrompt).toContain("drop every step after it");
+    // 0049: no flagged label words reach a corrective prompt any more, so the
+    // "replace it with words copied from visibleText" instruction is gone.
+    expect(retryPrompt).not.toContain("flagged label word");
 
     // The fixed plan lands: ends on the success state, nothing to explain.
     expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3, 4, 5]);
@@ -231,12 +249,30 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     expect(generateObject).toHaveBeenCalledTimes(1);
     expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3, 4, 5]);
     expect(draft.retryViolations).toEqual([[]]);
+    // Every label is on its screen: the highlight is empty on every step.
+    expect(draft.steps.map((s) => s.offScreenWords)).toEqual([[], [], [], [], [], []]);
   });
 
-  it("the demo description reaches the prompt and widens the legal vocabulary", async () => {
+  it("an off-screen content word is accepted on ONE call, and lands in that step's offScreenWords", async () => {
+    // Decision 0049: label provenance is a highlight, not a gate. "הפרטים" is
+    // on no screen, in no questionnaire field, and there is no description —
+    // under the gate this cost a corrective call (every recorded round ever
+    // was this rule and nothing else); now the plan is accepted as it came
+    // and the word is stored on the step for the editor to mark.
+    generateObject.mockReset().mockResolvedValueOnce(OFF_SCREEN);
+
+    const draft = await generateStepPlan(db, { timeline: TIMELINE, questionnaire: QUESTIONNAIRE });
+
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(draft.retryViolations).toEqual([[]]);
+    expect(draft.steps[0]!.label).toBe("הפרטים");
+    expect(draft.steps.map((s) => s.offScreenWords)).toEqual([["הפרטים"], [], [], [], [], []]);
+  });
+
+  it("the demo description reaches the prompt and empties the flags", async () => {
     // Step 0's label is a word that exists ONLY in the description — not on
-    // the screen, not in the questionnaire. One call, no violations: the
-    // description reached findPlanViolations, and the prompt carries it.
+    // the screen, not in the questionnaire. One call, nothing marked: the
+    // description reached findOffScreenWords, and the prompt carries it.
     const descWord = {
       ...FIXED,
       object: {
@@ -245,7 +281,7 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
       },
     };
     generateObject.mockReset().mockResolvedValueOnce(descWord);
-    await generateStepPlan(db, {
+    const draft = await generateStepPlan(db, {
       timeline: TIMELINE,
       questionnaire: QUESTIONNAIRE,
       demoDescription: "מצלמים את הקופה בסוף",
@@ -254,6 +290,7 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     expect((generateObject.mock.calls[0]![0] as { prompt: string }).prompt).toContain(
       "מצלמים את הקופה בסוף",
     );
+    expect(draft.steps[0]!.offScreenWords).toEqual([]);
   });
 
   it("no description renders the sentinel — v13's {{demo_description}} is always satisfied", async () => {
@@ -342,7 +379,73 @@ describe("handlePlanDemoSteps diagnostics (0029)", () => {
     const ready = await planRow(planId);
     expect(ready.status).toBe("ready");
     expect(ready.failKind).toBeNull();
+    // The highlight is stored with the steps — every FIXED label is on its
+    // screen, so each step carries an empty array, never an absent field.
+    expect(
+      (ready.steps as { offScreenWords?: string[] }[]).map((step) => step.offScreenWords),
+    ).toEqual([[], [], [], [], [], []]);
     expect(ready.retryViolations).toEqual([expect.any(Array), []]);
     expect((ready.retryViolations as string[][])[0]!.length).toBeGreaterThan(0);
+  });
+
+  it("a human edit clears the marks on the label it changed and keeps the rest", async () => {
+    // Approve is disabled while the draft is dirty, so any edit, delete or
+    // added step forces a save before approval. A save that wiped every mark
+    // would take the highlight off the labels the customer never touched —
+    // so updatePlanSteps carries the stored marks onto unchanged labels and
+    // writes [] only where the text changed (or the step is new).
+    generateObject.mockReset().mockResolvedValueOnce(OFF_SCREEN);
+    const planId = await seedPlanRow("diag-edit@example.com");
+    await runLane(db, { workerId: "test", handlers: buildHandlers(), drainAndExit: true });
+    const ready = await planRow(planId);
+    const words = (steps: unknown) =>
+      (steps as { sourceIndex: number; offScreenWords?: string[] }[]).map((s) => [
+        s.sourceIndex,
+        s.offScreenWords,
+      ]);
+    expect(words(ready.steps)).toEqual([
+      [0, ["הפרטים"]],
+      [1, []],
+      [2, []],
+      [3, []],
+      [4, []],
+      [5, []],
+    ]);
+
+    // Change step 1's label only; step 0 keeps its mark, step 1 is the customer's now.
+    const edited = await updatePlanSteps(db, {
+      planId,
+      steps: [
+        { sourceIndex: 0, label: "הפרטים" },
+        { sourceIndex: 1, label: "בחירה שלכם" },
+        { sourceIndex: 2, label: "הקלדה" },
+        { sourceIndex: 3, label: "אישור" },
+        { sourceIndex: 4, label: "גלילה" },
+        { sourceIndex: 5, label: "הצלחה" },
+      ],
+    });
+    expect(words(edited.steps)).toEqual([
+      [0, ["הפרטים"]],
+      [1, []],
+      [2, []],
+      [3, []],
+      [4, []],
+      [5, []],
+    ]);
+
+    // Now rewrite step 0 itself (and drop a step): its mark goes, nothing else changes.
+    const rewritten = await updatePlanSteps(db, {
+      planId,
+      steps: [
+        { sourceIndex: 0, label: "פתיחה" },
+        { sourceIndex: 2, label: "הקלדה" },
+        { sourceIndex: 5, label: "הצלחה" },
+      ],
+    });
+    expect(words(rewritten.steps)).toEqual([
+      [0, []],
+      [2, []],
+      [5, []],
+    ]);
   });
 });

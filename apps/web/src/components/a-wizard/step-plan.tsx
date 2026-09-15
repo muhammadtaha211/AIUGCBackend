@@ -18,7 +18,9 @@ import {
   insertDraftStep,
   isActivePlanStatus,
   isAnalysisWorkingStatus,
+  labelRuns,
   labelWordWarning,
+  marksAfterEdit,
   planWaitView,
   planFailureNotice,
   planStepsDirty,
@@ -336,8 +338,21 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
     );
   }
 
+  /** An edited label is the customer's own words: its provenance marks clear
+   *  while the text differs from the stored label and come back when it is
+   *  typed back to it (marksAfterEdit) — the server applies the same rule on
+   *  save (updatePlanSteps), so the draft never hides a mark the row keeps. */
   function setLabel(sourceIndex: number, label: string) {
-    setDraft((d) => d && d.map((s) => (s.sourceIndex === sourceIndex ? { ...s, label } : s)));
+    const stored = plan?.steps.find((s) => s.sourceIndex === sourceIndex);
+    setDraft(
+      (d) =>
+        d &&
+        d.map((s) =>
+          s.sourceIndex === sourceIndex
+            ? { ...s, label, offScreenWords: marksAfterEdit(stored, label) }
+            : s,
+        ),
+    );
   }
 
   /** Delete removes the clip and the video gets shorter — no redistribution.
@@ -772,6 +787,9 @@ function PlanEditor({
   }, [approved]);
   const dirty = planStepsDirty(draft, plan.steps);
   const blocked = draftBlockedReason(draft);
+  /** Any step still carrying the model's off-screen words (decision 0049) —
+   *  the one hint line for the whole plan shows while this holds. */
+  const hasMarks = draft.some((step) => (step.offScreenWords?.length ?? 0) > 0);
   // Mutually exclusive by arithmetic (< min vs > max), so one slot renders both.
   const countWarning = deleteWarning(draft.length) ?? addWarning(draft.length);
   // Draft durations are the STORED assembly — a label/delete edit can widen a
@@ -791,6 +809,16 @@ function PlanEditor({
             מה שלא מתאים — והוסיפו צעדים מתוך מאגר המסכים שלמטה.
           </p>
         </div>
+      )}
+
+      {/* The provenance highlight's one hint for the whole plan (decision
+          0049): words the model wrote that come from none of the screen, the
+          questionnaire or the description are marked in the cards below.
+          Advisory — nothing blocks; a label edit clears its marks. */}
+      {!approved && hasMarks && (
+        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+          המילים המסומנות לא מופיעות בהקלטה — בדקו שהן נכונות לפני האישור.
+        </p>
       )}
 
       {plan.notes && (
@@ -859,6 +887,23 @@ function PlanEditor({
                 )}
                 {!approved && wordWarning && (
                   <p className="mt-1 text-[13px] text-amber-700">{wordWarning}</p>
+                )}
+                {/* The label as it reads, with the model's off-screen words
+                    marked (labelRuns over the step's offScreenWords). Shown
+                    under the input, which cannot carry marks; one keystroke
+                    clears it (setLabel). */}
+                {!approved && step.offScreenWords && step.offScreenWords.length > 0 && (
+                  <p dir="rtl" className="mt-1 text-sm text-ink">
+                    {labelRuns(step.label, step.offScreenWords).map((run, i) =>
+                      run.marked ? (
+                        <mark key={i} className="rounded bg-amber-100 px-0.5 text-amber-900">
+                          {run.text}
+                        </mark>
+                      ) : (
+                        <span key={i}>{run.text}</span>
+                      ),
+                    )}
+                  </p>
                 )}
                 {step.added ? (
                   // A draft-only step: the server assembles its duration on

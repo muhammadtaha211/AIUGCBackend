@@ -21,12 +21,16 @@ import { getLatestDemoAnalysis, type AnalysisState } from "../src/pipelines/demo
 import {
   approvePlan,
   assembleSteps,
+  findOffScreenWords,
   findPlanViolations,
   generateStepPlan,
   getStepPlan,
+  normalizeWord,
   planStepsSchema,
   planTimingMarkdown,
   readTimeMs,
+  splitWords,
+  tokenizeWords,
   stepDurations,
   stepRuntimeBand,
   requestDemoPlan,
@@ -401,82 +405,21 @@ describe("plan lifecycle: edit, approve, fork", () => {
   });
 });
 
-describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => {
-  // 2s apart: these fixtures stand for VALID plans, and two states closer
-  // together than one step is long are now a violation in their own right.
+describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
+  // Label provenance moved out to findOffScreenWords (decision 0049) — the
+  // describe below carries those tests. 2s apart: these fixtures stand for
+  // VALID plans, and two states closer together than one step is long are a
+  // violation in their own right.
   const timeline: AnalysisState[] = [
     state({ timestampMs: 0, visibleText: ["פרויקט חדש", "שמירה"] }),
     state({ timestampMs: 2000, visibleText: ["הקמפיין נוצר!"], actionType: "result" }),
     state({ timestampMs: 4000, visibleText: [], legibility: "unreadable" }),
   ];
 
-  it("accepts labels lifted from the screen or the questionnaire", () => {
-    expect(
-      findPlanViolations(
-        [
-          { sourceIndex: 0, label: "פרויקט חדש" },
-          { sourceIndex: 1, label: "הקמפיין נוצר" }, // punctuation-insensitive
-        ],
-        timeline,
-        QUESTIONNAIRE,
-        8,
-      ),
-    ).toEqual([]);
-    // Questionnaire words are allowed on any step.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "קמפיינר מהיר" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-  });
-
-  it("absorbs single-letter Hebrew prefixes on either side", () => {
-    // Label adds a prefix the screen lacks...
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "בפרויקט" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    // ...and the screen carries a prefix the label lacks ("הקמפיין" -> "קמפיין").
-    expect(
-      findPlanViolations([{ sourceIndex: 1, label: "קמפיין" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-  });
-
-  it("absorbs prefixed function words instead of flagging them as fabricated", () => {
-    // Hebrew glues ו/ש onto function words; "וגם"/"שכבר" must not cost a paid
-    // corrective re-request.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "וגם שמירה" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "שכבר שמירה" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-  });
-
-  it("demo-description words are allowed label words — the upload note widens the vocabulary", () => {
-    // "קופון" is on no screen and in no questionnaire field; only the
-    // customer's own note carries it — the same customer-authored-claims
-    // principle as demo_notes, wired per-demo instead of per-business.
-    const steps = [{ sourceIndex: 0, label: "קופון הנחה" }];
-    expect(
-      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8, undefined, "מזינים קופון הנחה בקופה"),
-    ).toEqual([]);
-    // Absent everywhere -> still a violation. The description weakens the
-    // rule by exactly its own words, nothing more.
-    expect(
-      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8).some((v) =>
-        v.includes("appears neither"),
-      ),
-    ).toBe(true);
-    // Blank and null are the no-description case, not a wildcard.
-    expect(
-      findPlanViolations(steps, timeline, QUESTIONNAIRE, 8, undefined, "   ").some((v) =>
-        v.includes("appears neither"),
-      ),
-    ).toBe(true);
-  });
-
   it("shape rules: model plans must end on the result state and explain under-min counts", () => {
     // Ends mid-journey while a selectable result state exists -> violation.
     expect(
-      findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, QUESTIONNAIRE, 8, {
+      findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, 8, {
         minSteps: 1,
         notes: null,
         minStepMs: 1400,
@@ -490,7 +433,6 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
           { sourceIndex: 1, label: "נוצר" },
         ],
         timeline,
-        QUESTIONNAIRE,
         8,
         { minSteps: 1, notes: null, minStepMs: 1400 },
       ),
@@ -498,7 +440,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     // Ends mid-journey but `notes` explains (the timeline's only "result"
     // states may be mistyped error screens) -> the notes waive the rule.
     expect(
-      findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, QUESTIONNAIRE, 8, {
+      findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, 8, {
         minSteps: 1,
         notes: "אין בהקלטה מסך סיום ברור",
         minStepMs: 1400,
@@ -509,7 +451,6 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       findPlanViolations(
         [{ sourceIndex: 0, label: "שמירה" }],
         [state({ timestampMs: 0, visibleText: ["שמירה"] })],
-        QUESTIONNAIRE,
         8,
         { minSteps: 1, notes: null, minStepMs: 1400 },
       ),
@@ -527,7 +468,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       { sourceIndex: 4, label: "חמש" },
     ];
     expect(
-      findPlanViolations(short, roomy, QUESTIONNAIRE, 8, {
+      findPlanViolations(short, roomy, 8, {
         minSteps: 5,
         notes: null,
         minStepMs: 1400,
@@ -537,7 +478,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     // last-step rule alone; waiving both is how a 5-step plan with a
     // 26-second hole in the middle passed.
     expect(
-      findPlanViolations(short, roomy, QUESTIONNAIRE, 8, {
+      findPlanViolations(short, roomy, 8, {
         minSteps: 5,
         notes: "בסרטון אין יותר צעדים",
         minStepMs: 1400,
@@ -552,7 +493,6 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
           { sourceIndex: 1, label: "נוצר" },
         ],
         timeline,
-        QUESTIONNAIRE,
         8,
         { minSteps: 6, notes: null, minStepMs: 1400 },
       ),
@@ -577,7 +517,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       { sourceIndex: 4, label: "חמש" },
     ];
     expect(
-      findPlanViolations(four, bunched, QUESTIONNAIRE, 8, {
+      findPlanViolations(four, bunched, 8, {
         minSteps: 5,
         notes: null,
         minStepMs: 1400,
@@ -589,7 +529,6 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       findPlanViolations(
         four.map((s) => (s.sourceIndex === 4 ? { ...s } : s)),
         spread,
-        QUESTIONNAIRE,
         8,
         { minSteps: 5, notes: null, minStepMs: 1400 },
       ).some((v) => v.includes("fewer than the minimum")),
@@ -616,7 +555,6 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         { sourceIndex: 2, label: "המשך" },
       ],
       continues,
-      QUESTIONNAIRE,
       8,
       { minSteps: 6, notes: null, minStepMs: 1400 },
     );
@@ -633,6 +571,161 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     // violation with no third call. Pin both halves.
     expect(shapeViolation).toContain("select additional distinct product states");
     expect(shapeViolation).toContain("never pad with loading, duplicate or otherwise skipped");
+  });
+
+  it("flags skip-kind screens for the model, treats absent screenKind as no information", () => {
+    const kinds: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחברות"], screenKind: "login" }),
+      state({ timestampMs: 1000, visibleText: ["דף הבית"], screenKind: "product" }),
+      state({
+        timestampMs: 2000,
+        visibleText: ["שגיאה"],
+        actionType: "result",
+        screenKind: "error",
+      }),
+      state({ timestampMs: 3000, visibleText: ["נשמר"] }), // v2-era: no screenKind
+    ];
+    // Login screens are never steps for the model.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "התחברות" }], kinds, 8).some((v) =>
+        v.includes('"login"'),
+      ),
+    ).toBe(true);
+    // product and absent screenKind both pass.
+    expect(findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, 8)).toEqual([]);
+    expect(findPlanViolations([{ sourceIndex: 3, label: "נשמר" }], kinds, 8)).toEqual([]);
+    // The only "result" is an error screen the analysis mistyped — the shape
+    // rule must not force the plan to end on a state it may never select.
+    expect(
+      findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, 8, {
+        minSteps: 1,
+        notes: null,
+        minStepMs: 1400,
+      }),
+    ).toEqual([]);
+  });
+
+  it("flags structural violations: unreadable states, dups, range, word count, step count", () => {
+    expect(
+      findPlanViolations([{ sourceIndex: 2, label: "שמירה" }], timeline, 8).some((v) =>
+        v.includes("unreadable"),
+      ),
+    ).toBe(true);
+    expect(
+      findPlanViolations(
+        [
+          { sourceIndex: 0, label: "שמירה" },
+          { sourceIndex: 0, label: "שמירה" },
+        ],
+        timeline,
+        8,
+      ).some((v) => v.includes("twice")),
+    ).toBe(true);
+    expect(
+      findPlanViolations([{ sourceIndex: 9, label: "שמירה" }], timeline, 8).some((v) =>
+        v.includes("not in the timeline"),
+      ),
+    ).toBe(true);
+    // Six is the ceiling: five passes, seven does not.
+    expect(
+      findPlanViolations([{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש" }], timeline, 8),
+    ).toEqual([]);
+    expect(
+      findPlanViolations(
+        [{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש שמירה פרויקט" }],
+        timeline,
+        8,
+      ).some((v) => v.includes("over 6 words")),
+    ).toBe(true);
+    expect(
+      findPlanViolations(
+        [
+          { sourceIndex: 0, label: "שמירה" },
+          { sourceIndex: 1, label: "נוצר" },
+        ],
+        timeline,
+        1,
+      ).some((v) => v.includes("maximum is 1")),
+    ).toBe(true);
+    expect(findPlanViolations([], timeline, 8)).toEqual(["the plan has zero steps"]);
+  });
+});
+
+describe("findOffScreenWords (the provenance highlight, deterministic)", () => {
+  // The rule that used to fail plans (decision 0049): same tokenization, same
+  // dup-run pooling, same three exemptions — it now returns the words instead
+  // of violation strings, and generateStepPlan stores them on each step for
+  // the editor to mark. Every test here is the gate's test ported one for one:
+  // same inputs, same words; "rejects" became "flags".
+  const timeline: AnalysisState[] = [
+    state({ timestampMs: 0, visibleText: ["פרויקט חדש", "שמירה"] }),
+    state({ timestampMs: 2000, visibleText: ["הקמפיין נוצר!"], actionType: "result" }),
+    state({ timestampMs: 4000, visibleText: [], legibility: "unreadable" }),
+  ];
+  /** The flagged words of a one-step plan. */
+  const flagged = (
+    label: string,
+    opts: {
+      sourceIndex?: number;
+      timeline?: AnalysisState[];
+      questionnaire?: Questionnaire;
+      description?: string | null;
+    } = {},
+  ): string[] =>
+    findOffScreenWords(
+      [{ sourceIndex: opts.sourceIndex ?? 0, label }],
+      opts.timeline ?? timeline,
+      opts.questionnaire ?? QUESTIONNAIRE,
+      opts.description,
+    )[0]!.words;
+
+  it("returns one entry per step, in order, carrying the sourceIndex", () => {
+    expect(
+      findOffScreenWords(
+        [
+          { sourceIndex: 0, label: "פרויקט חדש" },
+          { sourceIndex: 1, label: "הקמפיין נוצר" }, // punctuation-insensitive
+        ],
+        timeline,
+        QUESTIONNAIRE,
+      ),
+    ).toEqual([
+      { index: 0, sourceIndex: 0, words: [] },
+      { index: 1, sourceIndex: 1, words: [] },
+    ]);
+  });
+
+  it("passes labels lifted from the screen or the questionnaire", () => {
+    expect(flagged("פרויקט חדש")).toEqual([]);
+    expect(flagged("הקמפיין נוצר", { sourceIndex: 1 })).toEqual([]);
+    // Questionnaire words pass on any step.
+    expect(flagged("קמפיינר מהיר")).toEqual([]);
+  });
+
+  it("absorbs single-letter Hebrew prefixes on either side", () => {
+    // Label adds a prefix the screen lacks...
+    expect(flagged("בפרויקט")).toEqual([]);
+    // ...and the screen carries a prefix the label lacks ("הקמפיין" -> "קמפיין").
+    expect(flagged("קמפיין", { sourceIndex: 1 })).toEqual([]);
+  });
+
+  it("absorbs prefixed function words instead of marking them", () => {
+    // Hebrew glues ו/ש onto function words; "וגם"/"שכבר" would be noise.
+    expect(flagged("וגם שמירה")).toEqual([]);
+    expect(flagged("שכבר שמירה")).toEqual([]);
+  });
+
+  it("demo-description words pass — the upload note widens the vocabulary", () => {
+    // "קופון" is on no screen and in no questionnaire field; only the
+    // customer's own note carries it — the same customer-authored-claims
+    // principle as demo_notes, wired per-demo instead of per-business.
+    expect(flagged("קופון הנחה", { description: "מזינים קופון הנחה בקופה" })).toEqual([]);
+    // Absent everywhere -> marked. The description weakens the rule by
+    // exactly its own words, nothing more.
+    expect(flagged("קופון הנחה")).toEqual(["קופון", "הנחה"]);
+    // Blank and null are the no-description case, not a wildcard.
+    expect(flagged("קופון הנחה", { description: "   " })).toEqual(["קופון", "הנחה"]);
+    expect(flagged("קופון הנחה", { description: null })).toEqual(["קופון", "הנחה"]);
   });
 
   it("pools visibleText across a sameStateAsPrevious run (real BotTeacher state 36)", () => {
@@ -665,16 +758,10 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         actionType: "idle",
       }),
     ];
-    // The word the anchor clipped, found on the dups: no violation.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "בואו נשלים" }], run, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    // A word absent from the entire run still fails — pooling adds no slack.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "חוויה" }], run, QUESTIONNAIRE, 8).some((v) =>
-        v.includes("חוויה"),
-      ),
-    ).toBe(true);
+    // The word the anchor clipped, found on the dups: nothing marked.
+    expect(flagged("בואו נשלים", { timeline: run })).toEqual([]);
+    // A word absent from the entire run is still marked — pooling adds no slack.
+    expect(flagged("חוויה", { timeline: run })).toEqual(["חוויה"]);
   });
 
   it("keeps the מלאה true positive (real BotTeacher state 72)", () => {
@@ -694,23 +781,9 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       ],
       actionType: "navigate",
     });
-    expect(
-      findPlanViolations(
-        [{ sourceIndex: 0, label: "סימולציה מלאה" }],
-        [tourState],
-        QUESTIONNAIRE,
-        8,
-      ).some((v) => v.includes("מלאה")),
-    ).toBe(true);
+    expect(flagged("סימולציה מלאה", { timeline: [tourState] })).toEqual(["מלאה"]);
     // Words genuinely on that screen pass, including across the · separator.
-    expect(
-      findPlanViolations(
-        [{ sourceIndex: 0, label: "מכונת המבחנים" }],
-        [tourState],
-        QUESTIONNAIRE,
-        8,
-      ),
-    ).toEqual([]);
+    expect(flagged("מכונת המבחנים", { timeline: [tourState] })).toEqual([]);
   });
 
   it("normalizes gershayim, glued separators and niqqud on both sides", () => {
@@ -718,38 +791,25 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       state({ timestampMs: 0, visibleText: ['הלו"ז שלי', "BRONZE·עוזר אקדמי", "שָׁלוֹם"] }),
     ];
     // Hebrew gershayim (U+05F4) in the label vs ASCII quote on screen.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "לו״ז" }], noisy, QUESTIONNAIRE, 8),
-    ).toEqual([]);
+    expect(flagged("לו״ז", { timeline: noisy })).toEqual([]);
     // The OCR glued a · onto the word; whitespace splitting left it stuck.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "עוזר" }], noisy, QUESTIONNAIRE, 8),
-    ).toEqual([]);
+    expect(flagged("עוזר", { timeline: noisy })).toEqual([]);
     // Screen carries niqqud, the label does not.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "שלום" }], noisy, QUESTIONNAIRE, 8),
-    ).toEqual([]);
+    expect(flagged("שלום", { timeline: noisy })).toEqual([]);
   });
 
-  it("words from demo_notes are allowed label words — an explained moment becomes copy", () => {
+  it("words from demo_notes pass — an explained moment becomes copy", () => {
     // Not on state 0's screen and not elsewhere in the questionnaire...
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "תבניות מוכנות" }], timeline, QUESTIONNAIRE, 8)
-        .length,
-    ).toBeGreaterThan(0);
-    // ...but once the customer's answer carries them, the label passes.
+    expect(flagged("תבניות מוכנות")).toEqual(["תבניות", "מוכנות"]);
+    // ...but once the customer's answer carries them, nothing is marked.
     const explained = { ...QUESTIONNAIRE, demo_notes: ["מסך בחירת תבניות מוכנות"] };
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "תבניות מוכנות" }], timeline, explained, 8),
-    ).toEqual([]);
+    expect(flagged("תבניות מוכנות", { questionnaire: explained })).toEqual([]);
   });
 
-  it("allows instruction verbs — a caption tells you what to DO (real a179f069 state 1)", () => {
+  it("never marks instruction verbs — a caption tells you what to DO (real a179f069 state 1)", () => {
     // Verbatim visibleText from the shipped analysis. The opening caption the
-    // format wants is "go to boteacher.com", and every word of it has to
-    // clear the anti-fabrication rule: "boteacher" off the screen, "כנסו" off
-    // the instruction allowlist. Before the allowlist this failed on exactly
-    // one word and cost a paid corrective re-request.
+    // format wants is "go to boteacher.com": "boteacher" off the screen, "כנסו"
+    // off the instruction allowlist.
     const home = state({
       timestampMs: 2800,
       visibleText: [
@@ -767,158 +827,38 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
       actionType: "navigate",
       legibility: "low",
     });
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "כנסו לboteacher" }], [home], QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    // Prefixed forms cost nothing either — Hebrew glues ו onto verbs too.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "ולחצו boteacher" }], [home], QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    // A verb that is NOT on the list still fails: the allowlist is a list, not
+    expect(flagged("כנסו לboteacher", { timeline: [home] })).toEqual([]);
+    // Prefixed forms are not marked either — Hebrew glues ו onto verbs too.
+    expect(flagged("ולחצו boteacher", { timeline: [home] })).toEqual([]);
+    // A verb that is NOT on the list is marked: the allowlist is a list, not
     // a morphology rule.
-    expect(
-      findPlanViolations(
-        [{ sourceIndex: 0, label: "הורידו boteacher" }],
-        [home],
-        QUESTIONNAIRE,
-        8,
-      ).some((v) => v.includes("הורידו")),
-    ).toBe(true);
+    expect(flagged("הורידו boteacher", { timeline: [home] })).toEqual(["הורידו"]);
   });
 
-  it("allows pronouns addressed to the viewer", () => {
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "שמירה שלכם" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    expect(
-      findPlanViolations([{ sourceIndex: 1, label: "הוא נוצר" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
+  it("never marks pronouns addressed to the viewer", () => {
+    expect(flagged("שמירה שלכם")).toEqual([]);
+    expect(flagged("הוא נוצר", { sourceIndex: 1 })).toEqual([]);
   });
 
-  it("still rejects a product claim absent from the screen and the questionnaire", () => {
-    // The rule 2b loosens for instructions must NOT loosen for claims:
+  it("still flags a product claim absent from the screen and the questionnaire", () => {
+    // The rule loosens for instructions and must NOT loosen for claims:
     // "automatically" is a promise about the product, and a promise the
-    // recording does not show belongs in the questionnaire (which the
-    // validator already reads) — never in a caption the model invented.
+    // recording does not show belongs in the questionnaire — a caption that
+    // invents it is exactly what the customer has to see marked.
     const bare: Questionnaire = { ...QUESTIONNAIRE, what_it_does: "יוצר קמפיינים" };
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "שמירה אוטומטית" }], timeline, bare, 8).some(
-        (v) => v.includes("אוטומטית"),
-      ),
-    ).toBe(true);
+    expect(flagged("שמירה אוטומטית", { questionnaire: bare })).toEqual(["אוטומטית"]);
     // No root or morphology matching either: the questionnaire saying
     // "אוטומטי" does not license "אוטומטית".
     expect(
-      findPlanViolations(
-        [{ sourceIndex: 0, label: "שמירה אוטומטית" }],
-        timeline,
-        { ...bare, what_it_does: "יוצר קמפיינים אוטומטי" },
-        8,
-      ).some((v) => v.includes("אוטומטית")),
-    ).toBe(true);
-  });
-
-  it("allows function words but flags fabricated content words", () => {
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "רק פרויקט חדש" }], timeline, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    const violations = findPlanViolations(
-      [{ sourceIndex: 0, label: "חוויה מדהימה" }],
-      timeline,
-      QUESTIONNAIRE,
-      8,
-    );
-    expect(violations.some((v) => v.includes("חוויה"))).toBe(true);
-    expect(violations.some((v) => v.includes("מדהימה"))).toBe(true);
-  });
-
-  it("flags skip-kind screens for the model, treats absent screenKind as no information", () => {
-    const kinds: AnalysisState[] = [
-      state({ timestampMs: 0, visibleText: ["התחברות"], screenKind: "login" }),
-      state({ timestampMs: 1000, visibleText: ["דף הבית"], screenKind: "product" }),
-      state({
-        timestampMs: 2000,
-        visibleText: ["שגיאה"],
-        actionType: "result",
-        screenKind: "error",
+      flagged("שמירה אוטומטית", {
+        questionnaire: { ...bare, what_it_does: "יוצר קמפיינים אוטומטי" },
       }),
-      state({ timestampMs: 3000, visibleText: ["נשמר"] }), // v2-era: no screenKind
-    ];
-    // Login screens are never steps for the model.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "התחברות" }], kinds, QUESTIONNAIRE, 8).some(
-        (v) => v.includes('"login"'),
-      ),
-    ).toBe(true);
-    // product and absent screenKind both pass.
-    expect(
-      findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    expect(
-      findPlanViolations([{ sourceIndex: 3, label: "נשמר" }], kinds, QUESTIONNAIRE, 8),
-    ).toEqual([]);
-    // The only "result" is an error screen the analysis mistyped — the shape
-    // rule must not force the plan to end on a state it may never select.
-    expect(
-      findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, QUESTIONNAIRE, 8, {
-        minSteps: 1,
-        notes: null,
-        minStepMs: 1400,
-      }),
-    ).toEqual([]);
+    ).toEqual(["אוטומטית"]);
   });
 
-  it("flags structural violations: unreadable states, dups, range, word count, step count", () => {
-    expect(
-      findPlanViolations([{ sourceIndex: 2, label: "שמירה" }], timeline, QUESTIONNAIRE, 8).some(
-        (v) => v.includes("unreadable"),
-      ),
-    ).toBe(true);
-    expect(
-      findPlanViolations(
-        [
-          { sourceIndex: 0, label: "שמירה" },
-          { sourceIndex: 0, label: "שמירה" },
-        ],
-        timeline,
-        QUESTIONNAIRE,
-        8,
-      ).some((v) => v.includes("twice")),
-    ).toBe(true);
-    expect(
-      findPlanViolations([{ sourceIndex: 9, label: "שמירה" }], timeline, QUESTIONNAIRE, 8).some(
-        (v) => v.includes("not in the timeline"),
-      ),
-    ).toBe(true);
-    // Six is the ceiling: five passes, seven does not.
-    expect(
-      findPlanViolations(
-        [{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש" }],
-        timeline,
-        QUESTIONNAIRE,
-        8,
-      ),
-    ).toEqual([]);
-    expect(
-      findPlanViolations(
-        [{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש שמירה פרויקט" }],
-        timeline,
-        QUESTIONNAIRE,
-        8,
-      ).some((v) => v.includes("over 6 words")),
-    ).toBe(true);
-    expect(
-      findPlanViolations(
-        [
-          { sourceIndex: 0, label: "שמירה" },
-          { sourceIndex: 1, label: "נוצר" },
-        ],
-        timeline,
-        QUESTIONNAIRE,
-        1,
-      ).some((v) => v.includes("maximum is 1")),
-    ).toBe(true);
-    expect(findPlanViolations([], timeline, QUESTIONNAIRE, 8)).toEqual(["the plan has zero steps"]);
+  it("passes function words but flags fabricated content words", () => {
+    expect(flagged("רק פרויקט חדש")).toEqual([]);
+    expect(flagged("חוויה מדהימה")).toEqual(["חוויה", "מדהימה"]);
   });
 
   it("the confirm step can be an instruction instead of the button's own label", () => {
@@ -939,8 +879,7 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
         ],
       }),
     ];
-    const ok = (label: string) =>
-      findPlanViolations([{ sourceIndex: 0, label }], confirm, QUESTIONNAIRE, 8).length === 0;
+    const ok = (label: string) => flagged(label, { timeline: confirm }).length === 0;
     expect(ok("אשרו את הניתוב")).toBe(true);
     expect(ok("אישרו את הניתוב")).toBe(true);
     // ה-prefixed forms need no entries of their own: unlike "היכנסו", which
@@ -955,18 +894,53 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     expect(ok("שלה")).toBe(true);
   });
 
-  it("morphology is still not matched — a claim and a plural stay rejected", () => {
+  it("prepositions and narration verbs are never marked", () => {
+    // "לפי" failed a live plan three rounds running (2026-09-14/15, docs/vault/
+    // facts/label-rule-families-2026-09-15.md): a bare preposition carries no
+    // product claim. This timeline shows neither it nor the QUESTIONNAIRE
+    // (which has "בלי", deliberately not used here).
+    expect(flagged("שמירה לפי פרויקט")).toEqual([]);
+    // Glued ו, exactly like the other function words.
+    expect(flagged("ולפי פרויקט")).toEqual([]);
+    // The present-tense plural of a listed imperative narrates the screen the
+    // way a friend does ("ממלאים" for "מלאו") and is exempt the same way.
+    expect(flagged("ממלאים פרויקט חדש")).toEqual([]);
+    // The verbs the census found off-screen whose imperatives are NOT listed
+    // stay marked — the list is a list, not a morphology rule.
+    expect(flagged("מצאו פרויקט")).toEqual(["מצאו"]);
+    // A content word absent from the screen, the questionnaire and the
+    // description is marked; the additions widen nothing else.
+    expect(flagged("הפרטים של פרויקט")).toEqual(["הפרטים"]);
+  });
+
+  it("morphology is still not matched — a claim and a plural stay flagged", () => {
     // Deliberate, and measured rather than papered over: "הקמפיין" is the
     // questionnaire's own noun in the definite singular and it still fails
     // against "קמפיינים", which is what keeps dry-run-campaign-app red.
     const screen = [state({ timestampMs: 0, visibleText: ["שמירה"] })];
-    const words = (label: string) =>
-      findPlanViolations([{ sourceIndex: 0, label }], screen, QUESTIONNAIRE, 8);
-    expect(words("הקמפיין נוצר").some((v) => v.includes('"הקמפיין"'))).toBe(true);
-    // A benefit the customer never claimed stays out. ("אוטומטית" would pass
-    // here — it is in this questionnaire's what_it_does, which is the rule
-    // working, not failing.)
-    expect(words("בחינם").some((v) => v.includes('"בחינם"'))).toBe(true);
+    expect(flagged("הקמפיין נוצר", { timeline: screen })).toContain("הקמפיין");
+    // A benefit the customer never claimed stays marked. ("אוטומטית" would
+    // pass here — it is in this questionnaire's what_it_does, which is the
+    // rule working, not failing.)
+    expect(flagged("בחינם", { timeline: screen })).toEqual(["בחינם"]);
+  });
+
+  it("returns the label's own tokens as written, so the editor can match them exactly", () => {
+    // Normalization is for MATCHING only: the stored word keeps the label's
+    // spelling and case, and edge punctuation is a separator, never part of
+    // the word — the editor splits the same way (splitWords) and marks by
+    // string equality.
+    expect(flagged("חוויה, מדהימה!")).toEqual(["חוויה", "מדהימה"]);
+    expect(flagged("Amazing שמירה")).toEqual(["Amazing"]);
+    expect(splitWords("חוויה, מדהימה!")).toEqual(["חוויה", "מדהימה"]);
+    expect(tokenizeWords("Amazing, לו״ז")).toEqual(["amazing", 'לו"ז']);
+    expect(normalizeWord("שָׁלוֹם!")).toBe("שלום");
+  });
+
+  it("does not throw on a sourceIndex outside the timeline — the shape rule owns that", () => {
+    expect(
+      findOffScreenWords([{ sourceIndex: 9, label: "שמירה" }], timeline, QUESTIONNAIRE),
+    ).toEqual([{ index: 0, sourceIndex: 9, words: ["שמירה"] }]);
   });
 });
 
@@ -985,7 +959,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
   const pick = (...i: number[]) =>
     i.map((n) => ({ sourceIndex: n, label: wide[n]!.visibleText[0]! }));
   const shape = (steps: { sourceIndex: number; label: string }[]) =>
-    findPlanViolations(steps, wide, QUESTIONNAIRE, 8, {
+    findPlanViolations(steps, wide, 8, {
       minSteps: 1,
       notes: null,
       minStepMs: 1400,
@@ -1011,7 +985,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
   it("flags a plan that is too long", () => {
     // Eight states would be needed to overrun a 3s grid, so squeeze the band
     // instead — the rule is the comparison, not the constant.
-    const v = findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, QUESTIONNAIRE, 8, {
+    const v = findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, 8, {
       minSteps: 1,
       notes: null,
       minStepMs: 1400,
@@ -1025,7 +999,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     // 1800 + 1600 + 2200 + 1800 + 2200 + 2800 = 12400ms.
     expect(shape(pick(0, 1, 2, 3, 4, 5))).toEqual([]);
     expect(
-      findPlanViolations(pick(0, 1, 5), wide, QUESTIONNAIRE, 8, {
+      findPlanViolations(pick(0, 1, 5), wide, 8, {
         minSteps: 1,
         notes: null,
         minStepMs: 1400,
@@ -1054,7 +1028,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     // unreachable — the floor's escape now says so and stays quiet. The
     // ceiling has no escape, and reports the same assembled number.
     expect(
-      findPlanViolations(steps, tight, QUESTIONNAIRE, 8, {
+      findPlanViolations(steps, tight, 8, {
         minSteps: 1,
         notes: null,
         minStepMs: 1400,
@@ -1082,7 +1056,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     }));
     expect(totalRuntimeMs(assembleSteps(everything, eightSeconds, DURATIONS))).toBe(10_000);
     expect(
-      findPlanViolations(everything, eightSeconds, QUESTIONNAIRE, 8, {
+      findPlanViolations(everything, eightSeconds, 8, {
         minSteps: 5,
         notes: null,
         minStepMs: 1400,
@@ -1094,7 +1068,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     expect(shape(pick(0, 1, 5)).some((v) => v.includes("too SHORT"))).toBe(true);
     // And the ceiling never gets the escape: a long plan can always drop steps.
     expect(
-      findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, QUESTIONNAIRE, 8, {
+      findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, 8, {
         minSteps: 1,
         notes: null,
         minStepMs: 1400,
@@ -1105,7 +1079,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
 
   it("notes does not waive the band — a short ad is short however it is explained", () => {
     expect(
-      findPlanViolations(pick(0, 1, 5), wide, QUESTIONNAIRE, 8, {
+      findPlanViolations(pick(0, 1, 5), wide, 8, {
         minSteps: 1,
         notes: "בסרטון אין יותר מסכים",
         minStepMs: 1400,
@@ -1133,7 +1107,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     const short = [0, 1, 3, 4, 7].map((i) => ({ sourceIndex: i, label: words[i]! }));
     expect(totalRuntimeMs(assembleSteps(short, grid, DURATIONS))).toBe(9000);
     expect(
-      findPlanViolations(short, grid, QUESTIONNAIRE, 8, {
+      findPlanViolations(short, grid, 8, {
         minSteps: 5,
         notes: null,
         minStepMs: 1400,
@@ -1163,7 +1137,7 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     const floorEra = { byActionType: {}, minMs: 3000, maxMs: 4000 };
     expect(totalRuntimeMs(assembleSteps(plan, grid, floorEra))).toBe(12_000);
     expect(
-      findPlanViolations(plan, grid, QUESTIONNAIRE, 7, {
+      findPlanViolations(plan, grid, 7, {
         minSteps: 4,
         notes: null,
         minStepMs: 3000,
@@ -1190,7 +1164,6 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
           { sourceIndex: 1, label: "שש" },
         ],
         twoStates,
-        QUESTIONNAIRE,
         8,
         { minSteps: 1, notes: null, minStepMs: 1400, runtime: band },
       ),
@@ -1214,7 +1187,7 @@ describe("a caption must outlast its own read time", () => {
     { sourceIndex: 2, label: "שלוש" },
   ];
   const check = (first: string) =>
-    findPlanViolations(steps(first), squeezed, QUESTIONNAIRE, 8, {
+    findPlanViolations(steps(first), squeezed, 8, {
       minSteps: 1,
       notes: null,
       minStepMs: 1400,
@@ -1242,9 +1215,7 @@ describe("a caption must outlast its own read time", () => {
     // Human edits go through updatePlanSteps, which never calls this at all;
     // this pins the same split the min-gap rule has, so a customer who picks
     // two nearby states gets a short clip rather than a blocked save.
-    expect(
-      findPlanViolations(steps("אחת אחת אחת אחת אחת אחת"), squeezed, QUESTIONNAIRE, 8),
-    ).toEqual([]);
+    expect(findPlanViolations(steps("אחת אחת אחת אחת אחת אחת"), squeezed, 8)).toEqual([]);
   });
 });
 
@@ -1293,7 +1264,6 @@ describe("the prompt's timing block is generated from the code, not restated", (
         { sourceIndex: 2, label: "שלוש" },
       ],
       timeline,
-      QUESTIONNAIRE,
       8,
       {
         minSteps: 1,
@@ -1771,7 +1741,6 @@ describe("step durations (the window model)", () => {
         { sourceIndex: 2, label: "נשמר" },
       ],
       timeline,
-      QUESTIONNAIRE,
       8,
       { minSteps: 1, notes: null, minStepMs: 1400 },
     );
@@ -1788,7 +1757,6 @@ describe("step durations (the window model)", () => {
           { sourceIndex: 2, label: "נשמר" },
         ],
         timeline,
-        QUESTIONNAIRE,
         8,
         { minSteps: 1, notes: "הקלטה קצרה", minStepMs: 1400 },
       ).some((v) => v.includes("400ms apart")),
@@ -1801,7 +1769,6 @@ describe("step durations (the window model)", () => {
           { sourceIndex: 2, label: "נשמר" },
         ],
         timeline,
-        QUESTIONNAIRE,
         8,
         { minSteps: 1, notes: null, minStepMs: 1400 },
       ),
@@ -1843,7 +1810,7 @@ describe("band coherence — every legal shape fits the shipped band", () => {
       const steps = timeline.map((_, i) => ({ sourceIndex: i, label: `מסך ${i}` }));
       expect(totalRuntimeMs(assembleSteps(steps, timeline, durations))).toBe(n * 3000);
       expect(
-        findPlanViolations(steps, timeline, QUESTIONNAIRE, A_STEPS_MAX_DEFAULT, {
+        findPlanViolations(steps, timeline, A_STEPS_MAX_DEFAULT, {
           minSteps: A_STEPS_MIN_DEFAULT,
           notes: null,
           minStepMs: durations.minMs,
@@ -1907,6 +1874,11 @@ describe("plan-format re-export identity", () => {
     const planFormat = await import("../src/plan-format");
     expect(readTimeMs).toBe(planFormat.readTimeMs);
     expect(totalRuntimeMs).toBe(planFormat.totalRuntimeMs);
+    // The 0049 move: the tokenizer the editor's marks use is the one the
+    // server flagged with — a drifted copy would mark the wrong words.
+    expect(normalizeWord).toBe(planFormat.normalizeWord);
+    expect(tokenizeWords).toBe(planFormat.tokenizeWords);
+    expect(splitWords).toBe(planFormat.splitWords);
   });
 });
 

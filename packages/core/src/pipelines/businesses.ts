@@ -27,8 +27,9 @@ export const questionnaireSchema = z.object({
   wow: z.string().optional(),
   // The customer's answers to the plan pass's unexplainedMoments, appended by
   // addDemoNote. Part of the questionnaire on purpose: both passes read the
-  // questionnaire, and findPlanViolations already allows label words from any
-  // questionnaire string — an explained moment becomes usable copy.
+  // questionnaire, and findOffScreenWords already treats any questionnaire
+  // string as label vocabulary — an explained moment becomes usable copy that
+  // is never marked as off-screen.
   demo_notes: z.array(z.string().min(1)).max(MAX_DEMO_NOTES).optional(),
 });
 

@@ -14,6 +14,21 @@ source: db
 > for. Everything below describes the two-call era it was measured in; the call-count inference
 > still holds for rows from that era, and the cost baseline becomes 2–3 calls (~46-70k tokens).
 
+> **2026-09-15 — the rounds have now been classified by rule family, and the population this note
+> measured is gone.** [[label-rule-families-2026-09-15]] reads every `retry_violations` round in
+> production: **3 rows, 7 rounds, 25 violation strings, all 25 provenance** ("appears neither in
+> state …"); no other rule ever fired; all three rows would have been accepted on their first call
+> had the provenance rule not driven a round. The sixteen jobs counted below lived in the old
+> Supabase project, which was replaced on 2026-08-27 — the current database holds only the three
+> rows written since, so the 15/15 figure is `carried` from this note and cannot be re-run.
+
+> **2026-09-15 — the boundary.** From the deploy of
+> [[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]] onward, a label-provenance miss no
+> longer produces a round: the rule is computed once on the accepted plan and stored as
+> `offScreenWords`, never sent back to the model. Every round on record before that boundary was
+> provenance ([[label-rule-families-2026-09-15]]), so call counts — and this note's "first call
+> violated" reading of them — are not comparable across it.
+
 ## Why the call count is the measurement
 
 `generateStepPlan` made **at most two model calls, ever** (in the era measured here). `callOnce`

@@ -33,8 +33,10 @@ import {
   isActivePlanStatus,
   isAnalysisWorkingStatus,
   isIngestingDemoStatus,
+  labelRuns,
   labelWordCount,
   labelWordWarning,
+  marksAfterEdit,
   pickerPools,
   pinnedPlanFrom,
   planFailureNotice,
@@ -1242,5 +1244,68 @@ describe("the demo step rework (8d)", () => {
     }
     // Absent status = a locally-constructed reuse row — say nothing.
     expect(analysisBackgroundLine(undefined)).toBe(null);
+  });
+});
+
+/**
+ * The provenance highlight (decision 0049): the server stores each step's
+ * off-screen words as the label's own tokens; labelRuns splits the label the
+ * same way (core's splitWords) and marks by exact match, so the editor can
+ * render the words inline without re-implementing the tokenizer.
+ */
+describe("labelRuns (the provenance highlight)", () => {
+  it("splits a label into marked and unmarked runs by exact token match", () => {
+    expect(labelRuns("בחרו תחום וחפשו משרות", ["תחום"])).toEqual([
+      { text: "בחרו ", marked: false },
+      { text: "תחום", marked: true },
+      { text: " וחפשו משרות", marked: false },
+    ]);
+  });
+
+  it("keeps separators with their unmarked neighbours and merges adjacent runs", () => {
+    expect(labelRuns("מלאו קורות חיים, ושלחו", ["קורות", "חיים"])).toEqual([
+      { text: "מלאו ", marked: false },
+      { text: "קורות", marked: true },
+      { text: " ", marked: false },
+      { text: "חיים", marked: true },
+      { text: ", ושלחו", marked: false },
+    ]);
+  });
+
+  it("no marks is one unmarked run, and an empty label is no run at all", () => {
+    expect(labelRuns("כנסו לjobnet.co.il", [])).toEqual([
+      { text: "כנסו לjobnet.co.il", marked: false },
+    ]);
+    expect(labelRuns("", ["x"])).toEqual([]);
+  });
+
+  it("matches tokens as written — a prefixed form is not its bare word", () => {
+    // The server flags the token it saw; "ואזור" and "אזור" are different tokens.
+    expect(labelRuns("בחרו ואזור", ["אזור"])).toEqual([{ text: "בחרו ואזור", marked: false }]);
+    expect(labelRuns("בחרו ואזור", ["ואזור"])).toEqual([
+      { text: "בחרו ", marked: false },
+      { text: "ואזור", marked: true },
+    ]);
+  });
+});
+
+describe("marksAfterEdit (the provenance highlight survives a reverted keystroke)", () => {
+  const stored = { label: "בחרו תחום", offScreenWords: ["תחום"] };
+
+  it("keeps the stored marks while the text is the model's, trimmed either side", () => {
+    expect(marksAfterEdit(stored, "בחרו תחום")).toEqual(["תחום"]);
+    expect(marksAfterEdit(stored, "  בחרו תחום ")).toEqual(["תחום"]);
+  });
+
+  it("clears them the moment the text differs, and restores them when it is typed back", () => {
+    expect(marksAfterEdit(stored, "בחרו תחוםx")).toEqual([]);
+    expect(marksAfterEdit(stored, "בחרו")).toEqual([]);
+    // Type-then-backspace: the draft must not hide a mark the row still carries.
+    expect(marksAfterEdit(stored, "בחרו תחום")).toEqual(["תחום"]);
+  });
+
+  it("a step with no stored counterpart, or a pre-0049 row without the field, has no marks", () => {
+    expect(marksAfterEdit(undefined, "בחרו תחום")).toEqual([]);
+    expect(marksAfterEdit({ label: "בחרו תחום" }, "בחרו תחום")).toEqual([]);
   });
 });
