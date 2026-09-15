@@ -314,22 +314,28 @@ const FUNCTION_WORDS = new Set([
   "שלה",
   // Bare prepositions and conjunctions. Same membership test as everything
   // above — a word that carries no product claim — and none of these can:
-  // "according to", "without", "in order to", "via", "between", "opposite",
-  // "next to", "at", "for", "because of", "like", "out of", "but". The list
-  // had "לפני" and not "לפי", and "לפי" false-rejected a live plan three
-  // rounds running on 2026-09-14/15 (docs/vault/facts/
-  // label-rule-families-2026-09-15.md) — the only preposition ever flagged.
+  // "according to", "without", "in order to", "via", "opposite", "next to",
+  // "at", "for", "because of", "like", "out of", "but". The list had "לפני"
+  // and not "לפי", and "לפי" false-rejected a live plan three rounds running
+  // on 2026-09-14/15 (docs/vault/facts/label-rule-families-2026-09-15.md) —
+  // the only preposition ever flagged.
   // "בלי" already passed by stripping ב down to "לי"; listing it makes that
   // direct instead of accidental. Prefix-stripping exposure, written down
-  // rather than assumed away: "מבין"/"הבין" strip to "בין" and "הדרך"/"בדרך"
-  // to "דרך", so those pass too — the same slack window "כלי" → "לי" and
-  // "בעל" → "על" already open, and neither is a claim the screen would need
-  // to back.
+  // rather than assumed away: "הדרך"/"בדרך" strip to "דרך" and pass too —
+  // the same slack window "כלי" → "לי" and "בעל" → "על" already open, and
+  // how something is done is not a claim the screen would need to back.
+  // "בין" ("between") was a member for one commit (a4c1339) and came back
+  // off: it admits "הבין"/"מבין" by that same stripping, and a verb of
+  // UNDERSTANDING is a product-capability claim — the exact class this
+  // highlight exists to surface. The cost is real and accepted: the genuine
+  // preposition, and its "ובין"/"לבין" forms, is now marked when the screen
+  // does not carry it. An amber mark is the right price for not waving
+  // through "הבין את הצורך". (Longer forms were never exempt either way —
+  // "מבינים" strips to "בינים", "הבינו" to "בינו", neither of them a member.)
   "לפי",
   "בלי",
   "כדי",
   "דרך",
-  "בין",
   "מול",
   "ליד",
   "אצל",
