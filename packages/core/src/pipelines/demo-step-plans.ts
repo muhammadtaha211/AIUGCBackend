@@ -295,6 +295,32 @@ const FUNCTION_WORDS = new Set([
   // "שלהם" passed by double-stripping down to "הם". An asymmetry nobody chose.
   "שלו",
   "שלה",
+  // Bare prepositions and conjunctions. Same membership test as everything
+  // above — a word that carries no product claim — and none of these can:
+  // "according to", "without", "in order to", "via", "between", "opposite",
+  // "next to", "at", "for", "because of", "like", "out of", "but". The list
+  // had "לפני" and not "לפי", and "לפי" false-rejected a live plan three
+  // rounds running on 2026-09-14/15 (docs/vault/facts/
+  // label-rule-families-2026-09-15.md) — the only preposition ever flagged.
+  // "בלי" already passed by stripping ב down to "לי"; listing it makes that
+  // direct instead of accidental. Prefix-stripping exposure, written down
+  // rather than assumed away: "מבין"/"הבין" strip to "בין" and "הדרך"/"בדרך"
+  // to "דרך", so those pass too — the same slack window "כלי" → "לי" and
+  // "בעל" → "על" already open, and neither is a claim the screen would need
+  // to back.
+  "לפי",
+  "בלי",
+  "כדי",
+  "דרך",
+  "בין",
+  "מול",
+  "ליד",
+  "אצל",
+  "בשביל",
+  "בגלל",
+  "כמו",
+  "מתוך",
+  "אבל",
 ]);
 
 /**
@@ -340,6 +366,29 @@ const INSTRUCTIONAL_VERBS = new Set([
   // "היכנסו" is: stripping ה leaves "תחילו", which is not the base.
   "התחילו",
   "התחלו",
+  // The present-tense masculine-plural NARRATION forms of exactly the verbs
+  // above — "you enter, you click, you choose" as a friend narrating the
+  // screen says it — and nothing else: a verb whose imperative is not listed
+  // does not get its present tense here either (the list stays a list, not a
+  // morphology rule). They are as claim-free as the imperatives; v13 warned
+  // the model these "are NOT on the list", which cost a corrective call every
+  // time it reached for the natural form. One per imperative, in list order.
+  "נכנסים", // כנסו / היכנסו / הכנסו
+  "לוחצים", // לחצו
+  "בוחרים", // בחרו
+  "מעלים", // העלו
+  "פותחים", // פתחו
+  "מקלידים", // הקלידו
+  "כותבים", // כתבו
+  "גוררים", // גררו
+  "מסמנים", // סמנו
+  "ממלאים", // מלאו
+  "שולחים", // שלחו
+  "מחפשים", // חפשו
+  "שומרים", // שמרו
+  "גוללים", // גללו
+  "מאשרים", // אשרו / אישרו
+  "מתחילים", // התחילו / התחלו
 ]);
 
 /**

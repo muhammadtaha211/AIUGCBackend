@@ -955,6 +955,35 @@ describe("findPlanViolations (the anti-fabrication rule, deterministic)", () => 
     expect(ok("שלה")).toBe(true);
   });
 
+  it("prepositions and narration verbs are not fabrications", () => {
+    // "לפי" failed a live plan three rounds running (2026-09-14/15, docs/vault/
+    // facts/label-rule-families-2026-09-15.md): a bare preposition carries no
+    // product claim, so it passes with no screen or questionnaire support —
+    // this timeline shows neither it nor the QUESTIONNAIRE (which has "בלי",
+    // deliberately not used here).
+    const ok = (label: string) =>
+      findPlanViolations([{ sourceIndex: 0, label }], timeline, QUESTIONNAIRE, 8).length === 0;
+    expect(ok("שמירה לפי פרויקט")).toBe(true);
+    // Glued ו, exactly like the other function words.
+    expect(ok("ולפי פרויקט")).toBe(true);
+    // The present-tense plural of a listed imperative narrates the screen the
+    // way a friend does ("ממלאים" for "מלאו") and is allowed the same way.
+    expect(ok("ממלאים פרויקט חדש")).toBe(true);
+    // The verbs Task 1 found off-screen whose imperatives are NOT listed stay
+    // out — the list is a list, not a morphology rule.
+    expect(ok("מצאו פרויקט")).toBe(false);
+    // A content word absent from the screen, the questionnaire and the
+    // description still fails; the additions widen nothing else.
+    expect(
+      findPlanViolations(
+        [{ sourceIndex: 0, label: "הפרטים של פרויקט" }],
+        timeline,
+        QUESTIONNAIRE,
+        8,
+      ).some((v) => v.includes('"הפרטים"')),
+    ).toBe(true);
+  });
+
   it("morphology is still not matched — a claim and a plural stay rejected", () => {
     // Deliberate, and measured rather than papered over: "הקמפיין" is the
     // questionnaire's own noun in the definite singular and it still fails
