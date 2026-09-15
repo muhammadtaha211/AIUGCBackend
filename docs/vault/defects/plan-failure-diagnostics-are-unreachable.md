@@ -16,11 +16,19 @@ Both symptoms closed, structurally rather than by the join this note proposed:
   `retry_violations` (string[][], one entry per model call, written on success AND failure) landed
   in 0029. The English violation text is now durable **on the plan row itself** — better than
   joining `jobs.last_error`, because successes keep their history too.
+  **2026-09-15:** `retry_violations` keeps that meaning — the violations that drove each round —
+  but from [[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]] onward it holds shape-rule
+  violations only. Label provenance never drives a round any more; its result is stored per step
+  as `offScreenWords`. Rows from before that change carry provenance strings in their rounds
+  ([[label-rule-families-2026-09-15]] — all 25 on record are provenance), rows after cannot.
 - `prompt_version` is written on the validator-failure path (`PlanViolationError` carries it; the
   handler writes it), so per-version failure rates are derivable from now on.
 - The customer line is classified per failure class in `violationCustomerMessage`
   (`demo-step-plans.ts`): fabrication → "add a demo description and retry", skip-kind picks →
   "refilm focusing on product use", everything else keeps the generic line.
+  **2026-09-15:** the fabrication branch and its "add a demo description" line are gone with
+  [[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]] — provenance cannot be a final-round
+  violation any more. Skip-kind and the generic line remain.
 - The wrong RLS comment in `service-a-ui.ts` is corrected in place.
 
 The nine pre-0029 failed rows stay as they are — NULL `fail_kind`, NULL `prompt_version` — and are

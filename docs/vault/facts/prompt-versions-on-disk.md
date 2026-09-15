@@ -16,7 +16,7 @@ content_policy        v1                                    (latest v1)
 group_analysis_states v1                                    (latest v1, new 2026-08-25)
 hook_lines            v1..v7                                (latest v7)
 hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
-plan_demo_steps       v1..v13                               (latest v13)
+plan_demo_steps       v1..v14                               (latest v14, new 2026-09-15)
 tts_enhance           v1..v4                                (latest v4)
 vo_script             v1..v9                                (latest v9, new 2026-09-11)
 ```
@@ -104,6 +104,17 @@ is whatever the highest-numbered file happens to be.
 As of the 2026-08-23 DB check, `plan_demo_steps@v12` was both the newest file and the version on
 the newest production plan row (`0d1b5f41`, 2026-08-22 10:29). **v13 has not run in production
 yet** — the first live plan after 2026-08-25 stamps it.
+
+> **Corrected 2026-09-15.** v13 has run: every plan row in the current production project — three,
+> all since the 2026-08-27 rebuild — is `plan_demo_steps@v13` ([[label-rule-families-2026-09-15]]).
+> **v14** (2026-09-15, on branch `labels/highlight-not-gate`, not yet deployed) is v13 with the
+> label-provenance rule described as a highlight rather than a mechanical failure
+> ([[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]]); **same six variables as v13**
+> (`min`, `max`, `questionnaire`, `demo_description`, `timeline`, `timing` — pinned by
+> `packages/core/test/plan-prompt.test.ts`), so the prompt file itself needs no restart. The same
+> change edits `packages/core`, so the box needs `git pull` **and** a restart as one step
+> ([[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]]): a pulled-not-restarted box would
+> run v14's "your words will be marked" against old code that still fails plans on those words.
 
 ## The restart trap, stated precisely
 

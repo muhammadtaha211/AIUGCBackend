@@ -35,9 +35,15 @@ Selection pins aside (the harness conflates drift with failure —
   are stale arithmetic ([[fixture-comments-are-arithmetic-against-superseded-constants]]);
   and none carries a `demoDescription` — the study-app fabrication (`עוזר אישי`) is exactly
   the class a customer's one-line description now legalizes, and the classified failure
-  message now tells them so. Production traffic ≠ this corpus.
+  message now tells them so. Production traffic ≠ this corpus. (**2026-09-15:** that failure
+  message no longer exists — under
+  [[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]] `עוזר אישי` would be marked on the
+  step for the customer to check, never a failure; the description still empties the mark.)
 - **The ≤5% target is now measurable on live traffic** — `fail_kind` + `retry_violations`
   land on every plan row since 0029. Judge the target there, not here.
+  **2026-09-15:** measurable for the shape rules only from
+  [[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]] onward — a provenance miss no longer
+  produces a round or a `fail_kind = validator` row; count it on `offScreenWords` per step instead.
 
 ## If the tail needs more
 

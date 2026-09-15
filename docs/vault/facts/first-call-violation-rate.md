@@ -22,6 +22,13 @@ source: db
 > Supabase project, which was replaced on 2026-08-27 — the current database holds only the three
 > rows written since, so the 15/15 figure is `carried` from this note and cannot be re-run.
 
+> **2026-09-15 — the boundary.** From the deploy of
+> [[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]] onward, a label-provenance miss no
+> longer produces a round: the rule is computed once on the accepted plan and stored as
+> `offScreenWords`, never sent back to the model. Every round on record before that boundary was
+> provenance ([[label-rule-families-2026-09-15]]), so call counts — and this note's "first call
+> violated" reading of them — are not comparable across it.
+
 ## Why the call count is the measurement
 
 `generateStepPlan` made **at most two model calls, ever** (in the era measured here). `callOnce`

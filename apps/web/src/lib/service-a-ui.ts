@@ -6,6 +6,7 @@ import {
   MIN_LABEL_WORDS,
   PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
+  splitWords,
   totalRuntimeMs,
 } from "@aiugc/core/plan-format";
 import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
@@ -469,6 +470,11 @@ export type PlanStepWire = {
   label: string;
   sourceIndex: number;
   durationMs: number;
+  /** The label's own tokens that came from none of the state's screen text,
+   *  the questionnaire or the demo description (core's findOffScreenWords,
+   *  decision 0049) — the editor marks them for the customer to check. Absent
+   *  on rows from before it; [] after a human edit. */
+  offScreenWords?: string[];
 };
 
 /** stepPlanResponse — the one shape every plan-touching route returns. */
@@ -621,13 +627,67 @@ export function labelWordCount(label: string): number {
  * The soft word warning, firing at MAX_LABEL_WORDS (the model path's hard
  * ceiling; the target band is 3–5). ADVISORY ONLY: the human edit path is
  * never rejected on word count, and nothing client-side ever validates a
- * label against visibleText — the anti-fabrication rule constrains the
- * model, not the customer.
+ * label against visibleText — the provenance highlight below marks the
+ * MODEL's off-screen words for the customer to check, and never blocks.
  */
 export function labelWordWarning(label: string): string | null {
   return labelWordCount(label) >= MAX_LABEL_WORDS
     ? `כיתוב ארוך — עדיף ${MIN_LABEL_WORDS}–${MAX_LABEL_WORDS - 1} מילים כדי שיספיקו לקרוא אותו.`
     : null;
+}
+
+/**
+ * The marks a draft step carries after its label input changes: the stored
+ * step's while the text is still the model's (trimmed, the way the payload
+ * and the dirty check compare), none once it differs. Typing a letter and
+ * deleting it again must bring the marks back — otherwise the draft is not
+ * dirty (nothing to save), the row still carries the words, and the customer
+ * approves a label whose highlight they made vanish by accident. The server
+ * applies the same rule on save (updatePlanSteps).
+ */
+export function marksAfterEdit(
+  stored: Pick<PlanStepWire, "label" | "offScreenWords"> | undefined,
+  label: string,
+): string[] {
+  return stored !== undefined && stored.label.trim() === label.trim()
+    ? (stored.offScreenWords ?? [])
+    : [];
+}
+
+/**
+ * The provenance highlight (decision 0049): the label split into runs, each
+ * token that is in `marked` — the step's offScreenWords, the label's own
+ * tokens as the server split them — a marked run, everything else (the
+ * separators included) unmarked, adjacent runs of one kind merged. Splits
+ * with core's splitWords so the client never re-implements the tokenizer:
+ * the words the server flagged are, by construction, tokens of this split.
+ * Exact match on purpose — "ואזור" is not "אזור"; normalization is the
+ * server's matching concern, not the mark's.
+ */
+export function labelRuns(
+  label: string,
+  marked: readonly string[],
+): { text: string; marked: boolean }[] {
+  const text = label.normalize("NFC");
+  const set = new Set(marked);
+  const runs: { text: string; marked: boolean }[] = [];
+  const push = (piece: string, isMarked: boolean) => {
+    if (!piece) return;
+    const last = runs[runs.length - 1];
+    if (last && last.marked === isMarked) last.text += piece;
+    else runs.push({ text: piece, marked: isMarked });
+  };
+  let cursor = 0;
+  for (const token of splitWords(text)) {
+    // Tokens come in order and separators carry no token characters, so the
+    // first occurrence at or after the cursor is this token's own position.
+    const at = text.indexOf(token, cursor);
+    push(text.slice(cursor, at), false);
+    push(token, set.has(token));
+    cursor = at + token.length;
+  }
+  push(text.slice(cursor), false);
+  return runs;
 }
 
 /** Soft: below the a_steps_min default the ad starts feeling thin. The server

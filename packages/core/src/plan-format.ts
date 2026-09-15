@@ -89,3 +89,45 @@ export function readTimeMs(label: string): number {
 export function totalRuntimeMs(steps: { durationMs: number }[]): number {
   return steps.reduce((ms, step) => ms + step.durationMs, 0);
 }
+
+// ---------------------------------------------------------------------------
+// Label tokenization — shared by findOffScreenWords (server) and the editor's
+// marks (client), so the words the server flags are the words the client
+// finds in the label. Moved here from pipelines/demo-step-plans in 0049.
+// ---------------------------------------------------------------------------
+
+/**
+ * The boundary a label splits on: anything that is not a letter, digit,
+ * combining mark or an in-word quote mark (kept so acronyms like לו"ז survive
+ * as one token). Whitespace-only splitting left ·/־/– glued to neighbouring
+ * words whenever the OCR dropped a space. \p{M} keeps combining niqqud
+ * attached to its letter; normalizeWord then strips it from the token.
+ */
+const WORD_BOUNDARY = /[^\p{L}\p{M}\p{N}'"׳״]+/u;
+
+/** The label's own tokens AS WRITTEN (NFC, nothing else) — what the editor
+ *  marks by exact match. normalizeWord is for matching only. */
+export function splitWords(text: string): string[] {
+  return text.normalize("NFC").split(WORD_BOUNDARY).filter(Boolean);
+}
+
+/**
+ * Edge punctuation stripped before matching; case folded for Latin. Both sides
+ * of every comparison go through here: NFC first, Hebrew geresh/gershayim
+ * unified with their ASCII lookalikes (לו״ז vs לו"ז), combining marks (niqqud)
+ * dropped — screen OCR and model labels disagree on all three.
+ */
+export function normalizeWord(raw: string): string {
+  return raw
+    .normalize("NFC")
+    .replace(/׳/g, "'")
+    .replace(/״/g, '"')
+    .replace(/\p{M}+/gu, "")
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")
+    .toLowerCase();
+}
+
+/** Comparable word tokens: splitWords, normalized, empties dropped. */
+export function tokenizeWords(text: string): string[] {
+  return splitWords(text).map(normalizeWord).filter(Boolean);
+}
