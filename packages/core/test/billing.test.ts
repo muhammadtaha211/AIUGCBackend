@@ -56,8 +56,9 @@ describe("billing state machine", { timeout: 60_000 }, () => {
     const summary = await processDueRenewals(db, okGateway);
     expect(summary.renewed).toBe(1);
 
-    // Starter grants 40; leftover 7 expired first -> balance is exactly 40.
-    expect(await creditBalance(db, business.ownerUserId)).toBe(40);
+    // Starter grants 1000 (migration 0043); leftover 7 expired first -> balance
+    // is exactly 1000.
+    expect(await creditBalance(db, business.ownerUserId)).toBe(1000);
 
     const updated = (
       await db.select().from(schema.subscriptions).where(eq(schema.subscriptions.id, sub.id))

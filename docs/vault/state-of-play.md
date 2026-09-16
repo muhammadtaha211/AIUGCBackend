@@ -116,7 +116,7 @@ Everything in this section is **founder-reported from a dashboard**, not observe
 unless a line says otherwise.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0042 applied, ledger clean, 43 rows, no gaps, nothing pending** — **0041 and 0042 were pushed 2026-09-16** (see the subscriptions paragraph below), **0040 was
+**Migrations 0000–0042 applied, ledger clean, 43 rows, no gaps — and since 2026-09-16 exactly ONE file pending, the local-only 0043 below (44 files against 43 ledger rows)** — **0041 and 0042 were pushed 2026-09-16** (see the subscriptions paragraph below), **0040 was
 pushed 2026-09-16** (see the audio-preview paragraph below for the before/after read-back a guarded
 migration needs), and **0039 was pushed 2026-09-13** on the founder's explicit instruction for that one push, by the session that
 wrote it; `db push` recorded it itself, the sixth time running that no `migration repair` was
@@ -156,6 +156,13 @@ the first count of that table on this project (the 2026-08-23 one is against the
 So the `DROP COLUMN` destroyed nothing. Post-apply read-back 11/11, and
 `scripts/verify-migration-ledger.sql` — which gained a row for each file — read **32 structural
 rows, 30 true / 1 false (0022) / 1 NULL (0020)** against production, exactly its stated expectation.
+**0043 is WRITTEN AND NOT PUSHED** (2026-09-16) — `supabase/migrations/0043_pricing_credit_unit.sql`,
+the ₪0.15 credit unit and the three credit-only plans ([[0051-the-credit-unit-and-the-three-credit-only-plans]]).
+Production still holds the 0039 rates and 0001's placeholder plan prices; the ledger is unchanged at
+43 rows, 0000–0042. It is proved on PGlite only. Both its statements are **guarded**, so pushing it
+needs a before-read as well as an after-read (0040's lesson), and
+`packages/core/scripts/verify-credit-costs.ts` still pins the 0039 row and moves with the push.
+
 **What is NOT finished: the worker box.** It was on the pre-0041 commit when this landed, and its
 daily `billing_renewals` job selects `subscriptions` through drizzle, naming `business_id` on the
 old code. That job fails until `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl

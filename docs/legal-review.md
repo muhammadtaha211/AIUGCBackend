@@ -116,6 +116,12 @@ Grades: [R] official Reshumot / gov.il publication fetched; [M] two independent 
   what needs reconciling before billing ships is the **document type** — the plan issues
   חשבונית מס, which an עוסק פטור cannot
   ([`docs/vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md`](vault/defects/invoicing-plan-cannot-issue-for-an-osek-patur.md)).
+- Receipts (קבלה) issued as an עוסק פטור carry the **dealer's own legal name and number**, not a
+  brand name — the document is issued by the individual, so the individual is who appears on it.
+  **Accepted for now**, and revisit at incorporation: it is forming a **company** that changes the
+  name on the document, not conversion to עוסק מורשה, which is the same individual at a different
+  VAT status. Confirm with the accountant whether a registered trade name (שם עסק) may lead on the
+  קבלה alongside the legal name.
 - Supabase / Vercel backup retention.
 - If private individuals are ever allowed to buy: Consumer Protection Law s.14ג disclosures (incl.
   ID number and address) must be given before the sale, e.g. in the checkout flow, and s.13ד

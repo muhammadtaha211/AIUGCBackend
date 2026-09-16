@@ -92,8 +92,40 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
 
 ## Credits
 
-**Unit: 1 credit = 1 second.** Marketed in seconds, never in "videos per month" — a 35s ad and a
-10s ad are not the same product and must not cost the same.
+**Unit: 1000 credits = ₪150, i.e. ₪0.15 per credit on the base tier** (migration 0043,
+[`0051`](vault/decisions/0051-the-credit-unit-and-the-three-credit-only-plans.md)). A credit is a
+unit of money, not of time. The older rule — "1 credit = 1 second" — is **retired**: nothing in
+code ever depended on it, and it stopped being true the moment the steps format priced a render as
+a flat. Service B is still **priced per second** of approved VO, now with a floor; Service A steps
+is two flats.
+
+> **Migration 0043 is written and NOT pushed** as of 2026-09-16. This section describes the prices
+> it sets; production still holds the 0039 rates and 0001's placeholder plan prices until it is
+> applied. `packages/core/scripts/verify-credit-costs.ts` still pins the 0039 row and moves with it.
+
+Never marketed in **"videos per month"** — credits and worked examples only. A 35s ad and a 10s ad
+are not the same product and must not cost the same, so any count of videos is a number we would
+have to break.
+
+### Tiers
+
+The three plans differ by **credit volume only**. No founder-time benefit, no support level, no
+feature gate: all three unlock Service B, and `plans.config` is empty on all three. You get more
+credits per shekel the higher you go, steeply — the price per credit falls ₪0.15 → ₪0.12 → ₪0.10,
+a third off between the bottom tier and the top — and that is the entire pull upward. The one differentiator that is **named and not built** is **queue priority** for higher
+tiers: `jobs` has no priority column and the claim query has no plan awareness, so it is a core
+change if and when it comes.
+
+| code      | price      | credits/mo | per credit | Service B |
+| --------- | ---------- | ---------- | ---------- | --------- |
+| `starter` | ₪150 (net) | 1000       | ₪0.15      | ✔         |
+| `pro`     | ₪300 (net) | 2500       | ₪0.12      | ✔         |
+| `studio`  | ₪500 (net) | 5000       | ₪0.10      | ✔         |
+
+Prices are **net** — we ship as עוסק פטור, so no VAT is added today and on conversion it goes on
+top. `plans.name` still holds the Latin 'Starter' / 'Pro' / 'Studio'; the **Hebrew display names are
+still pending**, they are the founder's call, and migration 0043 deliberately leaves the column
+alone.
 
 The whole credits bundle — `pricing.ts`, the ledger rework, the wizard gate, migrations
 0016–0020 and their tests — landed in one commit: **`d8df728`** (2026-08-06).
@@ -115,54 +147,81 @@ quoteAssemblyRemix({ costs })
 ```
 
 Order of operations, exactly: **sum the components → clamp to the minimum → `Math.ceil` once.**
-Never ceil per component — a 34s demo with a 6.5s ending quotes 15 that way and 16 the wrong way,
+Never ceil per component — a 34s demo with a 6.5s ending quotes 73 that way and 74 the wrong way,
 and any drift between the displayed quote and the debit is the failure this module exists to
 prevent.
 
-### `credit_costs` (app_config, migrations 0017 + 0026 + 0039)
+### `credit_costs` (app_config, migrations 0017 + 0026 + 0039 + 0043)
 
 ```json
 {
-  "a_assembly_flat": 3,
-  "a_demo_per_second": 0.15,
-  "a_outro_per_second": 1,
-  "a_minimum_credits": 5,
-  "b_per_second": 1,
-  "b_minimum_credits": 0,
-  "a_ending_reroll_per_second": 1,
-  "a_remix_assembly_credits": 2,
-  "a_steps_credits": 3,
-  "a_demo_analysis_credits": 2
+  "a_assembly_flat": 15,
+  "a_demo_per_second": 0.75,
+  "a_outro_per_second": 5,
+  "a_minimum_credits": 25,
+  "b_per_second": 5,
+  "b_minimum_credits": 75,
+  "a_ending_reroll_per_second": 5,
+  "a_remix_assembly_credits": 10,
+  "a_steps_credits": 25,
+  "a_demo_analysis_credits": 20
 }
 ```
+
+**0043 (2026-09-16) multiplied seven of the ten rates by 5** — a re-denomination into the ₪0.15
+credit. **Three moved further, so it also re-prices**, and it does so on the two Service A charges a
+customer can actually reach. First, `b_minimum_credits` goes **0 → 75**:
+Service B had no floor at all, and 75 credits is 15 seconds at the new `b_per_second`. The floor
+exists because the per-ad costs that do **not** scale with seconds — the script call, the audio
+previews, the composite when there is one — are the same for a 6-second ad as for a 30-second one,
+and a seconds-only price hands those away free at the short end.
+
+The other two are the live Service A charges: `a_steps_credits` **3 → 25** (×8.3, where ×5 would be 15) and `a_demo_analysis_credits` **2 → 20** (×10, where ×5 would be 10). Measured against
+`b_per_second`, which is ×5 and so survives the change of unit, a steps render goes from 3× a
+Service B second to 5× (**+67%**) and the analysis from 2× to 4× (**+100%**). That is a deliberate
+price rise, not a change of unit.
+
+The six dormant keys (the retired full format, the re-roll, the remix) were scaled ×5 too, so that a
+re-enabled path never quotes at a fifth of cost.
 
 **Every key is required by `creditCostsSchema`** — restoring this row from an older copy of this
 block (without `a_steps_credits`, or without `a_demo_analysis_credits`) makes every quote path
 throw. The migration that adds a key must be applied before any build carrying the schema key
-deploys: that was true of 0026 and it is true of 0039.
+deploys: that was true of 0026 and it is true of 0039. **0043 adds no key**, so it carries no deploy
+order — it moves ten numbers the deployed code already reads live on every quote.
 
 Rates are `z.number()`, **not** `.int()` — whole-credit-per-second steps make tuning impossible.
 The charge is always an integer because of the single ceil. Tuning any of this is an `UPDATE` on
 this row, never a deploy; the code does not know which pricing model won.
 
-- A 35s demo + 6s avatar ending = `3 + 5.25 + 6` = **15 credits**, the same as a 15s Service B ad.
-- The same demo with a freeze or clean ending = **9** — a frozen frame spends no GPU, so
+- A 35s demo + 6s avatar ending = `15 + 26.25 + 30` = **72 credits** (₪10.80 at the base tier).
+  Under 0017 this was the same price as a 15s Service B ad; it no longer is, because a 15s B ad is
+  75 — exactly the new floor. Retired full format — CLI only.
+- The same demo with a freeze or clean ending = **42** — a frozen frame spends no GPU, so
   `outroMode: "freeze" | "none"` bills zero outro seconds. The quote can never contradict the
   shape summary printed beside it.
-- `a_minimum_credits` and `b_minimum_credits` express "no video costs less than X" as config.
+- **Service B, 20s of approved VO** = `20 x 5` = **100 credits**, ₪15 at the base tier. A 30s ad is 150. A 12s, 10s or 8s ad is **75 alike** — the floor binds everywhere below 15s.
+- **Service A steps, first ad off a new recording** = `25 + 20` = **45 credits**, ₪6.75 at the base
+  tier. Every later ad off the same recording is **25**, ₪3.75.
+- `a_minimum_credits` and `b_minimum_credits` express "no video costs less than X" as config, and
+  since 0043 **both are active** — 25 for the full format, 75 for Service B. `b_minimum_credits` was
+  `0`, i.e. off, from 0017 until then. A consequence worth stating: the wizard's **15s duration
+  preset now prices flat at the floor**, since 15 × 5 = 75 and an approved VO almost always lands
+  just under its preset.
 - `a_remix_assembly_credits` is **floor-exempt by design**: a remix that changes only the hook
   clip, the hook line, or the text rect re-runs assembly and nothing else, at near-zero marginal
   cost. It still goes through `createSet`, so a naive floor would silently price it like a fresh
   video and kill the volume play.
-- `a_steps_credits` (0026, **lowered 5 → 3 by 0039**) is the flat price of one steps-format
-  **render**, floor-exempt. The full-format quote would bill the UPLOADED duration — a 3-minute
-  recording would price ~31 credits for a ~20s output, at a rate calibrated to subsidise a TTS
-  funnel the steps format doesn't use.
+- `a_steps_credits` (0026, **split 5 → 3 by 0039, then taken to 25 by 0043** — an ×8.3 move, not
+  that file's ×5 re-denomination) is the flat price of one steps-format **render**, floor-exempt. The full-format quote would bill the UPLOADED duration — a 3-minute
+  recording would price **150** credits for a ~20s output (`15 + 180 × 0.75`), at a rate
+  calibrated to subsidise a TTS funnel the steps format doesn't use.
 - `a_demo_analysis_credits` (0039) is the demo analysis, **charged once per demo** and also
   floor-exempt. 0026 folded the analysis into the flat and called it "amortised over unlimited
   variants", which it never was: the flat is per render, so every variant paid for the analysis
   again — the opposite of the reuse the format exists for. Split, the price says what happens. **The
-  first render of a demo still totals 5**; every later render of the same demo is 3.
+  first render of a demo totals 45**; every later render of the same demo is 25. Under 0039 it was
+  5 and 3, and a straight ×5 would have been 25 and 15 — the extra is the price rise above.
   - **"First" is a fact about the LEDGER, not the wizard run.** `demoHasPaidRender`
     (`pipelines/sets.ts`): a demo has a paid render iff some `video_renders` row of that demo
     (through `sets.demo_id`) carries a `debit_render` row with no `refund_failed` row on the same
@@ -176,11 +235,12 @@ this row, never a deploy; the code does not know which pricing model won.
     nobody renders from; that is the price of not billing for work the customer never saw a price
     for.
   - **It rides on the FIRST cell's debit**, so a set of N cells still writes N ledger rows and the
-    first is simply larger (`5, 3, 3, …`). Refunds are unchanged: each row gives back its own delta.
+    first is simply larger (`45, 25, 25, …`). Refunds are unchanged: each row gives back its own delta.
     Inside `createSet`'s transaction the demo row is locked `FOR UPDATE` before the predicate is
     re-read, so two confirms racing on one demo cannot both charge the analysis.
-  - The 2 is reasoned from `docs/vault/facts/analyze-demo-cost.md` (₪2.04–₪2.56 for a clean run,
-    `verified: 2026-08-23` and **not** re-measured for this change).
+  - The analysis charge is reasoned from `docs/vault/facts/analyze-demo-cost.md` (₪2.04–₪2.56 for
+    a clean run, mean ₪2.28, `verified: 2026-08-23` and **not** re-measured since) — 20 credits is
+    ₪3 at the base tier.
     Full reasoning: [`0048`](vault/decisions/0048-the-demo-analysis-is-charged-once-per-demo.md).
 
 ### Semantics (`credits.ts` + `sets.ts`)
