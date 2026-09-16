@@ -134,15 +134,27 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   starter ₪299/40cr (A only), pro ₪599/100cr, studio ₪999/200cr. Migration 0043 (**applied
   2026-09-17**) replaced all three — starter ₪150/1000cr, pro ₪300/2500cr, studio
   ₪500/5000cr, `allows_service_b` true on all three — those are the live values; see
-  [05-billing.md](05-billing.md).
+  [05-billing.md](05-billing.md). `name` is Hebrew since 0044 (**applied 2026-09-17**): התחלה /
+  מתקדם / פרימיום.
 - **subscriptions** — keyed to the ACCOUNT since 0041: `user_id` NOT NULL and **no `business_id`
   at all** (one owner, one subscription, one credit pool that every business he holds spends from
   — the same model `credit_ledger` has had since 0011). Status
   `active|past_due|canceled|suspended`, `gateway_recurring_ref` (the הוראת קבע token), period
-  bounds, `cancel_at_period_end`. Partial unique index `subscriptions_one_live_per_user` (0041,
-  replacing 0001's per-business one): at most one live subscription per account.
+  bounds, `cancel_at_period_end`, and `scheduled_plan_code` (0045, nullable FK to plans — a pending
+  downgrade or last-day upgrade the next renewal applies; `plan_code` stays what was paid for
+  until then, [vault 0053](vault/decisions/0053-downgrades-are-scheduled-not-applied.md)).
+  `gateway` defaults to `'sumit'` since 0044 (the API layer our code will call; Upay is the
+  acquirer behind it, [vault 0054](vault/decisions/0054-payment-stack-is-sumit-via-upay.md)).
+  Partial unique index
+  `subscriptions_one_live_per_user` (0041, replacing 0001's per-business one): at most one live
+  subscription per account.
 - **gateway_events** — raw callback/charge log; `gateway_event_id` UNIQUE makes processing
-  idempotent.
+  idempotent. Kinds: `recurring_charge_success|failed` (renewals) and
+  `plan_change_charge_success|failed` (prorated upgrades).
+- **terms_acceptances** (0046) — the record that a signed-in customer ticked the terms box at
+  checkout: `user_id` (not null), `terms_version` (the date string the terms page shows at its
+  head), `context` (`'checkout'`), `ip`, `user_agent`, `accepted_at`; index on `user_id`.
+  Server-only: RLS on, no policies, the 0035 pattern.
 - **credit_ledger** — append-only, keyed to the ACCOUNT since 0011: `user_id` NOT NULL is
   ownership (`balance = SUM(delta)` per user — one owner's businesses share one balance),
   `business_id` nullable context on spend rows (user-level grants have none). Reasons:
@@ -156,9 +168,11 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 - **events** — append-only analytics: `star` (with the variant's params — the platform's
   format-performance data), `qc_release`, `qc_reject`, `content_policy_flag`.
 - **feedback** (0035) — the in-app "צור קשר" inbox: one row per message a signed-in customer
-  writes at `/home/feedback`. `user_id` (not null), `business_id` (nullable — a user with no
-  business can still write), `message`, `page` (the pathname the form was opened from, context
-  only), `created_at` + an index on it. The founder reads them at `/feedback` in the admin
+  writes at `/home/feedback`. `user_id` (nullable since 0047, so that a public `/contact` form —
+  a separate task, not built yet — can write anonymous rows carrying `contact_name`,
+  `contact_email` and `ip` instead; nothing writes those three columns today), `business_id`
+  (nullable — a user with no business can still write), `message`, `page` (the pathname the form
+  was opened from, context only), `created_at` + an index on it. The founder reads them at `/feedback` in the admin
   console; **nothing is emailed, posted or notified**, and there is no handled/resolved state.
   Server-only: RLS on, no policies — and because there is no policy, the ENABLE rides in the
   portable migration rather than a separate Supabase-only file

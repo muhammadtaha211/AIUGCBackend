@@ -88,11 +88,13 @@ export default async function AdminFeedbackPage({
                 </td>
                 <td className="px-4 py-2.5">
                   <span className="font-medium text-white" dir="ltr">
-                    {row.userEmail}
+                    {row.userEmail ?? "—"}
                   </span>
-                  <span className="ms-2">
-                    <CopyId id={row.userId} />
-                  </span>
+                  {row.userId && (
+                    <span className="ms-2">
+                      <CopyId id={row.userId} />
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-gray-300">
                   {row.businessName ?? <span className="text-gray-500">—</span>}

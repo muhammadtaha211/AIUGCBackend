@@ -39,8 +39,9 @@ export async function submitFeedback(
 
 export type FeedbackEntry = {
   id: string;
-  userId: string;
-  userEmail: string;
+  /** Both null on an anonymous /contact row (0047). */
+  userId: string | null;
+  userEmail: string | null;
   businessId: string | null;
   businessName: string | null;
   message: string;
@@ -78,7 +79,9 @@ export async function listFeedback(
       createdAt: feedback.createdAt,
     })
     .from(feedback)
-    .innerJoin(users, eq(users.id, feedback.userId))
+    // LEFT since 0047: user_id is nullable too now, and an inner join would
+    // silently drop every anonymous /contact row from the inbox.
+    .leftJoin(users, eq(users.id, feedback.userId))
     // LEFT: business_id is nullable, and an inner join would silently drop
     // every message written before the user had a business.
     .leftJoin(businesses, eq(businesses.id, feedback.businessId))

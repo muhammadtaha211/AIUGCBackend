@@ -541,4 +541,72 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0044-0047: Hebrew plan names, the sumit default, the scheduled column, terms_acceptances, anonymous feedback", async () => {
+    const { db, pg } = await createTestDb();
+
+    // 0044 (a): the guarded UPDATEs fired on 0001's Latin seed — a replay from
+    // empty lands on the Hebrew by construction. Pinned by identity so a hand
+    // edit in the SQL editor cannot drift from the migration silently.
+    const plans = await db.select().from(schema.plans).orderBy(schema.plans.code);
+    expect(plans.map((p) => [p.code, p.name])).toEqual([
+      ["pro", "מתקדם"],
+      ["starter", "התחלה"],
+      ["studio", "פרימיום"],
+    ]);
+    // 0044 (b): the column default, read from the catalog rather than by
+    // inserting a row — drizzle's own default would mask a missed ALTER.
+    const gatewayDefault = await pg.query<{ column_default: string }>(
+      `SELECT column_default FROM information_schema.columns
+       WHERE table_name = 'subscriptions' AND column_name = 'gateway'`,
+    );
+    expect(gatewayDefault.rows[0]?.column_default).toBe("'sumit'::text");
+
+    // 0045: nullable, and the FK is real (the billing suite proves the refusal).
+    const scheduled = await pg.query<{ is_nullable: string }>(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'subscriptions' AND column_name = 'scheduled_plan_code'`,
+    );
+    expect(scheduled.rows[0]?.is_nullable).toBe("YES");
+
+    // 0046: 0035's server-only shape — RLS on, zero policies, one user index.
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.terms_acceptances'::regclass",
+    );
+    expect(rls.rows[0]?.relrowsecurity).toBe(true);
+    const policies = await pg.query(
+      "SELECT 1 FROM pg_policies WHERE tablename = 'terms_acceptances'",
+    );
+    expect(policies.rows).toHaveLength(0);
+    const indexes = await pg.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'terms_acceptances' ORDER BY indexname",
+    );
+    expect(indexes.rows.map((r) => r.indexname)).toEqual([
+      "terms_acceptances_pkey",
+      "terms_acceptances_user_idx",
+    ]);
+    await expect(
+      db.insert(schema.termsAcceptances).values({
+        userId: "00000000-0000-0000-0000-000000000003",
+        termsVersion: "11.09.2026",
+        context: "checkout",
+      }),
+    ).rejects.toThrow(/foreign key/i);
+
+    // 0047: an anonymous row is accepted; the 0035 test above still proves a
+    // bad user_id is refused, so the FK survived the DROP NOT NULL.
+    const [anon] = await db
+      .insert(schema.feedback)
+      .values({
+        message: "מהטופס הציבורי",
+        contactName: "דנה",
+        contactEmail: "dana@example.co.il",
+        ip: "203.0.113.7",
+      })
+      .returning();
+    expect(anon?.userId).toBeNull();
+    expect(anon?.contactEmail).toBe("dana@example.co.il");
+
+    await pg.close();
+  });
 });

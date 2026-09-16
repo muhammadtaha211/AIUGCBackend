@@ -123,22 +123,25 @@ export async function grantCredits(
 /**
  * Subscriptions are account-keyed (0041), so a period grant is an
  * account-level row with no business context — the same shape grant_manual
- * has always had.
+ * has always had. A prorated upgrade grant is ALSO a period grant, with a
+ * note saying so: it must expire at the next renewal like the rest of the
+ * period's credits, and expirePeriodRemainder never touches grant_manual.
  */
 export async function grantPeriod(
   db: Db,
-  opts: { userId: string; credits: number; subscriptionId: string },
+  opts: { userId: string; credits: number; subscriptionId: string; note?: string },
 ): Promise<void> {
   await db.insert(creditLedger).values({
     userId: opts.userId,
     delta: opts.credits,
     reason: "grant_period",
     refId: opts.subscriptionId,
+    note: opts.note ?? null,
   });
 }
 
 /** Everything ever granted by hand — the portion no renewal may take back. */
-async function manualOutstanding(db: Db, userId: string): Promise<number> {
+export async function manualOutstanding(db: Db, userId: string): Promise<number> {
   const rows = await db
     .select({ total: sql<string>`coalesce(sum(${creditLedger.delta}), 0)` })
     .from(creditLedger)

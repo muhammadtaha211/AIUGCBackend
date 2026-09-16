@@ -32,6 +32,7 @@ export * from "./pipelines/qc";
 export * from "./pipelines/renders";
 export * from "./pipelines/sets";
 export * from "./pipelines/tts";
+export * from "./plan-change";
 export * from "./pricing";
 export * from "./prompts";
 export * from "./service-b-timeline";
