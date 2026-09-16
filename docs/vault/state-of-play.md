@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-13
+updated: 2026-09-16
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -146,6 +146,19 @@ had not moved. Before-read returned **50**, after-read **20**, both through
 `getConfigValue(db, 'audio_preview_daily_limit', z.number().int())` — never a raw `SELECT`, which
 cannot separate the number from the JSON string `"20"`. No restart or deploy needed.
 `per_account.tts_chars` is untouched.
+**0041 and 0042 are WRITTEN and NOT PUSHED** (2026-09-16) — `0041_subscriptions_keyed_on_user.sql`
+re-keys `subscriptions` from `business_id` to `user_id` and `0042_rls_subscriptions_user.sql`
+rescopes its RLS policy to `auth.uid()`, on the founder's decision that day
+([[0050-subscriptions-are-keyed-on-the-account]]). The ledger is therefore still 41 rows, 0000–0040.
+They are believed to re-key an **empty** table — no production code path inserts a subscription
+([[no-self-serve-credit-grant-path]], a code read re-grepped at this commit) — but the **row count
+was never measured on this project**: the only count ever taken is 2026-08-23, on the database that
+has since been deleted. One `select count(*) from subscriptions` before the push turns that into a
+fact. The two files must go **together** and in that order: 0041 drops the policy that 0042
+recreates, because Postgres will not drop a column a policy depends on. 0042 is Supabase-only and
+is deliberately absent from `PORTABLE_MIGRATIONS`. The push should also add a structural row for
+0041 to `scripts/verify-migration-ledger.sql` — that file mentions `subscriptions` nowhere today,
+which is correct while nothing is applied and wrong the moment something is.
 **The ledger file's own expected counts were measured against production for the first time on
 2026-09-13: 27 true, 1 false, 1 NULL of 29 structural rows.** The single false is **0022**, which
 asserts platform `gpu_seconds = 7200` — a value 0036 raised to 32000 on 2026-09-11 without anyone
@@ -287,6 +300,15 @@ on the wrong thing. There is no open code defect in this queue.
 `sets.ts`'s stale `copy.ts` cites, the pre-publication OAuth passages, and `CLAUDE.md:79`.
 
 ## Open decisions
+
+**Housekeeping, unresolved: `docs/vault/decisions/` has two 0046s and two 0047s.**
+`0046-billing-ships-as-osek-patur` / `0046-the-rega-ban-targets-the-hesitation-tick-not-the-word`,
+and `0047-audio-preview-attempt-cap-moves-to-50` / `0047-finished-renders-play-in-one-component` —
+four notes, two numbers, from concurrent sessions each taking "the next free number" at the same
+time. Nothing is lost (the slugs are distinct and every inbound link uses the full filename), but
+`[[0047]]` is ambiguous and the count no longer matches the highest number. 0050 was taken as the
+next free number above 0049 rather than filling either gap, because renumbering a published note
+breaks the links that already point at it. Renumber or leave it — a founder call, not a session's.
 
 - **Invoice document type before billing ships** — DECIDED 2026-09-13 —
   [[0046-billing-ships-as-osek-patur]].

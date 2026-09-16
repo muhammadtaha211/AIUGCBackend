@@ -455,6 +455,70 @@ describe("migrations", () => {
     await pg.close();
   });
 
+  it("0041: backfills user_id from each subscription's business owner, then drops business_id", async () => {
+    // Same shape as the 0011 test above, and for the same reason: every other
+    // test applies 0041 to an EMPTY subscriptions table, so nothing else ever
+    // runs the backfill. Build the PRE-0041 shape, seed business-keyed rows,
+    // then migrate.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0041")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const userA = "11111111-1111-4111-8111-111111111111";
+    const userB = "22222222-2222-4222-8222-222222222222";
+    const bizA = "33333333-3333-4333-8333-333333333333";
+    const bizB = "44444444-4444-4444-8444-444444444444";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES
+        ('${userA}', 'a@test.local'), ('${userB}', 'b@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES
+        ('${bizA}', '${userA}', 'A'), ('${bizB}', '${userB}', 'B');
+      INSERT INTO subscriptions (business_id, plan_code, status, current_period_start, current_period_end) VALUES
+        ('${bizA}', 'starter', 'active',   now(), now()),
+        ('${bizB}', 'pro',     'canceled', now(), now());
+    `);
+
+    await pg.exec(
+      readFileSync(join(MIGRATIONS_DIR, "0041_subscriptions_keyed_on_user.sql"), "utf8"),
+    );
+
+    const rows = await pg.query<{ user_id: string; plan_code: string }>(
+      "SELECT user_id, plan_code FROM subscriptions ORDER BY plan_code",
+    );
+    expect(rows.rows).toEqual([
+      { user_id: userB, plan_code: "pro" },
+      { user_id: userA, plan_code: "starter" },
+    ]);
+
+    // business_id is gone entirely, and so are 0001's per-business indexes.
+    await expect(pg.query("SELECT business_id FROM subscriptions")).rejects.toThrow(
+      /does not exist/i,
+    );
+    const indexes = await pg.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'subscriptions' ORDER BY indexname",
+    );
+    expect(indexes.rows.map((r) => r.indexname)).toEqual([
+      "subscriptions_one_live_per_user",
+      "subscriptions_pkey",
+      "subscriptions_user_idx",
+    ]);
+
+    // The canceled row sits outside the partial index, so userB may subscribe
+    // again; userA already holds a live one and may not.
+    await pg.query(
+      `INSERT INTO subscriptions (user_id, plan_code, status, current_period_start, current_period_end)
+       VALUES ('${userB}', 'pro', 'active', now(), now())`,
+    );
+    await expect(
+      pg.query(
+        `INSERT INTO subscriptions (user_id, plan_code, status, current_period_start, current_period_end)
+         VALUES ('${userA}', 'pro', 'suspended', now(), now())`,
+      ),
+    ).rejects.toThrow(/subscriptions_one_live_per_user/);
+
+    await pg.close();
+  });
+
   it("enforce the circular sets -> video_renders FK from 0001", async () => {
     const { db, pg } = await createTestDb();
 

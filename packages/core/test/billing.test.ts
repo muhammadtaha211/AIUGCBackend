@@ -35,7 +35,7 @@ async function makeSubscription(
   const inserted = await db
     .insert(schema.subscriptions)
     .values({
-      businessId: business.id,
+      userId: business.ownerUserId,
       planCode: "starter",
       status,
       gatewayRecurringRef: "tok_test",
@@ -51,7 +51,7 @@ describe("billing state machine", { timeout: 60_000 }, () => {
     const { db, pg } = await createTestDb();
     const { business, sub } = await makeSubscription(db, 0);
     // Leftover credits from last period — must not roll over.
-    await grantPeriod(db, { businessId: business.id, credits: 7, subscriptionId: sub.id });
+    await grantPeriod(db, { userId: business.ownerUserId, credits: 7, subscriptionId: sub.id });
 
     const summary = await processDueRenewals(db, okGateway);
     expect(summary.renewed).toBe(1);
@@ -115,7 +115,7 @@ describe("billing state machine", { timeout: 60_000 }, () => {
       .update(schema.subscriptions)
       .set({ cancelAtPeriodEnd: true })
       .where(eq(schema.subscriptions.id, sub2.id));
-    await grantPeriod(db, { businessId: b2.id, credits: 12, subscriptionId: sub2.id });
+    await grantPeriod(db, { userId: b2.ownerUserId, credits: 12, subscriptionId: sub2.id });
 
     const second = await processDueRenewals(db, okGateway);
     expect(second.canceled).toBe(1);
@@ -181,6 +181,84 @@ describe("manual credit grants (admin console)", { timeout: 60_000 }, () => {
       .where(eq(schema.creditLedger.reason, "debit_render"));
     expect(debits.map((row) => row.userId)).toEqual([owner, owner]);
     expect(debits.map((row) => row.businessId).sort()).toEqual([b1.id, b2.id].sort());
+    await pg.close();
+  });
+});
+
+describe("subscriptions are keyed on the account (0041)", { timeout: 60_000 }, () => {
+  it("one subscription, two businesses: both spend down the same period grant", async () => {
+    const { db, pg } = await createTestDb();
+    const ownerEmail = `owner-${crypto.randomUUID()}@test.local`;
+    const b1 = await createBusiness(db, { ownerEmail, name: "עסק א" });
+    const b2 = await createBusiness(db, { ownerEmail, name: "עסק ב" });
+    const owner = b1.ownerUserId;
+    expect(b2.ownerUserId).toBe(owner);
+
+    // ONE subscription for the account — not one per business.
+    const sub = (
+      await db
+        .insert(schema.subscriptions)
+        .values({
+          userId: owner,
+          planCode: "pro",
+          status: "active",
+          currentPeriodStart: new Date(Date.now() - 30 * 86_400_000),
+          currentPeriodEnd: new Date(Date.now() + 1 * 86_400_000),
+        })
+        .returning()
+    )[0]!;
+    await grantPeriod(db, { userId: owner, credits: 100, subscriptionId: sub.id });
+
+    await debitRender(db, { businessId: b1.id, videoRenderId: crypto.randomUUID(), cost: 15 });
+    await debitRender(db, { businessId: b2.id, videoRenderId: crypto.randomUUID(), cost: 25 });
+    expect(await creditBalance(db, owner)).toBe(60);
+
+    // The grant is an account-level row; only the spend rows carry a business.
+    const grant = (
+      await db
+        .select()
+        .from(schema.creditLedger)
+        .where(eq(schema.creditLedger.reason, "grant_period"))
+    )[0]!;
+    expect(grant.userId).toBe(owner);
+    expect(grant.businessId).toBeNull();
+    await pg.close();
+  });
+
+  it("the database refuses a second live subscription for one account, and allows one after cancellation", async () => {
+    const { db, pg } = await createTestDb();
+    const ownerEmail = `owner-${crypto.randomUUID()}@test.local`;
+    const b1 = await createBusiness(db, { ownerEmail, name: "עסק א" });
+    await createBusiness(db, { ownerEmail, name: "עסק ב" });
+    const owner = b1.ownerUserId;
+
+    const live = (status: "active" | "past_due" | "suspended" | "canceled") => ({
+      userId: owner,
+      planCode: "starter" as const,
+      status,
+      currentPeriodStart: new Date(Date.now() - 30 * 86_400_000),
+      currentPeriodEnd: new Date(Date.now() + 1 * 86_400_000),
+    });
+
+    const first = (await db.insert(schema.subscriptions).values(live("active")).returning())[0]!;
+    // A second business is no longer a second subscription: past_due and
+    // suspended are live too, so the index covers the whole live set.
+    // Named, not a bare toThrow: the point is THIS index refusing, not any error.
+    const refused = /subscriptions_one_live_per_user/;
+    await expect(db.insert(schema.subscriptions).values(live("active"))).rejects.toThrow(refused);
+    await expect(db.insert(schema.subscriptions).values(live("past_due"))).rejects.toThrow(refused);
+    await expect(db.insert(schema.subscriptions).values(live("suspended"))).rejects.toThrow(
+      refused,
+    );
+
+    // Canceled rows fall outside the partial index and may pile up.
+    await db
+      .update(schema.subscriptions)
+      .set({ status: "canceled" })
+      .where(eq(schema.subscriptions.id, first.id));
+    const second = (await db.insert(schema.subscriptions).values(live("active")).returning())[0]!;
+    expect(second.id).not.toBe(first.id);
+    expect(await db.select().from(schema.subscriptions)).toHaveLength(2);
     await pg.close();
   });
 });

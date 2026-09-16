@@ -120,13 +120,17 @@ export async function grantCredits(
   });
 }
 
+/**
+ * Subscriptions are account-keyed (0041), so a period grant is an
+ * account-level row with no business context — the same shape grant_manual
+ * has always had.
+ */
 export async function grantPeriod(
   db: Db,
-  opts: { businessId: string; credits: number; subscriptionId: string },
+  opts: { userId: string; credits: number; subscriptionId: string },
 ): Promise<void> {
   await db.insert(creditLedger).values({
-    userId: await businessOwnerId(db, opts.businessId),
-    businessId: opts.businessId,
+    userId: opts.userId,
     delta: opts.credits,
     reason: "grant_period",
     refId: opts.subscriptionId,
@@ -154,15 +158,13 @@ async function manualOutstanding(db: Db, userId: string): Promise<number> {
  */
 export async function expirePeriodRemainder(
   db: Db,
-  opts: { businessId: string; subscriptionId: string },
+  opts: { userId: string; subscriptionId: string },
 ): Promise<void> {
-  const userId = await businessOwnerId(db, opts.businessId);
-  const balance = await creditBalance(db, userId);
-  const expirable = Math.max(0, balance - (await manualOutstanding(db, userId)));
+  const balance = await creditBalance(db, opts.userId);
+  const expirable = Math.max(0, balance - (await manualOutstanding(db, opts.userId)));
   if (expirable > 0) {
     await db.insert(creditLedger).values({
-      userId,
-      businessId: opts.businessId,
+      userId: opts.userId,
       delta: -expirable,
       reason: "expire_period",
       refId: opts.subscriptionId,

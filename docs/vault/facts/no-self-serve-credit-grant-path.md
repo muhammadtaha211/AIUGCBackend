@@ -18,17 +18,18 @@ Every writer of `credit_ledger`, exhaustively — all five live in
 | ------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------- |
 | `debitRender` (:67)            | negative              | createSet / createBRender, chargeable accounts                                                            |
 | `refundRenderIfNeeded` (:94)   | mirrors a prior debit | render failure paths; one refund per render via the 0016 partial unique index — cannot net positive       |
-| `expirePeriodRemainder` (:163) | negative              | renewal/cancel, `Math.max(0, …)` guarded                                                                  |
+| `expirePeriodRemainder` (:166) | negative              | renewal/cancel, `Math.max(0, …)` guarded                                                                  |
 | `grantCredits` (:115)          | positive              | **founder only** — sole caller is `apps/admin/src/app/api/admin/grants/route.ts:24` behind `requireAdmin` |
-| `grantPeriod` (:127)           | positive              | **unreachable in production** — see below                                                                 |
+| `grantPeriod` (:132)           | positive              | **unreachable in production** — see below                                                                 |
 
 ## Why `grantPeriod` cannot fire
 
 Its sole caller is `processDueRenewals` (`packages/core/src/pipelines/billing.ts:114`), which
 requires an existing `subscriptions` row with `gatewayRecurringRef` and a successful gateway charge.
 **No production code inserts `subscriptions` rows** — every insert is test-only
-(`packages/core/test/billing.test.ts:36`, `packages/core/test/credit-ledger.test.ts:173`,
-`packages/core/test/terminal-failures.test.ts:224` and `:300`). And
+(`packages/core/test/billing.test.ts:36`, `:200`, `:243`, `:246-248`, `:255`,
+`packages/core/test/credit-ledger.test.ts:173`, `packages/core/test/migrations.test.ts:476`, `:509`, `:514`,
+`packages/core/test/terminal-failures.test.ts:228` and `:304`). And
 outside `DRY_RUN`, `getBillingGateway` returns `NotConfiguredGateway`, whose `chargeRecurring`
 throws (`billing.ts:26-31`).
 

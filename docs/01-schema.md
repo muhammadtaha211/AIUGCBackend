@@ -132,9 +132,12 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 
 - **plans** — code PK, price (agorot), monthly credits, `allows_service_b`. Seeded placeholders:
   starter ₪299/40cr (A only), pro ₪599/100cr, studio ₪999/200cr.
-- **subscriptions** — status `active|past_due|canceled|suspended`, `gateway_recurring_ref`
-  (the הוראת קבע token), period bounds, `cancel_at_period_end`. Partial unique index (0001):
-  at most one live subscription per business.
+- **subscriptions** — keyed to the ACCOUNT since 0041: `user_id` NOT NULL and **no `business_id`
+  at all** (one owner, one subscription, one credit pool that every business he holds spends from
+  — the same model `credit_ledger` has had since 0011). Status
+  `active|past_due|canceled|suspended`, `gateway_recurring_ref` (the הוראת קבע token), period
+  bounds, `cancel_at_period_end`. Partial unique index `subscriptions_one_live_per_user` (0041,
+  replacing 0001's per-business one): at most one live subscription per account.
 - **gateway_events** — raw callback/charge log; `gateway_event_id` UNIQUE makes processing
   idempotent.
 - **credit_ledger** — append-only, keyed to the ACCOUNT since 0011: `user_id` NOT NULL is
@@ -176,8 +179,10 @@ get read-only access. Policies:
 
 - Owner-scoped SELECT: businesses, demos, demo_analyses + demo_step_plans (0024, joined
   through demos), scripts, audio_renders, sets,
-  video_renders, subscriptions, orders — via `owns_business()` (SECURITY DEFINER).
-  credit_ledger is scoped directly by `user_id = auth.uid()` since 0012 (account-level credits).
+  video_renders, orders — via `owns_business()` (SECURITY DEFINER).
+  credit_ledger is scoped directly by `user_id = auth.uid()` since 0012, and subscriptions the
+  same way since 0042 — both are account-level, and neither has a `business_id` to go through
+  (0011, 0041).
 - **video_renders additionally hides `qc_pending`/`rejected` rows** — customers never see
   Service B output before the founder releases it; a rejected-and-regenerated render is
   internal.

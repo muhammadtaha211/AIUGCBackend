@@ -65,9 +65,16 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
                                         └── cancel_at_period_end ▶ canceled (at period end, leftover credits expired)
 ```
 
+- **Keyed on the ACCOUNT, not the business** (migration 0041,
+  [`0050`](vault/decisions/0050-subscriptions-are-keyed-on-the-account.md)) — `subscriptions.user_id`,
+  no `business_id` at all, and a partial unique index (`subscriptions_one_live_per_user`) that lets
+  an account hold exactly one live subscription. One owner, one subscription, one credit pool that
+  every business he holds spends from. Credits already worked this way since 0011; this is the same
+  model, not a second one.
 - **Signup**: web app creates the hosted payment page; the gateway callback (unique
-  `gateway_event_id` → `gateway_events`, idempotent) creates the subscription with
-  `gateway_recurring_ref` and grants the first period's credits.
+  `gateway_event_id` → `gateway_events`, idempotent) creates the subscription **on the signed-in
+  account** with `gateway_recurring_ref` and grants the first period's credits. An owner who then
+  adds a second business buys nothing further — he is already subscribed.
 - **Renewals**: the daily `billing_renewals` job (`processDueRenewals`) finds due subscriptions
   and charges via the adapter. Success → `expire_period` (zero leftover) + `grant_period`
   (plan credits) + period advanced one month (day-clamped). Failure → `past_due`; retried only
@@ -78,7 +85,7 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
 - **Plan changes** (launch scope): upgrade applies immediately — charge the difference via the
   gateway, `grant_manual` the credit difference, switch `plan_code`; downgrade takes effect at
   the next renewal (change `plan_code` only). Both are single UPDATEs + ledger rows on the
-  existing machinery.
+  existing machinery, and both move the whole account: there is no per-business plan to change.
 - **Callbacks vs our loop**: the gateway also emits charge events; both paths funnel through
   `gateway_events` with the unique id, so a callback arriving for a charge our renewal loop
   initiated (or vice versa) is a no-op.
@@ -200,6 +207,10 @@ this row, never a deploy; the code does not know which pricing model won.
   enqueue a lipsync job. A conflict on the unique index means the other caller won: success, not
   an error.
 - **QC rejection never double-charges** — regeneration reuses the original debit.
+- **Period rows are account-level** — `grant_period` and `expire_period` carry `user_id` and a
+  NULL `business_id`, the same shape `grant_manual` has always had, because the subscription they
+  come from belongs to the account (0041). `business_id` stays only on the spend rows
+  (`debit_render` / `refund_failed`), where it is real context.
 - **No rollover, but `grant_manual` survives** — `expire_period` expires only
   `balance − manualOutstanding`. That encodes "spend consumes period credits first, manual credits
   last" without a per-lot ledger, so a founder goodwill grant is never deleted by the customer's
@@ -217,11 +228,6 @@ console) and purchased once payments exist.
 Kept dormant, not deleted, because payments will want them: the Remotion watermark layer and
 `video_renders.watermarked`, `businesses.sample_used_at`, the `subscriptions` table, and
 `grantPeriod` / `expirePeriodRemainder`.
-
-> **Deferred to payments — the subscription-keying question.** Subscriptions are business-keyed
-> (`subscriptions.business_id`) while credits are account-keyed (`credit_ledger.user_id`). One
-> owner with three businesses has one balance but would have three subscriptions. Do not resolve
-> this here; decide it when checkout is built.
 
 ## Quotas and caps
 
@@ -307,3 +313,8 @@ two weeks of real traffic through this query replaces the guesswork. Every paid 
 
 Same pipeline, founder-driven: an `orders` row tracks status/price/payment (Bit or invoice);
 renders run under the founder's admin bypass. WhatsApp stays the channel (no API in V0).
+
+`orders` stays **business-keyed** and that is not an oversight: a DFY order is one piece of work
+for one brand, paid once, not a standing relationship with an account. Subscriptions and credits
+are the account-level things (0041); an order is not one of them, and a DFY customer has no
+subscription at all.

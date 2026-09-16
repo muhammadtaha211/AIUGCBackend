@@ -227,7 +227,7 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
       await db
         .insert(dbSchema.subscriptions)
         .values({
-          businessId: biz.id,
+          userId: biz.ownerUserId,
           planCode: "starter",
           status: "active",
           gatewayRecurringRef: "tok_test",
@@ -236,7 +236,7 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
         })
         .returning()
     )[0]!;
-    await grantPeriod(db, { businessId: biz.id, credits: 100, subscriptionId: sub.id });
+    await grantPeriod(db, { userId: biz.ownerUserId, credits: 100, subscriptionId: sub.id });
 
     let polls = 0;
     setLipsyncProvider({
@@ -303,7 +303,7 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
       await db
         .insert(dbSchema.subscriptions)
         .values({
-          businessId: biz.id,
+          userId: biz.ownerUserId,
           planCode: "starter",
           status: "active",
           gatewayRecurringRef: "tok_test2",
@@ -312,7 +312,7 @@ describe("terminal failures (dry-run, real DB + jobs + storage)", () => {
         })
         .returning()
     )[0]!;
-    await grantPeriod(db, { businessId: biz.id, credits: 100, subscriptionId: sub.id });
+    await grantPeriod(db, { userId: biz.ownerUserId, credits: 100, subscriptionId: sub.id });
 
     // A provider that is down: every submit throws a plain (transient) error.
     setLipsyncProvider({

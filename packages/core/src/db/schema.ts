@@ -556,13 +556,18 @@ export const plans = pgTable("plans", {
   config: jsonb("config").notNull().default({}),
 });
 
+// Keyed to the ACCOUNT since 0041, like credit_ledger since 0011: one owner,
+// one live subscription (partial unique index, 0041), one credit pool that
+// every business he holds spends from. A subscription carries no business
+// context at all — unlike a ledger spend row, there is nothing per-business
+// about it to keep.
 export const subscriptions = pgTable(
   "subscriptions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    businessId: uuid("business_id")
+    userId: uuid("user_id")
       .notNull()
-      .references(() => businesses.id),
+      .references(() => users.id),
     planCode: text("plan_code")
       .notNull()
       .references(() => plans.code),
@@ -576,7 +581,7 @@ export const subscriptions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("subscriptions_business_idx").on(t.businessId)],
+  (t) => [index("subscriptions_user_idx").on(t.userId)],
 );
 
 export const gatewayEvents = pgTable("gateway_events", {

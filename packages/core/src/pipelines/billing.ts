@@ -70,7 +70,7 @@ export async function processDueRenewals(
         .update(subscriptions)
         .set({ status: "canceled", updatedAt: now })
         .where(eq(subscriptions.id, sub.id));
-      await expirePeriodRemainder(db, { businessId: sub.businessId, subscriptionId: sub.id });
+      await expirePeriodRemainder(db, { userId: sub.userId, subscriptionId: sub.id });
       result.canceled++;
       continue;
     }
@@ -110,9 +110,9 @@ export async function processDueRenewals(
       .onConflictDoNothing({ target: gatewayEvents.gatewayEventId });
 
     if (charge.ok) {
-      await expirePeriodRemainder(db, { businessId: sub.businessId, subscriptionId: sub.id });
+      await expirePeriodRemainder(db, { userId: sub.userId, subscriptionId: sub.id });
       await grantPeriod(db, {
-        businessId: sub.businessId,
+        userId: sub.userId,
         credits: plan.monthlyCredits,
         subscriptionId: sub.id,
       });

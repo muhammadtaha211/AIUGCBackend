@@ -12,7 +12,7 @@ export const MIGRATIONS_DIR = fileURLToPath(
 
 // 0002_supabase_rls.sql is deliberately absent: it references the Supabase
 // auth schema, which only exists on Supabase. So are the later RLS files
-// (0007, 0012, 0024, 0033) — 0033's policy names the `authenticated` role,
+// (0007, 0012, 0024, 0033, 0042) — 0033's policy names the `authenticated` role,
 // which PGlite has no more than it has auth.uid(). 0035 is NOT one of them:
 // a bare `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` names no role, so PGlite
 // runs it (see facts/pglite-accepts-bare-enable-row-level-security) and the
@@ -54,6 +54,7 @@ export const PORTABLE_MIGRATIONS = [
   "0038_audio_preview_limit_50.sql",
   "0039_demo_analysis_credits.sql",
   "0040_audio_preview_cap_back_to_20.sql",
+  "0041_subscriptions_keyed_on_user.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

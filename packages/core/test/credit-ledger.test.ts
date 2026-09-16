@@ -172,7 +172,7 @@ describe("expiry never eats grant_manual", { timeout: 60_000 }, () => {
       await db
         .insert(schema.subscriptions)
         .values({
-          businessId: business.id,
+          userId: business.ownerUserId,
           planCode: "starter",
           status: "active",
           currentPeriodStart: new Date(Date.now() - 30 * 86_400_000),
@@ -186,14 +186,14 @@ describe("expiry never eats grant_manual", { timeout: 60_000 }, () => {
   it("expires the period remainder and leaves the manual grant standing", async () => {
     const { db, pg } = await createTestDb();
     const { business, sub } = await subscribed(db);
-    await grantPeriod(db, { businessId: business.id, credits: 40, subscriptionId: sub.id });
+    await grantPeriod(db, { userId: business.ownerUserId, credits: 40, subscriptionId: sub.id });
     await grantCredits(db, {
       userId: business.ownerUserId,
       credits: 25,
       note: "פיצוי על רינדור תקוע",
     });
 
-    await expirePeriodRemainder(db, { businessId: business.id, subscriptionId: sub.id });
+    await expirePeriodRemainder(db, { userId: business.ownerUserId, subscriptionId: sub.id });
 
     // 65 total, 40 of it period money -> exactly 40 expires.
     expect(await creditBalance(db, business.ownerUserId)).toBe(25);
@@ -203,13 +203,15 @@ describe("expiry never eats grant_manual", { timeout: 60_000 }, () => {
       .where(eq(schema.creditLedger.reason, "expire_period"));
     expect(expiries).toHaveLength(1);
     expect(expiries[0]!.delta).toBe(-40);
+    // Account-level row since 0041: the subscription it came from has no business.
+    expect(expiries[0]!.businessId).toBeNull();
     await pg.close();
   });
 
   it("spend consumes period credits first — a partly-spent period expires only what is left", async () => {
     const { db, pg } = await createTestDb();
     const { business, sub } = await subscribed(db);
-    await grantPeriod(db, { businessId: business.id, credits: 40, subscriptionId: sub.id });
+    await grantPeriod(db, { userId: business.ownerUserId, credits: 40, subscriptionId: sub.id });
     await grantCredits(db, { userId: business.ownerUserId, credits: 25, note: "goodwill" });
     await debitRender(db, {
       businessId: business.id,
@@ -217,7 +219,7 @@ describe("expiry never eats grant_manual", { timeout: 60_000 }, () => {
       cost: 30,
     });
 
-    await expirePeriodRemainder(db, { businessId: business.id, subscriptionId: sub.id });
+    await expirePeriodRemainder(db, { userId: business.ownerUserId, subscriptionId: sub.id });
 
     // 65 - 30 = 35 balance, 25 of it manual -> 10 period credits expire.
     expect(await creditBalance(db, business.ownerUserId)).toBe(25);
@@ -227,7 +229,7 @@ describe("expiry never eats grant_manual", { timeout: 60_000 }, () => {
   it("once spend has eaten into the manual portion, nothing expires at all", async () => {
     const { db, pg } = await createTestDb();
     const { business, sub } = await subscribed(db);
-    await grantPeriod(db, { businessId: business.id, credits: 40, subscriptionId: sub.id });
+    await grantPeriod(db, { userId: business.ownerUserId, credits: 40, subscriptionId: sub.id });
     await grantCredits(db, { userId: business.ownerUserId, credits: 25, note: "goodwill" });
     await debitRender(db, {
       businessId: business.id,
@@ -235,7 +237,7 @@ describe("expiry never eats grant_manual", { timeout: 60_000 }, () => {
       cost: 50,
     });
 
-    await expirePeriodRemainder(db, { businessId: business.id, subscriptionId: sub.id });
+    await expirePeriodRemainder(db, { userId: business.ownerUserId, subscriptionId: sub.id });
 
     // Balance 15, all of it inside the 25 manual grant -> untouchable.
     expect(await creditBalance(db, business.ownerUserId)).toBe(15);
@@ -253,7 +255,7 @@ describe("expiry never eats grant_manual", { timeout: 60_000 }, () => {
     const { business, sub } = await subscribed(db);
     await grantCredits(db, { userId: business.ownerUserId, credits: 10, note: "goodwill" });
 
-    await expirePeriodRemainder(db, { businessId: business.id, subscriptionId: sub.id });
+    await expirePeriodRemainder(db, { userId: business.ownerUserId, subscriptionId: sub.id });
 
     expect(await creditBalance(db, business.ownerUserId)).toBe(10);
     await pg.close();
