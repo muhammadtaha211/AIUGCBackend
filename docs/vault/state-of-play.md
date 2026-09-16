@@ -116,7 +116,7 @@ Everything in this section is **founder-reported from a dashboard**, not observe
 unless a line says otherwise.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0040 applied, ledger clean, 41 rows, no gaps, nothing pending** — **0040 was
+**Migrations 0000–0042 applied, ledger clean, 43 rows, no gaps, nothing pending** — **0041 and 0042 were pushed 2026-09-16** (see the subscriptions paragraph below), **0040 was
 pushed 2026-09-16** (see the audio-preview paragraph below for the before/after read-back a guarded
 migration needs), and **0039 was pushed 2026-09-13** on the founder's explicit instruction for that one push, by the session that
 wrote it; `db push` recorded it itself, the sixth time running that no `migration repair` was
@@ -146,19 +146,22 @@ had not moved. Before-read returned **50**, after-read **20**, both through
 `getConfigValue(db, 'audio_preview_daily_limit', z.number().int())` — never a raw `SELECT`, which
 cannot separate the number from the JSON string `"20"`. No restart or deploy needed.
 `per_account.tts_chars` is untouched.
-**0041 and 0042 are WRITTEN and NOT PUSHED** (2026-09-16) — `0041_subscriptions_keyed_on_user.sql`
-re-keys `subscriptions` from `business_id` to `user_id` and `0042_rls_subscriptions_user.sql`
-rescopes its RLS policy to `auth.uid()`, on the founder's decision that day
-([[0050-subscriptions-are-keyed-on-the-account]]). The ledger is therefore still 41 rows, 0000–0040.
-They are believed to re-key an **empty** table — no production code path inserts a subscription
-([[no-self-serve-credit-grant-path]], a code read re-grepped at this commit) — but the **row count
-was never measured on this project**: the only count ever taken is 2026-08-23, on the database that
-has since been deleted. One `select count(*) from subscriptions` before the push turns that into a
-fact. The two files must go **together** and in that order: 0041 drops the policy that 0042
-recreates, because Postgres will not drop a column a policy depends on. 0042 is Supabase-only and
-is deliberately absent from `PORTABLE_MIGRATIONS`. The push should also add a structural row for
-0041 to `scripts/verify-migration-ledger.sql` — that file mentions `subscriptions` nowhere today,
-which is correct while nothing is applied and wrong the moment something is.
+**0041 and 0042 are APPLIED (2026-09-16)** — `subscriptions` is re-keyed from `business_id` to
+`user_id` and its RLS policy re-scoped to `auth.uid()`, on the founder's decision and his explicit
+instruction for that one push ([[0050-subscriptions-are-keyed-on-the-account]]). One account, one
+live subscription, one credit pool — the model credits have had since 0011. Ledger **43 rows,
+0000–0042**; `db push` recorded both itself, eighth time running with no repair.
+**The count that was never taken is now taken: `subscriptions` held 0 rows**, measured pre-flight,
+the first count of that table on this project (the 2026-08-23 one is against the deleted database).
+So the `DROP COLUMN` destroyed nothing. Post-apply read-back 11/11, and
+`scripts/verify-migration-ledger.sql` — which gained a row for each file — read **32 structural
+rows, 30 true / 1 false (0022) / 1 NULL (0020)** against production, exactly its stated expectation.
+**What is NOT finished: the worker box.** It was on the pre-0041 commit when this landed, and its
+daily `billing_renewals` job selects `subscriptions` through drizzle, naming `business_id` on the
+old code. That job fails until `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl
+restart aiugc-worker` runs (`docs/07-worker-box.md` §11). Blast radius is that job alone — zero
+subscriptions rows means it does nothing even when it succeeds, and nothing else in the tree reads
+the table. It ran last at 00:07 UTC on 2026-09-16 and is enqueued daily.
 **The ledger file's own expected counts were measured against production for the first time on
 2026-09-13: 27 true, 1 false, 1 NULL of 29 structural rows.** The single false is **0022**, which
 asserts platform `gpu_seconds = 7200` — a value 0036 raised to 32000 on 2026-09-11 without anyone
@@ -331,11 +334,13 @@ on the wrong thing. There is no open code defect in this queue.
 
 ## Open decisions
 
-**Housekeeping, unresolved: `docs/vault/decisions/` has two 0046s and two 0047s.**
+**Housekeeping, unresolved: `docs/vault/decisions/` has two 0046s, two 0047s and two 0049s.**
 `0046-billing-ships-as-osek-patur` / `0046-the-rega-ban-targets-the-hesitation-tick-not-the-word`,
-and `0047-audio-preview-attempt-cap-moves-to-50` / `0047-finished-renders-play-in-one-component` —
-four notes, two numbers, from concurrent sessions each taking "the next free number" at the same
-time. Nothing is lost (the slugs are distinct and every inbound link uses the full filename), but
+`0047-audio-preview-attempt-cap-moves-to-50` / `0047-finished-renders-play-in-one-component`, and
+now `0049-audio-preview-attempt-cap-back-to-20` / `0049-the-label-provenance-rule-is-a-highlight-not-a-gate`
+(the second arrived on main in PR #40 while 0049 was already taken) — six notes, three numbers, from
+concurrent sessions each taking "the next free number" at the same time. It is happening roughly
+once a week now. Nothing is lost (the slugs are distinct and every inbound link uses the full filename), but
 `[[0047]]` is ambiguous and the count no longer matches the highest number. 0050 was taken as the
 next free number above 0049 rather than filling either gap, because renumbering a published note
 breaks the links that already point at it. Renumber or leave it — a founder call, not a session's.

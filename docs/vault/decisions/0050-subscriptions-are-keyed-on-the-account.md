@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-16
-method: "Founder instruction in chat, 2026-09-16, verbatim in substance: subscriptions are keyed on the ACCOUNT (users.id), not the business — one account, one live subscription, one credit pool, and every business the owner holds spends from it. Built and read back on the working tree: supabase/migrations/0041_subscriptions_keyed_on_user.sql (portable) and 0042_rls_subscriptions_user.sql (Supabase-only), packages/core/src/db/schema.ts:564-585, pipelines/credits.ts:128 (grantPeriod) and :159 (expirePeriodRemainder), pipelines/billing.ts:73/:113/:115. Pinned by packages/core/test/billing.test.ts describe 'subscriptions are keyed on the account (0041)' (2 tests) plus the updated helpers in billing/credit-ledger/terminal-failures; 0041 applies on PGlite as part of PORTABLE_MIGRATIONS (core suite green, 46 files / 562 tests, serial). NEITHER MIGRATION HAS BEEN PUSHED to production."
+method: "Founder instruction in chat, 2026-09-16, verbatim in substance: subscriptions are keyed on the ACCOUNT (users.id), not the business — one account, one live subscription, one credit pool, and every business the owner holds spends from it. Built and read back on the working tree: supabase/migrations/0041_subscriptions_keyed_on_user.sql (portable) and 0042_rls_subscriptions_user.sql (Supabase-only), packages/core/src/db/schema.ts:564-585, pipelines/credits.ts:128 (grantPeriod) and :159 (expirePeriodRemainder), pipelines/billing.ts:73/:113/:115. Pinned by packages/core/test/billing.test.ts describe 'subscriptions are keyed on the account (0041)' (2 tests) plus the updated helpers in billing/credit-ledger/terminal-failures; 0041 applies on PGlite as part of PORTABLE_MIGRATIONS (core suite green, 46 files / 562 tests, serial). Both migrations were APPLIED to production 2026-09-16 on the founder's explicit instruction; pre-flight measured subscriptions at 0 rows, post-apply read-back was 11/11 and the ledger file read 32 structural rows 30 true / 1 false (0022) / 1 NULL (0020)."
 source: founder
 ---
 
@@ -79,9 +79,25 @@ picked the direction credits already went.
 
 ## Status
 
-**Written, NOT pushed.** Neither 0041 nor 0042 has been applied to production; the ledger is still
-clean at 0000–0040. Pushing them is a founder call for that one push, like every push before it.
-They must go **together and in order** — 0041 drops the policy 0042 recreates — and the push should
-add a structural row for 0041 to `scripts/verify-migration-ledger.sql`, which is where every earlier
-push recorded its proof. Nothing there mentions `subscriptions` today, so the file stays honest
-until then.
+**APPLIED to production 2026-09-16**, both files in one `db push`, on the founder's explicit
+instruction for that one push. The ledger is now **43 rows, 0000–0042, no gaps**, and `db push`
+recorded both versions itself — no `migration repair`, the eighth time running.
+
+The pre-flight settled the question this note used to leave open: **`select count(*) from
+subscriptions` returned 0** — the first count of that table ever taken on this project. So the
+`DROP COLUMN` destroyed nothing and the backfill moved no row; the backfill's proof stays the PGlite
+test. The before-read also confirmed the shape 0041 assumes, including the 0002 policy still reading
+`owns_business(business_id)` — without 0041's `DROP POLICY` the apply would have failed on its last
+statement.
+
+Post-apply read-back, 11 checks, all pass: `business_id` gone, `user_id` NOT NULL, the other ten
+columns intact, exactly the three expected indexes with the live-status predicate on the unique one,
+the FK repointed at `users`, one policy whose qual is `(user_id = ( SELECT auth.uid() AS uid))` with
+RLS still enabled. `scripts/verify-migration-ledger.sql` gained a row for each file and then read
+**32 structural rows, 30 true / 1 false (0022, the known one) / 1 NULL (0020)** against production.
+
+**One thing is not finished by this note.** The worker box was on the pre-0041 commit when the
+migration landed, and its daily `billing_renewals` job selects `subscriptions` through drizzle —
+which names `business_id` on the old code. That job fails until the box is redeployed
+(`docs/07-worker-box.md` §11). Blast radius is that job alone: zero subscriptions rows, so it does
+nothing even when it succeeds, and nothing else in the tree reads the table.

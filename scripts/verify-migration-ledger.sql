@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033 and 0035-0039 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0042 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,7 +33,7 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 30 rows: **28 true, 1 false (0022), 1 NULL (0020)**. Two of those
+-- expect, of 32 rows: **30 true, 1 false (0022), 1 NULL (0020)**. Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -51,13 +51,17 @@
 --     (This paragraph is why the count above is one short of the row count —
 --     it said "27 true + 1 NULL" of 29 from 2026-09-11 to 2026-09-13, which was
 --     already one out for the same reason. 0039 moved both halves: 30 rows, and
---     28 of them true.)
+--     28 of them true; 0041 and 0042 moved both again, to 32 and 30.)
 --
 -- Row history: 0036 added one row on 2026-09-11, 0037 another the same day,
 -- 0038 one more on 2026-09-13 and 0039 the same day. 0040 (2026-09-16) added
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
--- 30, and 0022 is still the only expected false. 0037 and 0038 were both
+-- 30 by 0040, and 0041/0042 then took it to **32** with one row each — they are
+-- kept separate, not paired like '0038+0040', because they assert different
+-- objects and either can fail without the other: 0041 owns the column, indexes
+-- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
+-- and both read true — see RESULTS. 0022 is still the only expected false. 0037 and 0038 were both
 -- applied to production on the day their row was written and both read true —
 -- see RESULTS. **0039 was applied to production 2026-09-13 too, and its row read
 -- true** — see RESULTS. It also changed a row that was already here: 0026 no
@@ -474,6 +478,69 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     AND value -> 'a_demo_analysis_credits' = '2'::jsonb)),
   'seeded config: a_steps_credits 3 AND a_demo_analysis_credits 2'),
 
+-- 0041: subscriptions re-keyed from the business to the ACCOUNT. Asserts all
+-- four halves, because each is a different failure: user_id present but
+-- NULLABLE would let a subscription exist with no owner; business_id surviving
+-- would mean the DROP silently did not run (0041 ends with it, so a partial
+-- apply stops exactly there); the old partial unique index surviving would keep
+-- enforcing one-live-per-BUSINESS, which is the rule this migration exists to
+-- retire; and the FK must now point at users, not businesses.
+--
+-- The predicate is pinned by NAME on both indexes, not just by presence, and
+-- the unique one is checked for its live-status WHERE clause — an index on
+-- user_id with no predicate would read true on a bare existence check and then
+-- refuse a customer's second subscription after they cancelled the first.
+--
+-- NOTE what this row cannot see: production held **zero** subscriptions rows
+-- when 0041 ran (measured pre-flight, see RESULTS), so nothing proves the
+-- BACKFILL moved a row. That half is pinned in PGlite instead, by
+-- packages/core/test/migrations.test.ts ("0041: backfills user_id from each
+-- subscription's business owner, then drops business_id"), which seeds
+-- business-keyed rows first.
+('0041', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subscriptions'
+      AND column_name = 'user_id' AND is_nullable = 'NO')
+  AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subscriptions'
+      AND column_name = 'business_id')
+  AND EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'subscriptions'
+      AND indexname = 'subscriptions_one_live_per_user'
+      AND indexdef LIKE '%active%' AND indexdef LIKE '%past_due%'
+      AND indexdef LIKE '%suspended%')
+  AND EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'subscriptions'
+      AND indexname = 'subscriptions_user_idx')
+  AND NOT EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'subscriptions'
+      AND indexname IN ('subscriptions_one_live_per_business',
+                        'subscriptions_business_idx'))
+  AND EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.subscriptions'::regclass
+      AND conname = 'subscriptions_user_id_users_id_fk')),
+  'subscriptions keyed on user_id: column, both indexes, FK, business_id gone'),
+
+-- 0042: the RLS policy 0041 had to drop to drop the column. Separate row from
+-- 0041 on purpose — 0041 leaves the table RLS-ENABLED WITH NO POLICY, which is
+-- default-deny and therefore silent: a customer sees an empty list, not an
+-- error. Nothing reads subscriptions through an RLS-bound client today, so a
+-- missed 0042 would cost nothing YET and would be discovered by the first
+-- billing screen ever built. This row is what finds it before then.
+--
+-- Checked for the SHAPE of the qualifier, not just the policy's existence: a
+-- policy still going through owns_business() cannot exist (the column is gone)
+-- but one scoped to the wrong column could.
+('0042', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM pg_policies
+  WHERE schemaname = 'public' AND tablename = 'subscriptions'
+    AND policyname = 'subscriptions_select_own'
+    AND cmd = 'SELECT'
+    AND qual LIKE '%user_id%' AND qual NOT LIKE '%owns_business%')
+  AND (SELECT relrowsecurity FROM pg_class
+       WHERE oid = 'public.subscriptions'::regclass)),
+  'policy re-scoped to user_id = auth.uid(), RLS still enabled'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -546,6 +613,64 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-09-16 (second push that day), production (hyaqydcmwbnbaiqqufow), after
+-- `db push` applied **0041 and 0042 together** (subscriptions re-keyed from
+-- business_id to user_id, and its RLS policy re-scoped to auth.uid()), on the
+-- founder's explicit instruction for this one push: ledger read-back **43 rows,
+-- 0000-0042, NO GAPS, nothing unapplied and NO REPAIR NEEDED** -- `db push`
+-- recorded both itself, the EIGHTH time in a row the REPAIR note above has
+-- predicted correctly. Pre-flight was `migration list` (0000-0040 local ==
+-- remote, 0041 and 0042 the only rows with an empty remote) and
+-- `db push --dry-run`, which named exactly those two files in that order. Same
+-- Docker catalog-cache warning as 0035-0040, and not a failure; the apply
+-- printed "Applying migration 0041..." then "...0042..." and exited 0.
+--
+-- **This one needed a BEFORE-read for a different reason than 0040's.** 0040's
+-- was a guard that could silently match nothing; 0041's is an irreversible
+-- DROP COLUMN, so what mattered was knowing what was in the column first.
+-- Pre-flight measured, read-only: `select count(*) from subscriptions` = **0**
+-- -- the first count of that table ever taken on THIS project (the only earlier
+-- one, docs/vault/facts/demo-corpus.md, is 2026-08-23 against the database
+-- deleted at the 2026-08-27 env flip and says nothing about this one). So the
+-- DROP destroyed no data and the backfill moved no row; the backfill is proven
+-- in PGlite instead, see the 0041 row's NOTE above. The before-read also
+-- confirmed the shape 0041 assumes: business_id NOT NULL, the two old indexes
+-- present, FK to businesses, and the 0002 policy still reading
+-- `owns_business(business_id)` -- which is WHY 0041 has to drop that policy:
+-- Postgres refuses to drop a column a policy depends on, so without it the
+-- apply would have failed at the last statement.
+--
+-- Applied by a session, not by hand, and the pinned local binary was spawned
+-- directly (node_modules/.pnpm/@supabase+cli-windows-x64@2.109.1/.../supabase.exe,
+-- the .exe and not the .cmd shim) through a throwaway wrapper that read
+-- DATABASE_URL out of `.env` itself and swapped :6543/ for :5432/. The
+-- connection string was never typed on a command line and never printed.
+--
+-- Post-apply read-back, read-only, 11 checks, ALL PASS: business_id gone,
+-- user_id present and NOT NULL, the other 10 columns intact,
+-- pg_indexes on subscriptions exactly
+-- [subscriptions_one_live_per_user, subscriptions_pkey, subscriptions_user_idx]
+-- with the live-status predicate on the unique one, FK now
+-- subscriptions_user_id_users_id_fk and the businesses FK gone, one policy
+-- whose qual is `(user_id = ( SELECT auth.uid() AS uid))` with RLS still
+-- enabled, ledger 43 rows 0000-0042 with no gaps, and subscriptions still 0
+-- rows. credit_ledger was confirmed untouched: 2 grant_manual (0 with a
+-- business) and 2 debit_render (2 with a business), unchanged.
+--
+-- THIS FILE was then run against production and returned **32 structural rows,
+-- 30 true / 1 false / 1 NULL**, with 0022 the only false and 0020 the NULL --
+-- exactly the header's expectation, and both new rows ('0041', '0042') true.
+--
+-- STILL OPEN at the time of writing: the worker box was on the pre-0041 commit
+-- when this landed. Its daily `billing_renewals` job selects subscriptions
+-- through drizzle and will name business_id until the box is redeployed, so
+-- that one job fails until `cd ~/AIUGCBackend && git pull && pnpm install &&
+-- sudo systemctl restart aiugc-worker` runs. Blast radius is that job alone:
+-- zero subscriptions rows, so it does nothing even when it succeeds, and no
+-- other code path in the tree reads the table.
+--
+-- ---------------------------------------------------------------------------
 --
 -- 2026-09-13 (later the same day), production (hyaqydcmwbnbaiqqufow), after
 -- `db push` applied 0039 (credit_costs: a_steps_credits 5 -> 3, new
