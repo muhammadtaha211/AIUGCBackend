@@ -214,8 +214,10 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
    - **Review the decision note** — in particular its Legal section, which is REASONED ("no new
      exposure relative to the three ungated copy paths") and unconfirmed by counsel — and the
      unattended run's own review list in the branch's `.work/label-rule-progress.md` (gitignored;
-     the final summary is at its head). One item there is for the founder specifically: the Task 2
-     list additions include `בין`, and `מבין`/`הבין` now pass by prefix-stripping.
+     the final summary is at its head). The one item there that was for the founder specifically —
+     `בין` among the Task 2 list additions, which admitted `מבין`/`הבין` by prefix-stripping — is
+     CLOSED: `בין` came back off `FUNCTION_WORDS` on 2026-09-16, because a verb of understanding is
+     a product-capability claim, the class the highlight exists to surface. `דרך` stays.
    - **Merge to `main`.** Vercel deploys `apps/web` on its own; the new field is harmless on either
      side of the box's deploy (an old worker never writes it, an old web ignores it).
    - **Deploy the box as ONE step, gated on nothing running** — the only real hazard is a

@@ -383,6 +383,93 @@ describe("plan lifecycle: edit, approve, fork", () => {
     expect(steps[0]!.timestampMs + steps[0]!.durationMs).toBe(steps[1]!.timestampMs);
   });
 
+  it("marks are carried by sourceIndex, not by position — a deleted step moves nobody's", async () => {
+    // The rule (decision 0049): a step whose label is still the model's keeps
+    // the row's marks; a changed or added one gets []. The KEY is sourceIndex.
+    // plan-retry-contract.test.ts covers the edit-one-label case, but its
+    // fixture gives only one step a non-empty mark, so a position-keyed
+    // implementation passes it byte-identically. Here three steps carry three
+    // DIFFERENT marks and the middle one is deleted: positions shift under the
+    // survivors, so position keying drops step 3's mark and this test goes red.
+    const demo = await createDemo(db, { businessId, filePath: tempFile("marks.mp4") });
+    await drainAll(); // ingest -> analysis ready
+    const analysis = (await getLatestDemoAnalysis(db, demo.id))!;
+    await db
+      .update(dbSchema.demoAnalyses)
+      .set({
+        timeline: [
+          state({ timestampMs: 0, visibleText: ["אפס"], actionType: "navigate" }),
+          state({ timestampMs: 3000, visibleText: ["אחת"], actionType: "tap" }),
+          state({ timestampMs: 6000, visibleText: ["שתיים"], actionType: "type" }),
+          state({ timestampMs: 9000, visibleText: ["סוף"], actionType: "result" }),
+        ],
+      })
+      .where(eq(dbSchema.demoAnalyses.id, analysis.id));
+    const inserted = await db
+      .insert(dbSchema.demoStepPlans)
+      .values({
+        demoId: demo.id,
+        analysisId: analysis.id,
+        status: "ready",
+        steps: [
+          {
+            sourceIndex: 1,
+            label: "כיתוב ראשון",
+            timestampMs: 3000,
+            actionType: "tap",
+            durationMs: 3000,
+            offScreenWords: ["ראשון"],
+          },
+          {
+            sourceIndex: 2,
+            label: "כיתוב אמצעי",
+            timestampMs: 6000,
+            actionType: "type",
+            durationMs: 3000,
+            offScreenWords: ["אמצעי"],
+          },
+          {
+            sourceIndex: 3,
+            label: "כיתוב אחרון",
+            timestampMs: 9000,
+            actionType: "result",
+            durationMs: 3000,
+            offScreenWords: ["אחרון"],
+          },
+        ],
+      })
+      .returning();
+    const marks = (steps: unknown) =>
+      planStepsSchema.parse(steps).map((s) => [s.sourceIndex, s.offScreenWords]);
+
+    // Delete the middle step; 1 and 3 are untouched and keep THEIR OWN marks.
+    const afterDelete = await updatePlanSteps(db, {
+      planId: inserted[0]!.id,
+      steps: [
+        { sourceIndex: 1, label: "כיתוב ראשון" },
+        { sourceIndex: 3, label: "כיתוב אחרון" },
+      ],
+    });
+    expect(marks(afterDelete.steps)).toEqual([
+      [1, ["ראשון"]],
+      [3, ["אחרון"]],
+    ]);
+
+    // Now rewrite step 3's label: its marks are the customer's problem no
+    // longer, step 1's are untouched.
+    const afterEdit = await updatePlanSteps(db, {
+      planId: inserted[0]!.id,
+      steps: [
+        { sourceIndex: 1, label: "כיתוב ראשון" },
+        { sourceIndex: 3, label: "כיתוב אחר לגמרי" },
+      ],
+    });
+    expect(marks(afterEdit.steps)).toEqual([
+      [1, ["ראשון"]],
+      [3, []],
+    ]);
+  });
+
   it("approve is the gate; editing an approved plan forks a fresh unapproved row", async () => {
     const approved = await approvePlan(db, planId);
     expect(approved.approvedAt).not.toBeNull();
@@ -911,6 +998,21 @@ describe("findOffScreenWords (the provenance highlight, deterministic)", () => {
     // A content word absent from the screen, the questionnaire and the
     // description is marked; the additions widen nothing else.
     expect(flagged("הפרטים של פרויקט")).toEqual(["הפרטים"]);
+  });
+
+  it("a verb of understanding is a claim — בין is not a function word, דרך is", () => {
+    // "בין" was a member for one commit (a4c1339) and came back off: it
+    // admits "הבין"/"מבין" by prefix-stripping, and a claim that the product
+    // UNDERSTOOD something is exactly the class this highlight exists for.
+    expect(flagged("הבין שמירה")).toEqual(["הבין"]);
+    expect(flagged("מבין פרויקט")).toEqual(["מבין"]);
+    // The price of that: the genuine preposition is marked too, which under
+    // decision 0049 is an amber mark and not a rejection.
+    expect(flagged("בין שמירה לפרויקט")).toEqual(["בין"]);
+    // "דרך" stays — "הדרך"/"בדרך" say how something is done, never what the
+    // product can do, so neither needs the screen to back it.
+    expect(flagged("שמירה דרך פרויקט")).toEqual([]);
+    expect(flagged("הדרך לפרויקט")).toEqual([]);
   });
 
   it("morphology is still not matched — a claim and a plural stay flagged", () => {
