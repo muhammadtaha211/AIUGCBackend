@@ -286,7 +286,8 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   decision 2026-09-16, [vault 0049](vault/decisions/0049-audio-preview-attempt-cap-back-to-20.md),
   superseding [vault 0047](vault/decisions/0047-audio-preview-attempt-cap-moves-to-50.md): Service B
   is an occasional format, a good voice needs 2–3 retries rather than 50, and the 50 was reasoned
-  rather than measured. **0040 is written and NOT pushed — the live row still reads 50.**
+  rather than measured. **0040 was applied to production 2026-09-16** — read back through the code's
+  own parse as the number 20, with a before-read of 50 proving its guard matched.
   **Reasoned, not measured** — in both directions; no usage data was ever consulted. Revisit only
   with real `audio_renders` counts once billing is wired. Charging credits per preview was considered
   and rejected in 0047, and that ruling stands.

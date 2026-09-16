@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-16
-method: "Founder decision in chat, 2026-09-16. Reasoned, explicitly NOT measured — no query was run against audio_renders or usage_events, and no account has ever been observed hitting 20 or 50. Written as supabase/migrations/0040_audio_preview_cap_back_to_20.sql and NOT pushed: production still holds 50 until the founder gives an explicit go for that one push. Money arithmetic read from supabase/migrations/0018_per_account_caps.sql:11-13 (25000 chars/24h = ~7.50 ILS/day at 30 agorot/1k chars) and packages/core/src/pipelines/tts.ts:26-32, which carries TTS_COST_AGOROT_PER_1K_CHARS = 30 and reconciles it against ElevenLabs' $0.10/1k at USD/ILS 3.00 (founder-confirmed 2026-08). The ~375-char script length is the founder's estimate and is NOT measured; no average-script-length fact exists in the vault. Code read at 8624ab1: packages/core/src/pipelines/tts.ts:75-94 (the two ceilings, both keyed on the owner account); supabase/migrations/0001_extras_and_seed.sql:47 (the '20' seed a fresh database replays); supabase/migrations/0038_audio_preview_limit_50.sql (the unconditional UPDATE this one guards against); supabase/migrations/0031_seed_unseeded_config.sql (the guard pattern copied); packages/core/test/migrations.test.ts and test/helpers/pglite.ts (the PGlite replay that proves the chain lands on 20)."
+method: "Founder decision in chat, 2026-09-16. Reasoned, explicitly NOT measured — no query was run against audio_renders or usage_events, and no account has ever been observed hitting 20 or 50. Written as supabase/migrations/0040_audio_preview_cap_back_to_20.sql and APPLIED to production 2026-09-16 on the founder's explicit instruction for that one push; read-back through getConfigValue(db,'audio_preview_daily_limit',z.number().int()) returned 50 BEFORE (proving the guard's precondition) and 20 AFTER, ledger 41 rows 0000-0040 no gaps, no repair needed. Money arithmetic read from supabase/migrations/0018_per_account_caps.sql:11-13 (25000 chars/24h = ~7.50 ILS/day at 30 agorot/1k chars) and packages/core/src/pipelines/tts.ts:26-32, which carries TTS_COST_AGOROT_PER_1K_CHARS = 30 and reconciles it against ElevenLabs' $0.10/1k at USD/ILS 3.00 (founder-confirmed 2026-08). The ~375-char script length is the founder's estimate and is NOT measured; no average-script-length fact exists in the vault. Code read at 8624ab1: packages/core/src/pipelines/tts.ts:75-94 (the two ceilings, both keyed on the owner account); supabase/migrations/0001_extras_and_seed.sql:47 (the '20' seed a fresh database replays); supabase/migrations/0038_audio_preview_limit_50.sql (the unconditional UPDATE this one guards against); supabase/migrations/0031_seed_unseeded_config.sql (the guard pattern copied); packages/core/test/migrations.test.ts and test/helpers/pglite.ts (the PGlite replay that proves the chain lands on 20)."
 source: founder + code
 supersedes: "[[0047-audio-preview-attempt-cap-moves-to-50]]"
 ---
@@ -110,28 +110,45 @@ run rather than assumed.
   value the product ran on from `0001` until 2026-09-13 without a single observed complaint.
 - **Wait for measured data before moving anything.** Rejected: that leaves the reasoned-but-wrong 50
   live in the meantime. Going back to 20 costs one guarded UPDATE and is itself reversible.
-- **Back to 20, guarded, migration written and not pushed.** Chosen.
+- **Back to 20, guarded, in a migration.** Chosen — and applied to production the same day.
 - **Retro-edit 0038 or delete it.** Never on the table. 0038 is applied to production; the record of
   what was believed on 2026-09-13 and why is the thing the vault exists to keep.
 
-## Status — WRITTEN, NOT PUSHED
+## Status — APPLIED 2026-09-16
 
-The migration exists in the repo and is **not applied**. Production still holds **50** until the
-founder gives an explicit go for that one push (the CLAUDE.md migration gate). Until then
-[[app-config-live-state]] and `scripts/verify-migration-ledger.sql` §0038 correctly say 50 — they
-describe the live database, not the repo, and must not be edited ahead of the push. Same for
-[[0040-the-hard-ceiling-moves-to-the-providers]]'s cap table. When it is pushed: read back through
-`getConfigValue(db, "audio_preview_daily_limit", z.number().int())`, not a raw `SELECT` — a raw
-select cannot tell the number `20` from the JSON string `"20"`, and only the second one fails, at a
-customer's next preview. No worker restart and no deploy are needed either way: `requestAudio` reads
-the row live on every call.
+The migration was **applied to production the same day**, on the founder's explicit instruction for
+that one push (the CLAUDE.md migration gate). Ledger: **41 rows, 0000–0040, no gaps, nothing
+unapplied, no repair needed** — `db push` recorded the version itself, the seventh time running.
+
+**A guarded UPDATE needs a before-read, and that is new for this project.** The six previous pushes
+were unconditional, so "it applied" and "the value moved" were the same statement. 0040's
+`AND value = '50'::jsonb` breaks that: had the row drifted, the migration would have matched nothing,
+exited 0, printed the same output and still recorded its version — the ledger would say applied and
+the cap would still be 50. So the row was read **before** the push through
+`getConfigValue(db, "audio_preview_daily_limit", z.number().int())` and returned **50**, the guard's
+precondition exactly; and **after**, the same way, returning **20**. Both via
+`packages/core/.work/readback-0040.ts`. A raw `SELECT` would not have separated the number `20` from
+the JSON string `"20"` — the one way this row can be wrong, and it only surfaces at a customer's next
+preview.
+
+That before-read also settles something the repo could not otherwise know: **nobody had hand-edited
+this row between 2026-09-13 and 2026-09-16**, which is a live risk on this project
+([[prod-rows-hand-edited]]).
+
+**No worker restart and no deploy were needed** — `requestAudio` reads the row live on every call, so
+the cap was 20 for the next customer preview the moment the push exited.
+
+One limit on the ledger row worth stating: `scripts/verify-migration-ledger.sql`'s `0038+0040` row
+asserts the value is 20, and **0001 seeds 20 as well** — so it reads true both on a database where
+the pair ran and on one where neither did. `migration list` is what distinguishes those; the
+before-read above is what closes the gap for this database.
 
 ## Related
 
 - [[0047-audio-preview-attempt-cap-moves-to-50]] — superseded by this note; its ruling 2 (no credit
   charge for previews) survives intact
 - [[0040-the-hard-ceiling-moves-to-the-providers]] — the cap design this sits inside; its cap table
-  still reads 50 and is correct until 0040 is pushed
-- [[app-config-live-state]] — the live row (**50**, and staying 50 until the push)
+  is back to 20 and carries both amendments
+- [[app-config-live-state]] — the live row, re-measured at **20** and updated in this commit
 - [[token-and-money-budgets]] — the cap table and the read-back rule
 - [`docs/05-billing.md`](../../05-billing.md) §"Quotas and caps" — amended in the same commit

@@ -168,10 +168,12 @@ The surfaces:
   six, 2.1× a clean run, and [[analyze-demo-cost]] attributes that premium to a worker crash and a
   lease sweep, not to analysis. Never quote a single figure without the range.
 - **Copy generation**, including `plan_demo_steps` retry rounds.
-- **Audio previews** — free, capped at ~~20/24h~~ **50/24h** (`audio_preview_daily_limit`, an
+- **Audio previews** — free, capped at **20/24h** (`audio_preview_daily_limit`, an
   `app_config` row, not a code constant), counting **attempts** in `audio_renders` over 24h and keyed
   on the **owner account** rather than the business, because business creation is self-serve and
-  unlimited. **AMENDED 2026-09-13**: the cap moved to 50 —
+  unlimited. **AMENDED 2026-09-13 AND AGAIN 2026-09-16**: the cap moved to 50 and then straight back to 20
+  ([[0049-audio-preview-attempt-cap-back-to-20]], migration 0040, applied 2026-09-16), so the figure
+  above is the ORIGINAL one again. The 2026-09-13 reasoning, kept below for the record, was —
   `supabase/migrations/0038_audio_preview_limit_50.sql`, written and **applied to production** that
   same day, read back through the code's own parse as the number 50. The credit question this section defers
   was also answered for this one surface: **charging credits per preview was considered and

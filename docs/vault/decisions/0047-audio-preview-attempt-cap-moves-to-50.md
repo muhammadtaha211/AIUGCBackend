@@ -13,8 +13,9 @@ source: founder + code
 > needs 2–3 retries rather than 50, and the 50 below was reasoned rather than measured — as this
 > note says of itself, twice. **Ruling 2 survives intact**: previews are still free and still not
 > credit-debited, and the three reasons for that are unchanged. Everything below is kept verbatim as
-> the record of what was believed on 2026-09-13 and why. The live row is still 50 —
-> `supabase/migrations/0040_audio_preview_cap_back_to_20.sql` is written and **not pushed**.
+> the record of what was believed on 2026-09-13 and why. **The live row is 20 again**:
+> `supabase/migrations/0040_audio_preview_cap_back_to_20.sql` was applied to production 2026-09-16,
+> so the 50 this note argues for stood for three days.
 
 ## The decision
 

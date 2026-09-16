@@ -116,8 +116,9 @@ Everything in this section is **founder-reported from a dashboard**, not observe
 unless a line says otherwise.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0039 applied, ledger clean, 40 rows, no gaps, nothing pending** — **0039 was
-pushed 2026-09-13** on the founder's explicit instruction for that one push, by the session that
+**Migrations 0000–0040 applied, ledger clean, 41 rows, no gaps, nothing pending** — **0040 was
+pushed 2026-09-16** (see the audio-preview paragraph below for the before/after read-back a guarded
+migration needs), and **0039 was pushed 2026-09-13** on the founder's explicit instruction for that one push, by the session that
 wrote it; `db push` recorded it itself, the sixth time running that no `migration repair` was
 needed. The read-back went through `getConfigValue(db, 'credit_costs', creditCostsSchema)` — the
 exact call every quote path makes — and returned `a_steps_credits` **3** and
@@ -134,13 +135,17 @@ running that the prediction held). Proof block: `scripts/verify-migration-ledger
 **0038 raised `audio_preview_daily_limit` 20 → 50** ([[0047-audio-preview-attempt-cap-moves-to-50]],
 reasoned not measured); the live row was read back through the code's own parse as the number 50, and
 no restart or deploy was needed because `requestAudio` reads it live on every call.
-**0040 is WRITTEN AND NOT PUSHED: it takes `audio_preview_daily_limit` back 50 → 20**
-([[0049-audio-preview-attempt-cap-back-to-20]], founder decision 2026-09-16, superseding 0047 —
-reasoned not measured in both directions). **The live row still reads 50** until the founder gives an
-explicit go for that one push; the ledger above is still clean at 0000–0039. The UPDATE is guarded on
-`value = '50'` (0031's pattern, not 0038's unconditional one), so it is a no-op if the row has moved
-— read back through `getConfigValue(db, 'audio_preview_daily_limit', z.number().int())` after the
-push, never a raw `SELECT`. `per_account.tts_chars` is untouched.
+**0040 REVERSED that on 2026-09-16: `audio_preview_daily_limit` is back to 20**
+([[0049-audio-preview-attempt-cap-back-to-20]], founder decision that day, superseding 0047 —
+reasoned not measured in both directions). Applied to production on the founder's explicit
+instruction for that one push, so the ledger is now **41 rows, 0000–0040, no gaps**. Its UPDATE is
+**guarded** on `value = '50'` (0031's pattern, not 0038's unconditional one), which made a
+**before-read** necessary for the first time on this project: a guard that matches nothing exits 0,
+prints the same output and still records its version, so the ledger would read applied while the cap
+had not moved. Before-read returned **50**, after-read **20**, both through
+`getConfigValue(db, 'audio_preview_daily_limit', z.number().int())` — never a raw `SELECT`, which
+cannot separate the number from the JSON string `"20"`. No restart or deploy needed.
+`per_account.tts_chars` is untouched.
 **The ledger file's own expected counts were measured against production for the first time on
 2026-09-13: 27 true, 1 false, 1 NULL of 29 structural rows.** The single false is **0022**, which
 asserts platform `gpu_seconds = 7200` — a value 0036 raised to 32000 on 2026-09-11 without anyone
