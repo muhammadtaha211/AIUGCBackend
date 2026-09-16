@@ -94,6 +94,11 @@ the `content_policy_flag` event `contentPolicyCheck` already wrote itself.
   `scripts` row, and are not sent. They are derived from the customer's own screen recording, which
   is 0041's argument for why they matter less — but they are customer-editable burned text and this
   gate does not see them.
+  **2026-09-15:** still not sent to the classifier. The per-word provenance gate that used to fail a
+  plan whose label carried a word not on the screen is gone
+  ([[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]]); the highlight it left behind —
+  the off-screen words marked in the editor for the customer to confirm — is now the only control on
+  label text. Recorded as a remaining gap; the classifier input was deliberately not extended.
 - **The classifier call is not itself capped.** Nothing in `pipelines/copy.ts` calls `assertBudget`
   (`docs/04-integrations.md:98-103` says so), and this gate adds one more uncapped paid Claude call
   on the confirm path. It is one call per confirm, not a loop, so it adds no runaway surface — but

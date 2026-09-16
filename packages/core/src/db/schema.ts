@@ -209,7 +209,11 @@ export const demoStepPlans = pgTable(
       .notNull()
       .references(() => demoAnalyses.id),
     status: stepPlanStatus("status").notNull().default("pending"),
-    // PlanStep[]: { timestampMs, actionType, label, sourceIndex, durationMs }
+    // PlanStep[]: { timestampMs, actionType, label, sourceIndex, durationMs,
+    // offScreenWords? } — offScreenWords is the label-provenance highlight
+    // (0049): the model's words that came from none of the screen, the
+    // questionnaire or the demo description. Absent on rows written before
+    // it, [] on every human-edited plan. No migration: jsonb absorbs it.
     steps: jsonb("steps"),
     // { timestampMs, whatISaw, whyItMightMatter }[]
     unexplainedMoments: jsonb("unexplained_moments"),
@@ -227,7 +231,8 @@ export const demoStepPlans = pgTable(
     // string[][] — per model call, the violations findPlanViolations returned
     // AFTER that call (last entry empty on success). Written on success AND
     // failure: the per-rule/per-version failure rate is computed from this.
-    // (0029)
+    // (0029) Shape rules only since 0049: label provenance never drives a
+    // round any more, it lands on each step's offScreenWords instead.
     retryViolations: jsonb("retry_violations"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

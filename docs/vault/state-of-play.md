@@ -229,6 +229,36 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
 
 ## The queue
 
+0. **The label provenance rule is a highlight, not a gate — BUILT and PUSHED 2026-09-15 on
+   `labels/highlight-not-gate` (`f5a5663` the census, `a4c1339` the list widening, `4a29e92` the
+   highlight, plus the docs sweep; PR not opened, NOT merged, NOT deployed).** Decided in chat on
+   2026-09-15 and recorded in
+   [[0049-the-label-provenance-rule-is-a-highlight-not-a-gate]]; the measurement it rests on is
+   [[label-rule-families-2026-09-15]] (every recorded retry round was provenance — 25 of 25 strings,
+   3 of 3 rows). The remaining steps are the founder's, in this order:
+   - **Review the decision note** — in particular its Legal section, which is REASONED ("no new
+     exposure relative to the three ungated copy paths") and unconfirmed by counsel — and the
+     unattended run's own review list in the branch's `.work/label-rule-progress.md` (gitignored;
+     the final summary is at its head). The one item there that was for the founder specifically —
+     `בין` among the Task 2 list additions, which admitted `מבין`/`הבין` by prefix-stripping — is
+     CLOSED: `בין` came back off `FUNCTION_WORDS` on 2026-09-16, because a verb of understanding is
+     a product-capability claim, the class the highlight exists to surface. `דרך` stays.
+   - **Merge to `main`.** Vercel deploys `apps/web` on its own; the new field is harmless on either
+     side of the box's deploy (an old worker never writes it, an old web ignores it).
+   - **Deploy the box as ONE step, gated on nothing running** — the only real hazard is a
+     `git pull` without a restart: `prompts/plan_demo_steps/v14.md` goes live per call the moment
+     it lands, and the OLD worker code would still fail plans on the provenance rule v14 no longer
+     warns about ([[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]]):
+     `select id, type, status, locked_by, locked_at from jobs where status = 'running';` → empty,
+     then `git pull && pnpm install && sudo systemctl restart aiugc-worker`, then
+     `git log -1 --oneline` on the box shows the merge commit. v14 adds no variable; the restart
+     is for the core code. No migration, no config row.
+   - **Confirm the first live plan after that** stamps `plan_demo_steps@v14` and carries
+     `offScreenWords` on its steps:
+     `select prompt_version, steps->0->'offScreenWords' from demo_step_plans order by created_at desc limit 1;`
+   - **Hand counsel the T9 line.** `docs/legal-review.md` T9's "Counsel to confirm" column now
+     ends: step captions may carry model-written words not taken from the recording, shown to the
+     customer as unverified before approval. The open question there is unchanged and unanswered.
 1. **Correct the `רגע` ban rule — DECIDED and BUILT 2026-09-11 on `fix/rega-ban-rule` (`ecf50c5`,
    pushed, PR not opened). What remains is the founder's: open the PR, run the prod CLI step, and
    deploy/restart the box.** Kept here until all three are done.
@@ -290,7 +320,7 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
 5. **Ceiling alert + `vat_rate` config — build with the gateway adapter, not before; spec in
    [[0046-billing-ships-as-osek-patur]].**
 
-Item 1 is a live production copy-quality bug and outranks everything. Item 2 is the only one that
+Item 0 is waiting on the founder alone (review, merge, box deploy, counsel). Item 1 is a live production copy-quality bug and outranks everything else. Item 2 is the only one that
 can surface a security defect. 3–4 are cite corrections, ordered by how likely a reader is to act
 on the wrong thing. There is no open code defect in this queue.
 

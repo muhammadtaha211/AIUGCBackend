@@ -19,8 +19,11 @@ import {
   MAX_LABEL_CHARS,
   MAX_LABEL_WORDS,
   MIN_LABEL_WORDS,
+  normalizeWord,
   PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
+  splitWords,
+  tokenizeWords,
   totalRuntimeMs,
 } from "../plan-format";
 import { generateObject } from "../providers/anthropic";
@@ -37,7 +40,15 @@ import {
 // import them without dragging this module's db/fs/provider imports into a
 // browser bundle. Kept re-exported here because every server caller already
 // imports them from here.
-export { MAX_LABEL_CHARS, PLAN_SKIP_SCREEN_KINDS, readTimeMs, totalRuntimeMs };
+export {
+  MAX_LABEL_CHARS,
+  normalizeWord,
+  PLAN_SKIP_SCREEN_KINDS,
+  readTimeMs,
+  splitWords,
+  tokenizeWords,
+  totalRuntimeMs,
+};
 
 function isSkippedKind(state: AnalysisState): boolean {
   return state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind);
@@ -57,6 +68,12 @@ export const planStepSchema = z.object({
   label: z.string(),
   sourceIndex: z.number(),
   durationMs: z.number(),
+  /** The label's own tokens that came from none of the state's visibleText,
+   *  the questionnaire or the demo description — findOffScreenWords, computed
+   *  once on the accepted model plan and shown to the customer as unverified
+   *  (decision 0049). Optional so every jsonb row written before it parses;
+   *  [] on every human-edited plan. */
+  offScreenWords: z.array(z.string()).optional(),
 });
 export type PlanStep = z.infer<typeof planStepSchema>;
 
@@ -226,7 +243,7 @@ function llmCostAgorot(inputTokens: number, outputTokens: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Deterministic label-word enforcement (the anti-fabrication rule)
+// Deterministic label-word provenance (the highlight — decision 0049)
 // ---------------------------------------------------------------------------
 
 /** Single-letter prefixes Hebrew glues onto content words (ו/ה/ב/ל/מ/ש/כ). */
@@ -295,6 +312,38 @@ const FUNCTION_WORDS = new Set([
   // "שלהם" passed by double-stripping down to "הם". An asymmetry nobody chose.
   "שלו",
   "שלה",
+  // Bare prepositions and conjunctions. Same membership test as everything
+  // above — a word that carries no product claim — and none of these can:
+  // "according to", "without", "in order to", "via", "opposite", "next to",
+  // "at", "for", "because of", "like", "out of", "but". The list had "לפני"
+  // and not "לפי", and "לפי" false-rejected a live plan three rounds running
+  // on 2026-09-14/15 (docs/vault/facts/label-rule-families-2026-09-15.md) —
+  // the only preposition ever flagged.
+  // "בלי" already passed by stripping ב down to "לי"; listing it makes that
+  // direct instead of accidental. Prefix-stripping exposure, written down
+  // rather than assumed away: "הדרך"/"בדרך" strip to "דרך" and pass too —
+  // the same slack window "כלי" → "לי" and "בעל" → "על" already open, and
+  // how something is done is not a claim the screen would need to back.
+  // "בין" ("between") was a member for one commit (a4c1339) and came back
+  // off: it admits "הבין"/"מבין" by that same stripping, and a verb of
+  // UNDERSTANDING is a product-capability claim — the exact class this
+  // highlight exists to surface. The cost is real and accepted: the genuine
+  // preposition, and its "ובין"/"לבין" forms, is now marked when the screen
+  // does not carry it. An amber mark is the right price for not waving
+  // through "הבין את הצורך". (Longer forms were never exempt either way —
+  // "מבינים" strips to "בינים", "הבינו" to "בינו", neither of them a member.)
+  "לפי",
+  "בלי",
+  "כדי",
+  "דרך",
+  "מול",
+  "ליד",
+  "אצל",
+  "בשביל",
+  "בגלל",
+  "כמו",
+  "מתוך",
+  "אבל",
 ]);
 
 /**
@@ -340,39 +389,33 @@ const INSTRUCTIONAL_VERBS = new Set([
   // "היכנסו" is: stripping ה leaves "תחילו", which is not the base.
   "התחילו",
   "התחלו",
+  // The present-tense masculine-plural NARRATION forms of exactly the verbs
+  // above — "you enter, you click, you choose" as a friend narrating the
+  // screen says it — and nothing else: a verb whose imperative is not listed
+  // does not get its present tense here either (the list stays a list, not a
+  // morphology rule). They are as claim-free as the imperatives; v13 warned
+  // the model these "are NOT on the list", which cost a corrective call every
+  // time it reached for the natural form. One per imperative, in list order.
+  "נכנסים", // כנסו / היכנסו / הכנסו
+  "לוחצים", // לחצו
+  "בוחרים", // בחרו
+  "מעלים", // העלו
+  "פותחים", // פתחו
+  "מקלידים", // הקלידו
+  "כותבים", // כתבו
+  "גוררים", // גררו
+  "מסמנים", // סמנו
+  "ממלאים", // מלאו
+  "שולחים", // שלחו
+  "מחפשים", // חפשו
+  "שומרים", // שמרו
+  "גוללים", // גללו
+  "מאשרים", // אשרו / אישרו
+  "מתחילים", // התחילו / התחלו
 ]);
 
-/**
- * Edge punctuation stripped before matching; case folded for Latin. Both sides
- * of every comparison go through here: NFC first, Hebrew geresh/gershayim
- * unified with their ASCII lookalikes (לו״ז vs לו"ז), combining marks (niqqud)
- * dropped — screen OCR and model labels disagree on all three.
- */
-function normalizeWord(raw: string): string {
-  return raw
-    .normalize("NFC")
-    .replace(/׳/g, "'")
-    .replace(/״/g, '"')
-    .replace(/\p{M}+/gu, "")
-    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")
-    .toLowerCase();
-}
-
-/**
- * Split into comparable word tokens: on anything that is not a letter, digit
- * or an in-word quote mark (kept so acronyms like לו"ז survive as one token).
- * Whitespace-only splitting left ·/־/– glued to neighbouring words whenever
- * the OCR dropped a space.
- */
-function tokenizeWords(text: string): string[] {
-  // \p{M} keeps combining niqqud attached to its letter; normalizeWord then
-  // strips it from the finished token.
-  return text
-    .normalize("NFC")
-    .split(/[^\p{L}\p{M}\p{N}'"׳״]+/u)
-    .map(normalizeWord)
-    .filter(Boolean);
-}
+// normalizeWord / tokenizeWords / splitWords live in ../plan-format (imported
+// above): the editor's marks must find the same tokens this file flags.
 
 /**
  * A word plus its forms with up to two leading single-letter prefixes removed
@@ -435,23 +478,93 @@ function dupRunIndexes(timeline: AnalysisState[], index: number): number[] {
 }
 
 /**
+ * The provenance HIGHLIGHT (decision 0049): per step, the label's own tokens
+ * that come from none of three sources — the selected state's visibleText
+ * (pooled across its sameStateAsPrevious run), the questionnaire, or the
+ * customer's demo description (customer-authored claims, the demo_notes
+ * precedent, so the note the upload step asks for genuinely widens what a
+ * caption may say) — after the same three exemptions the old gate had:
+ * function words, instruction verbs, and a prefix letter left standalone by
+ * punctuation ("ל־BotTeacher" splits into ל + botteacher). Variants, not the
+ * exact word, on the exemptions too: Hebrew glues ו/ש/כ onto function words
+ * and verbs constantly ("וגם", "ולחצו"), and a mark there would be noise.
+ *
+ * Computed ONCE on the accepted plan and stored on each step as
+ * offScreenWords, so the editor can show the customer which words did not
+ * come from their recording. It never fails a plan and never costs a
+ * corrective call: every retry round ever recorded was this rule and nothing
+ * else (docs/vault/facts/label-rule-families-2026-09-15.md). `words` are the
+ * tokens AS WRITTEN (splitWords), so the editor marks them by exact match;
+ * normalization is for matching only. Human-edited labels never pass through
+ * here — updatePlanSteps writes [].
+ */
+export function findOffScreenWords(
+  steps: { sourceIndex: number; label: string }[],
+  timeline: AnalysisState[],
+  questionnaire: Questionnaire,
+  demoDescription?: string | null,
+): { index: number; sourceIndex: number; words: string[] }[] {
+  const allowedQuestionnaire = expandToVariantSet([
+    ...questionnaireWords(questionnaire),
+    ...tokenizeWords(demoDescription ?? ""),
+  ]);
+  return steps.map((step, index) => {
+    // A sourceIndex outside the timeline has no screen to match against;
+    // findPlanViolations rejects it before the plan can be accepted.
+    const allowedState = timeline[step.sourceIndex]
+      ? expandToVariantSet(
+          dupRunIndexes(timeline, step.sourceIndex).flatMap((j) =>
+            timeline[j]!.visibleText.flatMap(tokenizeWords),
+          ),
+        )
+      : new Set<string>();
+    const words: string[] = [];
+    for (const raw of splitWords(step.label)) {
+      const word = normalizeWord(raw);
+      if (!word) continue;
+      const variants = wordVariants(word);
+      if (variants.some((v) => FUNCTION_WORDS.has(v))) continue;
+      if (variants.some((v) => INSTRUCTIONAL_VERBS.has(v))) continue;
+      if (word.length === 1 && HEBREW_PREFIXES.has(word)) continue;
+      if (variants.some((v) => allowedState.has(v) || allowedQuestionnaire.has(v))) continue;
+      words.push(raw);
+    }
+    return { index, sourceIndex: step.sourceIndex, words };
+  });
+}
+
+/** The assembled steps with their offScreenWords attached — the one place a
+ *  model plan's highlight is computed. assembleSteps re-sorts by timestamp,
+ *  so the highlight runs on the assembled order and lines up by position. */
+function withOffScreenWords(
+  assembled: PlanStep[],
+  timeline: AnalysisState[],
+  questionnaire: Questionnaire,
+  demoDescription?: string | null,
+): PlanStep[] {
+  const flagged = findOffScreenWords(assembled, timeline, questionnaire, demoDescription);
+  return assembled.map((step, i) => ({ ...step, offScreenWords: flagged[i]!.words }));
+}
+
+/**
  * Every violation in a model-proposed plan, as model-facing English strings.
- * Empty array = valid. Deterministic on purpose: the anti-fabrication rule is
+ * Empty array = valid. Deterministic on purpose: the plan-shape rules are
  * enforced here, not just requested in the prompt. This constrains the MODEL —
- * user-edited labels never pass through it. `shape` adds the plan-shape rules
- * the generation path enforces on top of the per-step rules: the video must
- * end on the success state (when the timeline offers a selectable one and
- * `notes` does not explain why it cannot); a below-minimum plan is a violation
- * unless the timeline itself cannot offer that many selectable states; no two
- * selected states may sit closer together than one step is long; and, when
- * `shape.runtime` is supplied, the assembled steps must total inside the
- * format's band. Human edits deliberately skip all four — deleting steps just
- * makes the video shorter.
+ * user-edited labels never pass through it. Label PROVENANCE is not in here
+ * any more: findOffScreenWords computes it and the editor shows it (decision
+ * 0049). `shape` adds the plan-shape rules the generation path enforces on
+ * top of the per-step rules: the video must end on the success state (when
+ * the timeline offers a selectable one and `notes` does not explain why it
+ * cannot); a below-minimum plan is a violation unless the timeline itself
+ * cannot offer that many selectable states; no two selected states may sit
+ * closer together than one step is long; and, when `shape.runtime` is
+ * supplied, the assembled steps must total inside the format's band. Human
+ * edits deliberately skip all four — deleting steps just makes the video
+ * shorter.
  */
 export function findPlanViolations(
   steps: { sourceIndex: number; label: string }[],
   timeline: AnalysisState[],
-  questionnaire: Questionnaire,
   maxSteps: number,
   shape?: {
     minSteps: number;
@@ -462,11 +575,6 @@ export function findPlanViolations(
      *  DEFAULT_STEP_MS is a number the video never shows. */
     runtime?: { durations: StepDurationConfig; minMs: number; maxMs: number };
   },
-  /** The customer's own note on what the footage shows (demos.description).
-   *  Its words are legal label words for the same reason questionnaire words
-   *  are — customer-authored claims, the demo_notes precedent — so the note
-   *  the upload step asks for genuinely widens what a caption may say. */
-  demoDescription?: string | null,
 ): string[] {
   const violations: string[] = [];
   if (steps.length === 0) {
@@ -477,10 +585,6 @@ export function findPlanViolations(
     violations.push(`the plan has ${steps.length} steps — the maximum is ${maxSteps}`);
   }
   const seen = new Set<number>();
-  const allowedQuestionnaire = expandToVariantSet([
-    ...questionnaireWords(questionnaire),
-    ...tokenizeWords(demoDescription ?? ""),
-  ]);
 
   steps.forEach((step, i) => {
     if (!Number.isInteger(step.sourceIndex) || !timeline[step.sourceIndex]) {
@@ -504,8 +608,8 @@ export function findPlanViolations(
     if (step.label.length > MAX_LABEL_CHARS) {
       violations.push(`step ${i}: label is over ${MAX_LABEL_CHARS} characters`);
     }
-    // The word cap counts what the viewer sees (whitespace words); the content
-    // check below works on normalized tokens instead.
+    // The word cap counts what the viewer sees (whitespace words);
+    // findOffScreenWords works on normalized tokens instead.
     const words = step.label.split(/\s+/).map(normalizeWord).filter(Boolean);
     if (words.length === 0) {
       violations.push(`step ${i}: label is empty`);
@@ -513,31 +617,6 @@ export function findPlanViolations(
     }
     if (words.length > MAX_LABEL_WORDS) {
       violations.push(`step ${i}: label "${step.label}" is over ${MAX_LABEL_WORDS} words`);
-    }
-    const allowedState = expandToVariantSet(
-      dupRunIndexes(timeline, step.sourceIndex).flatMap((j) =>
-        timeline[j]!.visibleText.flatMap(tokenizeWords),
-      ),
-    );
-    for (const word of tokenizeWords(step.label)) {
-      // Variants, not the exact word: Hebrew glues ו/ש/כ onto function words
-      // constantly ("וגם", "שכבר") and a false reject here costs a paid
-      // corrective re-request — or the whole plan on the second offence.
-      if (wordVariants(word).some((v) => FUNCTION_WORDS.has(v))) continue;
-      // Same variant matching, same reason: "ולחצו" must not cost a paid
-      // corrective re-request over a glued ו.
-      if (wordVariants(word).some((v) => INSTRUCTIONAL_VERBS.has(v))) continue;
-      // A prefix letter left standalone by punctuation ("ל־BotTeacher" splits
-      // into ל + botteacher) carries no content — it cannot fabricate a claim.
-      if (word.length === 1 && HEBREW_PREFIXES.has(word)) continue;
-      const matches = wordVariants(word).some(
-        (v) => allowedState.has(v) || allowedQuestionnaire.has(v),
-      );
-      if (!matches) {
-        violations.push(
-          `step ${i}: label word "${word}" appears neither in state ${step.sourceIndex}'s visibleText nor in the questionnaire or the customer's demo description`,
-        );
-      }
     }
   });
 
@@ -774,19 +853,19 @@ export interface StepPlanDraft {
   promptVersion: string;
   /** Per model call, the violations found AFTER that call — last entry empty
    *  on success, [] under DRY_RUN (no calls). Persisted on the plan row so
-   *  the per-rule fix rate is measurable (0029). */
+   *  the per-rule fix rate is measurable (0029). Shape rules only since 0049:
+   *  label provenance never drives a round, it lands on each step's
+   *  offScreenWords instead. */
   retryViolations: string[][];
 }
 
 /** The customer-facing Hebrew for a validator failure, classified from the
  *  FINAL round's violations. Deliberately the whole scope — no per-violation
- *  translation layer: the two classes a customer can act on get actionable
- *  lines, everything else keeps the generic one. */
+ *  translation layer: the one class a customer can act on gets an actionable
+ *  line, everything else keeps the generic one. (The "add a short description"
+ *  line for label provenance went with the gate in 0049 — provenance can no
+ *  longer be a final-round violation.) */
 function violationCustomerMessage(finalRound: string[]): string {
-  if (finalRound.some((v) => v.includes("appears neither in state"))) {
-    // The fabrication class — the one the demo description directly widens.
-    return "לא הצלחנו לנסח כיתובים מהטקסט שמופיע בסרטון — הוסיפו תיאור קצר של מה רואים בסרטון ונסו שוב.";
-  }
   if (finalRound.some((v) => v.includes("screens are never steps"))) {
     return "התוכנית כללה מסכי טעינה או התחברות שלא נכנסים למודעה — נסו שוב, ואם זה חוזר צלמו קטע שמתמקד בשימוש במוצר עצמו.";
   }
@@ -1101,22 +1180,22 @@ export async function generateStepPlan(
     // writer chose. Holding a mechanical stub to a band that exists to size
     // AUTHORED Hebrew would mean tuning the stub, not the format. The band is
     // unit-tested directly and enforced on every model plan.
-    const violations = findPlanViolations(
-      canned.steps,
-      opts.timeline,
-      opts.questionnaire,
-      maxSteps,
-      {
-        minSteps,
-        notes: canned.notes,
-        minStepMs: durations.minMs,
-      },
-    );
+    const violations = findPlanViolations(canned.steps, opts.timeline, maxSteps, {
+      minSteps,
+      notes: canned.notes,
+      minStepMs: durations.minMs,
+    });
     if (violations.length > 0) {
       throw new Error(`dry-run plan violates its own rules: ${violations.join("; ")}`);
     }
     return {
-      steps: assembleSteps(canned.steps, opts.timeline, durations),
+      // The highlight rides along so the keyless shape matches live.
+      steps: withOffScreenWords(
+        assembleSteps(canned.steps, opts.timeline, durations),
+        opts.timeline,
+        opts.questionnaire,
+        opts.demoDescription,
+      ),
       unexplainedMoments: canned.unexplainedMoments,
       notes: canned.notes,
       promptVersion: "plan_demo_steps@dry-run",
@@ -1171,14 +1250,12 @@ export async function generateStepPlan(
   };
 
   const validate = (output: PlanOutput): string[] =>
-    findPlanViolations(
-      output.steps,
-      opts.timeline,
-      opts.questionnaire,
-      maxSteps,
-      { minSteps, notes: output.notes, minStepMs: durations.minMs, runtime },
-      opts.demoDescription,
-    );
+    findPlanViolations(output.steps, opts.timeline, maxSteps, {
+      minSteps,
+      notes: output.notes,
+      minStepMs: durations.minMs,
+      runtime,
+    });
 
   // "Minimal edits" matters: a from-scratch replan routinely fixes the named
   // violations while introducing brand-new ones (seen live: the retry swapped
@@ -1191,7 +1268,7 @@ export async function generateStepPlan(
       .map((v) => `- ${v}`)
       .join(
         "\n",
-      )}\n\nReturn the same plan with the minimal edits that fix every violation named above. For each flagged label word, replace it with words copied from that state's \`visibleText\` (or the questionnaire, or the customer's demo description) — do not paraphrase around it. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`;
+      )}\n\nReturn the same plan with the minimal edits that fix every violation named above. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`;
 
   let output = await callOnce(text);
   let violations = validate(output);
@@ -1210,7 +1287,13 @@ export async function generateStepPlan(
   }
 
   return {
-    steps: assembleSteps(output.steps, opts.timeline, durations),
+    // The provenance highlight, computed once on the accepted plan (0049).
+    steps: withOffScreenWords(
+      assembleSteps(output.steps, opts.timeline, durations),
+      opts.timeline,
+      opts.questionnaire,
+      opts.demoDescription,
+    ),
     unexplainedMoments: output.unexplainedMoments,
     notes: output.notes,
     promptVersion,
@@ -1399,8 +1482,14 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
  * Replace a plan's steps with the user's selection. The client sends only
  * {sourceIndex, label} — timestamp, actionType and duration are re-derived
  * server-side and the result re-sorted by timestamp: chronology is a property
- * of the format, not a client convention. Labels are NOT checked against
- * visibleText — the anti-fabrication rule constrains the model, not the human.
+ * of the format, not a client convention. Labels are NOT run through
+ * findOffScreenWords — the highlight is for the model's words. A step whose
+ * label the customer CHANGED stores offScreenWords: [] (the words are theirs
+ * now); a step whose label is still the model's keeps the marks the stored
+ * row carries, because approve is disabled while the draft is dirty, so every
+ * edit — or a delete, or an added step — forces a save before approval, and a
+ * save that wiped every mark would take the highlight away from the labels
+ * the customer never touched. An added step has no stored marks and gets [].
  *
  * Before approval the row mutates in place. Any edit to an APPROVED plan forks
  * a new row (renders reference plans by id, like audio pins its script), and
@@ -1446,7 +1535,18 @@ export async function updatePlanSteps(
     }
   }
 
-  const steps = assembleSteps(opts.steps, timeline, await stepDurations(db));
+  // The stored row's marks, by sourceIndex — carried only onto a step whose
+  // label is unchanged (trimmed, as assembleSteps stores it). A row from
+  // before 0049, or one whose steps fail to parse, carries none.
+  const stored = planStepsSchema.safeParse(plan.steps);
+  const storedBySource = new Map(
+    (stored.success ? stored.data : []).map((step) => [step.sourceIndex, step]),
+  );
+  const steps = assembleSteps(opts.steps, timeline, await stepDurations(db)).map((step) => {
+    const before = storedBySource.get(step.sourceIndex);
+    const unchanged = before !== undefined && before.label.trim() === step.label;
+    return { ...step, offScreenWords: unchanged ? (before.offScreenWords ?? []) : [] };
+  });
 
   const fork = async (): Promise<StepPlan> => {
     const inserted = await db
