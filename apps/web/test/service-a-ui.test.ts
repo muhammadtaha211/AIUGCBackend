@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEMO_MAX_DURATION_MS, DEMO_MIN_DURATION_MS } from "@aiugc/core";
 import { readTimeMs } from "@aiugc/core/plan-format";
 import {
   addWarning,
@@ -37,6 +38,8 @@ import {
   labelWordCount,
   labelWordWarning,
   marksAfterEdit,
+  MAX_DEMO_SECONDS,
+  MIN_DEMO_SECONDS,
   pickerPools,
   pinnedPlanFrom,
   planFailureNotice,
@@ -499,11 +502,21 @@ describe("client demo pre-checks", () => {
     expect(clientDemoFileError({ type: "image/png", size: 1000 })).toMatch(/MP4 או MOV/);
   });
 
-  it("gates duration to the ingest limits (8s-3min)", () => {
-    expect(demoDurationError(7.9)).toMatch(/8 שניות ל-3 דקות/);
+  it("gates duration to the ingest limits (8s-90s)", () => {
+    expect(demoDurationError(7.9)).toMatch(/8 שניות ל-90 שניות/);
     expect(demoDurationError(8)).toBeNull();
-    expect(demoDurationError(180)).toBeNull();
-    expect(demoDurationError(181)).toMatch(/8 שניות ל-3 דקות/);
+    expect(demoDurationError(90)).toBeNull();
+    expect(demoDurationError(91)).toMatch(/8 שניות ל-90 שניות/);
+  });
+});
+
+describe("the demo duration limits", () => {
+  // Two literals on purpose: core's are server-side ms, the web copy is
+  // seconds and ships in the client bundle (core's main entry cannot). The
+  // ingest probe is the only gate — this is what stops the two drifting.
+  it("match core's ingest gate exactly", () => {
+    expect(MIN_DEMO_SECONDS * 1000).toBe(DEMO_MIN_DURATION_MS);
+    expect(MAX_DEMO_SECONDS * 1000).toBe(DEMO_MAX_DURATION_MS);
   });
 });
 

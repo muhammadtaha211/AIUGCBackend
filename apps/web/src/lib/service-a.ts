@@ -13,7 +13,7 @@ import { ANALYSIS_PAGE_SIZE } from "./service-a-ui";
 // Demo direct upload (signed upload URL — bytes never pass through a route)
 // ---------------------------------------------------------------------------
 
-// 1GB: up to 3 minutes of phone screen recording. Uploads go straight to
+// 1GB: ample for a 90-second phone screen recording. Uploads go straight to
 // storage via signed URL, so no route body limit applies — but the Supabase
 // bucket's own file_size_limit must be raised to match (dashboard setting).
 export const MAX_DEMO_BYTES = 1024 * 1024 * 1024;

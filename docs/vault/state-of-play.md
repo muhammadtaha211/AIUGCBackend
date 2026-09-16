@@ -229,6 +229,10 @@ upload a custom app logo — it triggers brand review even with non-sensitive sc
 4. **Resend's transfer basis is an open question, not a resolved one.** EU sending region ≠ no US
    access; Resend is a US company. Do not write "EU, therefore covered by §7's German clause" onto
    a legal page. Belongs to counsel, tracked in `docs/legal/reg2-open-questions.md`.
+5. **The demo upload duration cap is 90 seconds (was 3 minutes), decided in chat 2026-09-16** and
+   built the same day: the ingest probe is the only gate, the limit is now stated in the picker
+   before a file is chosen, and `ready` demos longer than 90s stay usable because nothing re-checks
+   at analysis, plan or render time. The Hebrew is COPY PENDING FOUNDER REVIEW.
 
 ## The queue
 

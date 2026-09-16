@@ -509,7 +509,7 @@ this reasoning behind them.
 
 ## ffmpeg/ffprobe — `media/ffmpeg.ts`
 
-Probe (sanity checks with Hebrew reject reasons: vertical, 8–60s), normalize
+Probe (sanity checks with Hebrew reject reasons: vertical, 8–90s), normalize
 (`scale=1080:1920:force_original_aspect_ratio=increase,crop,fps=30`, x264 crf20, aac,
 +faststart), thumbnail, duration measurement, `atempo` stretch (≤1.05, inaudible). V2 segment
 cut/concat will live here. Binaries are required on the worker box; a missing binary throws a

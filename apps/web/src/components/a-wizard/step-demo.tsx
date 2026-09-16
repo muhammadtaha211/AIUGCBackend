@@ -48,6 +48,8 @@ const RECORDING_RULES = [
   "מצלמים משימה אחת שלמה, מההתחלה ועד הסוף.",
   "מסיימים על מסך הצלחה שרואים בבירור — אישור הזמנה, הודעת הצלחה, התוצאה המוכנה. בלי סוף כזה אין מודעה.",
   "אורך מומלץ: 30–90 שניות.",
+  // COPY PENDING FOUNDER REVIEW
+  "עד 90 שניות — צלמו רק את הפעולה עצמה, בלי הקדמה",
   "מתחילים אחרי ההתחברות — בלי מסכי לוגין, הרשמה וטפסים אישיים.",
   "בלי זמן מת — כל שנייה מקדמת את המשימה.",
   "טקסט שמופיע על המסך צריך לצאת קריא בצילום.",
@@ -643,8 +645,9 @@ export function StepDemo({
         className="mt-4 w-full rounded-xl border border-dashed border-white/20 bg-ink/[0.04] px-6 py-12 text-center transition-colors duration-150 hover:border-accent/60 hover:bg-ink/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
       >
         <span className="block text-base font-medium text-ink">בחירת סרטון מהמכשיר</span>
+        {/* COPY PENDING FOUNDER REVIEW */}
         <span className="mt-2 block text-sm text-ink/60">
-          וידאו אנכי (9:16), באורך 8 שניות עד 3 דקות, MP4 או MOV עד 1GB
+          וידאו אנכי (9:16), באורך 8 שניות עד 90 שניות, MP4 או MOV עד 1GB
         </span>
       </button>
       {readyTotal !== null && readyTotal > 0 && (
