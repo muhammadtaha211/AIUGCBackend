@@ -1,0 +1,70 @@
+-- Hand-written. Portable SQL: applies to any Postgres (Supabase, PGlite, plain PG).
+
+-- audio_preview_daily_limit: 50 -> 20. Straight back to where 0038 found it.
+--
+-- Founder decision 2026-09-16, recorded in
+-- docs/vault/decisions/0049-audio-preview-attempt-cap-back-to-20.md.
+--
+-- BEFORE: 50   AFTER: 20
+--
+-- WHY IT GOES BACK
+-- 0038 raised this to 50 three days ago on an argument, not a measurement, and
+-- the founder has now judged the argument wrong in both of its halves:
+--   * Service B is an OCCASIONAL format. Nobody spams talking heads. The
+--     queue-flood scenario 50 was sized against is not the traffic this
+--     product gets.
+--   * The voice is good. A perfectionist needs 2-3 retries on a script, not
+--     50. A ceiling nobody approaches is not a ceiling; it is decoration.
+-- Neither reading is measured either — that is the point. 0038 was reasoned,
+-- this is reasoned, and until real audio_renders counts exist the honest move
+-- is the tighter of two guesses. Revisit ONLY with measured data.
+--
+-- THE MONEY BOUND IS UNCHANGED, AND IT IS NOT THIS ROW
+-- requestAudio (packages/core/src/pipelines/tts.ts:75-94) checks two ceilings
+-- in a row, both keyed on the owner account:
+--   1. audio_preview_daily_limit — a COUNT of audio_renders rows in 24h. This
+--      row. A queue bound; TTS is absorbed cost of sale and is never debited.
+--   2. per_account.tts_chars = 25000/24h — CHARACTERS actually synthesized.
+--      The money bound. UNTOUCHED by this migration, as is every other
+--      daily_caps key.
+-- 0018's own header prices that 25000 at 30 agorot/1k chars = ~7.50 ILS per
+-- account per day. At 20 attempts and a ~375-char script, 7500 chars = ~2.25
+-- ILS/day, so the attempt count binds first again — which is exactly what 0038
+-- set out to stop, and is now the intended state: the cheap ceiling should
+-- trip first when the expensive one protects nothing anybody is approaching.
+-- REASONED, not measured: the ~375 chars is the founder's estimate of a B
+-- script, and 0018's own estimate implies ~500 (25000 chars ~= 50 previews).
+-- The conclusion survives either -- at 500 chars, 20 attempts is ~3.00 ILS/day,
+-- still well inside 7.50. And the 3.3x RATIO between the two ceilings does not
+-- depend on the TTS rate at all: both ceilings are denominated in CHARACTERS
+-- (25000 vs 20 x 375 = 7500), so agorot/1k cancels. Only the absolute shekel
+-- figures move with the rate. The rate itself is not in doubt: tts.ts:26-32
+-- carries TTS_COST_AGOROT_PER_1K_CHARS = 30 and reconciles it -- ElevenLabs
+-- bills $0.10/1k chars, which at USD/ILS 3.00 (founder-confirmed 2026-08) IS
+-- 30 agorot. The "~0.10/1k" docs/05-billing.md used to carry was that dollar
+-- figure written with a shekel sign, and the bullet is corrected in the same
+-- commit rather than silently dropped.
+--
+-- GUARDED, unlike 0038, and this is the load-bearing difference.
+-- 0038's UPDATE is unconditional: 50 WAS the decision, so a drifted third
+-- value should still have become 50. This one follows 0031's pattern instead
+-- and fires only on the exact value 0038 wrote:
+--   * A rebuild replays 0001 ('20') -> 0038 ('50') -> 0040 ('20') and lands on
+--     20 BY CONSTRUCTION, with no seed retro-edit. 0001's literal stays 20 and
+--     is now right again by accident; that is not what this file relies on.
+--   * A later deliberate founder flip away from 50 is not silently undone the
+--     next time the ledger replays. If the row is anything other than 50, this
+--     is a no-op on purpose and the read-back below is how you find out.
+-- 0001's literal is NOT retro-edited, for the same reason 0038 gave: rewriting
+-- an applied migration is a founder call
+-- (docs/vault/defects/migration-0027-still-seeds-the-old-llm-cap.md).
+--
+-- Verify by READ-BACK, never by "the UPDATE succeeded" — the guard means a
+-- successful statement and zero rows look identical:
+--   select value from app_config where key = 'audio_preview_daily_limit';
+-- The value is a bare jsonb number and tts.ts:76 parses it with
+-- z.number().int(), so a string '"20"' would throw at the next customer
+-- preview rather than here.
+UPDATE "app_config"
+SET "value" = '20'::jsonb, "updated_at" = now()
+WHERE "key" = 'audio_preview_daily_limit' AND "value" = '50'::jsonb;

@@ -53,6 +53,7 @@ export const PORTABLE_MIGRATIONS = [
   "0037_events_notified_at.sql",
   "0038_audio_preview_limit_50.sql",
   "0039_demo_analysis_credits.sql",
+  "0040_audio_preview_cap_back_to_20.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

@@ -54,7 +54,10 @@
 --     28 of them true.)
 --
 -- Row history: 0036 added one row on 2026-09-11, 0037 another the same day,
--- 0038 one more on 2026-09-13 and 0039 the same day. 0037 and 0038 were both
+-- 0038 one more on 2026-09-13 and 0039 the same day. 0040 (2026-09-16) added
+-- NO row: it reverted 0038, so it folded into that row instead, which is now
+-- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
+-- 30, and 0022 is still the only expected false. 0037 and 0038 were both
 -- applied to production on the day their row was written and both read true —
 -- see RESULTS. **0039 was applied to production 2026-09-13 too, and its row read
 -- true** — see RESULTS. It also changed a row that was already here: 0026 no
@@ -412,27 +415,41 @@ WITH checks(migration, layer, applied, note) AS (VALUES
       AND indexdef LIKE '%auth_email_send_failed%')),
   'events.notified_at + the partial alert index, predicate included'),
 
--- 0038: audio_preview_daily_limit 20 -> 50, the free-preview attempt cap.
--- Asserts the ACTUAL VALUE, not the row's existence — 0001 seeds this key, so
--- the row exists in every environment and existence proves nothing about
--- whether 0038 ran. Same hazard as 0036: nothing validates writes to
--- app_config, so a row that looks touched while the number has not moved is the
--- failure this row is here to catch.
+-- 0038 + 0040: audio_preview_daily_limit, the free-preview attempt cap.
+-- 0038 took it 20 -> 50 on 2026-09-13; 0040 took it 50 -> 20 on 2026-09-16.
+-- ONE row for the pair, asserting the END of the chain, because that is the
+-- only thing both migrations together leave behind and it is what a rebuilt
+-- database must reproduce. Splitting them would mean a permanently-false 0038
+-- row, and this file has exactly one of those (0022) on purpose -- the rule
+-- "a false on 0022 ALONE is expected, every other false is real" is what makes
+-- the file usable, and it is not worth spending twice.
 --
--- Compared as jsonb (`value = '50'::jsonb`) rather than through `->>` like the
+-- Asserts the ACTUAL VALUE, not the row's existence -- 0001 seeds this key, so
+-- the row exists in every environment and existence proves nothing about
+-- whether either migration ran. Same hazard as 0036: nothing validates writes
+-- to app_config, so a row that looks touched while the number has not moved is
+-- the failure this row is here to catch.
+--
+-- Compared as jsonb (`value = '20'::jsonb`) rather than through `->>` like the
 -- object-valued rows above, because this key holds a bare scalar and jsonb
--- equality is TYPE-AWARE: it rejects a hand-pasted '"50"' (a JSON string),
--- which `->>` would render as the text 50 and pass. That matters here —
+-- equality is TYPE-AWARE: it rejects a hand-pasted '"20"' (a JSON string),
+-- which `->>` would render as the text 20 and pass. That matters here --
 -- tts.ts:76 parses the row with z.number().int(), so a string would satisfy a
 -- looser check and then throw at the next customer preview instead.
 --
--- A false here means the migration did not land, OR prod was hand-edited after
--- it did. Reconcile before repairing.
-('0038', 'structural', (SELECT EXISTS (
+-- NOTE the one thing this row CANNOT tell you: 0001 also seeds 20, so on a
+-- database where 0038 and 0040 both ran and on one where NEITHER ran, this
+-- reads true either way. `migration list` is what distinguishes them, and the
+-- 0040 RESULTS entry below records the before-read (50) that proves 0040's
+-- guard actually matched rather than no-opping.
+--
+-- A false here means 0040 did not land, OR prod was hand-edited after it did.
+-- Reconcile before repairing.
+('0038+0040', 'structural', (SELECT EXISTS (
   SELECT 1 FROM app_config
   WHERE key = 'audio_preview_daily_limit'
-    AND value = '50'::jsonb)),
-  'seeded config: audio_preview_daily_limit is the number 50'),
+    AND value = '20'::jsonb)),
+  'seeded config: audio_preview_daily_limit is the number 20'),
 
 -- 0039: the steps flat splits — a_steps_credits 5 -> 3 and a NEW key
 -- a_demo_analysis_credits = 2, the demo analysis charged once per demo.
@@ -445,7 +462,7 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- Compared through `->` as jsonb rather than `->>` as text, so a hand-pasted
 -- '"3"' (a JSON string) is rejected here instead of passing and then throwing
 -- at the next customer quote — z.number() does not accept it. Same reasoning as
--- 0038's `value = '50'::jsonb`.
+-- the '0038+0040' row's `value = '20'::jsonb`.
 --
 -- 0039 is UNCONDITIONAL, so a false here means it did not land, or prod was
 -- hand-edited after it did. Reconcile before repairing. Note 0026's row above
@@ -568,6 +585,51 @@ ORDER BY migration, layer DESC;
 -- the only live effect is that a steps render prices at 3 instead of 5 until the
 -- branch merges. An undercharge window, not an outage.
 --
+-- 2026-09-16, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0040
+-- (audio_preview_daily_limit 50 -> 20, reverting 0038), on the founder's
+-- explicit instruction for this one push: ledger read-back **41 rows,
+-- 0000-0040, NO GAPS, nothing unapplied, nothing remote-only and NO REPAIR
+-- NEEDED** -- `db push` recorded 0040 itself, the SEVENTH time in a row the
+-- REPAIR note above has predicted correctly. Pre-flight was `migration list`
+-- (0000-0039 local == remote, 0040 the only row with an empty remote) and
+-- `db push --dry-run`, which named 0040_audio_preview_cap_back_to_20.sql alone.
+-- Same Docker catalog-cache warning as 0035-0039, and not a failure; the apply
+-- printed "Applying migration 0040_audio_preview_cap_back_to_20.sql..." and
+-- exited 0.
+--
+-- **0040's UPDATE is GUARDED (`AND value = '50'::jsonb`), so this push needed a
+-- verification the previous six did not: a BEFORE-read.** A guarded UPDATE that
+-- matches nothing exits 0 and prints the same thing as one that worked, and
+-- `db push` would record the version either way -- so "the migration applied"
+-- would have been true and "the value moved" false, with nothing in the output
+-- to tell them apart. Read BEFORE the push through the code's own parse:
+-- getConfigValue(db, 'audio_preview_daily_limit', z.number().int()) returned
+-- **50**, PASS -- the guard's precondition held exactly, so the row had NOT
+-- been hand-edited since 0038. Read AFTER the same way: **20**, PASS. Both via
+-- packages/core/.work/readback-0040.ts (throwaway, gitignored), which is the
+-- exact call pipelines/tts.ts:76 makes. A raw SELECT would not have
+-- distinguished the number 20 from the JSON string "20", which is the one way
+-- this row can be wrong and only surfaces at a customer's next preview.
+--
+-- The structural row for this key is now '0038+0040' and asserts **20**. Note
+-- what it cannot prove on its own: 0001 seeds 20 as well, so it reads true both
+-- on a database where the pair ran and on one where neither did. The before-read
+-- above is what closes that gap for THIS database.
+--
+-- **This file was then run against production in full, structural layer, and it
+-- matches its own header exactly: 30 rows, 28 TRUE, 1 false, 1 NULL.** The new
+-- '0038+0040' row read **true**. The single false is 0022, unchanged and not a
+-- finding (see its note); the single NULL is 0020, as always. So folding 0038's
+-- row into '0038+0040' did what it was meant to: the row count did not move and
+-- 0022 is still the ONLY expected false, which is the rule that makes this file
+-- usable. Measured via packages/core/.work/run-ledger-0040.ts (throwaway,
+-- gitignored) -- it reads this file, refuses it if any write statement appears
+-- outside a comment, and runs it over the session pooler read-only.
+--
+-- No worker restart and no deploy were needed: requestAudio reads the row live
+-- on every call. Decision: docs/vault/decisions/0049-audio-preview-attempt-cap-
+-- back-to-20.md, superseding 0047.
+
 -- 2026-09-13, production (hyaqydcmwbnbaiqqufow), after `db push` applied 0038
 -- (audio_preview_daily_limit 20 -> 50), on the founder's explicit instruction for
 -- this one push: ledger read-back **39 rows, 0000-0038, NO GAPS, nothing

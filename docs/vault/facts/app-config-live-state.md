@@ -14,7 +14,7 @@ reads through `getConfigValueOr` falls back to its code constant — see
 
 | key                         | value                                                                                                                |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `audio_preview_daily_limit` | `50`                                                                                                                 |
+| `audio_preview_daily_limit` | `20`                                                                                                                 |
 | `auto_release_b`            | `true`                                                                                                               |
 | `credit_costs`              | see [[credit-costs-row]]                                                                                             |
 | `daily_caps`                | see [[token-and-money-budgets]]                                                                                      |
@@ -43,7 +43,31 @@ Consequence, and the reason this was re-measured: with the flag off, `handleSynt
 English audio tags. Only the **other 12 rows** in the table below are still as of 2026-09-07; this
 one row is as of 2026-09-08.
 
-## Correction — `audio_preview_daily_limit` is `50` (2026-09-13)
+## Correction — `audio_preview_daily_limit` is back to `20` (2026-09-16)
+
+Founder decision 2026-09-16 reversed the raise below: the cap goes back from 50 to **20**
+([[../decisions/0049-audio-preview-attempt-cap-back-to-20]], superseding
+[[../decisions/0047-audio-preview-attempt-cap-moves-to-50]]). Service B is an occasional format, a
+good voice needs 2–3 retries rather than 50, and the 50 was reasoned rather than measured.
+`supabase/migrations/0040_audio_preview_cap_back_to_20.sql` was applied to production the same day on
+the founder's explicit instruction for that one push, and the table above is updated **because it was
+re-measured, not because the migration says so**:
+
+```
+apps/cli/node_modules/.bin/tsx packages/core/.work/readback-0040.ts 20   # throwaway, gitignored
+```
+
+which calls `getConfigValue(db, "audio_preview_daily_limit", z.number().int())` — the exact call
+`packages/core/src/pipelines/tts.ts:76` makes — and got **20** back, parsed as a number.
+
+**The same script was run BEFORE the push and returned 50.** That matters more here than it did for
+0038: 0040's `UPDATE` is guarded on `value = '50'::jsonb`, so a row that had drifted would have left
+the migration a silent no-op that still exits 0 and still records its version in the ledger. The
+before-read is what proves the guard matched rather than skipped — and, incidentally, that nobody had
+hand-edited this row between 2026-09-13 and 2026-09-16. Only **this one row** is as of 2026-09-16;
+the rest of the table is still as of 2026-09-07, except `tts_enhance` (2026-09-08, above).
+
+## Superseded correction — it was `50` between 2026-09-13 and 2026-09-16
 
 Founder decision 2026-09-13 raised the free-preview attempt cap from 20 to **50**
 ([[0047-audio-preview-attempt-cap-moves-to-50]]). `supabase/migrations/0038_audio_preview_limit_50.sql`

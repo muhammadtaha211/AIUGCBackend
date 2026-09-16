@@ -276,16 +276,21 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   `video_renders`, and is the only reader of `jobs.error_class = 'budget'` in the tree. A
   budget-parked `synth_tts` — or `analyze_demo`, `plan_demo_steps`, copy or composite job — has **no
   exit**: it re-queues at +1h indefinitely, with `audio_renders` left on `generating`.
-- **Audio previews are free but capped** — `audio_preview_daily_limit` (**50/24h, raised from 20 by
-  migration 0038, applied 2026-09-13**, founder decision the same day —
-  [vault 0047](vault/decisions/0047-audio-preview-attempt-cap-moves-to-50.md)), also keyed on the
-  owner account. TTS is absorbed cost of sale (~₪0.10/1k chars) and a cap beats a debit; absorbed
-  does not mean unbounded. This is the **queue** bound, not the money bound: `per_account.tts_chars`
-  above is the money bound, and the ~50-previews figure it implies is where the 50 comes from, so the
-  two ceilings now meet in roughly the same place instead of the attempt count binding 2.5× earlier.
-  **Reasoned, not measured** — no usage data was consulted; revisit with real `audio_renders` counts
-  once billing is wired. Charging credits per preview was considered and rejected in the same
-  decision.
+- **Audio previews are free but capped** — `audio_preview_daily_limit` (**20/24h**), also keyed on
+  the owner account. TTS is absorbed cost of sale (ElevenLabs bills **$0.10/1k chars**, which at
+  USD/ILS 3.00 is the **30 agorot/1k** that `pipelines/tts.ts` bills every `usage_events` row at) and
+  a cap beats a debit; absorbed does not mean unbounded. This is the **queue** bound, not the money
+  bound: `per_account.tts_chars` above is the money bound at 25,000 chars/24h, which migration 0018
+  prices at ~₪7.50/account/day, and it is unchanged. At 20 attempts and a ~375-char script the attempt cap binds first, at ~₪2.25/day.
+  Migration 0038 took this to 50 on 2026-09-13; **migration 0040 takes it back to 20** — founder
+  decision 2026-09-16, [vault 0049](vault/decisions/0049-audio-preview-attempt-cap-back-to-20.md),
+  superseding [vault 0047](vault/decisions/0047-audio-preview-attempt-cap-moves-to-50.md): Service B
+  is an occasional format, a good voice needs 2–3 retries rather than 50, and the 50 was reasoned
+  rather than measured. **0040 was applied to production 2026-09-16** — read back through the code's
+  own parse as the number 20, with a before-read of 50 proving its guard matched.
+  **Reasoned, not measured** — in both directions; no usage data was ever consulted. Revisit only
+  with real `audio_renders` counts once billing is wired. Charging credits per preview was considered
+  and rejected in 0047, and that ruling stands.
 - **Paid overage is the escalation path, not built** — letting an account keep generating past the
   free allowance by debiting credits is the better long-term answer, but it breaks the
   two-debit-sites invariant and no real user has hit the ceiling. Revisit only when telemetry says
