@@ -32,16 +32,22 @@ describe("migrations", () => {
       per_account: { tts_chars: 25_000, gpu_seconds: 2_000, llm_tokens: 500_000 },
     });
 
-    // 0038 (2026-09-13): the free audio-preview attempt cap, 20 -> 50. Pinned
-    // exactly and by identity, for the same reason per_account.llm_tokens is —
-    // the value lives in a migration precisely so a hand UPDATE in the SQL
-    // editor cannot move it silently. toBe also catches a string '"50"', which
-    // tts.ts's z.number().int() would reject at the next customer preview.
+    // The free audio-preview attempt cap. 0038 (2026-09-13) took it 20 -> 50 on
+    // an argument; 0040 (2026-09-16) took it straight back to 20 on the
+    // founder's call that Service B is an occasional format and a good voice
+    // needs 2-3 retries, not 50. This pins the END of that chain, so it also
+    // proves 0040's guard (WHERE value = '50') actually fired on the 50 that
+    // 0038 wrote — a rebuild has to land on 20 by construction, not by 0001's
+    // seed happening to say 20. Pinned exactly and by identity, for the same
+    // reason per_account.llm_tokens is: the value lives in a migration
+    // precisely so a hand UPDATE in the SQL editor cannot move it silently.
+    // toBe also catches a string '"20"', which tts.ts's z.number().int() would
+    // reject at the next customer preview.
     const previewLimit = await db
       .select()
       .from(schema.appConfig)
       .where(eq(schema.appConfig.key, "audio_preview_daily_limit"));
-    expect(previewLimit[0]?.value).toBe(50);
+    expect(previewLimit[0]?.value).toBe(20);
 
     await pg.close();
   });

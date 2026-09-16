@@ -1,12 +1,20 @@
 ---
 type: decision
-status: verified
+status: superseded
 verified: 2026-09-13
 method: "Founder decision in chat, 2026-09-13, reasoned and explicitly NOT measured — no query was run against audio_renders or usage_events, and no account has ever been observed hitting 20. Written as supabase/migrations/0038_audio_preview_limit_50.sql and APPLIED to production 2026-09-13 on the founder's explicit instruction for that one push; post-apply read-back through getConfigValue(db,'audio_preview_daily_limit',z.number().int()) returned 50, ledger 39 rows 0000-0038 no gaps, no repair needed. Code read at 280c4ff: packages/core/src/pipelines/tts.ts:75-94 (the two ceilings, both keyed on the owner account); packages/core/src/appConfig.ts:7-11 (getConfigValue throws on a missing row); supabase/migrations/0001_extras_and_seed.sql:47 (the '20' seed a fresh database still replays); supabase/migrations/0036_daily_caps_runaway_detector.sql (per_account.tts_chars 25000, untouched by 0036); docs/05-billing.md:207-208 (the ~50-previews estimate the number is taken from); packages/core/src/pipelines/sets.ts:786-793 (the two-debit-sites rule); apps/web/src/lib/wizard-gate.ts:27-32 and apps/web/src/app/home/b/new/page.tsx:43 (the zero-balance wizard door); apps/web/src/app/api/scripts/[id]/audio/route.ts (auth + ownership, NO balance check)."
 source: founder + code
 ---
 
 # 0047 — The audio-preview cap stays a count, and the count moves to 50
+
+> **SUPERSEDED 2026-09-16 by [[0049-audio-preview-attempt-cap-back-to-20]].** The founder reversed
+> ruling 1: the cap goes back to **20**, because Service B is an occasional format, a good voice
+> needs 2–3 retries rather than 50, and the 50 below was reasoned rather than measured — as this
+> note says of itself, twice. **Ruling 2 survives intact**: previews are still free and still not
+> credit-debited, and the three reasons for that are unchanged. Everything below is kept verbatim as
+> the record of what was believed on 2026-09-13 and why. The live row is still 50 —
+> `supabase/migrations/0040_audio_preview_cap_back_to_20.sql` is written and **not pushed**.
 
 ## The decision
 
@@ -107,6 +115,7 @@ restart and no deploy were needed: `requestAudio` reads the row live on every ca
 
 ## Related
 
+- [[0049-audio-preview-attempt-cap-back-to-20]] — **supersedes this note**; takes the count back to 20
 - [[0040-the-hard-ceiling-moves-to-the-providers]] — the cap design this sits inside; its "Deferred,
   not open" section is amended by ruling 2 for this one surface
 - [[no-self-serve-credit-grant-path]] — why there is no stranger at this door

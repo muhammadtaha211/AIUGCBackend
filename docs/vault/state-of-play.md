@@ -134,6 +134,13 @@ running that the prediction held). Proof block: `scripts/verify-migration-ledger
 **0038 raised `audio_preview_daily_limit` 20 → 50** ([[0047-audio-preview-attempt-cap-moves-to-50]],
 reasoned not measured); the live row was read back through the code's own parse as the number 50, and
 no restart or deploy was needed because `requestAudio` reads it live on every call.
+**0040 is WRITTEN AND NOT PUSHED: it takes `audio_preview_daily_limit` back 50 → 20**
+([[0049-audio-preview-attempt-cap-back-to-20]], founder decision 2026-09-16, superseding 0047 —
+reasoned not measured in both directions). **The live row still reads 50** until the founder gives an
+explicit go for that one push; the ledger above is still clean at 0000–0039. The UPDATE is guarded on
+`value = '50'` (0031's pattern, not 0038's unconditional one), so it is a no-op if the row has moved
+— read back through `getConfigValue(db, 'audio_preview_daily_limit', z.number().int())` after the
+push, never a raw `SELECT`. `per_account.tts_chars` is untouched.
 **The ledger file's own expected counts were measured against production for the first time on
 2026-09-13: 27 true, 1 false, 1 NULL of 29 structural rows.** The single false is **0022**, which
 asserts platform `gpu_seconds = 7200` — a value 0036 raised to 32000 on 2026-09-11 without anyone
