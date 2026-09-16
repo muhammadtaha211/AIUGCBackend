@@ -180,6 +180,21 @@ the new prices were live the moment the UPDATE committed. Post-apply proof:
 its `0039` row folded to `0039+0043` at 25/20 — asserting 0039's old literals would now read FALSE
 on a correct database, the same treatment 0038's row got when 0040 superseded it.
 
+**0043 devalued the two live customer balances, and they were topped up the same day.** Nothing
+rescales `credit_ledger`, so a balance granted under the 0039 scale bought roughly an eighth of the
+ads it was granted to buy once `a_steps_credits` went 3 → 25. Measured before: two `role=customer`
+accounts held **145** and **81** credits — 48 and 27 marginal steps ads at 3. On the founder's
+instruction both were made whole **in ads, not in credits**, on the marginal (second-and-later ad
+off one recording) rate: grants of **1055** and **594**, landing at **1200** and **675**, which is
+48 and 27 ads at 25. Written with `grantCredits` — the same function the admin grants route calls —
+as one `grant_manual` row each (`packages/core/.work/topup-0043.ts`, dry-run by default). Read back
+at 1200 / 675, three ledger rows each. **`grant_manual` has no unique index** (0016's two partial
+indexes cover `debit_render` and `refund_failed` only), so the script guards on its own note tag and
+a deliberate second `--apply` run was proved to write **0 grants** and leave both balances
+unchanged. A first-ad basis (5 → 45, ×9) would have been slightly more generous and a
+`b_per_second` basis (×5) much less; the marginal rate was chosen because variants are the product.
+`subscriptions` is still **0 rows**, so no plan grants anyone anything yet.
+
 **One thing 0043 does NOT carry: the Hebrew plan names.** `plans.name` still holds Latin
 'Starter' / 'Pro' / 'Studio' in a Hebrew-first product. That is a founder call and still open.
 

@@ -135,6 +135,23 @@ in [[analyze-demo-cost]], **measured 2026-08-23 and now stale** past [[CONVENTIO
 it was already stale when 0048 leaned on it and it has not been re-measured since. Six jobs is not
 a distribution. This is the single weakest number in the sheet.
 
+## The consequence nobody rescales: existing balances
+
+`credit_ledger` holds credits, not shekels, and nothing re-denominates a stored balance. Because
+`a_steps_credits` moved ×8.33 rather than ×5, every credit already granted bought roughly an eighth
+of the ads it was granted to buy the moment 0043 landed.
+
+Measured 2026-09-17, right after the push: exactly two accounts held a positive balance, both
+`role=customer`, at **145** and **81** credits. On the founder's instruction the same day both were
+made whole **in ads rather than in credits**, on the marginal steps rate (the second-and-later ad
+off one recording, 3 → 25, which is what a standing balance actually gets spent on): grants of
+**1055** and **594** to reach **1200** and **675**. One `grant_manual` row each, written by
+`grantCredits` — the same function the admin grants route calls.
+
+This is a standing hazard, not a one-off: **any future change to a rate silently re-values every
+stored balance**, and `grant_manual` has no unique index to make a corrective grant safe to repeat.
+A top-up script must carry its own idempotency tag, as this one did.
+
 ## Review trigger
 
 **Sixty days after the first paying customer**: re-run `aiugc costs --from <launch date>` and read
