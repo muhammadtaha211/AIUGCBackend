@@ -471,12 +471,38 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- 0039 is UNCONDITIONAL, so a false here means it did not land, or prod was
 -- hand-edited after it did. Reconcile before repairing. Note 0026's row above
 -- no longer asserts a value at all: 0039 is what owns a_steps_credits now.
-('0039', 'structural', (SELECT EXISTS (
+-- 0039 split the steps flat into 3 + 2; 0043 (2026-09-17) then re-based the
+-- whole row on the 0.15 ILS credit and took those two to 25 and 20. Asserting
+-- 0039's literals would now read FALSE on a correct database, so the pair is
+-- folded into one row at the CURRENT values, exactly as 0038's row was folded
+-- into '0038+0040'. What 0039 is still on the hook for is that the KEY exists
+-- at all -- that is the '0026' row above.
+('0039+0043', 'structural', (SELECT EXISTS (
   SELECT 1 FROM app_config
   WHERE key = 'credit_costs'
-    AND value -> 'a_steps_credits' = '3'::jsonb
-    AND value -> 'a_demo_analysis_credits' = '2'::jsonb)),
-  'seeded config: a_steps_credits 3 AND a_demo_analysis_credits 2'),
+    AND value -> 'a_steps_credits' = '25'::jsonb
+    AND value -> 'a_demo_analysis_credits' = '20'::jsonb)),
+  'seeded config: a_steps_credits 25 AND a_demo_analysis_credits 20 (0043 scale)'),
+
+-- 0043: the other two halves of the same migration. b_minimum_credits is the
+-- one key that is not a re-denomination -- it was 0 (inactive) from 0017 until
+-- 0043 made it a real 15-second floor -- and the plans row is statement (b),
+-- which is guarded SEPARATELY, so the file can half-apply. Both are asserted
+-- so that a half-apply cannot read as success.
+('0043', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM app_config
+  WHERE key = 'credit_costs'
+    AND value -> 'b_per_second' = '5'::jsonb
+    AND value -> 'b_minimum_credits' = '75'::jsonb)),
+  'seeded config: b_per_second 5 AND b_minimum_credits 75 (the new Service B floor)'),
+
+('0043-plans', 'structural', (SELECT NOT EXISTS (
+  SELECT 1 FROM plans
+  WHERE (code, price_agorot, monthly_credits, allows_service_b) NOT IN (
+    ('starter', 15000, 1000, true),
+    ('pro',     30000, 2500, true),
+    ('studio',  50000, 5000, true)))),
+  'plans: 150/300/500 ILS at 1000/2500/5000 credits, Service B on all three'),
 
 -- 0041: subscriptions re-keyed from the business to the ACCOUNT. Asserts all
 -- four halves, because each is a different failure: user_id present but

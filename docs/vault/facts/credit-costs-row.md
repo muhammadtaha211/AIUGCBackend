@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-09-13
-method: "Re-measured 2026-09-13 right after migration 0039 was pushed to production: packages/core/scripts/verify-credit-costs.ts (read-only, 16 checks, PASS) read the row through getConfigValue(db,'credit_costs',creditCostsSchema) — the exact call every quote path makes — and asserted jsonb_typeof, the key count and each of the other eight rates. Key reachability is the older measurement: grep -rn <each key> packages/core/src apps/*/src packages/remotion/src, 2026-08-23, plus the tenth key added 2026-09-13."
+verified: 2026-09-17
+method: "Re-measured 2026-09-17 right after migration 0043 was pushed to production: packages/core/scripts/verify-credit-costs.ts (read-only, 18 checks, PASS) read the row through getConfigValue(db,'credit_costs',creditCostsSchema) — the exact call every quote path makes — and asserted all ten rates, that the row holds exactly the ten known keys with nothing stray, that every value is jsonb_typeof number, the two steps quotes (25 and 45) and both sides of the new Service B floor. A before-read the same day, through the same call (packages/core/.work/preflight-0043.ts), returned the 0039 row with all four of 0043's guards matching — so the move is measured at both ends, not inferred from an exit code. Key reachability is the older measurement: grep -rn <each key> packages/core/src apps/*/src packages/remotion/src, 2026-08-23, plus the tenth key added 2026-09-13."
 source: db
 ---
 
@@ -10,38 +10,43 @@ source: db
 
 ```json
 {
-  "a_assembly_flat": 3,
-  "a_demo_per_second": 0.15,
-  "a_outro_per_second": 1,
-  "a_minimum_credits": 5,
-  "b_per_second": 1,
-  "b_minimum_credits": 0,
-  "a_ending_reroll_per_second": 1,
-  "a_remix_assembly_credits": 2,
-  "a_steps_credits": 3,
-  "a_demo_analysis_credits": 2
+  "a_assembly_flat": 15,
+  "a_demo_per_second": 0.75,
+  "a_outro_per_second": 5,
+  "a_minimum_credits": 25,
+  "b_per_second": 5,
+  "b_minimum_credits": 75,
+  "a_ending_reroll_per_second": 5,
+  "a_remix_assembly_credits": 10,
+  "a_steps_credits": 25,
+  "a_demo_analysis_credits": 20
 }
 ```
 
-> **Changed 2026-09-13, applied and read back the same day.** `a_steps_credits` went **5 → 3** and
-> `a_demo_analysis_credits: 2` is **new**, both written by
-> `supabase/migrations/0039_demo_analysis_credits.sql`
-> ([[0048-the-demo-analysis-is-charged-once-per-demo]]) and pushed to production on the founder's
-> explicit instruction for that one push. The block above is the row as it actually reads: ten keys,
-> both new values `jsonb_typeof` = `number`, the other eight rates untouched by the `||` merge.
-> The proof is `packages/core/scripts/verify-credit-costs.ts` (read-only, 16 checks, PASS) and
-> `scripts/verify-migration-ledger.sql` §RESULTS. Re-read at any time with
+> **Changed 2026-09-17, applied and read back the same day.** Every rate above was written by
+> `supabase/migrations/0043_pricing_credit_unit.sql`
+> ([[0051-the-credit-unit-and-the-three-credit-only-plans]]), pushed to production on the founder's
+> explicit instruction for that one push. A credit is now **₪0.15** on the base tier; the
+> "1 credit = 1 second" rule is retired. **Seven of the ten rates are a straight ×5. Three are
+> not**, and those three are the change rather than the conversion: `b_minimum_credits` **0 → 75**
+> (a Service B floor where there was none — it binds under 15s), `a_steps_credits` **3 → 25**
+> (×8.33) and `a_demo_analysis_credits` **2 → 20** (×10). Measured against `b_per_second`, which is
+> ×5: a steps render went from 3 seconds-of-Service-B to 5 (+67%) and the analysis from 2 to 4
+> (+100%) — a real-terms price rise on the two live Service A charges.
+>
+> Both of 0043's statements are guarded, so the row was read at **both** ends: before, through
+> `getConfigValue` (`packages/core/.work/preflight-0043.ts`), returning the 0039 row with all four
+> guards matching; after, through the same call, returning the block above with all ten values
+> `jsonb_typeof` = `number` and nothing stray. Proof is
+> `packages/core/scripts/verify-credit-costs.ts` (read-only, **18 checks**, PASS) and
+> `scripts/verify-migration-ledger.sql`. Ledger **44 rows, 0000–0043**, recorded by `db push`
+> itself — ninth time running with no `migration repair`. No restart or deploy was needed:
+> `getConfigValue` reads the row on every quote. Re-read at any time with
 > `select value from app_config where key = 'credit_costs';`
-
-> **Superseded on push — NOT yet pushed.** `supabase/migrations/0043_pricing_credit_unit.sql`
-> (written 2026-09-16, guarded on this exact row, **not applied**) re-bases all ten rates on a
-> ₪0.15 credit: seven ×5, plus `b_minimum_credits` **0 → 75** (a new Service B floor),
-> `a_steps_credits` **3 → 25** and `a_demo_analysis_credits` **2 → 20** —
-> [[0051-the-credit-unit-and-the-three-credit-only-plans]]. The block above is **production**, which
-> still holds the 0039 values. But `packages/core/test/helpers/pglite.ts` already replays 0043, so
-> the `@aiugc/core` suite runs on the NEW numbers — a test asserting 25 and this note asserting 3
-> are both correct. Re-measure this note, and re-pin
-> `packages/core/scripts/verify-credit-costs.ts`, in the same change that pushes the file.
+>
+> **The previous era, for the record:** 0039 (2026-09-13) split the steps flat 5 → 3 + 2
+> ([[0048-the-demo-analysis-is-charged-once-per-demo]]); 0017 seeded the eight rates before that.
+> 0048's mechanism is untouched by 0043 — only its numbers moved.
 
 **No unread keys** — all ten are read by `packages/core/src/pricing.ts` and nothing else touches
 them (grepped one key at a time across `packages/core/src`, `apps/*/src`, `packages/remotion/src`;
@@ -64,21 +69,24 @@ Cites re-measured 2026-09-13 against `packages/core/src/pricing.ts` — the whol
 | `a_outro_per_second`         | `pricing.ts:110-114` | avatar ending only; 0 when the ending is a freeze      |
 | `a_minimum_credits`          | `pricing.ts:116`     | floor on the full-format quote                         |
 | `b_per_second`               | `pricing.ts:124`     | Service B, × the approved VO's measured seconds        |
-| `b_minimum_credits`          | `pricing.ts:125`     | floor on Service B — `0`, i.e. inactive                |
+| `b_minimum_credits`          | `pricing.ts:125`     | floor on Service B — `75` since 0043, i.e. **active**  |
 | `a_ending_reroll_per_second` | `pricing.ts:136-140` | ending re-roll; floor-exempt                           |
 | `a_remix_assembly_credits`   | `pricing.ts:185`     | hook / hook-line / rect remix; floor-exempt            |
 | `a_steps_credits`            | `pricing.ts:170`     | one steps-format RENDER; floor-exempt                  |
 | `a_demo_analysis_credits`    | `pricing.ts:172`     | the demo analysis, ONCE per demo; floor-exempt         |
 
-## A steps render is 3 credits, and the first render of a demo is 5
+## A steps render is 25 credits, and the first render of a demo is 45
 
-**Changed 2026-09-13** ([[0048-the-demo-analysis-is-charged-once-per-demo]]). It was a single flat
-of 5 from 0026 until then, and the six observed production debits below are all from that era.
+**Split 2026-09-13** ([[0048-the-demo-analysis-is-charged-once-per-demo]]) from a single flat of 5,
+into 3 + 2; **re-priced to 25 + 20 on 2026-09-17** by 0043
+([[0051-the-credit-unit-and-the-three-credit-only-plans]]). The six observed production debits
+below all predate BOTH changes — they are the 0026 era, when the flat was 5.
 
 `quoteServiceASteps` returns the `steps` component always, adds an `analysis` component when the
 caller passes `firstPaidRenderOfDemo: true`, and passes `0` as the floor for both — so demo length
 still changes nothing. That is deliberate and the comment above it says why: the full-format quote
-bills the **uploaded** duration, so a 3-minute recording would price ~31 credits for a ~20s output.
+bills the **uploaded** duration, so a 3-minute recording would price 150 credits for a ~20s output
+(`15 + 180 × 0.75`).
 
 `firstPaidRenderOfDemo` comes from **one** place, `demoHasPaidRender` in
 `packages/core/src/pipelines/sets.ts`: a demo has a paid render iff some `video_renders` row of that
@@ -91,7 +99,7 @@ The debit is still written inside `createSet`'s per-cell loop — one ledger row
 set, because refunds key on the render id. The once-per-set analysis is **added to the first cell's
 row**, which is why that row is larger and no third row appears. The wizard only ever sends a 1×1
 grid, so per-set and per-render coincide today; a fresh demo's N-cell steps grid would be
-`5, 3, 3, …` and a reused demo's would be `3×N`.
+`45, 25, 25, …` and a reused demo's would be `25×N`.
 
 **Observed, not just derived.** Joining `credit_ledger.ref_id` to `video_renders`, all ten
 `debit_render` rows in production resolve, and the split is exactly what the code predicts:
@@ -102,8 +110,9 @@ grid, so per-set and per-render coincide today; a fresh demo's N-cell steps grid
 | 2026-08-18 → 2026-08-22 (6) | **−5 every time**  | `steps`                               |
 
 Six steps renders, six −5 debits, no exceptions. The length-priced rows above them are the reason
-the flat exists. **All six predate the 2026-09-13 split** — under it the same six renders, off six
-distinct demos, would still be −5 each; off ONE demo they would be −5 then −3 five times.
+the flat exists. **All six predate both the 2026-09-13 split and the 2026-09-17 re-pricing**, so do
+not compare them to a live quote. At today's rates the same six renders, off six distinct demos,
+would be −45 each; off ONE demo they would be −45 then −25 five times.
 
 ## Three traps
 
