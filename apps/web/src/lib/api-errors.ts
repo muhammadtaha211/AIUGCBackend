@@ -1,4 +1,9 @@
-import { AccountBudgetError, ContentPolicyError, InsufficientCreditsError } from "@aiugc/core";
+import {
+  AccountBudgetError,
+  ContentPolicyError,
+  InsufficientCreditsError,
+  PlanChangeError,
+} from "@aiugc/core";
 
 /**
  * Pure, unit-testable part of the HTTP error layer: the decision of which
@@ -14,6 +19,8 @@ import { AccountBudgetError, ContentPolicyError, InsufficientCreditsError } from
 export const GENERIC_ERROR = "משהו השתבש. נסו שוב בעוד רגע.";
 export const NOT_FOUND = "לא נמצא.";
 export const INVALID_BODY = "הבקשה לא תקינה.";
+/** The 503 every charge path answers until a gateway adapter exists. */
+export const PAYMENTS_SOON = "התשלום המקוון יופעל בקרוב.";
 
 export type CoreErrorMapping = {
   status: number;
@@ -134,5 +141,30 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
   if (err instanceof InsufficientCreditsError) {
     return hit(402, `אין מספיק קרדיטים ליצירת הסרטון — חסרים ${err.shortfall}.`);
   }
+  // Typed by `code`, so the account page can answer each refusal in its own
+  // words. 404 for no subscription (nothing to change), 409 for a subscription
+  // in a state that cannot change or a request with nothing to undo, 400 for
+  // a plan code that is not on the ladder.
+  if (err instanceof PlanChangeError) {
+    switch (err.code) {
+      case "no_subscription":
+        return hit(404, "אין מנוי פעיל בחשבון הזה.");
+      case "not_active":
+        return hit(
+          409,
+          "אי אפשר לשנות מסלול כשהתשלום האחרון לא הצליח. עדכנו את אמצעי התשלום קודם.",
+        );
+      case "nothing_pending":
+        return hit(409, "אין שינוי ממתין לביטול.");
+      case "no_recurring_ref":
+        return hit(409, "אין אמצעי תשלום שמור בחשבון הזה.");
+      case "unknown_plan":
+        return hit(400, INVALID_BODY);
+    }
+  }
+  // NotConfiguredGateway (billing.ts) — the checkout is a deliberate dead end
+  // until the gateway adapter exists. 503, not 500: the request was fine and
+  // the customer can come back.
+  if (/no payment gateway configured/.test(message)) return hit(503, PAYMENTS_SOON);
   return { status: 500, error: GENERIC_ERROR, mapped: false };
 }

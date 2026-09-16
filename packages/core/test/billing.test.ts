@@ -1,11 +1,22 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema";
 import type { Db } from "../src/db";
 import { createBusiness } from "../src/pipelines/businesses";
 import { creditBalance, debitRender, grantCredits, grantPeriod } from "../src/pipelines/credits";
-import { processDueRenewals, type BillingGateway } from "../src/pipelines/billing";
+import {
+  cancelSubscription,
+  changePlan,
+  getAccountBilling,
+  PlanChangeError,
+  processDueRenewals,
+  recordTermsAcceptance,
+  resumeSubscription,
+  type BillingGateway,
+} from "../src/pipelines/billing";
 import { createTestDb } from "./helpers/pglite";
+
+const DAY = 24 * 60 * 60 * 1000;
 
 const okGateway: BillingGateway = {
   name: "test",
@@ -21,29 +32,65 @@ const failGateway: BillingGateway = {
   },
 };
 
+/** A gateway that records what it was asked to charge. */
+function recordingGateway(ok = true) {
+  const calls: Array<{ recurringRef: string; amountAgorot: number; description: string }> = [];
+  const gateway: BillingGateway = {
+    name: "test",
+    async chargeRecurring(input) {
+      calls.push(input);
+      return {
+        ok,
+        gatewayEventId: `evt_${crypto.randomUUID()}`,
+        error: ok ? undefined : "declined",
+      };
+    },
+  };
+  return { gateway, calls };
+}
+
 async function makeSubscription(
   db: Db,
   periodEndDaysAgo: number,
-  status: "active" | "past_due" = "active",
+  status: "active" | "past_due" | "suspended" = "active",
+  extra: {
+    planCode?: string;
+    cancelAtPeriodEnd?: boolean;
+    scheduledPlanCode?: string | null;
+    gatewayRecurringRef?: string | null;
+  } = {},
 ) {
   const business = await createBusiness(db, {
     ownerEmail: `owner-${crypto.randomUUID()}@test.local`,
     name: "Biz",
   });
-  const end = new Date(Date.now() - periodEndDaysAgo * 24 * 60 * 60 * 1000);
-  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const end = new Date(Date.now() - periodEndDaysAgo * DAY);
+  const start = new Date(end.getTime() - 30 * DAY);
   const inserted = await db
     .insert(schema.subscriptions)
     .values({
       userId: business.ownerUserId,
-      planCode: "starter",
+      planCode: extra.planCode ?? "starter",
       status,
-      gatewayRecurringRef: "tok_test",
+      gatewayRecurringRef:
+        extra.gatewayRecurringRef === undefined ? "tok_test" : extra.gatewayRecurringRef,
       currentPeriodStart: start,
       currentPeriodEnd: end,
+      cancelAtPeriodEnd: extra.cancelAtPeriodEnd ?? false,
+      scheduledPlanCode: extra.scheduledPlanCode ?? null,
     })
     .returning();
   return { business, sub: inserted[0]! };
+}
+
+async function readSub(db: Db, id: string) {
+  return (await db.select().from(schema.subscriptions).where(eq(schema.subscriptions.id, id)))[0]!;
+}
+
+/** The live plan ladder, by price — never hard-coded in these tests. */
+async function ladder(db: Db) {
+  const rows = await db.select().from(schema.plans).orderBy(asc(schema.plans.priceAgorot));
+  return { lowest: rows[0]!, middle: rows[1]!, highest: rows[rows.length - 1]!, rows };
 }
 
 describe("billing state machine", { timeout: 60_000 }, () => {
@@ -260,6 +307,425 @@ describe("subscriptions are keyed on the account (0041)", { timeout: 60_000 }, (
     const second = (await db.insert(schema.subscriptions).values(live("active")).returning())[0]!;
     expect(second.id).not.toBe(first.id);
     expect(await db.select().from(schema.subscriptions)).toHaveLength(2);
+    await pg.close();
+  });
+});
+
+describe("plan changes (0045, decisions 0052/0053)", { timeout: 60_000 }, () => {
+  it("upgrade mid-period: charges the prorated difference, grants prorated PERIOD credits, keeps the period dates", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    // 10 of 30 days left (the period ends in 10 days).
+    const { business, sub } = await makeSubscription(db, -10, "active", { planCode: lowest.code });
+    await grantPeriod(db, {
+      userId: business.ownerUserId,
+      credits: lowest.monthlyCredits,
+      subscriptionId: sub.id,
+    });
+    const { gateway, calls } = recordingGateway();
+
+    const result = await changePlan(db, gateway, {
+      userId: business.ownerUserId,
+      toPlanCode: highest.code,
+    });
+    expect(result.kind).toBe("upgraded");
+    if (result.kind !== "upgraded") throw new Error("unreachable");
+    expect(result.quote.daysInPeriod).toBe(30);
+    expect(result.quote.daysRemaining).toBe(10);
+
+    // The gateway was asked for exactly the quoted amount, in Hebrew.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.amountAgorot).toBe(result.quote.chargeAgorot);
+    expect(calls[0]!.amountAgorot).toBe(
+      Math.ceil(((highest.priceAgorot - lowest.priceAgorot) * 10) / 30),
+    );
+    expect(calls[0]!.description).toBe(`תבנית — שדרוג ל${highest.name}`);
+
+    const after = await readSub(db, sub.id);
+    expect(after.planCode).toBe(highest.code);
+    expect(after.scheduledPlanCode).toBeNull();
+    expect(after.cancelAtPeriodEnd).toBe(false);
+    expect(after.currentPeriodStart.getTime()).toBe(sub.currentPeriodStart.getTime());
+    expect(after.currentPeriodEnd.getTime()).toBe(sub.currentPeriodEnd.getTime());
+
+    // The grant is a grant_period row with the upgrade note — NOT grant_manual.
+    const grants = await db
+      .select()
+      .from(schema.creditLedger)
+      .where(eq(schema.creditLedger.userId, business.ownerUserId));
+    const upgradeRow = grants.find((r) => r.note?.startsWith("upgrade "));
+    expect(upgradeRow).toBeDefined();
+    expect(upgradeRow!.reason).toBe("grant_period");
+    expect(upgradeRow!.delta).toBe(result.quote.creditsGranted);
+    expect(upgradeRow!.delta).toBe(
+      Math.floor(((highest.monthlyCredits - lowest.monthlyCredits) * 10) / 30),
+    );
+    expect(upgradeRow!.note).toBe(`upgrade ${lowest.code}→${highest.code} 10/30`);
+    expect(upgradeRow!.refId).toBe(sub.id);
+
+    const events = await db.select().from(schema.gatewayEvents);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.kind).toBe("plan_change_charge_success");
+    await pg.close();
+  });
+
+  it("the upgrade's credits EXPIRE at the next renewal: balance after renewal is exactly the new plan's credits", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, -10, "active", { planCode: lowest.code });
+    await grantPeriod(db, {
+      userId: business.ownerUserId,
+      credits: lowest.monthlyCredits,
+      subscriptionId: sub.id,
+    });
+    // A goodwill grant that MUST survive — the proof that the upgrade credits
+    // are the period kind and the manual kind is untouched.
+    await grantCredits(db, { userId: business.ownerUserId, credits: 7, note: "מתנה" });
+
+    const upgraded = await changePlan(db, okGateway, {
+      userId: business.ownerUserId,
+      toPlanCode: highest.code,
+    });
+    expect(upgraded.kind).toBe("upgraded");
+    expect(await creditBalance(db, business.ownerUserId)).toBeGreaterThan(
+      lowest.monthlyCredits + 7,
+    );
+
+    // Renew at the period end: expire_period must take the upgrade credits
+    // with the rest of the period, spare the 7, and grant the NEW plan.
+    const summary = await processDueRenewals(
+      db,
+      okGateway,
+      new Date(sub.currentPeriodEnd.getTime() + 1000),
+    );
+    expect(summary.renewed).toBe(1);
+    expect(await creditBalance(db, business.ownerUserId)).toBe(highest.monthlyCredits + 7);
+    expect((await readSub(db, sub.id)).planCode).toBe(highest.code);
+    await pg.close();
+  });
+
+  it("a declined upgrade charge changes nothing except the failed gateway_events row", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, -10, "active", {
+      planCode: lowest.code,
+      cancelAtPeriodEnd: true,
+    });
+    await grantPeriod(db, {
+      userId: business.ownerUserId,
+      credits: lowest.monthlyCredits,
+      subscriptionId: sub.id,
+    });
+
+    const result = await changePlan(db, failGateway, {
+      userId: business.ownerUserId,
+      toPlanCode: highest.code,
+    });
+    expect(result.kind).toBe("charge_failed");
+    if (result.kind !== "charge_failed") throw new Error("unreachable");
+    expect(result.error).toBe("card declined");
+
+    const after = await readSub(db, sub.id);
+    expect(after.planCode).toBe(lowest.code);
+    expect(after.cancelAtPeriodEnd).toBe(true); // untouched
+    expect(after.scheduledPlanCode).toBeNull();
+    expect(await creditBalance(db, business.ownerUserId)).toBe(lowest.monthlyCredits);
+    const events = await db.select().from(schema.gatewayEvents);
+    expect(events.map((e) => e.kind)).toEqual(["plan_change_charge_failed"]);
+    await pg.close();
+  });
+
+  it("downgrade: scheduled, nothing charged; the renewal charges and grants the NEW plan and clears the schedule", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, -10, "active", { planCode: highest.code });
+    await grantPeriod(db, {
+      userId: business.ownerUserId,
+      credits: highest.monthlyCredits,
+      subscriptionId: sub.id,
+    });
+    const { gateway, calls } = recordingGateway();
+
+    const result = await changePlan(db, gateway, {
+      userId: business.ownerUserId,
+      toPlanCode: lowest.code,
+    });
+    expect(result.kind).toBe("scheduled");
+    if (result.kind !== "scheduled") throw new Error("unreachable");
+    expect(result.quote.kind).toBe("downgrade");
+    expect(calls).toHaveLength(0);
+    let row = await readSub(db, sub.id);
+    expect(row.planCode).toBe(highest.code); // still on what was paid for
+    expect(row.scheduledPlanCode).toBe(lowest.code);
+
+    // getAccountBilling reports the pending change and quotes from the CURRENT plan.
+    const view = await getAccountBilling(db, { userId: business.ownerUserId });
+    expect(view.subscription?.scheduledPlanCode).toBe(lowest.code);
+    expect(Object.keys(view.quotes).sort()).toEqual(
+      view.plans
+        .map((p) => p.code)
+        .filter((c) => c !== highest.code)
+        .sort(),
+    );
+    expect(view.quotes[lowest.code]!.kind).toBe("downgrade");
+    const prices = view.plans.map((p) => p.priceAgorot);
+    expect(prices).toEqual([...prices].sort((a, b) => a - b));
+
+    const renewal = await processDueRenewals(
+      db,
+      gateway,
+      new Date(sub.currentPeriodEnd.getTime() + 1000),
+    );
+    expect(renewal.renewed).toBe(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.amountAgorot).toBe(lowest.priceAgorot);
+    row = await readSub(db, sub.id);
+    expect(row.planCode).toBe(lowest.code);
+    expect(row.scheduledPlanCode).toBeNull();
+    expect(await creditBalance(db, business.ownerUserId)).toBe(lowest.monthlyCredits);
+    await pg.close();
+  });
+
+  it("a failed renewal charge leaves the schedule in place", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, 0, "active", {
+      planCode: highest.code,
+      scheduledPlanCode: lowest.code,
+    });
+    const summary = await processDueRenewals(db, failGateway);
+    expect(summary.failed).toBe(1);
+    const row = await readSub(db, sub.id);
+    expect(row.status).toBe("past_due");
+    expect(row.planCode).toBe(highest.code);
+    expect(row.scheduledPlanCode).toBe(lowest.code);
+    expect(await creditBalance(db, business.ownerUserId)).toBe(0);
+    await pg.close();
+  });
+
+  it("an upgrade on the last day is scheduled, not charged", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    // The period ends in 12 hours -> 1 day remaining.
+    const { business, sub } = await makeSubscription(db, -0.5, "active", { planCode: lowest.code });
+    const { gateway, calls } = recordingGateway();
+    const result = await changePlan(db, gateway, {
+      userId: business.ownerUserId,
+      toPlanCode: highest.code,
+    });
+    expect(result.kind).toBe("scheduled");
+    if (result.kind !== "scheduled") throw new Error("unreachable");
+    expect(result.quote.scheduleInstead).toBe(true);
+    expect(calls).toHaveLength(0);
+    expect((await readSub(db, sub.id)).scheduledPlanCode).toBe(highest.code);
+    await pg.close();
+  });
+
+  it("an upgrade clears a pending cancel and a pending downgrade", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, middle, highest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, -10, "active", {
+      planCode: middle.code,
+      cancelAtPeriodEnd: true,
+      scheduledPlanCode: lowest.code,
+    });
+    const result = await changePlan(db, okGateway, {
+      userId: business.ownerUserId,
+      toPlanCode: highest.code,
+    });
+    expect(result.kind).toBe("upgraded");
+    const row = await readSub(db, sub.id);
+    expect(row.planCode).toBe(highest.code);
+    expect(row.cancelAtPeriodEnd).toBe(false);
+    expect(row.scheduledPlanCode).toBeNull();
+    await pg.close();
+  });
+
+  it("undo: re-choosing the current plan clears the schedule and the cancel; nothing pending is refused", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, -10, "active", {
+      planCode: highest.code,
+      cancelAtPeriodEnd: true,
+      scheduledPlanCode: lowest.code,
+    });
+    const result = await changePlan(db, okGateway, {
+      userId: business.ownerUserId,
+      toPlanCode: highest.code,
+    });
+    expect(result.kind).toBe("undone");
+    const row = await readSub(db, sub.id);
+    expect(row.planCode).toBe(highest.code);
+    expect(row.cancelAtPeriodEnd).toBe(false);
+    expect(row.scheduledPlanCode).toBeNull();
+
+    await expect(
+      changePlan(db, okGateway, { userId: business.ownerUserId, toPlanCode: highest.code }),
+    ).rejects.toMatchObject({ name: "PlanChangeError", code: "nothing_pending" });
+    await pg.close();
+  });
+
+  it("refuses past_due and suspended (typed), an unknown plan, an account with no subscription, and a missing token", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+
+    const pastDue = await makeSubscription(db, 1, "past_due", { planCode: lowest.code });
+    await expect(
+      changePlan(db, okGateway, { userId: pastDue.business.ownerUserId, toPlanCode: highest.code }),
+    ).rejects.toMatchObject({ code: "not_active", status: "past_due" });
+
+    const suspended = await makeSubscription(db, 8, "suspended", { planCode: lowest.code });
+    await expect(
+      changePlan(db, okGateway, {
+        userId: suspended.business.ownerUserId,
+        toPlanCode: highest.code,
+      }),
+    ).rejects.toMatchObject({ code: "not_active", status: "suspended" });
+
+    const active = await makeSubscription(db, -10, "active", { planCode: lowest.code });
+    await expect(
+      changePlan(db, okGateway, { userId: active.business.ownerUserId, toPlanCode: "no-such" }),
+    ).rejects.toMatchObject({ code: "unknown_plan" });
+
+    const nobody = await createBusiness(db, {
+      ownerEmail: `nobody-${crypto.randomUUID()}@test.local`,
+      name: "x",
+    });
+    const err = await changePlan(db, okGateway, {
+      userId: nobody.ownerUserId,
+      toPlanCode: highest.code,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PlanChangeError);
+    expect((err as PlanChangeError).code).toBe("no_subscription");
+
+    const tokenless = await makeSubscription(db, -10, "active", {
+      planCode: lowest.code,
+      gatewayRecurringRef: null,
+    });
+    await expect(
+      changePlan(db, okGateway, {
+        userId: tokenless.business.ownerUserId,
+        toPlanCode: highest.code,
+      }),
+    ).rejects.toMatchObject({ code: "no_recurring_ref" });
+    // Nothing above touched the events log.
+    expect(await db.select().from(schema.gatewayEvents)).toHaveLength(0);
+    await pg.close();
+  });
+
+  it("cancel clears a pending plan change and stops the renewal; resume undoes it", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest, highest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, -10, "active", {
+      planCode: highest.code,
+      scheduledPlanCode: lowest.code,
+    });
+    await cancelSubscription(db, { userId: business.ownerUserId });
+    let row = await readSub(db, sub.id);
+    expect(row.cancelAtPeriodEnd).toBe(true);
+    expect(row.scheduledPlanCode).toBeNull();
+
+    await resumeSubscription(db, { userId: business.ownerUserId });
+    row = await readSub(db, sub.id);
+    expect(row.cancelAtPeriodEnd).toBe(false);
+
+    const nobody = await createBusiness(db, {
+      ownerEmail: `nobody-${crypto.randomUUID()}@test.local`,
+      name: "x",
+    });
+    await expect(cancelSubscription(db, { userId: nobody.ownerUserId })).rejects.toMatchObject({
+      code: "no_subscription",
+    });
+    await expect(resumeSubscription(db, { userId: nobody.ownerUserId })).rejects.toMatchObject({
+      code: "no_subscription",
+    });
+    await pg.close();
+  });
+
+  it("the one-live-subscription index still holds with the new column; the FK on it is real", async () => {
+    const { db, pg } = await createTestDb();
+    const { lowest } = await ladder(db);
+    const { business, sub } = await makeSubscription(db, -10, "active", {
+      planCode: lowest.code,
+      scheduledPlanCode: lowest.code,
+    });
+    const another = {
+      userId: business.ownerUserId,
+      planCode: lowest.code,
+      status: "active" as const,
+      currentPeriodStart: sub.currentPeriodStart,
+      currentPeriodEnd: sub.currentPeriodEnd,
+    };
+    await expect(db.insert(schema.subscriptions).values(another)).rejects.toThrow(
+      /subscriptions_one_live_per_user/,
+    );
+    await db
+      .update(schema.subscriptions)
+      .set({ status: "canceled" })
+      .where(eq(schema.subscriptions.id, sub.id));
+    await db.insert(schema.subscriptions).values(another);
+    expect(await db.select().from(schema.subscriptions)).toHaveLength(2);
+
+    await expect(
+      db
+        .update(schema.subscriptions)
+        .set({ scheduledPlanCode: "no-such-plan" })
+        .where(eq(schema.subscriptions.id, sub.id)),
+    ).rejects.toThrow(/subscriptions_scheduled_plan_code_plans_code_fk/);
+    await pg.close();
+  });
+
+  it("getAccountBilling with no subscription: null, the ladder by price, the balance split, no quotes, Hebrew names", async () => {
+    const { db, pg } = await createTestDb();
+    const business = await createBusiness(db, {
+      ownerEmail: `owner-${crypto.randomUUID()}@test.local`,
+      name: "Biz",
+    });
+    await grantCredits(db, { userId: business.ownerUserId, credits: 9, note: "מתנה" });
+    const view = await getAccountBilling(db, { userId: business.ownerUserId });
+    expect(view.subscription).toBeNull();
+    expect(view.quotes).toEqual({});
+    expect(view.balance).toBe(9);
+    expect(view.manualOutstanding).toBe(9);
+    expect(view.plans.length).toBeGreaterThanOrEqual(3);
+    // 0044: every plan name is Hebrew now.
+    for (const plan of view.plans) expect(plan.name).toMatch(/[א-ת]/);
+    await pg.close();
+  });
+});
+
+describe("terms acceptance (0046)", { timeout: 60_000 }, () => {
+  it("records who, which version, where, from what", async () => {
+    const { db, pg } = await createTestDb();
+    const business = await createBusiness(db, {
+      ownerEmail: `owner-${crypto.randomUUID()}@test.local`,
+      name: "Biz",
+    });
+    const { id, acceptedAt } = await recordTermsAcceptance(db, {
+      userId: business.ownerUserId,
+      termsVersion: "11.09.2026",
+      context: "checkout",
+      ip: "203.0.113.7",
+      userAgent: "vitest",
+    });
+    const rows = await db.select().from(schema.termsAcceptances);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id,
+      userId: business.ownerUserId,
+      termsVersion: "11.09.2026",
+      context: "checkout",
+      ip: "203.0.113.7",
+      userAgent: "vitest",
+    });
+    expect(rows[0]!.acceptedAt.getTime()).toBe(acceptedAt.getTime());
+    // The request context is optional.
+    await recordTermsAcceptance(db, {
+      userId: business.ownerUserId,
+      termsVersion: "11.09.2026",
+      context: "checkout",
+    });
+    expect(await db.select().from(schema.termsAcceptances)).toHaveLength(2);
     await pg.close();
   });
 });

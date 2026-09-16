@@ -56,6 +56,10 @@ export const PORTABLE_MIGRATIONS = [
   "0040_audio_preview_cap_back_to_20.sql",
   "0041_subscriptions_keyed_on_user.sql",
   "0043_pricing_credit_unit.sql",
+  "0044_plans_hebrew_names_sumit.sql",
+  "0045_subscriptions_scheduled_plan_code.sql",
+  "0046_terms_acceptances.sql",
+  "0047_feedback_anonymous.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

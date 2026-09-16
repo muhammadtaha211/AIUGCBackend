@@ -577,12 +577,19 @@ export const subscriptions = pgTable(
       .notNull()
       .references(() => plans.code),
     status: subscriptionStatus("status").notNull().default("active"),
-    gateway: text("gateway").notNull().default("grow"),
+    // 0044: the stack is Sumit (API + documents) on Upay (acquirer); our code
+    // calls Sumit, never Upay. Decision 0054. Nothing reads this yet.
+    gateway: text("gateway").notNull().default("sumit"),
     // The recurring-charge token/reference the gateway returns at signup.
     gatewayRecurringRef: text("gateway_recurring_ref"),
     currentPeriodStart: timestamp("current_period_start", { withTimezone: true }).notNull(),
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
     cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    // 0045: a pending downgrade (or a last-day upgrade), applied by the next
+    // renewal. plan_code stays what the customer is on and paid for until
+    // then; flipping it early would misreport the plan and make a later
+    // upgrade prorate from the wrong base.
+    scheduledPlanCode: text("scheduled_plan_code").references(() => plans.code),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -684,19 +691,44 @@ export const feedback = pgTable(
   "feedback",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .references(() => users.id),
+    // Nullable since 0047: the public /contact form writes rows with no
+    // signed-in user. The in-app path still sets it.
+    userId: uuid("user_id").references(() => users.id),
     // Nullable: a user with no business yet can still write.
     businessId: uuid("business_id").references(() => businesses.id),
     message: text("message").notNull(),
     // The pathname the form was opened from — context only.
     page: text("page"),
+    // 0047: what an anonymous visitor typed, and where the request came from.
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+    ip: text("ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   // Newest-first is the only way this table is ever read. DESC in the SQL
   // (0035); Postgres reads either direction, so the ordering is documentation.
   (t) => [index("feedback_created_idx").on(t.createdAt)],
+);
+
+// 0046: the record that a signed-in customer ticked the terms box at checkout
+// — who, which dated version of the text, from where, when. Server-only (RLS
+// on, no policies), written by the checkout route alone.
+export const termsAcceptances = pgTable(
+  "terms_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    // The date string the terms page shows at its head (legal.tsx UPDATED).
+    termsVersion: text("terms_version").notNull(),
+    // Where it was accepted: 'checkout' today.
+    context: text("context").notNull(),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("terms_acceptances_user_idx").on(t.userId)],
 );
 
 export const appConfig = pgTable("app_config", {

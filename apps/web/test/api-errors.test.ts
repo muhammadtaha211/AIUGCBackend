@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { AccountBudgetError, ContentPolicyError, InsufficientCreditsError } from "@aiugc/core";
-import { coreErrorMapping, GENERIC_ERROR, INVALID_BODY, NOT_FOUND } from "../src/lib/api-errors";
+import {
+  AccountBudgetError,
+  ContentPolicyError,
+  InsufficientCreditsError,
+  NotConfiguredGateway,
+  PlanChangeError,
+} from "@aiugc/core";
+import {
+  coreErrorMapping,
+  GENERIC_ERROR,
+  INVALID_BODY,
+  NOT_FOUND,
+  PAYMENTS_SOON,
+} from "../src/lib/api-errors";
 
 /**
  * The mapper decides what a customer reads when a pipeline refuses them, so
@@ -188,5 +200,47 @@ describe("coreErrorMapping — the content-policy gate", () => {
     // /not found/ line would answer this one with a 404.
     const err = new ContentPolicyError("product not found in any legal catalogue");
     expect(coreErrorMapping(err).status).toBe(422);
+  });
+});
+
+describe("coreErrorMapping — plan changes and the unconfigured gateway", () => {
+  it("answers each PlanChangeError code with its own status and Hebrew", () => {
+    expect(coreErrorMapping(new PlanChangeError("no_subscription"))).toMatchObject({
+      status: 404,
+      mapped: true,
+    });
+    expect(coreErrorMapping(new PlanChangeError("not_active", "past_due"))).toMatchObject({
+      status: 409,
+      mapped: true,
+    });
+    expect(coreErrorMapping(new PlanChangeError("nothing_pending"))).toMatchObject({
+      status: 409,
+      mapped: true,
+    });
+    expect(coreErrorMapping(new PlanChangeError("no_recurring_ref"))).toMatchObject({
+      status: 409,
+      mapped: true,
+    });
+    expect(coreErrorMapping(new PlanChangeError("unknown_plan"))).toEqual({
+      status: 400,
+      error: INVALID_BODY,
+      mapped: true,
+    });
+    // Every one is Hebrew, none is the generic line.
+    for (const code of [
+      "no_subscription",
+      "not_active",
+      "nothing_pending",
+      "no_recurring_ref",
+    ] as const) {
+      const { error } = coreErrorMapping(new PlanChangeError(code));
+      expect(error).toMatch(/[א-ת]/);
+      expect(error).not.toBe(GENERIC_ERROR);
+    }
+  });
+
+  it("maps NotConfiguredGateway's throw to the 503 'coming soon' line", async () => {
+    const err = await new NotConfiguredGateway().chargeRecurring().catch((e: unknown) => e);
+    expect(coreErrorMapping(err)).toEqual({ status: 503, error: PAYMENTS_SOON, mapped: true });
   });
 });

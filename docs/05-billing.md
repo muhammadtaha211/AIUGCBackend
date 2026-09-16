@@ -12,13 +12,13 @@ Stripe doesn't onboard Israeli businesses and a merchant of record is the wrong 
 domestic customer base (~5% fees, foreign checkout, no חשבונית מס). Comparison of the local
 candidates:
 
-|                                                                       | Grow (Meshulam)                                 | PayPlus                 | Cardcom           | Sumit                              |
-| --------------------------------------------------------------------- | ----------------------------------------------- | ----------------------- | ----------------- | ---------------------------------- |
-| Recurring card billing (הוראת קבע)                                    | ✔ hosted pages                                  | ✔ REST API              | ✔ tokens          | ✔ built-in                         |
-| Server callbacks                                                      | ✔                                               | ✔                       | ✔                 | ✔                                  |
-| Documents (קבלה / חשבונית עסקה now; חשבונית מס-קבלה after conversion) | via Green Invoice integration — auto per charge | add-on module           | built-in          | built-in (it's an accounting SaaS) |
-| Fees                                                                  | ~1.4–2.5%                                       | similar                 | similar           | similar + SaaS fee                 |
-| Fit for a solo Hebrew-first micro-business                            | **very common choice**                          | more developer-oriented | veteran, older DX | fewest vendors                     |
+|                                                                       | Grow (Meshulam)                                                                       | PayPlus                 | Cardcom           | Sumit                              |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------- | ----------------- | ---------------------------------- |
+| Recurring card billing (הוראת קבע)                                    | ✔ API token charges                                                                   | ✔ REST API              | ✔ tokens          | ✔ built-in                         |
+| Server callbacks                                                      | ✔                                                                                     | ✔                       | ✔                 | ✔                                  |
+| Documents (קבלה / חשבונית עסקה now; חשבונית מס-קבלה after conversion) | via Morning (ex-Green Invoice) — auto per charge; Morning's own clearing runs on Grow | add-on module           | built-in          | built-in (it's an accounting SaaS) |
+| Fees                                                                  | ~1.4–2.5%                                                                             | similar                 | similar           | similar + SaaS fee                 |
+| Fit for a solo Hebrew-first micro-business                            | **very common choice**                                                                | more developer-oriented | veteran, older DX | fewest vendors                     |
 
 **Reference: Grow + its Green Invoice integration — now a requirement list, not a pick.** The
 reference shape is unchanged: a hosted payment page collects the card and creates the recurring
@@ -28,12 +28,30 @@ given vendor does it the way this design needs. Renewal scheduling stays ours �
 job charges a stored token through the gateway's API — so the gateway must support (a) a hosted
 page that returns a reusable token, (b) an API-initiated charge on that token for an arbitrary
 amount, (c) signed server callbacks carrying a unique event id, and (d) a sandbox with test cards.
-A vendor whose recurring runs only on its own scheduler does not fit. The table above lists Grow's
-recurring as hosted pages, which may not satisfy (b) — a question for the onboarding call
-([`0046`](vault/decisions/0046-billing-ships-as-osek-patur.md)). The whole design is behind
+A vendor whose recurring runs only on its own scheduler does not fit. (This table used to list
+Grow's recurring as "hosted pages" and raise it as a question against (b) — that cell was wrong,
+founder correction 2026-09-17: Grow does support API token charges.) The whole design is behind
 `interface BillingGateway { chargeRecurring() }`, so switching to PayPlus/Cardcom/Sumit during
 merchant onboarding is one adapter class. Final vendor confirmation happens when the founder opens
 the merchant account — deliberately not a code dependency.
+
+**The reference stack is Sumit via Upay** — founder decision 2026-09-17,
+[`0054`](vault/decisions/0054-payment-stack-is-sumit-via-upay.md). **Sumit** is the API layer
+_and_ the documents vendor; **Upay** (יופיי פיננסים בע"מ, ח.פ. 514672575) is the acquirer (מאגד)
+behind it. **Our code calls Sumit's API, never Upay.** The four requirements (a)–(d) above are
+closed at **capability level** from Sumit's help articles (founder-read, not re-fetched by the
+session that recorded it): the hosted first charge is `/billing/payments/beginredirect/` (a); an
+arbitrary-amount charge on the saved card is `/billing/payments/charge/`, which auto-issues the
+document (b); the sandbox is a free test company, separate from the real org (d); webhooks are
+`/triggers/triggers/subscribe/` and need the Growth plan — otherwise poll `/billing/payments/list/`
+(c). **Request/response schemas, the refund endpoint and the idempotency key are UNVERIFIED.**
+**Sumit's own `/billing/recurring/*` is NOT used, by design** — renewal scheduling stays ours
+(`processDueRenewals`), exactly as 0046 §4 requires. Nothing in the tree depends on any of this
+yet: every charge still goes through `BillingGateway`, production still runs
+`NotConfiguredGateway`, and there is no Sumit adapter. What changed is the default
+`subscriptions.gateway` (`'grow'` → `'sumit'`, migration 0044) and the terms-acceptance record at
+checkout, a card-company requirement of the acquirer. The Grow row in the table is **retained as
+the fallback** and its recurring cell was corrected in the same change.
 
 **Billing ships as עוסק פטור** ([`0046`](vault/decisions/0046-billing-ships-as-osek-patur.md)) —
 documents at launch are **קבלה** automatically per successful charge and **חשבונית עסקה** on
@@ -77,15 +95,48 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
   adds a second business buys nothing further — he is already subscribed.
 - **Renewals**: the daily `billing_renewals` job (`processDueRenewals`) finds due subscriptions
   and charges via the adapter. Success → `expire_period` (zero leftover) + `grant_period`
-  (plan credits) + period advanced one month (day-clamped). Failure → `past_due`; retried only
-  on configured dunning days; `suspend_after_days` → `suspended` (render paths treat only
-  active/past_due as live).
+  (plan credits) + period advanced one month (day-clamped). If `scheduled_plan_code` is set, the
+  charge and the grant are **that** plan's and it becomes `plan_code` in the same success branch;
+  a failed charge leaves the schedule in place. Failure → `past_due`; retried only on configured
+  dunning days; `suspend_after_days` → `suspended` (render paths treat only active/past_due as
+  live).
 - **Cancellation** = `cancel_at_period_end`; service continues to period end, then leftover
-  credits expire.
-- **Plan changes** (launch scope): upgrade applies immediately — charge the difference via the
-  gateway, `grant_manual` the credit difference, switch `plan_code`; downgrade takes effect at
-  the next renewal (change `plan_code` only). Both are single UPDATEs + ledger rows on the
-  existing machinery, and both move the whole account: there is no per-business plan to change.
+  credits expire. **No refund.** A cancel clears a pending plan change, and a plan change clears
+  a pending cancel.
+- **Plan changes** (founder decisions 2026-09-17,
+  [`0052`](vault/decisions/0052-upgrade-credits-are-period-credits.md) and
+  [`0053`](vault/decisions/0053-downgrades-are-scheduled-not-applied.md); `changePlan` in
+  `billing.ts`, arithmetic in `packages/core/src/plan-change.ts`):
+  - **Upgrade (by price) is immediate and prorated.** `quotePlanChange` takes the fraction of the
+    period that is left — `daysRemaining = ceil((periodEnd − now) / 1 day)` clamped to
+    `[0, daysInPeriod]`, over `daysInPeriod = round((periodEnd − periodStart) / 1 day)` — and
+    applies it to **both** numbers: `chargeAgorot = ceil(price difference × fraction)` (money
+    rounds up) and `creditsGranted = floor(credit difference × fraction)` (credits round down).
+    The gateway charges the difference; on success the credits are written as a **`grant_period`**
+    row with the note `upgrade <from>→<to> <daysRemaining>/<daysInPeriod>` and `plan_code`
+    switches. **Not `grant_manual`** — `expirePeriodRemainder` spares manual credits, so an
+    upgrade granted that way would never expire; as period credits they leave at the next renewal
+    with the rest. The period dates never move. A declined charge changes nothing but the
+    `gateway_events` row. **An upgrade on the last day** (`daysRemaining ≤ 1`) is scheduled
+    instead of charged.
+  - **Downgrade is scheduled**: `subscriptions.scheduled_plan_code` (migration 0045) is set and
+    `plan_code` stays what was paid for until the renewal applies it. Flipping `plan_code` early
+    would misreport the current plan and make an upgrade-after-downgrade prorate from the wrong
+    base — that is why it is a column.
+  - **Re-choosing the current plan is the undo**: clears the schedule and a pending cancel; a
+    typed `nothing_pending` refusal when nothing was pending. Only `active` may change plan;
+    `past_due`/`suspended` are refused (`not_active`, a Hebrew 409 on the web).
+  - The same `quotePlanChange` is a client-safe subpath (`@aiugc/core/plan-change`), so the
+    account page — not built yet; the routes are — will display the number the route charges.
+    `GET /api/account/subscription` returns a quote for every active plan the account is not on,
+    computed from the plan it is on even if that plan has since been retired.
+  - All of it moves the whole account: there is no per-business plan to change.
+- **Terms at checkout**: `POST /api/account/checkout` requires `acceptedTerms: true` (a checkbox,
+  a card-company requirement of the acquirer, Upay — reverses `docs/legal-review.md` row T1 for the purchase step
+  only) and writes a `terms_acceptances` row (migration 0046: user, the terms page's dated
+  version, `'checkout'`, first-hop IP, user agent) before answering **503 "התשלום המקוון יופעל
+  בקרוב."** — a deliberate dead end until the gateway adapter exists. The acceptance record is
+  real; the payment is not yet.
 - **Callbacks vs our loop**: the gateway also emits charge events; both paths funnel through
   `gateway_events` with the unique id, so a callback arriving for a charge our renewal loop
   initiated (or vice versa) is a no-op.
@@ -119,16 +170,24 @@ a third off between the bottom tier and the top — and that is the entire pull 
 tiers: `jobs` has no priority column and the claim query has no plan awareness, so it is a core
 change if and when it comes.
 
-| code      | price      | credits/mo | per credit | Service B |
-| --------- | ---------- | ---------- | ---------- | --------- |
-| `starter` | ₪150 (net) | 1000       | ₪0.15      | ✔         |
-| `pro`     | ₪300 (net) | 2500       | ₪0.12      | ✔         |
-| `studio`  | ₪500 (net) | 5000       | ₪0.10      | ✔         |
+| code      | name    | price      | credits/mo | per credit | Service B |
+| --------- | ------- | ---------- | ---------- | ---------- | --------- |
+| `starter` | התחלה   | ₪150 (net) | 1000       | ₪0.15      | ✔         |
+| `pro`     | מתקדם   | ₪300 (net) | 2500       | ₪0.12      | ✔         |
+| `studio`  | פרימיום | ₪500 (net) | 5000       | ₪0.10      | ✔         |
 
 Prices are **net** — we ship as עוסק פטור, so no VAT is added today and on conversion it goes on
-top. `plans.name` still holds the Latin 'Starter' / 'Pro' / 'Studio'; the **Hebrew display names are
-still pending**, they are the founder's call, and migration 0043 deliberately leaves the column
-alone.
+top. The Hebrew display names are the founder's (2026-09-17) and live in `plans.name` since
+migration 0044; the `code` is what every lookup uses and it does not change.
+
+> **Migrations 0044–0047 were applied to production on 2026-09-17** (the Hebrew names and the
+> `'sumit'` gateway default; `subscriptions.scheduled_plan_code`; `terms_acceptances`; nullable
+> `feedback.user_id` with the contact columns). 0044's guarded UPDATEs were read at both ends: the
+> before-read returned the Latin names with all three guards matching, the after-read the three
+> Hebrew names and `'sumit'::text`. Ledger **48 rows, 0000–0047**, recorded by `db push` itself.
+> Proof: `scripts/verify-migration-ledger.sql` §RESULTS (38 structural rows, 36 true). No restart
+> was needed for the names; **the renewal change ships to the worker box only with the merge and a
+> box deploy** (`docs/07-worker-box.md` §11).
 
 The whole credits bundle — `pricing.ts`, the ledger rework, the wizard gate, migrations
 0016–0020 and their tests — landed in one commit: **`d8df728`** (2026-08-06).

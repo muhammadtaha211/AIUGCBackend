@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0042 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0047 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,7 +33,9 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 32 rows: **30 true, 1 false (0022), 1 NULL (0020)**. Two of those
+-- expect, of 38 rows: **36 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
+-- which this sentence had missed; 0044-0047 then added one each, to 38.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -57,7 +59,8 @@
 -- 0038 one more on 2026-09-13 and 0039 the same day. 0040 (2026-09-16) added
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
--- 30 by 0040, and 0041/0042 then took it to **32** with one row each — they are
+-- 30 by 0040, 0043 took it to 34 with two ('0043', '0043-plans'), 0044-0047 to
+-- **38** with one each, and 0041/0042 before them took it to 32 with one row each — they are
 -- kept separate, not paired like '0038+0040', because they assert different
 -- objects and either can fail without the other: 0041 owns the column, indexes
 -- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
@@ -567,6 +570,62 @@ WITH checks(migration, layer, applied, note) AS (VALUES
        WHERE oid = 'public.subscriptions'::regclass)),
   'policy re-scoped to user_id = auth.uid(), RLS still enabled'),
 
+-- 0044: the Hebrew plan names and the gateway default. The name UPDATEs are
+-- GUARDED on the Latin names, so as with 0040 a miss exits 0 and still records
+-- the version -- this row is how a silent no-op is found. NOT IN over every
+-- plans row, like '0043-plans', so a fourth plan would need a row edit here.
+('0044', 'structural', (SELECT NOT EXISTS (
+  SELECT 1 FROM plans
+  WHERE (code, name) NOT IN (
+    ('starter', 'התחלה'),
+    ('pro',     'מתקדם'),
+    ('studio',  'פרימיום')))
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subscriptions'
+      AND column_name = 'gateway' AND column_default = '''sumit''::text')),
+  'plans named in Hebrew; subscriptions.gateway defaults to sumit'),
+
+-- 0045: the scheduled-downgrade column, nullable, with its FK to plans. Both
+-- halves: the column alone would let a schedule name a plan that does not
+-- exist, which the renewal would then skip forever.
+('0045', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'subscriptions'
+      AND column_name = 'scheduled_plan_code' AND is_nullable = 'YES')
+  AND EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.subscriptions'::regclass
+      AND conname = 'subscriptions_scheduled_plan_code_plans_code_fk')),
+  'subscriptions.scheduled_plan_code, nullable, FK to plans'),
+
+-- 0046: terms_acceptances -- table, its seven columns, the user index, the FK
+-- and RLS enabled with no policy (0035's pattern). to_regclass so a missing
+-- table reads false instead of erroring the whole file.
+('0046', 'structural', (SELECT
+  to_regclass('public.terms_acceptances') IS NOT NULL
+  AND (SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'terms_acceptances') = 7
+  AND EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'terms_acceptances'
+      AND indexname = 'terms_acceptances_user_idx')
+  AND EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid = to_regclass('public.terms_acceptances')
+      AND conname = 'terms_acceptances_user_id_users_id_fk')
+  AND COALESCE((SELECT relrowsecurity FROM pg_class
+       WHERE oid = to_regclass('public.terms_acceptances')), false)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'terms_acceptances')),
+  'terms_acceptances: 7 columns, user index, FK, RLS on with no policy'),
+
+-- 0047: feedback can hold an anonymous /contact row -- user_id nullable and
+-- the three contact columns present. All four, because a nullable user_id
+-- without contact_email is a message nobody can answer.
+('0047', 'structural', (SELECT
+  (SELECT count(*) FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'feedback'
+       AND ((column_name = 'user_id' AND is_nullable = 'YES')
+            OR column_name IN ('contact_name', 'contact_email', 'ip'))) = 4),
+  'feedback.user_id nullable; contact_name, contact_email, ip present'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -639,6 +698,59 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-09-17 (second push that day), production (hyaqydcmwbnbaiqqufow), after
+-- `db push` applied **0044, 0045, 0046 and 0047 together** (Hebrew plan names +
+-- gateway default 'sumit'; subscriptions.scheduled_plan_code; terms_acceptances;
+-- feedback.user_id nullable + contact columns), on the founder's explicit
+-- instruction for this one push: ledger read-back **48 rows, 0000-0047, NO
+-- GAPS, nothing unapplied and NO REPAIR NEEDED** -- `db push` recorded all four
+-- itself, the TENTH time in a row the REPAIR note above has predicted
+-- correctly. Pre-flight was `migration list` (0000-0043 local == remote,
+-- 0044-0047 the only rows with an empty remote) and `db push --dry-run`, which
+-- named exactly those four files in that order. Same Docker catalog-cache
+-- warning as 0035-0043, and not a failure; the apply printed "Applying
+-- migration 0044_plans_hebrew_names_sumit.sql..." through "...0047..." and
+-- exited 0.
+--
+-- 0044's three UPDATEs are GUARDED on the Latin names, so it was read at BOTH
+-- ends (packages/core/.work/readback-0044-0047.ts, read-only, the 0040 rule).
+-- BEFORE: plans.name = 'Pro' / 'Starter' / 'Studio' with all three guards
+-- matching, subscriptions.gateway default 'grow'::text, scheduled_plan_code
+-- absent, terms_acceptances absent, feedback.user_id NOT NULL with 1 row (1
+-- with a user), subscriptions 0 rows, ledger 44 rows 0000-0043. The push was
+-- scripted to refuse unless every one of those read "not applied" -- and its
+-- first run DID refuse, on a miscount in the guard script itself (the read-back
+-- prints "not applied" eight times, not five), which is the check working.
+-- AFTER: 'מתקדם' / 'התחלה' / 'פרימיום', default 'sumit'::text,
+-- scheduled_plan_code present nullable text with its FK, terms_acceptances
+-- present with 7 columns / RLS on / 0 policies / [pkey, user_idx] / the users
+-- FK / 0 rows, feedback.user_id + contact_name + contact_email + ip all
+-- nullable with the same 1 row, subscriptions still 0 rows. Nothing was
+-- deleted; 0047 relaxes a NOT NULL and adds three columns.
+--
+-- Applied by a session, not by hand; the pinned local binary was spawned
+-- directly through a throwaway wrapper that read DATABASE_URL out of `.env`
+-- itself, swapped :6543/ for :5432/, and scrubbed the URL, password, user and
+-- host out of every byte the CLI wrote. Never typed on a command line, never
+-- printed.
+--
+-- THIS FILE was then run against production through psql 17 and returned
+-- **41 rows: 38 structural, 36 true / 1 false / 1 NULL**, with 0022 the only
+-- false and 0020 the NULL -- exactly the header's (corrected) expectation --
+-- and all four new rows ('0044' through '0047') true. The 3 data rows read
+-- 0020 t, 0021 t, 0028 f, as expected against this database.
+--
+-- STILL OPEN at the time of writing: the worker box is on origin/main, which
+-- predates 0045. Its daily `billing_renewals` job selects `subscriptions`
+-- through drizzle by column name, and origin/main's schema does not name
+-- scheduled_plan_code, so the OLD code keeps working on the NEW database
+-- (additive column). The branch's code is the other way round -- it names the
+-- column and needs 0045 -- which is why the migrations went first. After the
+-- merge the box needs `cd ~/AIUGCBackend && git pull && pnpm install && sudo
+-- systemctl restart aiugc-worker` for the renewal change to ship.
+--
+-- ---------------------------------------------------------------------------
 --
 -- 2026-09-16 (second push that day), production (hyaqydcmwbnbaiqqufow), after
 -- `db push` applied **0041 and 0042 together** (subscriptions re-keyed from

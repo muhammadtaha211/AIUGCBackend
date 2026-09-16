@@ -11,6 +11,7 @@
     "./hook-effect": "./src/hook-effect.ts",
     "./hook-geometry": "./src/hook-geometry.ts",
     "./hook-text": "./src/hook-text.ts",
+    "./plan-change": "./src/plan-change.ts",
     "./plan-format": "./src/plan-format.ts",
     "./pricing": "./src/pricing.ts",
     "./service-b-timeline": "./src/service-b-timeline.ts"

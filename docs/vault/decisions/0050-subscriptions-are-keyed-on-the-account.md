@@ -72,6 +72,8 @@ picked the direction credits already went.
 
 - `subscriptions.gateway` keeps its `'grow'` default. Sumit is not confirmed against
   [[0046-billing-ships-as-osek-patur]]'s four requirements, and that is a separate decision.
+  _(Superseded on this one point, 2026-09-17: migration 0044 moves the default to `'sumit'` —
+  [[0054-payment-stack-is-sumit-via-upay]]. Everything else in this note stands.)_
 - `orders` stays business-keyed. A DFY order is one piece of work for one brand, paid once — not a
   standing relationship with an account.
 - `createSet`, `createBRender`, `debitRender` and the two-debit-sites invariant are untouched, as
