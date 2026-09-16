@@ -99,9 +99,12 @@ code ever depended on it, and it stopped being true the moment the steps format 
 a flat. Service B is still **priced per second** of approved VO, now with a floor; Service A steps
 is two flats.
 
-> **Migration 0043 is written and NOT pushed** as of 2026-09-16. This section describes the prices
-> it sets; production still holds the 0039 rates and 0001's placeholder plan prices until it is
-> applied. `packages/core/scripts/verify-credit-costs.ts` still pins the 0039 row and moves with it.
+> **Migration 0043 was applied to production on 2026-09-17** and these are the live prices. The
+> before-read returned the 0039 rates and 0001's placeholder plan prices with all four guards
+> matching; the after-read, through `getConfigValue(db, 'credit_costs', creditCostsSchema)`, returned
+> the ten rates below and the three plan rows. Ledger **44 rows, 0000–0043**, recorded by `db push`
+> itself. Proof: `apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-credit-costs.ts`
+> (18 checks, PASS). No restart or deploy was needed — `getConfigValue` reads the row on every quote.
 
 Never marketed in **"videos per month"** — credits and worked examples only. A 35s ad and a 10s ad
 are not the same product and must not cost the same, so any count of videos is a number we would

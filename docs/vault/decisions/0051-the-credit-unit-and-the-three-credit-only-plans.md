@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-16
-method: "Founder decisions in chat, 2026-09-16, taken together in one sitting: the credit unit (1000 credits = ₪150), Service B stays per-second with a floor, three plans differing by credit volume only, and the copy rule. Written as supabase/migrations/0043_pricing_credit_unit.sql — two guarded UPDATEs, `credit_costs` guarded on the 0039 state (`@>` containment on a_steps_credits 3 + a_demo_analysis_credits 2) and each `plans` row guarded on the 0001 placeholder price it replaces. The migration is WRITTEN AND NOT PUSHED: production still holds the 0039 rates and the 0001 plan prices as of this date. Proved on PGlite only, by `apps/cli/node_modules/.bin/tsx packages/core/.work/verify-0043-replay.ts` (24 checks, PASS: the ten rates, jsonb_typeof number on all ten, the six customer-facing quote assertions including all three sides of the new 75 floor, the three plan rows, a second run of the file as a clean no-op, the `@>` guard refusing a string-typed "3", and the fact that the plans half still applies when it does -- the two guards are independent, so the file can HALF-APPLY) — 0043 is in PORTABLE_MIGRATIONS (packages/core/test/helpers/pglite.ts) and the whole @aiugc/core suite runs against it green, with packages/core/test/credits-wiring.test.ts re-denominated end-to-end (24 cases, quote-equals-debit on every one) and packages/core/test/billing.test.ts asserting the Starter grant is 1000. The MARGIN figures below are REASONED, not measured, and are labelled as such individually."
+method: "Founder decisions in chat, 2026-09-16, taken together in one sitting: the credit unit (1000 credits = ₪150), Service B stays per-second with a floor, three plans differing by credit volume only, and the copy rule. Written as supabase/migrations/0043_pricing_credit_unit.sql — two guarded UPDATEs, `credit_costs` guarded on the 0039 state (`@>` containment on a_steps_credits 3 + a_demo_analysis_credits 2) and each `plans` row guarded on the 0001 placeholder price it replaces. APPLIED TO PRODUCTION 2026-09-17 on the founder's explicit instruction for that one push, after a read-only `migration list` + `db push --dry-run` pre-flight and a BEFORE-read through getConfigValue that returned the 0039 row with all four guards matching; the AFTER-read through the same call returned the ten new rates and the three new plan rows, and packages/core/scripts/verify-credit-costs.ts (re-pinned in the same change) passes 18 checks against production. Ledger 44 rows, 0000-0043, recorded by db push itself, ninth time running with no migration repair. No restart or deploy was needed - getConfigValue reads app_config on every quote, with no in-process cache. Proved on PGlite only, by `apps/cli/node_modules/.bin/tsx packages/core/.work/verify-0043-replay.ts` (24 checks, PASS: the ten rates, jsonb_typeof number on all ten, the six customer-facing quote assertions including all three sides of the new 75 floor, the three plan rows, a second run of the file as a clean no-op, the `@>` guard refusing a string-typed "3", and the fact that the plans half still applies when it does -- the two guards are independent, so the file can HALF-APPLY) — 0043 is in PORTABLE_MIGRATIONS (packages/core/test/helpers/pglite.ts) and the whole @aiugc/core suite runs against it green, with packages/core/test/credits-wiring.test.ts re-denominated end-to-end (24 cases, quote-equals-debit on every one) and packages/core/test/billing.test.ts asserting the Starter grant is 1000. The MARGIN figures below are REASONED, not measured, and are labelled as such individually."
 source: founder
 ---
 
@@ -134,6 +134,23 @@ analysis, and the format's whole argument is that the customer does not pay it a
 in [[analyze-demo-cost]], **measured 2026-08-23 and now stale** past [[CONVENTIONS]]'s 14-day rule;
 it was already stale when 0048 leaned on it and it has not been re-measured since. Six jobs is not
 a distribution. This is the single weakest number in the sheet.
+
+## The consequence nobody rescales: existing balances
+
+`credit_ledger` holds credits, not shekels, and nothing re-denominates a stored balance. Because
+`a_steps_credits` moved ×8.33 rather than ×5, every credit already granted bought roughly an eighth
+of the ads it was granted to buy the moment 0043 landed.
+
+Measured 2026-09-17, right after the push: exactly two accounts held a positive balance, both
+`role=customer`, at **145** and **81** credits. On the founder's instruction the same day both were
+made whole **in ads rather than in credits**, on the marginal steps rate (the second-and-later ad
+off one recording, 3 → 25, which is what a standing balance actually gets spent on): grants of
+**1055** and **594** to reach **1200** and **675**. One `grant_manual` row each, written by
+`grantCredits` — the same function the admin grants route calls.
+
+This is a standing hazard, not a one-off: **any future change to a rate silently re-values every
+stored balance**, and `grant_manual` has no unique index to make a corrective grant safe to repeat.
+A top-up script must carry its own idempotency tag, as this one did.
 
 ## Review trigger
 

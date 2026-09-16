@@ -116,7 +116,7 @@ Everything in this section is **founder-reported from a dashboard**, not observe
 unless a line says otherwise.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0042 applied, ledger clean, 43 rows, no gaps — and since 2026-09-16 exactly ONE file pending, the local-only 0043 below (44 files against 43 ledger rows)** — **0041 and 0042 were pushed 2026-09-16** (see the subscriptions paragraph below), **0040 was
+**Migrations 0000–0043 applied, ledger clean, 44 rows, no gaps, nothing pending** — **0043 was pushed 2026-09-17** (see the pricing paragraph below), **0041 and 0042 were pushed 2026-09-16** (see the subscriptions paragraph below), **0040 was
 pushed 2026-09-16** (see the audio-preview paragraph below for the before/after read-back a guarded
 migration needs), and **0039 was pushed 2026-09-13** on the founder's explicit instruction for that one push, by the session that
 wrote it; `db push` recorded it itself, the sixth time running that no `migration repair` was
@@ -156,12 +156,47 @@ the first count of that table on this project (the 2026-08-23 one is against the
 So the `DROP COLUMN` destroyed nothing. Post-apply read-back 11/11, and
 `scripts/verify-migration-ledger.sql` — which gained a row for each file — read **32 structural
 rows, 30 true / 1 false (0022) / 1 NULL (0020)** against production, exactly its stated expectation.
-**0043 is WRITTEN AND NOT PUSHED** (2026-09-16) — `supabase/migrations/0043_pricing_credit_unit.sql`,
-the ₪0.15 credit unit and the three credit-only plans ([[0051-the-credit-unit-and-the-three-credit-only-plans]]).
-Production still holds the 0039 rates and 0001's placeholder plan prices; the ledger is unchanged at
-43 rows, 0000–0042. It is proved on PGlite only. Both its statements are **guarded**, so pushing it
-needs a before-read as well as an after-read (0040's lesson), and
-`packages/core/scripts/verify-credit-costs.ts` still pins the 0039 row and moves with the push.
+**0043 is APPLIED (2026-09-17)** — `supabase/migrations/0043_pricing_credit_unit.sql`, the ₪0.15
+credit unit and the three credit-only plans ([[0051-the-credit-unit-and-the-three-credit-only-plans]]),
+on the founder's decision and his explicit instruction for that one push. A credit is now **₪0.15**
+on the base tier and the "1 credit = 1 second" rule is retired. Seven of the ten rates are a
+straight ×5; **three are not** — `b_minimum_credits` **0 → 75** (a Service B floor where there was
+none, binding under 15s), `a_steps_credits` **3 → 25** (×8.33) and `a_demo_analysis_credits`
+**2 → 20** (×10) — so it re-prices Service A steps as well as re-denominating. Plans went from
+0001's placeholders to ₪150/1000cr, ₪300/2500cr, ₪500/5000cr with `allows_service_b` **true on all
+three**. Ledger **44 rows, 0000–0043**; `db push` recorded it itself, **ninth time running** with no
+repair.
+
+**Both statements are guarded, so it was read at BOTH ends** — the rule 0040 established. The
+before-read (`packages/core/.work/preflight-0043.ts`, through
+`getConfigValue(db,'credit_costs',creditCostsSchema)`) returned the 0039 row with **all four guards
+matching**, which is what proves the push actually moved something rather than exiting 0 on a
+silent no-op; the after-read through the same call returned the ten new rates, all
+`jsonb_typeof` = `number`, nothing stray, plus the three new plan rows. **No restart and no deploy
+were needed** — `getConfigValue` has no in-process cache and reads `app_config` on every quote, so
+the new prices were live the moment the UPDATE committed. Post-apply proof:
+`packages/core/scripts/verify-credit-costs.ts`, **re-pinned to the 0043 values in the same change**,
+18 checks PASS; `scripts/verify-migration-ledger.sql` gained a `0043` row, a `0043-plans` row, and
+its `0039` row folded to `0039+0043` at 25/20 — asserting 0039's old literals would now read FALSE
+on a correct database, the same treatment 0038's row got when 0040 superseded it.
+
+**0043 devalued the two live customer balances, and they were topped up the same day.** Nothing
+rescales `credit_ledger`, so a balance granted under the 0039 scale bought roughly an eighth of the
+ads it was granted to buy once `a_steps_credits` went 3 → 25. Measured before: two `role=customer`
+accounts held **145** and **81** credits — 48 and 27 marginal steps ads at 3. On the founder's
+instruction both were made whole **in ads, not in credits**, on the marginal (second-and-later ad
+off one recording) rate: grants of **1055** and **594**, landing at **1200** and **675**, which is
+48 and 27 ads at 25. Written with `grantCredits` — the same function the admin grants route calls —
+as one `grant_manual` row each (`packages/core/.work/topup-0043.ts`, dry-run by default). Read back
+at 1200 / 675, three ledger rows each. **`grant_manual` has no unique index** (0016's two partial
+indexes cover `debit_render` and `refund_failed` only), so the script guards on its own note tag and
+a deliberate second `--apply` run was proved to write **0 grants** and leave both balances
+unchanged. A first-ad basis (5 → 45, ×9) would have been slightly more generous and a
+`b_per_second` basis (×5) much less; the marginal rate was chosen because variants are the product.
+`subscriptions` is still **0 rows**, so no plan grants anyone anything yet.
+
+**One thing 0043 does NOT carry: the Hebrew plan names.** `plans.name` still holds Latin
+'Starter' / 'Pro' / 'Studio' in a Hebrew-first product. That is a founder call and still open.
 
 **What is NOT finished: the worker box.** It was on the pre-0041 commit when this landed, and its
 daily `billing_renewals` job selects `subscriptions` through drizzle, naming `business_id` on the
