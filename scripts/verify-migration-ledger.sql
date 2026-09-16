@@ -616,6 +616,16 @@ ORDER BY migration, layer DESC;
 -- on a database where the pair ran and on one where neither did. The before-read
 -- above is what closes that gap for THIS database.
 --
+-- **This file was then run against production in full, structural layer, and it
+-- matches its own header exactly: 30 rows, 28 TRUE, 1 false, 1 NULL.** The new
+-- '0038+0040' row read **true**. The single false is 0022, unchanged and not a
+-- finding (see its note); the single NULL is 0020, as always. So folding 0038's
+-- row into '0038+0040' did what it was meant to: the row count did not move and
+-- 0022 is still the ONLY expected false, which is the rule that makes this file
+-- usable. Measured via packages/core/.work/run-ledger-0040.ts (throwaway,
+-- gitignored) -- it reads this file, refuses it if any write statement appears
+-- outside a comment, and runs it over the session pooler read-only.
+--
 -- No worker restart and no deploy were needed: requestAudio reads the row live
 -- on every call. Decision: docs/vault/decisions/0049-audio-preview-attempt-cap-
 -- back-to-20.md, superseding 0047.
