@@ -54,7 +54,7 @@ export const MAX_DEMO_BYTES = 1024 * 1024 * 1024;
 const DEMO_TYPES = ["video/mp4", "video/quicktime"];
 
 export const MIN_DEMO_SECONDS = 8;
-export const MAX_DEMO_SECONDS = 180;
+export const MAX_DEMO_SECONDS = 90;
 
 export function clientDemoFileError(file: { type: string; size: number }): string | null {
   if (!DEMO_TYPES.includes(file.type)) return "אפשר להעלות רק וידאו בפורמט MP4 או MOV.";
@@ -66,7 +66,9 @@ export function clientDemoFileError(file: { type: string; size: number }): strin
 /** Pre-upload duration gate (same limits the ingest job enforces server-side). */
 export function demoDurationError(seconds: number): string | null {
   if (seconds < MIN_DEMO_SECONDS || seconds > MAX_DEMO_SECONDS) {
-    return "אורך הסרטון חייב להיות בין 8 שניות ל-3 דקות";
+    // COPY PENDING FOUNDER REVIEW — byte-identical to the Hebrew the ingest
+    // probe stores as rejectReason (packages/core/src/pipelines/demos.ts).
+    return "אורך הסרטון חייב להיות בין 8 שניות ל-90 שניות";
   }
   return null;
 }

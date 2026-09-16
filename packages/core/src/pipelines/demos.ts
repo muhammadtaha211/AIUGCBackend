@@ -10,10 +10,14 @@ import { normalizeVideo, probe, thumbnail } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import { getStorage, storageKey } from "../storage";
 
-// Up to 3 minutes: step-plan demos are one continuous screen recording that
+// Up to 90 seconds: step-plan demos are one continuous screen recording that
 // the analysis pass mines for states — the render uses ~16-21s of it.
-const MIN_DURATION_MS = 8_000;
-const MAX_DURATION_MS = 180_000;
+// Exported only so apps/web's seconds-valued mirror can be pinned against
+// them (apps/web/test/service-a-ui.test.ts). This is the only gate on total
+// demo duration — nothing re-checks at analysis, plan or render time, so
+// demos already `ready` at the old cap stay usable.
+export const DEMO_MIN_DURATION_MS = 8_000;
+export const DEMO_MAX_DURATION_MS = 90_000;
 
 /** Register uploaded footage and queue probing/normalization. */
 export async function createDemo(
@@ -151,8 +155,10 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
     if (info.height <= info.width) {
       throw new PermanentError("הסרטון אופקי — צריך וידאו אנכי (9:16)");
     }
-    if (info.durationMs < MIN_DURATION_MS || info.durationMs > MAX_DURATION_MS) {
-      throw new PermanentError("אורך הסרטון חייב להיות בין 8 שניות ל-3 דקות");
+    if (info.durationMs < DEMO_MIN_DURATION_MS || info.durationMs > DEMO_MAX_DURATION_MS) {
+      // COPY PENDING FOUNDER REVIEW — stored verbatim as demos.reject_reason,
+      // and byte-identical to demoDurationError()'s string in apps/web.
+      throw new PermanentError("אורך הסרטון חייב להיות בין 8 שניות ל-90 שניות");
     }
 
     await ctx.db

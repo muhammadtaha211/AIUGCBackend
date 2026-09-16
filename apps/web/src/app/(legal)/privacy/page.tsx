@@ -95,7 +95,7 @@ export default function PrivacyPage() {
         </p>
         <SubTitle>תוכן שאתם מעלים</SubTitle>
         <p>
-          סרטוני הדגמה של המוצר (<Ltr>MP4</Ltr> או <Ltr>MOV</Ltr>, בין 8 שניות ל־3 דקות, עד{" "}
+          סרטוני הדגמה של המוצר (<Ltr>MP4</Ltr> או <Ltr>MOV</Ltr>, בין 8 שניות ל־90 שניות, עד{" "}
           <Ltr>1GB</Ltr>), ובמודעות עם דמות <Ltr>AI</Ltr> גם תמונת מוצר (<Ltr>JPG</Ltr>,{" "}
           <Ltr>PNG</Ltr> או <Ltr>WebP</Ltr>, עד <Ltr>10MB</Ltr>). הסרטון נשמר כולל ערוץ הקול המקורי
           שלו.

@@ -38,7 +38,7 @@ async function signedSamples(
 
 /**
  * Step 2 of the demo upload: the browser finished its direct upload — register
- * the object as a demo row and queue ingest (probe -> 8-60s gates -> normalize).
+ * the object as a demo row and queue ingest (probe -> 8-90s gates -> normalize).
  * Only paths this business's own upload-url route minted are accepted.
  */
 export async function POST(
