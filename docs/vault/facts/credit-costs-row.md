@@ -33,6 +33,16 @@ source: db
 > `scripts/verify-migration-ledger.sql` §RESULTS. Re-read at any time with
 > `select value from app_config where key = 'credit_costs';`
 
+> **Superseded on push — NOT yet pushed.** `supabase/migrations/0043_pricing_credit_unit.sql`
+> (written 2026-09-16, guarded on this exact row, **not applied**) re-bases all ten rates on a
+> ₪0.15 credit: seven ×5, plus `b_minimum_credits` **0 → 75** (a new Service B floor),
+> `a_steps_credits` **3 → 25** and `a_demo_analysis_credits` **2 → 20** —
+> [[0051-the-credit-unit-and-the-three-credit-only-plans]]. The block above is **production**, which
+> still holds the 0039 values. But `packages/core/test/helpers/pglite.ts` already replays 0043, so
+> the `@aiugc/core` suite runs on the NEW numbers — a test asserting 25 and this note asserting 3
+> are both correct. Re-measure this note, and re-pin
+> `packages/core/scripts/verify-credit-costs.ts`, in the same change that pushes the file.
+
 **No unread keys** — all ten are read by `packages/core/src/pricing.ts` and nothing else touches
 them (grepped one key at a time across `packages/core/src`, `apps/*/src`, `packages/remotion/src`;
 the tenth was added 2026-09-13 and is read at `quoteServiceASteps`).

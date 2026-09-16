@@ -57,8 +57,8 @@ let hookClipId: string;
 let hookLineId: string;
 let personaId: string;
 
-/** The shipped hybrid rates, on a 20s demo: flat 3 + 20 x 0.15 = 6 before any ending. */
-const A_BASE_CREDITS = 6;
+/** The shipped hybrid rates, on a 20s demo: flat 15 + 20 x 0.75 = 30 before any ending. */
+const A_BASE_CREDITS = 30;
 
 async function drainAll(): Promise<void> {
   for (let i = 0; i < 10; i++) {
@@ -229,8 +229,8 @@ afterAll(async () => {
 });
 
 describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
-  it("ending none: 20s demo, VO within it — 6 credits, quoted and charged alike", async () => {
-    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+  it("ending none: 20s demo, VO within it — 30 credits, quoted and charged alike", async () => {
+    await grantCredits(db, { userId: ownerUserId, credits: 500, note: "test" });
     const audio = await voicedAudio(20_000);
 
     const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
@@ -255,7 +255,7 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     expect(debits[0]!.delta).toBe(-quote.creditsPerRender);
   });
 
-  it("ending freeze: a sub-2s remainder spends no GPU, so it costs the same 6", async () => {
+  it("ending freeze: a sub-2s remainder spends no GPU, so it costs the same 30", async () => {
     const audio = await voicedAudio(21_500);
     const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
     expect(quote.creditsPerRender).toBe(A_BASE_CREDITS);
@@ -277,12 +277,12 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     expect((await debitsFor(renders[0]!.id))[0]!.delta).toBe(-quote.creditsPerRender);
   });
 
-  it("ending avatar: a 6s outro adds 6 credits of GPU — 12 in total", async () => {
+  it("ending avatar: a 6s outro adds 30 credits of GPU — 60 in total", async () => {
     const audio = await voicedAudio(26_000);
     const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
-    expect(quote.creditsPerRender).toBe(A_BASE_CREDITS + 6);
+    expect(quote.creditsPerRender).toBe(A_BASE_CREDITS + 30);
     expect(quote.components.find((c) => c.kind === "outro")!.seconds).toBe(6);
-    expect(quote.outroCredits).toBe(6);
+    expect(quote.outroCredits).toBe(30);
 
     const { renders } = await createSet(db, {
       businessId,
@@ -299,16 +299,16 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
   });
 
   it("outroCredits is a delta between two ceiled quotes, not the outro component", async () => {
-    // 6.5s ending: 3 flat + 3 demo + 6.5 outro = 12.5, ceiled ONCE to 13.
-    // Without the ending the same render is 6. The customer pays 7 more —
-    // showing the 6.5 component instead would understate it by half a credit
+    // 6.5s ending: 15 flat + 15 demo + 32.5 outro = 62.5, ceiled ONCE to 63.
+    // Without the ending the same render is 30. The customer pays 33 more —
+    // showing the 32.5 component instead would understate it by half a credit
     // and disagree with the total sitting on the next line.
     const audio = await voicedAudio(26_500);
     const quote = await quoteASet(db, { businessId, demoId, audioRenderId: audio.id });
 
-    expect(quote.components.find((c) => c.kind === "outro")!.credits).toBe(6.5);
-    expect(quote.creditsPerRender).toBe(13);
-    expect(quote.outroCredits).toBe(7);
+    expect(quote.components.find((c) => c.kind === "outro")!.credits).toBe(32.5);
+    expect(quote.creditsPerRender).toBe(63);
+    expect(quote.outroCredits).toBe(33);
     expect(quote.creditsPerRender - quote.outroCredits).toBe(A_BASE_CREDITS);
   });
 
@@ -340,7 +340,7 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
     await approvePlan(db, planId);
 
     // Every voiced case above paid for a render of THIS demo and none was
-    // refunded, so the analysis is long since bought: 3 a cell, not 5.
+    // refunded, so the analysis is long since bought: 25 a cell, not 45.
     expect(await demoHasPaidRender(db, demoId)).toBe(true);
 
     const second = await newHookLine();
@@ -357,26 +357,42 @@ describe("the quote shown IS the quote debited", { timeout: 120_000 }, () => {
       },
     });
     expect(renders).toHaveLength(2);
-    // a_steps_credits (3), per render — NOT the full-format duration quote,
-    // which would price this 20s demo at 6 (and a 3-minute one at ~31).
+    // a_steps_credits (25), per render — NOT the full-format duration quote,
+    // which would price this 20s demo at 30 (and a 3-minute one at ~150).
     for (const render of renders) {
-      expect(await debitDelta(render.id)).toBe(-3);
+      expect(await debitDelta(render.id)).toBe(-25);
     }
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 6);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 50);
 
     // A dying steps render refunds exactly the flat, keyed on the render id.
     expect(await failRenderAndRefund(db, renders[0]!.id, "בדיקה")).toBe(true);
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 3);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 25);
     await drainAll();
   });
 
-  it("Service B: the quote is ceil(duration_ms / 1000) at 1 credit per second", async () => {
+  it("Service B: the quote is ceil(seconds x 5), not ceil(seconds) x 5", async () => {
     const audio = await voicedAudio(15_400);
     const quote = await quoteBRender(db, { businessId, audioRenderId: audio.id });
-    expect(quote.creditsPerRender).toBe(16); // 15.4s rounds up
+    // 15.4 x 5 = 77, ceiled once. b_minimum_credits (75, new in 0043) is a
+    // floor on the SHORT end — 15s — so it does not bind here.
+    expect(quote.creditsPerRender).toBe(77);
 
     const render = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
-    expect((await debitsFor(render.id))[0]!.delta).toBe(-16);
+    expect((await debitsFor(render.id))[0]!.delta).toBe(-77);
+  });
+
+  it("Service B under 15s: the new floor decides the price, and it is what gets debited", async () => {
+    // b_minimum_credits 0 -> 75 is the ONE thing 0043 adds rather than
+    // re-denominates, and an inactive floor becoming active is exactly the
+    // kind of change no x5 assertion would catch. 9.2s x 5 = 46, clamped up to
+    // the 75 floor — and the DEBIT has to agree with the quote, which is what
+    // this whole describe exists to prove.
+    const audio = await voicedAudio(9_200);
+    const quote = await quoteBRender(db, { businessId, audioRenderId: audio.id });
+    expect(quote.creditsPerRender).toBe(75);
+
+    const render = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
+    expect((await debitsFor(render.id))[0]!.delta).toBe(-75);
   });
 });
 
@@ -431,78 +447,78 @@ describe("insufficient balance", { timeout: 120_000 }, () => {
 });
 
 /**
- * a_demo_analysis_credits (migration 0039): the analysis is paid for ONCE per
- * demo, on the first render of it that actually takes money. 3 for the render,
- * 2 for the analysis — so the first render of a demo totals 5, as it always
- * did, and every later one costs 3.
+ * a_demo_analysis_credits (migration 0039, re-denominated by 0043): the
+ * analysis is paid for ONCE per demo, on the first render of it that actually
+ * takes money. 25 for the render, 20 for the analysis — so the first render of
+ * a demo totals 45, and every later one costs 25.
  */
 describe("the demo analysis is charged once per demo", { timeout: 240_000 }, () => {
   // Its own float, so no case here depends on what an earlier describe left
   // behind or on the order vitest runs them in.
   beforeAll(async () => {
-    await grantCredits(db, { userId: ownerUserId, credits: 200, note: "analysis tests" });
+    await grantCredits(db, { userId: ownerUserId, credits: 1000, note: "analysis tests" });
   });
 
-  it("first paid render of a demo debits 5 — as ONE row, not two", async () => {
+  it("first paid render of a demo debits 45 — as ONE row, not two", async () => {
     const demo = await stepsDemo();
     expect(await demoHasPaidRender(db, demo.demoId)).toBe(false);
 
     const quote = await quoteStepsASet(db, businessId, demo.demoId);
-    expect(quote.creditsPerRender).toBe(3);
-    expect(quote.analysisCreditsOncePerSet).toBe(2);
+    expect(quote.creditsPerRender).toBe(25);
+    expect(quote.analysisCreditsOncePerSet).toBe(20);
     expect(quote.components).toEqual([
-      { kind: "steps", credits: 3 },
-      { kind: "analysis", credits: 2 },
+      { kind: "steps", credits: 25 },
+      { kind: "analysis", credits: 20 },
     ]);
 
     const before = await creditBalance(db, ownerUserId);
     const { renders } = await stepsSet(demo, [await newHookLine()]);
     // One ledger row per render is the invariant refunds key on — the
     // analysis makes the first row larger, it does not add a second row.
-    expect(await debitDelta(renders[0]!.id)).toBe(-5);
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
+    expect(await debitDelta(renders[0]!.id)).toBe(-45);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 45);
   });
 
-  it("every later render of the SAME demo debits 3 — the analysis is bought", async () => {
+  it("every later render of the SAME demo debits 25 — the analysis is bought", async () => {
     const demo = await stepsDemo();
     const first = await stepsSet(demo, [await newHookLine()]);
-    expect(await debitDelta(first.renders[0]!.id)).toBe(-5);
+    expect(await debitDelta(first.renders[0]!.id)).toBe(-45);
 
     expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
     const quote = await quoteStepsASet(db, businessId, demo.demoId);
-    expect(quote.creditsPerRender).toBe(3);
+    expect(quote.creditsPerRender).toBe(25);
     expect(quote.analysisCreditsOncePerSet).toBe(0);
-    expect(quote.components).toEqual([{ kind: "steps", credits: 3 }]);
+    expect(quote.components).toEqual([{ kind: "steps", credits: 25 }]);
 
     const before = await creditBalance(db, ownerUserId);
     const second = await stepsSet(demo, [await newHookLine()]);
-    expect(await debitDelta(second.renders[0]!.id)).toBe(-3);
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 3);
+    expect(await debitDelta(second.renders[0]!.id)).toBe(-25);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 25);
   });
 
-  it("a 2-cell set: 5 on the first cell, 3 on the second — and cell two refunds 3", async () => {
+  it("a 2-cell set: 45 on the first cell, 25 on the second — and cell two refunds 25", async () => {
     const demo = await stepsDemo();
     const before = await creditBalance(db, ownerUserId);
     const { renders } = await stepsSet(demo, [await newHookLine(), await newHookLine()]);
 
     expect(renders).toHaveLength(2);
-    expect(await debitDelta(renders[0]!.id)).toBe(-5);
-    expect(await debitDelta(renders[1]!.id)).toBe(-3);
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 8);
+    expect(await debitDelta(renders[0]!.id)).toBe(-45);
+    expect(await debitDelta(renders[1]!.id)).toBe(-25);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 70);
 
     // A refund gives back the row's own delta, which is why the analysis
     // rides on one cell instead of being spread across them.
     expect(await failRenderAndRefund(db, renders[1]!.id, "בדיקה")).toBe(true);
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
-    // The set still holds a paid render, so a third variant is still 3.
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 45);
+    // The set still holds a paid render, so a third variant is still 25.
     expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
     await drainAll();
   });
 
-  it("a demo whose only debits were refunded reads as unpaid, and pays 5 again", async () => {
+  it("a demo whose only debits were refunded reads as unpaid, and pays 45 again", async () => {
     const demo = await stepsDemo();
     const first = await stepsSet(demo, [await newHookLine()]);
-    expect(await debitDelta(first.renders[0]!.id)).toBe(-5);
+    expect(await debitDelta(first.renders[0]!.id)).toBe(-45);
 
     // The render dies and the money goes back — the customer paid nothing for
     // this demo, so the next render must not inherit a bought analysis.
@@ -511,8 +527,8 @@ describe("the demo analysis is charged once per demo", { timeout: 240_000 }, () 
 
     const before = await creditBalance(db, ownerUserId);
     const second = await stepsSet(demo, [await newHookLine()]);
-    expect(await debitDelta(second.renders[0]!.id)).toBe(-5);
-    expect(await creditBalance(db, ownerUserId)).toBe(before - 5);
+    expect(await debitDelta(second.renders[0]!.id)).toBe(-45);
+    expect(await creditBalance(db, ownerUserId)).toBe(before - 45);
     await drainAll();
   });
 
@@ -541,7 +557,7 @@ describe("the demo analysis is charged once per demo", { timeout: 240_000 }, () 
 
     expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
     const { renders } = await stepsSet(demo, [await newHookLine()]);
-    expect(await debitDelta(renders[0]!.id)).toBe(-3);
+    expect(await debitDelta(renders[0]!.id)).toBe(-25);
   });
 
   it("refunding the cell that CARRIED the analysis leaves the demo paid — by design", async () => {
@@ -553,19 +569,19 @@ describe("the demo analysis is charged once per demo", { timeout: 240_000 }, () 
     // surprise — see docs/vault/decisions/0048.
     const demo = await stepsDemo();
     const { renders } = await stepsSet(demo, [await newHookLine(), await newHookLine()]);
-    expect(await debitDelta(renders[0]!.id)).toBe(-5);
-    expect(await debitDelta(renders[1]!.id)).toBe(-3);
+    expect(await debitDelta(renders[0]!.id)).toBe(-45);
+    expect(await debitDelta(renders[1]!.id)).toBe(-25);
 
     const before = await creditBalance(db, ownerUserId);
     // Cell ONE — the bearer — dies. Its whole row comes back, analysis included.
     expect(await failRenderAndRefund(db, renders[0]!.id, "בדיקה")).toBe(true);
-    expect(await creditBalance(db, ownerUserId)).toBe(before + 5);
+    expect(await creditBalance(db, ownerUserId)).toBe(before + 45);
 
     // Cell two's debit stands, so the demo is still paid and the next variant
-    // is 3 — the analysis for this demo is collected zero times in total.
+    // is 25 — the analysis for this demo is collected zero times in total.
     expect(await demoHasPaidRender(db, demo.demoId)).toBe(true);
     const next = await stepsSet(demo, [await newHookLine()]);
-    expect(await debitDelta(next.renders[0]!.id)).toBe(-3);
+    expect(await debitDelta(next.renders[0]!.id)).toBe(-25);
     await drainAll();
   });
 
@@ -589,7 +605,7 @@ describe("the demo analysis is charged once per demo", { timeout: 240_000 }, () 
     expect(quote.chargeable).toBe(false);
     // The analysis part is still QUOTED — it is a price, and the bypass is
     // applied by quoteTotal, not by pretending the price is zero.
-    expect(quote.analysisCreditsOncePerSet).toBe(2);
+    expect(quote.analysisCreditsOncePerSet).toBe(20);
 
     const { renders } = await stepsSet(demo, [await newHookLine(founder.id)], founder.id);
     expect(await debitsFor(renders[0]!.id)).toHaveLength(0);
@@ -654,7 +670,7 @@ describe("admin bypass", { timeout: 120_000 }, () => {
 
 describe("refunds", { timeout: 120_000 }, () => {
   it("a freeze/none render — which never enqueues lipsync — is still refunded", async () => {
-    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    await grantCredits(db, { userId: ownerUserId, credits: 500, note: "test" });
     const audio = await voicedAudio(20_000);
     const { renders } = await createSet(db, {
       businessId,
@@ -727,7 +743,7 @@ describe("refunds", { timeout: 120_000 }, () => {
 
 describe("QC rejection never double-charges", { timeout: 120_000 }, () => {
   it("regeneration reuses the original debit — the customer pays once for our QC", async () => {
-    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    await grantCredits(db, { userId: ownerUserId, credits: 500, note: "test" });
     const audio = await voicedAudio(15_000);
     const render = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
     expect(await debitsFor(render.id)).toHaveLength(1);
@@ -764,7 +780,7 @@ describe("QC rejection never double-charges", { timeout: 120_000 }, () => {
   }
 
   it("a dying regeneration refunds the ROOT debit exactly once, and records the reroute", async () => {
-    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    await grantCredits(db, { userId: ownerUserId, credits: 500, note: "test" });
     const audio = await voicedAudio(15_000);
     const root = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
     const balanceAfterDebit = await creditBalance(db, ownerUserId);
@@ -827,7 +843,7 @@ describe("QC rejection never double-charges", { timeout: 120_000 }, () => {
   });
 
   it("refuses at confirm when the account GPU cap is spent — pre-debit, nothing written", async () => {
-    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    await grantCredits(db, { userId: ownerUserId, credits: 500, note: "test" });
     const audio = await voicedAudio(15_000);
     await db.insert(dbSchema.usageEvents).values({
       provider: "heygen",
@@ -855,7 +871,7 @@ describe("QC rejection never double-charges", { timeout: 120_000 }, () => {
     // refunds would otherwise land mid-test and skew the balance assertions.
     await drainAll();
 
-    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    await grantCredits(db, { userId: ownerUserId, credits: 500, note: "test" });
     const audio = await voicedAudio(15_000);
     // Confirm passes under the cap; the account hits it before the job runs.
     const render = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
@@ -893,7 +909,7 @@ describe("QC rejection never double-charges", { timeout: 120_000 }, () => {
   });
 
   it("the max-park-age valve fails and refunds a render parked on budget for too long", async () => {
-    await grantCredits(db, { userId: ownerUserId, credits: 100, note: "test" });
+    await grantCredits(db, { userId: ownerUserId, credits: 500, note: "test" });
     const audio = await voicedAudio(15_000);
     const render = await createBRender(db, { businessId, audioRenderId: audio.id, personaId });
     const balanceAfterDebit = await creditBalance(db, ownerUserId);

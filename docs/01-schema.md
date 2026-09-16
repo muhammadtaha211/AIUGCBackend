@@ -131,7 +131,10 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 ### Billing (details in [05-billing.md](05-billing.md))
 
 - **plans** — code PK, price (agorot), monthly credits, `allows_service_b`. Seeded placeholders:
-  starter ₪299/40cr (A only), pro ₪599/100cr, studio ₪999/200cr.
+  starter ₪299/40cr (A only), pro ₪599/100cr, studio ₪999/200cr. Migration 0043 (written
+  2026-09-16, **not pushed**) replaces all three — starter ₪150/1000cr, pro ₪300/2500cr, studio
+  ₪500/5000cr, `allows_service_b` true on all three — so production still holds 0001's values; see
+  [05-billing.md](05-billing.md).
 - **subscriptions** — keyed to the ACCOUNT since 0041: `user_id` NOT NULL and **no `business_id`
   at all** (one owner, one subscription, one credit pool that every business he holds spends from
   — the same model `credit_ledger` has had since 0011). Status
