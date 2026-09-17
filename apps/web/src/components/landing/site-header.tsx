@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
+import { NAV_PRICING } from "@/lib/plans-ui";
 
 const NAV_LINK =
   "text-sm font-medium text-ink/60 transition-colors duration-150 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink";
@@ -27,6 +28,10 @@ export function SiteHeader() {
           <a href="/#features" className={NAV_LINK}>
             יכולות
           </a>
+          {/* A route, not a fragment — so it is a Link where its neighbours are anchors. */}
+          <Link href="/pricing" className={NAV_LINK}>
+            {NAV_PRICING}
+          </Link>
           <a href="/#how" className={NAV_LINK}>
             איך זה עובד
           </a>

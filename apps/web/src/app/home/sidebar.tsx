@@ -18,6 +18,7 @@ import {
   Spinner,
 } from "@/components/ui/icons";
 import { signOut } from "@/lib/auth";
+import { CREDITS_BOX_LABEL, formatCredits } from "@/lib/plans-ui";
 import { BUSINESS_COOKIE } from "@/lib/service-b-ui";
 
 const MENU_ITEM =
@@ -63,8 +64,10 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
 /**
  * Dashboard sidebar (Lovable-style, RTL so it sits on the right): business
  * switcher on top, nav (home, the two libraries, the two service flows and
- * צור קשר), credits + profile menu at the bottom — the menu's פרופיל and
- * הגדרות rows both open /home/settings.
+ * צור קשר), profile menu at the bottom — the menu's פרופיל and הגדרות rows
+ * both open /home/settings. The credits moved out of the sidebar into the
+ * content pane's top-start pill (credits-box.tsx, founder's screenshot
+ * 2026-09-17); only the mobile chip below still shows them here.
  * Below md it collapses into a compact top bar (brand, switcher, credits,
  * account menu) — the nav is desktop-only for now.
  */
@@ -78,7 +81,7 @@ export function Sidebar({
   email: string;
 }) {
   // Server-seeded, pushed-to by the wizard's create/refund paths (null =
-  // admin bypass — no credits card). See balance-context.tsx.
+  // admin bypass — no credits chip). See balance-context.tsx.
   const { balance } = useBalance();
   const router = useRouter();
   const pathname = usePathname();
@@ -154,10 +157,13 @@ export function Sidebar({
             </select>
           )}
           {balance !== null && (
-            <span className="flex h-9 items-center gap-1 rounded-lg border border-ink/10 bg-paper px-2.5 text-sm text-ink/80">
-              <span className="font-semibold text-ink tabular-nums">{balance}</span>
-              קרדיטים
-            </span>
+            <Link
+              href="/home/plan"
+              className="flex h-9 items-center gap-1 rounded-lg border border-ink/10 bg-paper px-2.5 text-sm text-ink/80 transition-colors duration-150 hover:border-ink/25 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            >
+              <span className="font-semibold text-ink tabular-nums">{formatCredits(balance)}</span>
+              {CREDITS_BOX_LABEL}
+            </Link>
           )}
           <div className="relative">
             {openMenu === "mobileProfile" && (
@@ -289,18 +295,6 @@ export function Sidebar({
         </nav>
 
         <div className="space-y-3 px-3 pb-4">
-          {balance !== null && (
-            <div className="rounded-xl border border-ink/10 bg-paper px-3.5 py-3">
-              <p className="text-xs font-medium text-ink/60">היתרה שלכם</p>
-              <p className="mt-0.5 flex items-baseline gap-1.5">
-                <span className="font-display text-2xl leading-none text-ink tabular-nums">
-                  {balance}
-                </span>
-                <span className="text-sm text-ink/70">קרדיטים</span>
-              </p>
-            </div>
-          )}
-
           {/* Profile — avatar opens the account menu. */}
           <div className="relative z-50">
             {openMenu === "profile" && (

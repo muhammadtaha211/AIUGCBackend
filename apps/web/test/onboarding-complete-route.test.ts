@@ -82,6 +82,7 @@ const completeDraft: OnboardingDraft = {
   wow: "העור מפסיק לגרד תוך דקה",
   audience: "נשים 25–45 שמחפשות טיפוח טבעי",
   tone: "friendly",
+  plan: null,
 };
 
 async function post(body: OnboardingDraft & { allowCreate?: boolean }) {

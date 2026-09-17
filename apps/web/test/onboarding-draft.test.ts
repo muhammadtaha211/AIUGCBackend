@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   additionalWizardDraft,
+  afterSignupPath,
   emptyDraft,
   loadDraft,
   type OnboardingDraft,
+  parsePlanParam,
+  peekDraftPlan,
   postParkedDraft,
   saveDraft,
+  startWithPlanPath,
 } from "../src/lib/onboarding";
 
 /**
@@ -34,6 +38,7 @@ const completeDraft: OnboardingDraft = {
   wow: "העור מפסיק לגרד תוך דקה",
   audience: "נשים 25–45 שמחפשות טיפוח טבעי",
   tone: "friendly",
+  plan: null,
 };
 
 /** localStorage does not exist in node — loadDraft/saveDraft swallow that. */
@@ -162,5 +167,58 @@ describe('additionalWizardDraft — the "הוסף עסק" wizard opens on the ma
 
   it("opens empty when the marker points at nothing", () => {
     expect(additionalWizardDraft(true)).toEqual(emptyDraft);
+  });
+});
+
+describe("the plan a visitor picked on /pricing rides the draft", () => {
+  it("survives a save and a load", () => {
+    saveDraft({ ...completeDraft, plan: "pro" });
+    expect(loadDraft()!.plan).toBe("pro");
+  });
+
+  it("/login reads the plan before the post clears the stored draft", async () => {
+    // The email-confirmation path: the visitor signs up, confirms, and comes
+    // back through /login. postParkedDraft clears a STORED draft, so the
+    // plan has to be read first — and the sign-in then lands on /home/plan.
+    saveDraft({ ...completeDraft, plan: "pro" });
+    const plan = peekDraftPlan();
+    stubFetch(completeResponse(true));
+    await expect(postParkedDraft()).resolves.toBe("stored");
+    expect(loadDraft()).toBeNull();
+    expect(afterSignupPath(plan)).toBe("/home/plan?plan=pro");
+    expect(peekDraftPlan()).toBeNull();
+  });
+
+  it("the /pricing card and the plan page speak the same param", () => {
+    expect(startWithPlanPath("pro")).toBe("/start?plan=pro");
+    // Round trip: what the card writes is what /start (and /home/plan) parse.
+    const written = new URL(startWithPlanPath("studio"), "http://localhost");
+    expect(parsePlanParam(written.searchParams.get("plan") ?? undefined)).toBe("studio");
+  });
+
+  it("loads a draft stored before the key existed with plan: null", () => {
+    // The raw JSON of an older draft — no `plan` at all. loadDraft spreads
+    // emptyDraft underneath, so the field arrives null rather than undefined
+    // and afterSignupPath never sees a missing key.
+    const { plan: _plan, ...before } = completeDraft;
+    localStorage.setItem("aiugc.onboarding.v1", JSON.stringify(before));
+    const loaded = loadDraft();
+    expect(loaded).toEqual({ ...completeDraft, plan: null });
+    expect(loaded!.plan).toBeNull();
+  });
+
+  it("lands on /home/plan only when the draft carries a plan", () => {
+    expect(afterSignupPath("pro")).toBe("/home/plan?plan=pro");
+    expect(afterSignupPath(null)).toBe("/home");
+    expect(afterSignupPath("")).toBe("/home");
+  });
+
+  it("accepts a plan code off the URL only as the slug /home/plan accepts", () => {
+    expect(parsePlanParam("starter")).toBe("starter");
+    expect(parsePlanParam("Pro")).toBeNull();
+    expect(parsePlanParam("../x")).toBeNull();
+    expect(parsePlanParam("")).toBeNull();
+    expect(parsePlanParam(undefined)).toBeNull();
+    expect(parsePlanParam(["starter", "pro"])).toBeNull();
   });
 });

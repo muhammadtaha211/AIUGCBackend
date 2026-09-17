@@ -32,6 +32,16 @@ export async function GET() {
         priceAgorot: p.priceAgorot,
         monthlyCredits: p.monthlyCredits,
       })),
+      // The subscribed plan even when it has been retired off the ladder —
+      // the page needs its name and price for the dialogs either way.
+      currentPlan: view.currentPlan
+        ? {
+            code: view.currentPlan.code,
+            name: view.currentPlan.name,
+            priceAgorot: view.currentPlan.priceAgorot,
+            monthlyCredits: view.currentPlan.monthlyCredits,
+          }
+        : null,
       balance: view.balance,
       manualOutstanding: view.manualOutstanding,
       quotes: view.quotes,

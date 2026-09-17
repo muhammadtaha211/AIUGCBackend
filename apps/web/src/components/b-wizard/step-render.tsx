@@ -9,6 +9,7 @@ import { RenderPlayer } from "@/components/render-player";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
 import { useBalance } from "@/app/home/balance-context";
+import { ADD_CREDITS_LINK } from "@/lib/plans-ui";
 import {
   bShapeSummary,
   hasShortfall,
@@ -212,6 +213,16 @@ export function StepRender({
               >
                 {shortfallLine(quote!)}
               </p>
+            )}
+            {/* The way out of a shortfall: unlike the A wizard there is no
+                recheck button here, so the plans link stands alone. */}
+            {hasShortfall(quote) && (
+              <Link
+                href="/home/plan"
+                className="mt-2 inline-block text-sm text-ink/70 underline decoration-ink/25 underline-offset-4 transition-colors duration-150 hover:text-ink"
+              >
+                {ADD_CREDITS_LINK}
+              </Link>
             )}
 
             <Button

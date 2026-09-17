@@ -144,4 +144,4 @@ export const AUDIO_SCRIPT_CHANGED_NOTICE =
 /** The wizard-entry gate: an empty balance, before any work is done. */
 export const NO_CREDITS_TITLE = "אין קרדיטים בחשבון";
 export const NO_CREDITS_BODY =
-  "כדי ליצור סרטון צריך קרדיטים בחשבון. פנו אלינו ונטעין לכם — ואז אפשר להתחיל.";
+  "כדי ליצור סרטון צריך קרדיטים בחשבון. בוחרים מסלול, והקרדיטים נטענים לחשבון.";
