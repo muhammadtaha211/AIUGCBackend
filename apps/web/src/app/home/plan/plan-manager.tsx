@@ -1,0 +1,535 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { ConfirmDialog } from "@/components/plans/confirm-dialog";
+import { Amounts, PlanCards, type CardSlot } from "@/components/plans/plan-cards";
+import { Button } from "@/components/ui/button";
+import {
+  CANCEL_ACTION,
+  CANCEL_CONFIRM,
+  CANCEL_DIALOG_TITLE,
+  CANCEL_KEEP,
+  cancelDialogBody,
+  CHECKOUT_CONTINUE,
+  CHECKOUT_FAILED_LINE,
+  CHECKOUT_NO_REDIRECT,
+  CHECKOUT_PENDING_LINE,
+  CHECKOUT_RENEWAL_LINE,
+  CHECKOUT_SUCCESS_LINE,
+  checkoutDialogTitle,
+  creditsLine,
+  DIALOG_BACK,
+  downgradeDialogBody,
+  downgradeDialogTitle,
+  pendingKind,
+  periodLine,
+  PLAN_LOAD_FAILED,
+  PLAN_LOADING,
+  planCardStates,
+  priceLine,
+  REFRESH_FAILED,
+  RENEW_LINE,
+  RESUME_ACTION,
+  retiredPlanLine,
+  RESUME_CONFIRM,
+  RESUME_DIALOG_LINE,
+  RESUME_DIALOG_TITLE,
+  TERMS_CHECKBOX_PREFIX,
+  TERMS_LINK_LABEL,
+  UNDO_CONFIRM,
+  UNDO_DIALOG_TITLE,
+  undoDialogLine,
+  upgradeDialogBody,
+  upgradeDialogTitle,
+  type CardIntent,
+  type PlansView,
+  type SubscriptionView,
+} from "@/lib/plans-ui";
+import { apiFetch, postJson, type ApiResult } from "@/lib/use-api";
+import { useBalance } from "../balance-context";
+
+/**
+ * The plan page's client half: one GET for the subscription view, the
+ * button matrix from planCardStates (plans-ui), and one dialog per intent.
+ * Every dialog line is a plans-ui sentence over the numbers the API sent —
+ * the upgrade quote is the same arithmetic /change charges through
+ * (vault 0052), a downgrade is scheduled for the renewal (0053).
+ *
+ * After any successful action the page refetches the same GET and pushes
+ * the fresh balance to the sidebar through the balance context. Never
+ * router.refresh(): see balance-context.tsx for why.
+ */
+
+const SUBSCRIPTION_URL = "/api/account/subscription";
+const CHANGE_URL = "/api/account/subscription/change";
+/** Footer buttons stack full-width on a phone and sit in a row from sm up. */
+const FOOTER_BUTTON = "w-full sm:w-auto";
+
+type Dialog = { intent: CardIntent; code: string };
+
+export function PlanManager({
+  view,
+  openPlan,
+  checkout,
+}: {
+  view: PlansView;
+  openPlan: string | null;
+  checkout: "success" | "failed" | null;
+}) {
+  const { balance, setBalance } = useBalance();
+  const [sub, setSub] = useState<SubscriptionView | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // The re-read after a successful action failed: the cards on screen are one
+  // step behind the server. Its own flag so it never becomes the full-page
+  // dead end above — the action DID land, and hiding the cards would hide that.
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState(false);
+
+  async function refresh(initial: boolean): Promise<SubscriptionView | null> {
+    const result = await apiFetch<SubscriptionView>(SUBSCRIPTION_URL);
+    if (!result.ok) {
+      if (initial) setLoadFailed(true);
+      else setRefreshFailed(true);
+      return null;
+    }
+    setLoadFailed(false);
+    setRefreshFailed(false);
+    setSub(result.body);
+    return result.body;
+  }
+
+  // Mount: the one read, then the deep link. Only a card that would start a
+  // checkout (no subscription, or a suspended one) opens from ?plan= — an
+  // active account arriving from /pricing just sees its cards. This runs
+  // once because it lives in the mount effect; the refetch after an action
+  // goes through refresh() and never comes back here.
+  useEffect(() => {
+    void (async () => {
+      const fresh = await refresh(true);
+      if (!fresh || !openPlan) return;
+      const card = planCardStates(fresh, view.plans).cards[openPlan];
+      if (card && (card.intent === "checkout" || card.intent === "renew")) {
+        setDialog({ intent: card.intent, code: openPlan });
+      }
+    })();
+  }, []);
+
+  function open(intent: CardIntent, code: string) {
+    setError(null);
+    setAccepted(false);
+    setDialog({ intent, code });
+  }
+
+  function close() {
+    if (busy) return;
+    setDialog(null);
+    setError(null);
+  }
+
+  /**
+   * One POST. On failure the dialog stays open with the server's Hebrew line
+   * (the 503 "coming soon", a 402 refused charge, a 409); on success it
+   * closes and the page re-reads.
+   */
+  async function run(request: () => Promise<ApiResult<unknown>>) {
+    setBusy(true);
+    setError(null);
+    const result = await request();
+    if (!result.ok) {
+      setError(result.error);
+      setBusy(false);
+      return;
+    }
+    // Stay locked until the view is fresh: the cards are computed from `sub`,
+    // and for the length of this GET the server has already moved past it —
+    // a click in that window would open a dialog for a state that is gone
+    // (an undo the server would refuse as nothing_pending, a second cancel).
+    const fresh = await refresh(false);
+    setBusy(false);
+    setDialog(null);
+    // An upgrade lands its credits immediately — push the number to the
+    // sidebar. null there is the admin bypass (no credits chip), and a
+    // number would make the chip appear for the founder until the next
+    // server render, so the bypass is left alone.
+    if (fresh && balance !== null) setBalance(fresh.balance);
+  }
+
+  function change(code: string) {
+    return run(() => postJson(CHANGE_URL, { planCode: code }));
+  }
+
+  async function checkoutNow(code: string) {
+    setBusy(true);
+    setError(null);
+    const result = await postJson<{ redirectUrl?: string }>("/api/account/checkout", {
+      planCode: code,
+      acceptedTerms: true,
+    });
+    if (!result.ok) {
+      // Today this is production's 503 — the checkout route is a deliberate
+      // dead end until the gateway adapter exists — and the dialog stays
+      // open so the line can be read.
+      setError(result.error);
+      setBusy(false);
+      return;
+    }
+    if (result.body.redirectUrl) {
+      // Stays busy: the dialog is locked while the browser leaves for the gateway.
+      window.location.assign(result.body.redirectUrl);
+      return;
+    }
+    setError(CHECKOUT_NO_REDIRECT);
+    setBusy(false);
+  }
+
+  if (loadFailed) {
+    return (
+      <p role="alert" className="mt-8 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+        {PLAN_LOAD_FAILED}
+      </p>
+    );
+  }
+  if (!sub) {
+    return (
+      <div role="status" aria-label={PLAN_LOADING} className="mt-8 grid gap-5 pt-3 md:grid-cols-3">
+        <div className="h-[26rem] motion-safe:animate-pulse rounded-xl border border-ink/[0.08] bg-white" />
+        <div className="h-[26rem] motion-safe:animate-pulse rounded-xl border border-ink/[0.08] bg-white" />
+        <div className="h-[26rem] motion-safe:animate-pulse rounded-xl border border-ink/[0.08] bg-white" />
+      </div>
+    );
+  }
+
+  const live = sub.subscription;
+  const { banner, cards } = planCardStates(sub, view.plans);
+  const pending = pendingKind(live);
+  // The subscribed plan comes from the API's `currentPlan`, which is looked
+  // up without the active filter: a retired plan keeps serving (core), and
+  // its name and price are still what the downgrade and undo dialogs say.
+  const current = live ? (sub.currentPlan ?? undefined) : undefined;
+  // No card to carry cancel/resume when the plan has left the ladder — the
+  // control moves under the status line instead (retiredPlanLine).
+  const currentOnLadder = live ? view.plans.some((plan) => plan.code === live.planCode) : true;
+  const scheduled = live?.scheduledPlanCode
+    ? view.plans.find((plan) => plan.code === live.scheduledPlanCode)
+    : undefined;
+
+  // The one quiet line above the grid: what you are on and what happens next.
+  // Same helper as the settings row, so the two never disagree.
+  const status =
+    live && current ? `${current.name} · ${periodLine(live, scheduled?.name ?? null)}` : null;
+
+  const slots: Record<string, CardSlot> = {};
+  for (const [code, card] of Object.entries(cards)) {
+    slots[code] = {
+      badge: card.badge,
+      current: card.current,
+      action: {
+        label: card.label,
+        sub: card.sub,
+        tone: card.tone,
+        disabled: card.disabled || busy,
+        onClick: () => open(card.intent, code),
+      },
+    };
+  }
+
+  function renderDialog() {
+    if (!dialog || !sub) return null;
+    // The ladder, or the retired current plan (its cancel/resume control
+    // lives under the status line, not on a card) — the dialogs read only
+    // code, name, price and credits, which both carry.
+    const plan:
+      { code: string; name: string; priceAgorot: number; monthlyCredits: number } | undefined =
+      view.plans.find((candidate) => candidate.code === dialog.code) ??
+      (current && current.code === dialog.code ? current : undefined);
+    if (!plan) return null;
+    const back = (
+      <Button
+        type="button"
+        variant="secondary"
+        className={FOOTER_BUTTON}
+        disabled={busy}
+        onClick={close}
+      >
+        {DIALOG_BACK}
+      </Button>
+    );
+    const lines = (list: string[]) =>
+      list.map((line, index) => (
+        <p key={index}>
+          <Amounts line={line} />
+        </p>
+      ));
+
+    if (dialog.intent === "checkout" || dialog.intent === "renew") {
+      return (
+        <ConfirmDialog
+          title={checkoutDialogTitle(plan.name)}
+          onClose={close}
+          busy={busy}
+          error={error}
+          footer={
+            <>
+              <Button
+                type="button"
+                className={FOOTER_BUTTON}
+                disabled={!accepted}
+                loading={busy}
+                onClick={() => void checkoutNow(plan.code)}
+              >
+                {CHECKOUT_CONTINUE}
+              </Button>
+              {back}
+            </>
+          }
+        >
+          <p>
+            <Amounts line={priceLine(plan.priceAgorot)} />
+          </p>
+          <p>{creditsLine(plan.monthlyCredits)}</p>
+          <p>{CHECKOUT_RENEWAL_LINE}</p>
+          {dialog.intent === "renew" && <p>{RENEW_LINE}</p>}
+          {/* A real checkbox, required: /checkout refuses a body without
+              acceptedTerms: true, and this is where that true comes from.
+              The prefix ends in the preposition ל, so the link follows it
+              with no space. */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink/[0.08] bg-paper px-3 py-2.5 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={accepted}
+              disabled={busy}
+              onChange={(event) => setAccepted(event.target.checked)}
+              className="mt-0.5 size-4 shrink-0 accent-accent"
+            />
+            <span>
+              {TERMS_CHECKBOX_PREFIX}
+              <Link
+                href="/terms"
+                target="_blank"
+                rel="noreferrer"
+                className="underline decoration-ink/30 underline-offset-4 hover:decoration-ink"
+              >
+                {TERMS_LINK_LABEL}
+              </Link>
+            </span>
+          </label>
+        </ConfirmDialog>
+      );
+    }
+
+    // Every other intent acts on a live subscription — planCardStates only
+    // hands them out when there is one.
+    if (!live || !current) return null;
+
+    switch (dialog.intent) {
+      case "upgrade": {
+        const quote = sub.quotes[plan.code];
+        const body = quote
+          ? upgradeDialogBody({ plan, quote, periodEnd: live.currentPeriodEnd, pending })
+          : null;
+        return (
+          <ConfirmDialog
+            title={upgradeDialogTitle(plan.name)}
+            onClose={close}
+            busy={busy}
+            error={body ? error : PLAN_LOAD_FAILED}
+            footer={
+              <>
+                {body && (
+                  <Button
+                    type="button"
+                    className={FOOTER_BUTTON}
+                    loading={busy}
+                    onClick={() => void change(plan.code)}
+                  >
+                    {body.button}
+                  </Button>
+                )}
+                {back}
+              </>
+            }
+          >
+            {body && lines(body.lines)}
+          </ConfirmDialog>
+        );
+      }
+      case "downgrade": {
+        const body = downgradeDialogBody({
+          plan,
+          currentName: current.name,
+          periodEnd: live.currentPeriodEnd,
+          pending,
+        });
+        return (
+          <ConfirmDialog
+            title={downgradeDialogTitle(plan.name)}
+            onClose={close}
+            busy={busy}
+            error={error}
+            footer={
+              <>
+                <Button
+                  type="button"
+                  className={FOOTER_BUTTON}
+                  loading={busy}
+                  onClick={() => void change(plan.code)}
+                >
+                  {body.button}
+                </Button>
+                {back}
+              </>
+            }
+          >
+            {lines(body.lines)}
+          </ConfirmDialog>
+        );
+      }
+      case "cancel":
+        return (
+          <ConfirmDialog
+            title={CANCEL_DIALOG_TITLE}
+            onClose={close}
+            busy={busy}
+            error={error}
+            footer={
+              <>
+                <Button type="button" className={FOOTER_BUTTON} disabled={busy} onClick={close}>
+                  {CANCEL_KEEP}
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  className={FOOTER_BUTTON}
+                  loading={busy}
+                  onClick={() => void run(() => postJson("/api/account/subscription/cancel"))}
+                >
+                  {CANCEL_CONFIRM}
+                </Button>
+              </>
+            }
+          >
+            {lines(
+              cancelDialogBody({
+                periodEnd: live.currentPeriodEnd,
+                balance: sub.balance,
+                manualOutstanding: sub.manualOutstanding,
+                status: live.status,
+              }),
+            )}
+          </ConfirmDialog>
+        );
+      case "resume":
+        return (
+          <ConfirmDialog
+            title={RESUME_DIALOG_TITLE}
+            onClose={close}
+            busy={busy}
+            error={error}
+            footer={
+              <>
+                <Button
+                  type="button"
+                  className={FOOTER_BUTTON}
+                  loading={busy}
+                  onClick={() => void run(() => postJson("/api/account/subscription/resume"))}
+                >
+                  {RESUME_CONFIRM}
+                </Button>
+                {back}
+              </>
+            }
+          >
+            <p>{RESUME_DIALOG_LINE}</p>
+          </ConfirmDialog>
+        );
+      case "undo":
+        // Re-choosing the current plan IS the undo (vault 0053) — so the
+        // POST names the current code, not the card's.
+        return (
+          <ConfirmDialog
+            title={UNDO_DIALOG_TITLE}
+            onClose={close}
+            busy={busy}
+            error={error}
+            footer={
+              <>
+                <Button
+                  type="button"
+                  className={FOOTER_BUTTON}
+                  loading={busy}
+                  onClick={() => void change(current.code)}
+                >
+                  {UNDO_CONFIRM}
+                </Button>
+                {back}
+              </>
+            }
+          >
+            <p>{undoDialogLine(plan.name, current.name)}</p>
+          </ConfirmDialog>
+        );
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <div className="mt-8">
+      {/* "Paid and active" only when the read says so; the gateway's redirect
+          can land before its webhook (or our poll) has written the row. */}
+      {checkout === "success" && (
+        <p role="status" className="mb-5 rounded-lg bg-accent/25 px-3 py-2.5 text-sm text-ink">
+          {live?.status === "active" ? CHECKOUT_SUCCESS_LINE : CHECKOUT_PENDING_LINE}
+        </p>
+      )}
+      {checkout === "failed" && (
+        <p role="alert" className="mb-5 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+          {CHECKOUT_FAILED_LINE}
+        </p>
+      )}
+      {refreshFailed && (
+        <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
+          {REFRESH_FAILED}
+        </p>
+      )}
+      {banner && (
+        <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
+          {banner}
+        </p>
+      )}
+      {status && <p className="mb-5 text-sm text-ink/65">{status}</p>}
+      {live && current && !currentOnLadder && (
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-ink/[0.08] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-ink/80">{retiredPlanLine(current.name)}</p>
+          {live.cancelAtPeriodEnd ? (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy || live.status === "past_due"}
+              onClick={() => open("resume", current.code)}
+            >
+              {RESUME_ACTION}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy || live.status === "suspended"}
+              onClick={() => open("cancel", current.code)}
+            >
+              {CANCEL_ACTION}
+            </Button>
+          )}
+        </div>
+      )}
+
+      <PlanCards view={view} mode="app" slots={slots} />
+
+      {renderDialog()}
+    </div>
+  );
+}

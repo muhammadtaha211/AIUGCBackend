@@ -30,6 +30,7 @@ const completeDraft: OnboardingDraft = {
   wow: "העור מפסיק לגרד תוך דקה",
   audience: "נשים 25–45 שמחפשות טיפוח טבעי",
   tone: "friendly",
+  plan: null,
 };
 
 describe("draftToQuestionnairePayload", () => {
@@ -103,7 +104,7 @@ describe("questionnaireToDraft", () => {
   it("is the inverse of draftToQuestionnairePayload for a complete questionnaire", () => {
     const stored = questionnaireSchema.parse(draftToQuestionnairePayload(completeDraft));
     const draft = questionnaireToDraft(stored);
-    const { step: _step, ...answers } = completeDraft;
+    const { step: _step, plan: _plan, ...answers } = completeDraft;
     expect(draft).toEqual(answers);
     expect(draftToQuestionnairePayload(draft)).toEqual(draftToQuestionnairePayload(completeDraft));
   });

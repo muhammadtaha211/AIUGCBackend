@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   additionalWizardDraft,
+  afterSignupPath,
   clearDraft,
   emptyDraft,
   loadDraft,
@@ -88,9 +89,20 @@ type OnboardingFlowProps = {
    * which it left in localStorage and flagged with `?draft=1`.
    */
   seedFromDraft?: boolean;
+  /**
+   * "signup" only: the plan code the visitor picked on /pricing, off
+   * `/start?plan=` (already validated by parsePlanParam). Merged into the
+   * draft at mount so it rides localStorage through the signup round-trip,
+   * and read back to land them on /home/plan instead of /home.
+   */
+  plan?: string | null;
 };
 
-export function OnboardingFlow({ mode = "signup", seedFromDraft = false }: OnboardingFlowProps) {
+export function OnboardingFlow({
+  mode = "signup",
+  seedFromDraft = false,
+  plan = null,
+}: OnboardingFlowProps) {
   const router = useRouter();
   const [draft, setDraft] = useState<OnboardingDraft>(emptyDraft);
   // Seeding needs a frame, the same way the public wizard's saved draft does —
@@ -119,7 +131,12 @@ export function OnboardingFlow({ mode = "signup", seedFromDraft = false }: Onboa
       return;
     }
     const saved = loadDraft();
-    if (saved) setDraft(saved);
+    // A plan off the URL is merged OVER the saved draft rather than replacing
+    // it: someone who started the wizard, went back to /pricing and picked a
+    // card keeps their answers and gains the plan. The save effect below
+    // persists the merged draft, so a later cold visit to /start still has it.
+    if (plan) setDraft({ ...(saved ?? emptyDraft), plan });
+    else if (saved) setDraft(saved);
 
     // Returning from the OAuth redirect (or already signed in): a finished
     // draft is persisted server-side and lands on the homepage; anyone else
@@ -138,7 +155,12 @@ export function OnboardingFlow({ mode = "signup", seedFromDraft = false }: Onboa
           const result = await postDraft(saved);
           if ("businessId" in result) {
             clearDraft();
-            router.replace("/home");
+            // The URL's plan is the newest intent, exactly as the merge above
+            // treats it; `saved` (the localStorage draft, which carries the
+            // plan from the visit before the OAuth hop) is the fallback —
+            // /auth/callback returns to /start with no query, so it is what
+            // usually decides.
+            router.replace(afterSignupPath(plan ?? saved.plan));
             return;
           }
           // The draft is worth more than the redirect — keep them here with it.
@@ -152,7 +174,10 @@ export function OnboardingFlow({ mode = "signup", seedFromDraft = false }: Onboa
 
       setHydrated(true);
     })();
-  }, [mode, router]);
+    // `plan` is in the deps honestly: it is a server prop pinned for the life
+    // of the page (start/page.tsx reads the URL once), so it never changes on
+    // a rerender and cannot re-run the OAuth branch above.
+  }, [mode, router, plan]);
 
   useEffect(() => {
     if (hydrated && mode === "signup") saveDraft(draft);
@@ -174,12 +199,15 @@ export function OnboardingFlow({ mode = "signup", seedFromDraft = false }: Onboa
     }));
   }
 
-  /** Account exists (password or OAuth): persist the draft, land on the homepage. */
+  /**
+   * Account exists (password or OAuth): persist the draft, land on the
+   * homepage — or on /home/plan when the draft carries the plan they picked.
+   */
   async function completeSignup(): Promise<string | null> {
     const result = await postDraft(draft);
     if ("error" in result) return result.error;
     clearDraft();
-    router.push("/home");
+    router.push(afterSignupPath(draft.plan));
     return null;
   }
 

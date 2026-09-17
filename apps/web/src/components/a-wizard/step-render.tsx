@@ -23,6 +23,7 @@ import {
 } from "@/lib/service-a-ui";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { useBalance } from "@/app/home/balance-context";
+import { ADD_CREDITS_LINK } from "@/lib/plans-ui";
 import {
   hasShortfall,
   shortfallLine,
@@ -263,22 +264,29 @@ export function StepARender({
                 createError drops a stale 402 alert that would otherwise
                 contradict the fresh balance beside it. */}
             {hasShortfall(quote) && (
-              <Button
-                type="button"
-                variant="secondary"
-                className="mt-3"
-                loading={rechecking}
-                onClick={() =>
-                  void (async () => {
-                    setCreateError(null);
-                    setRechecking(true);
-                    await loadQuote();
-                    setRechecking(false);
-                  })()
-                }
-              >
-                בדיקת היתרה מחדש
-              </Button>
+              <div className="mt-3 flex items-center gap-4">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={rechecking}
+                  onClick={() =>
+                    void (async () => {
+                      setCreateError(null);
+                      setRechecking(true);
+                      await loadQuote();
+                      setRechecking(false);
+                    })()
+                  }
+                >
+                  בדיקת היתרה מחדש
+                </Button>
+                <Link
+                  href="/home/plan"
+                  className="text-sm text-ink/70 underline decoration-ink/25 underline-offset-4 transition-colors duration-150 hover:text-ink"
+                >
+                  {ADD_CREDITS_LINK}
+                </Link>
+              </div>
             )}
           </>
         )}

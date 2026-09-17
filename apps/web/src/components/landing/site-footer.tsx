@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
+import { NAV_PRICING } from "@/lib/plans-ui";
 
 /**
  * The landing page's footer, shared with the legal pages. Section anchors are
@@ -27,6 +28,14 @@ export function SiteFooter() {
               <a href="/#how" className="inline-block py-1.5 transition-colors hover:text-ink">
                 איך זה עובד
               </a>
+            </li>
+            <li>
+              <Link
+                href="/pricing"
+                className="inline-block py-1.5 transition-colors hover:text-ink"
+              >
+                {NAV_PRICING}
+              </Link>
             </li>
           </ul>
         </nav>

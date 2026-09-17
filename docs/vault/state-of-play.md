@@ -85,6 +85,26 @@ permanently-disabled button is a promise the product does not keep. Nothing was 
 browser; the ⋮ and the save-in-place are still founder checks.
 [[decisions/0047-finished-renders-play-in-one-component]].
 
+**Pushed, not merged: `feat/pricing-and-plans` (2026-09-17) — the customer-facing half of
+billing.** On top of prompt A's routes (`54c6231`): public `/pricing` (SiteHeader/SiteFooter,
+hour-cached plan view, FAQ), `/home/plan` with the button matrix and the six dialogs (checkout →
+the 503 dead end shown inline; upgrade quoted from `quotes[code]`; downgrade/undo/cancel/resume
+work for real), the settings row "המסלול הנוכחי", the credits pill at the content pane's
+top-start (the sidebar card is gone; `<main>` gained `md:pt-8` so the pill has its own band —
+measured, not guessed), תמחור in both headers and the footer, `/start?plan=` riding the
+onboarding draft into `/home/plan?plan=`, the no-credits card pointing at plans, and the
+wizards' "להוספת קרדיטים" link. Every customer string is in `apps/web/src/lib/plans-ui.ts`
+(COPY PENDING FOUNDER REVIEW); every number comes from `apps/web/src/lib/plans.ts`. The founder's
+copy rule narrowing is [[0055-plan-cards-may-show-computed-ad-counts]]. Walked in a real browser
+with a minted session on the founder's support account and a seeded pro subscription, then every
+seeded row was deleted by id (35 screenshots, listed in the task report). `getAccountBilling` gained
+`currentPlan` (the subscribed row without the active filter) for the retired-plan case. **Not
+exercised:** a confirmed upgrade (locally DRY_RUN makes it real and grants credits), past_due /
+suspended rows (no seed for them; their copy is unit-tested), the wired checkout redirect.
+**Still the founder's:** the copy review, the merge, and — the one tension worth a decision —
+terms §8 still says credits are loaded "בתיאום איתנו" while the no-credits card and the FAQ now
+say a plan loads them; true at wiring time, a day early today.
+
 **Pushed, not merged — its migration is already in production: `feat/demo-analysis-credit`.** The steps flat splits
 — `a_steps_credits` 5 → 3 for the render, new `a_demo_analysis_credits` 2 for the demo analysis,
 charged **once per demo** on the first render of it that is actually paid for. First render of a

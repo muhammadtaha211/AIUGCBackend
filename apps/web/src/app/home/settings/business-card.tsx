@@ -23,7 +23,9 @@ const MAX_BENEFITS = 8;
 
 const TONES: Tone[] = ["friendly", "direct", "professional"];
 
-const { step: _step, ...EMPTY_DRAFT } = emptyDraft;
+// `plan` is stripped too: it rides the public wizard's draft only (the
+// /pricing hand-off) and is not a questionnaire answer — QuestionnaireDraft omits it.
+const { step: _step, plan: _plan, ...EMPTY_DRAFT } = emptyDraft;
 
 export type BusinessCardProps = {
   business: {

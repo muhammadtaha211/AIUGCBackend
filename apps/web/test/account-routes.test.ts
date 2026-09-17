@@ -111,6 +111,16 @@ describe("GET /api/account/subscription", () => {
       plans: [
         { code: "starter", name: "א", priceAgorot: 1, monthlyCredits: 1, active: true, config: {} },
       ],
+      // A retired plan the account is still on: not in the ladder, but the
+      // route must still hand its name and price to the page.
+      currentPlan: {
+        code: "legacy",
+        name: "ותיק",
+        priceAgorot: 9,
+        monthlyCredits: 90,
+        active: false,
+        config: {},
+      },
       balance: 12,
       manualOutstanding: 2,
       quotes: { pro: { kind: "upgrade" } },
@@ -127,6 +137,7 @@ describe("GET /api/account/subscription", () => {
         scheduledPlanCode: null,
       },
       plans: [{ code: "starter", name: "א", priceAgorot: 1, monthlyCredits: 1 }],
+      currentPlan: { code: "legacy", name: "ותיק", priceAgorot: 9, monthlyCredits: 90 },
       balance: 12,
       manualOutstanding: 2,
       quotes: { pro: { kind: "upgrade" } },

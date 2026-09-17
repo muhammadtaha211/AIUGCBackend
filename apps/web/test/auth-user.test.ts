@@ -160,6 +160,10 @@ const OUTSIDE_HOME: Record<string, { marker: string; why: string }> = {
     marker: "createClient().auth.getUser()",
     why: "browser client, and its error case already falls through to rendering the wizard",
   },
+  "app/(marketing)/pricing/page.tsx": {
+    marker: "if (authReadFailed(error)) console.error",
+    why: "a public page that reads the session only to pick the cards' call to action — a failed read is logged and shown the signed-out cards, never the error card",
+  },
 };
 
 function sourceFilesUnder(dir: string): string[] {

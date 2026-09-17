@@ -24,10 +24,17 @@ export type OnboardingDraft = {
   wow: string;
   audience: string;
   tone: Tone | null;
+  /**
+   * The plan code a visitor picked on /pricing before they had an account
+   * (`/start?plan=<code>`). Not a questionnaire answer — it rides the draft
+   * only so it survives the signup round-trip (password or OAuth) and lands
+   * them on /home/plan with that card ready. null when they came in cold.
+   */
+  plan: string | null;
 };
 
-/** The questionnaire answers alone — what /home/settings edits; the wizard adds `step`. */
-export type QuestionnaireDraft = Omit<OnboardingDraft, "step">;
+/** The questionnaire answers alone — what /home/settings edits; the wizard adds `step` and `plan`. */
+export type QuestionnaireDraft = Omit<OnboardingDraft, "step" | "plan">;
 
 export const STEPS = ["business", "product", "benefits", "audience", "signup"] as const;
 export type StepId = (typeof STEPS)[number];
@@ -55,7 +62,48 @@ export const emptyDraft: OnboardingDraft = {
   wow: "",
   audience: "",
   tone: null,
+  plan: null,
 };
+
+/**
+ * `/start?plan=<code>` — how /pricing hands a signed-out visitor's choice to
+ * the wizard. One constant for the side that writes the URL and the side that
+ * reads it, for the same reason DRAFT_WAITING_PARAM is one.
+ */
+export const PLAN_PARAM = "plan";
+
+/**
+ * A plan code off the URL, or null. Accepts exactly the shape /home/plan
+ * accepts — lowercase slug, 40 chars — so a doctored value never reaches the
+ * draft, a redirect or a query. Arrays (a repeated param) are refused too.
+ */
+export function parsePlanParam(value: string | string[] | undefined): string | null {
+  return typeof value === "string" && /^[a-z][a-z0-9_-]{0,39}$/.test(value) ? value : null;
+}
+
+/**
+ * Where a finished signup lands: /home/plan with the picked card when the
+ * draft carried a plan, the dashboard otherwise. The code is URL-encoded even
+ * though parsePlanParam only lets slugs through — the encoding is the
+ * boundary's job, not the caller's.
+ */
+export function afterSignupPath(plan: string | null): string {
+  return plan ? `/home/plan?${PLAN_PARAM}=${encodeURIComponent(plan)}` : "/home";
+}
+
+/** The other end of the same hand-off: the URL a /pricing card sends a signed-out visitor to. */
+export function startWithPlanPath(planCode: string): string {
+  return `/start?${PLAN_PARAM}=${encodeURIComponent(planCode)}`;
+}
+
+/**
+ * The plan a parked draft carries, read BEFORE postParkedDraft clears it —
+ * /login finishes a draft for someone who confirmed their email and came
+ * back through the sign-in form, and that path must land on /home/plan too.
+ */
+export function peekDraftPlan(): string | null {
+  return loadDraft()?.plan ?? null;
+}
 
 /**
  * Founder decision (2026-09-08): the persona's register is the influencer's,

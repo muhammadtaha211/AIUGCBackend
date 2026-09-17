@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { GoogleG } from "@/components/ui/icons";
 import { GOOGLE_SIGN_IN_ENABLED, signIn, signUpWithGoogle } from "@/lib/auth";
-import { DRAFT_WAITING_PARAM, postParkedDraft } from "@/lib/onboarding";
+import {
+  afterSignupPath,
+  DRAFT_WAITING_PARAM,
+  peekDraftPlan,
+  postParkedDraft,
+} from "@/lib/onboarding";
 
 /** `initialError` seeds the inline message — a Google failure sent here by
  *  /auth/callback. Any later submit replaces it. */
@@ -44,10 +49,21 @@ export function LoginForm({ initialError = null }: { initialError?: string | nul
     // rule, not an edge case: never clear a draft on a response we did not
     // understand. The draft is the only copy of those answers; the response is
     // a guess about them.
+    // Read before the post: a stored draft is cleared from localStorage, and
+    // the plan the visitor picked on /pricing rides in it. Someone who
+    // confirmed their email and came back through this form is the same
+    // signup the wizard's own completion sends to /home/plan.
+    const plan = peekDraftPlan();
     const handoff = await postParkedDraft();
     // The marker is read by /home/new-business/page.tsx, which opens the
     // "הוסף עסק" wizard with the kept answers already filled in.
-    router.push(handoff === "parked" ? `/home/new-business?${DRAFT_WAITING_PARAM}=1` : "/home");
+    router.push(
+      handoff === "parked"
+        ? `/home/new-business?${DRAFT_WAITING_PARAM}=1`
+        : handoff === "stored"
+          ? afterSignupPath(plan)
+          : "/home",
+    );
   }
 
   async function handleGoogle() {

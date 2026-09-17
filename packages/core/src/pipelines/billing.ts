@@ -400,6 +400,12 @@ export async function getAccountBilling(
 ): Promise<{
   subscription: SubscriptionRow | null;
   plans: Array<typeof plans.$inferSelect>;
+  /**
+   * The row the subscription is ON, looked up without the active filter —
+   * a retired plan keeps serving, and the page still needs its name and
+   * price for the cancel/undo dialogs when it has left the ladder.
+   */
+  currentPlan: typeof plans.$inferSelect | null;
   balance: number;
   manualOutstanding: number;
   quotes: Record<string, PlanChangeQuote>;
@@ -432,6 +438,7 @@ export async function getAccountBilling(
   return {
     subscription: subscription ?? null,
     plans: planRows,
+    currentPlan: from ?? null,
     balance,
     manualOutstanding: manual,
     quotes,

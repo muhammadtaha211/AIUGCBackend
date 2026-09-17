@@ -33,6 +33,8 @@ const BASE =
  * an anchor — an inert link carries its own dimming.
  */
 export const PRIMARY_BUTTON_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.md}`;
+/** The lg size of the same, for the plan cards' public call-to-action links. */
+export const PRIMARY_BUTTON_LG_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.lg}`;
 
 export function Button({
   variant = "primary",

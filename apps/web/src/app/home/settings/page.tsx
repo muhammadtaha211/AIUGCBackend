@@ -2,13 +2,31 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
-import { getDb, questionnaireSchema, schema } from "@aiugc/core";
+import { getAccountBilling, getDb, questionnaireSchema, schema } from "@aiugc/core";
+import { Button } from "@/components/ui/button";
 import { authedUser } from "@/lib/auth-user";
 import { questionnaireToDraft } from "@/lib/onboarding";
+import {
+  periodLine,
+  SETTINGS_CHANGE_PLAN,
+  SETTINGS_CHOOSE_PLAN,
+  SETTINGS_MANUAL_CREDITS_LINE,
+  SETTINGS_NO_PLAN,
+  SETTINGS_PLAN_TITLE,
+  settingsPlanSummary,
+  STATUS_LABELS,
+} from "@/lib/plans-ui";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { BusinessCard } from "./business-card";
 import { SignOutButton } from "./sign-out-button";
+
+/** The status pill's colours — styling only; the words come from STATUS_LABELS. */
+const STATUS_PILL: Record<string, string> = {
+  active: "bg-accent/25 text-ink",
+  past_due: "bg-amber-100 text-amber-900",
+  suspended: "bg-red-100 text-red-700",
+};
 
 /**
  * The one page behind both account-menu rows (פרופיל and הגדרות — vault
@@ -37,6 +55,35 @@ export default async function SettingsPage() {
     .from(schema.businesses)
     .where(eq(schema.businesses.ownerUserId, user.id))
     .orderBy(asc(schema.businesses.createdAt));
+
+  // The same read /home/plan works from, so this row and that page cannot
+  // disagree about the plan, its dates or what is pending on it.
+  const billing = await getAccountBilling(getDb(), { userId: user.id });
+  const sub = billing.subscription;
+  // billing.currentPlan is the subscribed row looked up WITHOUT the active
+  // filter — a retired plan keeps serving (getAccountBilling's own note) and
+  // still has a Hebrew name and a price. The code is the last resort only.
+  const plan = billing.currentPlan;
+  const planName = plan?.name ?? sub?.planCode ?? "";
+  const scheduledName = sub?.scheduledPlanCode
+    ? (billing.plans.find((p) => p.code === sub.scheduledPlanCode)?.name ?? sub.scheduledPlanCode)
+    : null;
+  // The same helper the plan page's status line uses — one sentence, two
+  // surfaces, and past_due/suspended say the charge failed instead of
+  // promising a "next charge" on a date that has already passed.
+  const whatNext = sub
+    ? periodLine(
+        {
+          planCode: sub.planCode,
+          status: sub.status,
+          currentPeriodStart: sub.currentPeriodStart.toISOString(),
+          currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
+          cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+          scheduledPlanCode: sub.scheduledPlanCode,
+        },
+        scheduledName,
+      )
+    : null;
 
   const cookieStore = await cookies();
   const selectedId = pickSelectedBusiness(rows, cookieStore.get(BUSINESS_COOKIE)?.value)?.id;
@@ -69,6 +116,46 @@ export default async function SettingsPage() {
             </p>
           </div>
           <SignOutButton />
+        </div>
+      </section>
+
+      {/* The plan row: what the account is on and what happens at the next
+          charge, in one line each. Changing anything is /home/plan's job. */}
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold text-ink">{SETTINGS_PLAN_TITLE}</h2>
+        <div className="mt-3 flex flex-col gap-4 rounded-xl border border-ink/[0.08] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+          {sub ? (
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium text-ink">{planName}</p>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    STATUS_PILL[sub.status] ?? "bg-ink/[0.06] text-ink/70"
+                  }`}
+                >
+                  {STATUS_LABELS[sub.status] ?? sub.status}
+                </span>
+              </div>
+              {plan && <p className="mt-0.5 text-sm text-ink/70">{settingsPlanSummary(plan)}</p>}
+              <p className="mt-1 text-sm text-ink/65">{whatNext}</p>
+            </div>
+          ) : (
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-ink">{SETTINGS_NO_PLAN}</p>
+              {billing.manualOutstanding > 0 && (
+                <p className="mt-1 text-sm text-ink/65">{SETTINGS_MANUAL_CREDITS_LINE}</p>
+              )}
+            </div>
+          )}
+          <Link href="/home/plan" className="shrink-0">
+            {sub ? (
+              <Button type="button" variant="secondary">
+                {SETTINGS_CHANGE_PLAN}
+              </Button>
+            ) : (
+              <Button type="button">{SETTINGS_CHOOSE_PLAN}</Button>
+            )}
+          </Link>
         </div>
       </section>
 
