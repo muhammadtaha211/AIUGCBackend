@@ -51,4 +51,20 @@ export function Numbered({ children }: { children: React.ReactNode }) {
 }
 
 export const CONTACT_EMAIL = "tavnit.support@gmail.com";
-export const UPDATED = "11.09.2026";
+
+/**
+ * The operator's public postal address, in one place because four public
+ * surfaces state it — terms §1, privacy §1, /about and /contact — and an
+ * address that disagrees with itself across them is the defect.
+ */
+export const OPERATOR_ADDRESS = "ברזיל 14, תל אביב, ישראל";
+
+/**
+ * The dated version of the terms text. It is shown at the head of the page
+ * AND stored as `terms_acceptances.terms_version` by the checkout route, so
+ * it must move whenever the terms text changes materially — otherwise the
+ * acceptance record points at a version string the customer never read.
+ * Moved 11.09.2026 → 17.09.2026 for the UPay site-requirements rewrite of §8
+ * and the address change.
+ */
+export const UPDATED = "17.09.2026";

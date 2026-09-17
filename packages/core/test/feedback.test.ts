@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONTACT_EMAIL_MAX_CHARS,
+  CONTACT_NAME_MAX_CHARS,
+  countContactMessagesByIpSince,
   countFeedbackSince,
   FEEDBACK_MAX_CHARS,
   listFeedback,
+  submitContactMessage,
   submitFeedback,
 } from "../src/pipelines/feedback";
 import { createTestDb } from "./helpers/pglite";
@@ -177,6 +181,130 @@ describe("countFeedbackSince", () => {
     const user = await seedUser(db, "silent@test.local");
 
     expect(await countFeedbackSince(db, user.id, new Date(0))).toBe(0);
+
+    await pg.close();
+  });
+});
+
+describe("submitContactMessage (the public /contact form)", () => {
+  it("writes an anonymous row carrying the name, address and IP the visitor gave", async () => {
+    const { db, pg } = await createTestDb();
+
+    const { id } = await submitContactMessage(db, {
+      name: "  דנה לוי  ",
+      email: "  dana@business.co.il ",
+      message: "  שאלה על המסלולים  ",
+      ip: "203.0.113.7",
+    });
+
+    const [row] = await listFeedback(db, { limit: 10 });
+    expect(row).toMatchObject({
+      id,
+      userId: null,
+      userEmail: null,
+      businessId: null,
+      businessName: null,
+      contactName: "דנה לוי",
+      contactEmail: "dana@business.co.il",
+      message: "שאלה על המסלולים",
+      page: null,
+    });
+
+    await pg.close();
+  });
+
+  it("stores a null IP when none was forwarded, and when one is blank", async () => {
+    const { db, pg } = await createTestDb();
+
+    await submitContactMessage(db, { name: "דנה", email: "a@b.co", message: "היי" });
+    await submitContactMessage(db, { name: "דנה", email: "a@b.co", message: "היי", ip: "   " });
+
+    const rows = await db.select({ ip: schema.feedback.ip }).from(schema.feedback);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.ip === null)).toBe(true);
+
+    await pg.close();
+  });
+
+  it("refuses an empty or over-long value in any field, before touching the table", async () => {
+    const { db, pg } = await createTestDb();
+    const ok = { name: "דנה", email: "a@b.co", message: "היי" };
+
+    await expect(submitContactMessage(db, { ...ok, name: "  " })).rejects.toThrow(/name is empty/);
+    await expect(submitContactMessage(db, { ...ok, email: " \n " })).rejects.toThrow(
+      /email is empty/,
+    );
+    await expect(submitContactMessage(db, { ...ok, message: "" })).rejects.toThrow(
+      /message is empty/,
+    );
+    await expect(
+      submitContactMessage(db, { ...ok, name: "א".repeat(CONTACT_NAME_MAX_CHARS + 1) }),
+    ).rejects.toThrow(/name is longer than/);
+    await expect(
+      submitContactMessage(db, { ...ok, email: `${"a".repeat(CONTACT_EMAIL_MAX_CHARS)}@b.co` }),
+    ).rejects.toThrow(/email is longer than/);
+    await expect(
+      submitContactMessage(db, { ...ok, message: "א".repeat(FEEDBACK_MAX_CHARS + 1) }),
+    ).rejects.toThrow(/message is longer than/);
+
+    expect(await db.select().from(schema.feedback)).toHaveLength(0);
+
+    await pg.close();
+  });
+
+  it("lands in the same inbox as the in-app messages, newest first", async () => {
+    const { db, pg } = await createTestDb();
+    const user = await seedUser(db, "customer@test.local");
+    const at = (minute: number) => new Date(Date.UTC(2026, 8, 17, 10, minute));
+
+    await db
+      .insert(schema.feedback)
+      .values({ userId: user.id, message: "מהאפליקציה", createdAt: at(0) });
+    await db.insert(schema.feedback).values({
+      message: "מהטופס",
+      contactName: "דנה",
+      contactEmail: "dana@business.co.il",
+      ip: "203.0.113.7",
+      createdAt: at(1),
+    });
+
+    const rows = await listFeedback(db, { limit: 10 });
+    expect(rows.map((r) => r.message)).toEqual(["מהטופס", "מהאפליקציה"]);
+    // The LEFT join is what keeps the anonymous row in the list at all.
+    expect(rows[0]).toMatchObject({ userEmail: null, contactEmail: "dana@business.co.il" });
+    expect(rows[1]).toMatchObject({ userEmail: "customer@test.local", contactEmail: null });
+
+    await pg.close();
+  });
+});
+
+describe("countContactMessagesByIpSince", () => {
+  it("counts only anonymous rows from that address, inside the window", async () => {
+    const { db, pg } = await createTestDb();
+    const user = await seedUser(db, "customer@test.local");
+    const since = new Date(Date.UTC(2026, 8, 17, 10, 0));
+    const at = (minute: number) => new Date(Date.UTC(2026, 8, 17, 10, minute));
+
+    // Two from the address inside the window.
+    await db.insert(schema.feedback).values({ message: "א", ip: "203.0.113.7", createdAt: at(1) });
+    await db.insert(schema.feedback).values({ message: "ב", ip: "203.0.113.7", createdAt: at(2) });
+    // One from a different address.
+    await db.insert(schema.feedback).values({ message: "ג", ip: "198.51.100.4", createdAt: at(3) });
+    // One from the same address but BEFORE the window opened.
+    await db.insert(schema.feedback).values({
+      message: "ד",
+      ip: "203.0.113.7",
+      createdAt: new Date(Date.UTC(2026, 8, 16, 9, 0)),
+    });
+    // One from the same address written by a SIGNED-IN user — not a contact
+    // message, so it must not eat the allowance on a shared office address.
+    await db
+      .insert(schema.feedback)
+      .values({ userId: user.id, message: "ה", ip: "203.0.113.7", createdAt: at(4) });
+
+    expect(await countContactMessagesByIpSince(db, "203.0.113.7", since)).toBe(2);
+    expect(await countContactMessagesByIpSince(db, "198.51.100.4", since)).toBe(1);
+    expect(await countContactMessagesByIpSince(db, "192.0.2.1", since)).toBe(0);
 
     await pg.close();
   });

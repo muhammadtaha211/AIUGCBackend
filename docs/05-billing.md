@@ -94,7 +94,9 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
   account** with `gateway_recurring_ref` and grants the first period's credits. An owner who then
   adds a second business buys nothing further — he is already subscribed.
 - **Renewals**: the daily `billing_renewals` job (`processDueRenewals`) finds due subscriptions
-  and charges via the adapter. Success → `expire_period` (zero leftover) + `grant_period`
+  and charges via the adapter — on the reference stack that is Sumit's
+  `/billing/payments/charge/` against the card saved by the first charge, never Sumit's own
+  `/billing/recurring/*`. Success → `expire_period` (zero leftover) + `grant_period`
   (plan credits) + period advanced one month (day-clamped). If `scheduled_plan_code` is set, the
   charge and the grant are **that** plan's and it becomes `plan_code` in the same success branch;
   a failed charge leaves the schedule in place. Failure → `past_due`; retried only on configured

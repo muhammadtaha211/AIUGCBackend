@@ -124,13 +124,13 @@ describe("the card sentences read the view, never a literal", () => {
 
   it("estimate line on starter", () => {
     expect(estimateLine(view.plans[0]!, view.examples)).toBe(
-      "לדוגמה: עד 10 סרטוני דמות AI של 20 שנ׳, או עד 39 מודעות הוק+דמו מהקלטה אחת",
+      "לדוגמה: עד 10 סרטונים עם דמות AI של 20 שנ׳, או עד 39 מודעות הוק + דמו מהקלטה אחת",
     );
   });
 
   it("credit key line", () => {
     expect(creditKeyLine(view.examples)).toBe(
-      "סרטון דמות: 100 קרדיטים ל־20 שנ׳ · הוק+דמו: 25 קרדיטים, ועוד 20 חד־פעמית על ניתוח ההקלטה",
+      "סרטון עם דמות AI: 100 קרדיטים ל־20 שנ׳ · הוק + דמו: 25 קרדיטים, ועוד 20 חד־פעמית על ניתוח ההקלטה",
     );
   });
 

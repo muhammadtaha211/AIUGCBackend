@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../db";
 import { businesses, feedback, users } from "../db/schema";
 
@@ -37,6 +37,61 @@ export async function submitFeedback(
   return inserted[0]!;
 }
 
+/** Matches the contact form's inputs and the route's zod bounds. */
+export const CONTACT_NAME_MAX_CHARS = 80;
+export const CONTACT_EMAIL_MAX_CHARS = 254;
+
+/**
+ * One message from the PUBLIC /contact form — the same table, with no user.
+ * `user_id` is null (0047), and the name and address the visitor typed are
+ * what the founder answers to, since there is no `users` row to join back to.
+ *
+ * A sibling of submitFeedback rather than a widening of it: the signed-in path
+ * must keep requiring a user, and a single function taking `userId: string |
+ * null` would let a missing session quietly write an anonymous row instead of
+ * failing. Two call sites, two functions, neither able to do the other's job.
+ *
+ * Nothing here is validated as an address beyond a length bound — it is stored
+ * verbatim and only ever rendered, never sent to. The route's zod does the
+ * shape check.
+ */
+export async function submitContactMessage(
+  db: Db,
+  opts: { name: string; email: string; message: string; ip?: string | null },
+): Promise<{ id: string; createdAt: Date }> {
+  // Trimmed here, not at the boundary — the same rule submitFeedback follows,
+  // so a whitespace-only field fails identically from any caller.
+  const name = opts.name.trim();
+  const email = opts.email.trim();
+  const message = opts.message.trim();
+  if (name.length === 0) throw new Error("contact name is empty");
+  if (name.length > CONTACT_NAME_MAX_CHARS) {
+    throw new Error(`contact name is longer than ${CONTACT_NAME_MAX_CHARS} characters`);
+  }
+  if (email.length === 0) throw new Error("contact email is empty");
+  if (email.length > CONTACT_EMAIL_MAX_CHARS) {
+    throw new Error(`contact email is longer than ${CONTACT_EMAIL_MAX_CHARS} characters`);
+  }
+  if (message.length === 0) throw new Error("contact message is empty");
+  if (message.length > FEEDBACK_MAX_CHARS) {
+    throw new Error(`contact message is longer than ${FEEDBACK_MAX_CHARS} characters`);
+  }
+
+  const inserted = await db
+    .insert(feedback)
+    .values({
+      userId: null,
+      businessId: null,
+      message,
+      contactName: name,
+      contactEmail: email,
+      ip: opts.ip?.trim() || null,
+      page: null,
+    })
+    .returning({ id: feedback.id, createdAt: feedback.createdAt });
+  return inserted[0]!;
+}
+
 export type FeedbackEntry = {
   id: string;
   /** Both null on an anonymous /contact row (0047). */
@@ -44,6 +99,9 @@ export type FeedbackEntry = {
   userEmail: string | null;
   businessId: string | null;
   businessName: string | null;
+  /** Both set on an anonymous /contact row, both null on an in-app one (0047). */
+  contactName: string | null;
+  contactEmail: string | null;
   message: string;
   page: string | null;
   createdAt: Date;
@@ -74,6 +132,8 @@ export async function listFeedback(
       userEmail: users.email,
       businessId: feedback.businessId,
       businessName: businesses.name,
+      contactName: feedback.contactName,
+      contactEmail: feedback.contactEmail,
       message: feedback.message,
       page: feedback.page,
       createdAt: feedback.createdAt,
@@ -102,5 +162,33 @@ export async function countFeedbackSince(db: Db, userId: string, since: Date): P
     .select({ count: sql<string>`count(*)` })
     .from(feedback)
     .where(and(eq(feedback.userId, userId), gte(feedback.createdAt, since)));
+  return Number(rows[0]?.count ?? 0);
+}
+
+/**
+ * The same soft cap for the public form, keyed on the address the edge saw
+ * instead of on a user — /contact has none.
+ *
+ * What it does NOT do, stated rather than implied: an IP is not an identity.
+ * Everyone behind one office NAT shares a count, and anyone who can change
+ * address can have a fresh one. It is a brake on a stuck submit button and on
+ * the laziest kind of form spam, not an access control — which is why the
+ * route pairs it with a honeypot and why the cap is deliberately low.
+ * A request with no forwarded address is not counted here (the caller skips
+ * the check), because counting them together would let one unattributable
+ * request lock out every other one.
+ */
+export async function countContactMessagesByIpSince(
+  db: Db,
+  ip: string,
+  since: Date,
+): Promise<number> {
+  const rows = await db
+    .select({ count: sql<string>`count(*)` })
+    .from(feedback)
+    // isNull(userId) as well as the address: this counts /contact rows only,
+    // so an in-app message that ever starts recording an IP cannot eat a
+    // stranger's allowance on a shared address.
+    .where(and(isNull(feedback.userId), eq(feedback.ip, ip), gte(feedback.createdAt, since)));
   return Number(rows[0]?.count ?? 0);
 }

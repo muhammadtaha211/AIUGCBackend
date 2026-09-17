@@ -9,7 +9,9 @@ import { NAV_PRICING } from "@/lib/plans-ui";
 export function SiteFooter() {
   return (
     <footer className="border-t border-ink/[0.06] bg-white">
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:grid-cols-[2fr_1fr_1fr_1fr] sm:px-8">
+      {/* Five columns since אודות/צור קשר joined: the brand keeps its 2fr and
+          the four nav groups share the rest evenly. */}
+      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-14 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr] sm:px-8">
         <div>
           <Brand />
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-ink/60">
@@ -50,6 +52,24 @@ export function SiteFooter() {
             <li>
               <Link href="/login" className="inline-block py-1.5 transition-colors hover:text-ink">
                 התחברות
+              </Link>
+            </li>
+          </ul>
+        </nav>
+        <nav aria-label="קישורי חברה">
+          <p className="text-sm font-bold text-ink">חברה</p>
+          <ul className="mt-2 space-y-1 text-sm text-ink/60">
+            <li>
+              <Link href="/about" className="inline-block py-1.5 transition-colors hover:text-ink">
+                אודות
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/contact"
+                className="inline-block py-1.5 transition-colors hover:text-ink"
+              >
+                צור קשר
               </Link>
             </li>
           </ul>

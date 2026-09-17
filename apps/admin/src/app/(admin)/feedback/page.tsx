@@ -86,13 +86,22 @@ export default async function AdminFeedbackPage({
                 <td className="whitespace-nowrap px-4 py-2.5 text-gray-400 tabular-nums">
                   <span dir="ltr">{formatJerusalem(row.createdAt)}</span>
                 </td>
+                {/* One cell, two kinds of row. A signed-in message shows the
+                    account address and its copyable user id; an anonymous
+                    /contact row (0047) has neither, so it shows the address
+                    and name the visitor typed instead of an em dash. Same
+                    null guard, widened — not a second one beside it. */}
                 <td className="px-4 py-2.5">
                   <span className="font-medium text-white" dir="ltr">
-                    {row.userEmail ?? "—"}
+                    {row.userEmail ?? row.contactEmail ?? "—"}
                   </span>
-                  {row.userId && (
+                  {row.userId ? (
                     <span className="ms-2">
                       <CopyId id={row.userId} />
+                    </span>
+                  ) : (
+                    <span className="ms-2 whitespace-nowrap text-[13px] text-gray-500">
+                      {row.contactName ? `${row.contactName} · טופס` : "טופס"}
                     </span>
                   )}
                 </td>
