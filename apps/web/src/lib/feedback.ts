@@ -35,3 +35,43 @@ export const feedbackRequestSchema = z.object({
   businessId: z.string().uuid().optional(),
   page: z.string().max(200).optional(),
 });
+
+/* ---------- the PUBLIC /contact form ---------- */
+
+/** Matches core's CONTACT_NAME_MAX_CHARS / CONTACT_EMAIL_MAX_CHARS — contact.test.ts is the drift guard. */
+export const CONTACT_NAME_MAX_CHARS = 80;
+export const CONTACT_EMAIL_MAX_CHARS = 254;
+
+/**
+ * Lower than the in-app cap and keyed on the address, not a user: /contact is
+ * reachable by anyone, so 5 a day from one address is already far more than an
+ * honest visitor sends, and the ceiling has to sit where an abuser feels it.
+ */
+export const CONTACT_DAILY_CAP_PER_IP = 5;
+export const CONTACT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export const CONTACT_CAP_ERROR =
+  "כבר קיבלנו מכם כמה פניות היום. נחזור אליכם, ואפשר לכתוב שוב בעוד יממה.";
+
+/**
+ * The honeypot field's name. It is rendered as a real input, hidden from
+ * people and from screen readers and taken out of the tab order; a browser
+ * leaves it empty and a form-filling bot does not. A request that carries
+ * anything in it is answered 200 with no row written — a bot told it failed
+ * learns to stop falling for it.
+ *
+ * Named after something a bot wants to fill. `website` rather than `honeypot`,
+ * for the same reason the trap is not labelled.
+ */
+export const CONTACT_HONEYPOT_FIELD = "website";
+
+export const contactRequestSchema = z.object({
+  name: z.string().trim().min(1).max(CONTACT_NAME_MAX_CHARS),
+  // `.email()` and a length bound, nothing more: an address is a thing to
+  // reply to by hand, not a thing this service sends to, so the only failures
+  // worth catching are the ones a person can see and fix in the form.
+  email: z.string().trim().min(1).max(CONTACT_EMAIL_MAX_CHARS).email(),
+  message: z.string().trim().min(1).max(FEEDBACK_MAX_CHARS),
+  /** The honeypot. Optional and unbounded in meaning — only emptiness matters. */
+  [CONTACT_HONEYPOT_FIELD]: z.string().max(200).optional(),
+});

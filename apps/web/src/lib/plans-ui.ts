@@ -111,14 +111,19 @@ export function discountLabel(discountPct: number): string {
 /**
  * The worked estimate — the ONLY sanctioned count on a plan card (vault 0055):
  * computed live from credit_costs and plans, with the Service B length stated.
+ *
+ * The product names are the APP's, not the card's own (founder, 2026-09-17):
+ * "סרטון עם דמות AI" as the wizard and the dashboard card write it, and
+ * "הוק + דמו" spaced as SERVICE_LABELS.a writes it. These two sentences were
+ * the only place in the repo that said "סרטוני דמות AI" or "הוק+דמו".
  */
 export function estimateLine(plan: PlanView, examples: PlanExamples): string {
-  return `לדוגמה: עד ${formatCredits(plan.countB)} סרטוני דמות AI של ${examples.bSeconds} שנ׳, או עד ${formatCredits(plan.countA)} מודעות הוק+דמו מהקלטה אחת`;
+  return `לדוגמה: עד ${formatCredits(plan.countB)} סרטונים עם דמות AI של ${examples.bSeconds} שנ׳, או עד ${formatCredits(plan.countA)} מודעות הוק + דמו מהקלטה אחת`;
 }
 
 /** The credit key under the estimate: what each example ad costs. */
 export function creditKeyLine(examples: PlanExamples): string {
-  return `סרטון דמות: ${formatCredits(examples.bAd)} קרדיטים ל־${examples.bSeconds} שנ׳ · הוק+דמו: ${formatCredits(examples.aNext)} קרדיטים, ועוד ${formatCredits(examples.analysis)} חד־פעמית על ניתוח ההקלטה`;
+  return `סרטון עם דמות AI: ${formatCredits(examples.bAd)} קרדיטים ל־${examples.bSeconds} שנ׳ · הוק + דמו: ${formatCredits(examples.aNext)} קרדיטים, ועוד ${formatCredits(examples.analysis)} חד־פעמית על ניתוח ההקלטה`;
 }
 
 /* ---------- /pricing ---------- */
