@@ -154,6 +154,7 @@ describe("request schemas", () => {
 describe("step plan response shape", () => {
   it("renames id->planId, defaults missing jsonb to [], hides nulls", () => {
     const approvedAt = new Date();
+    const createdAt = new Date();
     expect(
       stepPlanResponse({
         id: "p1",
@@ -166,6 +167,7 @@ describe("step plan response shape", () => {
         failReason: null,
         failKind: null,
         approvedAt,
+        createdAt,
       }),
     ).toEqual({
       planId: "p1",
@@ -176,6 +178,7 @@ describe("step plan response shape", () => {
       unexplainedMoments: [],
       notes: "הערה",
       approvedAt,
+      createdAt,
     });
 
     const failed = stepPlanResponse({
@@ -189,6 +192,7 @@ describe("step plan response shape", () => {
       failReason: "יצירת התוכנית נכשלה — נסו שוב",
       failKind: "validator",
       approvedAt: null,
+      createdAt,
     });
     expect(failed.steps).toEqual([]);
     expect(failed.unexplainedMoments).toEqual([]);

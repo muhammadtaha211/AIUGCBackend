@@ -157,6 +157,7 @@ export function stepPlanResponse(plan: {
   failReason: string | null;
   failKind: string | null;
   approvedAt: Date | null;
+  createdAt: Date;
 }): {
   planId: string;
   demoId: string;
@@ -168,6 +169,7 @@ export function stepPlanResponse(plan: {
   failReason?: string;
   failKind?: string;
   approvedAt?: Date;
+  createdAt: Date;
 } {
   return {
     planId: plan.id,
@@ -180,6 +182,7 @@ export function stepPlanResponse(plan: {
     failReason: plan.failReason ?? undefined,
     failKind: plan.failKind ?? undefined,
     approvedAt: plan.approvedAt ?? undefined,
+    createdAt: plan.createdAt,
   };
 }
 

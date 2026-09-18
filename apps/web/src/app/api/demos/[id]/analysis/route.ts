@@ -65,6 +65,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       status: string;
       failReason?: string;
       job?: JobProgress;
+      /** demo_analyses.created_at, ISO — the wall-clock anchor
+       *  analysisWaitView uses for "רץ כבר X" instead of the job's own
+       *  elapsedMs, which resets on every retry re-claim. Sent alongside
+       *  `job`, the only condition under which the client shows it. */
+      requestedAt?: string;
       stateCount?: number;
       states?: unknown[];
       total?: number;
@@ -73,7 +78,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       sections?: { title: string; stateIndexes: number[] }[];
     } = { analysisId: analysis.id, status: analysis.status };
     if (analysis.failReason) body.failReason = analysis.failReason;
-    if (isAnalysisWorkingStatus(analysis.status)) body.job = await analysisJob();
+    if (isAnalysisWorkingStatus(analysis.status)) {
+      body.job = await analysisJob();
+      body.requestedAt = analysis.createdAt.toISOString();
+    }
     if (!analysis.timeline) return NextResponse.json(body);
 
     // rejected rows keep their timeline for founder debugging — the customer

@@ -171,6 +171,20 @@ export function fmtElapsedHe(elapsedMs: number): string {
   return `${minutes} דקות`;
 }
 
+/**
+ * Wall clock since the customer's request, for the "רץ כבר X" line — NOT
+ * core's JobProgress.elapsedMs, which is since job.lockedAt while running and
+ * therefore resets at every re-claim (a transient-failure retry re-locks the
+ * SAME job row). requestedAt is a DB row's own createdAt (demo_analyses /
+ * demo_step_plans), stamped once at the row's insert and never touched again
+ * by a retry of the job that owns it, so it only grows. Clamped to 0 for
+ * clock skew between the server that stamped requestedAt and the client
+ * evaluating `now`.
+ */
+export function requestElapsedMs(requestedAt: string, now: Date = new Date()): number {
+  return Math.max(0, now.getTime() - new Date(requestedAt).getTime());
+}
+
 export type AnalysisWaitView =
   | { kind: "waiting"; line: string; sub?: string }
   | { kind: "stuck"; line: string }
@@ -190,19 +204,33 @@ const stuckLine = (what: string) => PIPELINE_STUCK_LINE.replace("{מה}", what);
  * "stuck" when no worker has claimed anything past the heartbeat window, and
  * "failed" when the job is dead. No payload (older server, first poll still
  * in flight) degrades to the pre-8d generic line.
+ *
+ * requestedAt is demo_analyses.created_at (the analysis row, stamped once
+ * when the first attempt starts and reused by every retry of that attempt —
+ * never a new job field): the customer-facing elapsed rides it instead of
+ * job.elapsedMs, which resets at every re-claim and once showed "less than a
+ * minute" on a job's third attempt eight minutes in. Absent requestedAt
+ * (older server, or the split second before the row exists) falls back to
+ * job.elapsedMs, same as before.
  */
-export function analysisWaitView(job?: JobProgressWire): AnalysisWaitView {
+export function analysisWaitView(
+  job?: JobProgressWire,
+  requestedAt?: string,
+  now: Date = new Date(),
+): AnalysisWaitView {
   if (!job) return { kind: "waiting", line: ANALYSIS_QUEUED_LINE };
   if (job.state === "failed") return { kind: "failed" };
   if (job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
     return { kind: "stuck", line: stuckLine("ניתוח") };
   }
   if (job.state === "running") {
+    const elapsedMs =
+      requestedAt !== undefined ? requestElapsedMs(requestedAt, now) : job.elapsedMs;
     return {
       kind: "waiting",
       line:
-        job.elapsedMs !== undefined
-          ? `מנתחים את הסרטון עכשיו — רץ כבר ${fmtElapsedHe(job.elapsedMs)}.`
+        elapsedMs !== undefined
+          ? `מנתחים את הסרטון עכשיו — רץ כבר ${fmtElapsedHe(elapsedMs)}.`
           : "מנתחים את הסרטון עכשיו.",
     };
   }
@@ -248,8 +276,18 @@ export type PlanWaitView =
  * planning stage; a stale heartbeat or a dead job stops the spinner lying.
  * No queue position: the plan GET passes no lane (core exports no light-lane
  * type list), so `ahead` is undefined and nothing is promised.
+ *
+ * requestedAt is demo_step_plans.created_at — inserted synchronously by the
+ * POST route before the job is even enqueued, so it IS the request moment
+ * exactly, and (like the analysis row) is reused by every retry of the same
+ * job. See analysisWaitView for why this beats job.elapsedMs.
  */
-export function planWaitView(status: string, job?: JobProgressWire): PlanWaitView {
+export function planWaitView(
+  status: string,
+  job?: JobProgressWire,
+  requestedAt?: string,
+  now: Date = new Date(),
+): PlanWaitView {
   if (job?.state === "failed") return { kind: "failed" };
   if (job && job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
     return { kind: "stuck", line: stuckLine("תכנון") };
@@ -266,10 +304,13 @@ export function planWaitView(status: string, job?: JobProgressWire): PlanWaitVie
     };
   }
   if (status === "planning") {
-    const sub =
-      job?.state === "running" && job.elapsedMs !== undefined
-        ? `רץ כבר ${fmtElapsedHe(job.elapsedMs)}.`
-        : undefined;
+    const elapsedMs =
+      job?.state !== "running"
+        ? undefined
+        : requestedAt !== undefined
+          ? requestElapsedMs(requestedAt, now)
+          : job.elapsedMs;
+    const sub = elapsedMs !== undefined ? `רץ כבר ${fmtElapsedHe(elapsedMs)}.` : undefined;
     return { kind: "waiting", line: "בונים את תוכנית הצעדים…", ...(sub ? { sub } : {}) };
   }
   return { kind: "waiting", line: "התוכנית ממתינה בתור…" };
@@ -492,6 +533,9 @@ export type StepPlanWire = {
    *  before 0029, where the quota substring marker is the only signal. */
   failKind?: string;
   approvedAt?: string;
+  /** demo_step_plans.created_at — planWaitView's wall-clock anchor, always
+   *  present (the column is NOT NULL). */
+  createdAt: string;
   /** Plan job progress — attached by the GET while pending/planning (8d). */
   job?: JobProgressWire;
 };
