@@ -93,6 +93,35 @@ after the first sale. The constant now carries a comment saying so.
 **Two older branches are still the founder's to land** — `labels/highlight-not-gate` and
 `fix/rega-ban-rule`, both pushed, neither merged, neither deployed. Queue items 2 and 3.
 
+## What landed (2026-09-18) — the wait-timing fix, on `claude/analysis-wait-timing-backoff-z16uw9`, pushed, NOT merged
+
+Two customer-facing defects in the Service A wizard's analysis/plan wait cards, both in
+`apps/web/src/lib/service-a-ui.ts` — no server logic, no schema, no `packages/core` change.
+Two commits (`4917043`, `6c86a21`) plus this vault update.
+
+**The elapsed clock reset on every retry re-claim** (`4917043`). `analysisWaitView` and
+`planWaitView` read core's `JobProgress.elapsedMs`, which for a RUNNING job is `now -
+job.lockedAt` — refreshed at every re-claim. Measured: a real 8-minute wait on a job's third
+attempt showed "רץ כבר פחות מדקה". Fixed by computing elapsed as wall clock since the DOMAIN
+ROW's own `created_at` (`demo_analyses` / `demo_step_plans`) instead, threaded through the
+analysis GET route and `step-plan.tsx`. [[0059-the-wait-clock-counts-from-the-request-row-not-the-job]].
+**`renderWaitView` has the identical defect and was NOT touched** (out of this task's scope)
+— [[render-wait-elapsed-resets-on-reclaim]].
+
+**A short retry backoff read as a pause** (`6c86a21`). Both wait views showed "מושהה" (paused,
+will resume automatically) for ANY `resumeAtMs`, which core sets whenever a queued job's
+`run_at` is more than 60s out — conflating a 90s transient-retry backoff with an hours-long
+budget park. The founder saw it twice in one session. Gated on a new view-only
+`LONG_PARK_THRESHOLD_MS` (10 minutes); core's `JOB_DELAY_VISIBLE_MS` is untouched by
+instruction. Deliberately does NOT mirror [[0009-retry-backoff-is-invisible-to-the-customer]]'s
+"say nothing" answer for renders — a long analysis/plan park still shows the paused line, since
+those can run hours, not minutes. [[0060-a-short-retry-backoff-is-not-a-pause]].
+
+No Hebrew strings were added or changed — both fixes change WHEN the existing lines fire, not
+their wording. `pnpm lint` and the five serial test suites were run; the four core `ffmpeg
+ENOENT` failures are the pre-existing environment gap (see Unfinished measurement below), not
+from this change. **Not yet merged** — this session's branch, not landed to `main`.
+
 ## Decisions made in conversation — not yet in a note
 
 Each with its date. This is the main thing a new session cannot recover on its own.
