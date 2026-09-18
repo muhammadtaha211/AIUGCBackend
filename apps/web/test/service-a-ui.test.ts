@@ -37,6 +37,7 @@ import {
   labelRuns,
   labelWordCount,
   labelWordWarning,
+  LONG_PARK_THRESHOLD_MS,
   marksAfterEdit,
   MAX_DEMO_SECONDS,
   MIN_DEMO_SECONDS,
@@ -1034,6 +1035,31 @@ describe("the demo step rework (8d)", () => {
       });
     });
 
+    it("a short retry backoff reads as ordinary waiting, not a pause (founder call 2026-09-18)", () => {
+      // 90s past run_at is a normal transient-retry backoff (core's
+      // JOB_DELAY_VISIBLE_MS is 60s, so resumeAtMs is already set) — well
+      // under LONG_PARK_THRESHOLD_MS, so no "מושהה" line.
+      const now = new Date(0);
+      const view = analysisWaitView(job({ ahead: 0, resumeAtMs: 90_000 }), undefined, now);
+      expect(view).toMatchObject({ kind: "waiting", sub: "הניתוח יתחיל בקרוב." });
+      expect(view).not.toMatchObject({
+        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+      });
+    });
+
+    it("the paused line only fires once the park exceeds the threshold, not at or under it", () => {
+      const now = new Date(0);
+      expect(
+        analysisWaitView(job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now).kind,
+      ).toBe("waiting");
+      expect(
+        analysisWaitView(job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now),
+      ).not.toMatchObject({ sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר." });
+      expect(
+        analysisWaitView(job({ resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }), undefined, now),
+      ).toMatchObject({ sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר." });
+    });
+
     it("running: elapsed on a minutes scale", () => {
       expect(analysisWaitView(job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual({
         kind: "waiting",
@@ -1194,6 +1220,24 @@ describe("the demo step rework (8d)", () => {
         line: "התוכנית ממתינה בתור…",
         sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
       });
+    });
+
+    it("a short retry backoff reads as ordinary waiting, not a pause (founder call 2026-09-18)", () => {
+      const now = new Date(0);
+      expect(planWaitView("pending", job({ resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+      });
+    });
+
+    it("the paused line only fires once the park exceeds the threshold, not at or under it", () => {
+      const now = new Date(0);
+      expect(
+        planWaitView("pending", job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now),
+      ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…" });
+      expect(
+        planWaitView("pending", job({ resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }), undefined, now),
+      ).toMatchObject({ sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר." });
     });
 
     it("planning: the customer-facing clock is wall clock since requestedAt, not job.elapsedMs", () => {

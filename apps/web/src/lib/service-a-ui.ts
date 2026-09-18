@@ -185,6 +185,18 @@ export function requestElapsedMs(requestedAt: string, now: Date = new Date()): n
   return Math.max(0, now.getTime() - new Date(requestedAt).getTime());
 }
 
+/**
+ * How far a queued job's resumeAtMs must sit in the future before the wait
+ * surfaces call it a PAUSE rather than ordinary waiting. core's own
+ * JOB_DELAY_VISIBLE_MS (60s) is what makes resumeAtMs appear at all — it
+ * can't distinguish a 90s retry backoff from a multi-hour budget park, and
+ * conflating the two read as a fault to the founder twice in one session
+ * (2026-09-18). This is a view-only threshold, deliberately not
+ * JOB_DELAY_VISIBLE_MS itself: that constant is shared by every surface
+ * (queue position, stuck detection) and changing it would move all of them.
+ */
+export const LONG_PARK_THRESHOLD_MS = 10 * 60_000;
+
 export type AnalysisWaitView =
   | { kind: "waiting"; line: string; sub?: string }
   | { kind: "stuck"; line: string }
@@ -236,8 +248,10 @@ export function analysisWaitView(
   }
   if (job.state === "queued") {
     // A deliberately-rescheduled job (backoff, budget park) is PAUSED, not in
-    // line — "starts soon" over an hours-long park would be a lie.
-    if (job.resumeAtMs !== undefined) {
+    // line — but only when the park is genuinely long: "starts soon" over an
+    // hours-long park would be a lie, and a 90s retry backoff read as a fault
+    // reported over the resulting line.
+    if (job.resumeAtMs !== undefined && job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS) {
       return {
         kind: "waiting",
         line: ANALYSIS_QUEUED_LINE,
@@ -295,8 +309,14 @@ export function planWaitView(
   // A parked/deep-backoff job is PAUSED whatever the row says — the row sits
   // on "planning" when the budget park hit mid-call (the flip happens before
   // the paid call), and "building now" over an hours-long park is a lie. Same
-  // ruling as the analysis wait: resumeAtMs beats the row status.
-  if (job?.state === "queued" && job.resumeAtMs !== undefined) {
+  // ruling as the analysis wait: resumeAtMs beats the row status — but only
+  // once the park is genuinely long (LONG_PARK_THRESHOLD_MS); a short retry
+  // backoff reads as ordinary waiting, same as the analysis wait.
+  if (
+    job?.state === "queued" &&
+    job.resumeAtMs !== undefined &&
+    job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS
+  ) {
     return {
       kind: "waiting",
       line: "התוכנית ממתינה בתור…",
