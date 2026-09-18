@@ -2,7 +2,7 @@
 type: falsified
 status: superseded
 verified: 2026-08-23
-method: "packages/core/src/pipelines/demos.ts:109-198 read line by line; git log -S analyze_demo; jobs⋈usage_events per analyze_demo job"
+method: "packages/core/src/pipelines/demos.ts:109-198 read line by line; git log -S analyze_demo; jobs⋈usage_events per analyze_demo job. `verified` is the falsification date and stands; the §3 open question was narrowed on 2026-09-18 by a second three-attempt job (see the block there), and the two demo-analysis.ts cites in §2b were re-read at f84e931 the same day after drifting ~175 lines."
 source: code
 ---
 
@@ -55,9 +55,9 @@ for most of the project's life.
 
 Even after the enqueue, `analyze_demo` can terminate before its first Anthropic call:
 
-- the per-account `llm_tokens` cap trips (`packages/core/src/pipelines/demo-analysis.ts:368-375`,
+- the per-account `llm_tokens` cap trips (`packages/core/src/pipelines/demo-analysis.ts:543-550`,
   converted to a `PermanentError` with the Hebrew "try again tomorrow" message)
-- the business has no questionnaire (`demo-analysis.ts:379-385`)
+- the business has no questionnaire (`demo-analysis.ts:554-560`)
 - `DRY_RUN` is set — a canned timeline is written and the handler returns with zero calls
 
 The accurate precondition is "reaches `ready` **and** the analysis actually starts".
@@ -67,9 +67,19 @@ The accurate precondition is "reaches `ready` **and** the analysis actually star
 Measured across all six `analyze_demo` jobs, joining `usage_events` on `job_id`: a clean run
 (`attempts = 0`) costs **₪2.04 – ₪2.56**, mean ₪2.28, over 8–9 Claude calls and 125k–159k tokens.
 A run that retried three times cost **₪4.35** — 17 usage rows against a per-attempt ceiling of 16
-calls, so more than one attempt certainly ran. (_Why_ the retry re-bought batches rather than
-resuming from a checkpoint is not established here; the count is measured, the mechanism is not.)
-See [[analyze-demo-cost]].
+calls, so more than one attempt certainly ran. See [[analyze-demo-cost]].
+
+> **The open question here, NARROWED 2026-09-18.** This note left open _why_ that retry re-bought
+> batches rather than resuming from a checkpoint. It is still not answered — but it is no longer a
+> question about the mechanism in general. A second three-attempt job, `85d9ec0b`, was measured on
+> 2026-09-18 and the **resume mechanism demonstrably works**: five batches were bought once and
+> reused across four executions, and the job came in at 6 calls / ₪1.69, _below_ the clean-run
+> floor ([[analysis-parse-failure-discards-the-whole-attempt]]).
+>
+> So whatever produced the ₪4.35 / 17-usage-row run was **specific to that run, not a general
+> defect**. The likeliest reading is already in [[analyze-demo-cost]]: `5e98a9f4` died to a lease
+> sweep after the worker crashed, and a reclaimed lease is not a handler retry — but that has not
+> been traced to the checkpoint write, and remains **UNVERIFIED**.
 
 ₪2.40 sits inside the clean range, so it was never wildly wrong — it was a point estimate presented
 without its spread, which is 25% wide, and without the 2.1× retry tail.
