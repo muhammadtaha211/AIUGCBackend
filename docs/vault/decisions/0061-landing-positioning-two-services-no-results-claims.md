@@ -109,6 +109,11 @@ reads as a decision deferred, not an oversight.
   slot's own label; **the word "placeholder" never appears on screen**. Replacing an asset is a
   file drop plus one line — no import, no page edit. The hook lines live in the same object,
   because they are the copy burned onto those clips.
+  **One constraint on the owed footage, recorded because it only bites when the assets arrive:
+  `demoAfter` must carry NO burned hook line.** The page draws that line itself, in HTML, over all
+  five frames that play the clip — one in the before/after row and four in step 4, where the whole
+  point is that the SAME recording carries four different openers. A clip with its own line burned
+  in would show two at once and contradict three of the four tiles. It is in the README.
 - **The three feature cards lost their media headers.** Two of the three have no image to show, and
   the surviving card's existing caption read `כתוביות מיושרות לימין, תמיד` — forbidden vocabulary on
   the hook + demo path (§4) that could only be fixed by writing new Hebrew. Text-only cards avoided
@@ -117,11 +122,23 @@ reads as a decision deferred, not an oversight.
   correct under the old "הכתוביות והקריינות נוצרות לבד" heading and wrong under the new "בוחרים משפט
   פתיחה". It reuses the existing `HOOKS` lines rather than authoring new ones. The fake waveform is
   gone — the step no longer describes anything with audio in it.
-- **`StepTitle` gained a `tone`.** The dark block's lime numeral is invisible on paper, so the light
-  variant mutes it to `text-ink/30` instead of introducing a second heading style.
-- **The before/after arrow is drawn, not typed.** U+2190 is `Bidi_Mirrored`, so a literal `←` can
-  flip inside an RTL run; an inline SVG cannot. The row's RTL order was verified by measurement,
-  not by reading: raw demo at x 442–634 (right), arrow, finished ad at 130–322 (left).
+- **`StepTitle` gained a `tone`.** The dark block's lime numeral is invisible on paper (1.2:1), so
+  the light variant mutes it instead of introducing a second heading style. It is `text-ink/60`
+  **because Tailwind's preflight strips the `<ol>` marker, which makes that numeral the only visible
+  numbering — real text owing 4.5:1, not decoration.** It shipped at `/30` (1.98:1) and was caught in
+  review; the new `Eyebrow` (`/45`, 2.98:1) and the `#proof` disclosure line (`/50`, 3.49:1) were
+  wrong the same way. All three are `/60` = **4.83:1**, measured by compositing in the browser, which
+  is also the register the rest of the page already used. **The reusable number: on
+  `--color-paper`, `/60` is the first `text-ink` step that clears 4.5:1 — /30 is 1.98, /45 is 2.98,
+  /50 is 3.49, /55 is 4.12 (still short), /60 is 4.83, /65 is 5.77.** Everything below /60 reads
+  fine on the dark block and fails on paper, which is how all three got written.
+- **The before/after arrow is drawn, not typed** — but **not** for the reason first written here.
+  The original claim was that U+2190 is `Bidi_Mirrored`; it is **not** —
+  `unicodedata.mirrored('←')` is `0` on UCD 14, and the character is bidi class `ON`, so it is
+  _reordered_ by the run around it, never flipped. An SVG's direction is fixed by its path, which is
+  still the right call, for that reason. Recorded because the wrong version was committed first.
+  The row's RTL order was verified by measurement, not by reading: raw demo at x 442–634 (right),
+  arrow, finished ad at 130–322 (left).
 
 ## Corrections
 
