@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-19
-method: "session task brief, quoting the founder having seen it twice in one session: 'the founder saw it twice in one session and it read as a fault.' Gate implemented as a new view-only LONG_PARK_THRESHOLD_MS = 10 * 60_000 in apps/web/src/lib/service-a-ui.ts, applied to analysisWaitView's and planWaitView's resumeAtMs branches; core's JOB_DELAY_VISIBLE_MS (packages/core/src/jobs/queue.ts, 60_000) is unchanged, per explicit task constraint. Relationship to 0009 re-read and corrected 2026-09-19 against 0009's own text (it rules on retry backoff; the word 'budget' does not appear in it) and against renderWaitView's single resumeAtMs branch at apps/web/src/lib/service-a-ui.ts, which deriveJobProgress feeds from run_at alone without recording the reschedule's cause. Reopen condition read off failTransient + backoffMs (packages/core/src/jobs/queue.ts:225,246) and jobs.max_attempts default 5 (packages/core/src/db/schema.ts:522). Tests: 'a short retry backoff says nothing at all', 'the paused line fires above the threshold and nowhere else' and 'LONG_PARK_THRESHOLD_MS sits between the two things it separates' in apps/web/test/service-a-ui.test.ts."
+method: "session task brief, quoting the founder having seen it twice in one session: 'the founder saw it twice in one session and it read as a fault.' Gate implemented as a new view-only LONG_PARK_THRESHOLD_MS = 10 * 60_000 in apps/web/src/lib/service-a-ui.ts, applied to analysisWaitView's and planWaitView's resumeAtMs branches; core's JOB_DELAY_VISIBLE_MS (packages/core/src/jobs/queue.ts, 60_000) is unchanged, per explicit task constraint. Relationship to 0009 re-read and corrected 2026-09-19 against 0009's own text (it rules on retry backoff; the word 'budget' does not appear in it) and against renderWaitView's single resumeAtMs branch at apps/web/src/lib/service-a-ui.ts, which deriveJobProgress feeds from run_at alone without recording the reschedule's cause. Reopen condition read off failTransient + backoffMs (packages/core/src/jobs/queue.ts:225,246) and jobs.max_attempts default 5 (packages/core/src/db/schema.ts:522). Tests: 'a short retry backoff says nothing at all', 'the paused line fires above the threshold and nowhere else' and 'LONG_PARK_THRESHOLD_MS sits between the two things it separates' in apps/web/test/service-a-ui.test.ts. Budget attribution corrected 2026-09-19 by reading packages/core/src/budget.ts:25-48 (assertBudget's query has no account predicate; it is the only thrower of BudgetError, at :46), :50-57 (AccountBudgetError is deliberately not a BudgetError and never parks), packages/core/src/jobs/worker.ts:141-143 (BudgetError is the only error reaching parkForBudget) and the two conversion sites at demo-analysis.ts:543-550 and renders.ts:145-153 — all source: code, read not observed."
 source: founder
 ---
 
@@ -52,12 +52,40 @@ expressed in the copy these two surfaces already had.
 
 `analysisWaitView` and `planWaitView` DO speak about a park beyond `LONG_PARK_THRESHOLD_MS`;
 `renderWaitView` does not. This is a genuine difference between the surfaces, and it is
-deliberate on the analysis/plan side: those jobs can be parked by the per-account daily LLM
-budget for HOURS (`assertAccountBudget`, `BudgetError`'s default `resumeAt` is now + 1h,
-`packages/core/src/jobs/errors.ts:42`). Hiding a multi-hour park behind a cheerful,
-endlessly-spinning wait card is worse than the flicker 0009 removed. The task brief that
-commissioned this fix put it directly: "Keep the line for real parks. A four-hour budget park
-under a cheerful spinner is worse."
+deliberate on the analysis/plan side: those jobs can be parked for HOURS
+(`BudgetError`'s default `resumeAt` is now + 1h, `packages/core/src/jobs/errors.ts:42`).
+Hiding a multi-hour park behind a cheerful, endlessly-spinning wait card is worse than the
+flicker 0009 removed. The task brief that commissioned this fix put it directly: "Keep the
+line for real parks. A four-hour budget park under a cheerful spinner is worse."
+
+**Which cap parks a job — corrected 2026-09-19.** An earlier revision of this note credited
+the park to the PER-ACCOUNT ceiling (`assertAccountBudget`). That was wrong, and the mistake
+is worth keeping visible because the two caps behave in opposite ways. The park comes from
+`assertBudget`'s PLATFORM-WIDE rolling-24h cap (`packages/core/src/budget.ts:25-48`), whose
+query carries no account or business predicate at all:
+
+```ts
+const rows = await db
+  .select({ used: sql<string>`coalesce(sum(${usageEvents.quantity}), 0)` })
+  .from(usageEvents)
+  .where(
+    and(
+      eq(usageEvents.kind, kind),
+      gt(usageEvents.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
+    ),
+  );
+```
+
+It is the only thrower of `BudgetError` (`budget.ts:46`), and `BudgetError` is the only error
+that reaches `parkForBudget` (`packages/core/src/jobs/worker.ts:141-143`). The per-account
+ceiling raises `AccountBudgetError`, which **deliberately never parks** — `budget.ts:50-57`
+says so outright ("Deliberately NOT a BudgetError: that one parks the job … a parked TTS job
+leaves the wizard spinning forever"), and every call site converts it to a `PermanentError`
+with a Hebrew customer message (`demo-analysis.ts:543-550`, `renders.ts:145-153`).
+
+**The conclusion of this section is unchanged**: a park can hold a job for hours, so a long
+park still earns its sentence. Only the attribution moves — the ceiling in question is the
+platform's, not the customer's own.
 
 **`renderWaitView`'s silence on a long park is UNREVIEWED, not a decision.** 0009 removed one
 `resumeAtMs` branch, and that single branch catches both causes — `deriveJobProgress` sets
