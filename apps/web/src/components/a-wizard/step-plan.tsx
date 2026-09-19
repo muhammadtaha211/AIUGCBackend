@@ -83,7 +83,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
     status: string;
     failReason?: string;
     job?: JobProgressWire;
-    requestedAt?: string;
+    requestedElapsedMs?: number;
   } | null>(null);
   /** sourceIndex -> state, for the ready plan's cards. null while loading. */
   const [cards, setCards] = useState<Map<number, AnalysisStateWire> | null>(null);
@@ -122,7 +122,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
       status: string;
       failReason?: string;
       job?: JobProgressWire;
-      requestedAt?: string;
+      requestedElapsedMs?: number;
     }>(`/api/demos/${demoId}/analysis`);
     if (result.ok) {
       setError(null);
@@ -178,7 +178,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
     status: string;
     failReason?: string;
     job?: JobProgressWire;
-    requestedAt?: string;
+    requestedElapsedMs?: number;
   }>(
     waitingForAnalysis,
     `/api/demos/${demoId}/analysis`,
@@ -303,11 +303,11 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
       analysisId: "",
       status: "pending",
       steps: [],
-      // The just-created row's own createdAt, one HTTP round-trip away —
-      // "now" is accurate to within that round-trip, and planWaitView shows
-      // no elapsed for "pending" anyway. The next poll replaces this with
-      // the server's real value.
-      createdAt: new Date().toISOString(),
+      // The row was created by the POST that just returned, so zero is
+      // accurate to within that round-trip — and planWaitView shows no
+      // elapsed for "pending" anyway. The next poll carries the server's
+      // real figure.
+      requestedElapsedMs: 0,
     });
   }
 
@@ -446,7 +446,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
       {waitingForAnalysis &&
         !analysisPoll.stalled &&
         (() => {
-          const view = analysisWaitView(analysis?.job, analysis?.requestedAt);
+          const view = analysisWaitView(analysis?.job, analysis?.requestedElapsedMs);
           if (view.kind === "failed") {
             return (
               <p
@@ -521,7 +521,7 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
       {generating &&
         !planPoll.stalled &&
         (() => {
-          const view = planWaitView(plan!.status, plan!.job, plan!.createdAt);
+          const view = planWaitView(plan!.status, plan!.job, plan!.requestedElapsedMs);
           if (view.kind === "failed") {
             return (
               <div className="mt-6">

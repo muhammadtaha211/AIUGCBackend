@@ -48,7 +48,6 @@ import {
   renderCompositionKey,
   renderWaitView,
   planStepsDirty,
-  requestElapsedMs,
   restoredDemo,
   retryableCreateFailure,
   retryOutcome,
@@ -972,18 +971,6 @@ describe("the demo step rework (8d)", () => {
     expect(fmtElapsedHe(5 * 60_000)).toBe("5 דקות");
   });
 
-  describe("requestElapsedMs (the wall clock behind the customer-facing number)", () => {
-    it("counts from the request, not from any per-job field", () => {
-      const requestedAt = new Date(1_000_000).toISOString();
-      expect(requestElapsedMs(requestedAt, new Date(1_000_000))).toBe(0);
-      expect(requestElapsedMs(requestedAt, new Date(1_000_000 + 8 * 60_000))).toBe(8 * 60_000);
-    });
-
-    it("clamps to 0 rather than go negative on clock skew", () => {
-      expect(requestElapsedMs(new Date(10_000).toISOString(), new Date(0))).toBe(0);
-    });
-  });
-
   describe("analysisWaitView", () => {
     const job = (over: Partial<JobProgressWire>): JobProgressWire => ({
       state: "queued",
@@ -1060,10 +1047,20 @@ describe("the demo step rework (8d)", () => {
       ).toMatchObject({ sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר." });
     });
 
-    it("running: elapsed on a minutes scale", () => {
-      expect(analysisWaitView(job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual({
+    it("running: the server's number on a minutes scale", () => {
+      expect(analysisWaitView(job({ state: "running" }), 3 * 60_000)).toEqual({
         kind: "waiting",
         line: "מנתחים את הסרטון עכשיו — רץ כבר 3 דקות.",
+      });
+    });
+
+    it("running: no server-computed number renders no number — never job.elapsedMs", () => {
+      // The payload carries core's per-job figure and it must stay ignored:
+      // it is measured from lockedAt and resets at every re-claim, which is
+      // the whole defect. A missing number beats a decreasing one.
+      expect(analysisWaitView(job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual({
+        kind: "waiting",
+        line: "מנתחים את הסרטון עכשיו.",
       });
       expect(analysisWaitView(job({ state: "running" }))).toEqual({
         kind: "waiting",
@@ -1071,55 +1068,25 @@ describe("the demo step rework (8d)", () => {
       });
     });
 
-    it("running: the customer-facing clock is wall clock since requestedAt, not job.elapsedMs", () => {
-      const requestedAt = new Date(0).toISOString();
-      // job.elapsedMs says "just claimed" (a fresh re-claim after a transient
-      // failure resets core's lockedAt-based figure) — the customer-facing
-      // line must still show the true 8 minutes since the analysis row was
-      // created, the exact defect measured: "רץ כבר פחות מדקה" on a job's
-      // third attempt eight minutes in.
-      const view = analysisWaitView(
-        job({ state: "running", elapsedMs: 5_000 }),
-        requestedAt,
-        new Date(8 * 60_000),
-      );
-      expect(view).toEqual({
-        kind: "waiting",
-        line: "מנתחים את הסרטון עכשיו — רץ כבר 8 דקות.",
-      });
-    });
-
     it("the shown number never decreases across a queued->running transition or a re-claim", () => {
-      const requestedAt = new Date(0).toISOString();
       // Queued shows no number at all (never a smaller one to regress from).
-      const queued = analysisWaitView(
-        job({ state: "queued", ahead: 0 }),
-        requestedAt,
-        new Date(30_000),
-      );
-      expect(queued).toEqual({
+      expect(analysisWaitView(job({ state: "queued", ahead: 0 }), 30_000)).toEqual({
         kind: "waiting",
         line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
         sub: "הניתוח יתחיל בקרוב.",
       });
 
       // First claim, 5 minutes in.
-      const firstClaim = analysisWaitView(
-        job({ state: "running", elapsedMs: 5 * 60_000 }),
-        requestedAt,
-        new Date(5 * 60_000),
-      );
-      expect(firstClaim).toMatchObject({ line: "מנתחים את הסרטון עכשיו — רץ כבר 5 דקות." });
+      expect(
+        analysisWaitView(job({ state: "running", elapsedMs: 5 * 60_000 }), 5 * 60_000),
+      ).toMatchObject({ line: "מנתחים את הסרטון עכשיו — רץ כבר 5 דקות." });
 
       // A transient failure re-claims the job: core's own elapsedMs resets to
-      // near zero, but wall time has only moved forward — the shown number
-      // must grow, never fall back below the 5 minutes already shown.
-      const reclaim = analysisWaitView(
-        job({ state: "running", elapsedMs: 8_000 }),
-        requestedAt,
-        new Date(8 * 60_000),
-      );
-      expect(reclaim).toMatchObject({ line: "מנתחים את הסרטון עכשיו — רץ כבר 8 דקות." });
+      // near zero, but the server's wall clock has only moved forward — the
+      // shown number grows, never falls back below the 5 minutes on screen.
+      expect(
+        analysisWaitView(job({ state: "running", elapsedMs: 8_000 }), 8 * 60_000),
+      ).toMatchObject({ line: "מנתחים את הסרטון עכשיו — רץ כבר 8 דקות." });
     });
   });
 
@@ -1184,11 +1151,18 @@ describe("the demo step rework (8d)", () => {
       });
     });
 
-    it("planning + running job shows elapsed", () => {
-      expect(planWaitView("planning", job({ state: "running", elapsedMs: 60_000 }))).toEqual({
+    it("planning + running job shows the server's elapsed", () => {
+      expect(planWaitView("planning", job({ state: "running" }), 60_000)).toEqual({
         kind: "waiting",
         line: "בונים את תוכנית הצעדים…",
         sub: "רץ כבר דקה.",
+      });
+    });
+
+    it("planning: no server-computed number renders no sub — never job.elapsedMs", () => {
+      expect(planWaitView("planning", job({ state: "running", elapsedMs: 60_000 }))).toEqual({
+        kind: "waiting",
+        line: "בונים את תוכנית הצעדים…",
       });
     });
 
@@ -1240,15 +1214,12 @@ describe("the demo step rework (8d)", () => {
       ).toMatchObject({ sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר." });
     });
 
-    it("planning: the customer-facing clock is wall clock since requestedAt, not job.elapsedMs", () => {
-      const requestedAt = new Date(0).toISOString();
-      const view = planWaitView(
-        "planning",
-        job({ state: "running", elapsedMs: 5_000 }),
-        requestedAt,
-        new Date(8 * 60_000),
-      );
-      expect(view).toEqual({
+    it("planning: the shown clock is the server's, not job.elapsedMs", () => {
+      // The payload's own figure says "just claimed"; the server's says 8
+      // minutes since the plan row was inserted. The latter is what shows.
+      expect(
+        planWaitView("planning", job({ state: "running", elapsedMs: 5_000 }), 8 * 60_000),
+      ).toEqual({
         kind: "waiting",
         line: "בונים את תוכנית הצעדים…",
         sub: "רץ כבר 8 דקות.",
@@ -1256,33 +1227,21 @@ describe("the demo step rework (8d)", () => {
     });
 
     it("the shown number never decreases across a queued->running transition or a re-claim", () => {
-      const requestedAt = new Date(0).toISOString();
       // pending (queued) shows no elapsed number at all.
-      const pending = planWaitView(
-        "pending",
-        job({ state: "queued" }),
-        requestedAt,
-        new Date(30_000),
-      );
-      expect(pending).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…" });
+      expect(planWaitView("pending", job({ state: "queued" }), 30_000)).toEqual({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+      });
 
-      const firstClaim = planWaitView(
-        "planning",
-        job({ state: "running", elapsedMs: 5 * 60_000 }),
-        requestedAt,
-        new Date(5 * 60_000),
-      );
-      expect(firstClaim).toMatchObject({ sub: "רץ כבר 5 דקות." });
+      expect(
+        planWaitView("planning", job({ state: "running", elapsedMs: 5 * 60_000 }), 5 * 60_000),
+      ).toMatchObject({ sub: "רץ כבר 5 דקות." });
 
-      // A re-claim resets core's own elapsedMs; the wall-clock figure must
-      // not fall back below what was already shown.
-      const reclaim = planWaitView(
-        "planning",
-        job({ state: "running", elapsedMs: 9_000 }),
-        requestedAt,
-        new Date(8 * 60_000),
-      );
-      expect(reclaim).toMatchObject({ sub: "רץ כבר 8 דקות." });
+      // A re-claim resets core's own elapsedMs; the server's wall-clock
+      // figure does not fall back below what was already shown.
+      expect(
+        planWaitView("planning", job({ state: "running", elapsedMs: 9_000 }), 8 * 60_000),
+      ).toMatchObject({ sub: "רץ כבר 8 דקות." });
     });
   });
 

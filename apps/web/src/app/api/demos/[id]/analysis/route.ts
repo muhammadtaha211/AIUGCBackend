@@ -65,11 +65,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       status: string;
       failReason?: string;
       job?: JobProgress;
-      /** demo_analyses.created_at, ISO — the wall-clock anchor
-       *  analysisWaitView uses for "רץ כבר X" instead of the job's own
-       *  elapsedMs, which resets on every retry re-claim. Sent alongside
-       *  `job`, the only condition under which the client shows it. */
-      requestedAt?: string;
+      /** Wall clock since demo_analyses.created_at, differenced HERE on the
+       *  server's clock — what analysisWaitView shows as "רץ כבר X" instead
+       *  of the job's own elapsedMs, which resets on every retry re-claim.
+       *  Sent alongside `job`, the only condition under which it is shown.
+       *  Not on JobProgressWire: core's per-job elapsedMs is untouched, for
+       *  logs and admin. */
+      requestedElapsedMs?: number;
       stateCount?: number;
       states?: unknown[];
       total?: number;
@@ -79,8 +81,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     } = { analysisId: analysis.id, status: analysis.status };
     if (analysis.failReason) body.failReason = analysis.failReason;
     if (isAnalysisWorkingStatus(analysis.status)) {
+      // One clock for both: getJobProgress takes its own `now` internally
+      // (core, unchanged), but it is this same process microseconds away —
+      // not the browser's clock a poll later, which is what this replaced.
+      const now = new Date();
       body.job = await analysisJob();
-      body.requestedAt = analysis.createdAt.toISOString();
+      body.requestedElapsedMs = Math.max(0, now.getTime() - analysis.createdAt.getTime());
     }
     if (!analysis.timeline) return NextResponse.json(body);
 

@@ -23,12 +23,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     const plan = await getLatestStepPlan(db, id);
     if (!plan) return jsonError(404, NOT_FOUND);
+    // One clock for the whole body: requestedElapsedMs and the job payload
+    // below describe the same instant. getJobProgress takes its own `now`
+    // internally (core, unchanged here), but it is this same process a
+    // round-trip later, not the browser's clock a poll later.
+    const now = new Date();
     // While generating, ride the job's progress along (8d pattern, the demo
     // GET's minimal form): a dead plan job otherwise leaves the row pending
     // forever and the wizard spinning with it. The bare key is exact — every
     // retry is a NEW plan row. No aheadOfTypes: core exports no light-lane
     // type list, and the wait view says nothing when `ahead` is undefined.
-    const body = stepPlanResponse(plan) as ReturnType<typeof stepPlanResponse> & {
+    const body = stepPlanResponse(plan, now) as ReturnType<typeof stepPlanResponse> & {
       job?: Awaited<ReturnType<typeof getJobProgress>>;
     };
     if (isActivePlanStatus(plan.status)) {

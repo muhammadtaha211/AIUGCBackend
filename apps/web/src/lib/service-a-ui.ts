@@ -172,20 +172,6 @@ export function fmtElapsedHe(elapsedMs: number): string {
 }
 
 /**
- * Wall clock since the customer's request, for the "רץ כבר X" line — NOT
- * core's JobProgress.elapsedMs, which is since job.lockedAt while running and
- * therefore resets at every re-claim (a transient-failure retry re-locks the
- * SAME job row). requestedAt is a DB row's own createdAt (demo_analyses /
- * demo_step_plans), stamped once at the row's insert and never touched again
- * by a retry of the job that owns it, so it only grows. Clamped to 0 for
- * clock skew between the server that stamped requestedAt and the client
- * evaluating `now`.
- */
-export function requestElapsedMs(requestedAt: string, now: Date = new Date()): number {
-  return Math.max(0, now.getTime() - new Date(requestedAt).getTime());
-}
-
-/**
  * How far a queued job's resumeAtMs must sit in the future before the wait
  * surfaces call it a PAUSE rather than ordinary waiting. core's own
  * JOB_DELAY_VISIBLE_MS (60s) is what makes resumeAtMs appear at all — it
@@ -217,17 +203,23 @@ const stuckLine = (what: string) => PIPELINE_STUCK_LINE.replace("{מה}", what);
  * "failed" when the job is dead. No payload (older server, first poll still
  * in flight) degrades to the pre-8d generic line.
  *
- * requestedAt is demo_analyses.created_at (the analysis row, stamped once
- * when the first attempt starts and reused by every retry of that attempt —
- * never a new job field): the customer-facing elapsed rides it instead of
- * job.elapsedMs, which resets at every re-claim and once showed "less than a
- * minute" on a job's third attempt eight minutes in. Absent requestedAt
- * (older server, or the split second before the row exists) falls back to
- * job.elapsedMs, same as before.
+ * requestedElapsedMs is the wall clock since demo_analyses.created_at,
+ * computed by the ROUTE on the server's own clock (see the analysis GET). It
+ * replaces job.elapsedMs for the customer-facing number, which is measured
+ * from job.lockedAt and so resets at every re-claim — it once showed "less
+ * than a minute" on a job's third attempt eight minutes in. When the server
+ * sends no number (older server, or a payload without it) the line shows NO
+ * number rather than falling back to job.elapsedMs: a missing number beats a
+ * decreasing one.
+ *
+ * `now` stays a parameter because the PARK GATE below needs it, and that
+ * comparison tolerates the client's clock being off — the nearest boundary is
+ * a ~4min backoff against a 10min threshold, or a 60min park against the
+ * same. Only the displayed duration was skew-sensitive, and that left.
  */
 export function analysisWaitView(
   job?: JobProgressWire,
-  requestedAt?: string,
+  requestedElapsedMs?: number,
   now: Date = new Date(),
 ): AnalysisWaitView {
   if (!job) return { kind: "waiting", line: ANALYSIS_QUEUED_LINE };
@@ -236,13 +228,11 @@ export function analysisWaitView(
     return { kind: "stuck", line: stuckLine("ניתוח") };
   }
   if (job.state === "running") {
-    const elapsedMs =
-      requestedAt !== undefined ? requestElapsedMs(requestedAt, now) : job.elapsedMs;
     return {
       kind: "waiting",
       line:
-        elapsedMs !== undefined
-          ? `מנתחים את הסרטון עכשיו — רץ כבר ${fmtElapsedHe(elapsedMs)}.`
+        requestedElapsedMs !== undefined
+          ? `מנתחים את הסרטון עכשיו — רץ כבר ${fmtElapsedHe(requestedElapsedMs)}.`
           : "מנתחים את הסרטון עכשיו.",
     };
   }
@@ -291,15 +281,16 @@ export type PlanWaitView =
  * No queue position: the plan GET passes no lane (core exports no light-lane
  * type list), so `ahead` is undefined and nothing is promised.
  *
- * requestedAt is demo_step_plans.created_at — inserted synchronously by the
- * POST route before the job is even enqueued, so it IS the request moment
- * exactly, and (like the analysis row) is reused by every retry of the same
- * job. See analysisWaitView for why this beats job.elapsedMs.
+ * requestedElapsedMs is the wall clock since demo_step_plans.created_at,
+ * computed server-side by stepPlanResponse. The plan row is inserted
+ * synchronously by the POST route before the job is enqueued, so it IS the
+ * request moment exactly. See analysisWaitView for why this beats
+ * job.elapsedMs and why a missing number shows no number.
  */
 export function planWaitView(
   status: string,
   job?: JobProgressWire,
-  requestedAt?: string,
+  requestedElapsedMs?: number,
   now: Date = new Date(),
 ): PlanWaitView {
   if (job?.state === "failed") return { kind: "failed" };
@@ -324,13 +315,10 @@ export function planWaitView(
     };
   }
   if (status === "planning") {
-    const elapsedMs =
-      job?.state !== "running"
-        ? undefined
-        : requestedAt !== undefined
-          ? requestElapsedMs(requestedAt, now)
-          : job.elapsedMs;
-    const sub = elapsedMs !== undefined ? `רץ כבר ${fmtElapsedHe(elapsedMs)}.` : undefined;
+    const sub =
+      job?.state === "running" && requestedElapsedMs !== undefined
+        ? `רץ כבר ${fmtElapsedHe(requestedElapsedMs)}.`
+        : undefined;
     return { kind: "waiting", line: "בונים את תוכנית הצעדים…", ...(sub ? { sub } : {}) };
   }
   return { kind: "waiting", line: "התוכנית ממתינה בתור…" };
@@ -553,9 +541,12 @@ export type StepPlanWire = {
    *  before 0029, where the quota substring marker is the only signal. */
   failKind?: string;
   approvedAt?: string;
-  /** demo_step_plans.created_at — planWaitView's wall-clock anchor, always
-   *  present (the column is NOT NULL). */
-  createdAt: string;
+  /** Wall clock since demo_step_plans.created_at, measured on the SERVER's
+   *  clock by stepPlanResponse — planWaitView's "רץ כבר X". Always present
+   *  (the column is NOT NULL). Deliberately not on JobProgressWire: that
+   *  shape is core's, and its per-job elapsedMs stays as it is for logs and
+   *  admin. */
+  requestedElapsedMs: number;
   /** Plan job progress — attached by the GET while pending/planning (8d). */
   job?: JobProgressWire;
 };
