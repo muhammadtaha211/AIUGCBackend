@@ -15,7 +15,8 @@ export function SiteFooter() {
         <div>
           <Brand />
           <p className="mt-3 max-w-xs text-sm leading-relaxed text-ink/60">
-            מודעות וידאו בעברית לעסקים ישראליים. מסרטון אחד מהטלפון לחבילת מודעות מוכנה לפרסום.
+            מודעות וידאו בעברית לעסקים ישראליים. הוק + דמו מהסרטון שצילמתם, או פרזנטור AI שמדבר על
+            העסק שלכם.
           </p>
         </div>
         <nav aria-label="קישורי מוצר">

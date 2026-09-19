@@ -135,46 +135,35 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   `exchangeCodeForSession`. `/home` is the only real gate.
 - `words_per_second` is **2.1** (calibration), not the seed's 2.2 (a guess).
 
-## What landed (2026-09-18/19) — the wait-timing fix, on `claude/analysis-wait-timing-backoff-z16uw9`, pushed, NOT merged
+## What landed (2026-09-19) — the landing repositioning, on `landing/two-services`, NOT merged
 
-Customer-facing defects in the Service A wizard's analysis/plan wait cards. No server logic,
-no schema, no `packages/core` change, no Hebrew string added or changed. Six commits: the
-first pass (`4917043`, `6c86a21`, `6a51d91`), then a founder review that caught three things
-it got wrong (`7c93160`, `243c045`, `3550d7d`).
+The public landing and `/about` sold the **retired** Service A — "מסרטון אחד", קריינות, "עם קול
+ובלי" — and folded the talking head into one feature card. Both now sell the two services that
+exist, under the app's own names, and claim nothing: no results, no organic-reach promise, no credit
+or shekel number, no length for the talking head. The reasoning, the vocabulary rules
+(כיתובים for hook + demo, כתוביות only for B) and the eight product claims re-read against the code
+before shipping: [[0061-landing-positioning-two-services-no-results-claims]].
 
-**The elapsed clock reset on every retry re-claim.** `analysisWaitView` and `planWaitView`
-read core's `JobProgress.elapsedMs`, which for a RUNNING job is `now - job.lockedAt` —
-refreshed at every re-claim. Measured: a real 8-minute wait on a job's third attempt showed
-"רץ כבר פחות מדקה". Now the ROUTES difference the domain row's own `created_at`
-(`demo_analyses` / `demo_step_plans`) against their own clock and send a duration —
-`requestedElapsedMs` on the analysis body, on `StepPlanWire` via `stepPlanResponse`. The first
-pass sent an ISO string and subtracted in the view, which runs in the browser: a client clock
-behind the server's would have pinned the line at "פחות מדקה". Corrected in `7c93160`, which
-also deleted the fallback to `job.elapsedMs` — when the server sends no number, none is shown.
-[[0059-the-wait-clock-counts-from-the-request-row-not-the-job]].
+New: `apps/web/src/lib/landing-media.ts` + `apps/web/public/landing/` — every landing asset is one
+typed object plus a file drop, no import and no page edit. Every slot ships empty and draws the
+existing AdFrame still wearing its own label; "placeholder" never reaches the screen.
 
-**A short retry backoff read as a pause.** Both wait views showed "מושהה" (paused, will resume
-automatically) for ANY `resumeAtMs`, which core sets whenever a queued job's `run_at` is more
-than 60s out — conflating a 90s transient-retry backoff with an hours-long budget park. The
-founder saw it twice in one session. Gated on a new view-only `LONG_PARK_THRESHOLD_MS` (10
-minutes); core's `JOB_DELAY_VISIBLE_MS` is untouched by instruction. But gating alone let a
-short park fall through to branches that describe a job about to be claimed — "הניתוח יתחיל
-בקרוב" for the analysis, "בונים את תוכנית הצעדים…" for the plan, the second an outright lie
-about a job building nothing. `243c045` keys both on the JOB the way `renderWaitView` already
-did: a rescheduled job returns its standing queued line and stops.
-[[0060-a-short-retry-backoff-is-not-a-pause]], which extends
-[[0009-retry-backoff-is-invisible-to-the-customer]] to these two surfaces rather than
-diverging from it — 0009 ruled on retry backoff and never on budget parks.
+**The whole gate ran green from this machine — 1198 tests, 0 failures, all five suites.** ffmpeg IS
+installed here, so the four core `ffmpeg ENOENT` failures under Unfinished measurement are a property
+of that container, not of this repo.
 
-**The render wait now carries two recorded defects, both unfixed and both out of this task's
-scope**: [[render-wait-elapsed-resets-on-reclaim]] (the same elapsed reset) and
-[[render-wait-says-nothing-about-a-long-budget-park]] (0009's single `resumeAtMs` branch
-swallows an hours-long park as well as the backoff it was written for — never reviewed,
-because `resumeAtMs` does not record why a job was rescheduled).
+**The last surface still selling the retired format is `app/home/pathway-cards.tsx:36`** — the
+signed-in card into the A wizard, promising `כתוביות וקריינות` for a format with no audio stream.
+Out of this change's scope (a `/home` surface), left for the founder.
 
-`pnpm typecheck` and `pnpm lint` exit 0; the five serial suites run, with the four core
-`ffmpeg ENOENT` failures being the pre-existing environment gap (see Unfinished measurement
-below), not from this change. **Not yet merged** — this session's branch, not landed to `main`.
+## What landed earlier (2026-09-18/19) — the wait-timing fix — MERGED
+
+`claude/analysis-wait-timing-backoff-z16uw9` is in `origin/main` (PR #48, `1849713`); this file said
+"NOT merged" and was wrong. Both halves graduated into notes —
+[[0059-the-wait-clock-counts-from-the-request-row-not-the-job]] and
+[[0060-a-short-retry-backoff-is-not-a-pause]] — so the detail lives there, not here. Two render-wait
+defects stay open and unfixed: [[render-wait-elapsed-resets-on-reclaim]] and
+[[render-wait-says-nothing-about-a-long-budget-park]].
 
 ## Decisions made in conversation — not yet in a note
 
@@ -407,6 +396,14 @@ non-sensitive scopes.
 
 ## Owed founder actions
 
+- **Shoot and drop the landing media** — six slots, all empty today: `demoBefore`/`demoAfter`
+  (one recording and the ad built from it), four hook clips, a hook-studio screenshot, a presenter
+  clip, an Instagram screenshot. Filenames and the two-step swap are in
+  `apps/web/public/landing/README.md`; the page renders correctly without them.
+- **Set the presenter's name and Instagram URL** in `apps/web/src/lib/landing-media.ts`.
+  `presenterName` is `"עדי"` as a stand-in and `instagramUrl` is `null`, which hides the link. **The
+  `#proof` copy is written feminine — if the presenter is male, rewrite it rather than regendering
+  it in a session.** [[0061-landing-positioning-two-services-no-results-claims]].
 - **Update the address on the עוסק פטור registration** — still כאבול while every public page says
   ברזיל 14, תל אביב. **UNVERIFIED**: he said he is doing it; nobody has seen the file
   ([[0058-the-operator-address-is-a-tel-aviv-street-address]]).
@@ -428,6 +425,10 @@ distinct, every inbound link uses the full filename), but `[[0047]]` is ambiguou
 0059 were taken **above** the highest number rather than filling a gap, because renumbering a
 published note breaks the links pointing at it. Renumber or leave it — a founder call.
 
+- **Narrowing the ICP — RAISED AND DEFERRED, 2026-09-19**, as its own decision. The
+  physical-product category STAYS: `WhatChooser` still offers `מוצר פיזי` first and the landing still
+  addresses it. Recorded so the absence of narrowing reads as deferred, not overlooked.
+  [[0061-landing-positioning-two-services-no-results-claims]] §5.
 - **Service B ships unreviewed, by decision.** `auto_release_b` is `true` and stays true
   ([[0036-auto-release-b-is-always-on]]). **Not** settled: whether anything else should stand in that
   space at self-serve scale; as of `c442447` the content-policy classifier does
