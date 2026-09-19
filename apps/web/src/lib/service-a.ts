@@ -146,18 +146,22 @@ export function parseAnalysisIndexes(raw: string, timelineLength: number): numbe
  * all serialize through here), so the wizard never learns two shapes. steps/
  * unexplainedMoments pass through as stored — core owns their schema.
  */
-export function stepPlanResponse(plan: {
-  id: string;
-  demoId: string;
-  analysisId: string;
-  status: string;
-  steps: unknown;
-  unexplainedMoments: unknown;
-  notes: string | null;
-  failReason: string | null;
-  failKind: string | null;
-  approvedAt: Date | null;
-}): {
+export function stepPlanResponse(
+  plan: {
+    id: string;
+    demoId: string;
+    analysisId: string;
+    status: string;
+    steps: unknown;
+    unexplainedMoments: unknown;
+    notes: string | null;
+    failReason: string | null;
+    failKind: string | null;
+    approvedAt: Date | null;
+    createdAt: Date;
+  },
+  now: Date = new Date(),
+): {
   planId: string;
   demoId: string;
   analysisId: string;
@@ -168,6 +172,7 @@ export function stepPlanResponse(plan: {
   failReason?: string;
   failKind?: string;
   approvedAt?: Date;
+  requestedElapsedMs: number;
 } {
   return {
     planId: plan.id,
@@ -180,6 +185,12 @@ export function stepPlanResponse(plan: {
     failReason: plan.failReason ?? undefined,
     failKind: plan.failKind ?? undefined,
     approvedAt: plan.approvedAt ?? undefined,
+    // The customer-facing "רץ כבר X", differenced HERE on the server's clock
+    // rather than shipped as a timestamp for the browser to subtract from its
+    // own — a client clock behind the server's would otherwise pin the number
+    // at "פחות מדקה" for as long as the skew lasted. Clamped for the same
+    // reason in the other direction.
+    requestedElapsedMs: Math.max(0, now.getTime() - plan.createdAt.getTime()),
   };
 }
 

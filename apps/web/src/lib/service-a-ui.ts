@@ -171,6 +171,18 @@ export function fmtElapsedHe(elapsedMs: number): string {
   return `${minutes} דקות`;
 }
 
+/**
+ * How far a queued job's resumeAtMs must sit in the future before the wait
+ * surfaces call it a PAUSE rather than ordinary waiting. core's own
+ * JOB_DELAY_VISIBLE_MS (60s) is what makes resumeAtMs appear at all — it
+ * can't distinguish a 90s retry backoff from a multi-hour budget park, and
+ * conflating the two read as a fault to the founder twice in one session
+ * (2026-09-18). This is a view-only threshold, deliberately not
+ * JOB_DELAY_VISIBLE_MS itself: that constant is shared by every surface
+ * (queue position, stuck detection) and changing it would move all of them.
+ */
+export const LONG_PARK_THRESHOLD_MS = 10 * 60_000;
+
 export type AnalysisWaitView =
   | { kind: "waiting"; line: string; sub?: string }
   | { kind: "stuck"; line: string }
@@ -190,8 +202,26 @@ const stuckLine = (what: string) => PIPELINE_STUCK_LINE.replace("{מה}", what);
  * "stuck" when no worker has claimed anything past the heartbeat window, and
  * "failed" when the job is dead. No payload (older server, first poll still
  * in flight) degrades to the pre-8d generic line.
+ *
+ * requestedElapsedMs is the wall clock since demo_analyses.created_at,
+ * computed by the ROUTE on the server's own clock (see the analysis GET). It
+ * replaces job.elapsedMs for the customer-facing number, which is measured
+ * from job.lockedAt and so resets at every re-claim — it once showed "less
+ * than a minute" on a job's third attempt eight minutes in. When the server
+ * sends no number (older server, or a payload without it) the line shows NO
+ * number rather than falling back to job.elapsedMs: a missing number beats a
+ * decreasing one.
+ *
+ * `now` stays a parameter because the PARK GATE below needs it, and that
+ * comparison tolerates the client's clock being off — the nearest boundary is
+ * a ~4min backoff against a 10min threshold, or a 60min park against the
+ * same. Only the displayed duration was skew-sensitive, and that left.
  */
-export function analysisWaitView(job?: JobProgressWire): AnalysisWaitView {
+export function analysisWaitView(
+  job?: JobProgressWire,
+  requestedElapsedMs?: number,
+  now: Date = new Date(),
+): AnalysisWaitView {
   if (!job) return { kind: "waiting", line: ANALYSIS_QUEUED_LINE };
   if (job.state === "failed") return { kind: "failed" };
   if (job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
@@ -201,20 +231,27 @@ export function analysisWaitView(job?: JobProgressWire): AnalysisWaitView {
     return {
       kind: "waiting",
       line:
-        job.elapsedMs !== undefined
-          ? `מנתחים את הסרטון עכשיו — רץ כבר ${fmtElapsedHe(job.elapsedMs)}.`
+        requestedElapsedMs !== undefined
+          ? `מנתחים את הסרטון עכשיו — רץ כבר ${fmtElapsedHe(requestedElapsedMs)}.`
           : "מנתחים את הסרטון עכשיו.",
     };
   }
   if (job.state === "queued") {
-    // A deliberately-rescheduled job (backoff, budget park) is PAUSED, not in
-    // line — "starts soon" over an hours-long park would be a lie.
+    // Keyed on the JOB, not the row — renderWaitView's rule. A deliberately
+    // rescheduled job (backoff, budget park) is not in line at all, so it
+    // gets neither a queue position nor "starts soon": both describe a job
+    // the claim loop will pick up next, and this one it will not. Only a
+    // genuinely LONG park is named as a pause; a short retry backoff falls
+    // back to the standing queued line and says nothing about the retry,
+    // which is 0009's ruling for renders applied here.
     if (job.resumeAtMs !== undefined) {
-      return {
-        kind: "waiting",
-        line: ANALYSIS_QUEUED_LINE,
-        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
-      };
+      return job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS
+        ? {
+            kind: "waiting",
+            line: ANALYSIS_QUEUED_LINE,
+            sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+          }
+        : { kind: "waiting", line: ANALYSIS_QUEUED_LINE };
     }
     // ahead undefined = the queue depth is unknown (no lane named) — say
     // nothing rather than promising "soon" from behind three renders.
@@ -248,27 +285,43 @@ export type PlanWaitView =
  * planning stage; a stale heartbeat or a dead job stops the spinner lying.
  * No queue position: the plan GET passes no lane (core exports no light-lane
  * type list), so `ahead` is undefined and nothing is promised.
+ *
+ * requestedElapsedMs is the wall clock since demo_step_plans.created_at,
+ * computed server-side by stepPlanResponse. The plan row is inserted
+ * synchronously by the POST route before the job is enqueued, so it IS the
+ * request moment exactly. See analysisWaitView for why this beats
+ * job.elapsedMs and why a missing number shows no number.
  */
-export function planWaitView(status: string, job?: JobProgressWire): PlanWaitView {
+export function planWaitView(
+  status: string,
+  job?: JobProgressWire,
+  requestedElapsedMs?: number,
+  now: Date = new Date(),
+): PlanWaitView {
   if (job?.state === "failed") return { kind: "failed" };
   if (job && job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
     return { kind: "stuck", line: stuckLine("תכנון") };
   }
-  // A parked/deep-backoff job is PAUSED whatever the row says — the row sits
-  // on "planning" when the budget park hit mid-call (the flip happens before
-  // the paid call), and "building now" over an hours-long park is a lie. Same
-  // ruling as the analysis wait: resumeAtMs beats the row status.
+  // Keyed on the JOB, not the row — renderWaitView's rule, and the reason
+  // this sits above the status check rather than inside it: requestDemoPlan
+  // flips the row to "planning" BEFORE the paid call, so a park that hit
+  // mid-call arrives as status "planning" + state "queued" and must not fall
+  // through to the "building now" line. A rescheduled job is not building.
+  // Long parks are named as a pause; a short retry backoff gets the standing
+  // queued line and says nothing about the retry (0009's ruling for renders).
   if (job?.state === "queued" && job.resumeAtMs !== undefined) {
-    return {
-      kind: "waiting",
-      line: "התוכנית ממתינה בתור…",
-      sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
-    };
+    return job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS
+      ? {
+          kind: "waiting",
+          line: "התוכנית ממתינה בתור…",
+          sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
+        }
+      : { kind: "waiting", line: "התוכנית ממתינה בתור…" };
   }
   if (status === "planning") {
     const sub =
-      job?.state === "running" && job.elapsedMs !== undefined
-        ? `רץ כבר ${fmtElapsedHe(job.elapsedMs)}.`
+      job?.state === "running" && requestedElapsedMs !== undefined
+        ? `רץ כבר ${fmtElapsedHe(requestedElapsedMs)}.`
         : undefined;
     return { kind: "waiting", line: "בונים את תוכנית הצעדים…", ...(sub ? { sub } : {}) };
   }
@@ -492,6 +545,12 @@ export type StepPlanWire = {
    *  before 0029, where the quota substring marker is the only signal. */
   failKind?: string;
   approvedAt?: string;
+  /** Wall clock since demo_step_plans.created_at, measured on the SERVER's
+   *  clock by stepPlanResponse — planWaitView's "רץ כבר X". Always present
+   *  (the column is NOT NULL). Deliberately not on JobProgressWire: that
+   *  shape is core's, and its per-job elapsedMs stays as it is for logs and
+   *  admin. */
+  requestedElapsedMs: number;
   /** Plan job progress — attached by the GET while pending/planning (8d). */
   job?: JobProgressWire;
 };

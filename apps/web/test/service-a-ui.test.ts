@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_MAX_DURATION_MS, DEMO_MIN_DURATION_MS } from "@aiugc/core";
+import { backoffMs, DEMO_MAX_DURATION_MS, DEMO_MIN_DURATION_MS } from "@aiugc/core";
 import { readTimeMs } from "@aiugc/core/plan-format";
 import {
   addWarning,
@@ -37,6 +37,7 @@ import {
   labelRuns,
   labelWordCount,
   labelWordWarning,
+  LONG_PARK_THRESHOLD_MS,
   marksAfterEdit,
   MAX_DEMO_SECONDS,
   MIN_DEMO_SECONDS,
@@ -970,6 +971,33 @@ describe("the demo step rework (8d)", () => {
     expect(fmtElapsedHe(5 * 60_000)).toBe("5 דקות");
   });
 
+  describe("LONG_PARK_THRESHOLD_MS sits between the two things it separates", () => {
+    // The threshold is only honest if it lands in the gap between the
+    // deepest backoff a retry can reach and the shallowest real park. Both
+    // sides live in packages/core, so this test is the tripwire: it fails if
+    // either moves under it.
+    it("every reachable transient backoff is below it", () => {
+      // failTransient reschedules only while attempts + 1 < max_attempts, so
+      // the deepest reachable failure count is max_attempts - 1 = 4 today
+      // (jobs.max_attempts defaults to 5, schema.ts). backoffMs(4) is
+      // 30s * 2^3 = 240s plus up to 10s of jitter — nowhere near 10 minutes.
+      expect(backoffMs(4)).toBeLessThan(LONG_PARK_THRESHOLD_MS);
+      // The real headroom: even failure 5 (480s + jitter) stays under, so
+      // max_attempts would have to reach 7 before a transient backoff could
+      // read as a pause. Failure 6 is the first that breaches — it hits
+      // backoffMs's own 15-minute ceiling.
+      expect(backoffMs(5)).toBeLessThan(LONG_PARK_THRESHOLD_MS);
+      expect(backoffMs(6)).toBeGreaterThan(LONG_PARK_THRESHOLD_MS);
+    });
+
+    it("a budget park is above it", () => {
+      // BudgetError's default resumeAt is now + 1h (packages/core/src/jobs/
+      // errors.ts:42) — six times the threshold, so a park is never mistaken
+      // for a backoff however long the request took to reach the customer.
+      expect(60 * 60_000).toBeGreaterThan(LONG_PARK_THRESHOLD_MS);
+    });
+  });
+
   describe("analysisWaitView", () => {
     const job = (over: Partial<JobProgressWire>): JobProgressWire => ({
       state: "queued",
@@ -993,6 +1021,25 @@ describe("the demo step rework (8d)", () => {
       expect(analysisWaitView(job({ heartbeat: "stale" })).kind).toBe("stuck");
       expect(analysisWaitView(job({ state: "running", heartbeat: "stale" })).kind).toBe("stuck");
       expect(analysisWaitView(job({ heartbeat: "unknown" })).kind).toBe("waiting");
+    });
+
+    it("stale beats a park of any length — the stuck line is checked first", () => {
+      // Branch ORDER, not just output. renderWaitView puts its stale check
+      // above its resumeAtMs return, and 0009 leans on exactly that: the
+      // amber line is what survives when nothing is claiming the job, and a
+      // resumeAtMs on a dead queue must not quietly speak for it. Both
+      // parks are asserted because they take different arms of the return.
+      const now = new Date(0);
+      expect(
+        analysisWaitView(job({ heartbeat: "stale", resumeAtMs: 90_000 }), undefined, now).kind,
+      ).toBe("stuck");
+      expect(
+        analysisWaitView(
+          job({ heartbeat: "stale", resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }),
+          undefined,
+          now,
+        ).kind,
+      ).toBe("stuck");
     });
 
     it("queued: position when known, 'soon' at zero, silence when unknown", () => {
@@ -1021,15 +1068,93 @@ describe("the demo step rework (8d)", () => {
       });
     });
 
-    it("running: elapsed on a minutes scale", () => {
-      expect(analysisWaitView(job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual({
+    it("a short retry backoff says nothing at all — not a pause, and not a queue position", () => {
+      // 90s past run_at is a normal transient-retry backoff (core's
+      // JOB_DELAY_VISIBLE_MS is 60s, so resumeAtMs is already set). Under
+      // the threshold it is not a pause; and because the job is parked it is
+      // not in line either, so "הניתוח יתחיל בקרוב" would be a promise the
+      // claim loop cannot keep. The bare queued line, nothing else.
+      const now = new Date(0);
+      expect(analysisWaitView(job({ ahead: 0, resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+      });
+      // Keyed on the JOB: a real queue depth behind a parked job is just as
+      // meaningless, so it is not reported either.
+      expect(analysisWaitView(job({ ahead: 3, resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+      });
+    });
+
+    it("the paused line fires above the threshold and nowhere else — both sides of it", () => {
+      const now = new Date(0);
+      const at = analysisWaitView(
+        job({ ahead: 0, resumeAtMs: LONG_PARK_THRESHOLD_MS }),
+        undefined,
+        now,
+      );
+      const under = analysisWaitView(
+        job({ ahead: 0, resumeAtMs: LONG_PARK_THRESHOLD_MS - 1 }),
+        undefined,
+        now,
+      );
+      const over = analysisWaitView(
+        job({ ahead: 0, resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }),
+        undefined,
+        now,
+      );
+      // At the boundary and below: the bare line, no sub of any kind.
+      expect(at).toEqual({ kind: "waiting", line: "הסרטון בתור לניתוח — זה לוקח כמה דקות." });
+      expect(under).toEqual({ kind: "waiting", line: "הסרטון בתור לניתוח — זה לוקח כמה דקות." });
+      // One millisecond over: the honest pause line.
+      expect(over).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+      });
+    });
+
+    it("running: the server's number on a minutes scale", () => {
+      expect(analysisWaitView(job({ state: "running" }), 3 * 60_000)).toEqual({
         kind: "waiting",
         line: "מנתחים את הסרטון עכשיו — רץ כבר 3 דקות.",
+      });
+    });
+
+    it("running: no server-computed number renders no number — never job.elapsedMs", () => {
+      // The payload carries core's per-job figure and it must stay ignored:
+      // it is measured from lockedAt and resets at every re-claim, which is
+      // the whole defect. A missing number beats a decreasing one.
+      expect(analysisWaitView(job({ state: "running", elapsedMs: 3 * 60_000 }))).toEqual({
+        kind: "waiting",
+        line: "מנתחים את הסרטון עכשיו.",
       });
       expect(analysisWaitView(job({ state: "running" }))).toEqual({
         kind: "waiting",
         line: "מנתחים את הסרטון עכשיו.",
       });
+    });
+
+    it("the shown number never decreases across a queued->running transition or a re-claim", () => {
+      // Queued shows no number at all (never a smaller one to regress from).
+      expect(analysisWaitView(job({ state: "queued", ahead: 0 }), 30_000)).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+        sub: "הניתוח יתחיל בקרוב.",
+      });
+
+      // First claim, 5 minutes in.
+      expect(
+        analysisWaitView(job({ state: "running", elapsedMs: 5 * 60_000 }), 5 * 60_000),
+      ).toMatchObject({ line: "מנתחים את הסרטון עכשיו — רץ כבר 5 דקות." });
+
+      // A transient failure re-claims the job: core's own elapsedMs resets to
+      // near zero, but the server's wall clock has only moved forward — the
+      // shown number grows, never falls back below the 5 minutes on screen.
+      expect(
+        analysisWaitView(job({ state: "running", elapsedMs: 8_000 }), 8 * 60_000),
+      ).toMatchObject({ line: "מנתחים את הסרטון עכשיו — רץ כבר 8 דקות." });
     });
   });
 
@@ -1094,11 +1219,18 @@ describe("the demo step rework (8d)", () => {
       });
     });
 
-    it("planning + running job shows elapsed", () => {
-      expect(planWaitView("planning", job({ state: "running", elapsedMs: 60_000 }))).toEqual({
+    it("planning + running job shows the server's elapsed", () => {
+      expect(planWaitView("planning", job({ state: "running" }), 60_000)).toEqual({
         kind: "waiting",
         line: "בונים את תוכנית הצעדים…",
         sub: "רץ כבר דקה.",
+      });
+    });
+
+    it("planning: no server-computed number renders no sub — never job.elapsedMs", () => {
+      expect(planWaitView("planning", job({ state: "running", elapsedMs: 60_000 }))).toEqual({
+        kind: "waiting",
+        line: "בונים את תוכנית הצעדים…",
       });
     });
 
@@ -1117,6 +1249,28 @@ describe("the demo step rework (8d)", () => {
       expect(planWaitView("pending", job({ heartbeat: "unknown" })).kind).toBe("waiting");
     });
 
+    it("stale beats a park of any length — the stuck line is checked first", () => {
+      // Same ordering guarantee as the analysis wait, and as renderWaitView:
+      // the stale check sits above the resumeAtMs return, so a park on a
+      // queue nothing is claiming still surfaces the amber line. Asserted
+      // over both row statuses, since the park return is keyed on the job.
+      const now = new Date(0);
+      for (const status of ["pending", "planning"]) {
+        expect(
+          planWaitView(status, job({ heartbeat: "stale", resumeAtMs: 90_000 }), undefined, now)
+            .kind,
+        ).toBe("stuck");
+        expect(
+          planWaitView(
+            status,
+            job({ heartbeat: "stale", resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }),
+            undefined,
+            now,
+          ).kind,
+        ).toBe("stuck");
+      }
+    });
+
     it("a budget-parked plan job reads as paused — even when the row already says planning", () => {
       expect(planWaitView("pending", job({ resumeAtMs: 4_000_000_000_000 }))).toMatchObject({
         kind: "waiting",
@@ -1130,6 +1284,68 @@ describe("the demo step rework (8d)", () => {
         line: "התוכנית ממתינה בתור…",
         sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
       });
+    });
+
+    it("a short retry backoff says nothing at all — and never claims to be building", () => {
+      const now = new Date(0);
+      expect(planWaitView("pending", job({ resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+      });
+      // The one that matters: the row flips to "planning" before the paid
+      // call, so a short backoff mid-generation arrives as planning + queued.
+      // Keyed on the JOB, it must not fall through to "בונים את תוכנית הצעדים…"
+      // — a rescheduled job is not building anything.
+      expect(planWaitView("planning", job({ resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+      });
+    });
+
+    it("the paused line fires above the threshold and nowhere else — both sides of it", () => {
+      const now = new Date(0);
+      const PAUSED = "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.";
+      for (const status of ["pending", "planning"]) {
+        expect(
+          planWaitView(status, job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now),
+        ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…" });
+        expect(
+          planWaitView(status, job({ resumeAtMs: LONG_PARK_THRESHOLD_MS - 1 }), undefined, now),
+        ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…" });
+        expect(
+          planWaitView(status, job({ resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }), undefined, now),
+        ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…", sub: PAUSED });
+      }
+    });
+
+    it("planning: the shown clock is the server's, not job.elapsedMs", () => {
+      // The payload's own figure says "just claimed"; the server's says 8
+      // minutes since the plan row was inserted. The latter is what shows.
+      expect(
+        planWaitView("planning", job({ state: "running", elapsedMs: 5_000 }), 8 * 60_000),
+      ).toEqual({
+        kind: "waiting",
+        line: "בונים את תוכנית הצעדים…",
+        sub: "רץ כבר 8 דקות.",
+      });
+    });
+
+    it("the shown number never decreases across a queued->running transition or a re-claim", () => {
+      // pending (queued) shows no elapsed number at all.
+      expect(planWaitView("pending", job({ state: "queued" }), 30_000)).toEqual({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+      });
+
+      expect(
+        planWaitView("planning", job({ state: "running", elapsedMs: 5 * 60_000 }), 5 * 60_000),
+      ).toMatchObject({ sub: "רץ כבר 5 דקות." });
+
+      // A re-claim resets core's own elapsedMs; the server's wall-clock
+      // figure does not fall back below what was already shown.
+      expect(
+        planWaitView("planning", job({ state: "running", elapsedMs: 9_000 }), 8 * 60_000),
+      ).toMatchObject({ sub: "רץ כבר 8 דקות." });
     });
   });
 

@@ -154,19 +154,27 @@ describe("request schemas", () => {
 describe("step plan response shape", () => {
   it("renames id->planId, defaults missing jsonb to [], hides nulls", () => {
     const approvedAt = new Date();
+    const createdAt = new Date(0);
+    // The response carries a server-differenced duration, not the timestamp:
+    // the browser never subtracts its own clock from a server stamp.
+    const now = new Date(3 * 60_000);
     expect(
-      stepPlanResponse({
-        id: "p1",
-        demoId: "d1",
-        analysisId: "a1",
-        status: "ready",
-        steps: [{ sourceIndex: 3 }],
-        unexplainedMoments: [],
-        notes: "הערה",
-        failReason: null,
-        failKind: null,
-        approvedAt,
-      }),
+      stepPlanResponse(
+        {
+          id: "p1",
+          demoId: "d1",
+          analysisId: "a1",
+          status: "ready",
+          steps: [{ sourceIndex: 3 }],
+          unexplainedMoments: [],
+          notes: "הערה",
+          failReason: null,
+          failKind: null,
+          approvedAt,
+          createdAt,
+        },
+        now,
+      ),
     ).toEqual({
       planId: "p1",
       demoId: "d1",
@@ -176,26 +184,52 @@ describe("step plan response shape", () => {
       unexplainedMoments: [],
       notes: "הערה",
       approvedAt,
+      requestedElapsedMs: 3 * 60_000,
     });
 
-    const failed = stepPlanResponse({
-      id: "p2",
-      demoId: "d1",
-      analysisId: "a1",
-      status: "failed",
-      steps: null,
-      unexplainedMoments: null,
-      notes: null,
-      failReason: "יצירת התוכנית נכשלה — נסו שוב",
-      failKind: "validator",
-      approvedAt: null,
-    });
+    const failed = stepPlanResponse(
+      {
+        id: "p2",
+        demoId: "d1",
+        analysisId: "a1",
+        status: "failed",
+        steps: null,
+        unexplainedMoments: null,
+        notes: null,
+        failReason: "יצירת התוכנית נכשלה — נסו שוב",
+        failKind: "validator",
+        approvedAt: null,
+        createdAt,
+      },
+      now,
+    );
     expect(failed.steps).toEqual([]);
     expect(failed.unexplainedMoments).toEqual([]);
     expect(failed.failReason).toBe("יצירת התוכנית נכשלה — נסו שוב");
     expect(failed.failKind).toBe("validator");
     expect(failed.notes).toBeUndefined();
     expect(failed.approvedAt).toBeUndefined();
+    // A row stamped in the future (replica clock drift) reads as 0, never a
+    // negative duration the formatter would render as "פחות מדקה" anyway.
+    expect(failed.requestedElapsedMs).toBe(3 * 60_000);
+    expect(
+      stepPlanResponse(
+        {
+          id: "p3",
+          demoId: "d1",
+          analysisId: "a1",
+          status: "pending",
+          steps: null,
+          unexplainedMoments: null,
+          notes: null,
+          failReason: null,
+          failKind: null,
+          approvedAt: null,
+          createdAt: new Date(10_000),
+        },
+        new Date(0),
+      ).requestedElapsedMs,
+    ).toBe(0);
   });
 });
 
