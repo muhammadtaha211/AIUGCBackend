@@ -133,13 +133,16 @@ function MediaSlot({
 
 /** A section's category label, above its heading. */
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm font-bold text-ink/45">{children}</p>;
+  return <p className="text-sm font-bold text-ink/60">{children}</p>;
 }
 
 /**
  * Numbered step heading. `tone` picks the palette: `paper` inside the dark
- * block, `ink` in the light sections. The lime numeral is invisible on paper,
- * so the light variant mutes it instead of recolouring the scheme.
+ * block, `ink` in the light sections. The lime numeral is invisible on paper
+ * (#b6ff00 measures 1.2:1 there), so the light variant mutes it instead of
+ * recolouring the scheme — at /60, not lower: it is the ONLY visible numbering,
+ * since Tailwind's preflight strips the <ol> marker, so it is real text and
+ * owes 4.5:1. /60 is 4.83:1 on paper; /30 was 1.98:1.
  */
 function StepTitle({
   number,
@@ -158,7 +161,7 @@ function StepTitle({
     >
       <span
         aria-hidden
-        className={`font-display ${tone === "paper" ? "text-accent" : "text-ink/30"}`}
+        className={`font-display ${tone === "paper" ? "text-accent" : "text-ink/60"}`}
       >
         {number}
       </span>
@@ -256,8 +259,11 @@ function TwoServices() {
 
 /**
  * An arrow pointing at the inline end — physically left, the direction this
- * RTL page reads toward. Drawn rather than typed: U+2190 is bidi-mirrored, so
- * a literal arrow character can flip inside an RTL run.
+ * RTL page reads toward. Drawn rather than typed: the path fixes its direction,
+ * where a literal ← is bidi class ON and takes its placement from the run
+ * around it. It is NOT bidi-mirrored — measured, `unicodedata.mirrored('←')`
+ * is 0 on UCD 14 — so a character would not flip; it would only land where the
+ * surrounding Hebrew put it.
  */
 function ArrowStart({ className = "" }: { className?: string }) {
   return (
@@ -552,7 +558,7 @@ function Proof() {
           <p className="mt-4 max-w-2xl text-[17px] leading-relaxed text-ink/70">
             אם הגעתם לכאן מהסרטונים שלה — כבר ראיתם את זה עובד. אותו תהליך פתוח לכל עסק.
           </p>
-          <p className="mt-6 max-w-2xl text-sm leading-relaxed text-ink/50">
+          <p className="mt-6 max-w-2xl text-sm leading-relaxed text-ink/60">
             החשבון מסומן כדמות AI, כמו שאנחנו מבקשים מכל מי שמפרסם עם תבנית.
           </p>
           {LANDING_MEDIA.instagramUrl && (
