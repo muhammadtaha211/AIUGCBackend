@@ -1,8 +1,8 @@
 ---
 type: decision
 status: verified
-verified: 2026-09-18
-method: "session task brief directed the fix and named the source ('demo_analyses.created_at is the obvious source; decide and justify, do not invent a new job field'); confirmed by reading packages/core/src/pipelines/demo-analysis.ts's handleAnalyzeDemo (the demo_analyses row is inserted once, on the first attempt, and its id is checkpointed onto job.state.analysisId — a retry of the SAME job reuses the row and never re-inserts) and demo-step-plans.ts's requestDemoPlan (the demo_step_plans row is inserted synchronously in the POST route handler, before the job is even enqueued). Fixed in apps/web/src/lib/service-a-ui.ts (requestElapsedMs, analysisWaitView, planWaitView), threaded through apps/web/src/app/api/demos/[id]/analysis/route.ts and apps/web/src/components/a-wizard/step-plan.tsx; tests in apps/web/test/service-a-ui.test.ts."
+verified: 2026-09-19
+method: "session task brief directed the fix and named the source ('demo_analyses.created_at is the obvious source; decide and justify, do not invent a new job field'); confirmed by reading packages/core/src/pipelines/demo-analysis.ts's handleAnalyzeDemo (the demo_analyses row is inserted once, on the first attempt, and its id is checkpointed onto job.state.analysisId — a retry of the SAME job reuses the row and never re-inserts) and demo-step-plans.ts's requestDemoPlan (the demo_step_plans row is inserted synchronously in the POST route handler, before the job is even enqueued). Landed in apps/web/src/lib/service-a-ui.ts (analysisWaitView, planWaitView), apps/web/src/lib/service-a.ts (stepPlanResponse), apps/web/src/app/api/demos/[id]/analysis/route.ts, apps/web/src/app/api/demos/[id]/plan/route.ts and apps/web/src/components/a-wizard/step-plan.tsx; tests in apps/web/test/service-a-ui.test.ts and service-a.test.ts. Server-side-subtraction correction re-verified 2026-09-19 against step-plan.tsx:1 ('use client')."
 source: founder
 ---
 
@@ -10,11 +10,22 @@ source: founder
 
 ## The decision
 
-`analysisWaitView`'s and `planWaitView`'s "רץ כבר X" line now computes elapsed time as wall
-clock since the DOMAIN ROW was created — `demo_analyses.created_at` for the analysis wait,
+`analysisWaitView`'s and `planWaitView`'s "רץ כבר X" line now shows wall clock since the
+DOMAIN ROW was created — `demo_analyses.created_at` for the analysis wait,
 `demo_step_plans.created_at` for the plan wait — instead of core's `JobProgress.elapsedMs`.
-Both views take an optional `requestedAt` (ISO string) and fall back to the old
-`job.elapsedMs` behavior when it is absent.
+
+**The subtraction happens on the server.** Each route differences the row's `created_at`
+against its own `now` and sends the result as a duration — `requestedElapsedMs` on the
+analysis GET body, and on `StepPlanWire` via `stepPlanResponse`. The views receive a number,
+never a timestamp. The first cut of this fix (commit `4917043`) sent the ISO string and
+subtracted in the view, which runs in the browser under `"use client"` — a client clock
+behind the server's would have pinned the line at "פחות מדקה" for as long as the skew lasted.
+Corrected in `7c93160`.
+
+When the server sends no number, the views show **no number** — there is no fallback to
+`job.elapsedMs`. A missing number beats a decreasing one, and `job.elapsedMs` is the
+decreasing one. `JobProgressWire` is untouched: core's per-job figure stays exactly as it is
+for logs and admin.
 
 ## Why job.elapsedMs was wrong
 
@@ -71,10 +82,12 @@ in the POST route, before the job is enqueued, so it equals the request moment e
 - **A new `jobs.requested_at` (or similar) column.** Rejected — duplicates the domain row,
   needs a migration (out of scope), and has to re-solve the "what counts as a new request"
   question the domain row already answers.
-- **The domain row's own createdAt (demo_analyses / demo_step_plans), threaded through the
-  wire.** Chosen — no core change, no migration, exact for plans, close enough for analysis.
+- **The domain row's own createdAt (demo_analyses / demo_step_plans), differenced on the
+  server and sent as a duration.** Chosen — no core change, no migration, exact for plans,
+  close enough for analysis, and immune to the customer's own clock.
 
 ## Related
 
 - [[0060-a-short-retry-backoff-is-not-a-pause]] — the other half of the same session's fix
 - [[render-wait-elapsed-resets-on-reclaim]] — the same defect, unfixed, in renderWaitView
+- [[render-wait-says-nothing-about-a-long-budget-park]] — the render wait's other open gap

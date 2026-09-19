@@ -1,15 +1,15 @@
 ---
 type: defect
 status: verified
-verified: 2026-09-18
-method: "code trace of renderWaitView's running branch (apps/web/src/lib/service-a-ui.ts:1325, `job.elapsedMs !== undefined ? fmtElapsedHe(job.elapsedMs) : undefined`) against core's deriveJobProgress (packages/core/src/jobs/queue.ts:365-372), which sets a RUNNING job's elapsedMs to `now - (lockedAt ?? createdAt)` — lockedAt is refreshed on every re-claim, so a job that failed transiently and got re-claimed reports elapsed since the NEW claim, not since the render was requested. Same mechanism as the analysisWaitView/planWaitView defect fixed this session ([[0059-the-wait-clock-counts-from-the-request-row-not-the-job]])."
+verified: 2026-09-19
+method: "code trace of renderWaitView's running branch (apps/web/src/lib/service-a-ui.ts:1322, `job.elapsedMs !== undefined ? fmtElapsedHe(job.elapsedMs) : undefined`) against core's deriveJobProgress (packages/core/src/jobs/queue.ts:365-372), which sets a RUNNING job's elapsedMs to `now - (lockedAt ?? createdAt)` — lockedAt is refreshed on every re-claim, so a job that failed transiently and got re-claimed reports elapsed since the NEW claim, not since the render was requested. Same mechanism as the analysisWaitView/planWaitView defect fixed this session ([[0059-the-wait-clock-counts-from-the-request-row-not-the-job]]). source: code — reasoned from these two reads; the consequence below was never observed on a running render."
 source: code
 ---
 
 # renderWaitView's "רץ כבר X" also resets on a retry re-claim
 
 `renderWaitView`'s rendering-stage elapsed line reads `job.elapsedMs` directly
-(`apps/web/src/lib/service-a-ui.ts:1325`), exactly the field
+(`apps/web/src/lib/service-a-ui.ts:1322`), exactly the field
 [[0059-the-wait-clock-counts-from-the-request-row-not-the-job]] stopped
 `analysisWaitView`/`planWaitView` from using: core's `deriveJobProgress` computes a RUNNING
 job's `elapsedMs` as `now - job.lockedAt`, which is refreshed at every re-claim. A render
@@ -23,6 +23,12 @@ wall-clock anchor (mirroring `demo_analyses.created_at` / `demo_step_plans.creat
 is already available to `apps/web/src/app/api/renders/[id]/route.ts`, which already loads the
 render row — the fix shape would be the same `requestedAt` parameter added to
 `renderWaitView`, threaded from that route.
+
+This is one of **two** open defects on the render wait surface. The other is
+[[render-wait-says-nothing-about-a-long-budget-park]]: 0009's single `resumeAtMs` branch
+swallows an hours-long budget park as well as the retry backoff it was written for. Whoever
+picks up the render wait should read both — the elapsed anchor and the park sentence are
+adjacent lines in the same function.
 
 One reason this may matter less in practice: `renderWaitView`'s percent (`job.progress`,
 the checkpointed frame-loop fraction) is cleared on every retry attempt by

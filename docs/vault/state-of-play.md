@@ -93,34 +93,46 @@ after the first sale. The constant now carries a comment saying so.
 **Two older branches are still the founder's to land** — `labels/highlight-not-gate` and
 `fix/rega-ban-rule`, both pushed, neither merged, neither deployed. Queue items 2 and 3.
 
-## What landed (2026-09-18) — the wait-timing fix, on `claude/analysis-wait-timing-backoff-z16uw9`, pushed, NOT merged
+## What landed (2026-09-18/19) — the wait-timing fix, on `claude/analysis-wait-timing-backoff-z16uw9`, pushed, NOT merged
 
-Two customer-facing defects in the Service A wizard's analysis/plan wait cards, both in
-`apps/web/src/lib/service-a-ui.ts` — no server logic, no schema, no `packages/core` change.
-Two commits (`4917043`, `6c86a21`) plus this vault update.
+Customer-facing defects in the Service A wizard's analysis/plan wait cards. No server logic,
+no schema, no `packages/core` change, no Hebrew string added or changed. Six commits: the
+first pass (`4917043`, `6c86a21`, `6a51d91`), then a founder review that caught three things
+it got wrong (`7c93160`, `243c045`, `3550d7d`).
 
-**The elapsed clock reset on every retry re-claim** (`4917043`). `analysisWaitView` and
-`planWaitView` read core's `JobProgress.elapsedMs`, which for a RUNNING job is `now -
-job.lockedAt` — refreshed at every re-claim. Measured: a real 8-minute wait on a job's third
-attempt showed "רץ כבר פחות מדקה". Fixed by computing elapsed as wall clock since the DOMAIN
-ROW's own `created_at` (`demo_analyses` / `demo_step_plans`) instead, threaded through the
-analysis GET route and `step-plan.tsx`. [[0059-the-wait-clock-counts-from-the-request-row-not-the-job]].
-**`renderWaitView` has the identical defect and was NOT touched** (out of this task's scope)
-— [[render-wait-elapsed-resets-on-reclaim]].
+**The elapsed clock reset on every retry re-claim.** `analysisWaitView` and `planWaitView`
+read core's `JobProgress.elapsedMs`, which for a RUNNING job is `now - job.lockedAt` —
+refreshed at every re-claim. Measured: a real 8-minute wait on a job's third attempt showed
+"רץ כבר פחות מדקה". Now the ROUTES difference the domain row's own `created_at`
+(`demo_analyses` / `demo_step_plans`) against their own clock and send a duration —
+`requestedElapsedMs` on the analysis body, on `StepPlanWire` via `stepPlanResponse`. The first
+pass sent an ISO string and subtracted in the view, which runs in the browser: a client clock
+behind the server's would have pinned the line at "פחות מדקה". Corrected in `7c93160`, which
+also deleted the fallback to `job.elapsedMs` — when the server sends no number, none is shown.
+[[0059-the-wait-clock-counts-from-the-request-row-not-the-job]].
 
-**A short retry backoff read as a pause** (`6c86a21`). Both wait views showed "מושהה" (paused,
-will resume automatically) for ANY `resumeAtMs`, which core sets whenever a queued job's
-`run_at` is more than 60s out — conflating a 90s transient-retry backoff with an hours-long
-budget park. The founder saw it twice in one session. Gated on a new view-only
-`LONG_PARK_THRESHOLD_MS` (10 minutes); core's `JOB_DELAY_VISIBLE_MS` is untouched by
-instruction. Deliberately does NOT mirror [[0009-retry-backoff-is-invisible-to-the-customer]]'s
-"say nothing" answer for renders — a long analysis/plan park still shows the paused line, since
-those can run hours, not minutes. [[0060-a-short-retry-backoff-is-not-a-pause]].
+**A short retry backoff read as a pause.** Both wait views showed "מושהה" (paused, will resume
+automatically) for ANY `resumeAtMs`, which core sets whenever a queued job's `run_at` is more
+than 60s out — conflating a 90s transient-retry backoff with an hours-long budget park. The
+founder saw it twice in one session. Gated on a new view-only `LONG_PARK_THRESHOLD_MS` (10
+minutes); core's `JOB_DELAY_VISIBLE_MS` is untouched by instruction. But gating alone let a
+short park fall through to branches that describe a job about to be claimed — "הניתוח יתחיל
+בקרוב" for the analysis, "בונים את תוכנית הצעדים…" for the plan, the second an outright lie
+about a job building nothing. `243c045` keys both on the JOB the way `renderWaitView` already
+did: a rescheduled job returns its standing queued line and stops.
+[[0060-a-short-retry-backoff-is-not-a-pause]], which extends
+[[0009-retry-backoff-is-invisible-to-the-customer]] to these two surfaces rather than
+diverging from it — 0009 ruled on retry backoff and never on budget parks.
 
-No Hebrew strings were added or changed — both fixes change WHEN the existing lines fire, not
-their wording. `pnpm lint` and the five serial test suites were run; the four core `ffmpeg
-ENOENT` failures are the pre-existing environment gap (see Unfinished measurement below), not
-from this change. **Not yet merged** — this session's branch, not landed to `main`.
+**The render wait now carries two recorded defects, both unfixed and both out of this task's
+scope**: [[render-wait-elapsed-resets-on-reclaim]] (the same elapsed reset) and
+[[render-wait-says-nothing-about-a-long-budget-park]] (0009's single `resumeAtMs` branch
+swallows an hours-long park as well as the backoff it was written for — never reviewed,
+because `resumeAtMs` does not record why a job was rescheduled).
+
+`pnpm typecheck` and `pnpm lint` exit 0; the five serial suites run, with the four core
+`ffmpeg ENOENT` failures being the pre-existing environment gap (see Unfinished measurement
+below), not from this change. **Not yet merged** — this session's branch, not landed to `main`.
 
 ## Decisions made in conversation — not yet in a note
 
