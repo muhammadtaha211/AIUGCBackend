@@ -1023,6 +1023,25 @@ describe("the demo step rework (8d)", () => {
       expect(analysisWaitView(job({ heartbeat: "unknown" })).kind).toBe("waiting");
     });
 
+    it("stale beats a park of any length — the stuck line is checked first", () => {
+      // Branch ORDER, not just output. renderWaitView puts its stale check
+      // above its resumeAtMs return, and 0009 leans on exactly that: the
+      // amber line is what survives when nothing is claiming the job, and a
+      // resumeAtMs on a dead queue must not quietly speak for it. Both
+      // parks are asserted because they take different arms of the return.
+      const now = new Date(0);
+      expect(
+        analysisWaitView(job({ heartbeat: "stale", resumeAtMs: 90_000 }), undefined, now).kind,
+      ).toBe("stuck");
+      expect(
+        analysisWaitView(
+          job({ heartbeat: "stale", resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }),
+          undefined,
+          now,
+        ).kind,
+      ).toBe("stuck");
+    });
+
     it("queued: position when known, 'soon' at zero, silence when unknown", () => {
       expect(analysisWaitView(job({ ahead: 2 }))).toMatchObject({
         kind: "waiting",
@@ -1228,6 +1247,28 @@ describe("the demo step rework (8d)", () => {
         "stuck",
       );
       expect(planWaitView("pending", job({ heartbeat: "unknown" })).kind).toBe("waiting");
+    });
+
+    it("stale beats a park of any length — the stuck line is checked first", () => {
+      // Same ordering guarantee as the analysis wait, and as renderWaitView:
+      // the stale check sits above the resumeAtMs return, so a park on a
+      // queue nothing is claiming still surfaces the amber line. Asserted
+      // over both row statuses, since the park return is keyed on the job.
+      const now = new Date(0);
+      for (const status of ["pending", "planning"]) {
+        expect(
+          planWaitView(status, job({ heartbeat: "stale", resumeAtMs: 90_000 }), undefined, now)
+            .kind,
+        ).toBe("stuck");
+        expect(
+          planWaitView(
+            status,
+            job({ heartbeat: "stale", resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }),
+            undefined,
+            now,
+          ).kind,
+        ).toBe("stuck");
+      }
     });
 
     it("a budget-parked plan job reads as paused — even when the row already says planning", () => {
