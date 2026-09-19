@@ -11,8 +11,9 @@ const secularOne = Secular_One({
 });
 
 export const metadata: Metadata = {
-  title: "תבנית | מודעות וידאו בעברית, מסרטון אחד",
-  description: "מעלים סרטון קצר של המוצר ומקבלים כמה גרסאות של מודעת וידאו בעברית, מוכנות לפרסום.",
+  title: "תבנית — מודעות וידאו בעברית, בלי לדעת לשווק ובלי לדעת לערוך",
+  description:
+    "תבנית כותבת הוקים ותסריטים בעברית מדוברת מהשאלון של העסק שלכם, ומרכיבה סרטונים אנכיים מוכנים להעלאה: הוק + דמו מהסרטון שצילמתם, או סרטון עם דמות AI.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

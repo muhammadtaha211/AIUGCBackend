@@ -5,7 +5,7 @@ import { OPERATOR_ADDRESS } from "@/app/(legal)/legal";
 export const metadata: Metadata = {
   title: "אודות | תבנית",
   description:
-    "תבנית היא שירות ישראלי ליצירת מודעות וידאו בעברית לעסקים: מסרטון אחד מהטלפון לחבילת מודעות מוכנה לפרסום.",
+    "תבנית כותבת הוקים ותסריטים בעברית מדוברת מהשאלון של העסק שלכם, ומרכיבה סרטונים אנכיים מוכנים להעלאה: הוק + דמו מהסרטון שצילמתם, או סרטון עם דמות AI.",
 };
 
 const LINK = "underline decoration-ink/30 underline-offset-4 transition-colors hover:text-ink";
@@ -19,23 +19,25 @@ const LINK = "underline decoration-ink/30 underline-offset-4 transition-colors h
  * the address come from `(legal)/legal.tsx`, the one place the address lives,
  * so this page cannot drift from /terms and /privacy.
  *
- * Deliberately NOT repeated from the landing: its Service A "קריינות" promise.
- * That format was retired 2026-09-05 (CLAUDE.md) and the landing copy is stale
- * on it; this page says what the product does today.
+ * "מה תבנית עושה" is one paragraph per service, under the app's own names, and
+ * carries the same constraints the landing does: no results claim, no length
+ * for the talking head, כיתובים (not כתוביות) for hook + demo's per-step text,
+ * and the music line said once. The landing was stale on the retired Service A
+ * "קריינות" format when this page was written; it is not any more.
  */
 export default function AboutPage() {
   return (
     <>
       <section className="mx-auto max-w-3xl px-5 pb-10 pt-14 sm:px-8 sm:pt-20">
-        <h1 className="rise font-display text-[40px] leading-tight text-ink sm:text-[56px]">
-          מודעות וידאו בעברית, מסרטון אחד
+        <h1 className="rise font-display text-[36px] leading-tight text-ink sm:text-[52px]">
+          מודעות וידאו בעברית, בלי לדעת לשווק ובלי לדעת לערוך
         </h1>
         <p
           className="rise mt-5 max-w-2xl text-lg leading-relaxed text-ink/65"
           style={{ animationDelay: "80ms" }}
         >
-          תבנית היא פלטפורמה ישראלית שהופכת סרטון קצר שצילמתם בטלפון לחבילת מודעות וידאו אנכיות
-          בעברית, מוכנות לפרסום.
+          תבנית היא פלטפורמה ישראלית שכותבת הוקים ותסריטים בעברית מדוברת מהשאלון של העסק שלכם,
+          ומרכיבה מהם סרטונים אנכיים מוכנים להעלאה.
         </p>
       </section>
 
@@ -43,14 +45,15 @@ export default function AboutPage() {
         <div>
           <h2 className="font-display text-2xl leading-tight text-ink">מה תבנית עושה</h2>
           <p className="mt-3">
-            מעלים סרטון קצר של המוצר או של העסק, עונים על שאלון קצר, ומקבלים כמה גרסאות של אותה
-            מודעה. כל מודעה נבנית מהחומר שלכם: אותו דמו, פתיחים שונים ומסרים שונים, כך שאפשר לבדוק
-            מה עובד בלי לצלם מחדש. כל המודעות יוצאות אנכיות, בפורמט שהפיד מצפה לו, עם כתוביות בעברית
-            שנראות נכון — מימין לשמאל, בלי אותיות הפוכות ובלי תרגום של כלי אמריקאי.
+            בהוק + דמו מעלים סרטון קצר של המוצר שצילמתם בטלפון, בוחרים דמות וקליפ פתיחה מהמאגר ומשפט
+            פתיחה שנכתב לעסק שלכם, ותבנית מחלקת את הדמו לשלבים ומכתבת כל שלב בעברית. אותו דמו,
+            פתיחים שונים, מסרים שונים — כך שאפשר לבדוק מה עובד בלי לצלם מחדש. הסרטון יוצא שקט: את
+            המוזיקה מוסיפים בפלטפורמה עצמה.
           </p>
           <p className="mt-3">
-            לצד המודעות שנבנות מסרטון ההדגמה שלכם, אפשר להפיק מודעות עם דמות AI קבועה: פרזנטור
-            דיגיטלי בעברית שמציג את המוצר מול המצלמה, בלי צלם, בלי אולפן ובלי יום צילום.
+            בסרטון עם דמות AI בוחרים דמות מהמאגר, תבנית כותבת לה תסריט בעברית מדוברת על בסיס השאלון
+            וכמה נקודות שאתם נותנים לה, אתם שומעים ומאשרים את ההקלטה, ומקבלים סרטון שבו הדמות מדברת
+            למצלמה עם כתוביות בעברית — בלי צלם, בלי אולפן ובלי יום צילום.
           </p>
         </div>
 
