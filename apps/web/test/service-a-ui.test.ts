@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_MAX_DURATION_MS, DEMO_MIN_DURATION_MS } from "@aiugc/core";
+import { backoffMs, DEMO_MAX_DURATION_MS, DEMO_MIN_DURATION_MS } from "@aiugc/core";
 import { readTimeMs } from "@aiugc/core/plan-format";
 import {
   addWarning,
@@ -969,6 +969,33 @@ describe("the demo step rework (8d)", () => {
     expect(fmtElapsedHe(60_000)).toBe("דקה");
     expect(fmtElapsedHe(119_000)).toBe("דקה");
     expect(fmtElapsedHe(5 * 60_000)).toBe("5 דקות");
+  });
+
+  describe("LONG_PARK_THRESHOLD_MS sits between the two things it separates", () => {
+    // The threshold is only honest if it lands in the gap between the
+    // deepest backoff a retry can reach and the shallowest real park. Both
+    // sides live in packages/core, so this test is the tripwire: it fails if
+    // either moves under it.
+    it("every reachable transient backoff is below it", () => {
+      // failTransient reschedules only while attempts + 1 < max_attempts, so
+      // the deepest reachable failure count is max_attempts - 1 = 4 today
+      // (jobs.max_attempts defaults to 5, schema.ts). backoffMs(4) is
+      // 30s * 2^3 = 240s plus up to 10s of jitter — nowhere near 10 minutes.
+      expect(backoffMs(4)).toBeLessThan(LONG_PARK_THRESHOLD_MS);
+      // The real headroom: even failure 5 (480s + jitter) stays under, so
+      // max_attempts would have to reach 7 before a transient backoff could
+      // read as a pause. Failure 6 is the first that breaches — it hits
+      // backoffMs's own 15-minute ceiling.
+      expect(backoffMs(5)).toBeLessThan(LONG_PARK_THRESHOLD_MS);
+      expect(backoffMs(6)).toBeGreaterThan(LONG_PARK_THRESHOLD_MS);
+    });
+
+    it("a budget park is above it", () => {
+      // BudgetError's default resumeAt is now + 1h (packages/core/src/jobs/
+      // errors.ts:42) — six times the threshold, so a park is never mistaken
+      // for a backoff however long the request took to reach the customer.
+      expect(60 * 60_000).toBeGreaterThan(LONG_PARK_THRESHOLD_MS);
+    });
   });
 
   describe("analysisWaitView", () => {
