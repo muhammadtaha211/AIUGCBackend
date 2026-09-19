@@ -1022,29 +1022,51 @@ describe("the demo step rework (8d)", () => {
       });
     });
 
-    it("a short retry backoff reads as ordinary waiting, not a pause (founder call 2026-09-18)", () => {
+    it("a short retry backoff says nothing at all — not a pause, and not a queue position", () => {
       // 90s past run_at is a normal transient-retry backoff (core's
-      // JOB_DELAY_VISIBLE_MS is 60s, so resumeAtMs is already set) — well
-      // under LONG_PARK_THRESHOLD_MS, so no "מושהה" line.
+      // JOB_DELAY_VISIBLE_MS is 60s, so resumeAtMs is already set). Under
+      // the threshold it is not a pause; and because the job is parked it is
+      // not in line either, so "הניתוח יתחיל בקרוב" would be a promise the
+      // claim loop cannot keep. The bare queued line, nothing else.
       const now = new Date(0);
-      const view = analysisWaitView(job({ ahead: 0, resumeAtMs: 90_000 }), undefined, now);
-      expect(view).toMatchObject({ kind: "waiting", sub: "הניתוח יתחיל בקרוב." });
-      expect(view).not.toMatchObject({
-        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+      expect(analysisWaitView(job({ ahead: 0, resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+      });
+      // Keyed on the JOB: a real queue depth behind a parked job is just as
+      // meaningless, so it is not reported either.
+      expect(analysisWaitView(job({ ahead: 3, resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
       });
     });
 
-    it("the paused line only fires once the park exceeds the threshold, not at or under it", () => {
+    it("the paused line fires above the threshold and nowhere else — both sides of it", () => {
       const now = new Date(0);
-      expect(
-        analysisWaitView(job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now).kind,
-      ).toBe("waiting");
-      expect(
-        analysisWaitView(job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now),
-      ).not.toMatchObject({ sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר." });
-      expect(
-        analysisWaitView(job({ resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }), undefined, now),
-      ).toMatchObject({ sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר." });
+      const at = analysisWaitView(
+        job({ ahead: 0, resumeAtMs: LONG_PARK_THRESHOLD_MS }),
+        undefined,
+        now,
+      );
+      const under = analysisWaitView(
+        job({ ahead: 0, resumeAtMs: LONG_PARK_THRESHOLD_MS - 1 }),
+        undefined,
+        now,
+      );
+      const over = analysisWaitView(
+        job({ ahead: 0, resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }),
+        undefined,
+        now,
+      );
+      // At the boundary and below: the bare line, no sub of any kind.
+      expect(at).toEqual({ kind: "waiting", line: "הסרטון בתור לניתוח — זה לוקח כמה דקות." });
+      expect(under).toEqual({ kind: "waiting", line: "הסרטון בתור לניתוח — זה לוקח כמה דקות." });
+      // One millisecond over: the honest pause line.
+      expect(over).toEqual({
+        kind: "waiting",
+        line: "הסרטון בתור לניתוח — זה לוקח כמה דקות.",
+        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+      });
     });
 
     it("running: the server's number on a minutes scale", () => {
@@ -1196,22 +1218,36 @@ describe("the demo step rework (8d)", () => {
       });
     });
 
-    it("a short retry backoff reads as ordinary waiting, not a pause (founder call 2026-09-18)", () => {
+    it("a short retry backoff says nothing at all — and never claims to be building", () => {
       const now = new Date(0);
       expect(planWaitView("pending", job({ resumeAtMs: 90_000 }), undefined, now)).toEqual({
         kind: "waiting",
         line: "התוכנית ממתינה בתור…",
       });
+      // The one that matters: the row flips to "planning" before the paid
+      // call, so a short backoff mid-generation arrives as planning + queued.
+      // Keyed on the JOB, it must not fall through to "בונים את תוכנית הצעדים…"
+      // — a rescheduled job is not building anything.
+      expect(planWaitView("planning", job({ resumeAtMs: 90_000 }), undefined, now)).toEqual({
+        kind: "waiting",
+        line: "התוכנית ממתינה בתור…",
+      });
     });
 
-    it("the paused line only fires once the park exceeds the threshold, not at or under it", () => {
+    it("the paused line fires above the threshold and nowhere else — both sides of it", () => {
       const now = new Date(0);
-      expect(
-        planWaitView("pending", job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now),
-      ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…" });
-      expect(
-        planWaitView("pending", job({ resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }), undefined, now),
-      ).toMatchObject({ sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר." });
+      const PAUSED = "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.";
+      for (const status of ["pending", "planning"]) {
+        expect(
+          planWaitView(status, job({ resumeAtMs: LONG_PARK_THRESHOLD_MS }), undefined, now),
+        ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…" });
+        expect(
+          planWaitView(status, job({ resumeAtMs: LONG_PARK_THRESHOLD_MS - 1 }), undefined, now),
+        ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…" });
+        expect(
+          planWaitView(status, job({ resumeAtMs: LONG_PARK_THRESHOLD_MS + 1 }), undefined, now),
+        ).toEqual({ kind: "waiting", line: "התוכנית ממתינה בתור…", sub: PAUSED });
+      }
     });
 
     it("planning: the shown clock is the server's, not job.elapsedMs", () => {

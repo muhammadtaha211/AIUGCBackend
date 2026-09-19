@@ -237,16 +237,21 @@ export function analysisWaitView(
     };
   }
   if (job.state === "queued") {
-    // A deliberately-rescheduled job (backoff, budget park) is PAUSED, not in
-    // line — but only when the park is genuinely long: "starts soon" over an
-    // hours-long park would be a lie, and a 90s retry backoff read as a fault
-    // reported over the resulting line.
-    if (job.resumeAtMs !== undefined && job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS) {
-      return {
-        kind: "waiting",
-        line: ANALYSIS_QUEUED_LINE,
-        sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
-      };
+    // Keyed on the JOB, not the row — renderWaitView's rule. A deliberately
+    // rescheduled job (backoff, budget park) is not in line at all, so it
+    // gets neither a queue position nor "starts soon": both describe a job
+    // the claim loop will pick up next, and this one it will not. Only a
+    // genuinely LONG park is named as a pause; a short retry backoff falls
+    // back to the standing queued line and says nothing about the retry,
+    // which is 0009's ruling for renders applied here.
+    if (job.resumeAtMs !== undefined) {
+      return job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS
+        ? {
+            kind: "waiting",
+            line: ANALYSIS_QUEUED_LINE,
+            sub: "הניתוח מושהה כרגע ויתחדש אוטומטית מאוחר יותר.",
+          }
+        : { kind: "waiting", line: ANALYSIS_QUEUED_LINE };
     }
     // ahead undefined = the queue depth is unknown (no lane named) — say
     // nothing rather than promising "soon" from behind three renders.
@@ -297,22 +302,21 @@ export function planWaitView(
   if (job && job.heartbeat === "stale" && (job.state === "queued" || job.state === "running")) {
     return { kind: "stuck", line: stuckLine("תכנון") };
   }
-  // A parked/deep-backoff job is PAUSED whatever the row says — the row sits
-  // on "planning" when the budget park hit mid-call (the flip happens before
-  // the paid call), and "building now" over an hours-long park is a lie. Same
-  // ruling as the analysis wait: resumeAtMs beats the row status — but only
-  // once the park is genuinely long (LONG_PARK_THRESHOLD_MS); a short retry
-  // backoff reads as ordinary waiting, same as the analysis wait.
-  if (
-    job?.state === "queued" &&
-    job.resumeAtMs !== undefined &&
-    job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS
-  ) {
-    return {
-      kind: "waiting",
-      line: "התוכנית ממתינה בתור…",
-      sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
-    };
+  // Keyed on the JOB, not the row — renderWaitView's rule, and the reason
+  // this sits above the status check rather than inside it: requestDemoPlan
+  // flips the row to "planning" BEFORE the paid call, so a park that hit
+  // mid-call arrives as status "planning" + state "queued" and must not fall
+  // through to the "building now" line. A rescheduled job is not building.
+  // Long parks are named as a pause; a short retry backoff gets the standing
+  // queued line and says nothing about the retry (0009's ruling for renders).
+  if (job?.state === "queued" && job.resumeAtMs !== undefined) {
+    return job.resumeAtMs - now.getTime() > LONG_PARK_THRESHOLD_MS
+      ? {
+          kind: "waiting",
+          line: "התוכנית ממתינה בתור…",
+          sub: "יצירת התוכנית מושהית כרגע ותתחדש אוטומטית מאוחר יותר.",
+        }
+      : { kind: "waiting", line: "התוכנית ממתינה בתור…" };
   }
   if (status === "planning") {
     const sub =
