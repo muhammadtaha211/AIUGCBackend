@@ -1,12 +1,74 @@
 ---
 type: defect
 status: verified
-verified: 2026-09-18
-method: "production read of jobs (id, attempts, last_error, created_at, updated_at, locked_at, run_at) and usage_events joined on job_id for job 85d9ec0b; the three level-40 lines of `journalctl -u aiugc-worker` (epoch ms 1789693024360 / 1789693124363 / 1789693256270); then packages/core/src/pipelines/demo-analysis.ts:660-732 and packages/core/src/jobs/queue.ts:225-260 read in the tree at f84e931; then @anthropic-ai/sdk 0.111.0 read in node_modules (helpers/zod.js:41, lib/parser.js:51-64, resources/messages/messages.js:67, client.js:110) to locate the double wrap"
-source: db
+verified: 2026-09-20
+method: "FIX (2026-09-20): symbols grepped in the tree AFTER prettier — TOKEN_SHAPE :280, validateBatchFrames :312, parseBatchEnvelope :369, describeShortfall :402, correctivePrompt :435, transcribeBatch :466 (recordUsage at :478), assembleTimeline :532, the per-batch catch at :1053 and the rethrow at :1068 in packages/core/src/pipelines/demo-analysis.ts; foldedOutputFormat :73 and generateRawWithImages :99 in packages/core/src/providers/anthropic.ts; `pnpm --filter @aiugc/core exec vitest run test/analysis-batch-salvage.test.ts test/analysis-seam.test.ts --fileParallelism=false` 45 passed (43 + 2). ORIGINAL FINDING (2026-09-18, unchanged below): production read of jobs (id, attempts, last_error, created_at, updated_at, locked_at, run_at) and usage_events joined on job_id for job 85d9ec0b; the three level-40 lines of `journalctl -u aiugc-worker` (epoch ms 1789693024360 / 1789693124363 / 1789693256270); then packages/core/src/pipelines/demo-analysis.ts:660-732 and packages/core/src/jobs/queue.ts:225-260 read in the tree at f84e931; then @anthropic-ai/sdk 0.111.0 read in node_modules (helpers/zod.js:41, lib/parser.js:51-64, resources/messages/messages.js:67, client.js:110) to locate the double wrap"
+source: code
 ---
 
 # One bad enum value in one frame discards a whole analysis attempt
+
+## FIXED 2026-09-20 — the net, on branch `fix/analysis-frame-salvage`; NOT deployed to the worker box
+
+**What shipped (commit 1 of 2, "one invalid frame drops that frame, not the whole attempt").** The
+rejection unit is now the frame, not the batch, and a billed call is in the ledger whatever its body
+holds. Read in the tree AFTER prettier:
+
+- **The seam.** `generateObjectWithImages` is deleted. `generateRawWithImages`
+  (`packages/core/src/providers/anthropic.ts:99`) calls `messages.create` with the caller's wire
+  format passed through opaquely and returns `{ text, stopReason, usage }` — the first text block
+  verbatim, no `JSON.parse`, no zod. `foldedOutputFormat` (`:73`) builds today's wire from a zod
+  schema; the bytes are **byte-identical** to what production sent (the `zodOutputFormat` object
+  minus its `parse` callback, which `JSON.stringify` dropped anyway), pinned by the "the batch wire
+  format" test in `packages/core/test/analysis-batch-salvage.test.ts`, and checked equal to the
+  request body of a real call made on 2026-09-20 through a gitignored scratch script
+  (`packages/core/.work/enum-wire-ab.ts`, body saved beside it as `ab-wire-A.json`).
+- **Usage FIRST.** `transcribeBatch` (`packages/core/src/pipelines/demo-analysis.ts:466`) writes the
+  usage row (`:478`) before anything looks at the body, so the three calls this job billed and
+  recorded nowhere would now be three rows.
+- **The envelope, strict.** `parseBatchEnvelope` (`:369`) accepts only an object with a `frames`
+  array; a missing text block, JSON cut off by `max_tokens`, a refusal's prose or any other shape
+  throws OUR error carrying the stop_reason and no response content (the text may hold customer
+  screen text, and `jobs.last_error` reaches Sentry). Today's `max_tokens` surfaced with no
+  stop_reason at all.
+- **Per element.** `validateBatchFrames` (`:312`) canonicalizes a case-only mismatch on
+  `actionType` / `screenKind` / `legibility` against the declared lists (zero API calls; logged at
+  warn), then validates each entry against the strict frame schema; a failing entry is REMOVED, so
+  its claimed index stays null in `salvageBatchFrames` — by CLAIMED index, never by array position —
+  and rides the existing corrective-retry / dropped-state path. Rejections are logged at warn with
+  demoId, batch, position, claimed index, the zod issue paths and messages, and for enum fields
+  what the model wrote — quoted only when it has the shape of a token (letters, digits, `_`, `-`,
+  at most 32: `TOKEN_SHAPE`, `:280`), otherwise its length alone, because the wire does not
+  constrain the slot and a review reproduced a screen label landing in it; never a whole frame,
+  never `visibleText`.
+- **The corrective message** (`correctivePrompt`, `:435`, fed by `describeShortfall`, `:402`) names
+  uncovered frames in the old coverage wording and invalid frames by index, field, received value
+  and allowed values — one message when a batch has both; an entry whose index is unusable falls
+  under coverage. Still ONE corrective call per batch; the retry's response goes through the same
+  steps; whatever is still null is dropped, and the `a_analysis_max_degraded_fraction` gate is
+  unchanged.
+- **Every rejection in the `allSettled` round is logged** with its batch (the per-batch catch,
+  `:1053`) before the rethrow (`:1068`) picks one — observability hole 1 below is closed.
+- **Assembly lifted verbatim** into `assembleTimeline` (`:532`) so the index mapping
+  (`g = bi * batchSize + i`) and the `sameStateAsPrevious` seam bridging are pinned with a null
+  mid-batch and a null at a batch boundary; the logic did not change.
+- **The production seam is pinned too.** `packages/core/test/analysis-seam.test.ts` runs the
+  handler with DRY_RUN off and only ffmpeg and the provider replaced: three returned calls give
+  three usage rows with the garbage one included, the finished batch is checkpointed after its
+  corrective call, the next attempt buys exactly one more call, and the envelope failure is
+  transient with the stop_reason and no content.
+
+**What this does to the shape of job `85d9ec0b`:** one out-of-enum frame buys one corrective vision
+call inside the same attempt — not three failed attempts and ~227s of backoff — and the timeline
+degrades by at most that frame. The checkpoint contract is unchanged: a batch is checkpointed only
+after its corrective call has returned, so a checkpointed batch with nulls is final.
+
+**Not deployed.** The branch is not merged and the worker box is on the pre-fix commit; the deploy
+is `docs/07-worker-box.md` §11 with `git log -1` on the box as the check.
+
+**What this commit does not do.** The wire is unchanged by design, so the decoding grammar still
+does not hold the three enums and an out-of-enum value is still possible — it now costs one
+corrective vision call inside the attempt, not the attempt.
 
 `analyze_demo` job `85d9ec0b-4ee0-44d2-9bff-c89e9e55b332`
 (demo `3915c8e2-3ae0-486c-a1b5-2937a6a6e8d9`, business `1b237001-c525-47fe-9060-871f9a53df4c`,
@@ -118,7 +180,8 @@ A **parse** failure bypasses all of it, because it throws inside the provider
 (`providers/anthropic.ts:86-97`) before `salvageBatchFrames` ever sees a response. Routing parse
 failures into that existing path is the fix.
 
-**Not shipped.** This note is OPEN; the fix is queue item 1 in [[state-of-play]].
+**Shipped on branch 2026-09-20 — see the FIXED block at the head of this note.** Not merged, not
+deployed; queue item 1 in [[state-of-play]] tracks the merge and the box.
 
 ## The double wrap — LOCATED, and it is NOT a retry
 
@@ -158,12 +221,14 @@ session brief has no `Validation issues:` line. Either the transcription elided 
 running a different 0.111.x patch. One `select last_error from jobs where id =
 '85d9ec0b-4ee0-44d2-9bff-c89e9e55b332';` settles it, and nothing above depends on the answer.
 
-## Two observability holes found by reading — UNSHIPPED, and part of the fix list
+## Two observability holes found by reading — hole 1 CLOSED 2026-09-20, hole 2 open
 
-1. **The `allSettled` rethrow discards every rejection but one, unlogged.**
-   `demo-analysis.ts:727-732` picks the `BudgetError` if one is present, otherwise
-   `rejections[0]`, and throws it. Nothing logs the others. **If two batches fail in one round, one
-   leaves no trace anywhere** — not in `jobs.last_error`, not in the journal.
+1. **The `allSettled` rethrow discards every rejection but one, unlogged** — CLOSED by the
+   per-batch catch in the FIXED block at the head of this note; the cites in this paragraph are the
+   pre-fix tree at `f84e931`. `demo-analysis.ts:727-732` picked the `BudgetError` if one was
+   present, otherwise `rejections[0]`, and threw it. Nothing logged the others. **If two batches
+   failed in one round, one left no trace anywhere** — not in `jobs.last_error`, not in the
+   journal.
 2. **The ffmpeg / storage / thumbnail phases have no checkpoint guard**, so every retry repeats
    ~30s of work to reach the position of making one API call. Deliberately kept out of the
    granularity fix (queue item 3 in [[state-of-play]]).

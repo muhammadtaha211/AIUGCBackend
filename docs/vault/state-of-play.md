@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-18
+updated: 2026-09-20
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -56,7 +56,7 @@ Three notes created, two updated:
 - **[[analysis-parse-failure-discards-the-whole-attempt]]** (new, defect) — one frame's bad
   `actionType` enum discarded a whole `analyze_demo` attempt, three times: 8m19s of latency for ~85s
   of work. Full measured timeline, both halves of the defect, the fix list, two observability holes.
-  **OPEN.**
+  **FIXED ON BRANCH 2026-09-20** — queue item 1 has the state; the note's head has the FIXED block.
 - **[[demo-analysis-latency-is-not-duration-bound]]** (new, fact) — a 90s 1080×1920 demo analyses in
   ~65s of real work, ~53 states, no thinning. Graduated out of this file.
 - **[[0059-emoji-in-burned-text-needs-a-second-font]]** (new, decision) — the tofu, the verified
@@ -228,16 +228,20 @@ production throws on any charge and the web tier maps it to 503. The checklist, 
     `DRY_RUN=1` against production, so a local upgrade click grants real credits.
 14. **Sumit offers no integration support** — Facebook group, a paid support hour, or an external dev.
 
-**1. The batch-granularity fix.** Route a parse failure into the `salvageBatchFrames` /
-corrective-retry / `a_analysis_max_degraded_fraction` path that already exists, instead of throwing
-out of the provider. Turns ~8m19s into ~85s and closes a path to a customer-facing failure **on good
-footage**. Spec and fix list: [[analysis-parse-failure-discards-the-whole-attempt]]. **The double-wrap
-question the brief flagged as "resolve this first" is ANSWERED** — both prefixes are
-`@anthropic-ai/sdk` 0.111.0 (`helpers/zod.js:41` inner, `lib/parser.js:63` outer, which interpolates
-the Error object rather than its message), the parse runs in a `.then` outside the client's HTTP retry
-loop (`messages.js:67`), so **no internal retry and one sample per attempt**. The fix shape is
-unchanged. A prompt is written and waiting on a Fable 5.1 quota reset — **BLOCKED ON QUOTA, not on
-anything technical.**
+**1. The batch-granularity fix — FIXED ON BRANCH `fix/analysis-frame-salvage` (2026-09-20), awaiting
+merge and box deploy.** A parse failure now rides the `salvageBatchFrames` / corrective-retry /
+`a_analysis_max_degraded_fraction` path instead of throwing out of the provider: the rejection unit
+is the frame, usage is recorded before any parse, the envelope error carries the stop_reason, and
+every rejection in a parallel round is logged. The wire is byte-identical to today's and pinned. What
+shipped, with post-prettier cites: the FIXED block at the head of
+[[analysis-parse-failure-discards-the-whole-attempt]]. **The double-wrap question is ANSWERED** —
+both prefixes are `@anthropic-ai/sdk` 0.111.0 (`helpers/zod.js:41` inner, `lib/parser.js:63` outer),
+the parse runs in a `.then` outside the client's HTTP retry loop (`messages.js:67`), so no internal
+retry and one sample per attempt. What remains is the founder's: open the PR, merge, deploy the box
+as ONE step gated on nothing running (`select id, type, status from jobs where status = 'running';`
+→ empty, then `git pull && pnpm install && sudo systemctl restart aiugc-worker`, then `git log -1`
+on the box shows the merge commit — `docs/07-worker-box.md` §11). No migration, no config row, no
+prompt version moves.
 
 **2. The wait surfaces — two parts, both now MEASURED rather than reasoned.** Independent of item 1,
 cheap, and a lighter model can do it. (a) `analysisWaitView`'s elapsed comes from `now - lockedAt` for
