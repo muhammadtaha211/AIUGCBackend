@@ -9,9 +9,13 @@ keyless (the e2e test relies on this).
 
 - **Model locked by product decision: `claude-sonnet-4-6`** (`CLAUDE_MODEL`).
 - Official SDK (`@anthropic-ai/sdk`), **structured outputs** via
-  `client.messages.parse` + `zodOutputFormat(schema)` — assistant prefills 400 on this model;
-  `output_config.format` guarantees schema-valid JSON, parsed and validated with the same zod
-  schemas the pipelines use.
+  `client.messages.parse` + `zodOutputFormat(schema)` — assistant prefills 400 on this model.
+  What `output_config.format` actually enforces on that wire is the schema's types, required keys
+  and closed objects: the SDK's transform folds `enum`, `const` and `min`/`max` into description
+  prose, so those are checked only by the client-side zod parse, which rejects the whole object
+  and records no usage when it fails (`facts/sdk-folds-enum-and-const-into-description`). The
+  vision batch call alone goes through `generateRawWithImages` on the strict wire
+  (`strictOutputFormat` — the enums in the decoding grammar) and validates per element.
 - **Prompt versioning**: prompts are files — `prompts/<name>/v<N>.md` with `{{var}}`
   interpolation (`src/prompts.ts`). A revision is a new file, never an edit; every generated
   script row records `prompt_version = "<name>@v<N>"`, so any output is traceable to the exact
