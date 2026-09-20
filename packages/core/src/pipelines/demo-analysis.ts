@@ -20,9 +20,9 @@ import {
 import { WORK_DIR } from "../paths";
 import { PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
 import {
-  foldedOutputFormat,
   generateObject,
   generateRawWithImages,
+  strictOutputFormat,
   type RawResult,
   type WireOutputFormat,
 } from "../providers/anthropic";
@@ -144,15 +144,19 @@ export type BatchFrame = z.infer<typeof batchFrameSchema>;
  *  and is pinned byte for byte by analysis-batch-salvage.test.ts. */
 export const batchOutputSchema = z.object({ frames: z.array(batchFrameSchema) });
 
-/** The wire format of every vision batch call — built per call rather than at
- *  import, so tests that mock the provider module still load this one. */
+/** The wire format of every vision batch call — the strict wire, so the three
+ *  enums are rules of the decoding grammar and not prose the model may ignore
+ *  (job 85d9ec0b's actionType was outside the enum on the folded wire). Built
+ *  per call rather than at import, so tests that mock the provider module
+ *  still load this one. */
 export function batchWireFormat(): WireOutputFormat {
-  return foldedOutputFormat(batchOutputSchema);
+  return strictOutputFormat(batchOutputSchema);
 }
 
-/** The enum-valued frame fields with their declared values: the documented
- *  casing hole (structured outputs, "Enum value casing") is closed per element
- *  against these lists, never by blind lowercasing. */
+/** The enum-valued frame fields with their declared values. With the enums in
+ *  the grammar the residual hole is the documented one — structured outputs
+ *  do not guarantee the CASING of enum values — closed per element against
+ *  these lists, never by blind lowercasing. */
 const FRAME_ENUM_FIELDS = {
   actionType: ANALYSIS_ACTION_TYPES,
   screenKind: ANALYSIS_SCREEN_KINDS,

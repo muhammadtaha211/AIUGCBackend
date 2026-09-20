@@ -2,7 +2,7 @@
 type: defect
 status: verified
 verified: 2026-09-20
-method: "FIX (2026-09-20): symbols grepped in the tree AFTER prettier — TOKEN_SHAPE :280, validateBatchFrames :312, parseBatchEnvelope :369, describeShortfall :402, correctivePrompt :435, transcribeBatch :466 (recordUsage at :478), assembleTimeline :532, the per-batch catch at :1053 and the rethrow at :1068 in packages/core/src/pipelines/demo-analysis.ts; foldedOutputFormat :73 and generateRawWithImages :99 in packages/core/src/providers/anthropic.ts; `pnpm --filter @aiugc/core exec vitest run test/analysis-batch-salvage.test.ts test/analysis-seam.test.ts --fileParallelism=false` 45 passed (43 + 2). ORIGINAL FINDING (2026-09-18, unchanged below): production read of jobs (id, attempts, last_error, created_at, updated_at, locked_at, run_at) and usage_events joined on job_id for job 85d9ec0b; the three level-40 lines of `journalctl -u aiugc-worker` (epoch ms 1789693024360 / 1789693124363 / 1789693256270); then packages/core/src/pipelines/demo-analysis.ts:660-732 and packages/core/src/jobs/queue.ts:225-260 read in the tree at f84e931; then @anthropic-ai/sdk 0.111.0 read in node_modules (helpers/zod.js:41, lib/parser.js:51-64, resources/messages/messages.js:67, client.js:110) to locate the double wrap"
+method: "FIX (2026-09-20): symbols grepped in the tree AFTER prettier — TOKEN_SHAPE :284, validateBatchFrames :316, parseBatchEnvelope :373, describeShortfall :406, correctivePrompt :439, transcribeBatch :470 (recordUsage at :482), assembleTimeline :536, the per-batch catch at :1057 and the rethrow at :1072 in packages/core/src/pipelines/demo-analysis.ts; foldedOutputFormat :78 and generateRawWithImages :208 in packages/core/src/providers/anthropic.ts; `pnpm --filter @aiugc/core exec vitest run test/analysis-batch-salvage.test.ts test/analysis-seam.test.ts test/anthropic-wire.test.ts --fileParallelism=false` 56 passed (44 + 2 + 10); strictOutputFormat :174 in packages/core/src/providers/anthropic.ts. ORIGINAL FINDING (2026-09-18, unchanged below): production read of jobs (id, attempts, last_error, created_at, updated_at, locked_at, run_at) and usage_events joined on job_id for job 85d9ec0b; the three level-40 lines of `journalctl -u aiugc-worker` (epoch ms 1789693024360 / 1789693124363 / 1789693256270); then packages/core/src/pipelines/demo-analysis.ts:660-732 and packages/core/src/jobs/queue.ts:225-260 read in the tree at f84e931; then @anthropic-ai/sdk 0.111.0 read in node_modules (helpers/zod.js:41, lib/parser.js:51-64, resources/messages/messages.js:67, client.js:110) to locate the double wrap"
 source: code
 ---
 
@@ -15,41 +15,41 @@ rejection unit is now the frame, not the batch, and a billed call is in the ledg
 holds. Read in the tree AFTER prettier:
 
 - **The seam.** `generateObjectWithImages` is deleted. `generateRawWithImages`
-  (`packages/core/src/providers/anthropic.ts:99`) calls `messages.create` with the caller's wire
+  (`packages/core/src/providers/anthropic.ts:208`) calls `messages.create` with the caller's wire
   format passed through opaquely and returns `{ text, stopReason, usage }` — the first text block
-  verbatim, no `JSON.parse`, no zod. `foldedOutputFormat` (`:73`) builds today's wire from a zod
+  verbatim, no `JSON.parse`, no zod. `foldedOutputFormat` (`:78`) builds today's wire from a zod
   schema; the bytes are **byte-identical** to what production sent (the `zodOutputFormat` object
   minus its `parse` callback, which `JSON.stringify` dropped anyway), pinned by the "the batch wire
   format" test in `packages/core/test/analysis-batch-salvage.test.ts`, and checked equal to the
-  request body of a real call made on 2026-09-20 through a gitignored scratch script
-  (`packages/core/.work/enum-wire-ab.ts`, body saved beside it as `ab-wire-A.json`).
-- **Usage FIRST.** `transcribeBatch` (`packages/core/src/pipelines/demo-analysis.ts:466`) writes the
-  usage row (`:478`) before anything looks at the body, so the three calls this job billed and
+  `output_config.format` a real call sent on 2026-09-20 through a gitignored scratch script
+  (`packages/core/.work/enum-wire-ab.ts`; that object is saved beside it as `ab-wire-A.json`).
+- **Usage FIRST.** `transcribeBatch` (`packages/core/src/pipelines/demo-analysis.ts:470`) writes the
+  usage row (`:482`) before anything looks at the body, so the three calls this job billed and
   recorded nowhere would now be three rows.
-- **The envelope, strict.** `parseBatchEnvelope` (`:369`) accepts only an object with a `frames`
+- **The envelope, strict.** `parseBatchEnvelope` (`:373`) accepts only an object with a `frames`
   array; a missing text block, JSON cut off by `max_tokens`, a refusal's prose or any other shape
   throws OUR error carrying the stop_reason and no response content (the text may hold customer
   screen text, and `jobs.last_error` reaches Sentry). Today's `max_tokens` surfaced with no
   stop_reason at all.
-- **Per element.** `validateBatchFrames` (`:312`) canonicalizes a case-only mismatch on
+- **Per element.** `validateBatchFrames` (`:316`) canonicalizes a case-only mismatch on
   `actionType` / `screenKind` / `legibility` against the declared lists (zero API calls; logged at
   warn), then validates each entry against the strict frame schema; a failing entry is REMOVED, so
   its claimed index stays null in `salvageBatchFrames` — by CLAIMED index, never by array position —
   and rides the existing corrective-retry / dropped-state path. Rejections are logged at warn with
   demoId, batch, position, claimed index, the zod issue paths and messages, and for enum fields
   what the model wrote — quoted only when it has the shape of a token (letters, digits, `_`, `-`,
-  at most 32: `TOKEN_SHAPE`, `:280`), otherwise its length alone, because the wire does not
+  at most 32: `TOKEN_SHAPE`, `:284`), otherwise its length alone, because the wire does not
   constrain the slot and a review reproduced a screen label landing in it; never a whole frame,
   never `visibleText`.
-- **The corrective message** (`correctivePrompt`, `:435`, fed by `describeShortfall`, `:402`) names
+- **The corrective message** (`correctivePrompt`, `:439`, fed by `describeShortfall`, `:406`) names
   uncovered frames in the old coverage wording and invalid frames by index, field, received value
   and allowed values — one message when a batch has both; an entry whose index is unusable falls
   under coverage. Still ONE corrective call per batch; the retry's response goes through the same
   steps; whatever is still null is dropped, and the `a_analysis_max_degraded_fraction` gate is
   unchanged.
 - **Every rejection in the `allSettled` round is logged** with its batch (the per-batch catch,
-  `:1053`) before the rethrow (`:1068`) picks one — observability hole 1 below is closed.
-- **Assembly lifted verbatim** into `assembleTimeline` (`:532`) so the index mapping
+  `:1057`) before the rethrow (`:1072`) picks one — observability hole 1 below is closed.
+- **Assembly lifted verbatim** into `assembleTimeline` (`:536`) so the index mapping
   (`g = bi * batchSize + i`) and the `sameStateAsPrevious` seam bridging are pinned with a null
   mid-batch and a null at a batch boundary; the logic did not change.
 - **The production seam is pinned too.** `packages/core/test/analysis-seam.test.ts` runs the
@@ -66,9 +66,20 @@ after its corrective call has returned, so a checkpointed batch with nulls is fi
 **Not deployed.** The branch is not merged and the worker box is on the pre-fix commit; the deploy
 is `docs/07-worker-box.md` §11 with `git log -1` on the box as the check.
 
-**What this commit does not do.** The wire is unchanged by design, so the decoding grammar still
-does not hold the three enums and an out-of-enum value is still possible — it now costs one
-corrective vision call inside the attempt, not the attempt.
+**Commit 2 of 2, "put the frame enums in the decoding grammar" — same branch, same day.**
+`batchWireFormat()` now builds the strict wire (`strictOutputFormat`, `providers/anthropic.ts:174`):
+the three enums are keywords of the grammar, so the model cannot emit `"click"` there any more,
+and the pinned bytes moved by exactly three nodes — the `{enum: …}` prose out of three
+descriptions, an `enum` array into the same three nodes; nothing else. The builder lifts
+`enum`/`const` off zod's raw schema, runs the SDK's own transform on the rest (through the public
+`jsonSchemaOutputFormat` helper) and re-attaches them, so the transform's sanitising survives and a
+future `.min()` still becomes prose, not a 400 ([[sdk-folds-enum-and-const-into-description]]). A
+guard test walks the wire for the API's documented keyword set and refuses any `{enum:` /
+`{const:` fold prose. Untouched: the zod schema, `prompts/analyze_demo/*`, `promptVersion`,
+`resumeKey`. A job in flight at deploy may finish with batches from both wires; both are validated
+by the same strict zod schema. Cost on first use: one grammar recompile and one prompt-cache
+invalidation. This is the production risk of the pair — if the strict wire misbehaves on the box,
+reverting commit 2 alone keeps commit 1, the net.
 
 `analyze_demo` job `85d9ec0b-4ee0-44d2-9bff-c89e9e55b332`
 (demo `3915c8e2-3ae0-486c-a1b5-2937a6a6e8d9`, business `1b237001-c525-47fe-9060-871f9a53df4c`,
@@ -90,10 +101,22 @@ frames.5.actionType: Invalid option: expected one of
 ```
 
 One frame in one batch of ten came back with an `actionType` outside the enum.
-`batchOutputSchema` is `z.object({ frames: z.array(...) })`
-(`demo-analysis.ts:118-133`), so zod rejected the **whole batch object**, the call threw before
-returning, and the `Promise.allSettled` rethrow at `demo-analysis.ts:727-732` discarded the entire
-attempt.
+`batchOutputSchema` was `z.object({ frames: z.array(...) })` (`demo-analysis.ts:118-133` at
+`f84e931`), so zod rejected the **whole batch object**, the call threw before returning, and the
+`Promise.allSettled` rethrow at `demo-analysis.ts:727-732` (same tree) discarded the entire attempt.
+
+**Why the model could write an out-of-enum value at all — leading explanation [REASONED].** The
+enum was never in the decoding grammar. `@anthropic-ai/sdk` 0.111.0's transform folds `enum` into
+the field's `description` as prose, so the wire carried
+`{"type":"string","description":"{enum: [...]}"}` and the grammar constrained `actionType` to "a
+string" — [[sdk-folds-enum-and-const-into-description]], measured 2026-09-20: on that wire the model
+wrote `"click"` when asked to; on the strict wire it wrote `"tap"`. So the field was an
+unconstrained string with a hint, and an out-of-enum value needs no special explanation.
+**Secondary:** the documented casing hole — structured outputs do not guarantee the capitalization
+of enum values — which is the residual exposure once the grammar holds the enums, closed per
+element by `validateBatchFrames`. **The received value itself is unrecoverable:** zod 4's message
+carries the expected values, never the input, and the response body was not logged. Neither
+explanation is a measurement of what frame 5 held.
 
 ## The timeline [MEASURED]
 

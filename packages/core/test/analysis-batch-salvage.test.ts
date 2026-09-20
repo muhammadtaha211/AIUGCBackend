@@ -704,11 +704,70 @@ describe("transcribeBatch", () => {
  * The bytes every vision batch call puts under output_config.format — pinned
  * so a change to the model-facing schema (a grammar recompile and a prompt
  * cache invalidation) is a deliberate edit here, never a side effect. The
- * three enums are folded into description prose by the SDK's transform
- * (0.111.0), so they are hints to the model, not rules of the decoding
- * grammar — which is why per-element validation exists.
+ * three enums are keywords of the decoding grammar (strictOutputFormat);
+ * everything else is exactly what the SDK's transform (0.111.0) emits, the
+ * root $schema fold included. Measured 2026-09-20: the folded wire returned
+ * an out-of-enum value on request, this one refused it — vault
+ * facts/sdk-folds-enum-and-const-into-description.
  */
-const BATCH_WIRE = String.raw`{"type":"json_schema","schema":{"type":"object","properties":{"frames":{"type":"array","items":{"type":"object","properties":{"index":{"type":"number"},"screenName":{"type":"string"},"visibleText":{"type":"array","items":{"type":"string"}},"action":{"type":"string"},"actionType":{"type":"string","description":"{enum: [\"navigate\",\"tap\",\"type\",\"select\",\"scroll\",\"result\",\"idle\"]}"},"screenKind":{"type":"string","description":"{enum: [\"product\",\"login\",\"loading\",\"onboarding\",\"error\",\"tour\",\"system\",\"other\"]}"},"sameStateAsPrevious":{"type":"boolean"},"legibility":{"type":"string","description":"{enum: [\"high\",\"low\",\"unreadable\"]}"},"salienceNote":{"anyOf":[{"type":"string"},{"type":"null"}]}},"additionalProperties":false,"required":["index","screenName","visibleText","action","actionType","screenKind","sameStateAsPrevious","legibility","salienceNote"]}}},"additionalProperties":false,"required":["frames"],"description":"{$schema: \"https://json-schema.org/draft/2020-12/schema\"}"}}`;
+const BATCH_WIRE = String.raw`{"type":"json_schema","schema":{"type":"object","properties":{"frames":{"type":"array","items":{"type":"object","properties":{"index":{"type":"number"},"screenName":{"type":"string"},"visibleText":{"type":"array","items":{"type":"string"}},"action":{"type":"string"},"actionType":{"type":"string","enum":["navigate","tap","type","select","scroll","result","idle"]},"screenKind":{"type":"string","enum":["product","login","loading","onboarding","error","tour","system","other"]},"sameStateAsPrevious":{"type":"boolean"},"legibility":{"type":"string","enum":["high","low","unreadable"]},"salienceNote":{"anyOf":[{"type":"string"},{"type":"null"}]}},"additionalProperties":false,"required":["index","screenName","visibleText","action","actionType","screenKind","sameStateAsPrevious","legibility","salienceNote"]}}},"additionalProperties":false,"required":["frames"],"description":"{$schema: \"https://json-schema.org/draft/2020-12/schema\"}"}}`;
+
+/** The API's documented supported set for structured-output schemas. A keyword
+ *  outside it on the wire is a 400 on the box; this guard turns a future
+ *  schema edit red here instead. */
+const SUPPORTED_KEYWORDS = new Set([
+  "type",
+  "properties",
+  "required",
+  "additionalProperties",
+  "items",
+  "minItems",
+  "anyOf",
+  "allOf",
+  "$ref",
+  "$defs",
+  "definitions",
+  "enum",
+  "const",
+  "default",
+  "format",
+  "description",
+  "title",
+]);
+const SUPPORTED_FORMATS = new Set([
+  "date-time",
+  "time",
+  "date",
+  "duration",
+  "email",
+  "hostname",
+  "uri",
+  "ipv4",
+  "ipv6",
+  "uuid",
+]);
+
+/** Walk every schema node, yielding it with its path — `properties`/`$defs`
+ *  values are names, not keywords, and are stepped over. */
+function* schemaNodes(
+  node: Record<string, unknown>,
+  path = "$",
+): Generator<[string, Record<string, unknown>]> {
+  yield [path, node];
+  for (const [key, value] of Object.entries(node)) {
+    if ((key === "properties" || key === "$defs" || key === "definitions") && value) {
+      for (const [name, sub] of Object.entries(value as Record<string, unknown>)) {
+        yield* schemaNodes(sub as Record<string, unknown>, `${path}.${key}.${name}`);
+      }
+    } else if ((key === "anyOf" || key === "allOf") && Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        yield* schemaNodes(value[i] as Record<string, unknown>, `${path}.${key}[${i}]`);
+      }
+    } else if (key === "items" && value) {
+      yield* schemaNodes(value as Record<string, unknown>, `${path}.items`);
+    }
+  }
+}
 
 describe("the batch wire format", () => {
   it("is byte-identical to the pinned bytes", () => {
@@ -717,5 +776,30 @@ describe("the batch wire format", () => {
 
   it("carries no parse callback — the caller owns validation", () => {
     expect(Object.keys(batchWireFormat())).toEqual(["type", "schema"]);
+  });
+
+  it("uses only keywords the API supports, and no enum or const is left as description prose", () => {
+    const seenEnums: string[] = [];
+    for (const [path, node] of schemaNodes(batchWireFormat().schema)) {
+      for (const [key, value] of Object.entries(node)) {
+        expect(SUPPORTED_KEYWORDS.has(key), `${path}.${key} is not a supported keyword`).toBe(true);
+        if (key === "format") expect(SUPPORTED_FORMATS.has(value as string)).toBe(true);
+        if (key === "minItems") expect([0, 1]).toContain(value);
+        if (key === "description") {
+          // The SDK's fold is "{k: json, k: json}" — an enum can sit after a
+          // comma, and a folded sub-schema carries it JSON-quoted.
+          expect(value as string, `${path} folds a keyword into prose`).not.toMatch(
+            /[{,]\s*(enum|const):|"(enum|const)":/,
+          );
+        }
+        if (key === "enum") seenEnums.push(path);
+      }
+      if (node.type === "object") expect(node.additionalProperties).toBe(false);
+    }
+    expect(seenEnums).toEqual([
+      "$.properties.frames.items.properties.actionType",
+      "$.properties.frames.items.properties.screenKind",
+      "$.properties.frames.items.properties.legibility",
+    ]);
   });
 });
