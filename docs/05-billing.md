@@ -111,7 +111,9 @@ number below was measured on the founder's test business the same day
    changes nothing; the intent stays pending. A refusal raised AFTER the payment was verified
    valid — the money moved — also writes a `gateway_events` row `checkout_refused`
    (`sumit_refused_<payment id>`: intent, reason, amount, document), so a paid-but-unactivated
-   customer is findable from our tables (`select * from gateway_events where kind = 'checkout_refused'`).
+   customer is findable from our tables. **A refusal is only half of them** — see "Returns that
+   could not be confirmed" below, and query both kinds:
+   `select * from gateway_events where kind in ('checkout_refused', 'checkout_unconfirmed')`.
 6. **Activate** — a `suspended` subscription is reactivated in place (new period from now, the
    intent's plan, `gateway_recurring_ref` = the Sumit customer id, the leftover expired); otherwise
    a new row. `grant_period` for the plan's credits; a `gateway_events` row keyed on the Sumit
@@ -120,9 +122,58 @@ number below was measured on the founder's test business the same day
    intent is refused — paid twice, refund by hand; an `expired` intent is still completable
    (expiry only stops reuse by a new click). The browser lands on `/home/plan?checkout=success`;
    on `?checkout=refused` when Sumit holds a valid payment we refused to activate on (the line
-   says not to pay again); on `?checkout=failed` for everything else — with the reason in the
+   says not to pay again); on `?checkout=failed` **only when Sumit positively answered that the
+   payment is not valid** (`ValidPayment: false`) — that is the one line inviting another
+   attempt; and on `?checkout=unconfirmed` for every other failure, with the reason in the
    server log and never on screen. `POST /api/account/checkout` itself answers 409 for an
    account whose subscription is live and not suspended, before writing anything.
+
+**Returns that could not be confirmed** (decision 0062 as amended 2026-09-21, after a real
+₪150 payment landed on "אפשר לנסות שוב" because Vercel's Sumit credentials were malformed —
+[`defects/sumit-return-failure-invited-a-second-payment.md`](vault/defects/sumit-return-failure-invited-a-second-payment.md)).
+The payment page redirects to the return URL **only after a payment it accepted** (measured),
+so a browser arriving with an `OG-PaymentID` has almost certainly paid. Anything that stops us
+verifying that payment — any `SumitApiError` (timeout, 5xx, `Status 2`, a credential Sumit
+rejects), a database error, an unexpected throw, and `payment_not_found`, which a wrong key or
+the wrong organisation answers for a payment that genuinely exists — lands on
+`?checkout=unconfirmed`: received, being confirmed, do **not** pay again. The route records
+each one through `recordUnconfirmedCheckoutReturn` (core): gateway `sumit`,
+`sumit_unconfirmed_<payment id>`, kind `checkout_unconfirmed`, payload `{ intentId,
+sumitPaymentId, sumitCustomerId, reason, detail, returnPath }`, `onConflictDoNothing` on the
+id, `processed_at` null. Recording is best-effort — a failure to record is logged and never
+changes the landing, and when the failure IS the database the log line is the only record,
+which is why every failure line carries the intent, payment and customer ids and the
+replayable return path. Before the session and ownership checks (malformed parameters, no
+session, an unknown intent) **nothing is written at all**; only the line changes.
+
+There is no "resolved" column. **A row is resolved when a `checkout_charge` exists under the
+same payment id** — which is what happens when the cause is fixed and the founder replays the
+return URL while signed in as that customer (measured 2026-09-21: the replay activated the
+subscription normally). The open ones:
+
+```sql
+select e.payload->>'intentId'   as intent,
+       e.payload->>'reason'     as reason,
+       e.payload->>'detail'     as detail,
+       e.payload->>'returnPath' as return_path,
+       e.received_at
+from gateway_events e
+where e.kind = 'checkout_unconfirmed'
+  and not exists (
+    select 1 from gateway_events c
+    where c.kind = 'checkout_charge'
+      and c.gateway_event_id = e.payload->>'sumitPaymentId'
+  )
+order by e.received_at desc;
+```
+
+Query on `kind`, never on `gateway_event_id like 'sumit_unconfirmed_%'`: the renewal gateway
+writes that same prefix with its own attempt UUID for a charge whose answer was lost
+(`SumitGateway.chargeRecurring`), which is a different thing. The two never collide — a Sumit
+payment id is digits and an attempt id is a UUID — but a prefix query mixes the populations.
+
+Nothing retries automatically. `gateway_events.kind` is plain `text` with no CHECK and no
+enum, so the new kind needed no migration.
 
 **Renewals and upgrades** charge that customer's default card: `/billing/payments/charge/` with
 `Customer.ID`, one item named by the description (`תבנית — מסלול <name>, חידוש חודשי` /

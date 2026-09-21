@@ -1,13 +1,19 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { PlanChangeQuote } from "@aiugc/core/plan-change";
 import {
   BANNER_PAST_DUE,
   BANNER_SUSPENDED,
   cancelDialogBody,
+  CHECKOUT_FAILED_LINE,
+  CHECKOUT_STATES,
+  CHECKOUT_UNCONFIRMED_LINE,
   CURRENT_PLAN_BADGE,
   downgradeDialogBody,
   formatDate,
   formatShekels,
+  parseCheckoutParam,
   pendingKind,
   periodLine,
   planCardStates,
@@ -295,5 +301,59 @@ describe("periodLine — one sentence for the settings row and the plan page", (
         "התחלה",
       ),
     ).toBe("המנוי הושעה אחרי שהחיוב של 7.10.2026 לא הוסדר.");
+  });
+});
+
+describe("the ?checkout= landing the return route sends the browser to", () => {
+  it("the plan page accepts every value the route lands on, and nothing else", () => {
+    // Spelled out, not derived: the loops below iterate the same array they
+    // test, so this is what pins it against the route's four landing constants.
+    expect([...CHECKOUT_STATES]).toEqual(["success", "refused", "failed", "unconfirmed"]);
+    for (const state of CHECKOUT_STATES) expect(parseCheckoutParam(state)).toBe(state);
+    expect(parseCheckoutParam(undefined)).toBeNull();
+    expect(parseCheckoutParam("")).toBeNull();
+    expect(parseCheckoutParam("Success")).toBeNull();
+    expect(parseCheckoutParam("javascript:alert(1)")).toBeNull();
+  });
+
+  it("the unconfirmed line says paid, being confirmed, do not pay again — and never invites a retry", () => {
+    expect(CHECKOUT_UNCONFIRMED_LINE).toContain("\u05e0\u05e7\u05dc\u05d8");
+    expect(CHECKOUT_UNCONFIRMED_LINE).toContain("\u05de\u05d0\u05de\u05ea\u05d9\u05dd");
+    expect(CHECKOUT_UNCONFIRMED_LINE).toContain(
+      "\u05d0\u05d9\u05df \u05e6\u05d5\u05e8\u05da \u05dc\u05e9\u05dc\u05dd \u05e9\u05d5\u05d1",
+    );
+    expect(CHECKOUT_UNCONFIRMED_LINE).toContain("\u05db\u05ea\u05d1\u05d5 \u05dc\u05e0\u05d5");
+    // The retry invitation belongs to ?checkout=failed alone.
+    expect(CHECKOUT_FAILED_LINE).toContain("\u05dc\u05e0\u05e1\u05d5\u05ea \u05e9\u05d5\u05d1");
+    expect(CHECKOUT_UNCONFIRMED_LINE).not.toContain(
+      "\u05dc\u05e0\u05e1\u05d5\u05ea \u05e9\u05d5\u05d1",
+    );
+    // No time promise: nothing retries on its own yet.
+    expect(CHECKOUT_UNCONFIRMED_LINE).not.toMatch(/\d/);
+  });
+
+  /**
+   * There is no jsdom or @testing-library in this repo (apps/web/vitest.config.ts
+   * sets no environment, and adding one is new infrastructure), and PlanManager is
+   * a client component whose useEffect never runs under renderToStaticMarkup. So
+   * the banner block is pinned by reading the source, the way auth-user.test.ts
+   * pins its 503 markers. What it protects is real: the four states are four
+   * independent `&&` guards with no exhaustiveness check, so a state with no
+   * branch renders the page with no banner at all — the customer is simply not
+   * told — and nothing in the type system says so.
+   */
+  it("every landing the route can send has a branch on the plan page, and the new one renders its own line", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/app/home/plan/plan-manager.tsx", import.meta.url)),
+      "utf8",
+    );
+    for (const state of CHECKOUT_STATES) {
+      expect(source, `no branch renders ?checkout=${state}`).toContain(`checkout === "${state}"`);
+    }
+    const banner = source.split(`{checkout === "unconfirmed" && (`)[1]?.split("</p>")[0] ?? "";
+    expect(banner).toContain("CHECKOUT_UNCONFIRMED_LINE");
+    // The same contact page the refused banner offers — not a new channel.
+    expect(banner).toContain(`href="/contact"`);
+    expect(banner).toContain("CHECKOUT_REFUSED_CONTACT");
   });
 });

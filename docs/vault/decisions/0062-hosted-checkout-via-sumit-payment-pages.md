@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-21
-method: "Founder brief 2026-09-21 (hosted checkout via Sumit payment pages, the checkout dialog replaced by a page, a checkout_intents table, the unconfirmed-charge rule, DryRunGateway refused on production) built on branch feat/sumit-checkout and measured end to end against the founder's TEST Sumit business the same day: two payment-page purchases from the in-app browser with Sumit's published test cards (one declined 003, one approved 000), then /billing/payments/get/, /billing/paymentmethods/getforcustomer/, /billing/paymentmethods/setforcustomer/ and /accounting/documents/getdetails/ called with the Credentials body — see facts/sumit-payment-page-saves-the-card.md for every response. Request/response schemas read from the public OpenAPI spec at https://app.sumit.co.il/swagger/v1/swagger.json ('SUMIT API - Full', openapi 3.1.1, 84 paths, fetched 2026-09-21) — NOT from the login-walled developers page. Code: packages/core/src/gateways/sumit.ts, packages/core/src/pipelines/checkout.ts, supabase/migrations/0048_checkout_intents.sql, apps/web/src/app/api/account/checkout/route.ts, apps/web/src/app/api/billing/sumit/return/route.ts, apps/web/src/app/home/plan/checkout/. Pinned by packages/core/test/checkout.test.ts (PGlite, 16 cases), sumit-gateway.test.ts (mocked fetch, 21), migrations.test.ts (0048), apps/web/test/sumit-return-route.test.ts (10), account-routes.test.ts (16), billing-lib.test.ts (9). Reviewed the same day by a 16-agent adversarial pass (the pre-charge look, the session binding, the 409 and the refused landing come from its findings) and re-measured for the list window (facts/sumit-payments-list-honours-utc-offsets)."
+method: "Founder brief 2026-09-21 (hosted checkout via Sumit payment pages, the checkout dialog replaced by a page, a checkout_intents table, the unconfirmed-charge rule, DryRunGateway refused on production) built on branch feat/sumit-checkout and measured end to end against the founder's TEST Sumit business the same day: two payment-page purchases from the in-app browser with Sumit's published test cards (one declined 003, one approved 000), then /billing/payments/get/, /billing/paymentmethods/getforcustomer/, /billing/paymentmethods/setforcustomer/ and /accounting/documents/getdetails/ called with the Credentials body — see facts/sumit-payment-page-saves-the-card.md for every response. Request/response schemas read from the public OpenAPI spec at https://app.sumit.co.il/swagger/v1/swagger.json ('SUMIT API - Full', openapi 3.1.1, 84 paths, fetched 2026-09-21) — NOT from the login-walled developers page. Code: packages/core/src/gateways/sumit.ts, packages/core/src/pipelines/checkout.ts, supabase/migrations/0048_checkout_intents.sql, apps/web/src/app/api/account/checkout/route.ts, apps/web/src/app/api/billing/sumit/return/route.ts, apps/web/src/app/home/plan/checkout/. Pinned by packages/core/test/checkout.test.ts (PGlite, 16 cases), sumit-gateway.test.ts (mocked fetch, 21), migrations.test.ts (0048), apps/web/test/sumit-return-route.test.ts (10), account-routes.test.ts (16), billing-lib.test.ts (9). Reviewed the same day by a 16-agent adversarial pass (the pre-charge look, the session binding, the 409 and the refused landing come from its findings) and re-measured for the list window (facts/sumit-payments-list-honours-utc-offsets). Amended 2026-09-21 from a second founder brief the same day, after a real 150 shekel payment on the real organisation landed on ?checkout=failed because Vercel's credentials were malformed (defects/sumit-return-failure-invited-a-second-payment.md): the failure landing splits in two and the return route gains a gateway_events record. Code: apps/web/src/app/api/billing/sumit/return/route.ts, recordUnconfirmedCheckoutReturn in packages/core/src/pipelines/checkout.ts, apps/web/src/lib/billing.ts (sumitPaymentIdParam, sumitReturnPath), apps/web/src/lib/plans-ui.ts (CHECKOUT_UNCONFIRMED_LINE, parseCheckoutParam), apps/web/src/app/home/plan/. The test counts above move with it: apps/web/test/sumit-return-route.test.ts (16), checkout.test.ts (19), billing-lib.test.ts (12), plans-ui.test.ts (24)."
 source: founder + code + browser
 ---
 
@@ -132,6 +132,10 @@ close it.
   whose line says the payment was received and NOT to pay again. Refusals with nothing verified
   to have moved (an unknown intent, a payment Sumit does not know, an invalid one) land on
   `?checkout=failed` ("try again") as before.
+  _(Amended on this last sentence only, 2026-09-21: of those three, only an INVALID payment
+  still lands on `?checkout=failed`. See the amendment at the end of this note. Everything
+  else in this bullet — the `checkout_refused` row, its `sumit_refused_<payment id>` key and
+  the refused landing — stands.)_
 - **Bit is excluded** — Sumit does not return the og-* parameters for a Bit payment, so a Bit
   purchase could never complete an intent. The founder keeps Bit off on the pages.
 - **Which Sumit organisation** (the test business or the real one) is decided by the env values
@@ -165,8 +169,74 @@ close it.
 - **No `vat_rate` config yet** (0046 §6) — `VATIncluded: true` makes the eventual change a
   caller-side multiplication, not an adapter change.
 
+## Amended 2026-09-21 (founder, in chat, after the first real purchase) — a failure to VERIFY is not a decline
+
+The bullet above split refusals two ways: money moved (`?checkout=refused`) or nothing did
+(`?checkout=failed`). A real 150 shekel payment on the real organisation found the third case
+the same day. Sumit's page took the card and redirected; `/billing/payments/get/` then threw
+`SumitApiError` because Vercel's `SUMIT_COMPANY_ID` / `SUMIT_API_KEY` were malformed; the
+generic catch landed on `?checkout=failed` — **"התשלום לא הושלם. אפשר לנסות שוב."** — with the
+payment sitting at Sumit, and wrote nothing. Replaying the same return URL after the env was
+fixed completed the intent normally. Measured in full at
+[[../defects/sumit-return-failure-invited-a-second-payment]].
+
+**The rule now.** After the session and intent-ownership checks pass, `?checkout=failed` is
+reachable **only** when Sumit positively answered that this payment is not valid — reason
+`payment_invalid`, `ValidPayment: false`. Every other failure lands on a fourth value,
+`?checkout=unconfirmed`: payment received, being confirmed, do not pay again. That covers any
+`SumitApiError` of any kind, a database error, an unexpected throw, and — the non-obvious one
+— `payment_not_found`, which a wrong key or the wrong organisation answers for a payment that
+genuinely exists.
+
+**Why a third value and not `refused`.** They differ in what the founder must do. `refused` is
+a verdict: Sumit answered, the payment is good, we declined to activate on it, and the row
+that says so is written by `completeCheckout` itself under `sumit_refused_<payment id>`.
+`unconfirmed` is the absence of a verdict: nobody knows yet whether that payment is ours to
+activate on. The first is settled by refunding or activating by hand; the second is settled by
+fixing the cause and replaying the return URL, which is what actually worked.
+
+**Why the default flips to reassurance.** [[../facts/sumit-payment-page-saves-the-card]]
+measured that the page redirects to the return URL only after a payment it accepted — the
+declined attempt re-rendered and never redirected. So a browser holding an `OG-PaymentID` has
+almost certainly paid, and "try again" is the one thing that must not be said on a guess.
+Before the ownership check has run — malformed parameters, an unknown intent — only the LINE
+changes: a non-empty `OG-PaymentID` of any casing lands on `?checkout=unconfirmed`, without
+one it lands on `?checkout=failed`, and **nothing is written** either way, because those
+requests have proved nothing about who is asking. No session still goes through `/login`
+exactly as before.
+
+**The record.** A new exported core function, `recordUnconfirmedCheckoutReturn`, writes a
+`gateway_events` row beside the `checkout_refused` write — gateway `sumit`,
+`sumit_unconfirmed_<payment id>`, kind `checkout_unconfirmed`, payload `{ intentId,
+sumitPaymentId, sumitCustomerId, reason, detail, returnPath }`, `onConflictDoNothing` on the
+id, `processed_at` left null. `completeCheckout` itself is unchanged: this is the ROUTE's
+record of a return it could not finish, not a verification verdict, and the route calls it
+from its own catch. It is best-effort — a failure to record is logged and never changes the
+landing, and when the failure IS the database the write fails with it, which is why every
+failure log line now carries the intent, payment and customer ids and the replayable return
+path (og-* parameters only). **Resolved** is not a column: an unconfirmed row is resolved when
+a `checkout_charge` row exists under the same payment id. The query is in
+[`docs/05-billing.md`](../../05-billing.md).
+
+`gateway_events.kind` is plain `text` with no CHECK and no enum, and nothing in the tree
+enumerates kinds, so **no migration was needed** (measured across all 49 files in
+`supabase/migrations/` and `packages/core/src/db/schema.ts`).
+
+**What this did not touch**: `completeCheckout`'s verification order and its success and replay
+paths, `checkout_refused`, `POST /api/account/checkout`, the gateway and renewals, the Sumit
+client, pricing and plans. **And what it did not fix**: nothing validates the shape of
+`SUMIT_COMPANY_ID` / `SUMIT_API_KEY` at boot or at first use, so the same misconfiguration
+still breaks every checkout — it just fails politely now. No automatic retry was built.
+
+**Not merged, not deployed** when this was written: branch `fix/sumit-return-unconfirmed`. The
+Hebrew line for the new landing is marked COPY PENDING FOUNDER REVIEW in
+`apps/web/src/lib/plans-ui.ts`.
+
 ## Related
 
+- [[../defects/sumit-return-failure-invited-a-second-payment]] — the incident that amended this
+  note, and what the fix leaves open
+- [`docs/05-billing.md`](../../05-billing.md) §"Hosted checkout" — amended in the same commit
 - [[0054-payment-stack-is-sumit-via-upay]] — the vendor; its UNVERIFIED list is closed here
 - [[0056-the-purchase-step-takes-an-active-terms-checkbox]] — the checkbox the page keeps
 - [[0052-upgrade-credits-are-period-credits]], [[0053-downgrades-are-scheduled-not-applied]] —

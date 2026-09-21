@@ -3,7 +3,13 @@ import { redirect } from "next/navigation";
 import { authedUser } from "@/lib/auth-user";
 import { parsePlanParam, PLAN_PARAM } from "@/lib/onboarding";
 import { loadPlansView } from "@/lib/plans";
-import { checkoutPath, PLAN_META_TITLE, PLAN_PAGE_SUB, PLAN_PAGE_TITLE } from "@/lib/plans-ui";
+import {
+  checkoutPath,
+  parseCheckoutParam,
+  PLAN_META_TITLE,
+  PLAN_PAGE_SUB,
+  PLAN_PAGE_TITLE,
+} from "@/lib/plans-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { PlanManager } from "./plan-manager";
 
@@ -19,8 +25,8 @@ import { PlanManager } from "./plan-manager";
  *
  * ?plan=<code> (the /pricing and signup hand-off) goes straight to that
  * plan's checkout page, which decides for itself whether this account can
- * buy; ?checkout=success|refused|failed is where the return route sends the
- * browser.
+ * buy; ?checkout=success|refused|failed|unconfirmed is where the return route
+ * sends the browser.
  */
 export const metadata: Metadata = { title: PLAN_META_TITLE };
 
@@ -40,10 +46,7 @@ export default async function PlanPage({
   // The same parser /start uses for the same param — one slug rule, one place.
   const plan = parsePlanParam(params[PLAN_PARAM]);
   if (plan) redirect(checkoutPath(plan));
-  const checkout =
-    params.checkout === "success" || params.checkout === "refused" || params.checkout === "failed"
-      ? params.checkout
-      : null;
+  const checkout = parseCheckoutParam(params.checkout);
   const view = await loadPlansView();
 
   return (

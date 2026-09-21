@@ -256,6 +256,66 @@ export async function completeCheckout(
   }
 }
 
+/**
+ * The return leg could not CONFIRM a payment, and the browser got here by
+ * being redirected off Sumit's payment page — which, measured on the test
+ * business, only happens after a payment the page accepted (a decline
+ * re-rendered the page and never redirected: facts/sumit-payment-page-saves-the-card.md).
+ * So the customer has almost certainly paid, and the landing must not invite a
+ * second payment. This is that return's record: one row per payment id, so a
+ * paid-but-unactivated customer is findable from our own tables and not only
+ * from a log line that may have rolled off.
+ *
+ * Deliberately NOT inside completeCheckout, which is unchanged: `checkout_refused`
+ * is a VERDICT — Sumit answered, the payment is valid, and we refused to
+ * activate on it. This is the absence of a verdict — Sumit unreachable or
+ * misconfigured, an unexpected throw. The route decides which it had and calls
+ * this one itself.
+ *
+ * One case the ROW cannot cover, though the landing does: when the failure is
+ * this database, the write fails with it. Then the log line is the whole
+ * record — which is why every failure line carries the ids (route.ts).
+ *
+ * `processed_at` stays null: nothing was processed. What RESOLVES one of these
+ * rows is a `checkout_charge` row under the same payment id — the query is in
+ * docs/05-billing.md. Recording is best-effort by design: the caller logs a
+ * failure here and lands the customer on the same line either way.
+ */
+export async function recordUnconfirmedCheckoutReturn(
+  db: Db,
+  opts: {
+    intentId: string;
+    sumitPaymentId: string;
+    sumitCustomerId: string;
+    /** `CheckoutVerificationReason`, `sumit_<SumitApiError kind>`, or `unexpected_error`. */
+    reason: string;
+    /** The error's message. Never a stack — this row is read in the SQL editor. */
+    detail: string;
+    /** The route path plus the og-* query it arrived with, so the founder can replay it. */
+    returnPath: string;
+  },
+): Promise<void> {
+  await db
+    .insert(gatewayEvents)
+    .values({
+      gateway: "sumit",
+      gatewayEventId: `sumit_unconfirmed_${opts.sumitPaymentId}`,
+      kind: "checkout_unconfirmed",
+      payload: {
+        intentId: opts.intentId,
+        sumitPaymentId: opts.sumitPaymentId,
+        sumitCustomerId: opts.sumitCustomerId,
+        reason: opts.reason,
+        detail: opts.detail,
+        returnPath: opts.returnPath,
+      },
+    })
+    // A reloaded return URL keeps the FIRST reason rather than overwriting it
+    // with the second attempt's, and one payment is one row however many times
+    // the customer refreshes.
+    .onConflictDoNothing({ target: gatewayEvents.gatewayEventId });
+}
+
 async function completeCheckoutTx(
   db: Db,
   opts: {
