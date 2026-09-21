@@ -19,7 +19,13 @@ import {
 } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import { PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
-import { generateObject, generateObjectWithImages } from "../providers/anthropic";
+import {
+  generateObject,
+  generateRawWithImages,
+  strictOutputFormat,
+  type RawResult,
+  type WireOutputFormat,
+} from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { getStorage, storageKey } from "../storage";
 import { requireQuestionnaire } from "./businesses";
@@ -114,23 +120,49 @@ export function findSectionViolations(
   return violations;
 }
 
-/** What the model returns per batch — timestamps and thumb paths are attached in code. */
-const batchOutputSchema = z.object({
-  frames: z.array(
-    z.object({
-      index: z.number(),
-      screenName: z.string(),
-      visibleText: z.array(z.string()),
-      action: z.string(),
-      actionType: z.enum(ANALYSIS_ACTION_TYPES),
-      screenKind: z.enum(ANALYSIS_SCREEN_KINDS),
-      sameStateAsPrevious: z.boolean(),
-      legibility: z.enum(["high", "low", "unreadable"]),
-      salienceNote: z.string().nullable(),
-    }),
-  ),
+export const ANALYSIS_LEGIBILITY = ["high", "low", "unreadable"] as const;
+
+/**
+ * One frame as the model returns it — timestamps and thumb paths are attached
+ * in code. Validated PER ELEMENT (validateBatchFrames): a frame the model got
+ * wrong drops that frame into the salvage path, never its whole batch.
+ */
+export const batchFrameSchema = z.object({
+  index: z.number(),
+  screenName: z.string(),
+  visibleText: z.array(z.string()),
+  action: z.string(),
+  actionType: z.enum(ANALYSIS_ACTION_TYPES),
+  screenKind: z.enum(ANALYSIS_SCREEN_KINDS),
+  sameStateAsPrevious: z.boolean(),
+  legibility: z.enum(ANALYSIS_LEGIBILITY),
+  salienceNote: z.string().nullable(),
 });
-type BatchFrame = z.infer<typeof batchOutputSchema>["frames"][number];
+export type BatchFrame = z.infer<typeof batchFrameSchema>;
+
+/** What the model returns per batch. The wire format derives from this object
+ *  and is pinned byte for byte by analysis-batch-salvage.test.ts. */
+export const batchOutputSchema = z.object({ frames: z.array(batchFrameSchema) });
+
+/** The wire format of every vision batch call — the strict wire, so the three
+ *  enums are rules of the decoding grammar and not prose the model may ignore
+ *  (job 85d9ec0b's actionType was outside the enum on the folded wire). Built
+ *  per call rather than at import, so tests that mock the provider module
+ *  still load this one. */
+export function batchWireFormat(): WireOutputFormat {
+  return strictOutputFormat(batchOutputSchema);
+}
+
+/** The enum-valued frame fields with their declared values. With the enums in
+ *  the grammar the residual hole is the documented one — structured outputs
+ *  do not guarantee the CASING of enum values — closed per element against
+ *  these lists, never by blind lowercasing. */
+const FRAME_ENUM_FIELDS = {
+  actionType: ANALYSIS_ACTION_TYPES,
+  screenKind: ANALYSIS_SCREEN_KINDS,
+  legibility: ANALYSIS_LEGIBILITY,
+} as const;
+type FrameEnumField = keyof typeof FRAME_ENUM_FIELDS;
 
 /**
  * 768px is what lets the model read Hebrew UI text off a filmed screen — do
@@ -240,6 +272,315 @@ export function salvageBatchFrames<T extends { index: number }>(
     }
   }
   return out;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The wire does not constrain an enum slot, so what the model wrote there can
+ *  be anything — screen text included. It is reported only when it has the
+ *  shape of a token (letters, digits, `_`, `-`, at most 32 of them); anything
+ *  else is described by its length and never quoted in a log or a prompt. */
+const TOKEN_SHAPE = /^[A-Za-z0-9_-]{1,32}$/;
+const describeReceived = (value: string): string =>
+  TOKEN_SHAPE.test(value) ? value : `(${value.length} chars, not a token)`;
+
+export interface FrameCanonicalization {
+  position: number;
+  claimedIndex: number | null;
+  field: FrameEnumField;
+  received: string;
+  canonical: string;
+}
+
+export interface FrameRejection {
+  /** Array position in the response — always known. */
+  position: number;
+  /** The entry's own `index` when it is an integer, else null — the salvage key. */
+  claimedIndex: number | null;
+  issues: { path: string; message: string }[];
+  /** Enum fields that failed, with what the model wrote when it is a token —
+   *  otherwise its length alone. Never screen text. */
+  received: Partial<Record<FrameEnumField, string>>;
+}
+
+/**
+ * Per-element validation of a batch response. Each entry is canonicalized on
+ * its enum fields first — a case-only mismatch against a declared value is
+ * replaced by the declared value, at zero API calls where the corrective
+ * retry costs a full vision call — then checked against the strict frame
+ * schema. A failing entry is REMOVED, so the index it claimed stays null in
+ * salvageBatchFrames and rides the existing corrective-retry / dropped-state
+ * path. Nothing here throws on a bad element; the envelope is the caller's.
+ */
+export function validateBatchFrames(entries: unknown[]): {
+  frames: BatchFrame[];
+  rejected: FrameRejection[];
+  canonicalized: FrameCanonicalization[];
+} {
+  const frames: BatchFrame[] = [];
+  const rejected: FrameRejection[] = [];
+  const canonicalized: FrameCanonicalization[] = [];
+  entries.forEach((entry, position) => {
+    const claimedIndex =
+      isRecord(entry) && Number.isInteger(entry.index) ? (entry.index as number) : null;
+    let candidate = entry;
+    if (isRecord(entry)) {
+      const copy = { ...entry };
+      for (const field of Object.keys(FRAME_ENUM_FIELDS) as FrameEnumField[]) {
+        const allowed: readonly string[] = FRAME_ENUM_FIELDS[field];
+        const value = copy[field];
+        if (typeof value !== "string" || allowed.includes(value)) continue;
+        const match = allowed.find((a) => a.toLowerCase() === value.toLowerCase());
+        if (match === undefined) continue;
+        copy[field] = match;
+        canonicalized.push({ position, claimedIndex, field, received: value, canonical: match });
+      }
+      candidate = copy;
+    }
+    const result = batchFrameSchema.safeParse(candidate);
+    if (result.success) {
+      frames.push(result.data);
+      return;
+    }
+    const received: Partial<Record<FrameEnumField, string>> = {};
+    for (const issue of result.error.issues) {
+      const field = issue.path[0];
+      if (typeof field === "string" && field in FRAME_ENUM_FIELDS && isRecord(candidate)) {
+        const value = candidate[field];
+        if (typeof value === "string") received[field as FrameEnumField] = describeReceived(value);
+      }
+    }
+    rejected.push({
+      position,
+      claimedIndex,
+      issues: result.error.issues.map((i) => ({
+        path: i.path.map(String).join("."),
+        message: i.message,
+      })),
+      received,
+    });
+  });
+  return { frames, rejected, canonicalized };
+}
+
+/**
+ * The batch envelope, strictly: an object carrying a `frames` array. Anything
+ * else — no text block, JSON cut off by max_tokens, a refusal's prose, some
+ * other shape — throws with the stop_reason and NO response content:
+ * jobs.last_error reaches Sentry, and the text may hold customer screen text.
+ */
+export function parseBatchEnvelope(raw: {
+  text: string | null;
+  stopReason: string | null;
+}): unknown[] {
+  const reason = `stop_reason: ${raw.stopReason}`;
+  if (raw.text === null)
+    throw new Error(`analysis: batch response carried no text block (${reason})`);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.text);
+  } catch {
+    throw new Error(`analysis: batch response is not JSON (${reason})`);
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.frames)) {
+    throw new Error(`analysis: batch response is not a frames envelope (${reason})`);
+  }
+  return parsed.frames;
+}
+
+export interface BatchShortfall {
+  batchLength: number;
+  /** Entries in the response, valid or not. */
+  returned: number;
+  /** Positions with no entry after salvage that no named rejection accounts for. */
+  unexplained: number[];
+  /** Rejections whose claimed index is a frame of this batch and whose position
+   *  is still empty — the ones a corrective message can name, one line per issue. */
+  invalid: { index: number; violations: string[] }[];
+}
+
+/** Which holes the corrective retry has to explain: a rejection is named only
+ *  when its claimed index is a frame of this batch and no valid entry filled
+ *  that position; every other hole falls under the coverage wording. */
+export function describeShortfall(
+  salvaged: (unknown | null)[],
+  returned: number,
+  rejected: FrameRejection[],
+): BatchShortfall {
+  const batchLength = salvaged.length;
+  const invalid: BatchShortfall["invalid"] = [];
+  const named = new Set<number>();
+  for (const r of rejected) {
+    const i = r.claimedIndex;
+    if (i === null || i < 0 || i >= batchLength || salvaged[i] || named.has(i)) continue;
+    named.add(i);
+    invalid.push({
+      index: i,
+      violations: r.issues.map((issue) => {
+        const field = issue.path as FrameEnumField;
+        const value = field in FRAME_ENUM_FIELDS ? r.received[field] : undefined;
+        if (value === undefined) return `${issue.path}: ${issue.message}`;
+        const allowed = `use one of ${FRAME_ENUM_FIELDS[field].join(", ")}`;
+        return TOKEN_SHAPE.test(value)
+          ? `${field} "${value}" is not an allowed value — ${allowed}`
+          : `${field} is not an allowed value — ${allowed}`;
+      }),
+    });
+  }
+  const unexplained = salvaged.flatMap((f, i) => (!f && !named.has(i) ? [i] : []));
+  return { batchLength, returned, unexplained, invalid };
+}
+
+/** The corrective message — findPlanViolations' deterministic-check-plus-one-
+ *  corrective-call shape — naming what the check found: uncovered frames in
+ *  the coverage wording, schema violations by frame, field, received value and
+ *  allowed values. One message names both when a batch has both. */
+export function correctivePrompt(basePrompt: string, s: BatchShortfall): string {
+  const lines: string[] = [];
+  if (s.unexplained.length > 0) {
+    lines.push(
+      `- It covered only ${s.batchLength - s.unexplained.length} of these ${s.batchLength} frames (${s.returned} entries returned). Every frame gets exactly one entry, even when consecutive frames look identical or near-identical — report each repeat as its own entry with sameStateAsPrevious: true. Never merge frames into one entry.`,
+    );
+  }
+  for (const { index, violations } of s.invalid) {
+    for (const v of violations) lines.push(`- Frame ${index}: ${v}.`);
+  }
+  return `${basePrompt}\n\nYour previous response was not accepted:\n${lines.join("\n")}\nReturn exactly ${s.batchLength} entries, with index 0 through ${s.batchLength - 1} matching the frame labels.`;
+}
+
+export interface BatchIo {
+  /** One vision call for this batch, budget check included — its throws are
+   *  the caller's error classes and pass through untouched. */
+  call: (prompt: string) => Promise<RawResult>;
+  /** The ledger write — runs before any parse, so every returned call is recorded. */
+  recordUsage: (usage: RawResult["usage"]) => Promise<void>;
+  log: { warn: (fields: Record<string, unknown>, msg: string) => void };
+}
+
+/**
+ * One batch, start to finish: the first call, per-element validation, ONE
+ * corrective retry when the salvage left holes (missing or invalid, both
+ * named in the message), the merge, and whatever is still null is dropped —
+ * "degrade, don't die". I/O is injected so the contract is testable without
+ * ffmpeg or the network. The checkpoint stays the caller's: a batch is
+ * checkpointed only after this returns, so a checkpointed batch with nulls
+ * is final by construction.
+ */
+export async function transcribeBatch(opts: {
+  demoId: string;
+  batch: number;
+  batchLength: number;
+  basePrompt: string;
+  io: BatchIo;
+}): Promise<(BatchFrame | null)[]> {
+  const { demoId, batch, batchLength, basePrompt, io } = opts;
+  const round = async (prompt: string) => {
+    const raw = await io.call(prompt);
+    // Usage FIRST: the call was billed whatever its body holds — parse
+    // failures inside the SDK hid three billed calls on job 85d9ec0b.
+    await io.recordUsage(raw.usage);
+    const entries = parseBatchEnvelope(raw);
+    const { frames, rejected, canonicalized } = validateBatchFrames(entries);
+    for (const c of canonicalized) {
+      io.log.warn({ demoId, batch, ...c }, "analysis: frame enum canonicalized by case");
+    }
+    for (const r of rejected) {
+      // Never the frame and never visibleText — that is customer screen content.
+      io.log.warn(
+        { demoId, batch, ...r },
+        "analysis: frame rejected by the schema — dropped from its batch",
+      );
+    }
+    return {
+      salvaged: salvageBatchFrames(frames, batchLength),
+      returned: entries.length,
+      rejected,
+    };
+  };
+
+  const first = await round(basePrompt);
+  let salvaged = first.salvaged;
+  if (salvaged.some((f) => !f)) {
+    // Corrective retry, once (same pattern as demo-step-plans): seen live when
+    // near-identical frames get merged into one entry instead of repeated
+    // with sameStateAsPrevious, and when one frame carries a value outside
+    // the schema. Name the failure and re-request this batch only.
+    const shortfall = describeShortfall(salvaged, first.returned, first.rejected);
+    io.log.warn(
+      {
+        demoId,
+        batch,
+        sent: batchLength,
+        returned: first.returned,
+        unexplained: shortfall.unexplained,
+        invalid: shortfall.invalid.map((v) => v.index),
+      },
+      "analysis: batch response incomplete or invalid — corrective retry",
+    );
+    const retry = await round(correctivePrompt(basePrompt, shortfall));
+    // Fill what the retry still misses from the first response — both
+    // transcribe the same images, so coverage only ever improves.
+    salvaged = retry.salvaged.map((f, i) => f ?? salvaged[i] ?? null);
+  }
+  return salvaged;
+}
+
+/**
+ * Timeline assembly, lifted verbatim out of handleAnalyzeDemo so the index
+ * mapping and the seam bridging can be pinned without ffmpeg: position i of
+ * batch bi is kept-index g = bi * batchSize + i, a null at a position drops
+ * that cluster, and sameStateAsPrevious is recomputed by dHash wherever the
+ * model could not have judged it.
+ */
+export function assembleTimeline(opts: {
+  batches: StateCluster[][];
+  batchResults: Record<string, (BatchFrame | null)[]>;
+  batchSize: number;
+  keptHashes: bigint[];
+  thumbPathAt: (ms: number) => string;
+}): { assembled: AnalysisState[]; droppedMs: number[] } {
+  const { batches, batchResults, batchSize, keptHashes, thumbPathAt } = opts;
+  const assembled: AnalysisState[] = [];
+  const droppedMs: number[] = [];
+  let prevG = -1; // kept-index of the last assembled state
+  batches.forEach((batch, bi) => {
+    batch.forEach((cluster, i) => {
+      const frame = batchResults[bi]![i];
+      const g = bi * batchSize + i;
+      if (!frame) {
+        droppedMs.push(cluster.representativeMs);
+        return;
+      }
+      // The model judges duplicates within its batch only — at a batch
+      // boundary it cannot see the prior frame and reports false by
+      // instruction. Bridge the seam with the same dHash the clustering
+      // used, so a duplicate straddling batches still reads as one. When a
+      // dropped cluster broke adjacency, the model's flag refers to a state
+      // that no longer exists — recompute against the last assembled one.
+      const sameStateAsPrevious =
+        prevG < 0
+          ? false
+          : prevG === g - 1
+            ? frame.sameStateAsPrevious ||
+              (i === 0 && hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING)
+            : hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING;
+      assembled.push({
+        timestampMs: cluster.representativeMs,
+        screenName: frame.screenName,
+        visibleText: frame.visibleText,
+        action: frame.action,
+        actionType: frame.actionType,
+        screenKind: frame.screenKind,
+        sameStateAsPrevious,
+        legibility: frame.legibility,
+        salienceNote: frame.salienceNote,
+        thumbPath: thumbPathAt(cluster.representativeMs),
+      });
+      prevG = g;
+    });
+  });
+  return { assembled, droppedMs };
 }
 
 const REFILM_MESSAGE =
@@ -661,21 +1002,23 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
 
     const basePrompt = (n: number) =>
       `Analyse the ${n} frames above, in order. Return exactly one entry per frame, with the index from its label.`;
-    const callBatch = async (batch: StateCluster[], prompt: string): Promise<BatchFrame[]> => {
+    const callBatch = async (batch: StateCluster[], prompt: string): Promise<RawResult> => {
       // Parallel batches each pass this check before any usage lands, so one
       // analysis can overshoot the cap by at most the batch cap — acceptable
       // for a backstop; the real per-analysis bound is max_states.
       await assertBudget(ctx.db, "llm_tokens");
-      const { object, usage } = await generateObjectWithImages({
+      return generateRawWithImages({
         system,
         prompt,
         frames: batch.map((cluster, i) => ({
           label: `Frame ${i} — t=${(cluster.representativeMs / 1000).toFixed(1)}s`,
           jpeg: readFileSync(localFrameOf(cluster)),
         })),
-        schema: batchOutputSchema,
+        format: batchWireFormat(),
       });
-      await recordUsage(ctx.db, {
+    };
+    const recordBatchUsage = (usage: RawResult["usage"]) =>
+      recordUsage(ctx.db, {
         provider: "anthropic",
         kind: "llm_tokens",
         quantity: usage.inputTokens + usage.outputTokens,
@@ -683,45 +1026,43 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
         jobId: job.id,
         businessId: demo.businessId,
       });
-      return object.frames;
-    };
 
     const settled = await Promise.allSettled(
       batches.map(async (batch, bi) => {
         if (batchResults[bi]) return;
-        const first = await callBatch(batch, basePrompt(batch.length));
-        let salvaged = salvageBatchFrames(first, batch.length);
-        if (salvaged.some((f) => !f)) {
-          // Corrective retry, once (same pattern as demo-step-plans): seen live
-          // when near-identical frames get merged into one entry instead of
-          // repeated with sameStateAsPrevious. Name the failure and re-request
-          // this batch only.
-          const covered = salvaged.filter(Boolean).length;
+        try {
+          const salvaged = await transcribeBatch({
+            demoId,
+            batch: bi,
+            batchLength: batch.length,
+            basePrompt: basePrompt(batch.length),
+            io: {
+              call: (prompt) => callBatch(batch, prompt),
+              recordUsage: recordBatchUsage,
+              log: ctx.log,
+            },
+          });
+          const droppedMs = batch.filter((_, i) => !salvaged[i]).map((c) => c.representativeMs);
+          if (droppedMs.length > 0) {
+            // Degrade, don't die: losing a few states out of eighty is nothing;
+            // losing the whole analysis is expensive. The fraction gate below
+            // fails the analysis when too many batches end up here.
+            ctx.log.warn(
+              { demoId, batch: bi, sent: batch.length, droppedMs },
+              "analysis: batch still short after corrective retry — dropping unreturned states",
+            );
+          }
+          batchResults[bi] = salvaged;
+          await saveCheckpoint();
+        } catch (err) {
+          // Every rejection is logged here with its batch — the rethrow below
+          // surfaces only one, and the others used to leave no trace at all.
           ctx.log.warn(
-            { demoId, batch: bi, sent: batch.length, returned: first.length, covered },
-            "analysis: batch response did not cover every frame — corrective retry",
+            { demoId, batch: bi, err: err instanceof Error ? err.message : String(err) },
+            "analysis: batch failed",
           );
-          const retry = await callBatch(
-            batch,
-            `${basePrompt(batch.length)}\n\nYour previous response covered only ${covered} of these ${batch.length} frames (${first.length} entries returned). That is wrong: every frame gets exactly one entry, even when consecutive frames look identical or near-identical — report each repeat as its own entry with sameStateAsPrevious: true. Never merge frames into one entry. Return exactly ${batch.length} entries, with index 0 through ${batch.length - 1} matching the frame labels.`,
-          );
-          // Fill what the retry still misses from the first response — both
-          // transcribe the same images, so coverage only ever improves.
-          const retrySalvaged = salvageBatchFrames(retry, batch.length);
-          salvaged = retrySalvaged.map((f, i) => f ?? salvaged[i]!);
+          throw err;
         }
-        const droppedMs = batch.filter((_, i) => !salvaged[i]).map((c) => c.representativeMs);
-        if (droppedMs.length > 0) {
-          // Degrade, don't die: losing a few states out of eighty is nothing;
-          // losing the whole analysis is expensive. The fraction gate below
-          // fails the analysis when too many batches end up here.
-          ctx.log.warn(
-            { demoId, batch: bi, sent: batch.length, droppedMs },
-            "analysis: batch still short after corrective retry — dropping unreturned states",
-          );
-        }
-        batchResults[bi] = salvaged;
-        await saveCheckpoint();
       }),
     );
     const rejections = settled.filter((r): r is PromiseRejectedResult => r.status === "rejected");
@@ -758,44 +1099,12 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
     // representativeMs = round(i*1000/fps), so the frame index inverts exactly.
     const keptHashes = kept.map((c) => hashes[Math.round((c.representativeMs * fps) / 1000)]!);
 
-    const assembled: AnalysisState[] = [];
-    const droppedMs: number[] = [];
-    let prevG = -1; // kept-index of the last assembled state
-    batches.forEach((batch, bi) => {
-      batch.forEach((cluster, i) => {
-        const frame = batchResults[bi]![i];
-        const g = bi * batchSize + i;
-        if (!frame) {
-          droppedMs.push(cluster.representativeMs);
-          return;
-        }
-        // The model judges duplicates within its batch only — at a batch
-        // boundary it cannot see the prior frame and reports false by
-        // instruction. Bridge the seam with the same dHash the clustering
-        // used, so a duplicate straddling batches still reads as one. When a
-        // dropped cluster broke adjacency, the model's flag refers to a state
-        // that no longer exists — recompute against the last assembled one.
-        const sameStateAsPrevious =
-          prevG < 0
-            ? false
-            : prevG === g - 1
-              ? frame.sameStateAsPrevious ||
-                (i === 0 && hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING)
-              : hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING;
-        assembled.push({
-          timestampMs: cluster.representativeMs,
-          screenName: frame.screenName,
-          visibleText: frame.visibleText,
-          action: frame.action,
-          actionType: frame.actionType,
-          screenKind: frame.screenKind,
-          sameStateAsPrevious,
-          legibility: frame.legibility,
-          salienceNote: frame.salienceNote,
-          thumbPath: `assets/${thumbKey(cluster.representativeMs)}`,
-        });
-        prevG = g;
-      });
+    const { assembled, droppedMs } = assembleTimeline({
+      batches,
+      batchResults,
+      batchSize,
+      keptHashes,
+      thumbPathAt: (ms) => `assets/${thumbKey(ms)}`,
     });
     if (droppedMs.length > 0) {
       // Fires on resumed runs too (the per-batch warn does not) — the durable

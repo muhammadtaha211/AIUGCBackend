@@ -47,8 +47,10 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   format), which add the plan-level status, approval gate and versioning this table lacked.
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
   `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips run **3–4 seconds**; the
-  one clip in the live bank is 4086ms ([04-integrations.md](04-integrations.md) §Hook-clip bank
-  source, which also records why the ~60-char hook-line cap is calibrated to the long end).
+  live bank holds 28 active clips across 7 personas, 4 each, plus 1 generic (`persona_id` NULL)
+  row (measured 2026-09-20, read-only probe of `personas`/`hook_clips`) — see
+  [04-integrations.md](04-integrations.md) §Hook-clip bank source, which also records why the
+  ~60-char hook-line cap is calibrated to the long end.
   `text_safe_area` is required at register; `DEFAULT_HOOK_TEXT_RECT` only seeds the editor.
 - **opener_clips** (0032) — **retired 2026-09-06** ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)): the table stays (no migration drops it) but no render reads it — the Service B hook is a Remotion animation over the one HeyGen clip. What it held: one founder-made clip per (selfie image × effect), stored play-ready…
   nothing processes it at render time). `persona_image_id`, `effect` (free key, e.g.

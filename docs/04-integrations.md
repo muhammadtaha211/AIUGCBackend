@@ -9,9 +9,13 @@ keyless (the e2e test relies on this).
 
 - **Model locked by product decision: `claude-sonnet-4-6`** (`CLAUDE_MODEL`).
 - Official SDK (`@anthropic-ai/sdk`), **structured outputs** via
-  `client.messages.parse` + `zodOutputFormat(schema)` — assistant prefills 400 on this model;
-  `output_config.format` guarantees schema-valid JSON, parsed and validated with the same zod
-  schemas the pipelines use.
+  `client.messages.parse` + `zodOutputFormat(schema)` — assistant prefills 400 on this model.
+  What `output_config.format` actually enforces on that wire is the schema's types, required keys
+  and closed objects: the SDK's transform folds `enum`, `const` and `min`/`max` into description
+  prose, so those are checked only by the client-side zod parse, which rejects the whole object
+  and records no usage when it fails (`facts/sdk-folds-enum-and-const-into-description`). The
+  vision batch call alone goes through `generateRawWithImages` on the strict wire
+  (`strictOutputFormat` — the enums in the decoding grammar) and validates per element.
 - **Prompt versioning**: prompts are files — `prompts/<name>/v<N>.md` with `{{var}}`
   interpolation (`src/prompts.ts`). A revision is a new file, never an edit; every generated
   script row records `prompt_version = "<name>@v<N>"`, so any output is traceable to the exact
@@ -344,18 +348,23 @@ The Service A hook bank is generated on **Seedance** and registered by hand thro
 console. No code calls it and no key exists in `.env`; it is recorded here because the
 generator's output length sets the format.
 
-- **Hook clips run 3–4 seconds** (founder, 2026-08-09). The one clip registered in the live bank
-  is **4086ms**. The old "2–3s curation doctrine" is stale, and so is the "2s" that survived in
-  `CLAUDE.md`, `README.md` and the CLI help — all three corrected in this pass. An earlier
-  version of this section called 4s a hard floor set by Seedance's minimum generation length;
-  that is not accurate and nothing in the repo can verify a generator-side floor, so the range
-  above is what we record.
+- **Hook clips run 3–4 seconds** (founder, 2026-08-09). The live bank holds 28 active clips
+  across 7 personas — 4 female (טליה, נועה, נטלי, שירה), 3 male (גלעד, נהוראי, עומרי) — 4 clips
+  each, plus 1 generic (`persona_id` NULL) row; 2 rows are inactive (30 total). Active-clip
+  durations range **2933–3622ms** (measured 2026-09-20, read-only probe of
+  `personas`/`hook_clips`). The old "2–3s curation doctrine" is stale, and so is the "2s" that
+  survived in `CLAUDE.md`, `README.md` and the CLI help — all three corrected in that pass. An
+  earlier version of this section called 4s a hard floor set by Seedance's minimum generation
+  length; that is not accurate and nothing in the repo can verify a generator-side floor, so the
+  range above is what we record.
 - **The read budget is set by the SHORTEST clip, not the longest.** At roughly 17
   characters/second of Hebrew reading, 4s buys ~60 characters — which is where `hook_lines` v7's
   ~60-char cap comes from — but a 3s clip buys only ~51. **The cap is therefore calibrated to
   the long end of the range and is generous on a short clip**; a 60-char line on a 3s clip is
-  the case to watch when a shorter clip is registered. Recorded, not fixed: no short clip is in
-  the bank today. The 8-word cap is a style hint; this one is the rendering limit.
+  the case to watch when a shorter clip is registered. **The bank's shortest active clip now
+  measures 2933ms** (measured 2026-09-20) — under the 3s baseline this reasoning uses, buying
+  ~50 characters at the same reading rate. The cap is not re-derived here; flagged to the
+  founder to decide. The 8-word cap is a style hint; this one is the rendering limit.
 - **Swap-matrix cost.** The oldest $0.25–0.40/swap and $8–10/matrix figures assumed 2–3s clips.
   At $0.126/s a 3–4s swap is **~$0.38–0.50**, and a 5 hooks × 5 personas matrix is **~$9.45–12.60**
   before any upscale pass. The founder has accepted the cost; only the numbers were wrong.

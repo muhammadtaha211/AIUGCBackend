@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 const generateObject = vi.hoisted(() => vi.fn());
 vi.mock("../src/providers/anthropic", () => ({
   generateObject,
-  generateObjectWithImages: vi.fn(),
+  generateRawWithImages: vi.fn(),
   CLAUDE_MODEL: "claude-sonnet-4-6",
 }));
 

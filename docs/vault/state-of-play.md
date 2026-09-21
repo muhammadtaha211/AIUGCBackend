@@ -66,7 +66,7 @@ Three notes created, two updated:
 - **[[analysis-parse-failure-discards-the-whole-attempt]]** (new, defect) — one frame's bad
   `actionType` enum discarded a whole `analyze_demo` attempt, three times: 8m19s of latency for ~85s
   of work. Full measured timeline, both halves of the defect, the fix list, two observability holes.
-  **OPEN.**
+  **FIXED ON BRANCH 2026-09-20** — queue item 1 has the state; the note's head has the FIXED block.
 - **[[demo-analysis-latency-is-not-duration-bound]]** (new, fact) — a 90s 1080×1920 demo analyses in
   ~65s of real work, ~53 states, no thinning. Graduated out of this file.
 - **[[0059-emoji-in-burned-text-needs-a-second-font]]** (new, decision) — the tofu, the verified
@@ -108,6 +108,18 @@ Each cost real time, and each came from asserting rather than checking.
   UTC column** — same class as the `finished_at` column that did not exist
   ([[local-workers-claimed-nine-production-jobs]]). **Production queries are UTC; the Vercel access
   log renders IDT (UTC+3). Convert before querying, never write a local time into the vault.**
+
+**From 2026-09-20, assistant-side:**
+
+- **The fix brief's (A) — "a lenient provider schema takes the enums out of the grammar" — WRONG in
+  its premise.** The enums were never in the grammar: `@anthropic-ai/sdk` 0.111.0 folds `enum` and
+  `const` into description prose, so there was nothing for a lenient client schema to loosen.
+  Caught by Step 0.1 of the brief, which existed to test exactly that premise
+  ([[sdk-folds-enum-and-const-into-description]]).
+- **"An enum slot holds a model-chosen token, never screen text" — WRONG under the folded wire.**
+  The slot was unconstrained; the review reproduced a screen label landing in it and reaching a
+  warn log field. Fixed before commit 1 landed: a received value is quoted only when it has the
+  shape of a token, otherwise its length alone.
 
 **From 2026-09-18, founder-side:** the proposal to **cap demos at 30 seconds for speed**. Measurement
 says duration was never the driver ([[demo-analysis-latency-is-not-duration-bound]]). A hypothesis
@@ -248,16 +260,26 @@ older launch items. Item 0 still outranks everything: nothing in billing earns m
 14. **Sumit offers no integration support** — Facebook group, a paid support hour, or an external dev.
     OPEN (nothing needed it this time; the public spec answered everything).
 
-**1. The batch-granularity fix.** Route a parse failure into the `salvageBatchFrames` /
-corrective-retry / `a_analysis_max_degraded_fraction` path that already exists, instead of throwing
-out of the provider. Turns ~8m19s into ~85s and closes a path to a customer-facing failure **on good
-footage**. Spec and fix list: [[analysis-parse-failure-discards-the-whole-attempt]]. **The double-wrap
-question the brief flagged as "resolve this first" is ANSWERED** — both prefixes are
-`@anthropic-ai/sdk` 0.111.0 (`helpers/zod.js:41` inner, `lib/parser.js:63` outer, which interpolates
-the Error object rather than its message), the parse runs in a `.then` outside the client's HTTP retry
-loop (`messages.js:67`), so **no internal retry and one sample per attempt**. The fix shape is
-unchanged. A prompt is written and waiting on a Fable 5.1 quota reset — **BLOCKED ON QUOTA, not on
-anything technical.**
+**1. The batch-granularity fix — FIXED ON BRANCH `fix/analysis-frame-salvage` (2026-09-20), two
+commits, awaiting merge and box deploy.** Commit 1, the net: a parse failure rides the
+`salvageBatchFrames` / corrective-retry / `a_analysis_max_degraded_fraction` path instead of
+throwing out of the provider — the rejection unit is the frame, usage is recorded before any parse,
+the envelope error carries the stop_reason, every rejection in a parallel round is logged, and the
+wire is byte-identical to before. Commit 2, the cure: the three frame enums go into the decoding
+grammar (`strictOutputFormat`; the pinned wire moved by exactly three nodes), because Step 0 of the
+fix found they never were — the SDK folds `enum` into description prose
+([[sdk-folds-enum-and-const-into-description]], measured with two authorized calls: the folded wire
+returned `"click"` on request, the strict wire returned `"tap"`). **Deploy order matters for the
+revert story, not the deploy:** the wire change is the production risk; if it misbehaves on the box,
+revert commit 2 alone and keep the net. What shipped, with post-prettier cites: the FIXED block at
+the head of [[analysis-parse-failure-discards-the-whole-attempt]]. **The double-wrap question is ANSWERED** —
+both prefixes are `@anthropic-ai/sdk` 0.111.0 (`helpers/zod.js:41` inner, `lib/parser.js:63` outer),
+the parse runs in a `.then` outside the client's HTTP retry loop (`messages.js:67`), so no internal
+retry and one sample per attempt. What remains is the founder's: open the PR, merge, deploy the box
+as ONE step gated on nothing running (`select id, type, status from jobs where status = 'running';`
+→ empty, then `git pull && pnpm install && sudo systemctl restart aiugc-worker`, then `git log -1`
+on the box shows the merge commit — `docs/07-worker-box.md` §11). No migration, no config row, no
+prompt version moves.
 
 **2. The wait surfaces — two parts, both now MEASURED rather than reasoned.** Independent of item 1,
 cheap, and a lighter model can do it. (a) `analysisWaitView`'s elapsed comes from `now - lockedAt` for
@@ -351,12 +373,21 @@ replays the files through `PORTABLE_MIGRATIONS`, `drizzle-kit generate` is not i
 founder's copy review of `plans-ui.ts`** — still ⚠️ COPY PENDING FOUNDER REVIEW; numbers correct,
 wording a first draft.
 
-**11. Sweep the stale `apps/web/src/lib/auth.ts` cites.** `5c13ead` pushed everything below `signUp`
+**11. `generateObject` shares the whole-object rejection unit — a decision, not a fix.** Its three
+callers (`plan_demo_steps`, `group_analysis_states`, `copy.ts`/`tts.ts`) still go through
+`messages.parse`: a parse failure throws whole-object, records NO usage (the ledger hole commit 1
+closed for the vision call), and a `max_tokens` truncation surfaces with no stop_reason at all.
+`group_analysis_states`' `.min(1)` / `.int().nonnegative()` are description-only on the wire
+([[sdk-folds-enum-and-const-into-description]]). None of them carries an enum, so the casing
+exposure does not apply. Whether they move to the raw seam and/or a strict wire is the founder's
+call; the brief for the analysis fix deliberately left their wire untouched.
+
+**12. Sweep the stale `apps/web/src/lib/auth.ts` cites.** `5c13ead` pushed everything below `signUp`
 down ~54 lines. Verified 2026-09-11: `docs/08` `:383` and `:631`; [[auth-email-runs-through-resend]]
 `:5`; [[auth-round-trips-that-miss-the-callback-die-silently]] `:24`; `0005` `:41` and `:48`. **Do not
 touch `0006:26`** — correct there.
 
-**12. Ceiling alert + `vat_rate` config — build with the gateway adapter, not before.** Spec in
+**13. Ceiling alert + `vat_rate` config — build with the gateway adapter, not before.** Spec in
 [[0046-billing-ships-as-osek-patur]] §6.
 
 ## External state — not in the repo
