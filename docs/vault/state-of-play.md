@@ -460,8 +460,9 @@ one hole the 2026-09-21 fix does not cover. The return leg is the only writer: n
 `completeCheckout`, no `checkout_charge`, and (since `fix/sumit-return-unconfirmed`) not even a
 `checkout_unconfirmed` row — the intent just stays `pending` while Sumit holds the money.
 **No sweep exists**: `listPayments` has exactly one caller, the post-lost-answer reconcile inside
-`SumitGateway.chargeRecurring`, and the job types are `analyze_demo`, `billing_renewals`, `janitor`,
-`lipsync`, `reap_dead_renders`, `render_video` — measured 2026-09-21.
+`SumitGateway.chargeRecurring`, and none of the **13** job types in the registry
+(`packages/core/src/handlers.ts` `buildHandlers()`) reconciles Sumit's payments against our intents
+— the only billing one is `billing_renewals`. Measured 2026-09-21.
 
 - **The manual net, available today:** Sumit's purchase history shows our `externalidentifier` on
   every page payment, and every purchase there should correspond to a `completed` intent. Anything
