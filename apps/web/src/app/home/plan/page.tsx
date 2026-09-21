@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { authedUser } from "@/lib/auth-user";
 import { parsePlanParam, PLAN_PARAM } from "@/lib/onboarding";
 import { loadPlansView } from "@/lib/plans";
-import { PLAN_META_TITLE, PLAN_PAGE_SUB, PLAN_PAGE_TITLE } from "@/lib/plans-ui";
+import { checkoutPath, PLAN_META_TITLE, PLAN_PAGE_SUB, PLAN_PAGE_TITLE } from "@/lib/plans-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { PlanManager } from "./plan-manager";
 
@@ -17,8 +17,10 @@ import { PlanManager } from "./plan-manager";
  * loadPlansView, not the cached one: a price change must reach the signed-in
  * page immediately (lib/plans.ts).
  *
- * ?plan=<code> opens that card's checkout dialog (the /pricing hand-off);
- * ?checkout=success|failed is where the gateway sends the browser back.
+ * ?plan=<code> (the /pricing and signup hand-off) goes straight to that
+ * plan's checkout page, which decides for itself whether this account can
+ * buy; ?checkout=success|refused|failed is where the return route sends the
+ * browser.
  */
 export const metadata: Metadata = { title: PLAN_META_TITLE };
 
@@ -37,15 +39,18 @@ export default async function PlanPage({
   const params = await searchParams;
   // The same parser /start uses for the same param — one slug rule, one place.
   const plan = parsePlanParam(params[PLAN_PARAM]);
+  if (plan) redirect(checkoutPath(plan));
   const checkout =
-    params.checkout === "success" || params.checkout === "failed" ? params.checkout : null;
+    params.checkout === "success" || params.checkout === "refused" || params.checkout === "failed"
+      ? params.checkout
+      : null;
   const view = await loadPlansView();
 
   return (
     <div className="mx-auto w-full max-w-5xl px-6 pb-16 pt-8 sm:pt-10">
       <h1 className="text-2xl font-semibold tracking-tight text-ink">{PLAN_PAGE_TITLE}</h1>
       <p className="mt-2 text-[15px] text-ink/65">{PLAN_PAGE_SUB}</p>
-      <PlanManager view={view} openPlan={plan} checkout={checkout} />
+      <PlanManager view={view} checkout={checkout} />
     </div>
   );
 }

@@ -15,8 +15,16 @@ import {
 } from "@/lib/onboarding";
 
 /** `initialError` seeds the inline message — a Google failure sent here by
- *  /auth/callback. Any later submit replaces it. */
-export function LoginForm({ initialError = null }: { initialError?: string | null }) {
+ *  /auth/callback. Any later submit replaces it. `next` is an already-vetted
+ *  path under /home (safeNextPath) that the email sign-in lands on instead of
+ *  the dashboard; the Google round-trip ignores it and lands on /home. */
+export function LoginForm({
+  initialError = null,
+  next = null,
+}: {
+  initialError?: string | null;
+  next?: string | null;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,7 +70,7 @@ export function LoginForm({ initialError = null }: { initialError?: string | nul
         ? `/home/new-business?${DRAFT_WAITING_PARAM}=1`
         : handoff === "stored"
           ? afterSignupPath(plan)
-          : "/home",
+          : (next ?? "/home"),
     );
   }
 

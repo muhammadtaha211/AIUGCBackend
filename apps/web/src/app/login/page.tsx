@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 import { GOOGLE_SIGN_IN_FAILED } from "@/lib/auth";
+import { safeNextPath } from "@/lib/onboarding";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "כניסה | תבנית" };
@@ -14,13 +15,18 @@ export const metadata: Metadata = { title: "כניסה | תבנית" };
  * Also the landing for a failed Google round-trip: /auth/callback sends the
  * user here with ?error=oauth, and the message sits above the email form that
  * is the way out.
+ *
+ * ?next=<path> is where the email sign-in lands afterwards — the Sumit
+ * return route sets it to its own URL for a browser that came back from the
+ * payment page without a session, so signing in completes the payment
+ * (safeNextPath refuses anything but /home paths and that route).
  */
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string | string[] }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
 
   return (
     <div className="theme-light relative isolate flex min-h-dvh flex-col overflow-hidden bg-paper text-ink">
@@ -45,7 +51,10 @@ export default async function LoginPage({
             <h1 className="text-2xl font-semibold tracking-tight text-ink">כניסה לחשבון</h1>
             <p className="mt-2 text-[15px] text-ink/65">ממשיכים מאיפה שהפסקתם.</p>
 
-            <LoginForm initialError={error === "oauth" ? GOOGLE_SIGN_IN_FAILED : null} />
+            <LoginForm
+              initialError={error === "oauth" ? GOOGLE_SIGN_IN_FAILED : null}
+              next={safeNextPath(next)}
+            />
 
             <p className="mt-4 text-sm">
               <Link

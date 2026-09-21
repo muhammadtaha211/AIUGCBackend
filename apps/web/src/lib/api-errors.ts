@@ -21,6 +21,8 @@ export const NOT_FOUND = "לא נמצא.";
 export const INVALID_BODY = "הבקשה לא תקינה.";
 /** The 503 every charge path answers until a gateway adapter exists. */
 export const PAYMENTS_SOON = "התשלום המקוון יופעל בקרוב.";
+/** POST /api/account/checkout for an account whose subscription is live: nothing to buy, change it from the plan page. */
+export const ALREADY_SUBSCRIBED = "כבר יש מסלול פעיל בחשבון. לשינוי מסלול חזרו לדף המסלולים.";
 
 export type CoreErrorMapping = {
   status: number;

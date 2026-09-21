@@ -60,6 +60,7 @@ export const PORTABLE_MIGRATIONS = [
   "0045_subscriptions_scheduled_plan_code.sql",
   "0046_terms_acceptances.sql",
   "0047_feedback_anonymous.sql",
+  "0048_checkout_intents.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

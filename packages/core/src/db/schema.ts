@@ -731,6 +731,36 @@ export const termsAcceptances = pgTable(
   (t) => [index("terms_acceptances_user_idx").on(t.userId)],
 );
 
+// 0048: the server-side half of a hosted checkout. Written before the browser
+// leaves for the Sumit payment page, completed when it comes back; the return
+// URL carries nothing signed, so every activation binds on this row and on a
+// server-to-server read of the payment (decision 0062).
+export const checkoutIntents = pgTable(
+  "checkout_intents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    planCode: text("plan_code")
+      .notNull()
+      .references(() => plans.code),
+    // The plan's price when the intent was created; the payment must match it.
+    priceAgorot: integer("price_agorot").notNull(),
+    // 'pending' | 'completed' | 'expired' — a CHECK in the migration, text here.
+    status: text("status").notNull().default("pending"),
+    // Sumit's ids, written on completion. The payment id is UNIQUE so one
+    // payment can complete one intent only.
+    sumitPaymentId: text("sumit_payment_id").unique(),
+    sumitCustomerId: text("sumit_customer_id"),
+    // NULL when a pending intent was reused instead of recording a new click.
+    termsAcceptanceId: uuid("terms_acceptance_id").references(() => termsAcceptances.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [index("checkout_intents_user_status_idx").on(t.userId, t.status)],
+);
+
 export const appConfig = pgTable("app_config", {
   key: text("key").primaryKey(),
   value: jsonb("value").notNull(),

@@ -9,6 +9,14 @@ const envSchema = z.object({
   FAL_KEY: z.string().optional(),
   HEYGEN_API_KEY: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
+  // Sumit (the payment stack, decision 0054/0062). All optional: absent means
+  // today's behaviour — NotConfiguredGateway, and a 503 from checkout. Which
+  // Sumit organisation these name (the founder's test business or the real
+  // one) is decided by the values alone; nothing in code knows the difference.
+  SUMIT_COMPANY_ID: z.string().optional(),
+  SUMIT_API_KEY: z.string().optional(),
+  // JSON: { "<plan code>": "<the product's payment-page URL>" }.
+  SUMIT_CHECKOUT_PAGES: z.string().optional(),
   DRY_RUN: z
     .string()
     .optional()

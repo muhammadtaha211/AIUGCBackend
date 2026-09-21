@@ -71,10 +71,114 @@ before); email subscribers 30 days ahead with the penalty-free cancellation righ
 and §8; confirm the gateway charge amount is net × (1 + `vat_rate`). Plan prices are **net** — on
 conversion VAT is added on top, not absorbed.
 
+## Hosted checkout — Sumit payment pages (built 2026-09-21)
+
+Decision [`0062`](vault/decisions/0062-hosted-checkout-via-sumit-payment-pages.md); every
+number below was measured on the founder's test business the same day
+([`facts/sumit-payment-page-saves-the-card.md`](vault/facts/sumit-payment-page-saves-the-card.md),
+[`facts/sumit-test-org-configuration.md`](vault/facts/sumit-test-org-configuration.md)).
+
+**The sequence.**
+
+1. **Summary page** — `/home/plan/checkout?plan=<code>` (also where `/home/plan?plan=<code>`
+   and the cards' "בחירת המסלול" / "חידוש המנוי" lead). Price, credits, first and next charge
+   dates, the VAT footnote, the required terms checkbox, one button. Only an account with no
+   live subscription or a `suspended` one gets here; everyone else is sent back to `/home/plan`.
+2. **`POST /api/account/checkout`** `{ planCode, acceptedTerms: true }` → `createCheckoutIntent`
+   writes the `terms_acceptances` row and a `checkout_intents` row (migration 0048) with the
+   plan's price snapshotted, reusing a pending intent for the same plan younger than 30 minutes
+   and expiring pending ones older than 24 h. Answers `{ redirectUrl }` = the plan's Sumit page
+   (`SUMIT_CHECKOUT_PAGES[planCode]`) + `externalidentifier=<intent id>`,
+   `customerexternalidentifier=<user id>`, `name=<selected business>`, `emailaddress=<account email>`.
+   No price on the URL: the Sumit product is fixed-price. No pages configured → the 503
+   "התשלום המקוון יופעל בקרוב." and nothing written.
+3. **Sumit's page** takes the card. The customer it creates (one per payer — "לקוח נפרד לכל
+   רכישה" is OFF) keeps the card as its default payment method, and Sumit issues the business's
+   default document (קבלה / "חשבון/קבלה" as עוסק פטור) and emails it.
+4. **Return** — the page redirects to `/api/billing/sumit/return?OG-CustomerID=…&OG-PaymentID=…&OG-ExternalIdentifier=…`
+   (mixed-case keys; also `OG-PaymentType`, `OG-DocumentNumber`). The route is rate-limited per
+   address and trusts nothing on the URL. It completes the intent **only for the intent's own
+   session**: a different account's session is a 403; no session completes nothing and sends the
+   browser through `/login?next=<this URL>`, so the email sign-in lands back here and finishes
+   (the Google round-trip lands on `/home`; the intent stays pending, the payment stays at Sumit).
+5. **Verify** — `completeCheckout` locks the intent, then reads the payment server-to-server
+   (`/billing/payments/get/`): `ValidPayment`, `Amount` = the intent's `price_agorot`,
+   `CustomerID` = `OG-CustomerID`, and the payment's `ExternalIdentifier` = the intent id. It
+   reads the customer's saved card (`/billing/paymentmethods/getforcustomer/`) — **a saved card
+   is there (measured)** — and, because the page keeps the FIRST card entered as the default even
+   when it was declined, makes the paying card the default when they differ
+   (`/billing/paymentmethods/setforcustomer/` with token + expiry). Any mismatch throws and
+   changes nothing; the intent stays pending. A refusal raised AFTER the payment was verified
+   valid — the money moved — also writes a `gateway_events` row `checkout_refused`
+   (`sumit_refused_<payment id>`: intent, reason, amount, document), so a paid-but-unactivated
+   customer is findable from our tables (`select * from gateway_events where kind = 'checkout_refused'`).
+6. **Activate** — a `suspended` subscription is reactivated in place (new period from now, the
+   intent's plan, `gateway_recurring_ref` = the Sumit customer id, the leftover expired); otherwise
+   a new row. `grant_period` for the plan's credits; a `gateway_events` row keyed on the Sumit
+   payment id (`checkout_charge`); the intent → `completed`. A replayed return URL (the same
+   payment id on a completed intent) grants nothing; a DIFFERENT payment id on a completed
+   intent is refused — paid twice, refund by hand; an `expired` intent is still completable
+   (expiry only stops reuse by a new click). The browser lands on `/home/plan?checkout=success`;
+   on `?checkout=refused` when Sumit holds a valid payment we refused to activate on (the line
+   says not to pay again); on `?checkout=failed` for everything else — with the reason in the
+   server log and never on screen. `POST /api/account/checkout` itself answers 409 for an
+   account whose subscription is live and not suspended, before writing anything.
+
+**Renewals and upgrades** charge that customer's default card: `/billing/payments/charge/` with
+`Customer.ID`, one item named by the description (`תבנית — מסלול <name>, חידוש חודשי` /
+`תבנית — מסלול <name>, שדרוג`) at `UnitPrice` = the agorot ÷ 100, `VATIncluded: true` (so the
+charge is exactly the requested amount whatever the org's VAT setting), `SendDocumentByEmail`.
+A decline is `Status 0` with `ValidPayment false` and a code ("003"), recorded under Sumit's
+payment id; a `Status 1` refusal is recorded under `sumit_refused_<attempt>` with Sumit's
+message. **The unconfirmed-charge rule:** the charge has no merchant reference, so when the
+answer is lost (a 30 s timeout, non-200, `Status 2`, `Status 0` without a `Payment`) the gateway
+looks for its own payment three times over ~20 s through `/billing/payments/list/` — this
+customer, exactly this amount, valid, no `ExternalIdentifier` (an API charge, not a page
+payment), dated no earlier than two minutes before the attempt; found → success with that id;
+not found → `ok: false`, error `unconfirmed` → `past_due` and dunning retries. The look is
+deliberately narrow and there is NO look before charging: a Sumit payment carries nothing that
+names our attempt, and on this ladder a day-0 upgrade starter → pro costs exactly a starter
+renewal, so a wide look would count the renewal as the upgrade and grant it free. The accepted
+residual is the other way round — a success Sumit lists later than ~50 s is charged again by
+the retry, visibly, and refunded by hand (decision 0062).
+
+**Excluded: Bit.** Sumit returns no og-* parameters for a Bit payment, so it can never complete
+an intent; Bit stays off on the pages (and at the clearing level in the real org).
+
+**Environment** — `SUMIT_COMPANY_ID`, `SUMIT_API_KEY`, `SUMIT_CHECKOUT_PAGES` (JSON, plan code →
+payment-page URL). All optional and read through `packages/core/src/config.ts`; absent means
+today's behaviour (`NotConfiguredGateway`, checkout 503). **Which Sumit organisation** — the
+founder's test business or the real one — is decided by these values alone: test keys and test
+pages locally, production keys and pages on Vercel and the worker box. `getBillingGateway()`
+returns `SumitGateway` when the keys are set and `DRY_RUN` is not, and **refuses
+`DryRunGateway` against the production database** (every local `.env` sets `DRY_RUN=1` while
+pointing at production — a dry-run charge there granted real credits).
+
+**The endpoint map** (all `POST https://api.sumit.co.il/<path>`, `Credentials: { CompanyID, APIKey }`
+in the JSON body, an HTTP 200 envelope `{ Status 0|1|2, UserErrorMessage, TechnicalErrorDetails, Data }`):
+
+| path                                                                        | used for                                                                        |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/billing/payments/get/`                                                    | verify the returned payment (checkout)                                          |
+| `/billing/payments/list/`                                                   | reconcile a lost charge answer (gateway)                                        |
+| `/billing/payments/charge/`                                                 | renewals and prorated upgrades (gateway)                                        |
+| `/billing/paymentmethods/getforcustomer/`                                   | the saved card exists (checkout)                                                |
+| `/billing/paymentmethods/setforcustomer/`                                   | make the paying card the default (checkout)                                     |
+| `/website/companies/listquotas/`                                            | the test org's quota, by hand                                                   |
+| `/accounting/documents/getdetails/`                                         | by hand, to see what document was issued                                        |
+| `/billing/payments/beginredirect/`                                          | **not used** — the pages are the hosted first charge                            |
+| `/billing/recurring/*`                                                      | **not used by design** — renewal scheduling is ours                             |
+| `/billing/paymentmethods/remove/`                                           | not used                                                                        |
+| `/accounting/customers/create/`                                             | not used — the page creates the customer                                        |
+| `/accounting/documents/cancel/`, `/create/`, `/send/`, `/getpdf/`, `/list/` | not used; cancel's effect on the money is UNVERIFIED (refunds via the Sumit UI) |
+| `/accounting/general/getvatrate/`                                           | not used (conversion runbook, later)                                            |
+| `/creditguy/gateway/*`, `/creditguy/vault/*`                                | **never** — a raw terminal and a PAN vault                                      |
+| `/billing/generalbilling/*`, `/triggers/*`                                  | never — org setup; webhooks need the Growth plan                                |
+
 ## Subscription lifecycle
 
 ```
-checkout (hosted page) ──callback──▶ active ──period end──▶ charge OK ──▶ active (new period)
+checkout (Sumit page) ──return + verify──▶ active ──period end──▶ charge OK ──▶ active (new period)
                                         │                      │
                                         │                 charge FAIL ──▶ past_due
                                         │                                  │ retry day 2, day 5 (config `dunning`)
@@ -89,10 +193,11 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
   an account hold exactly one live subscription. One owner, one subscription, one credit pool that
   every business he holds spends from. Credits already worked this way since 0011; this is the same
   model, not a second one.
-- **Signup**: web app creates the hosted payment page; the gateway callback (unique
-  `gateway_event_id` → `gateway_events`, idempotent) creates the subscription **on the signed-in
-  account** with `gateway_recurring_ref` and grants the first period's credits. An owner who then
-  adds a second business buys nothing further — he is already subscribed.
+- **Signup**: the hosted checkout above — the intent, Sumit's page, the return, the
+  server-to-server verify — creates the subscription **on the intent's account** with
+  `gateway_recurring_ref` = the Sumit customer id, writes the `gateway_events` row (unique
+  `gateway_event_id` = the Sumit payment id, idempotent) and grants the first period's credits.
+  An owner who then adds a second business buys nothing further — he is already subscribed.
 - **Renewals**: the daily `billing_renewals` job (`processDueRenewals`) finds due subscriptions
   and charges via the adapter — on the reference stack that is Sumit's
   `/billing/payments/charge/` against the card saved by the first charge, never Sumit's own
@@ -136,9 +241,9 @@ checkout (hosted page) ──callback──▶ active ──period end──▶ 
 - **Terms at checkout**: `POST /api/account/checkout` requires `acceptedTerms: true` (a checkbox,
   a card-company requirement of the acquirer, Upay — reverses `docs/legal-review.md` row T1 for the purchase step
   only) and writes a `terms_acceptances` row (migration 0046: user, the terms page's dated
-  version, `'checkout'`, first-hop IP, user agent) before answering **503 "התשלום המקוון יופעל
-  בקרוב."** — a deliberate dead end until the gateway adapter exists. The acceptance record is
-  real; the payment is not yet.
+  version, `'checkout'`, first-hop IP, user agent) — one per intent, not per click, since 0048.
+  The 503 "התשלום המקוון יופעל בקרוב." remains the answer wherever `SUMIT_CHECKOUT_PAGES` does
+  not name the plan's page.
 - **Callbacks vs our loop**: the gateway also emits charge events; both paths funnel through
   `gateway_events` with the unique id, so a callback arriving for a charge our renewal loop
   initiated (or vice versa) is a no-op.

@@ -339,7 +339,7 @@ describe("plan changes (0045, decisions 0052/0053)", { timeout: 60_000 }, () => 
     expect(calls[0]!.amountAgorot).toBe(
       Math.ceil(((highest.priceAgorot - lowest.priceAgorot) * 10) / 30),
     );
-    expect(calls[0]!.description).toBe(`תבנית — שדרוג ל${highest.name}`);
+    expect(calls[0]!.description).toBe(`תבנית — מסלול ${highest.name}, שדרוג`);
 
     const after = await readSub(db, sub.id);
     expect(after.planCode).toBe(highest.code);
