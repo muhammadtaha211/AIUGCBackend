@@ -97,6 +97,23 @@ export function startWithPlanPath(planCode: string): string {
 }
 
 /**
+ * `/login?next=<path>` — where a sign-in should land instead of /home. Only
+ * a same-origin path under /home, or the Sumit return route with its query,
+ * is honoured; anything else (an absolute URL, a protocol-relative `//host`,
+ * a path elsewhere) is null, so the param can never turn the login page into
+ * an open redirect. The return route writes its own URL here for a browser
+ * that came back from the payment page without a session: signing in then
+ * completes the payment it could not complete without one.
+ */
+export function safeNextPath(value: string | string[] | undefined): string | null {
+  return typeof value === "string" &&
+    /^(?:\/home(?:[/?#][^\s]*)?|\/api\/billing\/sumit\/return\?[^\s]*)$/.test(value) &&
+    !value.startsWith("//")
+    ? value
+    : null;
+}
+
+/**
  * The plan a parked draft carries, read BEFORE postParkedDraft clears it —
  * /login finishes a draft for someone who confirmed their email and came
  * back through the sign-in form, and that path must land on /home/plan too.

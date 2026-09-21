@@ -609,4 +609,63 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0048: checkout_intents — server-only RLS, the status CHECK, the unique payment id, three FKs", async () => {
+    const { db, pg } = await createTestDb();
+
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.checkout_intents'::regclass",
+    );
+    expect(rls.rows[0]?.relrowsecurity).toBe(true);
+    expect(
+      (await pg.query("SELECT 1 FROM pg_policies WHERE tablename = 'checkout_intents'")).rows,
+    ).toHaveLength(0);
+    const indexes = await pg.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'checkout_intents' ORDER BY indexname",
+    );
+    expect(indexes.rows.map((r) => r.indexname)).toEqual([
+      "checkout_intents_pkey",
+      "checkout_intents_sumit_payment_id_unique",
+      "checkout_intents_user_status_idx",
+    ]);
+    const columns = await pg.query(
+      "SELECT 1 FROM information_schema.columns WHERE table_name = 'checkout_intents'",
+    );
+    expect(columns.rows).toHaveLength(10);
+
+    const [user] = await db.insert(schema.users).values({ email: "buyer@test.local" }).returning();
+    const base = { userId: user!.id, planCode: "starter", priceAgorot: 15000 };
+
+    // The CHECK: only the three statuses.
+    await expect(
+      db.insert(schema.checkoutIntents).values({ ...base, status: "bogus" }),
+    ).rejects.toThrow(/checkout_intents_status_check/);
+    // Three FKs.
+    await expect(
+      db
+        .insert(schema.checkoutIntents)
+        .values({ ...base, userId: "00000000-0000-0000-0000-000000000009" }),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      db.insert(schema.checkoutIntents).values({ ...base, planCode: "platinum" }),
+    ).rejects.toThrow(/foreign key/i);
+    await expect(
+      db.insert(schema.checkoutIntents).values({
+        ...base,
+        termsAcceptanceId: "00000000-0000-0000-0000-000000000009",
+      }),
+    ).rejects.toThrow(/foreign key/i);
+    // One payment completes one intent; pending rows (NULL) may repeat.
+    await db.insert(schema.checkoutIntents).values([{ ...base }, { ...base }]);
+    await db
+      .insert(schema.checkoutIntents)
+      .values({ ...base, status: "completed", sumitPaymentId: "2376907759" });
+    await expect(
+      db
+        .insert(schema.checkoutIntents)
+        .values({ ...base, status: "completed", sumitPaymentId: "2376907759" }),
+    ).rejects.toThrow(/checkout_intents_sumit_payment_id_unique/);
+
+    await pg.close();
+  });
 });

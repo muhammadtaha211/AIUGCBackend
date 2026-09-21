@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-20
+updated: 2026-09-21
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -33,6 +33,16 @@ customer-facing half (`7ccb708`) and the legal/public pass (`d215eae`); migratio
 Read the notes, not a summary: 0052–0058 in `decisions/`. `UPDATED` in `(legal)/legal.tsx` is
 `17.09.2026` and is load-bearing — both /terms' date and the string checkout writes into
 `terms_acceptances.terms_version`. Safe today (0 rows); not safe to forget after the first sale.
+
+**The Sumit adapter and hosted checkout are BUILT on `feat/sumit-checkout` (2026-09-21), NOT
+merged.** [[0062-hosted-checkout-via-sumit-payment-pages]] is the decision; migration 0048
+(`checkout_intents`) IS applied to production (ledger 0000–0048, 49 rows). Walked through end to
+end against the founder's TEST Sumit business the same day: page → Sumit → return → active
+subscription, one renewal charged through `SumitGateway` with a real חשבון/קבלה issued, the
+walkthrough rows deleted afterwards. Production still answers the checkout 503 until `SUMIT_*` are
+set on Vercel and the box against the REAL org — the founder actions below, in order. Facts:
+[[sumit-payment-page-saves-the-card]], [[sumit-payments-list-honours-utc-offsets]],
+[[sumit-test-org-configuration]].
 
 **Two deploy checks worth keeping, neither with a vault note — both die with this file.** (1) Verify
 the deployed **artifact**, not the symptom: `git log -1` on the box, never "a render worked
@@ -186,7 +196,9 @@ Each with its date. This is the main thing a new session cannot recover on its o
 2. **VAT stays ON TOP at conversion, reaffirmed 2026-09-17.** 0046 §2 stands; "כולל מע״מ" nowhere.
 3. **Checkout is a dead end BY DECISION, not omission** — the server answers 503 with a Hebrew line
    until the Sumit adapter exists, the client is written for the wired shape, so wiring is
-   server-only. Noted because it reads like an unfinished feature and is not.
+   server-only. Noted because it reads like an unfinished feature and is not. **Superseded
+   2026-09-21** by [[0062-hosted-checkout-via-sumit-payment-pages]] on `feat/sumit-checkout`: the
+   503 now means only "no `SUMIT_CHECKOUT_PAGES` in this environment".
 4. **`requires_new_card` is DEFERRED to the adapter task, not declined**, 2026-09-17 — gateway tokens
    are not portable, so building the state first would fix its shape to a vendor nobody had
    integrated. Checklist item 10 below.
@@ -211,34 +223,42 @@ Each with its date. This is the main thing a new session cannot recover on its o
 Two axes. **Money** (item 0) and **pipeline** (items 1–7, all from this session's diagnosis), then the
 older launch items. Item 0 still outranks everything: nothing in billing earns money until it exists.
 
-**0. The Sumit adapter.** `getBillingGateway()` returns `NotConfiguredGateway` outside `DRY_RUN`, so
-production throws on any charge and the web tier maps it to 503. The checklist, as dictated:
+**0. The Sumit adapter.** BUILT 2026-09-21 on `feat/sumit-checkout` (unmerged) —
+[[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway` once
+`SUMIT_COMPANY_ID` + `SUMIT_API_KEY` are set without `DRY_RUN`; until then production still answers 503. The checklist, as dictated, with what the build closed:
 
-1. Create a **SEPARATE test business** at `app.sumit.co.il/companies/newtestcompany`. **LANDMINE:
-   connecting a test terminal on the real org disconnects its existing Upay clearing — never touch
-   `developers/testterminal` there.** Test quotas ~100 actions / ~400 API calls a month; test docs
-   carry business no. 999999998; no Upay, no 3DS in test.
-2. Install modules **הכנסות + סליקת אשראי** on the real org.
-3. Confirm schemas of `/billing/payments/charge/`, `/billing/payments/beginredirect/` (return-URL
-   params, save-card mode) and `/billing/paymentmethods/setforcustomer/` — **single-use token only,
-   never a PAN**; terms §8 promises card data is never held by us.
+1. ~~Create a **SEPARATE test business**~~ — DONE, exists and measured
+   ([[sumit-test-org-configuration]]). **LANDMINE stands: connecting a test terminal on the real
+   org disconnects its existing Upay clearing — never touch `developers/testterminal` there.** Test
+   quotas: Operations 100/month (6 used after the walkthrough), Mails 1000; test docs carry
+   business no. 999999998; no Upay, no 3DS in test.
+2. Install modules **הכנסות + סליקת אשראי** on the real org — founder, UNVERIFIED whether done.
+3. ~~Confirm schemas~~ — DONE from the public OpenAPI spec and measured
+   ([[sumit-payment-page-saves-the-card]]). `beginredirect` is NOT used: the founder's fixed-price
+   payment pages are the hosted first charge; `setforcustomer` takes Sumit's own token + expiry,
+   never a PAN.
 4. **Refund: no endpoint seen.** Check `/creditguy/gateway/transaction/` for a credit type
    referencing the original, and what `/accounting/documents/cancel/` does to the payment; else
-   refunds go through the Sumit UI at launch.
-5. **Idempotency:** does charge accept an external reference? If not, write the attempt row first,
-   reconcile via `/billing/payments/get/` on timeout.
-6. **Errors:** HTTP status, or a status field inside a 200 body — never treat 200 as success blindly.
-7. **Card auto-update on replaced cards** — API-charged too, or only Sumit-run recurring?
-8. **Chargebacks:** poll `/billing/payments/list/` or use triggers (Growth plan) — decide.
+   refunds go through the Sumit UI at launch. STILL OPEN — refunds are by hand in Sumit's UI.
+5. ~~Idempotency~~ — ANSWERED: charge accepts NO external reference. `checkout_intents` is the
+   attempt row for the hosted leg; renewals reconcile through `/billing/payments/list/` (narrow
+   window, API charges only) and end `unconfirmed` → dunning otherwise (0062 states the residual).
+6. ~~Errors~~ — ANSWERED: always HTTP 200 with `Status` 0/1/2 in the body; a decline is Status 0
+   with `ValidPayment false`. The client never treats 200 as success blindly.
+7. **Card auto-update on replaced cards** — API-charged too, or only Sumit-run recurring? OPEN.
+8. **Chargebacks:** poll `/billing/payments/list/` or use triggers (Growth plan) — decide. OPEN.
 9. **3DS is production-only, ₪1 per attempt, first customer-present charge only.** The CVV exemption
-   for recurring is automatic on Upay.
+   for recurring is automatic on Upay. OPEN (unmeasurable in the test org).
 10. Add **`requires_new_card`**: the enum value, the one-live-per-user partial index, the renewal
-    skip, the `/home/plan` banner.
-11. **Rename the renewal charge description** from `AIUGC <name> — monthly renewal` to a תבנית one.
-12. **Cap or dedupe `terms_acceptances` per user per version** — checkout inserts on every request.
-13. **Refuse the `DryRunGateway` when the database host is production.** `apps/web/.env.local` has
-    `DRY_RUN=1` against production, so a local upgrade click grants real credits.
+    skip, the `/home/plan` banner. OPEN — a suspended subscription reactivates from the checkout page.
+11. ~~Rename the renewal charge description~~ — DONE: `תבנית — מסלול <name>, חידוש חודשי` and
+    `תבנית — מסלול <name>, שדרוג`, seen on the test org's receipt 40002.
+12. ~~Cap or dedupe `terms_acceptances`~~ — DONE: one row per intent; a second click within 30 min
+    reuses the pending intent and writes none.
+13. ~~Refuse the `DryRunGateway` when the database host is production~~ — DONE, throws naming
+    `apps/web/.env.local`.
 14. **Sumit offers no integration support** — Facebook group, a paid support hour, or an external dev.
+    OPEN (nothing needed it this time; the public spec answered everything).
 
 **1. The batch-granularity fix — FIXED ON BRANCH `fix/analysis-frame-salvage` (2026-09-20), two
 commits, awaiting merge and box deploy.** Commit 1, the net: a parse failure rides the
@@ -427,6 +447,24 @@ non-sensitive scopes.
 
 ## Owed founder actions
 
+- **Take the Sumit checkout live — in this order** (branch `feat/sumit-checkout`, 2026-09-21):
+  1. Review and merge `feat/sumit-checkout`; deploy `apps/web` (Vercel) and the worker box.
+  2. In the REAL Sumit org: create one fixed-price product per plan (התחלה ₪150, מתקדם ₪300,
+     פרימיום ₪500 — the prices in `plans`, VAT as the org is registered) and a payment page for
+     each, with the return URL `https://tavnit.ai/api/billing/sumit/return`, the customer's
+     card SAVED, and "לקוח נפרד לכל רכישה" OFF. Copy each page's URL.
+  3. Turn **Bit off** on those pages and at the clearing level — a Bit payment never returns the
+     og-* parameters and can never activate a subscription.
+  4. Delete any **recurring products** in the real org — renewal scheduling is ours; a Sumit-run
+     recurring charge would double-bill.
+  5. Set `SUMIT_COMPANY_ID`, `SUMIT_API_KEY` (the real org's API key from הגדרות → API) and
+     `SUMIT_CHECKOUT_PAGES` (JSON: `{"starter":"<url>","pro":"<url>","studio":"<url>"}`) on Vercel
+     for `apps/web` and in `apps/worker/.env` on the box. Never in a chat, never in a commit.
+  6. Restart the worker box so the renewal job runs the new code with the new env.
+  7. Make ONE real purchase on the cheapest plan with your own card from a customer account, check
+     `/home/plan` shows the plan and the credits, that Sumit issued the document, and refund it in
+     Sumit's UI (refunds have no API path yet — queue item 0.4).
+  8. Only then announce prices. **Do not touch `developers/testterminal` on the real org.**
 - **Shoot and drop the landing media** — six slots, all empty today: `demoBefore`/`demoAfter`
   (one recording and the ad built from it), four hook clips, a hook-studio screenshot, a presenter
   clip, an Instagram screenshot. Filenames and the two-step swap are in
@@ -442,7 +480,8 @@ non-sensitive scopes.
   Hebrew draft was handed over with the change that implemented them.
 - **Restart the worker box** (queue item 8 and the box entry above). Blast radius is wider than it
   was: the renewal change, the label rule and the `רגע` ban fix are all merged and none is running.
-- **Create the Sumit test business** (queue item 0, step 1) — the adapter cannot start without it.
+- ~~**Create the Sumit test business**~~ — done; the adapter was built and walked through on it
+  2026-09-21 ([[sumit-test-org-configuration]]).
 - **Decide the emoji font subset** (conversation decision 9) — queue item 4 is blocked on it.
 - Vendor DPA / reg. 3 undertakings (Anthropic, ElevenLabs, HeyGen, fal.ai, Sentry, Resend), the
   ElevenLabs voice licence question, Sentry's data region, the עוסק פטור ceiling on gov.il. Full list:

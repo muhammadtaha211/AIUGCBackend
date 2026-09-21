@@ -164,6 +164,10 @@ const OUTSIDE_HOME: Record<string, { marker: string; why: string }> = {
     marker: "if (authReadFailed(error)) console.error",
     why: "a public page that reads the session only to pick the cards' call to action — a failed read is logged and shown the signed-out cards, never the error card",
   },
+  "app/api/billing/sumit/return/route.ts": {
+    marker: "if (authReadFailed(error)) console.error",
+    why: "the browser arrives from Sumit's payment page; a failed read is logged and treated as no session, so nothing completes and the customer goes through /login with this URL as next — the payment waits at Sumit, and signing in completes it",
+  },
 };
 
 function sourceFilesUnder(dir: string): string[] {

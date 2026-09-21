@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/plans/confirm-dialog";
 import { Amounts, PlanCards, type CardSlot } from "@/components/plans/plan-cards";
@@ -11,14 +12,12 @@ import {
   CANCEL_DIALOG_TITLE,
   CANCEL_KEEP,
   cancelDialogBody,
-  CHECKOUT_CONTINUE,
   CHECKOUT_FAILED_LINE,
-  CHECKOUT_NO_REDIRECT,
   CHECKOUT_PENDING_LINE,
-  CHECKOUT_RENEWAL_LINE,
+  CHECKOUT_REFUSED_CONTACT,
+  CHECKOUT_REFUSED_LINE,
   CHECKOUT_SUCCESS_LINE,
-  checkoutDialogTitle,
-  creditsLine,
+  checkoutPath,
   DIALOG_BACK,
   downgradeDialogBody,
   downgradeDialogTitle,
@@ -27,16 +26,12 @@ import {
   PLAN_LOAD_FAILED,
   PLAN_LOADING,
   planCardStates,
-  priceLine,
   REFRESH_FAILED,
-  RENEW_LINE,
   RESUME_ACTION,
   retiredPlanLine,
   RESUME_CONFIRM,
   RESUME_DIALOG_LINE,
   RESUME_DIALOG_TITLE,
-  TERMS_CHECKBOX_PREFIX,
-  TERMS_LINK_LABEL,
   UNDO_CONFIRM,
   UNDO_DIALOG_TITLE,
   undoDialogLine,
@@ -51,7 +46,10 @@ import { useBalance } from "../balance-context";
 
 /**
  * The plan page's client half: one GET for the subscription view, the
- * button matrix from planCardStates (plans-ui), and one dialog per intent.
+ * button matrix from planCardStates (plans-ui), and one dialog per intent
+ * that acts on a live subscription. A checkout or a renewal is NOT a dialog
+ * (founder decision 2026-09-21, decision 0062): those two buttons navigate to
+ * /home/plan/checkout, the order summary before Sumit's payment page.
  * Every dialog line is a plans-ui sentence over the numbers the API sent —
  * the upgrade quote is the same arithmetic /change charges through
  * (vault 0052), a downgrade is scheduled for the renewal (0053).
@@ -70,13 +68,12 @@ type Dialog = { intent: CardIntent; code: string };
 
 export function PlanManager({
   view,
-  openPlan,
   checkout,
 }: {
   view: PlansView;
-  openPlan: string | null;
-  checkout: "success" | "failed" | null;
+  checkout: "success" | "refused" | "failed" | null;
 }) {
+  const router = useRouter();
   const { balance, setBalance } = useBalance();
   const [sub, setSub] = useState<SubscriptionView | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -87,7 +84,6 @@ export function PlanManager({
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [accepted, setAccepted] = useState(false);
 
   async function refresh(initial: boolean): Promise<SubscriptionView | null> {
     const result = await apiFetch<SubscriptionView>(SUBSCRIPTION_URL);
@@ -102,25 +98,20 @@ export function PlanManager({
     return result.body;
   }
 
-  // Mount: the one read, then the deep link. Only a card that would start a
-  // checkout (no subscription, or a suspended one) opens from ?plan= — an
-  // active account arriving from /pricing just sees its cards. This runs
-  // once because it lives in the mount effect; the refetch after an action
-  // goes through refresh() and never comes back here.
+  // Mount: the one read. The refetch after an action goes through refresh()
+  // and never comes back here.
   useEffect(() => {
-    void (async () => {
-      const fresh = await refresh(true);
-      if (!fresh || !openPlan) return;
-      const card = planCardStates(fresh, view.plans).cards[openPlan];
-      if (card && (card.intent === "checkout" || card.intent === "renew")) {
-        setDialog({ intent: card.intent, code: openPlan });
-      }
-    })();
+    void refresh(true);
   }, []);
 
   function open(intent: CardIntent, code: string) {
+    // The two purchase intents leave the page; everything else is a dialog
+    // over the live subscription.
+    if (intent === "checkout" || intent === "renew") {
+      router.push(checkoutPath(code));
+      return;
+    }
     setError(null);
-    setAccepted(false);
     setDialog({ intent, code });
   }
 
@@ -132,8 +123,8 @@ export function PlanManager({
 
   /**
    * One POST. On failure the dialog stays open with the server's Hebrew line
-   * (the 503 "coming soon", a 402 refused charge, a 409); on success it
-   * closes and the page re-reads.
+   * (a 402 refused charge, a 409, the 503 when no gateway is configured); on
+   * success it closes and the page re-reads.
    */
   async function run(request: () => Promise<ApiResult<unknown>>) {
     setBusy(true);
@@ -160,30 +151,6 @@ export function PlanManager({
 
   function change(code: string) {
     return run(() => postJson(CHANGE_URL, { planCode: code }));
-  }
-
-  async function checkoutNow(code: string) {
-    setBusy(true);
-    setError(null);
-    const result = await postJson<{ redirectUrl?: string }>("/api/account/checkout", {
-      planCode: code,
-      acceptedTerms: true,
-    });
-    if (!result.ok) {
-      // Today this is production's 503 — the checkout route is a deliberate
-      // dead end until the gateway adapter exists — and the dialog stays
-      // open so the line can be read.
-      setError(result.error);
-      setBusy(false);
-      return;
-    }
-    if (result.body.redirectUrl) {
-      // Stays busy: the dialog is locked while the browser leaves for the gateway.
-      window.location.assign(result.body.redirectUrl);
-      return;
-    }
-    setError(CHECKOUT_NO_REDIRECT);
-    setBusy(false);
   }
 
   if (loadFailed) {
@@ -265,64 +232,8 @@ export function PlanManager({
         </p>
       ));
 
-    if (dialog.intent === "checkout" || dialog.intent === "renew") {
-      return (
-        <ConfirmDialog
-          title={checkoutDialogTitle(plan.name)}
-          onClose={close}
-          busy={busy}
-          error={error}
-          footer={
-            <>
-              <Button
-                type="button"
-                className={FOOTER_BUTTON}
-                disabled={!accepted}
-                loading={busy}
-                onClick={() => void checkoutNow(plan.code)}
-              >
-                {CHECKOUT_CONTINUE}
-              </Button>
-              {back}
-            </>
-          }
-        >
-          <p>
-            <Amounts line={priceLine(plan.priceAgorot)} />
-          </p>
-          <p>{creditsLine(plan.monthlyCredits)}</p>
-          <p>{CHECKOUT_RENEWAL_LINE}</p>
-          {dialog.intent === "renew" && <p>{RENEW_LINE}</p>}
-          {/* A real checkbox, required: /checkout refuses a body without
-              acceptedTerms: true, and this is where that true comes from.
-              The prefix ends in the preposition ל, so the link follows it
-              with no space. */}
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-ink/[0.08] bg-paper px-3 py-2.5 text-sm text-ink">
-            <input
-              type="checkbox"
-              checked={accepted}
-              disabled={busy}
-              onChange={(event) => setAccepted(event.target.checked)}
-              className="mt-0.5 size-4 shrink-0 accent-accent"
-            />
-            <span>
-              {TERMS_CHECKBOX_PREFIX}
-              <Link
-                href="/terms"
-                target="_blank"
-                rel="noreferrer"
-                className="underline decoration-ink/30 underline-offset-4 hover:decoration-ink"
-              >
-                {TERMS_LINK_LABEL}
-              </Link>
-            </span>
-          </label>
-        </ConfirmDialog>
-      );
-    }
-
-    // Every other intent acts on a live subscription — planCardStates only
-    // hands them out when there is one.
+    // Every dialog acts on a live subscription — planCardStates only hands
+    // these intents out when there is one.
     if (!live || !current) return null;
 
     switch (dialog.intent) {
@@ -479,11 +390,20 @@ export function PlanManager({
 
   return (
     <div className="mt-8">
-      {/* "Paid and active" only when the read says so; the gateway's redirect
-          can land before its webhook (or our poll) has written the row. */}
+      {/* "Paid and active" only when the read says so: the return route
+          activates before it redirects, but a failed re-read here would
+          otherwise claim an active plan it has not seen. */}
       {checkout === "success" && (
         <p role="status" className="mb-5 rounded-lg bg-accent/25 px-3 py-2.5 text-sm text-ink">
           {live?.status === "active" ? CHECKOUT_SUCCESS_LINE : CHECKOUT_PENDING_LINE}
+        </p>
+      )}
+      {checkout === "refused" && (
+        <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
+          {CHECKOUT_REFUSED_LINE}{" "}
+          <Link href="/contact" className="underline underline-offset-2">
+            {CHECKOUT_REFUSED_CONTACT}
+          </Link>
         </p>
       )}
       {checkout === "failed" && (

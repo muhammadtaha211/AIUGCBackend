@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0047 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0048 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,9 +33,10 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 38 rows: **36 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 39 rows: **37 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
--- which this sentence had missed; 0044-0047 then added one each, to 38.) Two of those
+-- which this sentence had missed; 0044-0047 then added one each, to 38, and
+-- 0048 one more on 2026-09-21, to 39.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -60,7 +61,7 @@
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
 -- 30 by 0040, 0043 took it to 34 with two ('0043', '0043-plans'), 0044-0047 to
--- **38** with one each, and 0041/0042 before them took it to 32 with one row each — they are
+-- 38 with one each, 0048 to **39**, and 0041/0042 before them took it to 32 with one row each — they are
 -- kept separate, not paired like '0038+0040', because they assert different
 -- objects and either can fail without the other: 0041 owns the column, indexes
 -- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
@@ -626,6 +627,30 @@ WITH checks(migration, layer, applied, note) AS (VALUES
             OR column_name IN ('contact_name', 'contact_email', 'ip'))) = 4),
   'feedback.user_id nullable; contact_name, contact_email, ip present'),
 
+-- 0048: checkout_intents (decision 0062) -- table, its ten columns, the
+-- (user_id, status) index, the five named constraints (payment-id UNIQUE, the
+-- status CHECK, three FKs) and RLS enabled with no policy (0046's pattern).
+-- to_regclass so a missing table reads false instead of erroring the file.
+('0048', 'structural', (SELECT
+  to_regclass('public.checkout_intents') IS NOT NULL
+  AND (SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'checkout_intents') = 10
+  AND EXISTS (SELECT 1 FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'checkout_intents'
+      AND indexname = 'checkout_intents_user_status_idx')
+  AND (SELECT count(*) FROM pg_constraint
+    WHERE conrelid = to_regclass('public.checkout_intents')
+      AND conname IN ('checkout_intents_sumit_payment_id_unique',
+                      'checkout_intents_status_check',
+                      'checkout_intents_user_id_users_id_fk',
+                      'checkout_intents_plan_code_plans_code_fk',
+                      'checkout_intents_terms_acceptance_id_terms_acceptances_id_fk')) = 5
+  AND COALESCE((SELECT relrowsecurity FROM pg_class
+       WHERE oid = to_regclass('public.checkout_intents')), false)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'checkout_intents')),
+  'checkout_intents: 10 columns, (user_id,status) index, unique payment id + CHECK + 3 FKs, RLS on with no policy'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -698,6 +723,40 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-09-21, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0048** (checkout_intents, decision 0062) alone, on the founder's written
+-- instruction in the Sumit-adapter brief ("apply to production only at the
+-- end, with the read-back pattern") -- for this one push: ledger read-back
+-- **49 rows, 0000-0048, NO GAPS, nothing unapplied and NO REPAIR NEEDED** --
+-- `db push` recorded it itself, the ELEVENTH time in a row. Pre-flight was
+-- `migration list` (0000-0047 local == remote, 0048 the only row with an empty
+-- remote) and `db push --dry-run`, which named 0048_checkout_intents.sql
+-- alone. Same Docker catalog-cache warning as 0035-0047, not a failure; the
+-- apply printed "Applying migration 0048_checkout_intents.sql..." and exited 0.
+--
+-- Read at BOTH ends through the code's own connection
+-- (packages/core/.work/readback-0048.ts, read-only -- the migration's own
+-- VERIFY block). BEFORE: to_regclass('public.checkout_intents') absent (the
+-- first query errored "relation does not exist"), 0 columns, ledger 48 rows
+-- 0000-0047. AFTER: relrowsecurity true, 10 columns, indexes
+-- [checkout_intents_pkey, checkout_intents_sumit_payment_id_unique,
+-- checkout_intents_user_status_idx], the six constraints (pkey, unique, check,
+-- three FKs), 0 policies, 0 rows, ledger 49 rows latest 0048. Pure DDL, nothing
+-- backfilled, nothing deleted.
+--
+-- Applied by a session through the same throwaway wrapper shape as 0044-0047
+-- (packages/core/.work/push-0048.mjs): the pinned local binary spawned
+-- directly, DATABASE_URL read out of `.env` by the wrapper, :6543/ swapped for
+-- :5432/, the URL scrubbed from every byte of output. Never typed, never
+-- printed.
+--
+-- THIS FILE was then run against production through psql 17 (the same
+-- wrapper shape, packages/core/.work/run-ledger-sql.mjs, read-only) and
+-- returned **42 rows: 39 structural, 37 true / 1 false / 1 NULL**, with 0022
+-- the only false and 0020 the NULL -- exactly the header's expectation -- and
+-- the new '0048' row true. The 3 data rows read 0020 t, 0021 t, 0028 f, as
+-- before.
 --
 -- 2026-09-17 (second push that day), production (hyaqydcmwbnbaiqqufow), after
 -- `db push` applied **0044, 0045, 0046 and 0047 together** (Hebrew plan names +

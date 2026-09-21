@@ -17,6 +17,7 @@
  */
 
 import type { PlanChangeQuote } from "@aiugc/core/plan-change";
+import { PLAN_PARAM } from "@/lib/onboarding";
 
 /* ---------- the plan view model's shape (built server-side in lib/plans.ts) ---------- */
 
@@ -181,6 +182,16 @@ export const CHECKOUT_SUCCESS_LINE = "התשלום התקבל והמנוי פע�
 export const CHECKOUT_PENDING_LINE =
   "התשלום התקבל. המנוי מתעדכן בעוד רגע — אם הוא עדיין לא מופיע, רעננו את העמוד.";
 export const CHECKOUT_FAILED_LINE = "התשלום לא הושלם. אפשר לנסות שוב.";
+/**
+ * ?checkout=refused — Sumit holds a valid payment and the return leg refused
+ * to activate on it (a price that no longer matches, an account that is
+ * already subscribed, a card Sumit did not save). The one thing this line
+ * must do is stop a second payment; the founder settles it from the
+ * checkout_refused event and the Sumit payment.
+ */
+export const CHECKOUT_REFUSED_LINE =
+  "התשלום נקלט, אבל לא הצלחנו להפעיל את המסלול. אין צורך לשלם שוב — כתבו לנו ונסדיר את זה.";
+export const CHECKOUT_REFUSED_CONTACT = "לעמוד יצירת הקשר";
 /** The action went through, but the re-read after it did not — the cards may be a step behind. */
 export const REFRESH_FAILED =
   "הפעולה בוצעה, אבל לא הצלחנו לרענן את פרטי המנוי. רעננו את העמוד כדי לראות את המצב העדכני.";
@@ -360,24 +371,41 @@ export function planCardStates(
   return { banner: pastDue ? BANNER_PAST_DUE : null, cards };
 }
 
-/* ---------- dialogs ---------- */
+/* ---------- /home/plan/checkout — the order summary before Sumit's page ---------- */
 
-export const DIALOG_CLOSE = "סגירה";
-export const DIALOG_BACK = "חזרה";
+/** The page a "בחירת המסלול" / "חידוש המנוי" button and /home/plan?plan=<code> lead to. */
+export function checkoutPath(planCode: string): string {
+  return `/home/plan/checkout?${PLAN_PARAM}=${encodeURIComponent(planCode)}`;
+}
 
-export function checkoutDialogTitle(planName: string): string {
+export const CHECKOUT_META_TITLE = "תשלום | תבנית";
+export const CHECKOUT_BACK = "חזרה למסלולים";
+
+export function checkoutTitle(planName: string): string {
   return `הצטרפות למסלול ${planName}`;
+}
+/** "החיוב הראשון היום, הבא ב־21.10.2026" — the next date is today plus one month (addOneMonth). */
+export function firstChargeLine(nextChargeDate: string): string {
+  return `החיוב הראשון היום, הבא ב־${nextChargeDate}`;
 }
 export const CHECKOUT_RENEWAL_LINE =
   "המנוי מתחדש אוטומטית מדי חודש; אפשר לבטל בכל רגע, והביטול נכנס לתוקף בסוף תקופת החיוב.";
+/** Matches privacy §6: Sumit takes the payment, the card never reaches us. */
+export const CHECKOUT_SECURE_LINE =
+  "התשלום מתבצע בדף מאובטח של סאמיט. פרטי הכרטיס נשמרים אצלם ולא מגיעים אלינו.";
 /** The checkbox reads "קראתי ואני מסכים/ה ל" + a link "תנאי השימוש" — two pieces so the link is real. */
 export const TERMS_CHECKBOX_PREFIX = "קראתי ואני מסכים/ה ל";
 export const TERMS_LINK_LABEL = "תנאי השימוש";
-export const CHECKOUT_CONTINUE = "המשך לתשלום";
+export const CHECKOUT_PAY_ACTION = "המשך לתשלום המאובטח";
 /** A 2xx from /checkout that carries no redirectUrl — nothing to send the browser to. */
 export const CHECKOUT_NO_REDIRECT = "לא התקבל קישור לתשלום. נסו שוב בעוד רגע.";
 /** Added to the checkout lines when the account is renewing a suspended subscription. */
 export const RENEW_LINE = "החידוש מפעיל את המנוי מחדש עם תקופת חיוב חדשה מהיום.";
+
+/* ---------- dialogs ---------- */
+
+export const DIALOG_CLOSE = "סגירה";
+export const DIALOG_BACK = "חזרה";
 
 export function upgradeDialogTitle(planName: string): string {
   return `שדרוג למסלול ${planName}`;

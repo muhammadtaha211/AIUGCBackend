@@ -4,7 +4,8 @@ import { dunningSchema } from "../config";
 import { getEnv } from "../config";
 import type { Db } from "../db";
 import { gatewayEvents, plans, subscriptions, termsAcceptances } from "../db/schema";
-import type { Job } from "../jobs/queue";
+import { SumitGateway, sumitConfigured } from "../gateways/sumit";
+import { isProductionDatabaseUrl, PRODUCTION_PROJECT_REF, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
 import { quotePlanChange, type PlanChangeQuote } from "../plan-change";
 import { creditBalance, expirePeriodRemainder, grantPeriod, manualOutstanding } from "./credits";
@@ -39,8 +40,30 @@ export class DryRunGateway implements BillingGateway {
   }
 }
 
+/**
+ * SUMIT_COMPANY_ID + SUMIT_API_KEY, and not DRY_RUN → the real adapter, against
+ * whichever Sumit organisation the keys name. DRY_RUN → DryRunGateway, but
+ * ONLY off the production database: every local .env sets DRY_RUN=1 while
+ * pointing at the one project that holds real data, so a dry-run "charge"
+ * there would grant real credits for no money (state-of-play queue item 13,
+ * found by an upgrade click from a local web). Neither → NotConfiguredGateway,
+ * which throws on the first charge and the web tier answers as a 503.
+ */
 export function getBillingGateway(): BillingGateway {
-  return getEnv().DRY_RUN ? new DryRunGateway() : new NotConfiguredGateway();
+  const env = getEnv();
+  if (!env.DRY_RUN && sumitConfigured()) return new SumitGateway();
+  if (env.DRY_RUN) {
+    if (isProductionDatabaseUrl(env.DATABASE_URL)) {
+      throw new Error(
+        `refusing DryRunGateway against the production database (project ${PRODUCTION_PROJECT_REF}): ` +
+          "apps/web/.env.local and the other local env files set DRY_RUN=1 while DATABASE_URL points " +
+          "at production — a dry-run charge there grants real credits for no money. Point DATABASE_URL " +
+          "at a non-production database, or unset DRY_RUN and set SUMIT_* for a real gateway.",
+      );
+    }
+    return new DryRunGateway();
+  }
+  return new NotConfiguredGateway();
 }
 
 /**
@@ -122,7 +145,8 @@ export async function processDueRenewals(
       const charge = await gateway.chargeRecurring({
         recurringRef: fresh.gatewayRecurringRef,
         amountAgorot: plan.priceAgorot,
-        description: `AIUGC ${plan.name} — monthly renewal`,
+        // The document line the customer reads on the receipt (queue item 11).
+        description: `תבנית — מסלול ${plan.name}, חידוש חודשי`,
       });
       await tx
         .insert(gatewayEvents)
@@ -310,7 +334,7 @@ export async function changePlan(
       const charge = await gateway.chargeRecurring({
         recurringRef: sub.gatewayRecurringRef,
         amountAgorot: quote.chargeAgorot,
-        description: `תבנית — שדרוג ל${to.name}`,
+        description: `תבנית — מסלול ${to.name}, שדרוג`,
       });
       await tx
         .insert(gatewayEvents)
