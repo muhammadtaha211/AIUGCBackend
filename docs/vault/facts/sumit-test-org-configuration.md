@@ -58,4 +58,7 @@ approves is not documented; treat the table as two data points, not a rule.
 ## Related
 
 - [[sumit-payment-page-saves-the-card]] — every API response measured on this org
+- [[sumit-real-org-configuration]] — the REAL organisation, which differs deliberately: קטלוג ללא
+  מע"מ is **off** there, because a no-VAT catalogue flags its customers VAT-exempt for future
+  charges and every subscriber is created through one
 - [[../decisions/0062-hosted-checkout-via-sumit-payment-pages]] — the design built on it

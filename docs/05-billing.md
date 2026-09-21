@@ -205,6 +205,18 @@ returns `SumitGateway` when the keys are set and `DRY_RUN` is not, and **refuses
 `DryRunGateway` against the production database** (every local `.env` sets `DRY_RUN=1` while
 pointing at production — a dry-run charge there granted real credits).
 
+**How the values must be TYPED differs by host, and getting it wrong cost most of go-live day**
+([`facts/env-values-differ-between-the-box-and-vercel.md`](vault/facts/env-values-differ-between-the-box-and-vercel.md)).
+`apps/worker/.env` on the box: **one line per value**, quotes optional — a value wrapped across
+lines is broken even inside single quotes, because systemd strips the quotes and keeps the break.
+Vercel: **bare values only** — no surrounding quotes, no `NAME=` prefix, no line breaks; Vercel
+stores what you paste, and **a change reaches only deployments created after it**, so redeploy.
+Nothing validates the shape: `config.ts` takes any string and the Sumit client checks presence
+only, so a quoted `SUMIT_COMPANY_ID` becomes `NaN` and is sent as `"CompanyID": null`. And note
+which values a given click actually exercises — **a checkout click proves only
+`SUMIT_CHECKOUT_PAGES`**; the credentials are reached only by `/api/billing/sumit/return`, by an
+upgrade through `/api/account/subscription/change`, and by the renewal job on the box.
+
 **The endpoint map** (all `POST https://api.sumit.co.il/<path>`, `Credentials: { CompanyID, APIKey }`
 in the JSON body, an HTTP 200 envelope `{ Status 0|1|2, UserErrorMessage, TechnicalErrorDetails, Data }`):
 
@@ -225,6 +237,18 @@ in the JSON body, an HTTP 200 envelope `{ Status 0|1|2, UserErrorMessage, Techni
 | `/accounting/general/getvatrate/`                                           | not used (conversion runbook, later)                                            |
 | `/creditguy/gateway/*`, `/creditguy/vault/*`                                | **never** — a raw terminal and a PAN vault                                      |
 | `/billing/generalbilling/*`, `/triggers/*`                                  | never — org setup; webhooks need the Growth plan                                |
+
+**A refund is not always available, which changes what "just refund it" means.** Per Sumit's help
+articles (5799412, 10792135, read 2026-09-21, not measured by us): a refund issued from Sumit needs
+a **Upay balance larger than the refund** and needs the original charge to have gone through Sumit;
+a full refund on the day of the charge usually becomes a cancellation; "סכום הזיכוי לא אושר על ידי
+חברת הסליקה…" means the balance is short, and the way out is Upay (their form, or WhatsApp
+055-9763169) and then crediting the document by hand. The control is on the payment's clearing card
+under סליקת אשראי → "יצירת זיכוי באשראי". **Consequence for a new terminal:** with no balance yet,
+the first customers cannot be refunded out of Sumit at all — so a paid-but-unactivated customer is
+recovered by fixing the cause and **replaying the return URL**, which is what worked on 2026-09-21
+([`facts/sumit-real-org-configuration.md`](vault/facts/sumit-real-org-configuration.md),
+[`facts/first-real-purchase-2026-09-21.md`](vault/facts/first-real-purchase-2026-09-21.md)).
 
 ## Subscription lifecycle
 
