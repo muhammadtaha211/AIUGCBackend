@@ -18,18 +18,20 @@ import type { NextResponse } from "next/server";
  * What one real refresh writes: a token too big for one cookie, so it arrives
  * chunked, plus the removal of a stale chunk — @supabase/ssr concatenates
  * removals and writes into a single `setAll` call. Options are the library's
- * defaults (dist/main/utils/constants.js).
+ * defaults, verbatim (dist/main/utils/constants.js:4-10) — `httpOnly` among
+ * them is **false**, and has to be: the browser client reads the session back
+ * out of `document.cookie`.
  */
 const ROTATED = [
   {
     name: "sb-test-auth-token.0",
     value: "R2-chunk-0",
-    options: { path: "/", maxAge: 34_560_000, httpOnly: true, sameSite: "lax" as const },
+    options: { path: "/", maxAge: 34_560_000, httpOnly: false, sameSite: "lax" as const },
   },
   {
     name: "sb-test-auth-token.1",
     value: "R2-chunk-1",
-    options: { path: "/", maxAge: 34_560_000, httpOnly: true, sameSite: "lax" as const },
+    options: { path: "/", maxAge: 34_560_000, httpOnly: false, sameSite: "lax" as const },
   },
   { name: "sb-test-stale.2", value: "", options: { path: "/", maxAge: 0 } },
 ];
