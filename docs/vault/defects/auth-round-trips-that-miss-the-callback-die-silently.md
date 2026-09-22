@@ -19,11 +19,11 @@ the allow-list, is delivered to the Site URL with no error
 
 State of the three, verified 2026-08-27 at `7f95875`:
 
-| Flow                | Redirects to `/auth/callback`?                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Completes?                                                                                                                    |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Signup confirmation | Yes — `emailRedirectTo`, `auth.ts:78` (fixed in `02f58bb`)                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Yes (latent — confirm-email is OFF)                                                                                           |
-| Google OAuth        | Success: yes — `auth.ts:161`, in daily use. Error return: **yes for a provider refusal** — GoTrue redirects to `redirect_to` carrying `error`/`error_description` (and `error_code` only for its own HTTP errors), so `/auth/callback` does see it. **No** for a bad or expired `state`, which GoTrue sends to the **Site URL** instead, where nothing reads it (`internal/api/external_oauth.go:31-58` @ v2.196.0 — see Fixed below; [[0006-google-oauth-is-in-scope-for-launch]] carries the `access_denied` history) | Success yes; the error path was a silent dead end until 2026-09-03 — see Fixed below. The Site-URL landing is still unhandled |
-| Password recovery   | ~~No sending call exists at all~~ **built 2026-08-27**, via its own `/auth/recovery` route (see Fixed below)                                                                                                                                                                                                                                                                                                                                                                                                            | Yes — including the expired-link path                                                                                         |
+| Flow                | Redirects to `/auth/callback`?                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Completes?                                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signup confirmation | Yes — `emailRedirectTo`, `auth.ts:132` (fixed in `02f58bb`)                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Yes (latent — confirm-email is OFF)                                                                                                                        |
+| Google OAuth        | Success: yes — `auth.ts:224`, in daily use. Error return: **yes for a provider refusal** — GoTrue redirects to `redirect_to` carrying `error`/`error_description` (and `error_code` only for its own HTTP errors), so `/auth/callback` does see it. **No** for a bad or expired `state`, which GoTrue sends to the **Site URL** instead, where nothing reads it (`internal/api/external_oauth.go:31-58` @ v2.196.0 — see Fixed below; [[0006-google-oauth-is-in-scope-for-launch]] carries the `access_denied` history) | Success yes; the error path was a silent dead end until 2026-09-03 — see Fixed below. The Site-URL landing is forwarded since 2026-09-22 — see Fixed below |
+| Password recovery   | ~~No sending call exists at all~~ **built 2026-08-27**, via its own `/auth/recovery` route (see Fixed below)                                                                                                                                                                                                                                                                                                                                                                                                            | Yes — including the expired-link path                                                                                                                      |
 
 ## Recovery, the variation that surfaced this
 
@@ -131,6 +131,26 @@ this repo reads `?error=` at `/` — a repo-wide grep for `error_description|err
 access_denied|location.hash` hits only `auth/callback/route.ts`. Same silent dead end as the
 original defect, one door further out. Not fixed, deliberately: it needs a decision about what `/`
 should do with an auth error, and `/` is the marketing page.
+
+### FIXED (the Site-URL landing) — 2026-09-22, branch `fix/site-url-landing`
+
+`apps/web/src/middleware.ts` forwards `/` to `/auth/callback` with `request.nextUrl.search`
+verbatim when the query carries `error`, `error_code`, `error_description`, or a UUID-shaped
+`code` — before the Supabase client is constructed, so there is nothing to carry. The callback's
+four outcomes then apply unchanged.
+
+The re-grep above still holds at HEAD: `/` reads nothing, and nothing outside
+`auth/callback/route.ts` reads those params. That is why the fix is a forward and not a reader.
+
+What this section did **not** know is the worse half. The landing does not merely die silently: the
+`/` → `/home` owner bounce (`middleware.ts`) forwards a browser that still holds an OLDER session
+into **that** account and drops the query on the way, so the customer sees the wrong account and the
+evidence goes with it. That, its two sub-cases and everything still UNVERIFIED — above all what
+triggered the fallback — are in
+[[the-site-url-landing-signs-you-into-the-wrong-account]].
+
+This does not close the deferred decision this section named. `/` still renders nothing itself; it
+hands the request to the route that already had the answer, which was the cheaper half.
 
 **Also still open — `/auth/recovery` swallows the same information.** Its own comment claims
 "GoTrue also lands here with error params and no code … same handling", but it reads only `code`,

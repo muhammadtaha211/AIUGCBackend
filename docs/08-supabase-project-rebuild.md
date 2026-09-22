@@ -757,13 +757,23 @@ character for character.
   `http://localhost:3000/auth/recovery` (password recovery), plus the same two on
   `https://<prod-domain>` once it exists.
 
-`apps/web/src/lib/auth.ts:73` builds `redirectTo` as `` `${window.location.origin}/auth/callback` ``
+`apps/web/src/lib/auth.ts:224` builds `redirectTo` as `` `${window.location.origin}/auth/callback` ``
 — computed live in the browser from no env var — so every origin the app is served from needs its
 own entry.
 
+The `/auth/recovery` entry is **moot in production** while §8A step 1's token_hash Reset Password
+template is the live one: that template links to `/reset-password?token_hash=…`, which is an
+ordinary page and not a redirect target, so recovery never uses the allow-list at all.
+`/auth/recovery` still serves any reset email sent before the template change, which is why the
+localhost entry stays.
+
 **A missed allow-list entry does not error.** GoTrue silently falls back to the Site URL, so a wrong
 list looks like a _successful_ sign-in that lands on the marketing page with no session, while the
-SQL still shows a `google` identity. This is why the browser check below is the gate.
+SQL still shows a `google` identity. This is why the browser check below is the gate. Since
+2026-09-22 the landing is no longer silent — `apps/web/src/middleware.ts` forwards `/` to
+`/auth/callback` when the query carries an auth result, so the browser ends on `/login` with a
+message instead of in whatever account it was already signed into
+(`docs/vault/defects/the-site-url-landing-signs-you-into-the-wrong-account.md`).
 
 ### Step 6 — add yourself as a test user
 
