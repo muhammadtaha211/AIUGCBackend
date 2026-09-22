@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-21
+updated: 2026-09-22
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -477,9 +477,27 @@ one hole the 2026-09-21 fix does not cover. The return leg is the only writer: n
   answer it from the payment id, and both would run on the box with the box's own credentials —
   independent of Vercel's, which is the pair that failed on go-live day.
 
-**15. The Site-URL wrong-account landing — FIXED on `fix/site-url-landing`, UNMERGED.**
-[[the-site-url-landing-signs-you-into-the-wrong-account]]; the trigger stays UNVERIFIED until the
-founder says which origin the failed attempt started from and what the live Redirect URLs list holds.
+**15. The Site-URL wrong-account landing — FIXED and MERGED in #54 (`352484e`).** The second half,
+the stale session left live behind the failure message, is `f544619` on `fix/callback-clears-stale-session`
+(pushed, not merged). [[the-site-url-landing-signs-you-into-the-wrong-account]]. Two things stay
+open and neither is code: **the trigger** — UNVERIFIED until the founder says which origin the
+failed attempt started from, the Redirect URLs half of it having been read on 2026-09-22 — and
+**whether `/login` should redirect a signed-in user**, which decides how often the clear's
+consequence bites (a signed-in user who cancels a Google sign-in from `/login` is now signed out).
+The drive-by sign-out that the first cut of the clear opened — `/auth/callback?error=anything` from
+any cross-site link, because the auth cookie is `SameSite=Lax` — is **closed**: the clear now
+requires a PKCE code-verifier cookie. What that costs is in the note: a cross-origin `?code=`
+landing (a `*.vercel.app` preview; `localhost:3000` is allowlisted) no longer clears.
+
+**16. GoTrue calls are unbounded in time, everywhere — one decision, not three.** `@supabase/auth-js`
+2.110.6 sets no `AbortController`, `signal` or timeout anywhere in `dist/main/lib/fetch.js`, so a
+Supabase Auth that HANGS rather than errors stalls whatever is awaiting it until the platform kills
+the function. Three callers, all equally exposed: `exchangeCodeForSession` on the callback's happy
+path, the middleware's `getUser()` on **every matched request**, and the `signOut` the clear added.
+The lever is the same for all three and it is not the callback — it is a custom `fetch` with a
+deadline on the clients built in `lib/supabase/{client,server}.ts` and `middleware.ts`. Deliberately
+NOT done bespoke in the callback, where it would have bounded the least important of the three and
+made the other two look handled. Deferred, founder's call.
 
 ## External state — not in the repo
 
@@ -497,9 +515,10 @@ matching the 49 files in `supabase/migrations/`. This corrected a stale "0000–
 History and read-backs live in `scripts/verify-migration-ledger.sql` §RESULTS (38 structural rows, 36
 true / 1 false (0022, expected — every other false is real) / 1 NULL (0020)); the guarded- and
 destructive-migration read-back rules are in CLAUDE.md. Do not re-narrate either here. Auth: Email on,
-Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.ai`,
-`https://tavnit.ai/auth/callback` allowlisted. Custom SMTP, 100 emails/hour. Hebrew auth templates in
-`docs/08` §8A.2.
+Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.ai`; **Redirect URLs
+read 2026-09-22 — four and only four: `/auth/callback` + `/auth/recovery` on `https://tavnit.ai` and
+on `http://localhost:3000`, no `*.vercel.app`, no `www`** — every other origin falls back to the Site
+URL. Custom SMTP, 100 emails/hour. Hebrew auth templates in `docs/08` §8A.2.
 
 **`events` is EMPTY — 0 rows, every kind.** Not `platform_budget_tripped`, not
 `qc_release`/`qc_reject`, not `content_policy_flag`. The alert sweep reads an empty partial index
