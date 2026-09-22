@@ -4,11 +4,59 @@ import { authReadFailed } from "@/lib/auth-user";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/client";
 
 /**
+ * GoTrue's PKCE auth codes are UUIDs. REASONED — nothing in this tree pins it,
+ * and a `code` that is not UUID-shaped simply keeps today's behaviour. Matched
+ * with a local regex rather than `isUuid` (lib/service-b.ts:63) because that
+ * module pulls zod and @aiugc/core into what is an Edge bundle on every matched
+ * request; api/hooks/route.ts:7 keeps its own copy for the same reason.
+ */
+const AUTH_CODE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Does this query string carry the result of an auth round-trip? `error`,
+ * `error_code` and `error_description` are what GoTrue writes when one failed;
+ * `code` is the PKCE auth code of one it already completed.
+ *
+ * The UUID test on `code` is why this is a predicate and not a `has("code")`:
+ * `/` is the public landing page, and a future `?code=PROMO10` on it must never
+ * be eaten by auth routing.
+ */
+function carriesAuthResult(params: URLSearchParams): boolean {
+  if (params.has("error") || params.has("error_code") || params.has("error_description")) {
+    return true;
+  }
+  const code = params.get("code");
+  return code !== null && AUTH_CODE_RE.test(code);
+}
+
+/**
  * Refreshes the Supabase auth session on every request (the only place cookie
- * refresh can happen for Server Components) and enforces the two route rules:
- * unauthenticated /home -> /start, authenticated owner on the wizard -> /home.
+ * refresh can happen for Server Components), forwards an auth round-trip that
+ * landed on `/` to the callback that can read it, and enforces the two route
+ * rules: unauthenticated /home -> /start, authenticated owner on the wizard ->
+ * /home.
  */
 export async function middleware(request: NextRequest) {
+  // A Google round-trip GoTrue could not deliver to /auth/callback arrives HERE
+  // instead, on the Site URL root, carrying its result on the query string. Two
+  // sub-cases, told apart by the signature: `?code=` means GoTrue COMPLETED the
+  // sign-in server-side and only the return leg missed; `?error=` means it did
+  // not complete. Nothing on `/` reads either — app/page.tsx takes no
+  // searchParams — and the owner bounce below would forward a visitor who still
+  // holds an OLDER session into that account with the query dropped: a
+  // wrong-account landing that also destroys the evidence. Hand it instead to
+  // the route that already has all four outcomes.
+  //
+  // `/` only, because the Site URL root is the one place the fallback delivers.
+  //
+  // Nothing to carry forward: this runs before the Supabase client exists, so
+  // no refresh has happened yet, and the /auth/callback request it redirects to
+  // runs this same middleware.
+  // See docs/vault/defects/the-site-url-landing-signs-you-into-the-wrong-account.md
+  if (request.nextUrl.pathname === "/" && carriesAuthResult(request.nextUrl.searchParams)) {
+    return NextResponse.redirect(new URL(`/auth/callback${request.nextUrl.search}`, request.url));
+  }
+
   let response = NextResponse.next({ request });
 
   // The no-store headers @supabase/ssr hands `setAll` alongside the rotated

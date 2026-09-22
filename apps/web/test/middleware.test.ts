@@ -320,3 +320,79 @@ describe("middleware carries the no-store headers onto every exit", () => {
     expectRotationCarried(res);
   });
 });
+
+/**
+ * The Site-URL landing. A Google round-trip GoTrue cannot deliver to
+ * /auth/callback is delivered to the Site URL root instead, carrying its result
+ * on the query string — `?code=` when the sign-in completed server-side and only
+ * the return leg missed, `?error=` when it did not complete at all.
+ *
+ * Before the forward, `/` read neither and the owner bounce sent a browser still
+ * holding an OLDER session to /home as that account, dropping the query on the
+ * way: the customer sees the wrong account and the evidence is gone with it.
+ * See docs/vault/defects/the-site-url-landing-signs-you-into-the-wrong-account.md.
+ */
+describe("middleware forwards an auth round-trip that landed on /", () => {
+  const CODE = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
+
+  it("forwards a PKCE code to /auth/callback with the query byte-identical", async () => {
+    const res = await run(`/?code=${CODE}`);
+
+    expect(res.headers.get("location")).toBe(`http://localhost:3000/auth/callback?code=${CODE}`);
+    // The forward runs before the Supabase client is constructed, so no refresh
+    // has happened and there is nothing to carry. Move the guard below
+    // createServerClient and this goes red — which is the point: it would spend
+    // a refresh on a request that does nothing but redirect.
+    expect(res.headers.getSetCookie()).toHaveLength(0);
+  });
+
+  it("forwards GoTrue's error params", async () => {
+    const res = await run("/?error=access_denied&error_description=x");
+
+    expect(res.headers.get("location")).toBe(
+      "http://localhost:3000/auth/callback?error=access_denied&error_description=x",
+    );
+  });
+
+  /**
+   * The regression this change exists to prevent. Everything below the forward
+   * sees a perfectly good session — it is just the wrong one.
+   */
+  it("forwards even when an older session still owns a business", async () => {
+    state.user = { id: "11111111-1111-4111-8111-111111111111" };
+    state.businessRows = [{ id: "22222222-2222-4222-8222-222222222222" }];
+
+    const res = await run(`/?code=${CODE}`);
+
+    expect(res.headers.get("location")).toBe(`http://localhost:3000/auth/callback?code=${CODE}`);
+  });
+
+  /**
+   * `/` is the public landing page. Widen the guard to any `code` and the next
+   * campaign link with `?code=PROMO10` on it becomes an auth round-trip.
+   */
+  it("leaves a non-UUID code alone — the owner still bounces to /home", async () => {
+    state.user = { id: "11111111-1111-4111-8111-111111111111" };
+    state.businessRows = [{ id: "22222222-2222-4222-8222-222222222222" }];
+
+    const res = await run("/?code=PROMO10");
+
+    expect(res.headers.get("location")).toBe("http://localhost:3000/home");
+  });
+
+  it("leaves a non-UUID code alone — an anonymous visitor still gets the page", async () => {
+    const res = await run("/?code=PROMO10");
+
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  /** The Site URL root is the only place GoTrue's fallback delivers. */
+  it("does not forward from /start, where the owner bounce still applies", async () => {
+    state.user = { id: "11111111-1111-4111-8111-111111111111" };
+    state.businessRows = [{ id: "22222222-2222-4222-8222-222222222222" }];
+
+    const res = await run(`/start?code=${CODE}`);
+
+    expect(res.headers.get("location")).toBe("http://localhost:3000/home");
+  });
+});
