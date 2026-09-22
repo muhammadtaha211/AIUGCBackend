@@ -1,5 +1,56 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
+
+/**
+ * The tail of the PKCE code-verifier cookie's name. Both halves of it were
+ * read, not recalled:
+ *
+ * - @supabase/ssr forces `flowType: "pkce"` on both factories
+ *   (createServerClient.js:33, createBrowserClient.js:40) and overrides the
+ *   storage key only from `cookieOptions.name` (:29-31), which is configured
+ *   NOWHERE in this repo — so the key stays supabase-js's default,
+ *   `sb-${hostname.split(".")[0]}-auth-token` (supabase-js dist/index.cjs:1270).
+ * - auth-js writes the verifier under `${storageKey}-code-verifier`
+ *   (lib/helpers.js:269-275, `getCodeChallengeAndMethod`), called from the PKCE
+ *   branch of `_getUrlForProvider` (GoTrueClient.js:4702-4703).
+ *
+ * Matched by SUFFIX, not rebuilt from the project ref: rebuilding it would mean
+ * parsing NEXT_PUBLIC_SUPABASE_URL here and keeping that derivation in step
+ * with supabase-js's forever. The suffix is the part both halves agree on, and
+ * this comment is the coupling made visible — if either library changes the
+ * name, this constant is what has to move.
+ *
+ * Not chunk-aware, and does not need to be: the verifier is 56 characters
+ * (auth-js lib/helpers.js:235) against a 3180-byte chunk threshold
+ * (@supabase/ssr utils/chunker.js:8), so it is never split into `.0`/`.1`.
+ */
+const CODE_VERIFIER_SUFFIX = "-auth-token-code-verifier";
+
+/**
+ * Did an auth round-trip start in THIS browser, on THIS origin?
+ *
+ * The PKCE code verifier is the only browser-side evidence that one did. It is
+ * written when `signInWithOAuth` builds the provider URL and it is scoped to
+ * the origin that wrote it, so its presence is the closest thing this route has
+ * to "you started this".
+ *
+ * Why the clear needs it: `/auth/callback?error=x` takes the failure branch on
+ * the query string alone, and the auth cookies are `SameSite=Lax`, which the
+ * browser DOES send on a top-level cross-site GET. Without this guard any link,
+ * posted anywhere, signs out whoever follows it. With it, the drive-by finds no
+ * verifier and the branch behaves exactly as it did before the clear existed:
+ * redirect, log, touch nothing.
+ *
+ * Lax is also why the guard does not break the real flow — GoTrue's redirect
+ * back here is itself a cross-site top-level GET, and it carries the verifier
+ * for the same reason the drive-by carries the session.
+ */
+function startedHere(cookieStore: Awaited<ReturnType<typeof cookies>>): boolean {
+  return cookieStore
+    .getAll()
+    .some(({ name, value }) => name.endsWith(CODE_VERIFIER_SUFFIX) && value !== "");
+}
 
 /**
  * OAuth (PKCE) landing point. A good exchange returns to the wizard —
@@ -19,12 +70,20 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
 
   if (code) {
+    // BEFORE the exchange, and that placement is load-bearing.
+    // `_exchangeCodeForSession` removes the verifier on every outcome it has —
+    // at GoTrueClient.js:1591, ahead of the `if (error) throw` on the line
+    // below it, and again at :1609 in its own catch — so the read has to happen
+    // while the evidence is still there. It is also the honest question: "did
+    // this browser start a round-trip", about the request as it ARRIVED, not
+    // about what we did to the cookie jar afterwards.
+    const started = startedHere(await cookies());
     const supabase = await createServerSupabase();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return NextResponse.redirect(`${origin}/start`);
     // The message only — the code is a credential and never gets logged.
     console.error("[auth/callback] code exchange failed:", error.message.slice(0, 200));
-    await endPreviousSession(supabase);
+    if (started) await endPreviousSession(supabase);
     return NextResponse.redirect(`${origin}/login?error=oauth`);
   }
 
@@ -42,7 +101,12 @@ export async function GET(request: Request) {
     // would be evaluated outside it, and a factory throw (an unset
     // NEXT_PUBLIC_SUPABASE_* on some deploy) would replace the message with a
     // 500 on the one branch whose whole job is to show it.
-    await endPreviousSession();
+    //
+    // Nothing removes the verifier on this branch, so the read can sit here.
+    // No verifier means no round-trip started here, and then this branch is
+    // byte-for-byte what it was before the clear existed — including building
+    // no client at all.
+    if (startedHere(await cookies())) await endPreviousSession();
     return NextResponse.redirect(`${origin}/login?error=oauth`);
   }
 
@@ -51,7 +115,8 @@ export async function GET(request: Request) {
 
 /**
  * Ends whatever session this browser was already carrying, on the two paths
- * that end at /login?error=oauth.
+ * that end at /login?error=oauth — and only when `startedHere` says this
+ * browser began the round-trip.
  *
  * Without it a failed round-trip leaves the customer reading "ההתחברות עם
  * Google לא הצליחה" while still signed in as the account they were in before

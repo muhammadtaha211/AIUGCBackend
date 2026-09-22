@@ -483,10 +483,21 @@ the stale session left live behind the failure message, is `f544619` on `fix/cal
 open and neither is code: **the trigger** — UNVERIFIED until the founder says which origin the
 failed attempt started from and what the live Redirect URLs list holds — and **whether `/login`
 should redirect a signed-in user**, which decides how often the clear's consequence bites (a
-signed-in user who cancels a Google sign-in from `/login` is now signed out). A third, larger
-consequence is recorded in the note and is also a founder call: `/auth/callback?error=anything` is
-now an unauthenticated sign-out any link can trigger, because the auth cookie is `SameSite=Lax` and
-rides a top-level cross-site GET.
+signed-in user who cancels a Google sign-in from `/login` is now signed out). The drive-by sign-out
+that the first cut of the clear opened — `/auth/callback?error=anything` from any cross-site link,
+because the auth cookie is `SameSite=Lax` — is **closed**: the clear now requires a PKCE
+code-verifier cookie. What that costs is in the note: a cross-origin `?code=` landing (the
+preview/localhost path) no longer clears, and the allow-list is what fixes that, not the callback.
+
+**16. GoTrue calls are unbounded in time, everywhere — one decision, not three.** `@supabase/auth-js`
+2.110.6 sets no `AbortController`, `signal` or timeout anywhere in `dist/main/lib/fetch.js`, so a
+Supabase Auth that HANGS rather than errors stalls whatever is awaiting it until the platform kills
+the function. Three callers, all equally exposed: `exchangeCodeForSession` on the callback's happy
+path, the middleware's `getUser()` on **every matched request**, and the `signOut` the clear added.
+The lever is the same for all three and it is not the callback — it is a custom `fetch` with a
+deadline on the clients built in `lib/supabase/{client,server}.ts` and `middleware.ts`. Deliberately
+NOT done bespoke in the callback, where it would have bounded the least important of the three and
+made the other two look handled. Deferred, founder's call.
 
 ## External state — not in the repo
 

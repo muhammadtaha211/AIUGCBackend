@@ -309,23 +309,71 @@ That is the trade the fix makes, and it is the right way round for this defect: 
 the wrong-account landing, where the browser keeps a session the user did not choose and the `/` →
 `/home` bounce hides it. It is not free, and it is the reason the question below is open.
 
-**The second consequence, which the brief did not name and which is the larger one.**
-`GET /auth/callback?error=anything` is now an **unauthenticated, externally-triggerable sign-out**.
-The branch is entered on `searchParams.get("error")` alone — there is no marker that an auth
-round-trip was ever started, and there cannot easily be one, since the whole point of the branch is
-to catch a landing GoTrue produced without our state. Supabase's auth cookies are written
-`SameSite=Lax` (`@supabase/ssr` `DEFAULT_COOKIE_OPTIONS`, `dist/main/utils/constants.js:4-11`), and
-a Lax cookie IS sent on a top-level cross-site GET — so that URL, posted anywhere, signs out any
-signed-in visitor who follows it and drops them on `/login` reading a Google failure they never
-triggered. On `origin/main` the same request left them signed in. The `?code=` branch behaves the
-same way with any non-empty junk code.
+**The second consequence, which the brief did not name and which was the larger one.**
+`GET /auth/callback?error=anything` became an **unauthenticated, externally-triggerable sign-out**.
+The branch is entered on `searchParams.get("error")` alone, and Supabase's auth cookies are written
+`SameSite=Lax` (`@supabase/ssr` `DEFAULT_COOKIE_OPTIONS`, `dist/main/utils/constants.js:4-11`) —
+which the browser DOES send on a top-level cross-site GET. So that URL, posted anywhere, signed out
+any signed-in visitor who followed it and dropped them on `/login` reading a Google failure they
+never triggered. On `origin/main` the same request left them signed in, and the `?code=` branch
+behaved the same way with any non-empty junk code. Nuisance rather than takeover — nothing is read,
+written or disclosed — but a new externally-reachable side effect on a GET route handler.
 
-Nuisance, not takeover: nothing is read, written or disclosed, and the user signs in again. It is
-recorded here because it is a new externally-reachable side effect on a GET route handler, it was a
-direct consequence of the change as specified rather than a deviation from it, and **no cheap
-correct guard exists** — a `Referer` check is unreliable and there is no state to verify. Whether
-to accept it, or to narrow the branch (e.g. clear only when `error_description`/`error_code` is
-also present, or only for a known GoTrue error vocabulary), is a founder call and is open.
+### CLOSED by the verifier guard — 2026-09-22, founder-directed, same branch
+
+The first draft of this section said "no cheap correct guard exists". That was wrong, and the
+founder named the thing it missed: **the PKCE code verifier**. `startedHere(cookieStore)` in
+`route.ts` requires a cookie whose name ends `-auth-token-code-verifier` and whose value is
+non-empty, and the clear runs on the two failure branches **only** when it does. Without it each
+branch is byte-for-byte its `origin/main` self — same redirect, same log, no client built at all on
+the error-params branch.
+
+**Where the name comes from**, read rather than recalled, because the guard is coupled to two
+libraries at once: `@supabase/ssr` forces `flowType: "pkce"` on both factories
+(`createServerClient.js:33`, `createBrowserClient.js:40`) and overrides the storage key only from
+`cookieOptions.name` (`:29-31`), which is set **nowhere in this repo** — so the key stays
+supabase-js's default `sb-${hostname.split(".")[0]}-auth-token` (supabase-js
+`dist/index.cjs:1270`), and auth-js writes the verifier at `` `${storageKey}-code-verifier` ``
+(`lib/helpers.js:269-275`, from the PKCE branch of `_getUrlForProvider`,
+`GoTrueClient.js:4702-4703`). Matched by SUFFIX, not rebuilt from the project ref, so the derivation
+is not duplicated here and left to drift. Never chunked: 56 characters
+(`lib/helpers.js:235`) against a 3180-byte threshold (`utils/chunker.js:8`).
+
+**Why Lax cuts both ways, and why the guard still works.** GoTrue's redirect back here is itself a
+cross-site top-level GET, so the verifier rides it exactly as the session does. The guard does not
+ask "was this navigation same-site" — it could not, and a `Referer` check would be unreliable. It
+asks whether this browser holds evidence it started a flow **on this origin**, which an attacker
+cannot plant.
+
+**The read sits BEFORE `exchangeCodeForSession`, and that placement is load-bearing.**
+`_exchangeCodeForSession` removes the verifier on every outcome it has: `GoTrueClient.js:1591`,
+ahead of the `if (error) throw` on the very next line, and again at `:1609` in its own catch. A read
+placed after the exchange would find nothing and the clear would silently stop happening on the
+branch that needs it most. One test exists purely to hold that line — its fake exchange deletes the
+verifier from the store, and a read moved after it goes red.
+
+### What the guard costs
+
+**A cross-origin `?code=` landing no longer clears** — and that is the founder's own
+preview/localhost path. The verifier lives on the origin the flow started from, so a round-trip
+begun on `localhost:3000` or a `*.vercel.app` preview and delivered by GoTrue's fallback to the
+Site URL `tavnit.ai` arrives at an origin that never wrote one. `startedHere` is false, no clear
+runs, and that visitor gets the failure message **and stays in the old account** — precisely the
+wrong-account landing this whole note is about, reopened for exactly one path.
+
+That is accepted rather than worked around, because **the fix for that path is the allow-list**, not
+the callback: a round-trip whose `redirect_to` origin is allowlisted never falls back to the Site
+URL in the first place, and never reaches this branch. See `UNVERIFIED 2` and `UNVERIFIED 3` — the
+live Redirect URLs list and the set of origins `apps/web` is actually served from are both still
+unread, and reading them is what closes this.
+
+### The residual
+
+**An abandoned verifier keeps the drive-by open for that browser.** Someone who clicks "כניסה עם
+Google" and closes the tab leaves a live verifier cookie behind; until the next exchange or sign-out
+removes it (`GoTrueClient.js:1591`, `:1609`, `:4329`), a crafted link WILL sign that browser out.
+The window is per-browser and self-closing, not a standing hole, and it is the price of using the
+only evidence the browser actually has.
 
 ## Still open
 
