@@ -191,7 +191,30 @@ export const CHECKOUT_FAILED_LINE = "התשלום לא הושלם. אפשר לנ
  */
 export const CHECKOUT_REFUSED_LINE =
   "התשלום נקלט, אבל לא הצלחנו להפעיל את המסלול. אין צורך לשלם שוב — כתבו לנו ונסדיר את זה.";
+/**
+ * ?checkout=unconfirmed — the browser came back from Sumit's payment page,
+ * which (measured) only redirects after a payment it accepted, and the return
+ * leg could not CONFIRM that payment: Sumit unreachable or misconfigured, a
+ * payment Sumit does not know, our own database down. The customer has almost
+ * certainly paid, so the one thing this line must not do is invite a second
+ * payment — the same job as the refused line, for the case where we do not
+ * even know what happened. No time promise: nothing retries on its own yet.
+ *
+ * COPY PENDING FOUNDER REVIEW.
+ */
+export const CHECKOUT_UNCONFIRMED_LINE =
+  "התשלום נקלט ואנחנו מאמתים אותו מול חברת הסליקה. אין צורך לשלם שוב — אם המסלול עדיין לא פעיל, כתבו לנו ונשלים את ההפעלה.";
+/** The link under both lines that say "write to us" — the contact page the site already offers. */
 export const CHECKOUT_REFUSED_CONTACT = "לעמוד יצירת הקשר";
+
+/** The values the return route lands on; anything else on the query is ignored. */
+export const CHECKOUT_STATES = ["success", "refused", "failed", "unconfirmed"] as const;
+export type CheckoutState = (typeof CHECKOUT_STATES)[number];
+
+/** /home/plan's ?checkout= parameter, or null when it is absent or not one of ours. */
+export function parseCheckoutParam(raw: string | undefined): CheckoutState | null {
+  return CHECKOUT_STATES.includes(raw as CheckoutState) ? (raw as CheckoutState) : null;
+}
 /** The action went through, but the re-read after it did not — the cards may be a step behind. */
 export const REFRESH_FAILED =
   "הפעולה בוצעה, אבל לא הצלחנו לרענן את פרטי המנוי. רעננו את העמוד כדי לראות את המצב העדכני.";

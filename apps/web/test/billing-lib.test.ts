@@ -4,6 +4,8 @@ import {
   IpRateLimiter,
   parseCheckoutPages,
   parseSumitReturnParams,
+  sumitPaymentIdParam,
+  sumitReturnPath,
 } from "../src/lib/billing";
 import { safeNextPath } from "../src/lib/onboarding";
 import { checkoutPath, firstChargeLine } from "../src/lib/plans-ui";
@@ -98,6 +100,39 @@ describe("parseSumitReturnParams", () => {
         new URLSearchParams(`og-customerid=-1&og-paymentid=2&og-externalidentifier=${INTENT}`),
       ),
     ).toBeNull();
+  });
+});
+
+describe("sumitPaymentIdParam", () => {
+  it("finds a payment id whatever the casing, and only when it is non-empty", () => {
+    expect(sumitPaymentIdParam(new URLSearchParams("OG-PaymentID=2376907759"))).toBe("2376907759");
+    expect(sumitPaymentIdParam(new URLSearchParams("og-paymentid=2376907759"))).toBe("2376907759");
+    // Too malformed for parseSumitReturnParams, but still a browser the payment
+    // page redirected: the landing must not say "try again".
+    expect(sumitPaymentIdParam(new URLSearchParams("OG-PaymentID=abc"))).toBe("abc");
+    expect(sumitPaymentIdParam(new URLSearchParams(""))).toBeNull();
+    expect(sumitPaymentIdParam(new URLSearchParams("OG-PaymentID="))).toBeNull();
+    expect(sumitPaymentIdParam(new URLSearchParams("OG-PaymentID=%20%20"))).toBeNull();
+    expect(sumitPaymentIdParam(new URLSearchParams("OG-CustomerID=2376907140"))).toBeNull();
+  });
+});
+
+describe("sumitReturnPath", () => {
+  it("keeps the path and Sumit's own parameters, in order, and drops everything else", () => {
+    const url = new URL(
+      `http://localhost:3000/api/billing/sumit/return?OG-CustomerID=2376907140` +
+        `&utm_source=mail&OG-PaymentID=2376907759&session=whatever&OG-ExternalIdentifier=${INTENT}`,
+    );
+    expect(sumitReturnPath(url)).toBe(
+      `/api/billing/sumit/return?OG-CustomerID=2376907140&OG-PaymentID=2376907759` +
+        `&OG-ExternalIdentifier=${INTENT}`,
+    );
+  });
+
+  it("no og-* parameters at all leaves the bare path", () => {
+    expect(sumitReturnPath(new URL("http://localhost:3000/api/billing/sumit/return?x=1"))).toBe(
+      "/api/billing/sumit/return",
+    );
   });
 });
 

@@ -17,9 +17,9 @@ conversation, and the ordered queue. **If this file and the repo disagree, the r
 
 ## Where things stand
 
-**The product is live end to end; billing is built but not wired.** `tavnit.ai` serves `apps/web` on
-Vercel; both wizards run; `apps/admin` sits behind HTTP Basic in front of `requireAdmin`. Service A/B
-format and engine decisions are all in `decisions/` — start at
+**The product is live end to end, and billing is WIRED and has taken a real payment (2026-09-21).**
+`tavnit.ai` serves `apps/web` on Vercel; both wizards run; `apps/admin` sits behind HTTP Basic in
+front of `requireAdmin`. Service A/B format and engine decisions are all in `decisions/` — start at
 [[0020-service-a-is-hook-and-steps-only]], [[0017-service-b-single-setting-selfie-talking-head]],
 [[0023-hook-is-a-remotion-animation-opener-clips-retired]],
 [[0024-hook-effect-is-a-render-param-the-customer-picks]], and CLAUDE.md rather than a summary here.
@@ -32,17 +32,28 @@ trip over. Every signup depends on a Resend delivery, ceiling 100/day
 customer-facing half (`7ccb708`) and the legal/public pass (`d215eae`); migrations 0044–0047 applied.
 Read the notes, not a summary: 0052–0058 in `decisions/`. `UPDATED` in `(legal)/legal.tsx` is
 `17.09.2026` and is load-bearing — both /terms' date and the string checkout writes into
-`terms_acceptances.terms_version`. Safe today (0 rows); not safe to forget after the first sale.
+`terms_acceptances.terms_version`. **The first sale has happened** — one row now carries
+`17.09.2026` ([[first-real-purchase-2026-09-21]]), so changing `UPDATED` from here on changes what
+later buyers accept, not what nobody accepted.
 
-**The Sumit adapter and hosted checkout are BUILT on `feat/sumit-checkout` (2026-09-21), NOT
-merged.** [[0062-hosted-checkout-via-sumit-payment-pages]] is the decision; migration 0048
-(`checkout_intents`) IS applied to production (ledger 0000–0048, 49 rows). Walked through end to
-end against the founder's TEST Sumit business the same day: page → Sumit → return → active
-subscription, one renewal charged through `SumitGateway` with a real חשבון/קבלה issued, the
-walkthrough rows deleted afterwards. Production still answers the checkout 503 until `SUMIT_*` are
-set on Vercel and the box against the REAL org — the founder actions below, in order. Facts:
-[[sumit-payment-page-saves-the-card]], [[sumit-payments-list-honours-utc-offsets]],
-[[sumit-test-org-configuration]].
+**The Sumit adapter and hosted checkout are MERGED and LIVE since 2026-09-21** — PR #52,
+`4100cc7`, and the box reports the same commit. [[0062-hosted-checkout-via-sumit-payment-pages]] is
+the decision; migration 0048 (`checkout_intents`) is applied (ledger 0000–0048, **49 rows,
+measured**). It was walked through first against the founder's TEST business — page → Sumit →
+return → active subscription, one renewal charged through `SumitGateway` with a real חשבון/קבלה,
+the walkthrough rows deleted afterwards — and then **used for real**: one ₪150 התחלה purchase on the
+REAL org, which activated only after the return leg was repaired
+([[first-real-purchase-2026-09-21]]). Facts: [[sumit-real-org-configuration]],
+[[env-values-differ-between-the-box-and-vercel]], [[sumit-payment-page-saves-the-card]],
+[[sumit-payments-list-honours-utc-offsets]], [[sumit-test-org-configuration]].
+
+**The go-live cost three env mistakes and one customer-visible failure.** The third told a paying
+customer "התשלום לא הושלם. אפשר לנסות שוב." while Sumit held his ₪150
+([[sumit-return-failure-invited-a-second-payment]]). The fix is on
+**`fix/sumit-return-unconfirmed` (`7ec6005`), pushed, NOT merged and NOT deployed** — a failure to
+verify now lands on `?checkout=unconfirmed` ("being confirmed, do not pay again") and is recorded
+in `gateway_events`. **Prices should not be announced until that branch is merged and live**, since
+until then any Sumit hiccup during a return repeats the same invitation to pay twice.
 
 **Two deploy checks worth keeping, neither with a vault note — both die with this file.** (1) Verify
 the deployed **artifact**, not the symptom: `git log -1` on the box, never "a render worked
@@ -156,8 +167,14 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
 - **`/start` proves nothing about auth** — redirects unconditionally, discards
   `exchangeCodeForSession`. `/home` is the only real gate.
 - `words_per_second` is **2.1** (calibration), not the seed's 2.2 (a guess).
+- **Two branches were described here as unmerged for days after they merged** — `fix/analysis-frame-salvage`
+  (PR #51) and `landing/two-services` (PR #49), both corrected 2026-09-21 from
+  `git merge-base --is-ancestor`. That is now four times this file has said "NOT merged" about merged
+  code. **Check a branch's state with git before writing it down, every time.**
+- **Two lines of this file disagreed on the migration ledger** (0000–0047/48 rows vs 0000–0048/49).
+  The database settled it: 49 rows, last `0048`. A count that appears twice will drift; keep one.
 
-## What landed (2026-09-19) — the landing repositioning, on `landing/two-services`, NOT merged
+## What landed (2026-09-19) — the landing repositioning, `landing/two-services`, MERGED as PR #49 (`495ac43`)
 
 The public landing and `/about` sold the **retired** Service A — "מסרטון אחד", קריינות, "עם קול
 ובלי" — and folded the talking head into one feature card. Both now sell the two services that
@@ -198,7 +215,10 @@ Each with its date. This is the main thing a new session cannot recover on its o
    until the Sumit adapter exists, the client is written for the wired shape, so wiring is
    server-only. Noted because it reads like an unfinished feature and is not. **Superseded
    2026-09-21** by [[0062-hosted-checkout-via-sumit-payment-pages]] on `feat/sumit-checkout`: the
-   503 now means only "no `SUMIT_CHECKOUT_PAGES` in this environment".
+   503 now means only "no `SUMIT_CHECKOUT_PAGES` in this environment". **Closed 2026-09-21**: the
+   pages are set on Vercel and checkout redirects to Sumit. The 503 was seen once more that day,
+   on all three tiers at once, because the value had been saved with its quotes
+   ([[env-values-differ-between-the-box-and-vercel]]).
 4. **`requires_new_card` is DEFERRED to the adapter task, not declined**, 2026-09-17 — gateway tokens
    are not portable, so building the state first would fix its shape to a vendor nobody had
    integrated. Checklist item 10 below.
@@ -217,22 +237,45 @@ Each with its date. This is the main thing a new session cannot recover on its o
 9. **Emoji: which font subset to ship — OPEN, 2026-09-18.** Gates queue item 4;
    [[0059-emoji-in-burned-text-needs-a-second-font]] has both options costed.
 10. **Whether transient job retries should report to Sentry — OPEN, 2026-09-18.** Queue item 7.
+11. **Testing the API charge is DEFERRED until real sales fund the Upay balance — 2026-09-21.**
+    The only way to exercise `/billing/payments/charge/` on the live terminal is a day-0 upgrade
+    (₪150), and it could not be refunded afterwards: a Sumit refund needs a Upay balance larger
+    than the refund, and a new terminal has none. Reason given: cost. So renewals and upgrades
+    remain **unproven against the real terminal** ([[first-real-purchase-2026-09-21]]).
+12. **The first real purchase stays UNREFUNDED for now — 2026-09-21.** Founder's call. It is a
+    TEST subscription on his own card and must be excluded from revenue; the accountant has to be
+    told the ₪150 receipt is a self-purchase. Refunding later is optional and only becomes possible
+    once the Upay balance exceeds ₪150.
+
+Recorded as recommendations the founder did not object to, 2026-09-21 — not decisions he stated:
+קטלוג ללא מע"מ stays unticked on the real org (deliberately unlike the test org, because a no-VAT
+catalogue flags its customers VAT-exempt for future charges); Sumit's own terms stay unattached
+(acceptance lives in our checkout, 0056); the return URL is set per catalogue only; wallets stay off
+until someone measures whether a wallet payment leaves a chargeable saved card.
+[[sumit-real-org-configuration]].
 
 ## The queue
 
-Two axes. **Money** (item 0) and **pipeline** (items 1–7, all from this session's diagnosis), then the
-older launch items. Item 0 still outranks everything: nothing in billing earns money until it exists.
+Two axes. **Money** (item 0) and **pipeline** (items 1–7, all from the 2026-09-18 diagnosis), then
+the older launch items. Item 0 no longer outranks everything the way it did — billing exists and has
+taken a real payment — but what is left of it is still the part that decides whether the next
+payment is kept.
 
-**0. The Sumit adapter.** BUILT 2026-09-21 on `feat/sumit-checkout` (unmerged) —
-[[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway` once
-`SUMIT_COMPANY_ID` + `SUMIT_API_KEY` are set without `DRY_RUN`; until then production still answers 503. The checklist, as dictated, with what the build closed:
+**0. The Sumit adapter.** MERGED and LIVE 2026-09-21 — PR #52, `4100cc7` —
+[[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway`
+because `SUMIT_COMPANY_ID` + `SUMIT_API_KEY` are set on Vercel and on the box without `DRY_RUN`, and
+one real ₪150 purchase has gone through it ([[first-real-purchase-2026-09-21]]). What is left is
+below. The checklist, as dictated, with what the build and the go-live closed:
 
 1. ~~Create a **SEPARATE test business**~~ — DONE, exists and measured
    ([[sumit-test-org-configuration]]). **LANDMINE stands: connecting a test terminal on the real
    org disconnects its existing Upay clearing — never touch `developers/testterminal` there.** Test
    quotas: Operations 100/month (6 used after the walkthrough), Mails 1000; test docs carry
    business no. 999999998; no Upay, no 3DS in test.
-2. Install modules **הכנסות + סליקת אשראי** on the real org — founder, UNVERIFIED whether done.
+2. ~~Install modules **הכנסות + סליקת אשראי** on the real org~~ — **סליקת אשראי is PROVEN**: the
+   live Upay terminal took a customer-present ₪150 payment and Sumit issued the document
+   ([[first-real-purchase-2026-09-21]]). **הכנסות and what the receipt actually shows stay
+   UNVERIFIED** — the founder has not said.
 3. ~~Confirm schemas~~ — DONE from the public OpenAPI spec and measured
    ([[sumit-payment-page-saves-the-card]]). `beginredirect` is NOT used: the founder's fixed-price
    payment pages are the hosted first charge; `setforcustomer` takes Sumit's own token + expiry,
@@ -240,6 +283,12 @@ older launch items. Item 0 still outranks everything: nothing in billing earns m
 4. **Refund: no endpoint seen.** Check `/creditguy/gateway/transaction/` for a credit type
    referencing the original, and what `/accounting/documents/cancel/` does to the payment; else
    refunds go through the Sumit UI at launch. STILL OPEN — refunds are by hand in Sumit's UI.
+   **And a refund is not always possible at all**: per Sumit's help articles (5799412, 10792135,
+   read 2026-09-21, not measured by us) a refund needs a **Upay balance larger than the refund**,
+   the charge must have gone through Sumit, and a same-day full refund usually becomes a
+   cancellation. A new terminal therefore cannot refund its first customers — which is why the
+   recovery that matters is **replaying the return URL**, not refunding
+   ([[sumit-real-org-configuration]]).
 5. ~~Idempotency~~ — ANSWERED: charge accepts NO external reference. `checkout_intents` is the
    attempt row for the hosted leg; renewals reconcile through `/billing/payments/list/` (narrow
    window, API charges only) and end `unconfirmed` → dunning otherwise (0062 states the residual).
@@ -248,7 +297,10 @@ older launch items. Item 0 still outranks everything: nothing in billing earns m
 7. **Card auto-update on replaced cards** — API-charged too, or only Sumit-run recurring? OPEN.
 8. **Chargebacks:** poll `/billing/payments/list/` or use triggers (Growth plan) — decide. OPEN.
 9. **3DS is production-only, ₪1 per attempt, first customer-present charge only.** The CVV exemption
-   for recurring is automatic on Upay. OPEN (unmeasurable in the test org).
+   for recurring is automatic on Upay. **STILL OPEN after the real purchase** — one customer-present
+   charge ran on the live terminal on 2026-09-21 and the founder has not said whether 3DS appeared
+   ([[first-real-purchase-2026-09-21]]); the CVV exemption is untested because no API charge has
+   run against Upay at all (0.15).
 10. Add **`requires_new_card`**: the enum value, the one-live-per-user partial index, the renewal
     skip, the `/home/plan` banner. OPEN — a suspended subscription reactivates from the checkout page.
 11. ~~Rename the renewal charge description~~ — DONE: `תבנית — מסלול <name>, חידוש חודשי` and
@@ -259,9 +311,17 @@ older launch items. Item 0 still outranks everything: nothing in billing earns m
     `apps/web/.env.local`.
 14. **Sumit offers no integration support** — Facebook group, a paid support hour, or an external dev.
     OPEN (nothing needed it this time; the public spec answered everything).
+15. **`/billing/payments/charge/` has never run against the real terminal — OPEN, and it is the
+    biggest unproven thing in billing.** Every renewal and every prorated upgrade takes that path.
+    The hosted first charge proves the page, the saved card and the return leg; it proves nothing
+    about a customer-not-present charge, the CVV exemption, or the reconcile ladder that 0.5
+    describes. Testing it costs a ₪150 day-0 upgrade that cannot be refunded yet, so it is deferred
+    by decision (conversation decision 11). **The first real renewal is the test**, and it will
+    happen unattended — watch for `recurring_charge_failed`. Related and still open: 0.7 (card
+    auto-update) and 0.8 (chargebacks), both of which also only bite on the API path.
 
-**1. The batch-granularity fix — FIXED ON BRANCH `fix/analysis-frame-salvage` (2026-09-20), two
-commits, awaiting merge and box deploy.** Commit 1, the net: a parse failure rides the
+**1. The batch-granularity fix — MERGED 2026-09-20 as PR #51 (`27ee842`), two commits, and LIVE on
+the box since the 2026-09-21 deploy** (`4100cc7` contains it). Commit 1, the net: a parse failure rides the
 `salvageBatchFrames` / corrective-retry / `a_analysis_max_degraded_fraction` path instead of
 throwing out of the provider — the rejection unit is the frame, usage is recorded before any parse,
 the envelope error carries the stop_reason, every rejection in a parallel round is logged, and the
@@ -275,11 +335,10 @@ revert commit 2 alone and keep the net. What shipped, with post-prettier cites: 
 the head of [[analysis-parse-failure-discards-the-whole-attempt]]. **The double-wrap question is ANSWERED** —
 both prefixes are `@anthropic-ai/sdk` 0.111.0 (`helpers/zod.js:41` inner, `lib/parser.js:63` outer),
 the parse runs in a `.then` outside the client's HTTP retry loop (`messages.js:67`), so no internal
-retry and one sample per attempt. What remains is the founder's: open the PR, merge, deploy the box
-as ONE step gated on nothing running (`select id, type, status from jobs where status = 'running';`
-→ empty, then `git pull && pnpm install && sudo systemctl restart aiugc-worker`, then `git log -1`
-on the box shows the merge commit — `docs/07-worker-box.md` §11). No migration, no config row, no
-prompt version moves.
+retry and one sample per attempt. Both halves are now done: merged as PR #51, and the box reports `4100cc7`
+on `git log -1` after the 2026-09-21 deploy, which contains it. No migration, no config row, no
+prompt version moved. **What was never done is watching it work** — no analysis has been observed
+salvaging a frame in production since the deploy.
 
 **2. The wait surfaces — two parts, both now MEASURED rather than reasoned.** Independent of item 1,
 cheap, and a lighter model can do it. (a) `analysisWaitView`'s elapsed comes from `now - lockedAt` for
@@ -348,9 +407,14 @@ failures and leave no signal in Sentry, in the dashboard, or anywhere a human lo
 (`ade760a`, [[0046-the-rega-ban-targets-the-hesitation-tick-not-the-word]],
 [[ban-rule-test-collides-with-a-curated-hook]]).
 
-**Not closed, and uncheckable from this container: the box deploy.** A prompt version goes live **per
-call** the moment the file lands, while worker code needs a restart — a `git pull` without a restart
-is the hazard ([[prompt-versions-on-disk]]). Owed: deploy as ONE step gated on nothing running
+**CLOSED 2026-09-21 — the box was deployed and restarted for the Sumit env.** The founder reports
+`git log -1` on the box = `4100cc7` and `HEAD = origin/main`, the unit active, the journal's
+`worker started` line carrying `workerId: hetzner` and `dryRun: false`, and three `SUMIT_` variables
+in the running process's environment. That commit contains the renewal change, the label rule and
+the `רגע` ban fix, all verified here as ancestors of `4100cc7`, so **those three are live**. Keep
+the rule that produced this: a prompt version goes live **per call** the moment the file lands,
+while worker code needs a restart — a `git pull` without a restart is the hazard
+([[prompt-versions-on-disk]]). Deploy as ONE step gated on nothing running
 (`select id, type, status from jobs where status = 'running';` → empty, then
 `git pull && pnpm install && sudo systemctl restart aiugc-worker`, then `git log -1` on the box);
 confirm the first live plan stamps `plan_demo_steps@v14` and carries `offScreenWords`; run
@@ -390,13 +454,39 @@ touch `0006:26`** — correct there.
 **13. Ceiling alert + `vat_rate` config — build with the gateway adapter, not before.** Spec in
 [[0046-billing-ships-as-osek-patur]] §6.
 
+**14. "Paid, never returned" — a customer who pays and closes the tab before Sumit redirects leaves
+NOTHING on our side.** Numbered last because it is new, not because it is least important; it is the
+one hole the 2026-09-21 fix does not cover. The return leg is the only writer: no redirect, no
+`completeCheckout`, no `checkout_charge`, and (since `fix/sumit-return-unconfirmed`) not even a
+`checkout_unconfirmed` row — the intent just stays `pending` while Sumit holds the money.
+**No sweep exists**: `listPayments` has exactly one caller, the post-lost-answer reconcile inside
+`SumitGateway.chargeRecurring`, and none of the **13** job types in the registry
+(`packages/core/src/handlers.ts` `buildHandlers()`) reconciles Sumit's payments against our intents
+— the only billing one is `billing_renewals`. Measured 2026-09-21.
+
+- **The manual net, available today:** Sumit's purchase history shows our `externalidentifier` on
+  every page payment, and every purchase there should correspond to a `completed` intent. Anything
+  in Sumit with no completed intent is a customer who paid for nothing.
+- **A sweep is feasible**: `/billing/payments/list/` returns `ExternalIdentifier` for page payments
+  (measured 2026-09-21 on the test org, [[sumit-payment-page-saves-the-card]]), so a job can match
+  Sumit's list against `checkout_intents` by our own id — which is exactly what the API charge
+  cannot do (0.15, and 0062's unconfirmed-charge rule).
+- **It is probably the same job** as the sweep over unresolved `checkout_unconfirmed` rows that
+  `fix/sumit-return-unconfirmed` leaves for later: both ask "did this payment ever activate?", both
+  answer it from the payment id, and both would run on the box with the box's own credentials —
+  independent of Vercel's, which is the pair that failed on go-live day.
+
 ## External state — not in the repo
 
-Founder-reported from a dashboard unless a line says otherwise. **Nothing in this section changed on
-2026-09-18.**
+Founder-reported from a dashboard unless a line says otherwise. **This section changed on
+2026-09-21**: the Sumit variables now exist in two places, the box was deployed, and the first
+subscription row was written.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0047 applied, ledger clean at 48 rows, no gaps, nothing pending.** Every push since
+**Migrations 0000–0048 applied, ledger clean at 49 rows, no gaps, nothing pending** — measured
+2026-09-21 against `supabase_migrations.schema_migrations` (count 49, first `0000`, last `0048`),
+matching the 49 files in `supabase/migrations/`. This corrected a stale "0000–0047 / 48 rows" here;
+**CLAUDE.md still says 0000–0047 and is now the stale copy.** Every push since
 0036 was on the founder's explicit instruction **for that one push** — not standing permission — and
 `db push` recorded each version itself, so `migration repair` has been needed zero times in ten.
 History and read-backs live in `scripts/verify-migration-ledger.sql` §RESULTS (38 structural rows, 36
@@ -410,8 +500,14 @@ Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.
 `qc_release`/`qc_reject`, not `content_policy_flag`. The alert sweep reads an empty partial index
 every 60s. **A session that finds silence here must NOT read it as "the feature is broken"** — that is
 the intended steady state, and the first real proof has to be provoked. Non-succeeded jobs: 3 dead
-`render_video` (the 2026-08/09 bundle bug), 2 `lipsync` failed on HeyGen credit. `subscriptions` is
-**0 rows**.
+`render_video` (the 2026-08/09 bundle bug), 2 `lipsync` failed on HeyGen credit.
+
+**`subscriptions` is 1 row as of 2026-09-21, and it is a TEST** — the founder's own ₪150 התחלה,
+`active`, `cancel_at_period_end = true`, period to 2026-10-21, with a `grant_period` of 1000 credits
+beside it. **Exclude it from every revenue figure.** Measured, with the rest of the read-back, at
+[[first-real-purchase-2026-09-21]]. Also measured the same day: `checkout_intents` holds 3 rows (one
+`completed`, two `pending` for pro and studio that were never paid), and `gateway_events` holds
+exactly one row, the `checkout_charge`. No `checkout_refused` row has ever been written.
 
 **Resend.** Region **Ireland (EU)**, `tavnit.ai` verified, DKIM `TXT resend._domainkey`, sending via
 two CNAMEs (`rsend`, `send`) not an SPF TXT, DMARC `p=none`, receiving off. Free tier 3,000/month
@@ -420,9 +516,15 @@ transfer basis is still open** — an Irish sending region says nothing about US
 and `/privacy` deliberately claims no basis. Unanswered at `docs/legal/reg2-open-questions.md:131`
 (COUNSEL) and `:167` (VENDOR).
 
-**The box.** `aiugc-worker.service`, `Restart=always`, `WORKER_ID=hetzner`. Last confirmed at
-`b8af879`; `origin/main` is now `f84e931`, so **the box is behind by at least the billing merges and
-the two branches in queue item 8 — UNVERIFIED, nobody has run `git log -1` on it since 2026-09-11.**
+**The box.** `aiugc-worker.service`, `Restart=always`, `WORKER_ID=hetzner`. **Deployed and
+restarted 2026-09-21: `git log -1` on the box = `4100cc7`, `HEAD = origin/main`, unit active,
+`worker started` with `workerId: hetzner` and `dryRun: false`** (founder-reported from the box
+itself, which is the artifact check §11 asks for). `apps/worker/.env` now also carries
+`SUMIT_COMPANY_ID`, `SUMIT_API_KEY` and `SUMIT_CHECKOUT_PAGES` for the **real** org — three
+`SUMIT_` variables confirmed in the running process's environment. The pages value was first pasted
+across two lines and the worker started anyway with a broken map
+([[env-values-differ-between-the-box-and-vercel]]); the checks that catch it are
+`docs/07-worker-box.md` §13.
 Sentry confirmed active **by test** (a job inserted knowing it would fail; the founder got the email),
 not by a log line — `error reporting on` also prints for a malformed DSN. `journalctl` sees unit
 lifecycle and OOM kills (`usermod -aG systemd-journal aiugc` has been run). `ufw` active, OpenSSH
@@ -431,7 +533,12 @@ only, key-only SSH from one desktop. `sudo` needs a password, so an unattended s
 Deploys: `docs/07-worker-box.md` §11.
 
 **Vercel.** `apps/web` off this monorepo: Root Directory `apps/web`, Next.js preset, no overrides,
-region `fra1`, `ANTHROPIC_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` present. Admin project also `fra1`.
+region `fra1`, `ANTHROPIC_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` present. **Since 2026-09-21 also
+`SUMIT_COMPANY_ID`, `SUMIT_API_KEY` and `SUMIT_CHECKOUT_PAGES` on the Production environment**, for
+the REAL org. Two of the three were first saved in a shape Vercel stores verbatim and the code
+cannot read — quotes around the JSON, then a malformed credential — which is what cost go-live day;
+**bare values only, and a change reaches only deployments created after it, so redeploy**
+([[env-values-differ-between-the-box-and-vercel]]). Admin project also `fra1`.
 `NEXT_PUBLIC_*` must be type Config, not Secret. **The access log renders IDT (UTC+3); the database
 does not.**
 
@@ -447,24 +554,29 @@ non-sensitive scopes.
 
 ## Owed founder actions
 
-- **Take the Sumit checkout live — in this order** (branch `feat/sumit-checkout`, 2026-09-21):
-  1. Review and merge `feat/sumit-checkout`; deploy `apps/web` (Vercel) and the worker box.
-  2. In the REAL Sumit org: create one fixed-price product per plan (התחלה ₪150, מתקדם ₪300,
-     פרימיום ₪500 — the prices in `plans`, VAT as the org is registered) and a payment page for
-     each, with the return URL `https://tavnit.ai/api/billing/sumit/return`, the customer's
-     card SAVED, and "לקוח נפרד לכל רכישה" OFF. Copy each page's URL.
-  3. Turn **Bit off** on those pages and at the clearing level — a Bit payment never returns the
-     og-* parameters and can never activate a subscription.
-  4. Delete any **recurring products** in the real org — renewal scheduling is ours; a Sumit-run
-     recurring charge would double-bill.
-  5. Set `SUMIT_COMPANY_ID`, `SUMIT_API_KEY` (the real org's API key from הגדרות → API) and
-     `SUMIT_CHECKOUT_PAGES` (JSON: `{"starter":"<url>","pro":"<url>","studio":"<url>"}`) on Vercel
-     for `apps/web` and in `apps/worker/.env` on the box. Never in a chat, never in a commit.
-  6. Restart the worker box so the renewal job runs the new code with the new env.
-  7. Make ONE real purchase on the cheapest plan with your own card from a customer account, check
-     `/home/plan` shows the plan and the credits, that Sumit issued the document, and refund it in
-     Sumit's UI (refunds have no API path yet — queue item 0.4).
-  8. Only then announce prices. **Do not touch `developers/testterminal` on the real org.**
+- **Take the Sumit checkout live — DONE 2026-09-21 except step 8.** Kept with a status per step,
+  because the order is the useful part and because a rebuild would follow it again:
+  1. ~~Merge and deploy~~ **DONE** — PR #52, `4100cc7`, on Vercel and on the box.
+  2. ~~One fixed-price product and payment page per plan in the REAL org, return URL
+     `https://tavnit.ai/api/billing/sumit/return`, card SAVED, "לקוח נפרד לכל רכישה" OFF~~ —
+     **DONE for התחלה, proven by the purchase**; מתקדם and פרימיום are founder-reported only and
+     have never been paid through ([[sumit-real-org-configuration]]).
+  3. **Bit off** — the catalogue screen showed no Bit option at all, consistent with the module not
+     being installed. Not the same as confirming it is off at the clearing level: OPEN.
+  4. **Delete any recurring products** in the real org — renewal scheduling is ours; a Sumit-run
+     recurring charge would double-bill. UNVERIFIED, nobody has confirmed there are none.
+  5. ~~Set `SUMIT_COMPANY_ID`, `SUMIT_API_KEY` and `SUMIT_CHECKOUT_PAGES` on Vercel and in
+     `apps/worker/.env`~~ — **DONE**, after three false starts on the value FORMAT
+     ([[env-values-differ-between-the-box-and-vercel]]). Never in a chat, never in a commit.
+  6. ~~Restart the worker box~~ — **DONE**, `git log -1` = `4100cc7`.
+  7. ~~Make ONE real purchase on the cheapest plan~~ — **DONE**, ₪150 התחלה, and it exposed the
+     defect this day is named for ([[first-real-purchase-2026-09-21]],
+     [[sumit-return-failure-invited-a-second-payment]]). **Not refunded** — by decision, and a new
+     terminal has no Upay balance to refund from anyway (queue item 0.4).
+  8. **Announce prices — STILL OPEN, and now gated on more than step 7.** Do not announce until
+     `fix/sumit-return-unconfirmed` is merged and live on the web: until then, any Sumit timeout or
+     5xx during a return tells a customer who has paid to pay again. **Do not touch
+     `developers/testterminal` on the real org.**
 - **Shoot and drop the landing media** — six slots, all empty today: `demoBefore`/`demoAfter`
   (one recording and the ad built from it), four hook clips, a hook-studio screenshot, a presenter
   clip, an Instagram screenshot. Filenames and the two-step swap are in
@@ -478,10 +590,26 @@ non-sensitive scopes.
   ([[0058-the-operator-address-is-a-tel-aviv-street-address]]).
 - **Send the reply email to UPay** confirming each site requirement and where it is satisfied. The
   Hebrew draft was handed over with the change that implemented them.
-- **Restart the worker box** (queue item 8 and the box entry above). Blast radius is wider than it
-  was: the renewal change, the label rule and the `רגע` ban fix are all merged and none is running.
+- ~~**Restart the worker box**~~ — done 2026-09-21 with the Sumit env; the box reports `4100cc7`,
+  which contains the renewal change, the label rule and the `רגע` ban fix (ancestry verified here).
+  All three are live.
 - ~~**Create the Sumit test business**~~ — done; the adapter was built and walked through on it
   2026-09-21 ([[sumit-test-org-configuration]]).
+- **Owed from the 2026-09-21 go-live** — eight, none of which this repo can answer:
+  1. **Compare the return URL on מתקדם and פרימיום to התחלה's.** Only התחלה has ever been paid
+     through; a wrong or empty return URL on the other two is invisible until someone buys.
+  2. **Confirm the catalogue settings on all three** — no quantity control and no add-product arrow
+     on the rendered pages, single-item limit on, wallets off, קטלוג ללא מע"מ off.
+  3. **Confirm the Bit module is not installed and that no recurring products exist** in the real
+     org. Both are inferred, neither observed.
+  4. **Set the notification inbox** on the global payment-page settings — it was empty.
+  5. **Ask Sumit what `Obligo 57,000` measures.** It is in `listquotas` and in no help article.
+  6. **Say whether 3DS appeared** during the ₪150 purchase, and what the receipt shows.
+  7. **Tell the accountant the ₪150 receipt is a self-purchase.** Refunding is optional and only
+     possible once the Upay balance exceeds ₪150.
+  8. **Watch the first real renewal and the first real upgrade.** Both take
+     `/billing/payments/charge/`, which has never run against the live terminal (queue item 0.15);
+     the renewal failure mode to watch for is `recurring_charge_failed`.
 - **Decide the emoji font subset** (conversation decision 9) — queue item 4 is blocked on it.
 - Vendor DPA / reg. 3 undertakings (Anthropic, ElevenLabs, HeyGen, fal.ai, Sentry, Resend), the
   ElevenLabs voice licence question, Sentry's data region, the עוסק פטור ceiling on gov.il. Full list:

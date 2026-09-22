@@ -111,7 +111,9 @@ number below was measured on the founder's test business the same day
    changes nothing; the intent stays pending. A refusal raised AFTER the payment was verified
    valid — the money moved — also writes a `gateway_events` row `checkout_refused`
    (`sumit_refused_<payment id>`: intent, reason, amount, document), so a paid-but-unactivated
-   customer is findable from our tables (`select * from gateway_events where kind = 'checkout_refused'`).
+   customer is findable from our tables. **A refusal is only half of them** — see "Returns that
+   could not be confirmed" below, and query both kinds:
+   `select * from gateway_events where kind in ('checkout_refused', 'checkout_unconfirmed')`.
 6. **Activate** — a `suspended` subscription is reactivated in place (new period from now, the
    intent's plan, `gateway_recurring_ref` = the Sumit customer id, the leftover expired); otherwise
    a new row. `grant_period` for the plan's credits; a `gateway_events` row keyed on the Sumit
@@ -120,9 +122,58 @@ number below was measured on the founder's test business the same day
    intent is refused — paid twice, refund by hand; an `expired` intent is still completable
    (expiry only stops reuse by a new click). The browser lands on `/home/plan?checkout=success`;
    on `?checkout=refused` when Sumit holds a valid payment we refused to activate on (the line
-   says not to pay again); on `?checkout=failed` for everything else — with the reason in the
+   says not to pay again); on `?checkout=failed` **only when Sumit positively answered that the
+   payment is not valid** (`ValidPayment: false`) — that is the one line inviting another
+   attempt; and on `?checkout=unconfirmed` for every other failure, with the reason in the
    server log and never on screen. `POST /api/account/checkout` itself answers 409 for an
    account whose subscription is live and not suspended, before writing anything.
+
+**Returns that could not be confirmed** (decision 0062 as amended 2026-09-21, after a real
+₪150 payment landed on "אפשר לנסות שוב" because Vercel's Sumit credentials were malformed —
+[`defects/sumit-return-failure-invited-a-second-payment.md`](vault/defects/sumit-return-failure-invited-a-second-payment.md)).
+The payment page redirects to the return URL **only after a payment it accepted** (measured),
+so a browser arriving with an `OG-PaymentID` has almost certainly paid. Anything that stops us
+verifying that payment — any `SumitApiError` (timeout, 5xx, `Status 2`, a credential Sumit
+rejects), a database error, an unexpected throw, and `payment_not_found`, which a wrong key or
+the wrong organisation answers for a payment that genuinely exists — lands on
+`?checkout=unconfirmed`: received, being confirmed, do **not** pay again. The route records
+each one through `recordUnconfirmedCheckoutReturn` (core): gateway `sumit`,
+`sumit_unconfirmed_<payment id>`, kind `checkout_unconfirmed`, payload `{ intentId,
+sumitPaymentId, sumitCustomerId, reason, detail, returnPath }`, `onConflictDoNothing` on the
+id, `processed_at` null. Recording is best-effort — a failure to record is logged and never
+changes the landing, and when the failure IS the database the log line is the only record,
+which is why every failure line carries the intent, payment and customer ids and the
+replayable return path. Before the session and ownership checks (malformed parameters, no
+session, an unknown intent) **nothing is written at all**; only the line changes.
+
+There is no "resolved" column. **A row is resolved when a `checkout_charge` exists under the
+same payment id** — which is what happens when the cause is fixed and the founder replays the
+return URL while signed in as that customer (measured 2026-09-21: the replay activated the
+subscription normally). The open ones:
+
+```sql
+select e.payload->>'intentId'   as intent,
+       e.payload->>'reason'     as reason,
+       e.payload->>'detail'     as detail,
+       e.payload->>'returnPath' as return_path,
+       e.received_at
+from gateway_events e
+where e.kind = 'checkout_unconfirmed'
+  and not exists (
+    select 1 from gateway_events c
+    where c.kind = 'checkout_charge'
+      and c.gateway_event_id = e.payload->>'sumitPaymentId'
+  )
+order by e.received_at desc;
+```
+
+Query on `kind`, never on `gateway_event_id like 'sumit_unconfirmed_%'`: the renewal gateway
+writes that same prefix with its own attempt UUID for a charge whose answer was lost
+(`SumitGateway.chargeRecurring`), which is a different thing. The two never collide — a Sumit
+payment id is digits and an attempt id is a UUID — but a prefix query mixes the populations.
+
+Nothing retries automatically. `gateway_events.kind` is plain `text` with no CHECK and no
+enum, so the new kind needed no migration.
 
 **Renewals and upgrades** charge that customer's default card: `/billing/payments/charge/` with
 `Customer.ID`, one item named by the description (`תבנית — מסלול <name>, חידוש חודשי` /
@@ -154,6 +205,18 @@ returns `SumitGateway` when the keys are set and `DRY_RUN` is not, and **refuses
 `DryRunGateway` against the production database** (every local `.env` sets `DRY_RUN=1` while
 pointing at production — a dry-run charge there granted real credits).
 
+**How the values must be TYPED differs by host, and getting it wrong cost most of go-live day**
+([`facts/env-values-differ-between-the-box-and-vercel.md`](vault/facts/env-values-differ-between-the-box-and-vercel.md)).
+`apps/worker/.env` on the box: **one line per value**, quotes optional — a value wrapped across
+lines is broken even inside single quotes, because systemd strips the quotes and keeps the break.
+Vercel: **bare values only** — no surrounding quotes, no `NAME=` prefix, no line breaks; Vercel
+stores what you paste, and **a change reaches only deployments created after it**, so redeploy.
+Nothing validates the shape: `config.ts` takes any string and the Sumit client checks presence
+only, so a quoted `SUMIT_COMPANY_ID` becomes `NaN` and is sent as `"CompanyID": null`. And note
+which values a given click actually exercises — **a checkout click proves only
+`SUMIT_CHECKOUT_PAGES`**; the credentials are reached only by `/api/billing/sumit/return`, by an
+upgrade through `/api/account/subscription/change`, and by the renewal job on the box.
+
 **The endpoint map** (all `POST https://api.sumit.co.il/<path>`, `Credentials: { CompanyID, APIKey }`
 in the JSON body, an HTTP 200 envelope `{ Status 0|1|2, UserErrorMessage, TechnicalErrorDetails, Data }`):
 
@@ -174,6 +237,18 @@ in the JSON body, an HTTP 200 envelope `{ Status 0|1|2, UserErrorMessage, Techni
 | `/accounting/general/getvatrate/`                                           | not used (conversion runbook, later)                                            |
 | `/creditguy/gateway/*`, `/creditguy/vault/*`                                | **never** — a raw terminal and a PAN vault                                      |
 | `/billing/generalbilling/*`, `/triggers/*`                                  | never — org setup; webhooks need the Growth plan                                |
+
+**A refund is not always available, which changes what "just refund it" means.** Per Sumit's help
+articles (5799412, 10792135, read 2026-09-21, not measured by us): a refund issued from Sumit needs
+a **Upay balance larger than the refund** and needs the original charge to have gone through Sumit;
+a full refund on the day of the charge usually becomes a cancellation; "סכום הזיכוי לא אושר על ידי
+חברת הסליקה…" means the balance is short, and the way out is Upay (their form, or WhatsApp
+055-9763169) and then crediting the document by hand. The control is on the payment's clearing card
+under סליקת אשראי → "יצירת זיכוי באשראי". **Consequence for a new terminal:** with no balance yet,
+the first customers cannot be refunded out of Sumit at all — so a paid-but-unactivated customer is
+recovered by fixing the cause and **replaying the return URL**, which is what worked on 2026-09-21
+([`facts/sumit-real-org-configuration.md`](vault/facts/sumit-real-org-configuration.md),
+[`facts/first-real-purchase-2026-09-21.md`](vault/facts/first-real-purchase-2026-09-21.md)).
 
 ## Subscription lifecycle
 

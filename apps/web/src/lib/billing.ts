@@ -87,6 +87,43 @@ const SUMIT_ID_RE = /^\d{1,20}$/;
 
 export type SumitReturnParams = { intentId: string; paymentId: string; customerId: string };
 
+/** First value per key, keyed lowercase — Sumit's casing is not ours to predict. */
+function lowerKeys(params: URLSearchParams): Map<string, string> {
+  const lower = new Map<string, string>();
+  params.forEach((value, key) => {
+    const k = key.toLowerCase();
+    if (!lower.has(k)) lower.set(k, value);
+  });
+  return lower;
+}
+
+/**
+ * Whether the URL carries a payment id at all, whatever its casing and even
+ * when the rest of the query is unusable. Measured: the payment page redirects
+ * ONLY after a payment it accepted, so a browser holding one of these has
+ * almost certainly paid and must never be told to try again. Non-empty is the
+ * whole test — a value too malformed for parseSumitReturnParams still says a
+ * payment page sent this browser here.
+ */
+export function sumitPaymentIdParam(params: URLSearchParams): string | null {
+  return lowerKeys(params).get("og-paymentid")?.trim() || null;
+}
+
+/**
+ * The route path plus ONLY Sumit's own og-* parameters, in the order they
+ * arrived. This is what a failure logs and records, so the founder can replay
+ * the return once the cause is fixed; everything else on the query is dropped
+ * rather than copied into a log line and a database row.
+ */
+export function sumitReturnPath(url: URL): string {
+  const og = new URLSearchParams();
+  url.searchParams.forEach((value, key) => {
+    if (key.toLowerCase().startsWith("og-")) og.append(key, value);
+  });
+  const query = og.toString();
+  return query ? `${url.pathname}?${query}` : url.pathname;
+}
+
 /**
  * The three ids the return URL carries, or null when any is missing or
  * malformed. Keys are matched CASE-INSENSITIVELY: Sumit's help article writes
@@ -96,11 +133,7 @@ export type SumitReturnParams = { intentId: string; paymentId: string; customerI
  * its ids to look things up server-to-server.
  */
 export function parseSumitReturnParams(params: URLSearchParams): SumitReturnParams | null {
-  const lower = new Map<string, string>();
-  params.forEach((value, key) => {
-    const k = key.toLowerCase();
-    if (!lower.has(k)) lower.set(k, value);
-  });
+  const lower = lowerKeys(params);
   const intentId = lower.get("og-externalidentifier") ?? "";
   const paymentId = lower.get("og-paymentid") ?? "";
   const customerId = lower.get("og-customerid") ?? "";

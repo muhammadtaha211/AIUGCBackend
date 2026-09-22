@@ -17,6 +17,7 @@ import {
   CHECKOUT_REFUSED_CONTACT,
   CHECKOUT_REFUSED_LINE,
   CHECKOUT_SUCCESS_LINE,
+  CHECKOUT_UNCONFIRMED_LINE,
   checkoutPath,
   DIALOG_BACK,
   downgradeDialogBody,
@@ -38,6 +39,7 @@ import {
   upgradeDialogBody,
   upgradeDialogTitle,
   type CardIntent,
+  type CheckoutState,
   type PlansView,
   type SubscriptionView,
 } from "@/lib/plans-ui";
@@ -71,7 +73,7 @@ export function PlanManager({
   checkout,
 }: {
   view: PlansView;
-  checkout: "success" | "refused" | "failed" | null;
+  checkout: CheckoutState | null;
 }) {
   const router = useRouter();
   const { balance, setBalance } = useBalance();
@@ -401,6 +403,17 @@ export function PlanManager({
       {checkout === "refused" && (
         <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
           {CHECKOUT_REFUSED_LINE}{" "}
+          <Link href="/contact" className="underline underline-offset-2">
+            {CHECKOUT_REFUSED_CONTACT}
+          </Link>
+        </p>
+      )}
+      {/* The return leg could not confirm a payment the page had already taken:
+          same job as the refused line — stop a second payment — for the case
+          where we do not yet know what happened. */}
+      {checkout === "unconfirmed" && (
+        <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
+          {CHECKOUT_UNCONFIRMED_LINE}{" "}
           <Link href="/contact" className="underline underline-offset-2">
             {CHECKOUT_REFUSED_CONTACT}
           </Link>

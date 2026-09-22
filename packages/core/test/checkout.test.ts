@@ -11,6 +11,7 @@ import {
   createCheckoutIntent,
   INTENT_REUSE_MS,
   INTENT_TTL_MS,
+  recordUnconfirmedCheckoutReturn,
 } from "../src/pipelines/checkout";
 import { creditBalance, grantPeriod } from "../src/pipelines/credits";
 import { createTestDb } from "./helpers/pglite";
@@ -607,6 +608,9 @@ describe("completeCheckout", () => {
       planCode: "starter",
       status: "canceled",
       gatewayRecurringRef: "old",
+      // Explicit, because the assertion below orders on it: the default is the
+      // real clock, which is now later than NOW and flipped the order.
+      createdAt: new Date("2026-07-01T00:00:00Z"),
       currentPeriodStart: new Date("2026-07-01T00:00:00Z"),
       currentPeriodEnd: new Date("2026-08-01T00:00:00Z"),
     });
@@ -624,6 +628,102 @@ describe("completeCheckout", () => {
       .from(schema.subscriptions)
       .orderBy(asc(schema.subscriptions.createdAt));
     expect(rows.map((r) => r.status)).toEqual(["canceled", "active"]);
+    await pg.close();
+  });
+});
+
+describe("recordUnconfirmedCheckoutReturn", () => {
+  const unconfirmed = {
+    intentId: "2b7c5a41-9e10-4a53-a7a8-0c1c1a9f52d1",
+    sumitPaymentId: PAYMENT_ID,
+    sumitCustomerId: CUSTOMER,
+    reason: "sumit_business",
+    detail: "sumit /billing/payments/get/: Invalid Credentials",
+    returnPath: `/api/billing/sumit/return?OG-PaymentID=${PAYMENT_ID}`,
+  };
+
+  it("one row per payment id, whatever the customer does with the URL — and the FIRST reason is the one kept", async () => {
+    const { db, pg } = await createTestDb();
+
+    await recordUnconfirmedCheckoutReturn(db, unconfirmed);
+    // The customer reloads, and by then the failure is a different one.
+    await recordUnconfirmedCheckoutReturn(db, {
+      ...unconfirmed,
+      reason: "unexpected_error",
+      detail: "pooler dropped the connection",
+    });
+
+    const rows = await db.select().from(schema.gatewayEvents);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      gateway: "sumit",
+      gatewayEventId: `sumit_unconfirmed_${PAYMENT_ID}`,
+      kind: "checkout_unconfirmed",
+    });
+    expect(rows[0]!.payload).toEqual(unconfirmed);
+    // Nothing was processed: that is what the null says, and what resolves the
+    // row is a checkout_charge under the same payment id, not this column.
+    expect(rows[0]!.processedAt).toBeNull();
+
+    // A different payment is a different row.
+    await recordUnconfirmedCheckoutReturn(db, { ...unconfirmed, sumitPaymentId: "9999999999" });
+    expect(await db.select().from(schema.gatewayEvents)).toHaveLength(2);
+    await pg.close();
+  });
+
+  it("leaves a checkout_charge alone: the row sits beside it and the completed checkout is untouched", async () => {
+    const { db, pg } = await createTestDb();
+    const { userId } = await account(db);
+    const intent = await intentFor(db, userId);
+    const { client } = fake({ payment: { externalIdentifier: intent.id } });
+    await completeCheckout(db, {
+      intentId: intent.id,
+      sumitPaymentId: PAYMENT_ID,
+      sumitCustomerId: CUSTOMER,
+      now: NOW,
+      client,
+    });
+    const balance = await creditBalance(db, userId);
+
+    await recordUnconfirmedCheckoutReturn(db, { ...unconfirmed, intentId: intent.id });
+
+    const rows = await db.select().from(schema.gatewayEvents);
+    expect(rows.map((r) => r.gatewayEventId).sort()).toEqual([
+      PAYMENT_ID,
+      `sumit_unconfirmed_${PAYMENT_ID}`,
+    ]);
+    const charge = rows.find((r) => r.gatewayEventId === PAYMENT_ID)!;
+    expect(charge.kind).toBe("checkout_charge");
+    expect(charge.processedAt?.getTime()).toBe(NOW.getTime());
+    expect(charge.payload).toMatchObject({ intentId: intent.id, planCode: "starter" });
+    expect(await creditBalance(db, userId)).toBe(balance);
+    expect((await db.select().from(schema.checkoutIntents))[0]!.status).toBe("completed");
+    await pg.close();
+  });
+
+  it("leaves a checkout_refused alone: three different ids, three different meanings", async () => {
+    const { db, pg } = await createTestDb();
+    const { userId } = await account(db);
+    const intent = await intentFor(db, userId);
+    // A valid payment at the wrong price: core records the refusal itself.
+    await expect(
+      completeCheckout(db, {
+        intentId: intent.id,
+        sumitPaymentId: PAYMENT_ID,
+        sumitCustomerId: CUSTOMER,
+        now: NOW,
+        client: fake({ payment: { externalIdentifier: intent.id, amountAgorot: 14900 } }).client,
+      }),
+    ).rejects.toMatchObject({ reason: "amount_mismatch" });
+
+    await recordUnconfirmedCheckoutReturn(db, { ...unconfirmed, intentId: intent.id });
+
+    const rows = await db.select().from(schema.gatewayEvents);
+    expect(rows.map((r) => r.kind).sort()).toEqual(["checkout_refused", "checkout_unconfirmed"]);
+    const refused = rows.find((r) => r.kind === "checkout_refused")!;
+    expect(refused.gatewayEventId).toBe(`sumit_refused_${PAYMENT_ID}`);
+    expect(refused.payload).toMatchObject({ reason: "amount_mismatch", amountAgorot: 14900 });
+    expect(refused.processedAt?.getTime()).toBe(NOW.getTime());
     await pg.close();
   });
 });

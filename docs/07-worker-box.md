@@ -181,8 +181,21 @@ ELEVENLABS_API_KEY=PASTE-FROM-DESKTOP-ENV
 FAL_KEY=PASTE-FROM-DESKTOP-ENV
 HEYGEN_API_KEY=PASTE-FROM-DESKTOP-ENV
 SENTRY_DSN=PASTE-DSN-FROM-SENTRY-PROJECT-SETTINGS
+SUMIT_COMPANY_ID=PASTE-REAL-ORG-VALUE
+SUMIT_API_KEY=PASTE-REAL-ORG-VALUE
+SUMIT_CHECKOUT_PAGES=PASTE-REAL-ORG-JSON-ON-ONE-LINE
 WORKER_ID=hetzner
 ```
+
+**Every value is ONE line. No exceptions, and quotes do not buy you one.** On 2026-09-21
+`SUMIT_CHECKOUT_PAGES` was pasted here wrapped across lines inside single quotes; systemd stripped
+the quotes and kept the break, the value in the running process ended at position 77, and the worker
+**started normally anyway** — the env schema takes any string and no worker code path parses that
+map. Nothing tells you. The checks below do.
+([`vault/facts/env-values-differ-between-the-box-and-vercel.md`](vault/facts/env-values-differ-between-the-box-and-vercel.md).)
+
+The three `SUMIT_` lines are the **real** organisation's, not the desktop's — the desktop points at
+the test business ([`vault/facts/sumit-real-org-configuration.md`](vault/facts/sumit-real-org-configuration.md)).
 
 Three lines that are different from the desktop **on purpose**:
 
@@ -375,3 +388,48 @@ session pooler) prints it alongside the job's attempt count and the worker heart
 **Resolved 2026-09-03.** The box's first week on port 6543 logged zero `"claim failed` and zero
 `"lease sweep failed` lines — `DATABASE_URL` stays on the transaction pooler:
 `docs/vault/decisions/0016-worker-stays-on-transaction-pooler-6543.md`.
+
+## 13. After changing `apps/worker/.env` — prove the PROCESS got what you typed
+
+A restart is not proof. The box will start, run and claim jobs with a malformed `SUMIT_` value, and
+the only symptom is a renewal that fails weeks later. These four checks were run by the founder on
+2026-09-21, after the paste that broke `SUMIT_CHECKOUT_PAGES` across two lines; **none of them
+prints a key.**
+
+```
+PID=$(systemctl show aiugc-worker -p MainPID --value)
+tr '\0' '\n' < /proc/$PID/environ | grep -c '^SUMIT_'
+```
+
+**Works:** `3`. Fewer means the unit is running on an older environment — the file is read at start,
+so a change needs `sudo systemctl restart aiugc-worker`, not a reload.
+
+```
+tr '\0' '\n' < /proc/$PID/environ | grep '^SUMIT_CHECKOUT_PAGES=' | cut -d= -f2- | node -e 'console.log(Object.keys(JSON.parse(require("fs").readFileSync(0,"utf8"))))'
+```
+
+**Works:** `[ 'starter', 'pro', 'studio' ]`. This is the check that catches the wrapped value: a
+broken one throws `SyntaxError` here while the worker keeps running happily. It prints plan codes,
+never a URL or a key.
+
+```
+cd ~/AIUGCBackend/apps/worker
+CID=$(sed -n 's/^SUMIT_COMPANY_ID=//p' .env | tr -d "'\"\r")
+KEY=$(sed -n 's/^SUMIT_API_KEY=//p' .env | tr -d "'\"\r")
+printf '{"Credentials":{"CompanyID":%s,"APIKey":"%s"}}' "$CID" "$KEY" | curl -s https://api.sumit.co.il/website/companies/listquotas/ -H 'content-type: application/json' -d @- | head -c 400; echo
+unset CID KEY
+```
+
+**Works:** the answer starts with the quota object and contains `"Status":0`. Anything else means
+the keys do not authenticate — `Status 1` with "Missing Credentials" or "Invalid Credentials" is the
+same failure the return leg hit on Vercel. The quota numbers also tell you **which** organisation
+answered (the real org reports Operations 50 and Mails 5000; the test org 100 and 1000 —
+[`vault/facts/sumit-real-org-configuration.md`](vault/facts/sumit-real-org-configuration.md)).
+
+**`printf` is a shell builtin**, so the key never reaches `argv` or the shell history, and `unset`
+clears both variables afterwards. Never echo either value, and never pass one on a command line —
+CLAUDE.md's credential rule, which this repo has had to enforce twice.
+
+Fixing an env value on the **box** does not fix Vercel, and the reverse: the two hosts take the same
+value in different shapes, and a Vercel change reaches only deployments created after it.
+[`vault/facts/env-values-differ-between-the-box-and-vercel.md`](vault/facts/env-values-differ-between-the-box-and-vercel.md).
