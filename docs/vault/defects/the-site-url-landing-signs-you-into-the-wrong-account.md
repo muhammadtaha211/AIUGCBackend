@@ -2,8 +2,8 @@
 type: defect
 status: verified
 verified: 2026-09-22
-method: "Code read, 2026-09-22, at 0cca4fa (branch fix/site-url-landing). Repo: apps/web/src/middleware.ts, apps/web/src/app/page.tsx, apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/test/middleware.test.ts read in full; repo-wide grep over apps/ and packages/ for error_description|error_code|access_denied|location.hash and for URL-param reads of `code`, excluding node_modules and .next. Installed libraries read from node_modules/.pnpm, not from docs: next 15.5.20 (dist/server/base-http/node.js, dist/server/lib/patch-set-header.js, dist/server/lib/router-server.js, dist/server/next-server.js, dist/server/lib/server-ipc/utils.js, dist/server/lib/router-utils/resolve-routes.js, dist/server/async-storage/request-store.js, dist/server/web/spec-extension/adapters/request-cookies.js, dist/compiled/@edge-runtime/cookies/index.js), @supabase/auth-js 2.110.6 (dist/main/GoTrueClient.js, dist/main/lib/constants.js, dist/main/lib/locks.js), @supabase/ssr 0.12.3 (dist/main/createBrowserClient.js, dist/main/cookies.js, dist/main/utils/chunker.js, dist/main/utils/constants.js). The symptom itself is FOUNDER-REPORTED, not observed here. The fix on this branch is pinned by tests; it has NOT been exercised against a real occurrence."
-source: code
+method: "Code read, 2026-09-22, at 0cca4fa (branch fix/site-url-landing). Repo: apps/web/src/middleware.ts, apps/web/src/app/page.tsx, apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/test/middleware.test.ts read in full; repo-wide grep over apps/ and packages/ for error_description|error_code|access_denied|location.hash and for URL-param reads of `code`, excluding node_modules and .next. Installed libraries read from node_modules/.pnpm, not from docs: next 15.5.20 (dist/server/base-http/node.js, dist/server/lib/patch-set-header.js, dist/server/lib/router-server.js, dist/server/next-server.js, dist/server/lib/server-ipc/utils.js, dist/server/lib/router-utils/resolve-routes.js, dist/server/async-storage/request-store.js, dist/server/web/spec-extension/adapters/request-cookies.js, dist/compiled/@edge-runtime/cookies/index.js), @supabase/auth-js 2.110.6 (dist/main/GoTrueClient.js, dist/main/lib/constants.js, dist/main/lib/locks.js), @supabase/ssr 0.12.3 (dist/main/createBrowserClient.js, dist/main/cookies.js, dist/main/utils/chunker.js, dist/main/utils/constants.js). The symptom itself is FOUNDER-REPORTED, not observed here. The fix on this branch is pinned by tests; it has NOT been exercised against a real occurrence. The Vercel Set-Cookie merge order was MEASURED 2026-09-22, not read: `curl -sS -D - -o /dev/null <deployment>/api/probe` x3, no redirect following, against preview deployment `4cb3330yd` built from throwaway branch `probe/vercel-cookie-merge` commit `eead322` (branch and deployment since deleted); the browser-side outcome read once with document.cookie at the redirect target."
+source: code + browser
 ---
 
 # The Site-URL landing signed you into the wrong account, and destroyed the evidence
@@ -80,18 +80,15 @@ survives; recording them so they are not re-derived.
   **no cross-tab lock** in this version (`lib/locks.js:2-9`, `GoTrueClient.js:154`, `:199-203`);
   visibility is what closes the race, not a mutex. **Not** ruled out: two _simultaneously visible_
   windows — see UNVERIFIED.
-- **The middleware's rotated `Set-Cookie` overwriting the callback's new session.** Ruled out on the
-  installed Next.js 15.5.20. The route handler's cookie is emitted **last** and therefore wins:
-  `dist/server/base-http/node.js:124-131` implements `appendHeader` as
-  `setHeader(name, [...currentValues, value])`, and `dist/server/lib/patch-set-header.js:20-32`
-  independently rebuilds the array as `[...middlewareValue, ...value]` — middleware first by design
-  (`dist/server/base-server.js:525-527`: "not overridden by API routes"). Within the request the two
-  writes also collapse to one value per name before emission
-  (`dist/server/async-storage/request-store.js:115` →
-  `dist/server/web/spec-extension/adapters/request-cookies.js:117`,
-  `dist/compiled/@edge-runtime/cookies/index.js:292-298`). The window was narrow regardless: the
-  middleware only writes cookies if a refresh fires, and `__loadSession` refreshes only inside
-  `EXPIRY_MARGIN_MS` = **90 000 ms** (`@supabase/auth-js/dist/main/lib/constants.js:13`).
+- **The middleware's rotated `Set-Cookie` overwriting the callback's new session.** Ruled out — and
+  since **2026-09-22 ruled out ON VERCEL by measurement**, not by reading the self-hosted Node path.
+  See "Measured on Vercel" below. The earlier reading of the installed Next.js 15.5.20 pointed the
+  same way (`dist/server/base-http/node.js:124-131` implements `appendHeader` as
+  `setHeader(name, [...currentValues, value])`; `dist/server/lib/patch-set-header.js:20-32`
+  rebuilds the array as `[...middlewareValue, ...value]`, middleware first by design —
+  `dist/server/base-server.js:525-527`, "not overridden by API routes"), but it was the wrong
+  evidence for production and two of its supporting claims were wrong. Both are corrected below
+  rather than deleted.
 - **A stale cookie chunk shadowing the new session.** Ruled out _for this app's configuration_, not
   in general. The real hazard exists: `@supabase/ssr/dist/main/utils/chunker.js:66-70` —
   `combineChunks` reads the **unchunked base name first** and never looks at `.0` if it is truthy —
@@ -100,6 +97,85 @@ survives; recording them so they are not re-derived.
   (`cookies.js:186-197` browser, `:379-400` server) and **no `cookieOptions` is configured anywhere**
   — `apps/web` and `apps/admin` both call `createBrowserClient(url, key)` bare — so there is only one
   cookie scope for a stale one to hide in. If a `domain` is ever set, re-open this.
+
+## Measured on Vercel — 2026-09-22
+
+`UNVERIFIED 4` asked for exactly one artefact: `curl -sD -` against a deployed route that writes the
+same cookie name in both middleware and handler. Here it is.
+
+A throwaway branch `probe/vercel-cookie-merge` (commit `eead322`, preview deployment `4cb3330yd`;
+branch and deployment both deleted after the run) put the callback's shape behind `/api/probe` —
+the middleware wrote `probe=mw` onto `NextResponse.next({ request })` and returned it, and the route
+handler wrote `probe=route` through `next/headers` and returned `NextResponse.redirect(...)`, a 307
+carrying cookies. `curl -sS -D - -o /dev/null <deployment>/api/probe`, no redirect following, three
+runs. Run 1 verbatim:
+
+```
+HTTP/1.1 307 Temporary Redirect
+Age: 0
+Cache-Control: public, max-age=0, must-revalidate
+Content-Length: 0
+Date: Tue, 22 Sep 2026 05:42:34 GMT
+Location: https://<deployment>/
+Server: Vercel
+Set-Cookie: probe=mw; Path=/
+Set-Cookie: probe=route; Path=/
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+Vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
+X-Matched-Path: /api/probe
+X-Robots-Tag: noindex
+X-Vercel-Cache: MISS
+X-Vercel-Id: fra1::fra1::mn8g5-1790055753982-02577c07b38a
+```
+
+Runs 2 and 3 were byte-identical except for the two headers that cannot repeat — the host in
+`Location` is elided here, not in the capture:
+
+```
+Date: Tue, 22 Sep 2026 05:42:35 GMT   X-Vercel-Id: fra1::fra1::gvsxl-1790055755233-2852b32d8f13
+Set-Cookie: probe=mw; Path=/
+Set-Cookie: probe=route; Path=/
+
+Date: Tue, 22 Sep 2026 05:42:35 GMT   X-Vercel-Id: fra1::fra1::4mldr-1790055755671-c81721a2d0ef
+Set-Cookie: probe=mw; Path=/
+Set-Cookie: probe=route; Path=/
+```
+
+**Two `probe=` headers. Both survive. `mw` first, `route` last — every run.** And the browser keeps
+the last one, measured rather than inferred from RFC 6265: loading the same URL in a browser and
+reading `document.cookie` at the redirect target returned `probe=route`.
+
+**So the hypothesis is dead at Vercel too.** A route handler that writes the session itself beats a
+middleware that rotated the same cookie name on the same request, on the production serving path as
+well as the self-hosted one.
+
+### Two supporting claims that were wrong
+
+- **`patch-set-header.js` is not the mechanism on Vercel, and cannot be.** Its only data source is
+  request meta `middlewareCookie`, written in exactly one place in the whole package —
+  `dist/server/next-server.js:1293`, inside `async runMiddleware` (`:1162`), which opens with
+  `if (process.env.NEXT_MINIMAL) throw ... 'runMiddleware should not be called in minimal mode'`
+  (`:1163-1169`). Wherever middleware runs as its own function instead of in-process, that merge
+  cannot run at all. (That Vercel's builder sets `NEXT_MINIMAL` is **REASONED** — `@vercel/next` is
+  not installed in this tree.) The ordering above is Vercel's proxy's, and this note does not claim
+  to know which code produced it.
+- **"The window was narrow regardless … refreshes only inside `EXPIRY_MARGIN_MS` = 90 000 ms" was
+  misleading**, and misleading in the direction that mattered. The condition at
+  `@supabase/auth-js/dist/main/GoTrueClient.js:2489-2491` is
+  `expires_at * 1000 - Date.now() < EXPIRY_MARGIN_MS`, which **every already-expired session
+  satisfies**, however long it has been expired. The window is 90 s before expiry and unbounded
+  after it — so it never narrowed the hazard for the expired-session case this defect is about. The
+  ruling-out now rests on the measurement alone, which is stronger anyway.
+
+### What this probe does not settle
+
+Both writers used one cookie name at `Path=/`, so it settles count and order **for a name both
+sides write**. It says nothing about a name the route handler never writes — the live shapes being
+a chunked `sb-<ref>-auth-token.0`/`.1` from the middleware against an unchunked write from the
+callback, and `/auth/callback`'s `?error=` branch, which constructs no Supabase client at all and
+so writes no session of its own — `createServerSupabase()` is called only at
+`app/auth/callback/route.ts:22`, inside `if (code)`, and a `?error=` landing takes the `:30-39`
+path instead. See `UNVERIFIED 7`.
 
 ## FIXED on branch `fix/site-url-landing` — 2026-09-22, UNMERGED
 
@@ -145,14 +221,24 @@ Each with the one artefact that would settle it.
 3. **Every origin `apps/web` is actually served from.** Vercel assigns per-deployment and
    per-branch `*.vercel.app` hosts; `state-of-play.md` records `apps/admin` as reachable on one.
    That `apps/web` has the same is REASONED, not read. Settled by: the Vercel project's Domains page.
-4. **Vercel's own `Set-Cookie` merge order.** The Next.js finding above is the self-hosted Node
-   path; on Vercel, middleware is a separate Edge Function and the merge is done by infrastructure
-   that is not in this repo. Settled by: `curl -sD -` against a deployed route that writes the same
-   cookie name in both middleware and handler.
+4. ~~**Vercel's own `Set-Cookie` merge order.**~~ **SETTLED 2026-09-22** by the artefact this line
+   asked for — see "Measured on Vercel" above. Both headers survive, middleware first and route
+   last, and the browser keeps the route's value. Kept in place rather than deleted so the numbering
+   below does not shift.
 5. **The two-visible-windows refresh race.** Nothing serializes two foreground tabs. Runtime
    interleaving; code cannot settle it.
 6. **Whether the fix resolves the founder's symptom.** It is pinned by tests and unexercised against
    a real occurrence.
+7. **Whether `x-middleware-set-cookie` reaches the origin function on Vercel** — and so whether a
+   route handler re-emits the middleware's cookies for names it does not itself write. On the
+   installed Next that seeding is real: `dist/server/async-storage/request-store.js:112-118` passes
+   the mutating proxy to `mergeMiddlewareCookies`, whose `set` trap marks each name modified
+   (`adapters/request-cookies.js:146-155`), and `route-modules/app-route/module.js:482` emits them
+   on the handler's own response. It is also what would let `@supabase/ssr` 0.12.3's stale-chunk
+   sweep (`dist/main/cookies.js:388-402`) see an orphaned chunk from the other account and delete
+   it — the mitigation only exists if the seeding happens. The two-header result above is consistent
+   with the seeding happening AND with it not happening, so it does not settle this. Settled by: a
+   probe route that returns `(await cookies()).get("probe")` while the middleware sets it.
 
 Related: [[auth-round-trips-that-miss-the-callback-die-silently]] (the parent defect and its
 `/auth/callback` error handling), [[0006-google-oauth-is-in-scope-for-launch]] (the `access_denied`
