@@ -2,7 +2,7 @@
 type: defect
 status: verified
 verified: 2026-09-03
-method: "2026-09-03 — GoTrue's own error handling read at the version this project runs (v2.196.0, from `GET {SUPABASE_URL}/auth/v1/health`): `redirectErrors` (internal/api/external.go:812-836 @ v2.196.0) writes the error params into BOTH the query string and the fragment, unconditionally, with no PKCE/implicit branch, and `getErrorQueryString` (:839-883) sets `error_code` only for `*HTTPError`, so a provider `access_denied` carries `error` + `error_description` and no `error_code`. The Part B code was read and typechecked, NOT exercised against a real failed round-trip. 2026-08-27 — repo-wide enumeration of every supabase `.auth.<method>` call site over **/*.{ts,tsx} (complete set: getUser, getSession, signUp, signInWithPassword, signInWithOAuth, signOut, exchangeCodeForSession — nothing else); full reads of apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/src/middleware.ts, both apps' login pages; full route-tree globs of apps/web and apps/admin. Run as 4 investigators + 4 adversarial verifiers (Hebrew UI strings, raw /auth/v1 fetches, dynamic dispatch all swept); every claim confirmed."
+method: "2026-09-03 — GoTrue's own error handling read at the version this project runs (v2.196.0, from `GET {SUPABASE_URL}/auth/v1/health`): `redirectErrors` (internal/api/external.go:812-836 @ v2.196.0) writes the error params into BOTH the query string and the fragment, unconditionally, with no PKCE/implicit branch, and `getErrorQueryString` (:839-883) sets `error_code` only for `*HTTPError`, so a provider `access_denied` carries `error` + `error_description` and no `error_code`. The Part B code was read and typechecked, NOT exercised against a real failed round-trip. 2026-08-27 — repo-wide enumeration of every supabase `.auth.<method>` call site over **/*.{ts,tsx} (complete set: getUser, getSession, signUp, signInWithPassword, signInWithOAuth, signOut, exchangeCodeForSession — nothing else); full reads of apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/src/middleware.ts, both apps' login pages; full route-tree globs of apps/web and apps/admin. Run as 4 investigators + 4 adversarial verifiers (Hebrew UI strings, raw /auth/v1 fetches, dynamic dispatch all swept); every claim confirmed." 2026-09-22 — the signOut amendment below is measured in [[the-site-url-landing-signs-you-into-the-wrong-account]], whose method carries the auth-js/@supabase/ssr reads and the mutation-checked tests; nothing else in this note was re-measured that day, so `verified` stays 2026-09-03."
 source: code
 ---
 
@@ -95,6 +95,12 @@ when the exchange failed (expired link, reused code). Fixed below.
   `/login?error=oauth`, with both logged.
 - Neither → `/start`, unchanged, so nothing regresses if the params ever move.
 
+**Amended 2026-09-22 (`f544619`, branch `fix/callback-clears-stale-session`):** the two
+`/login?error=oauth` outcomes above also end the session the browser arrived with —
+`auth.signOut({ scope: "local" })`, best-effort, before the redirect. Without it the customer read
+the Hebrew failure message while still signed in as the older account. Consequence, and the open
+question it raises: [[the-site-url-landing-signs-you-into-the-wrong-account]].
+
 `/login` reads `?error=oauth` server-side from its `searchParams` prop and seeds `LoginForm`'s
 existing error state with `GOOGLE_SIGN_IN_FAILED` (`apps/web/src/lib/auth.ts`):
 `ההתחברות עם Google לא הצליחה. נסו שוב, או היכנסו עם אימייל וסיסמה.` Only `error=oauth` is
@@ -132,7 +138,7 @@ access_denied|location.hash` hits only `auth/callback/route.ts`. Same silent dea
 original defect, one door further out. Not fixed, deliberately: it needs a decision about what `/`
 should do with an auth error, and `/` is the marketing page.
 
-### FIXED (the Site-URL landing) — 2026-09-22, branch `fix/site-url-landing`
+### FIXED (the Site-URL landing) — 2026-09-22, merged in #54 (`352484e`)
 
 `apps/web/src/middleware.ts` forwards `/` to `/auth/callback` with `request.nextUrl.search`
 verbatim when the query carries `error`, `error_code`, `error_description`, or a UUID-shaped

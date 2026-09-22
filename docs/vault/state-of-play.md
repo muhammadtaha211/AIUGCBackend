@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-21
+updated: 2026-09-22
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -477,9 +477,16 @@ one hole the 2026-09-21 fix does not cover. The return leg is the only writer: n
   answer it from the payment id, and both would run on the box with the box's own credentials —
   independent of Vercel's, which is the pair that failed on go-live day.
 
-**15. The Site-URL wrong-account landing — FIXED on `fix/site-url-landing`, UNMERGED.**
-[[the-site-url-landing-signs-you-into-the-wrong-account]]; the trigger stays UNVERIFIED until the
-founder says which origin the failed attempt started from and what the live Redirect URLs list holds.
+**15. The Site-URL wrong-account landing — FIXED and MERGED in #54 (`352484e`).** The second half,
+the stale session left live behind the failure message, is `f544619` on `fix/callback-clears-stale-session`
+(pushed, not merged). [[the-site-url-landing-signs-you-into-the-wrong-account]]. Two things stay
+open and neither is code: **the trigger** — UNVERIFIED until the founder says which origin the
+failed attempt started from and what the live Redirect URLs list holds — and **whether `/login`
+should redirect a signed-in user**, which decides how often the clear's consequence bites (a
+signed-in user who cancels a Google sign-in from `/login` is now signed out). A third, larger
+consequence is recorded in the note and is also a founder call: `/auth/callback?error=anything` is
+now an unauthenticated sign-out any link can trigger, because the auth cookie is `SameSite=Lax` and
+rides a top-level cross-site GET.
 
 ## External state — not in the repo
 
