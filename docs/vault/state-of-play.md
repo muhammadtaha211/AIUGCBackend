@@ -449,7 +449,7 @@ call; the brief for the analysis fix deliberately left their wire untouched.
 
 **12. Sweep the stale `apps/web/src/lib/auth.ts` cites.** `5c13ead` pushed everything below `signUp`
 down ~54 lines. LEFT: `docs/08` `:383`, `:631`; `0005` `:41`. Done on `fix/site-url-landing`:
-`docs/08` `:760`, both in [[auth-round-trips-that-miss-the-callback-die-silently]],
+`docs/08` `:763` (was `:760`), both in [[auth-round-trips-that-miss-the-callback-die-silently]],
 [[auth-email-runs-through-resend]] `:5`, `0005` `:48`. **Do not touch `0006:26`** — correct there.
 
 **13. Ceiling alert + `vat_rate` config — build with the gateway adapter, not before.** Spec in
@@ -477,17 +477,12 @@ one hole the 2026-09-21 fix does not cover. The return leg is the only writer: n
   answer it from the payment id, and both would run on the box with the box's own credentials —
   independent of Vercel's, which is the pair that failed on go-live day.
 
-**15. The Site-URL wrong-account landing — FIXED and MERGED in #54 (`352484e`).** The second half,
-the stale session left live behind the failure message, is `f544619` on `fix/callback-clears-stale-session`
-(pushed, not merged). [[the-site-url-landing-signs-you-into-the-wrong-account]]. Two things stay
-open and neither is code: **the trigger** — UNVERIFIED until the founder says which origin the
-failed attempt started from, the Redirect URLs half of it having been read on 2026-09-22 — and
-**whether `/login` should redirect a signed-in user**, which decides how often the clear's
-consequence bites (a signed-in user who cancels a Google sign-in from `/login` is now signed out).
-The drive-by sign-out that the first cut of the clear opened — `/auth/callback?error=anything` from
-any cross-site link, because the auth cookie is `SameSite=Lax` — is **closed**: the clear now
-requires a PKCE code-verifier cookie. What that costs is in the note: a cross-origin `?code=`
-landing (a `*.vercel.app` preview; `localhost:3000` is allowlisted) no longer clears.
+**15. The Site-URL wrong-account landing — CLOSED 2026-09-22.** Both halves merged (PR #54
+`352484e`, PR #56 `57e599d`), and **the trigger is measured**: a third occurrence, in the founder's
+Supabase + Vercel log exports, started on `www.tavnit.ai` — a second serving origin holding the PKCE
+verifier in its own jar. Fixed in Vercel: `www` 308s to the apex, measured, and a fifth allow-list
+entry was rejected. [[the-site-url-landing-signs-you-into-the-wrong-account]]. Not a queue item, in
+that note's "Still open": whether `/login` should redirect a signed-in user.
 
 **16. GoTrue calls are unbounded in time, everywhere — one decision, not three.** `@supabase/auth-js`
 2.110.6 sets no `AbortController`, `signal` or timeout anywhere in `dist/main/lib/fetch.js`, so a
@@ -677,6 +672,11 @@ ENOENT`) and `remotion.media` 403s for the Chromium Headless Shell (1 remotion t
   running before anything else, since prettier and every dependency read depends on it.
 - **The worst-case analysis is unmeasured.** ~53 states is one 90s demo; a denser one could approach
   the 80-state cap and add a seventh batch.
+- **One session refreshed twice by the middleware 14s apart, both 200** — `2ce072ce…` at 11:31:56
+  and 11:32:10 UTC, 2026-09-22, in queue item 15's log exports. Inconsistent with the config as
+  written (`supabase/config.toml:165` `jwt_expiry = 3600`; `:171`/`:174` rotation with a 10s reuse
+  interval): hosted settings differing from the file, or a pass-through `Set-Cookie` that did not
+  stick — though that branch predicts a failed second call, not a 200. Not investigated.
 
 ---
 
