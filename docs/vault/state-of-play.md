@@ -142,8 +142,9 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   applied). **Fetch the artefact — `origin/main`, the ledger, `verify-migration-ledger.sql`
   §RESULTS — never this file, for a count.**
 - **A brief is the least current thing in the room; re-grep even the part telling you the truth.**
-  Two briefs in a row described merged branches as unmerged (queue item 8), and one handed over
-  `auth.ts:78` as the _correct_ cite sixteen hours after it moved to `:132`.
+  Two briefs in a row described merged branches as unmerged (queue item 8), and one handed over a
+  superseded `emailRedirectTo` cite as the _correct_ one sixteen hours after it moved to
+  `auth.ts:132`.
 - **Cites drift en masse, a "fix" can be wrong in a new way, and a commit that fixes a cite while
   editing the cited file invalidates its own cite.** Four notes cited `sets.ts:483`; the fix pointed at
   the definition while the described line had moved to `:745`. Three more were found drifted ~175
@@ -447,9 +448,9 @@ exposure does not apply. Whether they move to the raw seam and/or a strict wire 
 call; the brief for the analysis fix deliberately left their wire untouched.
 
 **12. Sweep the stale `apps/web/src/lib/auth.ts` cites.** `5c13ead` pushed everything below `signUp`
-down ~54 lines. Verified 2026-09-11: `docs/08` `:383` and `:631`; [[auth-email-runs-through-resend]]
-`:5`; [[auth-round-trips-that-miss-the-callback-die-silently]] `:24`; `0005` `:41` and `:48`. **Do not
-touch `0006:26`** — correct there.
+down ~54 lines. LEFT: `docs/08` `:383`, `:631`; `0005` `:41`. Done on `fix/site-url-landing`:
+`docs/08` `:760`, both in [[auth-round-trips-that-miss-the-callback-die-silently]],
+[[auth-email-runs-through-resend]] `:5`, `0005` `:48`. **Do not touch `0006:26`** — correct there.
 
 **13. Ceiling alert + `vat_rate` config — build with the gateway adapter, not before.** Spec in
 [[0046-billing-ships-as-osek-patur]] §6.
@@ -475,6 +476,10 @@ one hole the 2026-09-21 fix does not cover. The return leg is the only writer: n
   `fix/sumit-return-unconfirmed` leaves for later: both ask "did this payment ever activate?", both
   answer it from the payment id, and both would run on the box with the box's own credentials —
   independent of Vercel's, which is the pair that failed on go-live day.
+
+**15. The Site-URL wrong-account landing — FIXED on `fix/site-url-landing`, UNMERGED.**
+[[the-site-url-landing-signs-you-into-the-wrong-account]]; the trigger stays UNVERIFIED until the
+founder says which origin the failed attempt started from and what the live Redirect URLs list holds.
 
 ## External state — not in the repo
 

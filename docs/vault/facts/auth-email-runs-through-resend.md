@@ -2,7 +2,7 @@
 type: fact
 status: carried
 verified: 2026-09-11
-method: "Founder-reported from the Supabase, Resend and Namecheap dashboards on 2026-09-11, plus one end-to-end signup he ran and described. NONE of it is observable from this repo — there is no API call, config file or env var here that reports SMTP settings, the sending domain, the provider plan or the Supabase rate limit. The two published plan limits (100/day, 3,000/month) are Resend's documented free tier, not a measurement. What IS repo-verified: apps/web/src/lib/auth.ts:78 passes emailRedirectTo, and the reachability table in docs/08 §8A.2 was derived by grep at 2828fd3."
+method: "Founder-reported from the Supabase, Resend and Namecheap dashboards on 2026-09-11, plus one end-to-end signup he ran and described. NONE of it is observable from this repo — there is no API call, config file or env var here that reports SMTP settings, the sending domain, the provider plan or the Supabase rate limit. The two published plan limits (100/day, 3,000/month) are Resend's documented free tier, not a measurement. What IS repo-verified: apps/web/src/lib/auth.ts:132 passes emailRedirectTo, and the reachability table in docs/08 §8A.2 was derived by grep at 2828fd3."
 source: founder
 ---
 

@@ -49,7 +49,7 @@ code.
 
 Both Google buttons still render unconditionally — `steps/step-signup.tsx:114-125` and
 `login/login-form.tsx:63-74`, each sitting _above_ the email form. With the provider off, clicking
-one does **not** show the Hebrew fallback at `auth.ts:78`: `signInWithOAuth` performs no network
+one does **not** show the Hebrew fallback at `auth.ts:229`: `signInWithOAuth` performs no network
 call, only `window.location.assign(...)`, so the browser leaves the app and Supabase returns the
 user to the Site URL root with error params nothing reads — a silent dead end with the wizard
 draft stranded in `localStorage`. **Whether to hide those buttons is a separate decision the
