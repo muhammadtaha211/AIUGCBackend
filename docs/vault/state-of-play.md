@@ -481,13 +481,13 @@ one hole the 2026-09-21 fix does not cover. The return leg is the only writer: n
 the stale session left live behind the failure message, is `f544619` on `fix/callback-clears-stale-session`
 (pushed, not merged). [[the-site-url-landing-signs-you-into-the-wrong-account]]. Two things stay
 open and neither is code: **the trigger** — UNVERIFIED until the founder says which origin the
-failed attempt started from and what the live Redirect URLs list holds — and **whether `/login`
-should redirect a signed-in user**, which decides how often the clear's consequence bites (a
-signed-in user who cancels a Google sign-in from `/login` is now signed out). The drive-by sign-out
-that the first cut of the clear opened — `/auth/callback?error=anything` from any cross-site link,
-because the auth cookie is `SameSite=Lax` — is **closed**: the clear now requires a PKCE
-code-verifier cookie. What that costs is in the note: a cross-origin `?code=` landing (the
-preview/localhost path) no longer clears, and the allow-list is what fixes that, not the callback.
+failed attempt started from, the Redirect URLs half of it having been read on 2026-09-22 — and
+**whether `/login` should redirect a signed-in user**, which decides how often the clear's
+consequence bites (a signed-in user who cancels a Google sign-in from `/login` is now signed out).
+The drive-by sign-out that the first cut of the clear opened — `/auth/callback?error=anything` from
+any cross-site link, because the auth cookie is `SameSite=Lax` — is **closed**: the clear now
+requires a PKCE code-verifier cookie. What that costs is in the note: a cross-origin `?code=`
+landing (a `*.vercel.app` preview; `localhost:3000` is allowlisted) no longer clears.
 
 **16. GoTrue calls are unbounded in time, everywhere — one decision, not three.** `@supabase/auth-js`
 2.110.6 sets no `AbortController`, `signal` or timeout anywhere in `dist/main/lib/fetch.js`, so a
@@ -515,9 +515,10 @@ matching the 49 files in `supabase/migrations/`. This corrected a stale "0000–
 History and read-backs live in `scripts/verify-migration-ledger.sql` §RESULTS (38 structural rows, 36
 true / 1 false (0022, expected — every other false is real) / 1 NULL (0020)); the guarded- and
 destructive-migration read-back rules are in CLAUDE.md. Do not re-narrate either here. Auth: Email on,
-Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.ai`,
-`https://tavnit.ai/auth/callback` allowlisted. Custom SMTP, 100 emails/hour. Hebrew auth templates in
-`docs/08` §8A.2.
+Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.ai`; **Redirect URLs
+read 2026-09-22 — four and only four: `/auth/callback` + `/auth/recovery` on `https://tavnit.ai` and
+on `http://localhost:3000`, no `*.vercel.app`, no `www`** — every other origin falls back to the Site
+URL. Custom SMTP, 100 emails/hour. Hebrew auth templates in `docs/08` §8A.2.
 
 **`events` is EMPTY — 0 rows, every kind.** Not `platform_budget_tripped`, not
 `qc_release`/`qc_reject`, not `content_policy_flag`. The alert sweep reads an empty partial index

@@ -2,8 +2,8 @@
 type: defect
 status: verified
 verified: 2026-09-22
-method: "Code read, 2026-09-22, at 0cca4fa (branch fix/site-url-landing). Repo: apps/web/src/middleware.ts, apps/web/src/app/page.tsx, apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/test/middleware.test.ts read in full; repo-wide grep over apps/ and packages/ for error_description|error_code|access_denied|location.hash and for URL-param reads of `code`, excluding node_modules and .next. Installed libraries read from node_modules/.pnpm, not from docs: next 15.5.20 (dist/server/base-http/node.js, dist/server/lib/patch-set-header.js, dist/server/lib/router-server.js, dist/server/next-server.js, dist/server/lib/server-ipc/utils.js, dist/server/lib/router-utils/resolve-routes.js, dist/server/async-storage/request-store.js, dist/server/web/spec-extension/adapters/request-cookies.js, dist/compiled/@edge-runtime/cookies/index.js), @supabase/auth-js 2.110.6 (dist/main/GoTrueClient.js, dist/main/lib/constants.js, dist/main/lib/locks.js), @supabase/ssr 0.12.3 (dist/main/createBrowserClient.js, dist/main/cookies.js, dist/main/utils/chunker.js, dist/main/utils/constants.js). The symptom itself is FOUNDER-REPORTED, not observed here. The fix on this branch is pinned by tests; it has NOT been exercised against a real occurrence. The Vercel Set-Cookie merge order was MEASURED 2026-09-22, not read: `curl -sS -D - -o /dev/null <deployment>/api/probe` x3, no redirect following, against preview deployment `4cb3330yd` built from throwaway branch `probe/vercel-cookie-merge` commit `eead322` (branch and deployment since deleted); the browser-side outcome read once with document.cookie at the redirect target. Extended 2026-09-22 for the callback clear (f544619): @supabase/auth-js 2.110.6 dist/main/GoTrueClient.js (_signOut :3360-3392, _removeSession :4317-4335, _useSession :2443-2456, __loadSession :2462-2545, _callRefreshToken :4094-4235 (the whole function both times — the refresh-failure returns at :2517-2538 and the _removeSession at :4212 are what the third limit turns on), _notifyAllSubscribers :4236-4276), dist/main/GoTrueAdminApi.js :67-85, dist/main/lib/constants.js :13, and @supabase/ssr 0.12.3 dist/main/createServerClient.js :48-66 + dist/main/cookies.js :359-440 read in full, versions from each package.json; the seven cases in apps/web/test/auth-callback.test.ts run green and mutation-checked (pnpm --filter @aiugc/web exec vitest run --fileParallelism=false). No live round-trip was exercised."
-source: code + browser
+method: "Code read, 2026-09-22, at 0cca4fa (branch fix/site-url-landing). Repo: apps/web/src/middleware.ts, apps/web/src/app/page.tsx, apps/web/src/app/auth/callback/route.ts, apps/web/src/lib/auth.ts, apps/web/test/middleware.test.ts read in full; repo-wide grep over apps/ and packages/ for error_description|error_code|access_denied|location.hash and for URL-param reads of `code`, excluding node_modules and .next. Installed libraries read from node_modules/.pnpm, not from docs: next 15.5.20 (dist/server/base-http/node.js, dist/server/lib/patch-set-header.js, dist/server/lib/router-server.js, dist/server/next-server.js, dist/server/lib/server-ipc/utils.js, dist/server/lib/router-utils/resolve-routes.js, dist/server/async-storage/request-store.js, dist/server/web/spec-extension/adapters/request-cookies.js, dist/compiled/@edge-runtime/cookies/index.js), @supabase/auth-js 2.110.6 (dist/main/GoTrueClient.js, dist/main/lib/constants.js, dist/main/lib/locks.js), @supabase/ssr 0.12.3 (dist/main/createBrowserClient.js, dist/main/cookies.js, dist/main/utils/chunker.js, dist/main/utils/constants.js). The symptom itself is FOUNDER-REPORTED, not observed here. The fix on this branch is pinned by tests; it has NOT been exercised against a real occurrence. The Vercel Set-Cookie merge order was MEASURED 2026-09-22, not read: `curl -sS -D - -o /dev/null <deployment>/api/probe` x3, no redirect following, against preview deployment `4cb3330yd` built from throwaway branch `probe/vercel-cookie-merge` commit `eead322` (branch and deployment since deleted); the browser-side outcome read once with document.cookie at the redirect target. Extended 2026-09-22 for the callback clear (f544619): @supabase/auth-js 2.110.6 dist/main/GoTrueClient.js (_signOut :3360-3392, _removeSession :4317-4335, _useSession :2443-2456, __loadSession :2462-2545, _callRefreshToken :4094-4235 (the whole function both times — the refresh-failure returns at :2517-2538 and the _removeSession at :4212 are what the third limit turns on), _notifyAllSubscribers :4236-4276), dist/main/GoTrueAdminApi.js :67-85, dist/main/lib/constants.js :13, and @supabase/ssr 0.12.3 dist/main/createServerClient.js :48-66 + dist/main/cookies.js :359-440 read in full, versions from each package.json; the seven cases in apps/web/test/auth-callback.test.ts run green and mutation-checked (pnpm --filter @aiugc/web exec vitest run --fileParallelism=false). No live round-trip was exercised. Extended 2026-09-22 for the allow-list: the live Redirect URLs list and Site URL MEASURED off Authentication -> URL Configuration for project hyaqydcmwbnbaiqqufow, read by the founder and pasted verbatim into the task that produced this edit; recorded in full below. That is dashboard state and nothing in this repo can confirm or refute it, and a read on 2026-09-22 says nothing about what the list held on the two undated occurrence dates."
+source: code + browser + dashboard
 ---
 
 # The Site-URL landing signed you into the wrong account, and destroyed the evidence
@@ -345,6 +345,16 @@ ask "was this navigation same-site" — it could not, and a `Referer` check woul
 asks whether this browser holds evidence it started a flow **on this origin**, which an attacker
 cannot plant.
 
+**That the verifier cookie actually reaches this route in production is not an open question**, and
+it is closed by evidence that already existed rather than by anything newly measured. Every
+successful exchange here reads the verifier off that same cookie on that same request:
+`_exchangeCodeForSession` fetches it from storage as its first act (`GoTrueClient.js:1577`), throws
+`AuthPKCECodeVerifierMissingError` without it (`:1580-1581`) **before any network call**, and sends
+it as `code_verifier` (`:1587`). A sign-in that works is therefore itself the proof the cookie
+arrived. Every Google sign-in on `tavnit.ai` since `5646529` (2026-09-03) has gone through that line
+with it unchanged, so the guard reads a cookie whose delivery the success path has been
+demonstrating daily.
+
 **The read sits BEFORE `exchangeCodeForSession`, and that placement is load-bearing.**
 `_exchangeCodeForSession` removes the verifier on every outcome it has: `GoTrueClient.js:1591`,
 ahead of the `if (error) throw` on the very next line, and again at `:1609` in its own catch. A read
@@ -354,18 +364,64 @@ verifier from the store, and a read moved after it goes red.
 
 ### What the guard costs
 
-**A cross-origin `?code=` landing no longer clears** — and that is the founder's own
-preview/localhost path. The verifier lives on the origin the flow started from, so a round-trip
-begun on `localhost:3000` or a `*.vercel.app` preview and delivered by GoTrue's fallback to the
-Site URL `tavnit.ai` arrives at an origin that never wrote one. `startedHere` is false, no clear
-runs, and that visitor gets the failure message **and stays in the old account** — precisely the
-wrong-account landing this whole note is about, reopened for exactly one path.
+**A cross-origin `?code=` landing no longer clears.** The verifier lives on the origin the flow
+started from, so a round-trip begun on a `*.vercel.app` preview and delivered by GoTrue's fallback
+to the Site URL `tavnit.ai` arrives at an origin that never wrote one. `startedHere` is false, no
+clear runs, and that visitor gets the failure message **and stays in the old account** — precisely
+the wrong-account landing this whole note is about, reopened for exactly one path.
+
+An earlier draft of this paragraph called that "the founder's own preview/localhost path" and named
+`localhost:3000` beside the preview hosts. The measurement below removes the localhost half:
+`http://localhost:3000/auth/callback` **is** allowlisted, so a round-trip started there is delivered
+there and never falls back. The cost is the preview hosts only.
 
 That is accepted rather than worked around, because **the fix for that path is the allow-list**, not
 the callback: a round-trip whose `redirect_to` origin is allowlisted never falls back to the Site
-URL in the first place, and never reaches this branch. See `UNVERIFIED 2` and `UNVERIFIED 3` — the
-live Redirect URLs list and the set of origins `apps/web` is actually served from are both still
-unread, and reading them is what closes this.
+URL in the first place, and never reaches this branch. `UNVERIFIED 2` asked for that list and it is
+now read — immediately below. `UNVERIFIED 3`, the set of preview origins such a list would have to
+cover, is what remains.
+
+### The allow-list, measured — 2026-09-22
+
+Read off **Authentication → URL Configuration** for project `hyaqydcmwbnbaiqqufow` on 2026-09-22 by
+the founder and pasted verbatim. Dashboard state; nothing in this repo can confirm or refute it.
+
+```
+http://localhost:3000/auth/callback
+http://localhost:3000/auth/recovery
+https://tavnit.ai/auth/callback
+https://tavnit.ai/auth/recovery
+Total URLs: 4
+
+Site URL: https://tavnit.ai
+```
+
+**No `*.vercel.app` entry. No `www` host. Four URLs, and that is the entire list.** So the fallback
+this note opens with is not a corner case — it is the defined behaviour for **every origin but those
+two**, and the per-deployment and per-branch `*.vercel.app` hosts Vercel assigns are all outside it.
+The precondition for the whole defect is now measured instead of assumed.
+
+**Localhost is listed on port 3000 only**, the port `pnpm dev` serves `apps/web` on. A dev server
+moved to any other port stops being allowlisted and starts landing on `tavnit.ai`.
+
+**Both live origins carry both paths**, which is what `apps/web` actually needs: `signInWithOAuth`
+(`lib/auth.ts:224`) and the signup `emailRedirectTo` (`:132`) build `/auth/callback`, and
+`resetPasswordForEmail` (`:174`) builds `/auth/recovery` — three origin-derived targets, two paths.
+`apps/admin` has no auth surface at all and needs no entry.
+
+**`https://tavnit.ai/auth/recovery` reads `https://` because it was corrected today.** It had been
+written `http://`; the founder fixed the scheme in the same sitting as this read. Recorded rather
+than celebrated, because the entry is **moot in production** either way while the token_hash Reset
+Password template is live — that template links to `/reset-password?token_hash=…`, an ordinary page
+and not a redirect target, so recovery never consults the allow-list
+(`docs/08-supabase-project-rebuild.md:764-768`). It matters here for one reason only: it is proof
+the list is edited, which is why nothing below reads this list backwards in time.
+
+**The trigger for the founder's two occurrences stays UNVERIFIED.** A list with no preview entry is
+a _possible_ cause of a Site-URL landing, not an observed one. The occurrence dates were never
+given, nothing was captured from either, and a dashboard read on 2026-09-22 cannot establish what
+the list held on two undated earlier days — the recovery entry alone shows it changes. `UNVERIFIED 1`
+stands exactly as written.
 
 ### The residual
 
@@ -391,10 +447,10 @@ Each with the one artefact that would settle it.
 1. **What triggered the fallback on the founder's two occurrences** — a `redirect_to` origin not on
    the allow-list, or a bad/expired `state`. Not in this repo. Settled by: the origin in the address
    bar when the failed attempt started, plus the signature (`?code=` vs `?error=`) at the landing.
-2. **The live Supabase Site URL and Redirect URLs list.** Dashboard state. `docs/vault/state-of-play.md`
-   records Site URL `https://tavnit.ai` with `https://tavnit.ai/auth/callback` allowlisted; whether
-   anything else is on it — a `www` host, any `*.vercel.app` alias — is unread. Settled by:
-   Authentication → URL Configuration.
+2. ~~**The live Supabase Site URL and Redirect URLs list.**~~ **SETTLED 2026-09-22** by the artefact
+   this line asked for — see "The allow-list, measured" above, where all four URLs and the Site URL
+   are recorded verbatim. No `www` host, no `*.vercel.app` alias, no fifth entry. Kept in place
+   rather than deleted so the numbering does not shift.
 3. **Every origin `apps/web` is actually served from.** Vercel assigns per-deployment and
    per-branch `*.vercel.app` hosts; `state-of-play.md` records `apps/admin` as reachable on one.
    That `apps/web` has the same is REASONED, not read. Settled by: the Vercel project's Domains page.
