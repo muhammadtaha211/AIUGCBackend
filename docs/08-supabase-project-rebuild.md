@@ -752,14 +752,31 @@ character for character.
 
 **Authentication → URL Configuration**:
 
-- **Site URL**: `http://localhost:3000` now; the Vercel/production domain when there is one.
+- **Site URL**: `http://localhost:3000` during a rebuild, the production domain once there is one.
+  **Live value, read off the dashboard 2026-09-22: `https://tavnit.ai`** — the apex, no `www`.
 - **Redirect URLs**: `http://localhost:3000/auth/callback` and
   `http://localhost:3000/auth/recovery` (password recovery), plus the same two on
-  `https://<prod-domain>` once it exists.
+  `https://<prod-domain>` once it exists. **Live list, same read: exactly those four** —
+  `http://localhost:3000/auth/callback`, `http://localhost:3000/auth/recovery`,
+  `https://tavnit.ai/auth/callback`, `https://tavnit.ai/auth/recovery`.
 
 `apps/web/src/lib/auth.ts:224` builds `redirectTo` as `` `${window.location.origin}/auth/callback` ``
 — computed live in the browser from no env var — so every origin the app is served from needs its
 own entry.
+
+**Which is why the list stops at four: `www.tavnit.ai` redirects to the apex rather than serving.**
+Every hostname that serves the app is its own origin, with its own cookie jar and its own entry on
+this list — and an origin that serves but is not listed is the whole of the defect below. On
+2026-09-22 `www.tavnit.ai` was serving the app on a 200: a sign-in started there sent GoTrue a
+`redirect_to` no entry matched, GoTrue fell back to the Site URL on the apex, and the PKCE verifier
+stayed behind in the `www` cookie jar, so the exchange failed and the browser stayed in the account
+it had arrived in. The fix was the **Vercel domain redirect** — `www.tavnit.ai` now answers
+`308 → https://tavnit.ai/` — and **not** a fifth entry here, because a fifth entry would have kept
+two cookie jars alive while the Site URL points at the apex, and so does everything built from it,
+including the live Reset Password link (`{{ .SiteURL }}/reset-password?token_hash=…`, §8A step 1
+above). A host that redirects never reaches this list; a host that serves must be on it. Full chain
+and the rejected alternative:
+`docs/vault/defects/the-site-url-landing-signs-you-into-the-wrong-account.md`.
 
 The `/auth/recovery` entry is **moot in production** while §8A step 1's token_hash Reset Password
 template is the live one: that template links to `/reset-password?token_hash=…`, which is an
