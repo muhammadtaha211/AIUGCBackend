@@ -33,7 +33,7 @@ export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
           icon={<Clip className="size-6" />}
           gradient="bg-gradient-to-br from-accent/35 via-lime-100/70 to-white"
           title="הוק + דמו"
-          body="פתיח AI קצר עם משפט הוק בעברית, חיתוך לסרטון המוצר שלכם, כתוביות וקריינות. מעלים סרטון ומקבלים מודעה מוכנה לפרסום."
+          body="פתיח AI קצר עם משפט הוק בעברית, חיתוך לסרטון המוצר שלכם וכיתוב על כל צעד. מעלים סרטון ומקבלים מודעה מוכנה לפרסום."
           cta="יצירת מודעה"
         />
         <ServiceCard
