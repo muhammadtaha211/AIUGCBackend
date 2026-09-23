@@ -541,9 +541,228 @@ function withOffScreenWords(
   timeline: AnalysisState[],
   questionnaire: Questionnaire,
   demoDescription?: string | null,
+  pinnedIndex?: number,
 ): PlanStep[] {
   const flagged = findOffScreenWords(assembled, timeline, questionnaire, demoDescription);
-  return assembled.map((step, i) => ({ ...step, offScreenWords: flagged[i]!.words }));
+  return assembled.map((step, i) => ({
+    ...step,
+    // The pinned access step's caption is fixed copy, not the model's words:
+    // never marked, whatever the exemption sets say tomorrow. (Today they
+    // clear it anyway — כנסו is an instruction verb, לכאן a prefixed function
+    // word — so this is a guarantee, not a fix.)
+    offScreenWords: step.sourceIndex === pinnedIndex ? [] : flagged[i]!.words,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// The access moment — the pinned "כנסו לכאן" first step (founder rule,
+// 2026-09-23)
+// ---------------------------------------------------------------------------
+
+/**
+ * The demo step's tip asks customers to open the recording by typing the
+ * site's address. When the analysis shows that moment, the generated plan
+ * ALWAYS starts there, with this exact caption, pinned by CODE. The prompt
+ * has asked for a way-in step since v4 and could not get one whenever the
+ * vision pass read the browser's new tab and address bar as `system` (an OS
+ * surface, hence a skip kind the validator rejects): the founder hand-added
+ * exactly this step on both of his 2026-09-18/20 demos. The customer edits
+ * or deletes it like any other step — nothing downstream knows it is pinned.
+ */
+export const ACCESS_LABEL = "כנסו לכאן";
+
+/** The access moment is looked for only this deep into the recording, and
+ *  never past the first product or loading screen: a URL typed later is a
+ *  search inside the product, not the way in. This bounds the SEARCH only —
+ *  the drop zone below is the address-bar run, never the whole window. */
+export const ACCESS_WINDOW_MS = 15_000;
+
+const ACCESS_WINDOW_CLOSERS: ReadonlySet<string> = new Set(["product", "loading"]);
+/** Kinds a candidate may never carry: a domain on a login, onboarding, error
+ *  or tour screen is not the way in. `system` and `other` are what the vision
+ *  pass actually calls browser chrome; absent (v2-era analyses) passes. */
+const ACCESS_EXCLUDED_KINDS: ReadonlySet<string> = new Set([
+  "login",
+  "onboarding",
+  "error",
+  "tour",
+]);
+
+/** TLDs a domain-like token may end in. Short on purpose — what the corpus
+ *  shows plus the Israeli set. The questionnaire's own link (registrableDomain
+ *  below) is the second signal and covers everything else. */
+const URL_TLDS = "com|co\\.il|org\\.il|net\\.il|ac\\.il|gov\\.il|il|net|org|io|app|ai|dev";
+/** An explicit http(s) URL, or label(.label)*.tld not glued to a letter,
+ *  digit, "@", "." or "-" on the left and not followed by a letter or digit
+ *  (so `index.html`, `3.5`, `e.g.` and `Syllabus.txt` never match). */
+const URL_TOKEN = new RegExp(
+  `(?:https?://\\S+|(?:^|[^\\p{L}\\p{N}@.\\-])[\\p{L}\\p{N}\\-]+(?:\\.[\\p{L}\\p{N}\\-]+)*\\.(?:${URL_TLDS})(?![\\p{L}\\p{N}]))`,
+  "iu",
+);
+
+/** Public suffixes that take two labels, so the registrable domain is the
+ *  last THREE labels of the host (app.jobnet.co.il -> jobnet.co.il). */
+const TWO_LABEL_SUFFIXES: ReadonlySet<string> = new Set([
+  "co.il",
+  "org.il",
+  "net.il",
+  "ac.il",
+  "gov.il",
+  "muni.il",
+  "k12.il",
+  "co.uk",
+  "org.uk",
+  "com.au",
+]);
+
+/** The registrable domain of the questionnaire's link — undefined when there
+ *  is no link or it does not parse as a host. Compared as a lowercase
+ *  substring of a visibleText entry, so an off-list TLD still detects. */
+export function registrableDomain(link: string | null | undefined): string | undefined {
+  const raw = link?.trim();
+  if (!raw) return undefined;
+  let host: string;
+  try {
+    host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`).hostname;
+  } catch {
+    return undefined;
+  }
+  const labels = host
+    .toLowerCase()
+    .replace(/^www\./, "")
+    .split(".")
+    .filter(Boolean);
+  if (labels.length < 2) return undefined;
+  const keep = TWO_LABEL_SUFFIXES.has(labels.slice(-2).join(".")) ? 3 : 2;
+  return labels.slice(-keep).join(".");
+}
+
+export interface AccessMoment {
+  /** The pinned state. */
+  index: number;
+  /** Its assembled clip length, DERIVED from the same clamp every step gets —
+   *  the 3s step floor today, because the type/select defaults (2200/1800)
+   *  and the caption's 1200ms read time all sit under it. Never a literal:
+   *  the model-facing band and the drop zone both read it. */
+  pinMs: number;
+  /** The address-bar run: contiguous candidates from the first one. */
+  run: number[];
+  /** Timestamp of the first state after the run; +Infinity when the run
+   *  reaches the end of the timeline. */
+  runEndMs: number;
+  /** [runStartMs, dropUntilMs): the run plus the pin's clip. A step the
+   *  model (or the canned planner) puts in here is dropped — it is the moment
+   *  the pin already shows. NOT the search window: when the loaded site is
+   *  read as `other` and no loading screen was caught (2 of 6 production
+   *  analyses), the window runs to 15s and would swallow real product steps. */
+  runStartMs: number;
+  dropUntilMs: number;
+}
+
+/**
+ * Find the access moment on an analysed timeline. Deterministic, and it reads
+ * only what the vision pass already transcribed, so it costs nothing and
+ * works on every analysis already on disk (re-planning never re-analyses).
+ *
+ * Candidate: inside the window; not unreadable, not a duplicate frame;
+ * actionType type/select (every real opening in the corpus is a `type`
+ * state, while a loaded page with its URL bar in frame is navigate/idle);
+ * kind not excluded; and some visibleText entry with no "@" in it (an email
+ * is not an address) carries a URL-like token or the link's domain.
+ * Run: candidates from the first one while consecutive candidates sit no more
+ * than one step apart — the same moment on screen; a candidate further on is
+ * a second typing, not this one.
+ * Pin: the LATEST run candidate whose clip ends at or before the run's end,
+ * so the completed address is on screen before the clip leaves the address
+ * bar; when none fits, the earliest.
+ */
+export function findAccessMoment(
+  timeline: AnalysisState[],
+  opts: { durations: StepDurationConfig; link?: string | null },
+): AccessMoment | null {
+  const domain = registrableDomain(opts.link);
+  const carriesAddress = (entry: string): boolean =>
+    !entry.includes("@") &&
+    (URL_TOKEN.test(entry) || (domain !== undefined && entry.toLowerCase().includes(domain)));
+  const isCandidate = (s: AnalysisState): boolean =>
+    s.legibility !== "unreadable" &&
+    !s.sameStateAsPrevious &&
+    (s.actionType === "type" || s.actionType === "select") &&
+    !(s.screenKind !== undefined && ACCESS_EXCLUDED_KINDS.has(s.screenKind)) &&
+    s.visibleText.some(carriesAddress);
+
+  const candidates: number[] = [];
+  for (const [i, s] of timeline.entries()) {
+    if (s.timestampMs > ACCESS_WINDOW_MS) break;
+    if (s.screenKind !== undefined && ACCESS_WINDOW_CLOSERS.has(s.screenKind)) break;
+    if (isCandidate(s)) candidates.push(i);
+  }
+  if (candidates.length === 0) return null;
+
+  const ts = (i: number): number => timeline[i]!.timestampMs;
+  const run = [candidates[0]!];
+  for (const c of candidates.slice(1)) {
+    if (ts(c) - ts(run[run.length - 1]!) > opts.durations.minMs) break;
+    run.push(c);
+  }
+  const runEndMs = timeline[run[run.length - 1]! + 1]?.timestampMs ?? Number.POSITIVE_INFINITY;
+  const pinMsOf = (i: number): number =>
+    assembleSteps([{ sourceIndex: i, label: ACCESS_LABEL }], timeline, opts.durations)[0]!
+      .durationMs;
+  let index = run[0]!;
+  for (const c of [...run].reverse()) {
+    if (ts(c) + pinMsOf(c) <= runEndMs) {
+      index = c;
+      break;
+    }
+  }
+  const pinMs = pinMsOf(index);
+  return {
+    index,
+    pinMs,
+    run,
+    runEndMs,
+    runStartMs: ts(run[0]!),
+    dropUntilMs: Math.max(runEndMs, ts(index) + pinMs),
+  };
+}
+
+/** A selection with the access step pinned first. The selector's own pick of
+ *  the same state and every step inside the drop zone go — the run and the
+ *  pin's clip are one moment on screen and the pin already shows it — so the
+ *  model can never duplicate or crowd it, whatever it returns. Out-of-range
+ *  indexes pass through for the validator to name. */
+function withPin(
+  steps: { sourceIndex: number; label: string }[],
+  timeline: AnalysisState[],
+  access: AccessMoment | null,
+): { sourceIndex: number; label: string }[] {
+  if (!access) return steps;
+  const kept = steps.filter((step) => {
+    if (step.sourceIndex === access.index) return false;
+    const state = Number.isInteger(step.sourceIndex) ? timeline[step.sourceIndex] : undefined;
+    if (!state) return true;
+    return state.timestampMs < access.runStartMs || state.timestampMs >= access.dropUntilMs;
+  });
+  return [{ sourceIndex: access.index, label: ACCESS_LABEL }, ...kept];
+}
+
+/** The model-facing notice appended under the rendered prompt when a pin
+ *  exists. Appended in code, the way correctivePrompt appends, so v14 stays
+ *  the shipped file and a recording with no access moment renders it
+ *  verbatim. The numbers are the same ones findPlanViolations enforces on the
+ *  combined plan, never restated by hand. */
+function accessNotice(
+  access: AccessMoment,
+  timeline: AnalysisState[],
+  modelMin: number,
+  modelMax: number,
+): string {
+  return [
+    "## The way in is already the first step",
+    "",
+    `Ignore rule 4 ("Open with the way in"): the system has fixed step 1 of this plan — state ${access.index} (${timeline[access.index]!.timestampMs}ms, the customer typing the address), captioned "${ACCESS_LABEL}", running ${(access.pinMs / 1000).toFixed(1)}s. It appears as index 0 in any plan echoed back to you; whether or not you repeat it, the system re-pins it — never move or recaption it. Never select state ${access.index}, any state from ${access.runStartMs}ms up to ${access.dropUntilMs}ms, or write a "go here" caption of your own. The ${modelMin}–${modelMax} steps and the runtime band above already exclude that step: select your own steps at ${access.dropUntilMs}ms or later, and end on the success state as before.`,
+  ].join("\n");
 }
 
 /**
@@ -574,6 +793,13 @@ export function findPlanViolations(
      *  config because the check measures ASSEMBLED windows: a sum of nominal
      *  DEFAULT_STEP_MS is a number the video never shows. */
     runtime?: { durations: StepDurationConfig; minMs: number; maxMs: number };
+    /** The pinned access step, when the generation path pinned one. Its
+     *  state may carry a skipped kind (the vision pass calls browser chrome
+     *  `system`) — that one check is waived for it, nothing else is. The
+     *  waiver walk and the reachability bound also skip the drop zone, which
+     *  withPin makes unselectable: counting a state there would demand a
+     *  plan no retry can produce. */
+    pinned?: AccessMoment;
   },
 ): string[] {
   const violations: string[] = [];
@@ -585,6 +811,17 @@ export function findPlanViolations(
     violations.push(`the plan has ${steps.length} steps — the maximum is ${maxSteps}`);
   }
   const seen = new Set<number>();
+  const pinned = shape?.pinned;
+  const inDropZone = (index: number, s: AnalysisState): boolean =>
+    pinned !== undefined &&
+    index !== pinned.index &&
+    s.timestampMs >= pinned.runStartMs &&
+    s.timestampMs < pinned.dropUntilMs;
+  /** The per-step legality the two bounds below count — the pin counts
+   *  whatever its kind, exactly as the per-step check accepts it. */
+  const selectable = (index: number, s: AnalysisState): boolean =>
+    index === pinned?.index ||
+    (s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious);
 
   steps.forEach((step, i) => {
     if (!Number.isInteger(step.sourceIndex) || !timeline[step.sourceIndex]) {
@@ -600,7 +837,7 @@ export function findPlanViolations(
     if (state.legibility === "unreadable") {
       violations.push(`step ${i}: state ${step.sourceIndex} is legibility "unreadable"`);
     }
-    if (isSkippedKind(state)) {
+    if (isSkippedKind(state) && step.sourceIndex !== pinned?.index) {
       violations.push(
         `step ${i}: state ${step.sourceIndex} is a "${state.screenKind}" screen — login, loading, onboarding, error, tour and system screens are never steps; select the customer using the product itself`,
       );
@@ -629,7 +866,11 @@ export function findPlanViolations(
     const successCandidates = timeline
       .map((s, i) => ({ s, i }))
       .filter(
-        ({ s }) => s.actionType === "result" && s.legibility !== "unreadable" && !isSkippedKind(s),
+        ({ s, i }) =>
+          s.actionType === "result" &&
+          s.legibility !== "unreadable" &&
+          !isSkippedKind(s) &&
+          !inDropZone(i, s),
       );
     const valid = steps.filter((s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex]);
     // `notes` waives the rule: the analysis may have typed error screens as
@@ -688,18 +929,18 @@ export function findPlanViolations(
         successCandidates.length > 0
           ? successCandidates[successCandidates.length - 1]!.s.timestampMs
           : Number.POSITIVE_INFINITY;
-      let selectable = 0;
+      let selectableCount = 0;
       let lastMs = Number.NEGATIVE_INFINITY;
-      for (const s of timeline) {
-        if (s.legibility === "unreadable" || isSkippedKind(s) || s.sameStateAsPrevious) continue;
+      for (const [index, s] of timeline.entries()) {
+        if (!selectable(index, s) || inDropZone(index, s)) continue;
         if (s.timestampMs > endsAtMs) break;
         if (s.timestampMs - lastMs < shape.minStepMs) continue;
-        selectable++;
+        selectableCount++;
         lastMs = s.timestampMs;
       }
-      if (selectable >= shape.minSteps) {
+      if (selectableCount >= shape.minSteps) {
         violations.push(
-          `the plan has ${steps.length} steps, fewer than the minimum ${shape.minSteps} — this timeline offers ${selectable} selectable states, so select more genuinely distinct ones; \`notes\` does not waive this, and never pad with loading, duplicate or otherwise skipped states`,
+          `the plan has ${steps.length} steps, fewer than the minimum ${shape.minSteps} — this timeline offers ${selectableCount} selectable states, so select more genuinely distinct ones; \`notes\` does not waive this, and never pad with loading, duplicate or otherwise skipped states`,
         );
       }
     }
@@ -803,11 +1044,8 @@ export function findPlanViolations(
           ? successCandidates[successCandidates.length - 1]!.s.timestampMs
           : Number.POSITIVE_INFINITY;
       const sel = timeline.filter(
-        (s) =>
-          s.legibility !== "unreadable" &&
-          !isSkippedKind(s) &&
-          !s.sameStateAsPrevious &&
-          s.timestampMs <= reachEndsAtMs,
+        (s, index) =>
+          selectable(index, s) && !inDropZone(index, s) && s.timestampMs <= reachEndsAtMs,
       );
       let reachableMs = sel.length > 0 ? stepCeilingMs : 0;
       const best = sel.map(() => new Array<number>(maxSteps).fill(-1));
@@ -1002,8 +1240,14 @@ function dryRunPlan(
   minSteps: number,
   maxSteps: number,
   minStepMs: number,
+  /** States the canned plan may not select — the pinned access step and its
+   *  drop zone, which withPin prepends and removes. Filtered ONCE, here, so
+   *  the ending lookup below cannot reach back into the zone either. */
+  exclude?: (index: number, state: AnalysisState) => boolean,
 ): PlanOutput {
-  const indexed = timeline.map((state, index) => ({ state, index }));
+  const indexed = timeline
+    .map((state, index) => ({ state, index }))
+    .filter(({ state, index }) => !exclude?.(index, state));
   // The quality pool the canned plan prefers, and the wider pool the validator
   // will actually accept. They are NOT the same set — "low" and idle states
   // are legal steps, they are just poor ones — so a timeline that is mostly
@@ -1029,12 +1273,10 @@ function dryRunPlan(
   // rule findPlanViolations enforces, so the keyless plan always passes its
   // own validation (even when the success screen is legibility "low" and the
   // quality filter above dropped it).
-  const results = timeline
-    .map((state, index) => ({ state, index }))
-    .filter(
-      ({ state }) =>
-        state.actionType === "result" && state.legibility !== "unreadable" && !isSkippedKind(state),
-    );
+  const results = indexed.filter(
+    ({ state }) =>
+      state.actionType === "result" && state.legibility !== "unreadable" && !isSkippedKind(state),
+  );
   const lastResult = results[results.length - 1];
 
   // Thin to the cap keeping the ending, then respect the min-gap rule.
@@ -1163,14 +1405,36 @@ export async function generateStepPlan(
   const durations = await stepDurations(db);
   const runtime = { durations, ...(await stepRuntimeBand(db)) };
 
+  // The access moment, pinned as step 1 on both branches (see ACCESS_LABEL).
+  // The model or the canned planner fills the plan AROUND it: one step and
+  // its clip are already spoken for, so the counts and the band they see are
+  // reduced by exactly what the pin takes, while findPlanViolations checks
+  // the COMBINED plan against the full ones — consistent by construction.
+  // The prompt file itself stays v14; the pinned rendering is marked on the
+  // stored version so pinned plans are distinguishable in the row.
+  const access = findAccessMoment(opts.timeline, {
+    durations,
+    link: opts.questionnaire.link,
+  });
+  const pinned = access ?? undefined;
+  const modelMin = access ? Math.max(1, minSteps - 1) : minSteps;
+  const modelMax = access ? Math.max(modelMin, maxSteps - 1) : maxSteps;
+  const markVersion = (version: string): string => (access ? `${version}+access-pin` : version);
+
   if (getEnv().DRY_RUN) {
     const canned = dryRunPlan(
       opts.timeline,
       opts.questionnaire,
-      minSteps,
-      maxSteps,
+      modelMin,
+      modelMax,
       durations.minMs,
+      access
+        ? (index, state) =>
+            index === access.index ||
+            (state.timestampMs >= access.runStartMs && state.timestampMs < access.dropUntilMs)
+        : undefined,
     );
+    const steps = withPin(canned.steps, opts.timeline, access);
     // The canned plan goes through the same enforcement as a real one, so the
     // whole validation path runs keyless; a violation here is a code bug.
     //
@@ -1180,10 +1444,11 @@ export async function generateStepPlan(
     // writer chose. Holding a mechanical stub to a band that exists to size
     // AUTHORED Hebrew would mean tuning the stub, not the format. The band is
     // unit-tested directly and enforced on every model plan.
-    const violations = findPlanViolations(canned.steps, opts.timeline, maxSteps, {
+    const violations = findPlanViolations(steps, opts.timeline, maxSteps, {
       minSteps,
       notes: canned.notes,
       minStepMs: durations.minMs,
+      pinned,
     });
     if (violations.length > 0) {
       throw new Error(`dry-run plan violates its own rules: ${violations.join("; ")}`);
@@ -1191,17 +1456,27 @@ export async function generateStepPlan(
     return {
       // The highlight rides along so the keyless shape matches live.
       steps: withOffScreenWords(
-        assembleSteps(canned.steps, opts.timeline, durations),
+        assembleSteps(steps, opts.timeline, durations),
         opts.timeline,
         opts.questionnaire,
         opts.demoDescription,
+        access?.index,
       ),
       unexplainedMoments: canned.unexplainedMoments,
       notes: canned.notes,
-      promptVersion: "plan_demo_steps@dry-run",
+      promptVersion: markVersion("plan_demo_steps@dry-run"),
       retryViolations: [],
     };
   }
+
+  // The band the model is asked to fill on its own — the full band minus the
+  // pin's clip, which the combined plan then has to total inside.
+  const modelRuntime = access
+    ? {
+        minMs: Math.max(0, runtime.minMs - access.pinMs),
+        maxMs: Math.max(0, runtime.maxMs - access.pinMs),
+      }
+    : runtime;
 
   const promptTimeline = opts.timeline.map((s, index) => ({
     index,
@@ -1216,19 +1491,30 @@ export async function generateStepPlan(
     legibility: s.legibility,
     salienceNote: s.salienceNote,
   }));
-  const { text, promptVersion } = renderPrompt("plan_demo_steps", {
+  const rendered = renderPrompt("plan_demo_steps", {
     questionnaire: JSON.stringify(opts.questionnaire, null, 2),
     timeline: JSON.stringify(promptTimeline, null, 2),
-    min: minSteps,
-    max: maxSteps,
+    min: modelMin,
+    max: modelMax,
     // v11+. Older prompt files never reference {{timing}} and are unaffected —
     // renderPrompt only substitutes what the template asks for.
-    timing: planTimingMarkdown({ durations, runtime, minSteps, maxSteps }),
+    timing: planTimingMarkdown({
+      durations,
+      runtime: modelRuntime,
+      minSteps: modelMin,
+      maxSteps: modelMax,
+    }),
     // v13+, same one-way compatibility as {{timing}}. The sentinel mirrors
     // the vo_script pattern (copy.ts): the template always has SOMETHING to
     // say where the description would go.
     demo_description: opts.demoDescription?.trim() || "(אין — התבסס על השאלון והמסכים בלבד)",
   });
+  // No access moment: v14 verbatim, stamped as v14. A pin: the notice under
+  // it, stamped "+access-pin".
+  const text = access
+    ? `${rendered.text}\n\n${accessNotice(access, opts.timeline, modelMin, modelMax)}`
+    : rendered.text;
+  const promptVersion = markVersion(rendered.promptVersion);
 
   // A BudgetError from a later call parks the JOB, and the resume re-runs
   // the first call. That re-pay is self-limiting — it only occurs when the
@@ -1249,12 +1535,17 @@ export async function generateStepPlan(
     return object;
   };
 
+  // Every check runs on the COMBINED plan: the pin first, the model's own
+  // steps after withPin has removed anything that duplicates or crowds it.
+  const combined = (output: PlanOutput): { sourceIndex: number; label: string }[] =>
+    withPin(output.steps, opts.timeline, access);
   const validate = (output: PlanOutput): string[] =>
-    findPlanViolations(output.steps, opts.timeline, maxSteps, {
+    findPlanViolations(combined(output), opts.timeline, maxSteps, {
       minSteps,
       notes: output.notes,
       minStepMs: durations.minMs,
       runtime,
+      pinned,
     });
 
   // "Minimal edits" matters: a from-scratch replan routinely fixes the named
@@ -1262,9 +1553,11 @@ export async function generateStepPlan(
   // in a fresh 5-word label). The previous plan is echoed back because each
   // call is stateless — without it the model cannot see the plan it is told
   // to minimally edit and reinvents it (seen live on a179f069: the retry
-  // dropped the success state the first call had correctly selected).
+  // dropped the success state the first call had correctly selected). The
+  // echo is the combined plan, pin first, so "step i" in a violation string
+  // points at the same row the model is looking at.
   const correctivePrompt = (previous: PlanOutput, violations: string[]): string =>
-    `${text}\n\nYour previous plan was:\n${JSON.stringify(previous, null, 2)}\n\nIt violated these rules:\n${violations
+    `${text}\n\nYour previous plan was:\n${JSON.stringify({ ...previous, steps: combined(previous) }, null, 2)}\n\nIt violated these rules:\n${violations
       .map((v) => `- ${v}`)
       .join(
         "\n",
@@ -1289,10 +1582,11 @@ export async function generateStepPlan(
   return {
     // The provenance highlight, computed once on the accepted plan (0049).
     steps: withOffScreenWords(
-      assembleSteps(output.steps, opts.timeline, durations),
+      assembleSteps(combined(output), opts.timeline, durations),
       opts.timeline,
       opts.questionnaire,
       opts.demoDescription,
+      access?.index,
     ),
     unexplainedMoments: output.unexplainedMoments,
     notes: output.notes,

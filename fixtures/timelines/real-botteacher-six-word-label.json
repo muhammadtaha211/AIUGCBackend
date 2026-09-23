@@ -30,7 +30,24 @@
     "",
     "COST OF KEEPING THIS FILE. 'aiugc plan regress' runs every fixture in this directory, so",
     "this one adds about 2 paid Claude calls per live run — roughly 40k tokens, about 0.50 ILS —",
-    "for a row that is guaranteed red until the pin is replaced. Delete it if that stops paying."
+    "for a row that is guaranteed red until the pin is replaced. Delete it if that stops paying.",
+    "",
+    "2026-09-23 (the pinned access step, feat/plan-access-step): both pins gain the access step, 2.",
+    "  THE PIN (findAccessMoment): window = states before the first product/loading state = 0..7",
+    "  (8 is \"loading\"). Candidates = type/select states, not unreadable/dup, kind not",
+    "  login/onboarding/error/tour, a visibleText entry with a domain token and no \"@\": states 2,",
+    "  3, 4, 5, 6 (all `type`, `other`, legibility low, \"boteacher.com\"); 7 is a `tap`, 0-1 carry",
+    "  no domain. Run [2,3,4,5,6] (gaps 2000/400/600/1000ms, all within one 3000ms step). runEnd =",
+    "  the state after the run = state 7 at 5600ms. Pin = the LATEST run candidate whose 3000ms",
+    "  clip ends by 5600: 6 -> 8200, 5 -> 7200, 4 -> 6600, 3 -> 6200 all overrun; 2 (1200 -> 4200)",
+    "  fits -> state 2. Drop zone [1200, max(5600, 4200)) = [1200, 5600).",
+    "  expected.dryRunSourceIndexes [42,47,48,60,74,79] -> [2,42,47,48,60,74,79], DERIVED: the",
+    "  canned planner now gets min 4 / max 6 and may not select 2-6, but the address-bar states",
+    "  are legibility low and were never in its quality pool, so that pool is the same five",
+    "  [42,47,48,60,74] (<= 6, so subsampleClusters is the identity) plus the ending 79, and the",
+    "  spacing walk changes nothing. Only the pin is new. Still LOAD-BEARING under DRY_RUN.",
+    "  expected.sourceIndexes (live) [42,47,48,60,74,79] -> [2,42,47,48,60,74,79]: still the",
+    "  PLACEHOLDER it always was, now carrying the pin every live plan on this timeline contains."
   ],
   "questionnaire": {
     "tone": "friendly",
@@ -2004,7 +2021,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [42, 47, 48, 60, 74, 79],
-    "dryRunSourceIndexes": [42, 47, 48, 60, 74, 79]
+    "sourceIndexes": [2, 42, 47, 48, 60, 74, 79],
+    "dryRunSourceIndexes": [2, 42, 47, 48, 60, 74, 79]
   }
 }

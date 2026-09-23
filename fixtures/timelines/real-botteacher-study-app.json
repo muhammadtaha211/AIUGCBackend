@@ -24,7 +24,29 @@
     "screenName+timestamp pairs match), NOT demo 724d68df's, which is a second v1 analysis of the",
     "same 80-state recording with different OCR. No state here carries a screenKind, so",
     "PLAN_SKIP_SCREEN_KINDS matches nothing and the login / tour / onboarding screens are",
-    "governed by the prompt's prose alone."
+    "governed by the prompt's prose alone.",
+    "",
+    "2026-09-23 (the pinned access step, feat/plan-access-step): expected.dryRunSourceIndexes moved",
+    "[1,16,40,45,51,79] -> [4,5,20,43,50,79]. DERIVED from the rule, not copied from a run:",
+    "  THE PIN (findAccessMoment; no screenKind anywhere, so the search window is the 15s bound",
+    "  alone): candidates = type/select states, not unreadable/dup, carrying a domain token in a",
+    "  visibleText entry with no \"@\": state 1 (2600ms, type, \"boteacher.com\") and state 4",
+    "  (5400ms, select). States 2-3 are idle -> not candidates. Run [1,4]: 2800ms apart, within one",
+    "  3000ms step. runEnd = the state after the run = state 5 at 10200ms. Pin = the LATEST run",
+    "  candidate whose 3000ms clip ends by 10200: state 4 (5400 -> 8400). Drop zone",
+    "  [2600, max(10200, 8400)) = [2600, 10200).",
+    "  THE CANNED PART (dryRunPlan with min 4 / max 6 — one step and its clip already spoken for —",
+    "  and states 1-4 excluded): quality pool = 27 states",
+    "  [5,13,16,19,20,36,40,41,42,43,45,47,49,50,51,52,56,61,64,68,69,70,71,72,76,77,78];",
+    "  subsampleClusters(27 -> 6) keeps pool[floor(i*27/6)] = pool[0,4,9,13,18,22] with the last",
+    "  replaced by the pool's last: [5,20,43,50,64,78]. Ending = 79 (the last result state); keep",
+    "  the states before it and subsample(6 -> 5) = pool[0,1,2,3,4] with the last replaced by 78:",
+    "  [5,20,43,50,78], append 79. Spacing walk: 78 (119600ms) and 79 (121400ms) are 1800ms apart,",
+    "  under the floor, so the EARLIER goes: [5,20,43,50,79]. With the pin: [4,5,20,43,50,79].",
+    "  State 5 sits at exactly 10200ms = the drop zone's open end, so it is selectable — it is the",
+    "  \"BotTeacher - מסך טעינה\" screen, legal here only because this v2-era analysis carries no",
+    "  screenKind (the prompt's prose skips it live).",
+    "  expected.sourceIndexes (live) untouched: allowNotes keeps this fixture green on its note."
   ],
   "questionnaire": {
     "tone": "friendly",
@@ -1999,6 +2021,6 @@
   "expected": {
     "sourceIndexes": [1, 13, 36, 42, 49, 56, 78, 79],
     "allowNotes": true,
-    "dryRunSourceIndexes": [1, 16, 40, 45, 51, 79]
+    "dryRunSourceIndexes": [4, 5, 20, 43, 50, 79]
   }
 }
