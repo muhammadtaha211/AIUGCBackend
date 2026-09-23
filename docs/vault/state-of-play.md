@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-22
+updated: 2026-09-23
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -186,15 +186,28 @@ before shipping: [[0061-landing-positioning-two-services-no-results-claims]].
 
 New: `apps/web/src/lib/landing-media.ts` + `apps/web/public/landing/` — every landing asset is one
 typed object plus a file drop, no import and no page edit. Every slot ships empty and draws the
-existing AdFrame still wearing its own label; "placeholder" never reaches the screen.
+existing AdFrame still wearing its own label; "placeholder" never reaches the screen. One
+exception since `13432fc`: `instagramShot` hides its `#proof` column instead of drawing a still —
+an empty phone frame beside copy about an Instagram account read as a broken image. Setting its
+`src` brings the frame and the two-column layout back; there is no flag.
 
 **The whole gate ran green from this machine — 1198 tests, 0 failures, all five suites.** ffmpeg IS
 installed here, so the four core `ffmpeg ENOENT` failures under Unfinished measurement are a property
 of that container, not of this repo.
 
-**The last surface still selling the retired format is `app/home/pathway-cards.tsx:36`** — the
-signed-in card into the A wizard, promising `כתוביות וקריינות` for a format with no audio stream.
-Out of this change's scope (a `/home` surface), left for the founder.
+**No surface still sells the retired format** — closed 2026-09-23 on branch
+`tweaks/landing-home-contact-demo`. This file used to name `app/home/pathway-cards.tsx:36` as the
+last one; that was true of the file and wrong about the count. A repo-wide sweep of `apps/web` for
+`קריינות`/`קריינ`/`voiceover` found **two** live claims, not one, and `0ade931` fixed both: the
+signed-in card into the A wizard (now `…חיתוך לסרטון המוצר שלכם וכיתוב על כל צעד.`) and
+`app/home/demos/page.tsx:40`, which told customers the demo description helps `הקריינות` — it
+feeds the burned step labels and the hook lines (`demo-step-plans.ts:1149`, `copy.ts:322`), so it
+now says `הכיתובים`. The other 40 hits are accurate Service B copy, service-wide legal statements
+that are true because Service B exists, source comments, or copy belonging to the retired voiced
+format, which is unreachable from the web app. Two are negations that must survive any future
+sweep: `service-a-ui.ts:1167` (`בלי קריינות`, pinned by `service-a-ui.test.ts:889`) and
+`terms/page.tsx:69` (`ללא קריינות וללא פסקול`). No legal page was edited, so `terms_version` did
+not move.
 
 ## What landed earlier (2026-09-18/19) — the wait-timing fix — MERGED
 
