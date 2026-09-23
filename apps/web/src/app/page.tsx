@@ -264,6 +264,11 @@ function TwoServices() {
  * around it. It is NOT bidi-mirrored — measured, `unicodedata.mirrored('←')`
  * is 0 on UCD 14 — so a character would not flip; it would only land where the
  * surrounding Hebrew put it.
+ *
+ * Two of the three call sites want exactly that. The third — the before/after
+ * row — mirrors it with `-scale-x-100` because that row is deliberately laid
+ * out left-to-right (see the comment there). Flip it at the call site, never
+ * in this path: editing the path would silently reverse the two CTA arrows.
  */
 function ArrowStart({ className = "" }: { className?: string }) {
   return (
