@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-19
-method: "Founder decisions taken in chat 2026-09-19 and relayed in the task brief for this change; every product claim the new copy makes was then re-read against the tree at branch `landing/two-services` (off `origin/main` `1849713`) before it shipped — the file:line evidence is in §4. Built in one change: apps/web/src/app/page.tsx, apps/web/src/lib/landing-media.ts (new), apps/web/public/landing/README.md (new), apps/web/src/app/layout.tsx, apps/web/src/components/landing/site-footer.tsx, apps/web/src/app/(marketing)/about/page.tsx. Gate: `pnpm lint` and `pnpm typecheck` exit 0; all five serial suites green (remotion 76, core 602, worker 7, web 474, admin 39 — 1198 tests, 0 failures). Rendered and measured in a browser at localhost:3000: the four anchors resolve, the before/after row's RTL order was read off getBoundingClientRect, the three corrected contrast ratios off a canvas composite, and no console error on /, /about, /pricing or /terms. The full five-suite gate ran at `95c12ac`; the review fixes at `d768a2c` re-ran `@aiugc/web` alone (474 green) because they touch only classNames, comments and a markdown file under `apps/web`."
+method: "Founder decisions taken in chat 2026-09-19 and relayed in the task brief for this change; every product claim the new copy makes was then re-read against the tree at branch `landing/two-services` (off `origin/main` `1849713`) before it shipped — the file:line evidence is in §4. Built in one change: apps/web/src/app/page.tsx, apps/web/src/lib/landing-media.ts (new), apps/web/public/landing/README.md (new), apps/web/src/app/layout.tsx, apps/web/src/components/landing/site-footer.tsx, apps/web/src/app/(marketing)/about/page.tsx. Gate: `pnpm lint` and `pnpm typecheck` exit 0; all five serial suites green (remotion 76, core 602, worker 7, web 474, admin 39 — 1198 tests, 0 failures). Rendered and measured in a browser at localhost:3000: the four anchors resolve, the before/after row's RTL order was read off getBoundingClientRect, the three corrected contrast ratios off a canvas composite, and no console error on /, /about, /pricing or /terms. The full five-suite gate ran at `95c12ac`; the review fixes at `d768a2c` re-ran `@aiugc/web` alone (474 green) because they touch only classNames, comments and a markdown file under `apps/web`. Amended 2026-09-23 on branch `tweaks/landing-home-contact-demo`: two bullets carry in-place amendments — the pathway-cards one (fixed in `0ade931`, which also found a second live `קריינות` surface 0061 had missed, `home/demos/page.tsx:40`) and the before/after order one, whose x-ranges were re-measured off getBoundingClientRect at a 768px viewport after `3375231` reversed the row. Gate at that point: `pnpm typecheck` and repo-wide `prettier --check` exit 0, all five serial suites green (remotion 76, core 699, worker 7, web 531, admin 39 — 1352 tests, 0 failures). `verified` stays 2026-09-19 — nothing else in this note was re-measured."
 source: founder
 ---
 
@@ -139,6 +139,15 @@ reads as a decision deferred, not an oversight.
   still the right call, for that reason. Recorded because the wrong version was committed first.
   The row's RTL order was verified by measurement, not by reading: raw demo at x 442–634 (right),
   arrow, finished ad at 130–322 (left).
+  _(Superseded on this last sentence only, 2026-09-23, in `3375231`: the founder reversed the
+  visual order — raw recording LEFT, finished ad RIGHT, which is deliberately not what RTL gives.
+  Re-measured the same way at a 768px viewport: raw demo at x 124–316 (left), arrow at 356–396,
+  finished ad at 436–628 (right). Mirror images of the numbers above, offset 6px per edge because
+  that measurement ran in a 764px content box and this one in 752px. The DOM order is unchanged,
+  raw-first; `flex-row-reverse` on the row does the flip and `-scale-x-100` on the arrow mirrors
+  it, so the arrow still travels raw → ad. The rest of this bullet — that the arrow is an SVG
+  because a path fixes its direction where U+2190 would only be reordered — is **why the flip is a
+  one-class change**, and stands unaltered.)_
 
 ## Corrections
 
@@ -178,6 +187,14 @@ is a real upload gate.
   — the card a signed-in customer clicks to enter the A wizard, describing a voiceover the silent
   format cannot produce. Out of this change's scope (a `/home` surface, not marketing) and left for
   the founder; it is now the last place on the customer path selling the retired format.
+  _(Fixed on this one point, 2026-09-23, in `0ade931` on branch
+  `tweaks/landing-home-contact-demo`, not yet merged. The card body is
+  now `…חיתוך לסרטון המוצר שלכם וכיתוב על כל צעד.`, so §4's two vocabulary rules hold on the
+  `/home` entry card too. It was **not** the last such place: the same sweep found
+  `apps/web/src/app/home/demos/page.tsx:40` saying the demo description helps `הקריינות`, fixed in
+  the same commit to `הכיתובים` — which is what `demos.description` actually feeds
+  (`pipelines/demo-step-plans.ts:1149`, `pipelines/copy.ts:322`). Everything else in this section
+  stands.)_
 - **No opengraph/twitter metadata was added.** There is none to update: the root
   `metadata` is two keys and there is no `metadataBase`, no `title.template`, no OG image. Worth
   knowing before the next metadata change — the root **description** is inherited by 15 of 20

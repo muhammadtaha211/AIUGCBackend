@@ -77,8 +77,11 @@ export function FeedbackForm({ businessId, email }: { businessId: string | null;
         label="ההודעה שלכם"
         hint={`${message.length}/${FEEDBACK_MAX_CHARS}`}
         // Customers paste English error text in here; dir=auto lets the box
-        // follow what they actually typed instead of forcing it RTL.
-        dir="auto"
+        // follow what they actually typed instead of forcing it RTL. But an
+        // EMPTY dir=auto box has nothing to judge and falls back to LTR, which
+        // left-aligns the Hebrew placeholder — so it is rtl until there is
+        // something typed, and auto from the first character on.
+        dir={message === "" ? "rtl" : "auto"}
         rows={8}
         maxLength={FEEDBACK_MAX_CHARS}
         value={message}

@@ -15,6 +15,7 @@ import {
   ingestPhaseView,
   ingestStuckView,
   isIngestingDemoStatus,
+  MAX_DEMO_SECONDS,
   restoredDemo,
   type DemoState,
   type DemoSummary,
@@ -42,19 +43,24 @@ const UPLOAD_BUSY = "הפעולה הקודמת עדיין מסתיימת — נ�
  * The rules that actually gate a usable recording — the analysis validator
  * hard-requires the last step to be a genuine success state, so footage with
  * no payoff cannot produce a plan at any number of retries. Guidance only:
- * nothing here gates the upload.
+ * nothing here gates the upload. What to leave OUT of the frame — logins,
+ * dead time, the 90s ceiling — is the tip below the list, not a rule.
  */
 const RECORDING_RULES = [
   "מצלמים משימה אחת שלמה, מההתחלה ועד הסוף.",
   "מסיימים על מסך הצלחה שרואים בבירור — אישור הזמנה, הודעת הצלחה, התוצאה המוכנה. בלי סוף כזה אין מודעה.",
-  "אורך מומלץ: 30–90 שניות.",
-  // COPY PENDING FOUNDER REVIEW
-  "עד 90 שניות — צלמו רק את הפעולה עצמה, בלי הקדמה",
-  "מתחילים אחרי ההתחברות — בלי מסכי לוגין, הרשמה וטפסים אישיים.",
-  "בלי זמן מת — כל שנייה מקדמת את המשימה.",
   "טקסט שמופיע על המסך צריך לצאת קריא בצילום.",
   "מצלמים את המסך בטלפון ביד — קצת רעד זה בסדר, זה בדיוק הסגנון.",
 ];
+
+/**
+ * The one piece of guidance that is an opening move rather than a constraint,
+ * so it sits apart from the ✓ list. The cap is interpolated, not typed: it is
+ * the same MAX_DEMO_SECONDS the pre-upload gate rejects on, which a test pins
+ * to core's DEMO_MAX_DURATION_MS (service-a-ui.test.ts:519-520). Moving the
+ * cap therefore moves this sentence, instead of leaving it quietly wrong.
+ */
+const GOLDEN_TIP = `התחילו את הצילום בהקלדת כתובת האתר, או בחיפוש שם האפליקציה בחנות האפליקציות. מעבר לזה, צמצמו מסכי התחברות והרשמה וזמן מת — אורך הסרטון המקסימלי הוא ${MAX_DEMO_SECONDS} שניות. ועדיף בלי פרטים אישיים על המסך.`;
 
 /** Metadata off the file; undefined when the browser can't decode it. */
 function readVideoMeta(
@@ -582,7 +588,9 @@ export function StepDemo({
    * Good-input guidance, before the upload button (8d). The rules are the
    * ones the analysis actually gates on — footage with no payoff screen can
    * never produce a plan — and the example pair SHOWS the acceptable
-   * handheld roughness no rule can describe. Guidance only, nothing gated.
+   * handheld roughness no rule can describe. The tip under them is the one
+   * thing to DO first, kept off the ✓ list so it reads as advice rather than
+   * as a fifth requirement. Guidance only, nothing gated.
    */
   const guidanceSection = (
     <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white p-4">
@@ -597,9 +605,17 @@ export function StepDemo({
           </li>
         ))}
       </ul>
+      <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+        <p className="font-semibold">טיפ זהב</p>
+        <p className="mt-0.5 leading-relaxed">{GOLDEN_TIP}</p>
+      </div>
       {samples && (
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div>
+        // Founder's call, 2026-09-23: the raw recording on the LEFT, the ad on
+        // the RIGHT — deliberately NOT where RTL puts them. The DOM stays
+        // raw-first so it still reads as a process; flex-row-reverse flips it
+        // visually, same as the landing's before/after row.
+        <div className="mt-4 flex flex-row-reverse gap-3">
+          <div className="flex-1">
             {/* Signed, short-lived URLs — refetched with the picker. */}
             <video
               src={samples.recordingUrl}
@@ -608,9 +624,9 @@ export function StepDemo({
               preload="metadata"
               className="aspect-[9/16] w-full rounded-lg bg-ink/10 object-cover"
             />
-            <p className="mt-1.5 text-center text-[13px] text-ink/60">ככה נראה צילום טוב</p>
+            <p className="mt-1.5 text-center text-[13px] text-ink/60">דוגמה לצילום טוב</p>
           </div>
-          <div>
+          <div className="flex-1">
             <video
               src={samples.adUrl}
               controls
@@ -618,7 +634,7 @@ export function StepDemo({
               preload="metadata"
               className="aspect-[9/16] w-full rounded-lg bg-ink/10 object-cover"
             />
-            <p className="mt-1.5 text-center text-[13px] text-ink/60">וזו המודעה שיצאה ממנו</p>
+            <p className="mt-1.5 text-center text-[13px] text-ink/60">המודעה שיצאה ממנו</p>
           </div>
         </div>
       )}

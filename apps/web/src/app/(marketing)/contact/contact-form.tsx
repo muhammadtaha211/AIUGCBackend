@@ -138,7 +138,10 @@ export function ContactForm() {
           hint={`${message.length}/${FEEDBACK_MAX_CHARS}`}
           // dir=auto: people paste English error text in here, and the box
           // should follow what they actually typed instead of forcing it RTL.
-          dir="auto"
+          // An EMPTY dir=auto box has nothing to judge and falls back to LTR,
+          // which left-aligns the Hebrew placeholder — so it is rtl until
+          // there is something typed, and auto from the first character on.
+          dir={message === "" ? "rtl" : "auto"}
           rows={7}
           maxLength={FEEDBACK_MAX_CHARS}
           value={message}

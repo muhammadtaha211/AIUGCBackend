@@ -264,6 +264,11 @@ function TwoServices() {
  * around it. It is NOT bidi-mirrored — measured, `unicodedata.mirrored('←')`
  * is 0 on UCD 14 — so a character would not flip; it would only land where the
  * surrounding Hebrew put it.
+ *
+ * Two of the three call sites want exactly that. The third — the before/after
+ * row — mirrors it with `-scale-x-100` because that row is deliberately laid
+ * out left-to-right (see the comment there). Flip it at the call site, never
+ * in this path: editing the path would silently reverse the two CTA arrows.
  */
 function ArrowStart({ className = "" }: { className?: string }) {
   return (
@@ -312,17 +317,20 @@ function HookAndDemo() {
       </p>
 
       {/*
-        RTL: the first child renders on the right, so the raw recording sits
-        where the eye starts and the arrow travels toward the finished ad.
+        Founder's call, 2026-09-23: the raw recording goes on the LEFT and the
+        finished ad on the RIGHT — deliberately NOT where RTL puts them, so do
+        not "fix" it back. The DOM order stays raw-first, which is what a
+        screen reader reads as a process; `flex-row-reverse` does the flip
+        visually, and the arrow is mirrored so it still travels raw → ad.
       */}
-      <div className="mt-12 flex items-center justify-center gap-4 sm:gap-10">
+      <div className="mt-12 flex flex-row-reverse items-center justify-center gap-4 sm:gap-10">
         <MediaSlot
           {...LANDING_MEDIA.demoBefore}
           seed="tavnit-demo"
           caption={LANDING_MEDIA.demoBefore.alt}
           className="w-32 shrink-0 sm:w-48"
         />
-        <ArrowStart className="size-7 shrink-0 text-ink/25 sm:size-10" />
+        <ArrowStart className="size-7 shrink-0 -scale-x-100 text-ink/25 sm:size-10" />
         <MediaSlot
           {...LANDING_MEDIA.demoAfter}
           seed="tavnit-demo"
@@ -545,7 +553,9 @@ function Presenter() {
 function Proof() {
   return (
     <section id="proof" className="mx-auto max-w-6xl scroll-mt-24 px-5 py-20 sm:px-8 sm:py-28">
-      <div className="grid items-center gap-12 sm:grid-cols-[1.4fr_1fr]">
+      <div
+        className={`grid items-center gap-12 ${LANDING_MEDIA.instagramShot.src ? "sm:grid-cols-[1.4fr_1fr]" : ""}`}
+      >
         <div>
           <h2 className="max-w-2xl font-display text-3xl leading-tight text-ink sm:text-5xl">
             תבנית משווקת את עצמה עם תבנית
@@ -573,16 +583,20 @@ function Proof() {
             </a>
           )}
         </div>
-        <div className="flex justify-center">
-          <MediaSlot
-            {...LANDING_MEDIA.instagramShot}
-            poster={null}
-            kind="image"
-            seed="tavnit-instagram"
-            caption={LANDING_MEDIA.instagramShot.alt}
-            className="w-52 sm:w-64"
-          />
-        </div>
+        {/* The one slot that hides instead of drawing a still — re-enable it the
+            ordinary way: drop instagram.png in public/landing/ and set its src. */}
+        {LANDING_MEDIA.instagramShot.src && (
+          <div className="flex justify-center">
+            <MediaSlot
+              {...LANDING_MEDIA.instagramShot}
+              poster={null}
+              kind="image"
+              seed="tavnit-instagram"
+              caption={LANDING_MEDIA.instagramShot.alt}
+              className="w-52 sm:w-64"
+            />
+          </div>
+        )}
       </div>
     </section>
   );

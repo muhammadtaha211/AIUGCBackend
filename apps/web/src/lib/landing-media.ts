@@ -9,6 +9,8 @@
  * "placeholder" on screen, and it never reaches the network for anything but
  * the picsum stand-in the landing already used.
  *
+ * One exception: `instagramShot` hides its column instead of drawing a still.
+ *
  * The hook lines live here too, because they are the copy burned onto those
  * clips: one file, one edit, whether what changes is the footage or the line.
  */
