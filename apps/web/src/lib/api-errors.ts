@@ -1,5 +1,6 @@
 import {
   AccountBudgetError,
+  BudgetError,
   ContentPolicyError,
   InsufficientCreditsError,
   PlanChangeError,
@@ -137,6 +138,14 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
           ? "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר."
           : "הגעתם למכסת ההקלטות היומית של החשבון — נסו שוב מחר.",
     );
+  }
+  // The platform-wide cap. Unlike AccountBudgetError this one is not abuse by
+  // THIS caller — it means the shared rolling window is exhausted (by this
+  // account, another account, or legitimate load). A worker job would park
+  // and retry the window; a synchronous route has no such retry, so it
+  // answers 503 rather than parking anything or surfacing a 500 (AUTHZ-12).
+  if (err instanceof BudgetError) {
+    return hit(503, "המערכת עמוסה כרגע. נסו שוב מאוחר יותר.");
   }
   // Typed, so the shortfall is a number the UI can render — not text scraped
   // back out of an English message.

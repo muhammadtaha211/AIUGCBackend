@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AccountBudgetError,
+  BudgetError,
   ContentPolicyError,
   InsufficientCreditsError,
   NotConfiguredGateway,
@@ -62,6 +63,26 @@ describe("coreErrorMapping — the per-account quota ceiling", () => {
     const result = coreErrorMapping(new Error("daily audio preview limit reached"));
     expect(result.status).toBe(429);
     expect(result.error).toBe("הגעתם למכסת ההשמעות היומית — נסו שוב מחר.");
+  });
+});
+
+describe("coreErrorMapping — the platform-wide cap (AUTHZ-12)", () => {
+  // budget.ts's assertBudget message, exactly.
+  const platformMessage =
+    "daily cap reached for llm_tokens: used 8000000 of 8000000 in the last 24h";
+
+  it("maps a platform trip to 503, not the park-and-spin BudgetError would cause in a job", () => {
+    const err = new BudgetError(platformMessage);
+    expect(coreErrorMapping(err)).toEqual({
+      status: 503,
+      error: "המערכת עמוסה כרגע. נסו שוב מאוחר יותר.",
+      mapped: true,
+    });
+  });
+
+  it("is a different class from AccountBudgetError — the per-account 429 still wins for that one", () => {
+    expect(coreErrorMapping(new AccountBudgetError(platformMessage)).status).toBe(429);
+    expect(coreErrorMapping(new BudgetError(platformMessage)).status).toBe(503);
   });
 });
 

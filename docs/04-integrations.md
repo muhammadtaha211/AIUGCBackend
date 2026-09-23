@@ -98,13 +98,21 @@ keyless (the e2e test relies on this).
   That is the rule-of-three threshold: extract a `speakerGenderOf` helper the next time one of
   them is touched.
 - Usage: one `usage_events` row per call (`llm_tokens`, in+out; cost estimated at $3/$15 per
-  MTok). **Known gap — the copy pipelines record spend but do not check it.** Only
-  `enhanceWithAudioTags` calls `assertBudget(db, "llm_tokens")`; nothing in `pipelines/copy.ts`
-  does, so `generateHookLines` in particular is an uncapped paid loop — ~5 agorot per press of
-  the wizard's reroll, with no ceiling. When it is capped it must **reject with a 429, never
-  park the job**: a parked job never fails, `useJobPoll` only gives up after consecutive
-  _failures_, and the wizard would spin forever (same split as the per-account caps in
-  [05-billing.md](05-billing.md) §Quotas and caps).
+  MTok). **Fixed 2026-09-23 (AUTHZ-12):** `pipelines/copy.ts` itself still checks nothing —
+  `callClaude` only `recordUsage`s, on purpose, because `generateHookLines`, `generateBScript`
+  and `generateVoScript` are also reachable from the `generate_copy` job handler
+  (`packages/core/src/handlers.ts`), and a `BudgetError` thrown mid-job parks it instead of
+  failing it. The caps live one layer up, in the three web routes that are the only reachable
+  callers of those functions today (`POST /api/businesses/[businessId]/hook-lines`, `/scripts`,
+  `/vo-script`) and in `POST /api/scripts/[id]/text` (`deriveHookText`, found in the same sweep):
+  each calls `assertAccountBudget(db, "llm_tokens", businessId)` then `assertBudget(db,
+  "llm_tokens")` before its first Anthropic call. `AccountBudgetError` rejects with a 429, exactly
+  the split this paragraph used to ask for; a platform-wide trip now answers 503
+  ("המערכת עמוסה כרגע. נסו שוב מאוחר יותר.") instead of parking anything or falling through to the
+  generic 500 `scripts/[id]/text` used to give it. `enhanceWithAudioTags` (`tts.ts`) is unchanged —
+  it still calls `assertBudget` directly because it runs inside the `synth_tts` job, where parking
+  is the correct behaviour. Defect note:
+  [defects/authz-12-synchronous-copy-routes-uncapped.md](vault/defects/authz-12-synchronous-copy-routes-uncapped.md).
 - **Content policy (both services)**: `contentPolicyCheck()` runs at the two functions that create
   renders — `createSet` (Service A) and `createBRender` (Service B), which do **not** share a path —
   after every free gate and **before the credit debit**, so a refused render never charges and an

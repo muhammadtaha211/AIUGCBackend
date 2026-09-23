@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { assertBScriptWordCeiling, deriveHookText, getDb, updateScriptText } from "@aiugc/core";
+import {
+  assertAccountBudget,
+  assertBScriptWordCeiling,
+  deriveHookText,
+  getDb,
+  updateScriptText,
+} from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireScript, requireUser } from "@/lib/api";
 import { scriptTextSchema } from "@/lib/service-b";
 
@@ -36,6 +42,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const isBScript = found.script.kind === "b_script";
     if (isBScript) {
       assertBScriptWordCeiling(body.data.text);
+      // deriveHookText below is a synchronous Anthropic call under the
+      // platform cap only (copy.ts) — no per-account ceiling until now
+      // (AUTHZ-12 sweep).
+      await assertAccountBudget(db, "llm_tokens", found.script.businessId);
     }
 
     const merge = isBScript
