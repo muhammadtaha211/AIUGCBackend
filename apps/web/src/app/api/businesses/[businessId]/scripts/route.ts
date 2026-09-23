@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { generateBScript, getDb, pickStructureForBusiness } from "@aiugc/core";
+import {
+  assertAccountBudget,
+  assertBudget,
+  generateBScript,
+  getDb,
+  pickStructureForBusiness,
+} from "@aiugc/core";
 import {
   coreErrorResponse,
   INVALID_BODY,
@@ -30,6 +36,13 @@ export async function POST(
     const db = getDb();
     const owned = await requireBusiness(db, businessId, auth.userId);
     if ("response" in owned) return owned.response;
+
+    // Synchronous Anthropic call below (plus a possible second one if the
+    // model's hook_text misses a cap, hookTextOrDerived) — no queue to absorb
+    // abuse. Per-account ceiling first, then the platform ceiling (AUTHZ-12:
+    // this route had neither).
+    await assertAccountBudget(db, "llm_tokens", businessId);
+    await assertBudget(db, "llm_tokens");
 
     const body = scriptRequestSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { generateHookLines, getDb, HOOK_LINE_FRAMES } from "@aiugc/core";
+import {
+  assertAccountBudget,
+  assertBudget,
+  generateHookLines,
+  getDb,
+  HOOK_LINE_FRAMES,
+} from "@aiugc/core";
 import {
   coreErrorResponse,
   INVALID_BODY,
@@ -29,6 +35,12 @@ export async function POST(
     const db = getDb();
     const owned = await requireBusiness(db, businessId, auth.userId);
     if ("response" in owned) return owned.response;
+
+    // Synchronous Anthropic call below, no queue to absorb abuse — the
+    // per-account ceiling first (fast, typed rejection), then the platform
+    // ceiling (AUTHZ-12: this route had neither).
+    await assertAccountBudget(db, "llm_tokens", businessId);
+    await assertBudget(db, "llm_tokens");
 
     // Both fields are optional, so an empty body is a valid request.
     const body = hookLinesRequestSchema.safeParse(await request.json().catch(() => ({})));
