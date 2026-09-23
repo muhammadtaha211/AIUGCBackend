@@ -312,17 +312,20 @@ function HookAndDemo() {
       </p>
 
       {/*
-        RTL: the first child renders on the right, so the raw recording sits
-        where the eye starts and the arrow travels toward the finished ad.
+        Founder's call, 2026-09-23: the raw recording goes on the LEFT and the
+        finished ad on the RIGHT — deliberately NOT where RTL puts them, so do
+        not "fix" it back. The DOM order stays raw-first, which is what a
+        screen reader reads as a process; `flex-row-reverse` does the flip
+        visually, and the arrow is mirrored so it still travels raw → ad.
       */}
-      <div className="mt-12 flex items-center justify-center gap-4 sm:gap-10">
+      <div className="mt-12 flex flex-row-reverse items-center justify-center gap-4 sm:gap-10">
         <MediaSlot
           {...LANDING_MEDIA.demoBefore}
           seed="tavnit-demo"
           caption={LANDING_MEDIA.demoBefore.alt}
           className="w-32 shrink-0 sm:w-48"
         />
-        <ArrowStart className="size-7 shrink-0 text-ink/25 sm:size-10" />
+        <ArrowStart className="size-7 shrink-0 -scale-x-100 text-ink/25 sm:size-10" />
         <MediaSlot
           {...LANDING_MEDIA.demoAfter}
           seed="tavnit-demo"

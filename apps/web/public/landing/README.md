@@ -19,14 +19,14 @@ There is no third step: no import, no build config, no page edit.
 
 ## Slots
 
-| Slot              | Expected filename                     | Where it appears                                              |
-| ----------------- | ------------------------------------- | ------------------------------------------------------------- |
-| `demoBefore`      | `demo-before.mp4` + `demo-before.jpg` | The before/after row (right frame) **and** step 1             |
-| `demoAfter`       | `demo-after.mp4` + `demo-after.jpg`   | The before/after row (left frame) **and** step 4's four tiles |
-| `hookClips[0..3]` | `hook-1.mp4` … `hook-4.mp4` + `.jpg`  | Step 2's four-clip strip — that strip only                    |
-| `hookStudioShot`  | `hook-studio.png`                     | Step 3 — a screenshot of the hook studio, replacing its mock  |
-| `presenterSample` | `presenter.mp4` + `presenter.jpg`     | The talking-head section (`#presenter`)                       |
-| `instagramShot`   | `instagram.png`                       | The self-marketing band (`#proof`) — **hidden until set**     |
+| Slot              | Expected filename                     | Where it appears                                             |
+| ----------------- | ------------------------------------- | ------------------------------------------------------------ |
+| `demoBefore`      | `demo-before.mp4` + `demo-before.jpg` | The before/after row (left frame) **and** step 1             |
+| `demoAfter`       | `demo-after.mp4` + `demo-after.jpg`   | The before/after row (right frame) **and** step 4's tiles    |
+| `hookClips[0..3]` | `hook-1.mp4` … `hook-4.mp4` + `.jpg`  | Step 2's four-clip strip — that strip only                   |
+| `hookStudioShot`  | `hook-studio.png`                     | Step 3 — a screenshot of the hook studio, replacing its mock |
+| `presenterSample` | `presenter.mp4` + `presenter.jpg`     | The talking-head section (`#presenter`)                      |
+| `instagramShot`   | `instagram.png`                       | The self-marketing band (`#proof`) — **hidden until set**    |
 
 `.jpg` files are the `poster` — the frame the browser shows before a clip plays.
 

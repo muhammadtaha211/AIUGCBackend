@@ -598,8 +598,12 @@ export function StepDemo({
         ))}
       </ul>
       {samples && (
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div>
+        // Founder's call, 2026-09-23: the raw recording on the LEFT, the ad on
+        // the RIGHT — deliberately NOT where RTL puts them. The DOM stays
+        // raw-first so it still reads as a process; flex-row-reverse flips it
+        // visually, same as the landing's before/after row.
+        <div className="mt-4 flex flex-row-reverse gap-3">
+          <div className="flex-1">
             {/* Signed, short-lived URLs — refetched with the picker. */}
             <video
               src={samples.recordingUrl}
@@ -608,9 +612,9 @@ export function StepDemo({
               preload="metadata"
               className="aspect-[9/16] w-full rounded-lg bg-ink/10 object-cover"
             />
-            <p className="mt-1.5 text-center text-[13px] text-ink/60">ככה נראה צילום טוב</p>
+            <p className="mt-1.5 text-center text-[13px] text-ink/60">דוגמה לצילום טוב</p>
           </div>
-          <div>
+          <div className="flex-1">
             <video
               src={samples.adUrl}
               controls
@@ -618,7 +622,7 @@ export function StepDemo({
               preload="metadata"
               className="aspect-[9/16] w-full rounded-lg bg-ink/10 object-cover"
             />
-            <p className="mt-1.5 text-center text-[13px] text-ink/60">וזו המודעה שיצאה ממנו</p>
+            <p className="mt-1.5 text-center text-[13px] text-ink/60">המודעה שיצאה ממנו</p>
           </div>
         </div>
       )}
