@@ -178,8 +178,8 @@ is a real upload gate.
   — the card a signed-in customer clicks to enter the A wizard, describing a voiceover the silent
   format cannot produce. Out of this change's scope (a `/home` surface, not marketing) and left for
   the founder; it is now the last place on the customer path selling the retired format.
-  _(Fixed on this one point, 2026-09-23, on branch `tweaks/landing-home-contact-demo`, commit
-  "home: no voiceover promised for hook + demo" — SHA to be filled in on merge. The card body is
+  _(Fixed on this one point, 2026-09-23, in `0ade931` on branch
+  `tweaks/landing-home-contact-demo`, not yet merged. The card body is
   now `…חיתוך לסרטון המוצר שלכם וכיתוב על כל צעד.`, so §4's two vocabulary rules hold on the
   `/home` entry card too. It was **not** the last such place: the same sweep found
   `apps/web/src/app/home/demos/page.tsx:40` saying the demo description helps `הקריינות`, fixed in
