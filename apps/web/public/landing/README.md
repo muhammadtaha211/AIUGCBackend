@@ -4,7 +4,8 @@ Everything the public landing page (`/`) shows in a media slot. Files here are s
 statically at `/landing/<filename>`.
 
 Every slot ships empty (`src: null`) and the page draws its own still in its place — today's
-AdFrame with the slot's label on it. Nothing on screen ever says "placeholder".
+AdFrame with the slot's label on it. Nothing on screen ever says "placeholder". One slot is the
+exception: `instagramShot` hides rather than draws — see its row below.
 
 ## Replacing a slot
 
@@ -25,7 +26,7 @@ There is no third step: no import, no build config, no page edit.
 | `hookClips[0..3]` | `hook-1.mp4` … `hook-4.mp4` + `.jpg`  | Step 2's four-clip strip — that strip only                    |
 | `hookStudioShot`  | `hook-studio.png`                     | Step 3 — a screenshot of the hook studio, replacing its mock  |
 | `presenterSample` | `presenter.mp4` + `presenter.jpg`     | The talking-head section (`#presenter`)                       |
-| `instagramShot`   | `instagram.png`                       | The self-marketing band (`#proof`), in a phone-shaped frame   |
+| `instagramShot`   | `instagram.png`                       | The self-marketing band (`#proof`) — **hidden until set**     |
 
 `.jpg` files are the `poster` — the frame the browser shows before a clip plays.
 
@@ -52,3 +53,7 @@ different openers, so all four tiles play `demoAfter` and only the line over the
 
 `presenterName` (the presenter the `#proof` band names) and `instagramUrl`. Leaving
 `instagramUrl` as `null` hides the link and nothing else — the band still renders.
+
+`instagramShot` is the one slot that draws no still: while its `src` is `null` the `#proof` band
+renders as a single column and the phone frame is not there at all. Setting its `src` (step 2
+above) brings the frame and the two-column layout back — there is no flag to flip.
