@@ -190,6 +190,29 @@ Nothing else. The matching policies already exist from `0002_supabase_rls.sql` a
 so the grant widens nothing: `businesses_select_own` (`owner_user_id = auth.uid()`) and
 `users_select_self` (`id = auth.uid()`).
 
+**Live correction (2026-09-24), read against `information_schema.table_privileges` /
+`column_privileges` on the live project — see
+[`vault/facts/supabase-live-snapshot-2026-09-24.md`](vault/facts/supabase-live-snapshot-2026-09-24.md):**
+the "Columns" column in the table above is what the **app** reads, not what the **grant** restricts.
+The `GRANT SELECT` statements above carry no column list, so they are — and have always been —
+table-wide: `authenticated` can `SELECT` every column of both tables (all 8 of `businesses`,
+including `owner_user_id` and `status`; all 4 of `users`), not just the ones the app UI happens to
+read. `anon` still has nothing. The only thing standing between `authenticated` and another user's
+row is the two SELECT-only, own-row RLS policies above — RLS, not column scope. A **column-scoped**
+grant — `GRANT SELECT (id,name,questionnaire,created_at) ON businesses TO authenticated;` and
+`GRANT SELECT (id,role) ON users TO authenticated;` in place of the two `GRANT` lines above — is the
+intended tightening target, tracked as a queue item in `docs/vault/state-of-play.md`; no migration
+writing it exists yet.
+
+**Also confirmed live, and true of every Supabase project regardless of any migration or setting
+here:** `anon` and `authenticated` hold `TRUNCATE`, `REFERENCES` and `TRIGGER` on every table in
+`public` (and, separately, `storage`) via Supabase's own platform-default ACL for future tables —
+nothing in this rebuild's migrations or in this section's grants adds it, and nothing here removes it
+either. No PostgREST verb maps to any of those three privileges, so this has no exploitable path
+through the Data API; `TRUNCATE` does ignore RLS, though, which is why revoking it in `public` (never
+in `storage` — Supabase manages that schema's own grants) is worth doing as part of the same
+tightening migration above.
+
 Also confirm `public` is listed in Dashboard → Project Settings → API → **Exposed schemas**. Table
 grants and schema exposure are separate switches; with `public` unexposed, PostgREST answers
 `404 PGRST106` however correct the grants are.

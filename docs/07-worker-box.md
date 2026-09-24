@@ -433,3 +433,84 @@ CLAUDE.md's credential rule, which this repo has had to enforce twice.
 Fixing an env value on the **box** does not fix Vercel, and the reverse: the two hosts take the same
 value in different shapes, and a Vercel change reaches only deployments created after it.
 [`vault/facts/env-values-differ-between-the-box-and-vercel.md`](vault/facts/env-values-differ-between-the-box-and-vercel.md).
+
+## 14. Network perimeter and SSH (2026-09-24)
+
+Two independent layers now gate the box, plus one hole that was open from day one and is closed as
+of this date. Full provenance, per item, is in
+[`vault/facts/worker-box-network-perimeter-2026-09-24.md`](vault/facts/worker-box-network-perimeter-2026-09-24.md) —
+this section is the operational summary.
+
+### Current state
+
+- **`ufw`** (unchanged from §3): active, default-deny incoming / default-allow outgoing / routed
+  disabled, logging low. The only allow rule is `22/tcp` from Anywhere, IPv4 and IPv6.
+  `[MEASURED, founder — sudo ufw status verbose]`
+- **A Hetzner Cloud Firewall**, applied to the worker server for the first time on 2026-09-24 — none
+  existed before. Inbound: TCP 22 and ICMP, from any IPv4/IPv6 — a second, independent layer in front
+  of `ufw`, not a tighter one. Outbound: **no rules at all**, deliberately — on Hetzner, adding any
+  outbound rule drops every other outbound flow, and the worker calls out to Supabase, Anthropic,
+  ElevenLabs, HeyGen, fal, Sentry, GitHub, npm and apt. SSH was confirmed working in a fresh session
+  after the firewall was applied. `[founder-reported]`
+- **Password SSH login is now OFF.** It was reachable from the open internet from day one until this
+  date — see below.
+- **Docker is not installed** (`command -v docker` returns nothing). `[MEASURED, founder]` This
+  matters because a container's published port bypasses `ufw` entirely; with no Docker on the box,
+  that vector doesn't exist today.
+- **Still OPEN, not fixed:** the worker runs as `aiugc`, a sudo-capable user with a password on
+  `sudo`. The target is a dedicated non-sudo service user; sized for a later phase of the ongoing
+  security audit and tracked in `docs/vault/state-of-play.md`'s queue.
+  `[REASONED, from a sudo password prompt — not yet acted on]`
+
+### What was actually open, and what closed it
+
+`sudo sshd -T`, read **before** any change, showed `passwordauthentication yes`,
+`kbdinteractiveauthentication no`, `permitrootlogin without-password`, `pubkeyauthentication yes`.
+`[MEASURED, founder]` **So password login for `aiugc` was reachable from the open internet from the
+day §2 created that user until 2026-09-24.** §3's firewall step never touched this — `ufw allow
+OpenSSH` opens port 22 to everyone; it says nothing about which auth method that port accepts once a
+connection lands. Likely cause `[REASONED, not verified]`: Hetzner's Ubuntu 24.04 image commonly ships
+`/etc/ssh/sshd_config.d/50-cloud-init.conf`, which enables password login, and nothing in this
+runbook ever overrode it.
+
+The fix, run on the box: create `/etc/ssh/sshd_config.d/00-hardening.conf` containing
+
+```
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+```
+
+The `00-` prefix is load-bearing — `sshd` reads `sshd_config.d/*` in filename order and keeps the
+**first** value it sees for a given directive, so `00-` has to sort ahead of cloud-init's `50-`.
+`sudo sshd -t` (syntax check) passed, then `sudo systemctl reload ssh`. `[founder-reported]`
+
+After: `sudo sshd -T` shows both directives as `no`; key login from the laptop still works; a
+password-only attempt — run from the box against its own public IP, so this tests `sshd`'s setting,
+not the network path — returned `Permission denied (publickey)`. The SSH login history checked
+**before** the change showed only `Accepted publickey` lines and 0 failed-password attempts in the
+last 30 days — so nothing is known to have exploited the window, but the setting being open, not
+observed abuse, was the actual exposure. `[MEASURED, founder]`
+
+### Recovery if SSH ever locks out
+
+`sshd` settings don't affect the Hetzner Cloud Console's web console — it's a local login to the VM,
+independent of the network stack:
+
+1. Open the server's console in the Hetzner Cloud dashboard.
+2. `sudo rm /etc/ssh/sshd_config.d/00-hardening.conf && sudo systemctl reload ssh`
+
+### Host key, for the first-connection prompt
+
+`ED25519 SHA256:jlOaU5XHz41HQJg4ER6u4Yx2jW8sdDrO4d5XQ38uhAU` — public, not a secret. If a future
+first connection shows a **different** fingerprint, stop and investigate before typing `yes`.
+`[MEASURED]`
+
+### Re-verify later
+
+```
+sudo ufw status verbose
+sudo sshd -T
+```
+
+plus the password-only test above (run **from the box**, against its own public IP — never from an
+untrusted host, and never with a real password typed anywhere it could be logged).
