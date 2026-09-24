@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-23
+updated: 2026-09-24
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -174,6 +174,13 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   code. **Check a branch's state with git before writing it down, every time.**
 - **Two lines of this file disagreed on the migration ledger** (0000–0047/48 rows vs 0000–0048/49).
   The database settled it: 49 rows, last `0048`. A count that appears twice will drift; keep one.
+
+**From 2026-09-24, external:**
+
+- **This file's own "key-only SSH from one desktop" line was unqualified.** `sshd -T` before that
+  date read `passwordauthentication yes`, so password login for `aiugc` was open to the internet the
+  whole time; 0 logged failed attempts in 30 days is luck observed after the fact, not evidence the
+  setting was closed. [[worker-box-network-perimeter-2026-09-24]].
 
 ## What landed (2026-09-19) — the landing repositioning, `landing/two-services`, MERGED as PR #49 (`495ac43`)
 
@@ -507,6 +514,16 @@ deadline on the clients built in `lib/supabase/{client,server}.ts` and `middlewa
 NOT done bespoke in the callback, where it would have bounded the least important of the three and
 made the other two look handled. Deferred, founder's call.
 
+**17. The worker runs as `aiugc`, which has password-protected sudo — a dedicated non-sudo service
+user is the target, not built.** Sized for a later phase of the ongoing box/Supabase security audit
+(`.work/security/`, session-local, not in this repo). [[worker-box-network-perimeter-2026-09-24]].
+
+**18. Tighten the live Supabase grants.** Column-scoped `SELECT` —
+`businesses(id,name,questionnaire,created_at)` and `users(id,role)` — to `authenticated`, in place of
+today's live table-wide grant; plus `REVOKE TRUNCATE, REFERENCES, TRIGGER` in `public` **only**
+(never touch `storage`'s grants — Supabase manages that schema itself). No migration written yet.
+[[supabase-live-snapshot-2026-09-24]], `docs/08-supabase-project-rebuild.md` §6A.
+
 ## External state — not in the repo
 
 Founder-reported from a dashboard unless a line says otherwise. **This section changed on
@@ -526,7 +543,10 @@ destructive-migration read-back rules are in CLAUDE.md. Do not re-narrate either
 Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.ai`; **Redirect URLs
 read 2026-09-22 — four and only four: `/auth/callback` + `/auth/recovery` on `https://tavnit.ai` and
 on `http://localhost:3000`, no `*.vercel.app`, no `www`** — every other origin falls back to the Site
-URL. Custom SMTP, 100 emails/hour. Hebrew auth templates in `docs/08` §8A.2.
+URL. Custom SMTP, 100 emails/hour. Hebrew auth templates in `docs/08` §8A.2. **RLS/grants/auth-settings
+re-verified read-only 2026-09-24** — everything matched the 2026-09-23 audit read except one thing
+`docs/08` §6A now says correctly: the `authenticated` grant is table-wide, not column-scoped.
+[[supabase-live-snapshot-2026-09-24]].
 
 **`events` is EMPTY — 0 rows, every kind.** Not `platform_budget_tripped`, not
 `qc_release`/`qc_reject`, not `content_policy_flag`. The alert sweep reads an empty partial index
@@ -560,7 +580,10 @@ across two lines and the worker started anyway with a broken map
 Sentry confirmed active **by test** (a job inserted knowing it would fail; the founder got the email),
 not by a log line — `error reporting on` also prints for a malformed DSN. `journalctl` sees unit
 lifecycle and OOM kills (`usermod -aG systemd-journal aiugc` has been run). `ufw` active, OpenSSH
-only, key-only SSH from one desktop. `sudo` needs a password, so an unattended session cannot
+only; **key-only SSH became true only on 2026-09-24** — password authentication was open to the
+internet in `sshd_config` from day one until then (0 failed attempts logged in 30 days, but the
+setting, not observed luck, was the exposure), and a Hetzner Cloud Firewall now also gates the host.
+[[worker-box-network-perimeter-2026-09-24]]. `sudo` needs a password, so an unattended session cannot
 `systemctl restart`; `kill -TERM $(systemctl show aiugc-worker -p MainPID --value)` is equivalent.
 Deploys: `docs/07-worker-box.md` §11.
 

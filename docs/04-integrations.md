@@ -106,7 +106,7 @@ keyless (the e2e test relies on this).
   callers of those functions today (`POST /api/businesses/[businessId]/hook-lines`, `/scripts`,
   `/vo-script`) and in `POST /api/scripts/[id]/text` (`deriveHookText`, found in the same sweep):
   each calls `assertAccountBudget(db, "llm_tokens", businessId)` then `assertBudget(db,
-  "llm_tokens")` before its first Anthropic call. `AccountBudgetError` rejects with a 429, exactly
+"llm_tokens")` before its first Anthropic call. `AccountBudgetError` rejects with a 429, exactly
   the split this paragraph used to ask for; a platform-wide trip now answers 503
   ("המערכת עמוסה כרגע. נסו שוב מאוחר יותר.") instead of parking anything or falling through to the
   generic 500 `scripts/[id]/text` used to give it. `enhanceWithAudioTags` (`tts.ts`) is unchanged —
