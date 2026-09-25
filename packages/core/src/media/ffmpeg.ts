@@ -9,6 +9,14 @@ import type { Rgb } from "./grade";
  * (1080x1920 / 30fps / H.264 / AAC), thumbnails, the atempo length-fit
  * stretch, and the step-plan analysis samplers (frame extraction, dHash,
  * state clustering). Step trims happen in Remotion, never here.
+ *
+ * INP-08: every production input reaching this file is a local path our own
+ * code wrote moments earlier (storage.download, or writeFileSync of
+ * provider/TTS response bytes) — never a network URL, stdin, or a synthetic
+ * lavfi source. `-protocol_whitelist file` is applied once, in runRaw, to
+ * every ffmpeg/ffprobe input, so no wrapper can forget it and no future
+ * caller can accidentally hand these functions a URL. `file` is the whole
+ * list: nothing here ever uses `-decryption_key`/`crypto`.
  */
 
 export interface ProbeResult {
@@ -20,10 +28,32 @@ export interface ProbeResult {
   hasAudio: boolean;
 }
 
+const PROTOCOL_WHITELIST = "file";
+
+/**
+ * `-protocol_whitelist` is a per-input AVOption, so ffmpeg needs it repeated
+ * immediately before every `-i` (there can be several, or none preceded by
+ * `-ss`/`-f lavfi`/etc. — it always goes right before the flag itself).
+ * ffprobe's callers here never pass `-i`: the filename is always the one
+ * trailing positional argument, so prepending once covers its single
+ * implicit input. Exported for the argv-shape tests (INP-08); every real
+ * caller goes through runRaw, which applies this to every spawned argv
+ * without exception.
+ */
+export function withProtocolWhitelist(args: string[]): string[] {
+  if (!args.includes("-i")) return ["-protocol_whitelist", PROTOCOL_WHITELIST, ...args];
+  const out: string[] = [];
+  for (const arg of args) {
+    if (arg === "-i") out.push("-protocol_whitelist", PROTOCOL_WHITELIST);
+    out.push(arg);
+  }
+  return out;
+}
+
 /** Raw-bytes runner — rawvideo output would be corrupted by string decoding. */
 function runRaw(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(bin, args, { windowsHide: true });
+    const proc = spawn(bin, withProtocolWhitelist(args), { windowsHide: true });
     const stdout: Buffer[] = [];
     let stderr = "";
     proc.stdout.on("data", (d: Buffer) => stdout.push(d));
@@ -46,16 +76,51 @@ async function run(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<string> {
   return (await runRaw(bin, args)).toString("utf8");
 }
 
-export async function probe(file: string): Promise<ProbeResult> {
-  const out = await run("ffprobe", [
-    "-v",
-    "error",
-    "-print_format",
-    "json",
-    "-show_streams",
-    "-show_format",
-    file,
-  ]);
+/**
+ * The demuxer families a probe call may open (INP-08 control b — a
+ * byte-level allow-list, layered under the protocol whitelist above so a
+ * hostile container inside the `file` protocol still can't pick an
+ * unexpected parser). Reconciled against what the upload UI/route accept
+ * today (mp4/mov only, `apps/web/src/lib/service-a-ui.ts` `DEMO_TYPES`): both
+ * are inside the mov/mp4 family ffprobe reports as one comma-joined
+ * `format_name` (`mov,mp4,m4a,3gp,3g2,mj2` — one ffmpeg demuxer serves all of
+ * those extensions), so there is no mismatch to widen or narrow. matroska/webm
+ * is included alongside it — a normal phone or desktop screen recorder never
+ * produces either family's siblings (3gp/mj2, or mkv/webm), so nothing real
+ * is rejected either way. Passed only by the demo ingest path
+ * (`pipelines/demos.ts`); every other caller of `probe()` (bank hook clips,
+ * persona images, provider media) passes no whitelist and is unrestricted at
+ * this layer, per design.
+ */
+export const INGEST_CONTAINER_WHITELIST = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm";
+
+export async function probe(
+  file: string,
+  opts?: { formatWhitelist?: string },
+): Promise<ProbeResult> {
+  let out: string;
+  try {
+    out = await run("ffprobe", [
+      "-v",
+      "error",
+      ...(opts?.formatWhitelist ? ["-format_whitelist", opts.formatWhitelist] : []),
+      "-print_format",
+      "json",
+      "-show_streams",
+      "-show_format",
+      file,
+    ]);
+  } catch (err) {
+    // ffprobe's own message for this is "Format not on whitelist '<list>'" —
+    // only that rejection becomes the same permanent, customer-facing string
+    // an unparseable file already throws below; any other ffprobe failure
+    // (a genuinely corrupt/unreadable file) keeps its existing transient
+    // behaviour, unchanged by this control.
+    if (opts?.formatWhitelist && err instanceof Error && /not on whitelist/.test(err.message)) {
+      throw new PermanentError("הקובץ לא מכיל וידאו תקין"); // no valid video stream
+    }
+    throw err;
+  }
   const json = JSON.parse(out) as {
     streams: {
       codec_type: string;
