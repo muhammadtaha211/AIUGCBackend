@@ -114,6 +114,17 @@ reads as a decision deferred, not an oversight.
   five frames that play the clip — one in the before/after row and four in step 4, where the whole
   point is that the SAME recording carries four different openers. A clip with its own line burned
   in would show two at once and contradict three of the four tiles. It is in the README.
+  _(Reversed 2026-09-25, founder's call in chat when the footage arrived: step 4 is ONE frame
+  playing `demoAfter`, and `demoAfter` is the finished ad as it came out — hook line burned in.
+  The page draws no HTML line over it anywhere now, in step 4 or in the before/after row (the
+  `hook={HOOKS[0]}` there is gone). The four HTML lines survive only on step 2's hook clips, which
+  are bank clips with no text on them. Checked at localhost:3000: exactly four
+  `p.absolute.top-3` overlays on the page, all on the hook strip; nine `<video>` elements, none
+  fetched at the top of the page and each at readyState 4, playing, once scrolled into view —
+  measured in headless Chrome over CDP at 375×812, because the app's Browser pane reports
+  `visibilityState: hidden` and never runs IntersectionObserver. The clips load lazily since
+  the same change (`components/landing/landing-video.tsx`, founder's pick): eager autoplay pulled
+  ~10 MB before the hero was scrolled past. README rewritten to match.)_
 - **The three feature cards lost their media headers.** Two of the three have no image to show, and
   the surviving card's existing caption read `כתוביות מיושרות לימין, תמיד` — forbidden vocabulary on
   the hook + demo path (§4) that could only be fixed by writing new Hebrew. Text-only cards avoided
