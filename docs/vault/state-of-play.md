@@ -66,6 +66,48 @@ paired with `pg_stat_user_indexes.idx_scan` for an index the same migration crea
 movement also proves the planner uses it (used 2026-09-11 for PR #29). **Caveats:** the counter is
 cumulative since reset so only the DELTA means anything, and it proves a behaviour, not a SHA.
 
+## Security audit — paused for launch
+
+**Done: phases 0–4.** Fixes merged: AUTHZ-12 (PR #59, commit `21b7557`); INP-01 (commit `511fefc`);
+Next.js 15.5.20 → 15.5.26 (commit `bfa65ae`). **INP-08 (this branch — pending merge and box
+deploy):** `fix/inp-08-ffmpeg-inputs`, commit `65114f8761191468619dc29677b1b7575ec6a09a` (the fix —
+`-protocol_whitelist` on every ffmpeg/ffprobe input, a container allow-list on the demo ingest path)
+and this docs commit (the second of the two). Founder-reported: Resend is on a paid plan; an
+Anthropic hard monthly spend limit is set. Measured 2026-09-24: box firewall and key-only SSH.
+
+**Deferred, each with its trigger — no file paths, line numbers, parameters or mechanics here; audit
+detail lives only in `.work/security/` (gitignored, the founder's main checkout).**
+
+- AUTH-01 admin two-factor — trigger: first weeks after launch.
+- AUTH-03 CAPTCHA on signup / sign-in / recover — trigger: before any paid ads or signup campaign.
+- AUTH-06 plus the two Supabase auth settings — trigger: a 10-minute founder test, first weeks.
+- INP-09/INP-10 plus box-check.md — server hardening (non-sudo service user, systemd limits, the
+  GitHub credential on the box) — trigger: first month.
+- INP-07, AUTHZ-06/07, phase 5 — upload/abuse limits — trigger: first sign of abuse or queue
+  backlog, or before scaling.
+- INP-02/03/14 — content-filter hardening — trigger: first month.
+- AUTH-02/04/05, CSRF, the grants migration (SB-5/SB-6), SB-4 bucket limit, PostgREST-off, the
+  English Reset Password email — trigger: a later fix batch.
+- AUTHZ-13 — billing edge case — trigger: phase 5.
+- Phase 6 (secrets, headers, dependency cleanup incl. the 11 remaining highs, vitest 2 → 3, drizzle
+  0.36 → 0.45) plus the register consolidation — trigger: first month.
+- Every remaining LOW in the 01–04 registers — trigger: with phase 6.
+
+**Standing rules until the audit resumes:**
+
+- drizzle-orm below 0.45.2: never pass a request-, customer- or model-derived value to
+  `sql.identifier`, `sql.raw`, `.as` or alias (CLEARED 2026-09-25: every current call is a literal).
+- Never run `vitest --ui` or Browser Mode on a Windows machine (vitest below 3.2.6).
+- INP-02 must make a failed parse record usage (state-of-play item 11) BEFORE it makes the
+  classifier fail closed; otherwise it reopens INP-01.
+- Audit details live only in `.work/security/` (gitignored, the founder's main checkout).
+
+MEASURED (this session, packages/core + apps/worker, this machine's ffmpeg 8.1.2-full_build-www.gyan.dev,
+Windows): INP-08's fix and its four new tests. Founder-reported: the Resend plan and the Anthropic
+spend limit, both above. REASONED: INP-08's behaviour on the box's Linux ffmpeg — not yet smoke-tested
+there (see the vault defect note). MEASURED 2026-09-24, carried from the prior session: the box
+firewall and key-only SSH ([[worker-box-network-perimeter-2026-09-24]]).
+
 ## What this session was (2026-09-18) — DIAGNOSIS, no fixes
 
 Nothing was fixed. Everything was measured against production (Supabase SQL, the Vercel access log,

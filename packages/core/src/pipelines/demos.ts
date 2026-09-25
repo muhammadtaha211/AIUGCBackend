@@ -6,7 +6,7 @@ import { demos } from "../db/schema";
 import { enqueue, type Job } from "../jobs/queue";
 import { PermanentError } from "../jobs/errors";
 import type { JobContext, JobResult } from "../jobs/worker";
-import { normalizeVideo, probe, thumbnail } from "../media/ffmpeg";
+import { INGEST_CONTAINER_WHITELIST, normalizeVideo, probe, thumbnail } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import { getStorage, storageKey } from "../storage";
 
@@ -150,7 +150,11 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
     const localRaw = path.join(WORK_DIR, "ingest", demoId, "raw.mp4");
     await storage.download(demo.rawPath, localRaw);
 
-    const info = await probe(localRaw);
+    // INP-08 control (b): the raw customer upload is the one point in the
+    // pipeline where an attacker's bytes first reach ffprobe — everything
+    // downstream (normalizeVideo, thumbnail, the analysis pass) reads either
+    // this same now-validated file or our own transcoded output.
+    const info = await probe(localRaw, { formatWhitelist: INGEST_CONTAINER_WHITELIST });
     // Lo-fi is intentional — sanity checks only, each with a human-readable reason.
     if (info.height <= info.width) {
       throw new PermanentError("הסרטון אופקי — צריך וידאו אנכי (9:16)");
@@ -168,7 +172,13 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
 
     const localNormalized = path.join(WORK_DIR, "ingest", demoId, "normalized.mp4");
     const localThumb = path.join(WORK_DIR, "ingest", demoId, "thumb.jpg");
-    await normalizeVideo(localRaw, localNormalized);
+    // Same INP-08 control (b) as the probe() above: this re-opens the raw
+    // customer upload, not the already-validated normalized file, so it
+    // needs the same allow-list — checking once and transcoding unrestricted
+    // would be a check-then-use gap.
+    await normalizeVideo(localRaw, localNormalized, {
+      formatWhitelist: INGEST_CONTAINER_WHITELIST,
+    });
     await thumbnail(localNormalized, localThumb);
 
     const keyBase = { businessId: demo.businessId, entity: "demo" as const, id: demoId };
