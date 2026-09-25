@@ -424,7 +424,6 @@ function HowItWorks() {
                   src={clip.src}
                   poster={clip.poster}
                   alt={clip.line}
-                  hook={clip.line}
                   seed={`tavnit-hook-${i + 1}`}
                 />
               ))}

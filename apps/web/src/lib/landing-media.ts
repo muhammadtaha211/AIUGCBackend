@@ -40,7 +40,7 @@ type LandingMedia = {
 };
 
 export const LANDING_MEDIA: LandingMedia = {
-  presenterName: "עדי",
+  presenterName: "נועה",
   instagramUrl: null,
 
   demoBefore: {
@@ -59,9 +59,9 @@ export const LANDING_MEDIA: LandingMedia = {
     alt: "דוגמה לסרטון עם דמות AI",
   },
 
-  // Bank clips, each matched to the line it reads as — and hook-3's line is
-  // feminine, so it can only sit on a woman: 1 noa/disbelief, 2 omri/laughing,
-  // 3 shira/takesoffheadphones, 4 nehoray/ma.
+  // Bank clips, shown bare — step 2 draws no line over them (founder's call,
+  // 2026-09-25). The lines feed step 3's option-list mock through `HOOKS`.
+  // 1 noa/disbelief, 2 omri/laughing, 3 shira/takesoffheadphones, 4 nehoray/ma.
   hookClips: [
     { src: "/landing/hook-1.mp4", poster: "/landing/hook-1.jpg", line: "לא האמנתי שזה באמת עובד" },
     {
