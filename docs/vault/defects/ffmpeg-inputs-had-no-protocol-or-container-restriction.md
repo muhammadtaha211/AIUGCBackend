@@ -15,7 +15,18 @@ method: "INP-08 fix, branch fix/inp-08-ffmpeg-inputs, base dbbc3388d53ea9b8aa113
   unmodified, as required). After the fix: the same four files, 12/12 pass. Full regression:
   packages/core (60 files, 747 tests) and apps/worker (1 file, 7 tests) both green, serially,
   --fileParallelism=false; every pre-existing real-ffmpeg test (media-steps/media-rate/media-color/
-  media-pad/persona-images) unchanged and still passing. tsc --noEmit clean on both packages."
+  media-pad/persona-images) unchanged and still passing. tsc --noEmit clean on both packages.
+  Follow-up, same day, same branch, base 4180f5e75ce2a1c411efb59d517a25ef1a32c5be (the branch's own
+  prior tip): the demuxer allow-list only ever reached probe()'s first read of the raw upload — the
+  very next call, normalizeVideo(), re-opened the same raw file through an unrestricted demuxer, a
+  check-then-use gap. Two new/changed cases proved it on the UNMODIFIED branch tip: a spawn-mocked
+  unit case on normalizeVideo() itself (expected -format_whitelist before -i, got none — the
+  wrapper did not even accept the option) and a spawn-mocked, real-DB/storage, real-job-queue case
+  driving handleIngestDemo end to end (expected normalizeVideo()'s real spawn argv to include
+  -format_whitelist, it didn't — the wiring gap, not just the wrapper). After the fix: both pass,
+  and the existing T3/T4 real-ffmpeg cases (demo-ingest-container-allowlist.test.ts) pass unchanged.
+  Full regression: packages/core (61 files, 749 tests) and apps/worker (1 file, 7 tests) both
+  green, serially, --fileParallelism=false. tsc --noEmit clean on both packages."
 source: code
 ---
 
@@ -74,6 +85,32 @@ the `data` protocol and probed successfully with no whitelist in place.
    behaved exactly as documented on this machine — no fallback to a container-check-only path was
    needed.
 
+## FOLLOW-UP FIXED 2026-09-25, same branch, commit 3 — the allow-list now covers every raw-upload read, not just the first probe
+
+**What was still open after the first commit.** Control (b) (the container allow-list) was wired
+into `probe()`'s **first** read of the raw customer upload only. The very next call in
+`handleIngestDemo`, `normalizeVideo(localRaw, localNormalized)`, re-opens that **same raw file**
+through ffmpeg's own unrestricted demuxer auto-detection — the wrapper did not even have a
+`formatWhitelist` parameter to pass. Checking with a restricted demuxer set and then transcoding
+with an unrestricted one is a check-then-use gap: item (c) below, previously framed as "why control
+(b) exists," was not actually fully realized by the first commit.
+
+**MEASURED, this machine's ffmpeg (8.1.2-full_build-www.gyan.dev, Windows).** Driving
+`handleIngestDemo` end to end with `node:child_process`'s `spawn` mocked (real PGlite DB, real
+temp-dir storage, real job queue — only the ffmpeg/ffprobe process itself is faked) and inspecting
+every spawned argv: on the unmodified branch tip, `normalizeVideo()`'s ffmpeg spawn carried no
+`-format_whitelist` at all, while `probe()`'s ffprobe spawn did.
+
+**REASONED — the fix.** `normalizeVideo()` gained the same optional `formatWhitelist` parameter
+`probe()` already had (`-format_whitelist <list>` inserted directly before `-i`, same per-input
+AVOption placement as `-protocol_whitelist`), with the same rejection mapped to the same
+`PermanentError("הקובץ לא מכיל וידאו תקין")`. `handleIngestDemo` now passes
+`INGEST_CONTAINER_WHITELIST` to **both** calls that touch the raw file — `probe()` and
+`normalizeVideo()` — via the one shared constant, not a repeated literal. `thumbnail()`,
+immediately after, deliberately gets no whitelist: it reads `localNormalized`, our own
+already-transcoded output, not raw customer bytes — confirmed by the new wiring test, which asserts
+the allow-list is present on both raw-touching spawns and absent from `thumbnail()`'s.
+
 **What the fix does NOT bound — stated, not closed by this task:**
 
 (a) **Provider-supplied media gets no container allow-list.** HeyGen clips (`renders.ts`), fal
@@ -85,11 +122,13 @@ sense), and matches finding A5 in the security audit — out of scope here.
 lives entirely in `ffmpeg.ts`'s ffprobe/ffmpeg calls; `@remotion/renderer`'s own frame decoding
 (separate process, separate library) is untouched by this fix and was never in scope for it.
 
-(c) **A protocol whitelist alone does not bound what a malicious container can do within the `file`
-protocol** — a crafted concat/playlist entry referencing another local path would still resolve.
-That is exactly why control (b) exists alongside control (a) rather than instead of it: the
-container allow-list keeps an unexpected demuxer (the thing that would interpret such an entry) from
-ever touching customer bytes on the one path they enter unauthenticated.
+(c) **RESOLVED by the follow-up above, not by the first commit alone.** A protocol whitelist alone
+does not bound what a malicious container can do within the `file` protocol — a crafted
+concat/playlist entry referencing another local path would still resolve. The container allow-list
+is what keeps an unexpected demuxer from ever touching customer bytes, but only on the calls it
+actually reaches — which, until this follow-up, was `probe()` alone. It now covers every read of
+the raw upload (`probe()` and `normalizeVideo()`); `thumbnail()` and everything downstream reads
+the normalized output, out of scope by design.
 
 (d) **REASONED, not yet MEASURED on the box.** Everything above is proven against this machine's
 Windows ffmpeg/ffprobe (8.1.2-full_build-www.gyan.dev). The box runs Linux; `-protocol_whitelist` and

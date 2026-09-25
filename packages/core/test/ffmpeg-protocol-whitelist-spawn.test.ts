@@ -72,4 +72,21 @@ describe("ffmpeg.ts wrappers hand spawn a whitelisted argv (spawn mocked)", () =
     expect(fwIndex).toBeGreaterThan(0);
     expect(args[fwIndex + 1]).toBe("mov,mp4,m4a,3gp,3g2,mj2,matroska,webm");
   });
+
+  it("normalizeVideo() with a formatWhitelist adds -format_whitelist directly before -i, alongside the protocol whitelist (INP-08 follow-up: the raw upload is re-opened here too, not just at probe())", async () => {
+    spawnMock.mockImplementation(() => fakeProcess(""));
+    await normalizeVideo("in.mp4", "out.mp4", {
+      formatWhitelist: "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm",
+    });
+
+    const [bin, args] = spawnMock.mock.calls[0]! as [string, string[]];
+    expect(bin).toBe("ffmpeg");
+    const iIndex = args.indexOf("-i");
+    expect(args[iIndex - 2]).toBe("-protocol_whitelist");
+    expect(args[iIndex - 1]).toBe("file");
+    const fwIndex = args.indexOf("-format_whitelist");
+    expect(fwIndex).toBeGreaterThan(0);
+    expect(fwIndex).toBeLessThan(iIndex); // both are per-input AVOptions — must precede -i
+    expect(args[fwIndex + 1]).toBe("mov,mp4,m4a,3gp,3g2,mj2,matroska,webm");
+  });
 });

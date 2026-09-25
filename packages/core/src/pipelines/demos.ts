@@ -172,7 +172,13 @@ export async function handleIngestDemo(job: Job, ctx: JobContext): Promise<JobRe
 
     const localNormalized = path.join(WORK_DIR, "ingest", demoId, "normalized.mp4");
     const localThumb = path.join(WORK_DIR, "ingest", demoId, "thumb.jpg");
-    await normalizeVideo(localRaw, localNormalized);
+    // Same INP-08 control (b) as the probe() above: this re-opens the raw
+    // customer upload, not the already-validated normalized file, so it
+    // needs the same allow-list — checking once and transcoding unrestricted
+    // would be a check-then-use gap.
+    await normalizeVideo(localRaw, localNormalized, {
+      formatWhitelist: INGEST_CONTAINER_WHITELIST,
+    });
     await thumbnail(localNormalized, localThumb);
 
     const keyBase = { businessId: demo.businessId, entity: "demo" as const, id: demoId };

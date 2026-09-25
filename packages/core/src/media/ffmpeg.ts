@@ -160,29 +160,50 @@ export function parseRate(rate: string | undefined): number {
  * Transcode to the single delivery format: 1080x1920, 30fps, H.264 + AAC,
  * moov at the head. Phone footage on ingest, and bank hook clips on upload —
  * both have to be exactly 30fps because the compositions are.
+ *
+ * INP-08 follow-up: a protocol whitelist alone still lets a whitelisted
+ * container reference other local files, so the demo ingest path re-applies
+ * the same demuxer allow-list here too — this call re-opens the raw customer
+ * upload probe() already checked, and checking once then transcoding with no
+ * restriction would be a check-then-use gap.
  */
-export async function normalizeVideo(input: string, output: string): Promise<void> {
+export async function normalizeVideo(
+  input: string,
+  output: string,
+  opts?: { formatWhitelist?: string },
+): Promise<void> {
   mkdirSync(path.dirname(output), { recursive: true });
-  await run("ffmpeg", [
-    "-y",
-    "-i",
-    input,
-    "-vf",
-    "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "20",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "128k",
-    "-movflags",
-    "+faststart",
-    output,
-  ]);
+  try {
+    await run("ffmpeg", [
+      "-y",
+      ...(opts?.formatWhitelist ? ["-format_whitelist", opts.formatWhitelist] : []),
+      "-i",
+      input,
+      "-vf",
+      "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "20",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-movflags",
+      "+faststart",
+      output,
+    ]);
+  } catch (err) {
+    // Same mapping as probe()'s formatWhitelist rejection — see the comment
+    // there for why only this specific ffmpeg error becomes the permanent,
+    // customer-facing string.
+    if (opts?.formatWhitelist && err instanceof Error && /not on whitelist/.test(err.message)) {
+      throw new PermanentError("הקובץ לא מכיל וידאו תקין"); // no valid video stream
+    }
+    throw err;
+  }
 }
 
 export async function thumbnail(input: string, output: string, atMs = 1000): Promise<void> {
