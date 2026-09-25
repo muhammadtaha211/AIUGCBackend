@@ -9,6 +9,13 @@ supersedes: "[[0041-content-policy-is-accepted-not-fixed]]"
 
 # 0042 — The content-policy classifier is wired at both render choke points
 
+> **Correction 2026-09-25** — "What is still NOT covered" below says the classifier call "adds no
+> runaway surface" because it is one call per confirm, not a loop. That missed that a **refused**
+> confirm is free (it throws pre-debit) and repeatable with no bound — an account with credits for
+> one render could press confirm indefinitely, each press a real paid Anthropic call. Fixed:
+> [[content-policy-classifier-was-uncapped]] (INP-01, security audit phase 4). This note's body is
+> left as written below; the fix note carries what changed.
+
 `contentPolicyCheck` now runs. [[0041-content-policy-is-accepted-not-fixed]] decided the opposite on
 2026-09-10 and was right for the world it described; this note replaces it because the event 0041
 itself named has arrived.

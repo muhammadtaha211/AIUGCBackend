@@ -16,7 +16,7 @@ import {
   sets,
   videoRenders,
 } from "../db/schema";
-import { assertAccountBudget } from "../budget";
+import { assertAccountBudget, assertBudget, AccountBudgetError } from "../budget";
 import { hookEffectSchema, isHookAnimation, type HookEffect } from "../hook-effect";
 import {
   CENTRED_HOOK_TEXT_RECT,
@@ -26,6 +26,7 @@ import {
 } from "../hook-geometry";
 import { hookTextError } from "../hook-text";
 import { enqueue } from "../jobs/queue";
+import { BudgetError } from "../jobs/errors";
 import { logger } from "../logger";
 import {
   creditCostsSchema,
@@ -188,11 +189,23 @@ export async function planAOutro(
  * refused render never charges, and a malformed or unaffordable request never
  * pays for a classifier call.
  *
+ * The classifier call itself is metered — per-account, then platform — BEFORE
+ * it spends (INP-01, security audit phase 4): it makes a real paid Anthropic
+ * call, and a flagged verdict throws pre-debit, so an unmetered classifier was
+ * a repeatable free spend. Both checks sit ahead of the try/catch below and on
+ * their own throw normally; they are never at risk of being read as "the
+ * classifier failed" by the catch.
+ *
  * FAILS OPEN, deliberately and as a trade-off worth stating: a classifier that
  * errors — Anthropic down, a timeout, output that will not parse — records that
  * it did not run and lets the render through. A classifier outage must not take
  * the product down, and the exposure it guards is small. The cost is that the
- * gate is exactly as available as Anthropic is.
+ * gate is exactly as available as Anthropic is. A budget refusal is NOT such an
+ * error and must never be read as one: the catch below rethrows
+ * AccountBudgetError/BudgetError before its fail-open branch, defense-in-depth
+ * against a future change inside contentPolicyCheck/callClaude that throws one
+ * from within the try — today neither does, so the two checks above are what
+ * actually fire.
  */
 async function assertContentPolicy(
   db: Db,
@@ -227,10 +240,21 @@ async function assertContentPolicy(
     .join("\n\n");
   if (!text) return;
 
+  // INP-01: the classifier is a real paid call, and a flagged verdict throws
+  // BEFORE the debit transaction — so an unmetered classifier was a repeatable
+  // free spend. Metered here, per-account then platform, same order AUTHZ-12
+  // used at its four routes, and OUTSIDE the try/catch: a budget refusal is a
+  // refusal, never a reason to let the render through.
+  await assertAccountBudget(db, "llm_tokens", businessId);
+  await assertBudget(db, "llm_tokens");
+
   let verdict: Awaited<ReturnType<typeof contentPolicyCheck>>;
   try {
     verdict = await contentPolicyCheck(db, { businessId, text });
   } catch (err) {
+    // Never swallow a budget refusal into "check failed, let it through" —
+    // see the defense-in-depth note above the function.
+    if (err instanceof AccountBudgetError || err instanceof BudgetError) throw err;
     await db.insert(events).values({
       kind: CONTENT_POLICY_CHECK_FAILED,
       businessId,
