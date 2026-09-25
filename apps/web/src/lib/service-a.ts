@@ -50,7 +50,11 @@ export function demoUploadPath(businessId: string, uploadId: string, type: strin
  * The founder-curated good-input example served on the demo step: a sample
  * recording and the ad it produced. Fixed storage paths — replacing the
  * example is overwriting these two objects (upsert put), never a code change.
- * Currently placeholders; see packages/core/.work/upload-a-samples.ts.
+ * Filled 2026-09-25 from the landing's demo pair: ad.mp4 IS
+ * apps/web/public/landing/demo-after.mp4, but recording.mp4 is its own 720p
+ * CRF 28 encode (20 MB) — the landing's 540p copy smears on-screen text at
+ * this size and fullscreen, under a rule that says that text must be readable.
+ * Re-run packages/core/.work/upload-a-samples.ts (gitignored) to replace them.
  */
 export const A_SAMPLE_RECORDING_PATH = "assets/samples/a-steps/recording.mp4";
 export const A_SAMPLE_AD_PATH = "assets/samples/a-steps/ad.mp4";
