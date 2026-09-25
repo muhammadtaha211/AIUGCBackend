@@ -685,10 +685,10 @@ non-sensitive scopes.
   recorded. Clips fetch only when scrolled near (`components/landing/landing-video.tsx`), and the
   web middleware no longer runs on `.mp4`. Filenames, the swap and the encode recipe:
   `apps/web/public/landing/README.md`.
-- **Set the presenter's name and Instagram URL** in `apps/web/src/lib/landing-media.ts`.
-  `presenterName` is `"עדי"` as a stand-in and `instagramUrl` is `null`, which hides the link. **The
-  `#proof` copy is written feminine — if the presenter is male, rewrite it rather than regendering
-  it in a session.** [[0061-landing-positioning-two-services-no-results-claims]].
+- **Set the presenter's Instagram URL** in `apps/web/src/lib/landing-media.ts` — `instagramUrl` is
+  `null`, which hides the link. The name is set: `presenterName` is `"נועה"` (founder, 2026-09-25),
+  and the `#proof` copy is written feminine, which fits her.
+  [[0061-landing-positioning-two-services-no-results-claims]].
 - **Update the address on the עוסק פטור registration** — still כאבול while every public page says
   ברזיל 14, תל אביב. **UNVERIFIED**: he said he is doing it; nobody has seen the file
   ([[0058-the-operator-address-is-a-tel-aviv-street-address]]).
