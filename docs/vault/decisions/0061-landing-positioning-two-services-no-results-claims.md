@@ -54,6 +54,8 @@ The presenter's name and the Instagram URL are founder-owed
 (`presenterName`, `instagramUrl` in `apps/web/src/lib/landing-media.ts`). `instagramUrl` is `null`
 today, which hides the link and nothing else; the band still renders. **The copy is written
 feminine** — if the presenter is male the founder rewrites it, not a session.
+_(Name set 2026-09-25, founder in chat: **נועה** — female, so the feminine copy stands.
+`instagramUrl` is still `null`.)_
 
 ### 4. The vocabulary rules, each with the code behind it
 
@@ -125,6 +127,9 @@ reads as a decision deferred, not an oversight.
   `visibilityState: hidden` and never runs IntersectionObserver. The clips load lazily since
   the same change (`components/landing/landing-video.tsx`, founder's pick): eager autoplay pulled
   ~10 MB before the hero was scrolled past. README rewritten to match.)_
+  _(Later the same day, founder's call: step 2's hook clips show bare too — no HTML line is drawn
+  over any clip on the page now, so the four `p.absolute.top-3` overlays above are zero. The
+  lines survive only in step 3's option-list mock.)_
 - **The three feature cards lost their media headers.** Two of the three have no image to show, and
   the surviving card's existing caption read `כתוביות מיושרות לימין, תמיד` — forbidden vocabulary on
   the hook + demo path (§4) that could only be fixed by writing new Hebrew. Text-only cards avoided

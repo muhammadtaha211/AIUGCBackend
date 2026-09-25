@@ -44,8 +44,8 @@ was four tiles of the same clip under four HTML lines; founder's call to show th
   nothing until it scrolls near the viewport (`components/landing/landing-video.tsx`) — only its
   poster loads with the page.
 - **`demoAfter` is the finished ad, its hook line burned in** — the page draws no line over it.
-- **The `hookClips` carry no text.** They are bank clips as they sit in the bank, and the page
-  draws each one's line over it in HTML. A clip with a line burned in would show two.
+- **The `hookClips` carry no text, and the page draws none over them.** Step 2 shows the bank
+  clips bare, as they sit in the bank.
 - **Encode for the web, not the archive.** The sources were 174 MB; these files are 11 MB. The
   recipe (ffmpeg): `-map 0:v:0 -an -map_metadata -1 -c:v libx264 -preset slow -pix_fmt yuv420p
 -movflags +faststart`, scaled and centre-cropped to 720×1280 at `-crf 26` (hooks, presenter) or
@@ -55,9 +55,9 @@ was four tiles of the same clip under four HTML lines; founder's call to show th
   (and can carry its location). Posters are each clip's first frame (`-frames:v 1 -q:v 4`).
 - **Stills**: `hookStudioShot` and `instagramShot` are screenshots. Crop `instagramShot` to a
   phone aspect — its frame is shaped for it.
-- **Hook lines** are copy, not assets: they live beside the clips in `landing-media.ts`, and
-  the line stored next to a clip is the one the page draws over it — pick a clip that reads as
-  that line (and matches its gender).
+- **Hook lines** are copy, not assets: they live beside the clips in `landing-media.ts`, but no
+  clip shows its line — they appear only in step 3's option-list mock, until `hookStudioShot`
+  replaces it.
 
 ## Also in that file
 
