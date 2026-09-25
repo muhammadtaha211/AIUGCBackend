@@ -3,9 +3,12 @@
 Everything the public landing page (`/`) shows in a media slot. Files here are served
 statically at `/landing/<filename>`.
 
-Every slot ships empty (`src: null`) and the page draws its own still in its place — today's
-AdFrame with the slot's label on it. Nothing on screen ever says "placeholder". One slot is the
-exception: `instagramShot` hides rather than draws — see its row below.
+A slot whose `src` is `null` draws its own still in its place — the AdFrame with the slot's label
+on it. Nothing on screen ever says "placeholder". One slot is the exception: `instagramShot` hides
+rather than draws — see its row below.
+
+Filled 2026-09-25: every clip slot (`demoBefore`, `demoAfter`, the four `hookClips`,
+`presenterSample`). Still empty: the two screenshots, `hookStudioShot` and `instagramShot`.
 
 ## Replacing a slot
 
@@ -22,7 +25,7 @@ There is no third step: no import, no build config, no page edit.
 | Slot              | Expected filename                     | Where it appears                                             |
 | ----------------- | ------------------------------------- | ------------------------------------------------------------ |
 | `demoBefore`      | `demo-before.mp4` + `demo-before.jpg` | The before/after row (left frame) **and** step 1             |
-| `demoAfter`       | `demo-after.mp4` + `demo-after.jpg`   | The before/after row (right frame) **and** step 4's tiles    |
+| `demoAfter`       | `demo-after.mp4` + `demo-after.jpg`   | The before/after row (right frame) **and** step 4            |
 | `hookClips[0..3]` | `hook-1.mp4` … `hook-4.mp4` + `.jpg`  | Step 2's four-clip strip — that strip only                   |
 | `hookStudioShot`  | `hook-studio.png`                     | Step 3 — a screenshot of the hook studio, replacing its mock |
 | `presenterSample` | `presenter.mp4` + `presenter.jpg`     | The talking-head section (`#presenter`)                      |
@@ -30,24 +33,31 @@ There is no third step: no import, no build config, no page edit.
 
 `.jpg` files are the `poster` — the frame the browser shows before a clip plays.
 
-Step 4 is deliberately one file, not four: its point is that the SAME recording carries four
-different openers, so all four tiles play `demoAfter` and only the line over them changes. Setting
-`demoAfter.src` therefore fills five frames at once.
+Step 4 is one frame playing `demoAfter` — the finished ad, as it comes out. (Until 2026-09-25 it
+was four tiles of the same clip under four HTML lines; founder's call to show the one real ad.)
 
 ## What the files should be
 
-- **Clips**: vertical 9:16, the product's own output shape. They autoplay muted and loop, so
-  keep them short and keep them silent. `demoAfter`, the `hookClips` and `presenterSample` are
-  real renders; `demoBefore` is the raw phone recording that produced `demoAfter`.
-- **`demoAfter` must have NO hook line burned into it.** The page draws the line itself, in HTML,
-  over every frame that plays this clip — one line in the before/after row and four different ones
-  across step 4's tiles. A clip with its own line burned in would show two at once, and step 4's
-  four tiles would each contradict the footage. Export it from the ad body, or from a render whose
-  hook text is empty.
+- **Clips**: vertical 9:16, the product's own output shape. They autoplay muted, loop and have no
+  controls, so ship them without an audio track. `demoAfter` and `presenterSample` are real
+  renders; `demoBefore` is the raw phone recording that produced `demoAfter`. A clip fetches
+  nothing until it scrolls near the viewport (`components/landing/landing-video.tsx`) — only its
+  poster loads with the page.
+- **`demoAfter` is the finished ad, its hook line burned in** — the page draws no line over it.
+- **The `hookClips` carry no text.** They are bank clips as they sit in the bank, and the page
+  draws each one's line over it in HTML. A clip with a line burned in would show two.
+- **Encode for the web, not the archive.** The sources were 174 MB; these files are 11 MB. The
+  recipe (ffmpeg): `-map 0:v:0 -an -map_metadata -1 -c:v libx264 -preset slow -pix_fmt yuv420p
+-movflags +faststart`, scaled and centre-cropped to 720×1280 at `-crf 26` (hooks, presenter) or
+  `-crf 30` (`demoAfter`). `demoBefore` is 87 s of a filmed monitor and moiré does not compress,
+  so it is 540×960 with `hqdn3d=4:4:8:8` at `-crf 32` — the same picture at the ~200px the page
+  draws it. `-map_metadata -1` is not optional: a phone recording carries its creation time
+  (and can carry its location). Posters are each clip's first frame (`-frames:v 1 -q:v 4`).
 - **Stills**: `hookStudioShot` and `instagramShot` are screenshots. Crop `instagramShot` to a
   phone aspect — its frame is shaped for it.
 - **Hook lines** are copy, not assets: they live beside the clips in `landing-media.ts`, and
-  a clip should carry the line stored next to it.
+  the line stored next to a clip is the one the page draws over it — pick a clip that reads as
+  that line (and matches its gender).
 
 ## Also in that file
 

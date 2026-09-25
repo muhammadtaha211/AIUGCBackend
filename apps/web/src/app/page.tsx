@@ -1,4 +1,5 @@
 import { SiteFooter } from "@/components/landing/site-footer";
+import { LandingVideo } from "@/components/landing/landing-video";
 import { SiteHeader } from "@/components/landing/site-header";
 import { WhatChooser } from "@/components/landing/what-chooser";
 import { HOOKS, LANDING_MEDIA } from "@/lib/landing-media";
@@ -116,14 +117,10 @@ function MediaSlot({
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <video
+        <LandingVideo
           src={src}
           poster={poster ?? undefined}
-          aria-label={alt}
-          muted
-          loop
-          autoPlay
-          playsInline
+          label={alt}
           className="absolute inset-0 h-full w-full object-cover"
         />
       )}
@@ -334,7 +331,6 @@ function HookAndDemo() {
         <MediaSlot
           {...LANDING_MEDIA.demoAfter}
           seed="tavnit-demo"
-          hook={HOOKS[0]}
           caption={LANDING_MEDIA.demoAfter.alt}
           className="w-32 shrink-0 sm:w-48"
         />
@@ -456,24 +452,18 @@ function HowItWorks() {
             </div>
           </div>
 
-          {/* Step 4: the finished ads — full-width grid */}
-          <div>
-            <StepTitle number="4">מקבלים סרטון מוכן להעלאה</StepTitle>
-            <p className="mt-3 max-w-md text-[15px] leading-relaxed text-paper/60">
-              תבנית מחלקת את הדמו לשלבים ומכתבת כל שלב בעברית. עוברים על זה פעם אחת לכל דמו, מאשרים,
-              והסרטון נוצר. מכאן כל מודעה נוספת מאותה הקלטה היא רק פתיח ומשפט חדשים — בלי לצלם מחדש.
-            </p>
-            <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {LANDING_MEDIA.hookClips.map((clip) => (
-                <MediaSlot
-                  key={clip.line}
-                  src={LANDING_MEDIA.demoAfter.src}
-                  poster={LANDING_MEDIA.demoAfter.poster}
-                  alt={clip.line}
-                  hook={clip.line}
-                  seed="tavnit-demo"
-                />
-              ))}
+          {/* Step 4: the finished ad — split layout */}
+          <div className="grid items-center gap-10 sm:grid-cols-2">
+            <div>
+              <StepTitle number="4">מקבלים סרטון מוכן להעלאה</StepTitle>
+              <p className="mt-3 max-w-md text-[15px] leading-relaxed text-paper/60">
+                תבנית מחלקת את הדמו לשלבים ומכתבת כל שלב בעברית. עוברים על זה פעם אחת לכל דמו,
+                מאשרים, והסרטון נוצר. מכאן כל מודעה נוספת מאותה הקלטה היא רק פתיח ומשפט חדשים — בלי
+                לצלם מחדש.
+              </p>
+            </div>
+            <div className="flex justify-center">
+              <MediaSlot {...LANDING_MEDIA.demoAfter} seed="tavnit-demo" className="w-44 sm:w-52" />
             </div>
           </div>
         </div>

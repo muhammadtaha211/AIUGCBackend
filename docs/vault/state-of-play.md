@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-24
+updated: 2026-09-25
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -674,10 +674,17 @@ non-sensitive scopes.
      `fix/sumit-return-unconfirmed` is merged and live on the web: until then, any Sumit timeout or
      5xx during a return tells a customer who has paid to pay again. **Do not touch
      `developers/testterminal` on the real org.**
-- **Shoot and drop the landing media** — six slots, all empty today: `demoBefore`/`demoAfter`
-  (one recording and the ad built from it), four hook clips, a hook-studio screenshot, a presenter
-  clip, an Instagram screenshot. Filenames and the two-step swap are in
-  `apps/web/public/landing/README.md`; the page renders correctly without them.
+- **Drop the last two landing stills** — `hookStudioShot` (step 3, a hook-studio screenshot) and
+  `instagramShot` (`#proof`). Every clip slot was filled 2026-09-25 — `demoBefore`/`demoAfter`,
+  the four hook clips, the presenter — from the founder's own files, web-encoded into
+  `apps/web/public/landing/` (174 MB of sources → 11 MB). The same demo pair now also fills the
+  A-wizard demo step's example (`assets/samples/a-steps/`, which was empty on this project) — the
+  recording there as its own 720p encode, since the landing's 540p one smears on-screen text. Step 4
+  is one frame of the finished ad now, not four tiles, and `demoAfter` carries its own burned hook
+  line — the reverse of the rule [[0061-landing-positioning-two-services-no-results-claims]]
+  recorded. Clips fetch only when scrolled near (`components/landing/landing-video.tsx`), and the
+  web middleware no longer runs on `.mp4`. Filenames, the swap and the encode recipe:
+  `apps/web/public/landing/README.md`.
 - **Set the presenter's name and Instagram URL** in `apps/web/src/lib/landing-media.ts`.
   `presenterName` is `"עדי"` as a stand-in and `instagramUrl` is `null`, which hides the link. **The
   `#proof` copy is written feminine — if the presenter is male, rewrite it rather than regendering

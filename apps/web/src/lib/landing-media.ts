@@ -30,9 +30,10 @@ type LandingMedia = {
   /** `null` hides the Instagram link entirely — the band still renders. */
   instagramUrl: string | null;
   demoBefore: VideoSlot;
+  /** The finished ad, its hook line burned in — the page draws no line over it. */
   demoAfter: VideoSlot;
   presenterSample: VideoSlot;
-  /** Exactly four — the strip and the output tiles are both four across. */
+  /** Exactly four — step 2's strip is four across. */
   hookClips: readonly [HookClipSlot, HookClipSlot, HookClipSlot, HookClipSlot];
   hookStudioShot: ImageSlot;
   instagramShot: ImageSlot;
@@ -42,15 +43,38 @@ export const LANDING_MEDIA: LandingMedia = {
   presenterName: "עדי",
   instagramUrl: null,
 
-  demoBefore: { src: null, poster: null, alt: "הדמו שצילמתם" },
-  demoAfter: { src: null, poster: null, alt: "המודעה שתבנית הרכיבה" },
-  presenterSample: { src: null, poster: null, alt: "דוגמה לסרטון עם דמות AI" },
+  demoBefore: {
+    src: "/landing/demo-before.mp4",
+    poster: "/landing/demo-before.jpg",
+    alt: "הדמו שצילמתם",
+  },
+  demoAfter: {
+    src: "/landing/demo-after.mp4",
+    poster: "/landing/demo-after.jpg",
+    alt: "המודעה שתבנית הרכיבה",
+  },
+  presenterSample: {
+    src: "/landing/presenter.mp4",
+    poster: "/landing/presenter.jpg",
+    alt: "דוגמה לסרטון עם דמות AI",
+  },
 
+  // Bank clips, each matched to the line it reads as — and hook-3's line is
+  // feminine, so it can only sit on a woman: 1 noa/disbelief, 2 omri/laughing,
+  // 3 shira/takesoffheadphones, 4 nehoray/ma.
   hookClips: [
-    { src: null, poster: null, line: "לא האמנתי שזה באמת עובד" },
-    { src: null, poster: null, line: "למה אף אחד לא סיפר לי על זה?!" },
-    { src: null, poster: null, line: "חייבת להראות לכם מה הגיע לי" },
-    { src: null, poster: null, line: "עצרו הכל. תראו את זה" },
+    { src: "/landing/hook-1.mp4", poster: "/landing/hook-1.jpg", line: "לא האמנתי שזה באמת עובד" },
+    {
+      src: "/landing/hook-2.mp4",
+      poster: "/landing/hook-2.jpg",
+      line: "למה אף אחד לא סיפר לי על זה?!",
+    },
+    {
+      src: "/landing/hook-3.mp4",
+      poster: "/landing/hook-3.jpg",
+      line: "חייבת להראות לכם מה הגיע לי",
+    },
+    { src: "/landing/hook-4.mp4", poster: "/landing/hook-4.jpg", line: "עצרו הכל. תראו את זה" },
   ],
 
   hookStudioShot: { src: null, alt: "בחירת משפט פתיחה" },
