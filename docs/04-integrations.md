@@ -127,7 +127,14 @@ keyless (the e2e test relies on this).
   **Wired 2026-09-11** (`docs/vault/decisions/0042-content-policy-is-wired-at-both-choke-points.md`);
   before that it had never been called at all, and this paragraph described behaviour that did not
   happen. **Service B is NOT covered by a QC gate** — `auto_release_b` is permanently true (vault 0036) and Service A bypasses QC unconditionally (`renders.ts:491-492`), so this check is the only
-  thing standing there.
+  thing standing there. **The classifier call itself is metered before it spends, fixed 2026-09-25
+  (INP-01):** `assertContentPolicy` calls `assertAccountBudget(db, "llm_tokens", businessId)` then
+  `assertBudget(db, "llm_tokens")` — same order and same split as the AUTHZ-12 paragraph above —
+  before ever reaching `contentPolicyCheck`, and OUTSIDE the fail-open catch, so a budget refusal is
+  never read as a classifier failure and never lets an unclassified render through. Before this fix
+  a refused (flagged) confirm threw pre-debit and cost nothing, so it was repeatable with no bound —
+  each repeat a real paid Anthropic call. Defect note:
+  [defects/content-policy-classifier-was-uncapped.md](vault/defects/content-policy-classifier-was-uncapped.md).
 - DRY_RUN: pipelines return canned Hebrew copy (the provider itself always calls the API).
 
 ### Hook lines (Service A) — how a v7 batch is generated and shown
