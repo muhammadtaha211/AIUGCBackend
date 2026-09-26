@@ -736,16 +736,22 @@ console.cloud.google.com → create a project (or reuse one). Everything below l
 **APIs & Services → Credentials → Create credentials → OAuth client ID.**
 
 - Application type: **Web application**.
-- **Authorized redirect URIs** → add exactly:
+- **Authorized redirect URIs** → add:
 
   ```
   https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback
+  https://auth.tavnit.ai/auth/v1/callback
   ```
 
-  This is a **Supabase** endpoint, not an app route. Google returns to Supabase, and Supabase then
-  returns to the app at `/auth/callback`. Putting `http://localhost:3000/auth/callback` here is the
-  classic mistake and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase code
-  runs.
+  The first is a **Supabase** endpoint, not an app route. Google returns to Supabase, and Supabase
+  then returns to the app at `/auth/callback`. Putting `http://localhost:3000/auth/callback` here is
+  the classic mistake and produces Google's `Error 400: redirect_uri_mismatch` before any Supabase
+  code runs.
+
+  The second is this project's **Auth custom domain**, added 2026-09-26
+  (`docs/vault/decisions/0063-auth-custom-domain.md`) so Google's account chooser reads `tavnit.ai`
+  instead of the raw project ref. It is kept alongside the first, never in its place — see Step 3B.
+  A rebuild that has not yet bought the custom-domain add-on only needs the first URI.
 
 - **Authorized JavaScript origins**: leave empty. This is a server-side code flow and does not need
   them.
@@ -754,6 +760,30 @@ console.cloud.google.com → create a project (or reuse one). Everything below l
 
 Google can take a few minutes to propagate a new redirect URI. A `redirect_uri_mismatch` right
 after saving is worth one retry before you start debugging.
+
+### Step 3B — Custom Auth domain (optional; done for `hyaqydcmwbnbaiqqufow` on 2026-09-26)
+
+Supabase's **Custom Domain** add-on lets Auth serve its callback from a branded host
+(`auth.tavnit.ai` here) instead of `<ref>.supabase.co`, so Google's account chooser shows the
+brand instead of the raw project reference. Full reasoning and DNS in
+`docs/vault/decisions/0063-auth-custom-domain.md`; the ordering constraint below is specific to a
+rebuild and worth calling out in the recipe:
+
+- **The add-on is per-project, not per-organisation.** A rebuilt project starts without it. Buying
+  the domain for the old project does not carry over — the new project has to re-buy and
+  re-activate Custom Domain from scratch, DNS records included.
+- **Register the new project's custom-domain callback URI in Google _before_ activating the
+  domain in Supabase, not after.** The moment activation completes, Supabase Auth starts sending
+  Google back to the custom domain for the OAuth callback. If that URI is not already on the
+  OAuth client's Authorized redirect URIs list at that moment, every Google sign-in breaks with
+  `redirect_uri_mismatch` until it is added — so add both URIs (Step 3, above) first, then
+  activate the domain.
+- **The 20–30 minute downtime Supabase's activation screen warns about does not apply here** when
+  no client URL changes — `NEXT_PUBLIC_SUPABASE_URL` stays on `<ref>.supabase.co`
+  (`docs/vault/decisions/0063-auth-custom-domain.md` explains why). This is **reasoned from Supabase's
+  own documentation, not measured**: this project's 2026-09-26 activation was not timed for
+  downtime. Do not assume zero downtime for a rebuild that also plans to switch client URLs —
+  that is a different, unmeasured case.
 
 ### Step 4 — Supabase provider
 

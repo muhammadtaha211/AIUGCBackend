@@ -588,7 +588,11 @@ on `http://localhost:3000`, no `*.vercel.app`, no `www`** — every other origin
 URL. Custom SMTP, 100 emails/hour. Hebrew auth templates in `docs/08` §8A.2. **RLS/grants/auth-settings
 re-verified read-only 2026-09-24** — everything matched the 2026-09-23 audit read except one thing
 `docs/08` §6A now says correctly: the `authenticated` grant is table-wide, not column-scoped.
-[[supabase-live-snapshot-2026-09-24]].
+[[supabase-live-snapshot-2026-09-24]]. **Custom Domain add-on activated 2026-09-26: `auth.tavnit.ai`**
+is now the Auth custom domain (founder-reported; $10/month, billed hourly, not covered by the
+platform spend cap — Supabase's documentation). Namecheap `CNAME auth -> hyaqydcmwbnbaiqqufow.supabase.co.`
+**must stay** — deleting it breaks Google sign-in, because Auth now sends Google back to
+`auth.tavnit.ai` for the callback. [[0063-auth-custom-domain]].
 
 **`events` is EMPTY — 0 rows, every kind.** Not `platform_budget_tripped`, not
 `qc_release`/`qc_reject`, not `content_policy_flag`. The alert sweep reads an empty partial index
@@ -647,7 +651,12 @@ does not.**
 plaintext in `~/.git-credentials` on the box. Nothing will remind anyone it exists; revocable only at
 GitHub. [[0008-github-pat-over-deploy-key]]. **Google OAuth** published, _In production_, scopes
 `openid`/`email`/`profile` — do NOT upload a custom app logo, it triggers brand review even with
-non-sensitive scopes.
+non-sensitive scopes (still correct while brand verification is deferred — see
+[[0063-auth-custom-domain]] for what reversing that would take). **Authorized redirect URIs, since
+the 2026-09-26 custom domain (founder-reported):**
+`https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback` and
+`https://auth.tavnit.ai/auth/v1/callback`, both kept. **The account chooser now reads "tavnit.ai"**
+— founder-tested after activation, no longer the raw project ref. [[0063-auth-custom-domain]].
 
 ## Owed founder actions
 
