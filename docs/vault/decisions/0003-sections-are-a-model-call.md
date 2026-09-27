@@ -4,9 +4,17 @@ status: verified
 verified: 2026-08-25
 method: "founder chose in chat (AskUserQuestion, 2026-08-25 session): approve the auto model call, noun-phrase titles"
 source: founder
+superseded_by: "[[0064-the-inventory-is-one-tier]] (the pool only)"
 ---
 
 # Inventory sections are one automatic text-only model call per analysis
+
+> **Superseded IN PART 2026-09-28 by [[0064-the-inventory-is-one-tier]]:** the call no longer
+> groups "the quality pool" — it groups every readable state (`isInventoryState`), the same set
+> the wizard now shows, with prompt v2. Everything else below still stands: one automatic
+> text-only call per analysis, computed once, noun-phrase titles, the CLI backfill as the only
+> backfill, a grouping as a nicety. `inventorySections` and its flat-grid fallback are gone —
+> `inventoryPages` falls back to time-range pages. Kept verbatim below.
 
 The plan step's inventory is grouped into task-level Hebrew sections ("פרסום פוסט",
 "מעקב אחרי משתמשים") by `group_analysis_states` — a text-only call over the quality pool,

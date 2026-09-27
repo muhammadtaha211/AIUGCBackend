@@ -14,7 +14,7 @@
     "WHY IT EXISTS. States 0-5 are the Chrome new tab and the address bar being typed (\"tavnit.ai\" is",
     "in visibleText on 1, 2, 3 and 5; state 4 shows \"tavnit.a\"), and analyze_demo@v3 read every one of",
     "them as screenKind \"system\" — an OS surface, which PLAN_SKIP_SCREEN_KINDS forbids to the model and",
-    "the picker hides under \"פחות מתאימים\". The prompt's own \"Open with the way in\" rule could not be",
+    "the picker hid under \"פחות מתאימים\" until decision 0064 (2026-09-28). The prompt's own \"Open with the way in\" rule could not be",
     "honoured, and every plan the founder approved on this demo carried a HAND-ADDED step 1",
     "\"[0] כנסו לכאן\". This fixture is that recording with the pin done by code.",
     "",

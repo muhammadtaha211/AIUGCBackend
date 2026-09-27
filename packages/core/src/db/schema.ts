@@ -176,7 +176,7 @@ export const demoAnalyses = pgTable(
     // Task-level Hebrew groupings of the timeline for the inventory UI:
     // { title, stateIndexes[] }[] from the group_analysis_states job. NULL =
     // not grouped (pre-0030, model failure, budget refusal) — the UI falls
-    // back to the flat grid; a grouping is a nicety, never a gate. (0030)
+    // back to time-range pages; a grouping is a nicety, never a gate. (0030)
     sections: jsonb("sections"),
     sectionsPromptVersion: text("sections_prompt_version"),
     // Customer-facing Hebrew when rejected (e.g. refilm with less glare).

@@ -4,6 +4,7 @@ import { readTimeMs } from "@aiugc/core/plan-format";
 import {
   addWarning,
   analysisBackgroundLine,
+  ANALYSIS_PAGE_SIZE,
   analysisIndexBatches,
   analysisWaitView,
   aRenderStageIndex,
@@ -28,8 +29,7 @@ import {
   identityFromSearch,
   identitySearch,
   insertDraftStep,
-  inventorySections,
-  isSkippedScreenKind,
+  inventoryPages,
   isActiveARenderStatus,
   isActivePlanStatus,
   isAnalysisWorkingStatus,
@@ -41,7 +41,6 @@ import {
   marksAfterEdit,
   MAX_DEMO_SECONDS,
   MIN_DEMO_SECONDS,
-  pickerPools,
   pinnedPlanFrom,
   planFailureNotice,
   planWaitView,
@@ -764,58 +763,122 @@ describe("inventory picker (8c)", () => {
     ...over,
   });
 
-  it("absent screenKind means no information — stays visible (the v1 case, on the data)", () => {
-    expect(isSkippedScreenKind(undefined)).toBe(false);
-    expect(isSkippedScreenKind("login")).toBe(true);
-    expect(isSkippedScreenKind("product")).toBe(false);
-  });
-
-  it("splits quality from legal-but-poor and drops unreadable entirely", () => {
-    const states = [
+  describe("inventoryPages (0064 — one tier, a page per group)", () => {
+    const indexes = (pages: { states: AnalysisStateWire[] }[]) =>
+      pages.map((page) => page.states.map((state) => state.index));
+    const mixed = [
       wire(0),
       wire(1, { legibility: "low" }),
       wire(2, { sameStateAsPrevious: true }),
       wire(3, { actionType: "idle" }),
       wire(4, { screenKind: "login" }),
-      wire(5, { legibility: "unreadable" }), // no tile — the server rejects it anyway
+      wire(5, { legibility: "unreadable" }), // no card — the server rejects it anyway
       wire(6, { screenKind: "product" }),
     ];
-    const { quality, other } = pickerPools(states);
-    expect(quality.map((s) => s.index)).toEqual([0, 6]);
-    expect(other.map((s) => s.index)).toEqual([1, 2, 3, 4]);
-  });
 
-  it("a v1 timeline (no screenKind anywhere) fills the main grid on the data alone", () => {
-    const { quality, other } = pickerPools([wire(0), wire(1), wire(2)]);
-    expect(quality).toHaveLength(3);
-    expect(other).toHaveLength(0);
-  });
-
-  describe("inventorySections (0030)", () => {
-    const quality = [wire(0), wire(2), wire(5), wire(7)];
-
-    it("no grouping collapses to one untitled section — exactly the flat grid", () => {
-      expect(inventorySections(quality)).toEqual([{ title: null, states: quality }]);
-      expect(inventorySections(quality, [])).toEqual([{ title: null, states: quality }]);
+    it("only unreadable states are excluded — low, repeat, idle and login land on pages", () => {
+      expect(indexes(inventoryPages(mixed)).flat()).toEqual([0, 1, 2, 3, 4, 6]);
+      expect(
+        indexes(inventoryPages(mixed, [{ title: "הכול", stateIndexes: [0, 1, 2, 3, 4, 6] }])),
+      ).toEqual([[0, 1, 2, 3, 4, 6]]);
     });
 
-    it("groups the quality pool, buckets leftovers, drops junk indexes", () => {
-      const sections = inventorySections(quality, [
-        // 3 is not in the quality pool (grouped server-side over a wider
-        // predicate era, say) — dropped; 0 claimed twice — second claim
-        // dropped; order inside a section re-sorts chronologically.
-        { title: "פרסום פוסט", stateIndexes: [2, 0, 3] },
-        { title: "מעקב", stateIndexes: [5, 0] },
+    it("an old quality-pool grouping places every other readable state by nearest neighbour", () => {
+      // Grouped before 0064: only 0 and 6 were in the pool the model saw.
+      const pages = inventoryPages(mixed, [
+        { title: "פתיחה", stateIndexes: [0] },
+        { title: "התוצאה", stateIndexes: [6] },
       ]);
-      expect(sections.map((s) => s.title)).toEqual(["פרסום פוסט", "מעקב", "עוד מסכים"]);
-      expect(sections[0]!.states.map((s) => s.index)).toEqual([0, 2]);
-      expect(sections[1]!.states.map((s) => s.index)).toEqual([5]);
-      expect(sections[2]!.states.map((s) => s.index)).toEqual([7]);
+      // 1, 2 -> nearer 0; 3 ties (3s either way) -> the earlier, 0; 4 -> nearer 6.
+      expect(pages.map((page) => page.title)).toEqual(["פתיחה", "התוצאה"]);
+      expect(indexes(pages)).toEqual([
+        [0, 1, 2, 3],
+        [4, 6],
+      ]);
     });
 
-    it("a grouping that matches nothing in the pool degrades to the flat grid", () => {
-      const sections = inventorySections(quality, [{ title: "ריקה", stateIndexes: [99] }]);
-      expect(sections).toEqual([{ title: null, states: quality }]);
+    it("one page per section, chronological inside, pages ordered by their earliest moment", () => {
+      const states = Array.from({ length: 8 }, (_, i) => wire(i));
+      const pages = inventoryPages(states, [
+        { title: "התוצאה", stateIndexes: [7, 5, 6] },
+        { title: "פתיחה", stateIndexes: [2, 0, 1] },
+        { title: "עריכה", stateIndexes: [4, 3] },
+      ]);
+      expect(pages.map((page) => page.title)).toEqual(["פתיחה", "עריכה", "התוצאה"]);
+      expect(indexes(pages)).toEqual([
+        [0, 1, 2],
+        [3, 4],
+        [5, 6, 7],
+      ]);
+    });
+
+    it("unclaimed states attach to the nearest claimed one — before the first, after the last, ties earlier", () => {
+      const states = Array.from({ length: 9 }, (_, i) => wire(i));
+      const pages = inventoryPages(states, [
+        { title: "א", stateIndexes: [2] },
+        { title: "ב", stateIndexes: [6] },
+      ]);
+      // 0, 1 precede the first claim -> א; 4 sits 2s from both -> the
+      // earlier (2) -> א; 7, 8 follow the last claim -> ב.
+      expect(indexes(pages)).toEqual([
+        [0, 1, 2, 3, 4],
+        [5, 6, 7, 8],
+      ]);
+    });
+
+    it("the tie goes to the earlier TIME — not the lower index, not the first section", () => {
+      // Index order runs against time order here, and the later claim's
+      // section is listed first: only a by-time tiebreak puts 1 with 2.
+      const pages = inventoryPages(
+        [
+          wire(0, { timestampMs: 8000 }),
+          wire(1, { timestampMs: 4000 }), // unclaimed, 4s from both claims
+          wire(2, { timestampMs: 0 }),
+        ],
+        [
+          { title: "מאוחר", stateIndexes: [0] },
+          { title: "מוקדם", stateIndexes: [2] },
+        ],
+      );
+      expect(pages.map((page) => page.title)).toEqual(["מוקדם", "מאוחר"]);
+      expect(indexes(pages)).toEqual([[2, 1], [0]]);
+    });
+
+    it("a double claim stays with its first section; out-of-pool indexes are dropped", () => {
+      const pages = inventoryPages(
+        [wire(0), wire(1), wire(2, { legibility: "unreadable" }), wire(3)],
+        [
+          { title: "א", stateIndexes: [0, 2, 99] }, // 2 is unreadable, 99 does not exist
+          { title: "ב", stateIndexes: [0, 3] }, // 0 is already א's
+          { title: "ריקה", stateIndexes: [3, 42] }, // nothing left -> no page
+        ],
+      );
+      expect(pages.map((page) => page.title)).toEqual(["א", "ב"]);
+      expect(indexes(pages)).toEqual([[0, 1], [3]]);
+    });
+
+    it("no grouping, an empty one, or one claiming nothing -> chronological pages of 12", () => {
+      // Handed over out of order: the fallback sorts by time.
+      const states = Array.from({ length: 26 }, (_, i) =>
+        wire(25 - i, { timestampMs: (25 - i) * 5000 }),
+      );
+      const unmatched = [{ title: "ריקה", stateIndexes: [99] }];
+      for (const sections of [undefined, [], unmatched]) {
+        const pages = inventoryPages(states, sections);
+        expect(ANALYSIS_PAGE_SIZE).toBe(12);
+        expect(pages.map((page) => page.states.length)).toEqual([12, 12, 2]);
+        expect(indexes(pages).flat()).toEqual(Array.from({ length: 26 }, (_, i) => i));
+        // Neutral time-range titles, the range in an LTR isolate.
+        expect(pages.map((page) => page.title)).toEqual([
+          "מסכים ⁦0:00–0:55⁩",
+          "מסכים ⁦1:00–1:55⁩",
+          "מסכים ⁦2:00–2:05⁩",
+        ]);
+      }
+    });
+
+    it("an inventory with nothing readable has no pages", () => {
+      expect(inventoryPages([wire(0, { legibility: "unreadable" })])).toEqual([]);
     });
   });
 
