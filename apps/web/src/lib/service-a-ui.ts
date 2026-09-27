@@ -3,8 +3,8 @@ import {
   A_STEPS_MAX_DEFAULT,
   A_STEPS_MIN_DEFAULT,
   MAX_LABEL_WORDS,
+  isInventoryState,
   MIN_LABEL_WORDS,
-  PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
   splitWords,
   totalRuntimeMs,
@@ -386,8 +386,9 @@ export function analysisBackgroundLine(analysisStatus?: string): string | null {
 /** The reuse picker pages ready demos four at a time (route + step agree). */
 export const DEMO_PAGE_SIZE = 4;
 
-/** The state picker pages analysis thumbs twelve at a time (route + picker
- *  agree) — thumb URLs are only signed for the requested page. */
+/** At most twelve analysis thumbs are signed per ?indexes= request (route +
+ *  picker agree; larger want-sets go through analysisIndexBatches), and the
+ *  inventory's ungrouped fallback pages hold twelve moments. */
 export const ANALYSIS_PAGE_SIZE = 12;
 
 /** One row of GET /api/businesses/[id]/demos — reuse picker + demo library. */
@@ -806,81 +807,76 @@ export function planStepsDirty(
 // The inventory picker (8c) — pure decisions behind state-picker.tsx
 // ---------------------------------------------------------------------------
 
-/** Client mirror of core's isSkippedKind. Absent screenKind means "no
- *  information" and stays visible — the documented per-state semantics, which
- *  is also the whole v1 handling: detected on the data, not on promptVersion,
- *  so a v1 analysis (no screenKind anywhere) simply lands in the main grid. */
-export function isSkippedScreenKind(screenKind?: string): boolean {
-  return (
-    screenKind !== undefined && (PLAN_SKIP_SCREEN_KINDS as ReadonlySet<string>).has(screenKind)
-  );
-}
-
-/**
- * The picker's two tiers, mirroring core's quality/legal pool split
- * (dryRunPlan): the main grid prefers exactly what the model path prefers;
- * the collapsed tier keeps everything legal-but-poor pickable — a human may
- * legitimately want the OAuth screen in a signup-flow ad. Unreadable states
- * are dropped entirely: the server rejects them whoever selected them, so a
- * tile for one would be a dead pick.
- */
-export function pickerPools(states: AnalysisStateWire[]): {
-  quality: AnalysisStateWire[];
-  other: AnalysisStateWire[];
-} {
-  const quality: AnalysisStateWire[] = [];
-  const other: AnalysisStateWire[] = [];
-  for (const state of states) {
-    if (state.legibility === "unreadable") continue;
-    const preferred =
-      state.legibility === "high" &&
-      !state.sameStateAsPrevious &&
-      state.actionType !== "idle" &&
-      !isSkippedScreenKind(state.screenKind);
-    (preferred ? quality : other).push(state);
-  }
-  return { quality, other };
-}
-
 /** One stored grouping, as the analysis GET serves it (0030). */
 export type InventorySectionWire = { title: string; stateIndexes: number[] };
 
-/** A rendered inventory section. `title: null` = the untitled flat grid —
- *  both the no-grouping fallback and the whole pre-0030 world. */
-export type InventorySection = { title: string | null; states: AnalysisStateWire[] };
+/** One page of the inventory: a group's label and its moments, in order. */
+export type InventoryPage = { title: string; states: AnalysisStateWire[] };
 
 /**
- * Fold the stored groupings over the QUALITY pool (sections never touch the
- * collapsed "פחות מתאימים" tier). Absent/empty groupings collapse to one
- * untitled section holding today's exact flat grid — the fallback for old
- * analyses, failed groupings and capped accounts. Quality states the
- * grouping missed land in a trailing "עוד מסכים" bucket; indexes outside
- * the quality pool (or claimed twice) are dropped, mirroring the server-side
- * validator's rules on the client's stricter pool.
+ * The inventory as pages, one group per page (decision 0064): every
+ * readable state (isInventoryState — the same predicate the grouping job
+ * pools on) shown equally, no "less fitting" tier.
+ *
+ * With a stored grouping: one page per section, pages ordered by their
+ * earliest moment, moments chronological inside a page. Indexes outside the
+ * pool are dropped; an index claimed twice stays with its first claim. A pool
+ * state no section claims joins the page of its nearest claimed state by
+ * timestampMs (tie -> the earlier one) — there is no leftover bucket. That is
+ * how analyses grouped over the old quality pool place their other states
+ * without a paid regroup.
+ *
+ * No grouping, an empty one, or one that claims nothing in the pool ->
+ * chronological pages of ANALYSIS_PAGE_SIZE titled by their time range: a
+ * neutral label, never a judgement.
  */
-export function inventorySections(
-  quality: AnalysisStateWire[],
+export function inventoryPages(
+  states: AnalysisStateWire[],
   sections?: InventorySectionWire[],
-): InventorySection[] {
-  if (!sections || sections.length === 0) return [{ title: null, states: quality }];
-  const byIndex = new Map(quality.map((state) => [state.index, state]));
-  const used = new Set<number>();
-  const out: InventorySection[] = [];
-  for (const section of sections) {
-    const states: AnalysisStateWire[] = [];
+): InventoryPage[] {
+  // Stable sort: equal timestamps keep timeline (index) order.
+  const pool = states.filter(isInventoryState).sort((a, b) => a.timestampMs - b.timestampMs);
+  const inPool = new Set(pool.map((state) => state.index));
+  /** state index -> position of the section that claimed it first. */
+  const owner = new Map<number, number>();
+  sections?.forEach((section, position) => {
     for (const index of section.stateIndexes) {
-      if (!byIndex.has(index) || used.has(index)) continue;
-      used.add(index);
-      states.push(byIndex.get(index)!);
+      if (inPool.has(index) && !owner.has(index)) owner.set(index, position);
     }
-    states.sort((a, b) => a.timestampMs - b.timestampMs);
-    if (states.length > 0) out.push({ title: section.title, states });
+  });
+  if (!sections || owner.size === 0) return timeRangePages(pool);
+
+  const claimed = pool.filter((state) => owner.has(state.index));
+  const nearestOwner = (state: AnalysisStateWire): number => {
+    let best = claimed[0]!;
+    for (const candidate of claimed) {
+      // Strict < over a chronological list: a tie keeps the earlier one.
+      const distance = Math.abs(candidate.timestampMs - state.timestampMs);
+      if (distance < Math.abs(best.timestampMs - state.timestampMs)) best = candidate;
+    }
+    return owner.get(best.index)!;
+  };
+  const buckets = sections.map((): AnalysisStateWire[] => []);
+  for (const state of pool) {
+    buckets[owner.get(state.index) ?? nearestOwner(state)]!.push(state);
   }
-  const leftovers = quality.filter((state) => !used.has(state.index));
-  if (leftovers.length > 0) {
-    out.push({ title: out.length > 0 ? "עוד מסכים" : null, states: leftovers });
+  return buckets
+    .map((pageStates, position) => ({ title: sections[position]!.title, states: pageStates }))
+    .filter((page) => page.states.length > 0)
+    .sort((a, b) => a.states[0]!.timestampMs - b.states[0]!.timestampMs);
+}
+
+function timeRangePages(pool: AnalysisStateWire[]): InventoryPage[] {
+  const pages: InventoryPage[] = [];
+  for (let i = 0; i < pool.length; i += ANALYSIS_PAGE_SIZE) {
+    const pageStates = pool.slice(i, i + ANALYSIS_PAGE_SIZE);
+    const from = fmtTimestamp(pageStates[0]!.timestampMs);
+    const to = fmtTimestamp(pageStates[pageStates.length - 1]!.timestampMs);
+    // The range rides in an LTR isolate (U+2066 … U+2069) inside the string:
+    // the title is plain text, so the isolate has to travel with it.
+    pages.push({ title: `מסכים \u2066${from}–${to}\u2069`, states: pageStates });
   }
-  return out;
+  return pages;
 }
 
 /** A plan step that exists only in the draft until the next save. The server

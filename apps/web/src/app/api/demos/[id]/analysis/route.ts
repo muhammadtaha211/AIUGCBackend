@@ -98,8 +98,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     body.stateCount = timeline.length;
     body.total = timeline.length;
 
-    // Malformed/legacy sections are simply omitted — the flat-grid fallback,
-    // never an error.
+    // Malformed/legacy sections are simply omitted — the time-range-pages
+    // fallback, never an error.
     const sections = analysisSectionsSchema.safeParse(analysis.sections);
     if (sections.success && sections.data.length > 0) body.sections = sections.data;
 

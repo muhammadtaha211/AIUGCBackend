@@ -4,9 +4,15 @@ status: verified
 verified: 2026-08-25
 method: "git show 0629cbb (the diff — the commit body is empty); git show 0629cbb:<path> | grep -n for every historical citation; gates re-run at 0629cbb in a detached git worktree with its own pnpm install"
 source: code
+superseded_by: "[[0064-the-inventory-is-one-tier]] (the two tiers and the add panel)"
 ---
 
 # Phase 8c — the inventory picker: add-a-step from the analysed grid
+
+> **The two tiers below were retired 2026-09-28 by [[0064-the-inventory-is-one-tier]]:** every
+> readable moment is now shown equally, a page per group, with its own label box and add button
+> always on. `pickerPools`, `isSkippedScreenKind`, the collapsed tier and the tap-to-open add
+> panel are deleted. This note is the record of what 8c shipped at `0629cbb` and is not rewritten.
 
 **Commit:** `0629cbb`, 2026-08-21 21:18 +0300. 4 files, +650 −30.
 **The commit body is empty** — `git log -1 --format=%B 0629cbb` is the subject and a

@@ -2,7 +2,7 @@
 type: fact
 status: verified
 verified: 2026-09-08
-method: "for d in prompts/*/; do ls $d | sort -V; done (2026-09-08); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run); b_script rows by version: select prompt_version, count(*) from scripts where kind = 'b_script' and created_at > now() - interval '30 days' group by 1 (2026-09-08 03:30 UTC: v12 19, v10 8, v9 12)"
+method: "for d in prompts/*/; do ls $d | sort -V; done (2026-09-08; re-run 2026-09-28 — every family identical except group_analysis_states, which gained v2 for [[0064-the-inventory-is-one-tier]]; the DB reads below were NOT re-run); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run); b_script rows by version: select prompt_version, count(*) from scripts where kind = 'b_script' and created_at > now() - interval '30 days' group by 1 (2026-09-08 03:30 UTC: v12 19, v10 8, v9 12)"
 source: code
 ---
 
@@ -13,7 +13,7 @@ analyze_demo          v1 v2 v3                              (latest v3)
 b_script              v1..v17                               (latest v17, new 2026-09-11)
 benefit_captions      v1 v2                                 (latest v2)
 content_policy        v1                                    (latest v1)
-group_analysis_states v1                                    (latest v1, new 2026-08-25)
+group_analysis_states v1 v2                                 (latest v2, new 2026-09-28)
 hook_lines            v1..v7                                (latest v7)
 hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
 plan_demo_steps       v1..v14                               (latest v14, new 2026-09-15)

@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-25
+updated: 2026-09-28
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -448,7 +448,10 @@ the model to select the URL state as the **FIRST** step, while `findPlanViolatio
 pre-empts the legibility objection in so many words ("The home page is often `legibility: "low"` —
 take it anyway for this one step"), which weakens hypothesis (b) without killing it._ **[MEASURED]**
 the state IS in the timeline: ~53 states under the 80 cap means no thinning occurred, so it was
-**demoted, not dropped**.
+**demoted, not dropped**. **The customer half is CLOSED (2026-09-28) by
+[[0064-the-inventory-is-one-tier]]:** the collapsed tier no longer exists, so that state now sits
+on a page like every readable moment and can be added by hand. Why the PLAN never took it stays
+UNDIAGNOSED — 0064 deliberately left the plan pass alone.
 
 **6. Move the demo upload to the FIRST wizard step** so the analysis runs behind the remaining steps.
 Founder's idea, and correct. **The honest size [MEASURED]:** the wizard opened 00:53:52 and the demo
@@ -660,6 +663,12 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Put the worker box on the 0064 commit — `git pull` AND restart** (2026-09-28,
+  [[0064-the-inventory-is-one-tier]]). The v2 grouping prompt is read per call, so a pull alone
+  makes the box send v2's text over the OLD quality pool; the pool change and the `screenKind`
+  field need the restart. The web half ships with Vercel. **Regrouping existing analyses under v2
+  is NOT done and is the founder's call** — each is a paid call that overwrites a computed-once
+  column; until then their other readable moments are placed by nearest neighbour.
 - **Take the Sumit checkout live — DONE 2026-09-21 except step 8.** Kept with a status per step,
   because the order is the useful part and because a rebuild would follow it again:
   1. ~~Merge and deploy~~ **DONE** — PR #52, `4100cc7`, on Vercel and on the box.
