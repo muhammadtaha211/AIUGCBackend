@@ -98,9 +98,10 @@ describe("attributeLosses", () => {
   });
 
   it("does not call a run S3 when its stored state is one frame off its representative", () => {
-    // Measured 2026-09-28: another ffmpeg build moves representatives by a
-    // frame. A 0–800 (rep 400) and B 1000–1800 (rep 1400); the analysis
-    // stored 600 and 1200. Exact matching alone would report both as S3.
+    // Measured 2026-09-28: on another machine two thirds of the moved
+    // representatives moved by one frame. A 0–800 (rep 400) and B 1000–1800
+    // (rep 1400); the analysis stored 600 and 1200. Exact matching alone
+    // would report both as S3.
     const audit = attributeLosses({
       hashes: frames([A, 5], [B, 5]),
       fps: 5,
@@ -166,7 +167,7 @@ describe("attributeLosses", () => {
 });
 
 describe("tierReasons / timelineLosses (the old collapsed tier, S5)", () => {
-  it("names every reason pickerPools would collapse a state for", () => {
+  it("names every reason the old pickerPools collapsed a state for", () => {
     expect(tierReasons(state(0))).toEqual([]);
     expect(
       tierReasons({
@@ -245,8 +246,8 @@ describe("diffKept (does this machine reproduce the analysis?)", () => {
   });
 
   it("names a one-frame boundary shift as one missing and one extra", () => {
-    // Measured 2026-09-28: ffmpeg 8.1.2 against the box's analyses moves
-    // representatives by one 200ms frame, in both directions.
+    // Measured 2026-09-28: ffmpeg 8.1.2 against the box's analyses moved
+    // two thirds of the moved representatives by one 200ms frame, both ways.
     expect(diffKept([200, 1000, 1600], [400, 1000, 1400])).toEqual({
       missingMs: [200, 1600],
       extraMs: [400, 1400],

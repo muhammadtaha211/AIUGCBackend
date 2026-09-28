@@ -28,7 +28,8 @@ import {
  *   S3 transcription  kept, but absent from the stored timeline (droppedMs)
  *   S4 unreadable     in the timeline, no picker tile, refused by updatePlanSteps
  *
- * plus S5, the picker's collapsed "פחות מתאימים" tier, counted for the record.
+ * plus S5, the picker's collapsed "פחות מתאימים" tier, counted for the record
+ * — 0064 removed that tier from the wizard; the audit still classifies by it.
  * No model call, no enqueue, no DB or storage write: the DB reads run in a
  * READ ONLY transaction, and the only thing written is the downloaded video,
  * in a temp dir under WORK_DIR that is removed afterwards.
@@ -36,9 +37,10 @@ import {
  * The analyze_demo job's checkpoint (its resumeKey) holds the analysis-time
  * kept set, so S3 is exact from it alone, and it says whether the recompute
  * reproduced the analysis. Measured 2026-09-28: ffmpeg 8.1.2 on the founder's
- * machine reproduced none of ten analyses the box ran — representatives moved
- * by a frame, both ways. Which part of ffmpeg differs (version, fps frame
- * selection, swscale rounding on another CPU path) is not isolated.
+ * machine reproduced none of ten analyses the box ran — two thirds of the
+ * moved representatives moved by exactly one frame, both ways. Which part of
+ * ffmpeg differs (version, fps frame selection, swscale rounding on another
+ * CPU path) is not isolated.
  */
 
 export type LossStage = "S1" | "S2" | "S3" | "S4";
@@ -195,9 +197,10 @@ export function attributeLosses(opts: {
 export type TierReason = "low" | "repeat" | "idle" | "skip-kind";
 
 /**
- * Why a timeline state sits in the picker's collapsed tier, every reason that
- * applies — pickerPools (apps/web/src/lib/service-a-ui.ts) inverted. [] for a
- * main-grid state, and for an unreadable one: that has no tile at all (S4).
+ * Why a timeline state sat in the picker's collapsed tier, every reason that
+ * applies — pickerPools inverted (apps/web/src/lib/service-a-ui.ts:827 at
+ * 577272d; deleted by 0064). [] for a main-grid state, and for an unreadable
+ * one: that has no tile at all (S4).
  */
 export function tierReasons(state: AuditState): TierReason[] {
   if (state.legibility === "unreadable") return [];
