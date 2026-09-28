@@ -453,18 +453,34 @@ export interface BatchIo {
   /** One vision call for this batch, budget check included — its throws are
    *  the caller's error classes and pass through untouched. */
   call: (prompt: string) => Promise<RawResult>;
+  /** One vision call for the frame at `position` ALONE: a batch of exactly one
+   *  image through the same builder as `call` (same system prompt, same wire,
+   *  labeled Frame 0), budget check included. */
+  callAlone: (position: number) => Promise<RawResult>;
   /** The ledger write — runs before any parse, so every returned call is recorded. */
   recordUsage: (usage: RawResult["usage"]) => Promise<void>;
   log: { warn: (fields: Record<string, unknown>, msg: string) => void };
 }
 
 /**
+ * A frame as transcribeBatch returns it and the checkpoint stores it.
+ * `filledAlone` marks one the fill round bought as a one-image batch: the
+ * model saw no neighbour, so its sameStateAsPrevious carries nothing and
+ * assembleTimeline decides it by dHash. Absent means transcribed beside its
+ * neighbours — true of every frame in a checkpoint written before the fill
+ * round existed. Never written as false, so a batch that needed no fill
+ * checkpoints exactly as before.
+ */
+export type TranscribedFrame = BatchFrame & { filledAlone?: true };
+
+/**
  * One batch, start to finish: the first call, per-element validation, ONE
  * corrective retry when the salvage left holes (missing or invalid, both
- * named in the message), the merge, and whatever is still null is dropped —
- * "degrade, don't die". I/O is injected so the contract is testable without
- * ffmpeg or the network. The checkpoint stays the caller's: a batch is
- * checkpointed only after this returns, so a checkpointed batch with nulls
+ * named in the message), the merge, then ONE one-image call per position the
+ * retry still left empty (the fill round), and whatever is still null is
+ * dropped — "degrade, don't die". I/O is injected so the contract is testable
+ * without ffmpeg or the network. The checkpoint stays the caller's: a batch
+ * is checkpointed only after this returns, so a checkpointed batch with nulls
  * is final by construction.
  */
 export async function transcribeBatch(opts: {
@@ -473,34 +489,41 @@ export async function transcribeBatch(opts: {
   batchLength: number;
   basePrompt: string;
   io: BatchIo;
-}): Promise<(BatchFrame | null)[]> {
+}): Promise<(TranscribedFrame | null)[]> {
   const { demoId, batch, batchLength, basePrompt, io } = opts;
-  const round = async (prompt: string) => {
-    const raw = await io.call(prompt);
+  const round = async (
+    call: () => Promise<RawResult>,
+    length: number,
+    context: Record<string, unknown> = {},
+  ) => {
+    const raw = await call();
     // Usage FIRST: the call was billed whatever its body holds — parse
     // failures inside the SDK hid three billed calls on job 85d9ec0b.
     await io.recordUsage(raw.usage);
     const entries = parseBatchEnvelope(raw);
     const { frames, rejected, canonicalized } = validateBatchFrames(entries);
     for (const c of canonicalized) {
-      io.log.warn({ demoId, batch, ...c }, "analysis: frame enum canonicalized by case");
+      io.log.warn(
+        { demoId, batch, ...context, ...c },
+        "analysis: frame enum canonicalized by case",
+      );
     }
     for (const r of rejected) {
       // Never the frame and never visibleText — that is customer screen content.
       io.log.warn(
-        { demoId, batch, ...r },
+        { demoId, batch, ...context, ...r },
         "analysis: frame rejected by the schema — dropped from its batch",
       );
     }
     return {
-      salvaged: salvageBatchFrames(frames, batchLength),
+      salvaged: salvageBatchFrames(frames, length),
       returned: entries.length,
       rejected,
     };
   };
 
-  const first = await round(basePrompt);
-  let salvaged = first.salvaged;
+  const first = await round(() => io.call(basePrompt), batchLength);
+  let salvaged: (TranscribedFrame | null)[] = first.salvaged;
   if (salvaged.some((f) => !f)) {
     // Corrective retry, once (same pattern as demo-step-plans): seen live when
     // near-identical frames get merged into one entry instead of repeated
@@ -518,10 +541,66 @@ export async function transcribeBatch(opts: {
       },
       "analysis: batch response incomplete or invalid — corrective retry",
     );
-    const retry = await round(correctivePrompt(basePrompt, shortfall));
+    const retry = await round(() => io.call(correctivePrompt(basePrompt, shortfall)), batchLength);
     // Fill what the retry still misses from the first response — both
     // transcribe the same images, so coverage only ever improves.
     salvaged = retry.salvaged.map((f, i) => f ?? salvaged[i] ?? null);
+
+    // The fill round. The model has now seen these same images twice and still
+    // left positions empty — in production a batch of 10 came back as frame
+    // 0's entry alone, and after the retry the other nine were still empty. A
+    // third look at the same images is the same bet, so each position still
+    // empty is re-sent ALONE, with no neighbour to fold it into.
+    // Spend bound: this runs only when a batch is still short after its
+    // corrective retry, and buys at most ONE call per missing position — a
+    // fill is never retried — so a batch makes at most 2 + batchLength calls.
+    // Best effort: a fill that fails or returns no valid frame leaves its
+    // position null, dropped exactly as before; only a BudgetError escapes,
+    // and only once every fill has settled — the batch then goes
+    // uncheckpointed and a resume re-buys it, as after a BudgetError on its
+    // corrective call. Fill logs carry the batch position as `fillPosition`.
+    const missing = salvaged.flatMap((f, i) => (f ? [] : [i]));
+    if (missing.length > 0) {
+      const fills = await Promise.allSettled(
+        missing.map((position) =>
+          round(() => io.callAlone(position), 1, { fillPosition: position }),
+        ),
+      );
+      let budget: BudgetError | undefined;
+      let recovered = 0;
+      fills.forEach((fill, k) => {
+        const position = missing[k]!;
+        if (fill.status === "rejected") {
+          if (fill.reason instanceof BudgetError) {
+            budget ??= fill.reason;
+            return;
+          }
+          // Never re-buy the finished batch over a best-effort fill: logged
+          // with its position (never frame content) and left empty.
+          io.log.warn(
+            {
+              demoId,
+              batch,
+              fillPosition: position,
+              err: fill.reason instanceof Error ? fill.reason.message : String(fill.reason),
+            },
+            "analysis: fill call failed — position stays empty",
+          );
+          return;
+        }
+        const frame = fill.value.salvaged[0];
+        if (!frame) return;
+        // The model labelled it Frame 0 of a one-image batch; it lands at its
+        // batch position, where every other frame's index equals its position.
+        salvaged[position] = { ...frame, index: position, filledAlone: true };
+        recovered++;
+      });
+      if (budget) throw budget;
+      io.log.warn(
+        { demoId, batch, sent: batchLength, missing: missing.length, recovered },
+        "analysis: fill round — re-sent each missing frame alone",
+      );
+    }
   }
   return salvaged;
 }
@@ -531,11 +610,11 @@ export async function transcribeBatch(opts: {
  * mapping and the seam bridging can be pinned without ffmpeg: position i of
  * batch bi is kept-index g = bi * batchSize + i, a null at a position drops
  * that cluster, and sameStateAsPrevious is recomputed by dHash wherever the
- * model could not have judged it.
+ * model could not have judged it — a frame filled alone included.
  */
 export function assembleTimeline(opts: {
   batches: StateCluster[][];
-  batchResults: Record<string, (BatchFrame | null)[]>;
+  batchResults: Record<string, (TranscribedFrame | null)[]>;
   batchSize: number;
   keptHashes: bigint[];
   thumbPathAt: (ms: number) => string;
@@ -557,11 +636,13 @@ export function assembleTimeline(opts: {
       // instruction. Bridge the seam with the same dHash the clustering
       // used, so a duplicate straddling batches still reads as one. When a
       // dropped cluster broke adjacency, the model's flag refers to a state
-      // that no longer exists — recompute against the last assembled one.
+      // that no longer exists — recompute against the last assembled one. A
+      // frame filled alone had no neighbour at all, so its flag says nothing
+      // either way: dHash alone decides it, flag not ORed in.
       const sameStateAsPrevious =
         prevG < 0
           ? false
-          : prevG === g - 1
+          : prevG === g - 1 && !frame.filledAlone
             ? frame.sameStateAsPrevious ||
               (i === 0 && hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING)
             : hamming(keptHashes[g]!, keptHashes[prevG]!) <= MAX_HAMMING;
@@ -980,14 +1061,16 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       .map((c) => c.representativeMs)
       .join(",")}`;
     // null = a cluster the model never returned an entry for, even after the
-    // corrective retry — dropped from the timeline at assembly. (v2-era
-    // checkpoints hold plain arrays, a compatible subset.)
+    // corrective retry and the fill round — dropped from the timeline at
+    // assembly. (v2-era checkpoints hold plain arrays, a compatible subset; a
+    // checkpoint from before the fill round has no `filledAlone` anywhere and
+    // resumes as "transcribed in its batch", which it was.)
     const priorState = job.state as {
       analysisId?: string;
       resumeKey?: string;
-      batchResults?: Record<string, (BatchFrame | null)[]>;
+      batchResults?: Record<string, (TranscribedFrame | null)[]>;
     } | null;
-    const batchResults: Record<string, (BatchFrame | null)[]> =
+    const batchResults: Record<string, (TranscribedFrame | null)[]> =
       priorState?.resumeKey === resumeKey ? { ...(priorState.batchResults ?? {}) } : {};
 
     // batchResults only grows, so every later snapshot is a superset of every
@@ -1004,9 +1087,12 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
     const basePrompt = (n: number) =>
       `Analyse the ${n} frames above, in order. Return exactly one entry per frame, with the index from its label.`;
     const callBatch = async (batch: StateCluster[], prompt: string): Promise<RawResult> => {
-      // Parallel batches each pass this check before any usage lands, so one
-      // analysis can overshoot the cap by at most the batch cap — acceptable
-      // for a backstop; the real per-analysis bound is max_states.
+      // Parallel batches — and within a batch, parallel fills — each pass this
+      // check before any usage lands, so one analysis can overshoot the cap by
+      // the calls in flight: one per unfinished batch, or one per missing
+      // position during its fill round — acceptable for a backstop. The real
+      // per-analysis bound is max_states: at most 2 calls per batch plus one
+      // per kept state.
       await assertBudget(ctx.db, "llm_tokens");
       return generateRawWithImages({
         system,
@@ -1039,6 +1125,8 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
             basePrompt: basePrompt(batch.length),
             io: {
               call: (prompt) => callBatch(batch, prompt),
+              // A one-image batch through the same builder — no new prompt text.
+              callAlone: (position) => callBatch([batch[position]!], basePrompt(1)),
               recordUsage: recordBatchUsage,
               log: ctx.log,
             },
