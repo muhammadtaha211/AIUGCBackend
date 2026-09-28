@@ -12,6 +12,7 @@ import {
   validateBatchFrames,
   type BatchFrame,
   type FrameRejection,
+  type TranscribedFrame,
 } from "../src/pipelines/demo-analysis";
 import type { RawResult } from "../src/providers/anthropic";
 
@@ -57,7 +58,7 @@ const BATCHES: StateCluster[][] = [
 const thumbPathAt = (ms: number) => `assets/thumb/${ms}.jpg`;
 
 function assemble(
-  batchResults: Record<string, (BatchFrame | null)[]>,
+  batchResults: Record<string, (TranscribedFrame | null)[]>,
   keptHashes: bigint[] = [...DISTINCT],
 ) {
   return assembleTimeline({
@@ -482,8 +483,16 @@ describe("transcribeBatch", () => {
     usage,
   });
 
-  function fakeIo(responses: (RawResult | Error)[]) {
+  /** `answerAlone` answers the fill round's one-image calls by batch position.
+   *  Its default is an error, which the fill round swallows by design — so a
+   *  test that expects no fill asserts `alone` is empty. */
+  function fakeIo(
+    responses: (RawResult | Error)[],
+    answerAlone: (position: number) => RawResult | Error | Promise<RawResult> = () =>
+      new Error("test: unexpected fill"),
+  ) {
     const prompts: string[] = [];
+    const alone: number[] = [];
     const usages: RawResult["usage"][] = [];
     const warns: { fields: Record<string, unknown>; msg: string }[] = [];
     const io = {
@@ -491,6 +500,12 @@ describe("transcribeBatch", () => {
         prompts.push(prompt);
         const next = responses.shift();
         if (next === undefined) throw new Error("test: no more responses");
+        if (next instanceof Error) throw next;
+        return next;
+      },
+      callAlone: async (position: number): Promise<RawResult> => {
+        alone.push(position);
+        const next = await answerAlone(position);
         if (next instanceof Error) throw next;
         return next;
       },
@@ -503,11 +518,15 @@ describe("transcribeBatch", () => {
         },
       },
     };
-    return { io, prompts, usages, warns };
+    return { io, prompts, alone, usages, warns };
   }
 
-  const run = (responses: (RawResult | Error)[], batchLength = 3) => {
-    const t = fakeIo(responses);
+  const run = (
+    responses: (RawResult | Error)[],
+    batchLength = 3,
+    answerAlone?: (position: number) => RawResult | Error | Promise<RawResult>,
+  ) => {
+    const t = fakeIo(responses, answerAlone);
     const result = transcribeBatch({
       demoId: "demo-1",
       batch: 4,
@@ -579,14 +598,19 @@ describe("transcribeBatch", () => {
     });
   });
 
-  it("a frame still invalid after the retry is dropped; nothing else moves", async () => {
-    const t = run([
-      ok([raw(0), raw(1, { actionType: "click" }), raw(2)]),
-      ok([raw(1, { actionType: "press" })]),
-    ]);
+  it("a frame still invalid after the retry is re-sent alone, and dropped when that is invalid too; nothing else moves", async () => {
+    const t = run(
+      [
+        ok([raw(0), raw(1, { actionType: "click" }), raw(2)]),
+        ok([raw(1, { actionType: "press" })]),
+      ],
+      3,
+      () => ok([raw(0, { actionType: "push" })]),
+    );
     expect((await t.result).map((f) => f?.index ?? null)).toEqual([0, null, 2]);
     expect(t.prompts).toHaveLength(2);
-    expect(t.usages).toHaveLength(2);
+    expect(t.alone).toEqual([1]);
+    expect(t.usages).toHaveLength(3);
   });
 
   it("a whole batch of invalid frames is one corrective call naming every frame", async () => {
@@ -680,19 +704,266 @@ describe("transcribeBatch", () => {
   });
 
   it("no log field and no prompt ever carries screen text — not even from an enum slot", async () => {
-    const t = run([
-      ok([
-        raw(0, { actionType: "click", screenName: SCREEN_TEXT }),
-        raw(1, { action: SCREEN_TEXT }),
-        raw(2, { actionType: `tap "${SCREEN_TEXT}"` }),
-      ]),
-      ok([raw(0, { legibility: SCREEN_TEXT }), raw(2)]),
-    ]);
+    const t = run(
+      [
+        ok([
+          raw(0, { actionType: "click", screenName: SCREEN_TEXT }),
+          raw(1, { action: SCREEN_TEXT }),
+          raw(2, { actionType: `tap "${SCREEN_TEXT}"` }),
+        ]),
+        ok([raw(0, { legibility: SCREEN_TEXT }), raw(2)]),
+      ],
+      3,
+      // The fill of frame 0 puts screen text in an enum slot once more.
+      () => ok([raw(0, { screenKind: SCREEN_TEXT, screenName: SCREEN_TEXT })]),
+    );
     const frames = await t.result;
     expect(frames.map((f) => f?.index ?? null)).toEqual([null, 1, 2]);
+    expect(t.alone).toEqual([0]);
     expect(JSON.stringify(t.warns)).not.toContain(SCREEN_TEXT);
     expect(t.prompts.join("\n")).not.toContain(SCREEN_TEXT);
     expect(t.prompts[1]).toContain("- Frame 2: actionType is not an allowed value");
+  });
+
+  describe("the fill round", () => {
+    const TEN = Array.from({ length: 10 }, (_, i) => i);
+    /** A one-image answer: the model labels its only frame 0. */
+    const aloneAnswer = (position: number, overrides: Record<string, unknown> = {}) =>
+      ok([raw(0, { screenName: `alone-${position}`, ...overrides })]);
+    // Its own prefix: a grep for the drop warn ("batch still short after
+    // corrective retry") must not count a batch the fill round recovered.
+    const FILL_SUMMARY = "analysis: fill round — re-sent each missing frame alone";
+
+    it("a batch of 10 that collapses to one entry twice re-sends the 9 missing frames alone — all recovered, 11 usage rows", async () => {
+      const t = run([ok([raw(0)]), ok([raw(0)])], 10, (p) => aloneAnswer(p));
+      const frames = await t.result;
+      expect(frames.map((f) => f?.index)).toEqual(TEN);
+      expect(frames.map((f) => f?.screenName)).toEqual([
+        "state-0",
+        ...TEN.slice(1).map((p) => `alone-${p}`),
+      ]);
+      expect(frames.map((f) => f?.filledAlone ?? false)).toEqual([false, ...Array(9).fill(true)]);
+      expect(t.prompts).toHaveLength(2); // the first call and the corrective, whole-batch
+      expect(t.alone).toEqual(TEN.slice(1));
+      expect(t.usages).toHaveLength(11);
+      expect(t.warns.map((w) => w.msg)).toEqual([
+        "analysis: batch response incomplete or invalid — corrective retry",
+        FILL_SUMMARY,
+      ]);
+      // The shape of 6548af7e's batch 2 in the worker journal (2026-09-27).
+      expect(t.warns[0]!.fields).toMatchObject({
+        sent: 10,
+        returned: 1,
+        unexplained: TEN.slice(1),
+        invalid: [],
+      });
+      expect(t.warns[1]!.fields).toEqual({
+        demoId: "demo-1",
+        batch: 4,
+        sent: 10,
+        missing: 9,
+        recovered: 9,
+      });
+    });
+
+    it("a fill that returns nothing, an invalid frame or another index stays null; the others are recovered", async () => {
+      const t = run([ok([raw(0)]), ok([raw(0)])], 5, (p) =>
+        p === 1
+          ? ok([])
+          : p === 2
+            ? ok([raw(0, { actionType: "click" })])
+            : p === 3
+              ? ok([raw(1)]) // no frame 1 in a one-image batch
+              : aloneAnswer(p),
+      );
+      const frames = await t.result;
+      expect(frames.map((f) => f?.index ?? null)).toEqual([0, null, null, null, 4]);
+      expect(frames[4]!.filledAlone).toBe(true);
+      expect(t.alone).toEqual([1, 2, 3, 4]); // one attempt each: no fill is retried
+      expect(t.usages).toHaveLength(6);
+      const rejected = t.warns.find((w) => w.msg.startsWith("analysis: frame rejected"))!;
+      expect(rejected.fields).toMatchObject({
+        demoId: "demo-1",
+        batch: 4,
+        fillPosition: 2,
+        position: 0,
+        claimedIndex: 0,
+        received: { actionType: "click" },
+      });
+      expect(t.warns.at(-1)!).toEqual({
+        msg: FILL_SUMMARY,
+        fields: { demoId: "demo-1", batch: 4, sent: 5, missing: 4, recovered: 1 },
+      });
+    });
+
+    it("no fill call when the first call or the corrective retry completes the batch", async () => {
+      const clean = run([ok([raw(0), raw(1), raw(2)])]);
+      await clean.result;
+      expect(clean.alone).toEqual([]);
+      const corrected = run([ok([raw(0)]), ok([raw(1), raw(2)])]);
+      expect((await corrected.result).map((f) => f?.filledAlone ?? false)).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      expect(corrected.alone).toEqual([]);
+      expect(corrected.usages).toHaveLength(2);
+      expect(corrected.warns.map((w) => w.msg)).not.toContain(FILL_SUMMARY);
+    });
+
+    it("fill calls run in parallel: every fill is in flight before any returns", async () => {
+      // Each answer waits until all 9 fills have started — a sequential fill
+      // round would wait on its first call forever and time out.
+      let started = 0;
+      let allStarted!: () => void;
+      const gate = new Promise<void>((resolve) => (allStarted = resolve));
+      const t = run([ok([raw(0)]), ok([raw(0)])], 10, async (p) => {
+        if (++started === 9) allStarted();
+        await gate;
+        return aloneAnswer(p);
+      });
+      expect((await t.result).every((f) => f !== null)).toBe(true);
+      expect(started).toBe(9);
+    });
+
+    it("spend bound: one call per position still empty after the corrective retry, never retried — a batch of 10 that returns nothing buys 2 + 10 calls", async () => {
+      const t = run([ok([]), ok([])], 10, () => ok([]));
+      expect(await t.result).toEqual(Array(10).fill(null));
+      expect(t.prompts).toHaveLength(2);
+      expect(t.alone).toEqual(TEN);
+      expect(t.usages).toHaveLength(12);
+      expect(t.warns.at(-1)!.fields).toMatchObject({ sent: 10, missing: 10, recovered: 0 });
+    });
+
+    it("a fill with a transient error or a garbage envelope stays null without throwing, logged with its position and no content", async () => {
+      const t = run([ok([raw(0)]), ok([raw(0)])], 4, (p) =>
+        p === 1
+          ? new Error("529 overloaded")
+          : p === 2
+            ? { text: `{"frames":"${SCREEN_TEXT}"}`, stopReason: "end_turn", usage }
+            : aloneAnswer(p),
+      );
+      expect((await t.result).map((f) => f?.index ?? null)).toEqual([0, null, null, 3]);
+      // The thrown call recorded nothing; the garbage one was billed and is in the ledger.
+      expect(t.usages).toHaveLength(2 + 2);
+      expect(
+        t.warns
+          .filter((w) => w.msg === "analysis: fill call failed — position stays empty")
+          .map((w) => w.fields),
+      ).toEqual([
+        { demoId: "demo-1", batch: 4, fillPosition: 1, err: "529 overloaded" },
+        {
+          demoId: "demo-1",
+          batch: 4,
+          fillPosition: 2,
+          err: "analysis: batch response is not a frames envelope (stop_reason: end_turn)",
+        },
+      ]);
+      expect(JSON.stringify(t.warns)).not.toContain(SCREEN_TEXT);
+      expect(t.warns.at(-1)!.fields).toMatchObject({ missing: 3, recovered: 1 });
+    });
+
+    it("a fill with BudgetError throws it — only after every fill has settled, so no billed call escapes the ledger", async () => {
+      const budget = new BudgetError("llm_tokens cap");
+      const t = run([ok([raw(0)]), ok([raw(0)])], 4, (p) =>
+        p === 2
+          ? budget
+          : // A sibling still in flight when the budget refusal lands.
+            new Promise<RawResult>((resolve) => setTimeout(() => resolve(aloneAnswer(p)), 20)),
+      );
+      await expect(t.result).rejects.toBe(budget);
+      expect(t.alone).toEqual([1, 2, 3]);
+      expect(t.usages).toHaveLength(2 + 2);
+      expect(t.warns.map((w) => w.msg)).not.toContain(FILL_SUMMARY);
+    });
+
+    it("the checkpoint round-trips the provenance; one written before the fill round resumes as not filled alone", async () => {
+      // Batch 0 collapses to frame 0 twice; 1 and 2 come back alone, the model
+      // claiming "same" with no neighbour to compare against.
+      const t = run([ok([raw(0)]), ok([raw(0)])], 3, (p) =>
+        aloneAnswer(p, { sameStateAsPrevious: true }),
+      );
+      // What saveCheckpoint writes to jobs.state and a resume reads back.
+      const json = JSON.stringify({ 0: await t.result, 1: [frame(0), frame(1)] });
+      const checkpoint = JSON.parse(json) as Record<string, (TranscribedFrame | null)[]>;
+      expect(checkpoint[0]!.map((f) => f?.filledAlone ?? null)).toEqual([null, true, true]);
+      // A frame transcribed in its batch is stored exactly as before the fill round.
+      expect(Object.keys(checkpoint[0]![0]!)).not.toContain("filledAlone");
+      // DISTINCT hashes: read back as filled alone, dHash overrules the model's "same".
+      expect(assemble(checkpoint).assembled.map((s) => s.sameStateAsPrevious)).toEqual([
+        false,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      // The same frames without provenance — a pre-fill-round checkpoint —
+      // resume as transcribed in their batch: adjacent, so the flag is trusted.
+      const old = JSON.parse(json.replace(/,"filledAlone":true/g, "")) as Record<
+        string,
+        (TranscribedFrame | null)[]
+      >;
+      expect(JSON.stringify(old)).not.toContain("filledAlone");
+      expect(assemble(old).assembled.map((s) => s.sameStateAsPrevious)).toEqual([
+        false,
+        true,
+        true,
+        false,
+        false,
+      ]);
+    });
+  });
+});
+
+describe("assembleTimeline — a frame filled alone is decided by dHash, never by its flag", () => {
+  const filledAlone = (index: number, overrides: Partial<BatchFrame> = {}): TranscribedFrame => ({
+    ...frame(index, overrides),
+    filledAlone: true,
+  });
+
+  it("flagged same, hashes far apart: a split", () => {
+    // Beside its neighbour, adjacent, the flag is trusted — the model saw both frames...
+    const inBatch = assemble({
+      0: [frame(0), frame(1, { sameStateAsPrevious: true }), frame(2)],
+      1: [frame(0), frame(1)],
+    });
+    expect(inBatch.assembled[1]!.sameStateAsPrevious).toBe(true);
+    // ...filled alone, the same flag says nothing: 20 bits apart, so false.
+    const alone = assemble({
+      0: [frame(0), filledAlone(1, { sameStateAsPrevious: true }), frame(2)],
+      1: [frame(0), frame(1)],
+    });
+    expect(alone.assembled[1]!.sameStateAsPrevious).toBe(false);
+  });
+
+  it("not flagged, hashes close: a repeat", () => {
+    const g1LikeG0 = [h(0), h(0), h(40), h(60), h(20) << 40n];
+    // Beside its neighbour an equal hash does not override the flag...
+    const inBatch = assemble(
+      { 0: [frame(0), frame(1), frame(2)], 1: [frame(0), frame(1)] },
+      g1LikeG0,
+    );
+    expect(inBatch.assembled[1]!.sameStateAsPrevious).toBe(false);
+    // ...filled alone, the hash decides.
+    const alone = assemble(
+      { 0: [frame(0), filledAlone(1), frame(2)], 1: [frame(0), frame(1)] },
+      g1LikeG0,
+    );
+    expect(alone.assembled[1]!.sameStateAsPrevious).toBe(true);
+  });
+
+  it("at a batch boundary the flag is not ORed in, as the boundary rule does for a frame from its batch", () => {
+    // g=3 is position 0 of batch 1, adjacent to g=2, 20 bits apart.
+    const fromBatch = assemble({
+      0: [frame(0), frame(1), frame(2)],
+      1: [frame(0, { sameStateAsPrevious: true }), frame(1)],
+    });
+    expect(fromBatch.assembled[3]!.sameStateAsPrevious).toBe(true);
+    const alone = assemble({
+      0: [frame(0), frame(1), frame(2)],
+      1: [filledAlone(0, { sameStateAsPrevious: true }), frame(1)],
+    });
+    expect(alone.assembled[3]!.sameStateAsPrevious).toBe(false);
   });
 });
 
