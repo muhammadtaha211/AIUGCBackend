@@ -129,7 +129,7 @@ Never run `next build` while `pnpm dev` is serving — the build replaces `.next
 The CLI is `apps/cli` and it is where the pipeline is driven today:
 
 ```
-pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI: demo, plan, copy, script, set, bank (add-hook; add-opener is retired 2026-09-06 with the opener bank), persona, render-b, qc, work, status, costs
+pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI: demo (audit: read-only moment-loss accounting — needs ffmpeg; S1/S2 are exact only where it reports "recompute: exact"), plan, copy, script, set, bank (add-hook; add-opener is retired 2026-09-06 with the opener bank), persona, render-b, qc, work, status, costs
 pnpm --filter @aiugc/worker dev        # the job loop (also `aiugc work --once` to drain and exit)
 
 npx -y supabase db push --db-url <session-pooler url>   # apply new migrations (see below)

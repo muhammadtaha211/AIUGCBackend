@@ -13,6 +13,7 @@ import {
   applyWordsPerSecond,
   approveAudio,
   approvePlan,
+  auditDemo,
   buildHandlers,
   closeDb,
   contentTypeForKey,
@@ -39,6 +40,7 @@ import {
   HOOK_EFFECTS,
   HOOK_TEXT_MAX_WORDS,
   planStepsSchema,
+  listAuditableDemos,
   listQcQueue,
   moreLikeThis,
   normalizeHookClip,
@@ -62,6 +64,8 @@ import {
   unexplainedMomentsSchema,
   updateScriptText,
   type Bucket,
+  type DemoAuditReport,
+  type LossStage,
 } from "@aiugc/core";
 
 /**
@@ -209,6 +213,197 @@ demo
         if (s.salienceNote) console.log(`           ! ${s.salienceNote}`);
       }
     }),
+  );
+
+const mmss = (ms: number) =>
+  `${Math.floor(ms / 60_000)}:${((ms % 60_000) / 1000).toFixed(1).padStart(4, "0")}`;
+const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+
+function parseMoment(value: string): number {
+  const m = /^(\d+):(\d{1,2}(?:\.\d+)?)$/.exec(value.trim());
+  if (!m) throw new Error(`--at takes m:ss (e.g. 1:12 or 1:12.4), got "${value}"`);
+  return Math.round((Number(m[1]) * 60 + Number(m[2])) * 1000);
+}
+
+function fateOf(lostAt: LossStage | null, timelineIndex: number | null): string {
+  return lostAt ?? `timeline #${timelineIndex}`;
+}
+
+/** null without a recompute or a checkpoint; true when this machine's ffmpeg
+ *  reproduced the analysis's kept set — which pins S2 and S3, never S1. */
+function reproduced(r: DemoAuditReport): boolean | null {
+  if (!r.reproduction) return null;
+  return r.reproduction.missingMs.length + r.reproduction.extraMs.length === 0;
+}
+
+function recomputeVerdict(r: DemoAuditReport): string {
+  if (!r.clusters) return "-";
+  const exact = reproduced(r);
+  if (exact === null) return "no checkpoint";
+  const { missingMs, extraMs } = r.reproduction!;
+  return exact
+    ? "kept set reproduced"
+    : `differs (${missingMs.length} missing, ${extraMs.length} extra)`;
+}
+
+/** S3 from the checkpoint when there is one — exact whatever ffmpeg runs here. */
+const s3Of = (r: DemoAuditReport): number | null =>
+  r.checkpoint ? r.checkpoint.s3Ms.length : (r.clusters?.s3 ?? null);
+
+function printAudit(r: DemoAuditReport): void {
+  console.log(
+    `demo ${r.demoId} · analysis ${r.analysisId} (${r.promptVersion ?? "-"}, ${r.analysedAt.slice(0, 10)})`,
+  );
+  console.log(
+    `  duration ${r.durationMs === null ? "?" : mmss(r.durationMs)} · a_analysis_fps ${r.fps} · a_analysis_max_states ${r.maxStates}`,
+  );
+  const cp = r.checkpoint;
+  console.log(
+    cp
+      ? `  checkpoint: analysed at ${cp.fps} fps, ${cp.kept} kept, S3 exact ${cp.s3Ms.length}${cp.s3Ms.length ? ` (${cp.s3Ms.map(secs).join(" ")})` : ""}`
+      : "  checkpoint: none — S3 comes from the recompute alone",
+  );
+  const s5 = r.s5;
+  const tier = `S5 old UI tier ${s5.total} (low ${s5.low} · repeat ${s5.repeat} · idle ${s5.idle} · skip-kind ${s5["skip-kind"]})`;
+  const c = r.clusters;
+  if (!c) {
+    console.log(`  ${r.skipped}`);
+    console.log(`  timeline ${r.timelineLength} · S4 ${r.s4} · ${tier}`);
+    return;
+  }
+  const exact = reproduced(r);
+  if (exact === true) {
+    console.log(
+      "  recompute: kept set reproduced — S2 and S3 match the analysis; S1 and run spans are this machine's ffmpeg, exact only if it is the build that ran the analysis",
+    );
+  } else if (exact === false) {
+    console.log(
+      `  recompute: ${recomputeVerdict(r)} — this ffmpeg does not reproduce the analysis's clustering, so S1, S2 and every per-cluster line below are APPROXIMATE; run it where the analysis ran`,
+    );
+    console.log(
+      `    missing ${r.reproduction!.missingMs.map(secs).join(" ") || "-"} · extra ${r.reproduction!.extraMs.map(secs).join(" ") || "-"}`,
+    );
+  } else {
+    console.log("  recompute: no checkpoint to check it against — S1–S3 unverified");
+  }
+  const s3 = s3Of(r)!;
+  console.log(
+    `  clusters ${c.clustersBeforeS1} → ${c.clustersAfterS1} after S1 · S1 ${c.s1} · S2 ${c.s2} · S3 ${s3}${s3 !== c.s3 ? ` (recompute says ${c.s3})` : ""} · timeline ${r.timelineLength} · S4 ${r.s4}`,
+  );
+  console.log(`  ${tier}`);
+  if (c.unmatchedTimelineMs.length > 0) {
+    console.log(
+      `  ! ${c.unmatchedTimelineMs.length} timeline state(s) match no recomputed cluster (${c.unmatchedTimelineMs.map(secs).join(" ")})`,
+    );
+  }
+  const d = c.durations;
+  console.log(
+    `  durations: ≥2s ${d.atLeast2s} · ≥3s ${d.atLeast3s} · ≥5s ${d.atLeast5s} · max ${secs(d.maxMs)}`,
+  );
+  const approx = exact === true ? "" : " — approximate";
+  const lost = c.runs.filter((run) => run.lostAt !== null);
+  console.log(`  lost clusters (${lost.length})${approx}:${lost.length === 0 ? " none" : ""}`);
+  for (const run of lost) {
+    console.log(
+      `    ${run.lostAt}  ${mmss(run.startMs)}–${mmss(run.endMs)}  ${secs(run.durationMs).padStart(6)}  Δprev ${run.hammingFromPrev ?? "-"}`,
+    );
+  }
+  console.log(
+    `  holds ≥3s (${c.longHolds.length})${approx}:${c.longHolds.length === 0 ? " none" : " first→last is ≤14 by construction, and handheld drift alone reaches 10–14 — look at the frames"}`,
+  );
+  for (const h of c.longHolds) {
+    console.log(
+      `    ${mmss(h.startMs)}–${mmss(h.endMs)}  ${secs(h.durationMs).padStart(6)}  first→last ${String(h.firstLastHamming).padStart(2)}  rep→last ${String(h.repLastHamming).padStart(2)}  ${fateOf(h.lostAt, h.timelineIndex)}`,
+    );
+  }
+  const m = r.moment;
+  if (m) {
+    const around =
+      m.run.lostAt === null
+        ? ""
+        : ` · nearest in timeline: #${m.timelineBefore ?? "-"} before, #${m.timelineAfter ?? "-"} after`;
+    console.log(
+      `  moment ${mmss(m.atMs)} (sampled ${mmss(m.frameMs)}): run ${mmss(m.run.startMs)}–${mmss(m.run.endMs)} (${secs(m.run.durationMs)}, representative ${mmss(m.run.representativeMs)}) → ${fateOf(m.run.lostAt, m.run.timelineIndex)} · Δ to representative ${m.hammingToRepresentative}${around}${approx}`,
+    );
+  }
+}
+
+/** A DRY_RUN worker's placeholder timeline: listed, never counted. */
+const isPlaceholder = (r: DemoAuditReport) => r.promptVersion?.endsWith("@dry-run") ?? false;
+
+function printAuditTotals(reports: DemoAuditReport[]): void {
+  const counted = reports.filter((r) => !isPlaceholder(r));
+  const measured = counted.filter((r) => r.clusters);
+  const approx = measured.some((r) => reproduced(r) !== true);
+  const n = (v: number | string | null | undefined) => String(v ?? "-").padStart(4);
+  const tilde = (r: DemoAuditReport, v: number | undefined) =>
+    v === undefined ? "-" : `${v}${reproduced(r) === true ? "" : "~"}`;
+  console.log("");
+  console.log("demo      duration  runs   S1   S2   S3  timeline  S4  S5-tier  ≥3s  recompute");
+  for (const r of reports) {
+    const c = r.clusters;
+    console.log(
+      `${r.demoId.slice(0, 8)}  ${(r.durationMs === null ? "?" : mmss(r.durationMs)).padStart(8)}  ${n(c?.clustersBeforeS1)} ${n(tilde(r, c?.s1))} ${n(tilde(r, c?.s2))} ${n(s3Of(r))}  ${String(r.timelineLength).padStart(8)} ${n(r.s4)}  ${String(r.s5.total).padStart(7)} ${n(c?.durations.atLeast3s)}  ${recomputeVerdict(r)}${r.skipped ? ` — ${r.skipped}` : ""}`,
+    );
+  }
+  console.log("S1 is always this machine's recompute — the checkpoint pins S2 and S3, never S1");
+  if (approx) console.log("~ approximate: this ffmpeg did not reproduce that analysis's kept set");
+  const sum = (f: (r: DemoAuditReport) => number | null | undefined) =>
+    counted.reduce((t, r) => t + (f(r) ?? 0), 0);
+  const totals: [LossStage, number][] = [
+    ["S1", sum((r) => r.clusters?.s1)],
+    ["S2", sum((r) => r.clusters?.s2)],
+    ["S3", sum(s3Of)],
+    ["S4", sum((r) => r.s4)],
+  ];
+  console.log(
+    `total over ${counted.length} demo(s), S1/S2 from ${measured.length} recomputed${approx ? " (approximate)" : ""}${counted.length < reports.length ? `, ${reports.length - counted.length} dry-run placeholder(s) left out` : ""}: ${totals.map(([s, v]) => `${s} ${v}`).join(" · ")} · S5 old UI tier ${sum((r) => r.s5.total)}`,
+  );
+  const top = Math.max(...totals.map(([, v]) => v));
+  const leaders = totals.filter(([, v]) => v === top).map(([s]) => s);
+  const shaky = approx && leaders.some((s) => s === "S1" || s === "S2");
+  console.log(`most lost: ${leaders.join(" = ")} (${top})${shaky ? " — approximate" : ""}`);
+}
+
+demo
+  .command("audit [demoId]")
+  .description(
+    "READ-ONLY: where screen-recording moments are lost before the inventory — S1 noise, S2 cap, S3 transcription, S4 unreadable, and the old S5 tier. Needs ffmpeg; no model call, no write",
+  )
+  .option("--all", "every demo with a ready analysis")
+  .option("--at <m:ss>", "which stage lost this moment, or which state holds it (one demo)")
+  .option("--json", "print the report(s) as JSON")
+  .action(
+    run(
+      async (demoId: string | undefined, opts: { all?: boolean; at?: string; json?: boolean }) => {
+        if (Boolean(demoId) === Boolean(opts.all)) {
+          throw new Error("give one demo id, or --all");
+        }
+        if (opts.at !== undefined && !demoId) throw new Error("--at takes one demo id, not --all");
+        const atMs = opts.at === undefined ? undefined : parseMoment(opts.at);
+        const db = getDb();
+        const ids = demoId ? [demoId] : await listAuditableDemos(db);
+        const reports: DemoAuditReport[] = [];
+        for (const id of ids) {
+          try {
+            const report = await auditDemo(db, id, { atMs });
+            reports.push(report);
+            if (!opts.json) {
+              printAudit(report);
+              console.log("");
+            }
+          } catch (err) {
+            console.error(`error: demo ${id}: ${err instanceof Error ? err.message : String(err)}`);
+            process.exitCode = 1;
+          }
+        }
+        if (opts.json) {
+          console.log(JSON.stringify(demoId ? (reports[0] ?? null) : reports, null, 2));
+        } else if (opts.all) {
+          printAuditTotals(reports);
+        }
+      },
+    ),
   );
 
 // --- step plans -------------------------------------------------------------
