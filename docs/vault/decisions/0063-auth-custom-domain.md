@@ -2,29 +2,29 @@
 type: decision
 status: verified
 verified: 2026-09-26
-method: "Founder-reported, in chat, 2026-09-26: the Supabase Custom Domain add-on was enabled on
+method: 'Founder-reported, in chat, 2026-09-26: the Supabase Custom Domain add-on was enabled on
   project hyaqydcmwbnbaiqqufow and auth.tavnit.ai activated on 2026-09-26 (the exact activation
   time was not given in the brief this note was written from — see Gaps below); Namecheap
   Advanced DNS (same zone as the Resend records) now carries `CNAME auth ->
   hyaqydcmwbnbaiqqufow.supabase.co.` and `TXT _acme-challenge.auth -> <an HK-... value Supabase
   issued>` (value deliberately not recorded here); the Supabase activation screen instructed
-  keeping the CNAME after activation for service continuity; the Google OAuth client's Authorized
+  keeping the CNAME after activation for service continuity; the Google OAuth client''s Authorized
   redirect URIs now list both `https://hyaqydcmwbnbaiqqufow.supabase.co/auth/v1/callback` and
   `https://auth.tavnit.ai/auth/v1/callback`; and a Google sign-in on tavnit.ai after activation
-  completed, with the account chooser reading \"tavnit.ai\" rather than the project ref or
-  \"auth.tavnit.ai\". None of this dashboard, DNS or Google Cloud Console state was independently
+  completed, with the account chooser reading "tavnit.ai" rather than the project ref or
+  "auth.tavnit.ai". None of this dashboard, DNS or Google Cloud Console state was independently
   observed by this session — it is founder-reported. The $10/month add-on cost and the claim that
   Supabase Auth advertises the custom domain as the OAuth callback once active (while supabase.co
-  keeps serving) are from Supabase's published documentation, not measured on this project. The
+  keeps serving) are from Supabase''s published documentation, not measured on this project. The
   claim that switching NEXT_PUBLIC_SUPABASE_URL would rename the auth cookie and sign out every
   user is REASONED, not observed: apps/web/src/app/auth/callback/route.ts:5-28 (the
-  CODE_VERIFIER_SUFFIX comment) documents that @supabase/ssr's storage key defaults to
-  `sb-${hostname.split(\".\")[0]}-auth-token` and is never overridden via `cookieOptions.name`
+  CODE_VERIFIER_SUFFIX comment) documents that @supabase/ssr''s storage key defaults to
+  `sb-${hostname.split(".")[0]}-auth-token` and is never overridden via `cookieOptions.name`
   anywhere in this repo (grepped 2026-09-26, no hits outside that comment and its own file), and
   apps/web/src/lib/supabase/client.ts:9-10 plus server.ts:12 confirm `NEXT_PUBLIC_SUPABASE_URL` is
   the URL string passed into both `createBrowserClient` and `createServerClient` — i.e. the
   hostname the cookie name is derived from today is `hyaqydcmwbnbaiqqufow`, from
-  `hyaqydcmwbnbaiqqufow.supabase.co`."
+  `hyaqydcmwbnbaiqqufow.supabase.co`.'
 source: founder
 ---
 
@@ -85,7 +85,7 @@ The reason is the auth cookie's name, not inertia. `apps/web/src/app/auth/callba
 (the `CODE_VERIFIER_SUFFIX` comment) documents, from reading `@supabase/ssr` and `@supabase-js`
 directly, that the session/verifier cookie's storage key is never set via `cookieOptions.name`
 anywhere in this repo, so it falls back to supabase-js's own default:
-`` sb-${hostname.split(".")[0]}-auth-token `` (route.ts:12-13), where that hostname is whatever
+`sb-${hostname.split(".")[0]}-auth-token` (route.ts:12-13), where that hostname is whatever
 URL string is handed to the client factory. `apps/web/src/lib/supabase/client.ts:9-10` and
 `server.ts:12` show that string is `NEXT_PUBLIC_SUPABASE_URL` — today
 `https://hyaqydcmwbnbaiqqufow.supabase.co`, giving the live cookie name

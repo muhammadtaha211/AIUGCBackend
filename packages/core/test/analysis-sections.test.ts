@@ -11,12 +11,16 @@ import { runLane } from "../src/jobs/worker";
 import { createBusiness, setQuestionnaire, type Questionnaire } from "../src/pipelines/businesses";
 import {
   analysisSectionsSchema,
+  analysisTimelineSchema,
   enqueueMissingSections,
   findSectionViolations,
   getLatestDemoAnalysis,
+  groupingInput,
   type AnalysisSection,
+  type AnalysisState,
 } from "../src/pipelines/demo-analysis";
 import { createDemo } from "../src/pipelines/demos";
+import { latestPromptVersion, renderPrompt } from "../src/prompts";
 import { setStorage } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
 import { tempStorage } from "./helpers/storage";
@@ -153,6 +157,43 @@ describe("group_analysis_states (dry-run chain)", () => {
     }
     // The canned grouping passes its own validator, like dryRunPlan does.
     expect(findSectionViolations(sections, analysis!.stateCount!)).toEqual([]);
+
+    // 0064: the grouping covers every readable state the wizard shows — the
+    // canned timeline's low-legibility, duplicate and login states land in a
+    // section; its unreadable state lands in none.
+    const timeline = analysisTimelineSchema.parse(analysis!.timeline);
+    const where = (test: (state: AnalysisState) => boolean) =>
+      timeline.flatMap((state, index) => (test(state) ? [index] : []));
+    const low = where((state) => state.legibility === "low");
+    const duplicate = where((state) => state.sameStateAsPrevious);
+    const login = where((state) => state.screenKind === "login");
+    const unreadable = where((state) => state.legibility === "unreadable");
+    for (const kind of [low, duplicate, login, unreadable]) expect(kind.length).toBeGreaterThan(0);
+    const grouped = new Set(sections.flatMap((section) => section.stateIndexes));
+    for (const index of [...low, ...duplicate, ...login]) expect(grouped.has(index)).toBe(true);
+    for (const index of unreadable) expect(grouped.has(index)).toBe(false);
+    expect(grouped.size).toBe(timeline.length - unreadable.length);
+  });
+
+  it("the live call sends every readable state with its screenKind, through prompt v2", async () => {
+    const analysis = await getLatestDemoAnalysis(db, demoId);
+    const timeline = analysisTimelineSchema.parse(analysis!.timeline);
+    const input = groupingInput(timeline);
+    // The canned timeline minus its one unreadable state, indexes absolute.
+    expect(input.map((state) => state.index)).toEqual(
+      timeline.flatMap((state, index) => (state.legibility === "unreadable" ? [] : [index])),
+    );
+    for (const state of input) expect(state.screenKind).toBe(timeline[state.index]!.screenKind);
+    expect(input.filter((state) => state.screenKind === "login")).toHaveLength(2);
+
+    expect(latestPromptVersion("group_analysis_states")).toBe(2);
+    const { text, promptVersion } = renderPrompt("group_analysis_states", {
+      states: JSON.stringify(input, null, 2),
+      count: input.length,
+    });
+    expect(promptVersion).toBe("group_analysis_states@v2");
+    expect(text).toContain('"screenKind": "login"');
+    expect(text).toContain("EVERY readable screen");
   });
 
   it("computed once — a duplicate job is a no-op, and the backfill skips it", async () => {

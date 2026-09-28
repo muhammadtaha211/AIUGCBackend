@@ -18,7 +18,7 @@ import {
   type StateCluster,
 } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
-import { PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
+import { isInventoryState } from "../plan-format";
 import {
   generateObject,
   generateRawWithImages,
@@ -81,8 +81,8 @@ export const analysisTimelineSchema = z.array(analysisStateSchema);
 /**
  * Task-level Hebrew groupings of the timeline for the wizard's inventory —
  * demo_analyses.sections (0030). Written once by group_analysis_states after
- * the analysis lands ready; NULL means "not grouped" and the UI renders the
- * flat grid, so nothing anywhere may treat a missing grouping as an error.
+ * the analysis lands ready; NULL means "not grouped" and the UI falls back to
+ * time-range pages, so nothing anywhere may treat a missing grouping as an error.
  */
 export const analysisSectionsSchema = z.array(
   z.object({
@@ -590,10 +590,11 @@ const REFILM_MESSAGE =
  * The fixed DRY_RUN timeline: a coherent 12-state journey (login -> create ->
  * result) inside the stubbed 20s demo, with one low-legibility state, one
  * unreadable state, one duplicate and two login states so downstream rules
- * (picker dimming, the plan pass's never-select-unreadable and
- * never-select-skip-kind rules) run for real. The six selectable product
- * states sit >= MIN_STEP_MS apart on purpose — the canned plan is the happy
- * path, so it must select all of them under the min-gap walk.
+ * (the inventory's unreadable exclusion, the plan pass's
+ * never-select-unreadable and never-select-skip-kind rules) run for real.
+ * The six selectable product states sit >= MIN_STEP_MS apart on purpose —
+ * the canned plan is the happy path, so it must select all of them under the
+ * min-gap walk.
  */
 function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
   const states: Omit<AnalysisState, "thumbPath">[] = [
@@ -1229,28 +1230,32 @@ export async function enqueueMissingSections(db: Db): Promise<number> {
   return queued;
 }
 
-/** The quality pool, with absolute timeline indexes — the same predicate as
- *  the wizard's main grid (pickerPools) and dryRunPlan's preferred pool: the
- *  grouping only ever organizes states a customer is steered toward. */
-function qualityPool(timeline: AnalysisState[]): { state: AnalysisState; index: number }[] {
+/** What the grouping model sees: every state the wizard shows
+ *  (isInventoryState, decision 0064), with its absolute timeline index, so a
+ *  section can hold any moment the customer sees and none the customer does
+ *  not. `screenKind` rides along so login/loading/tour screens can be read
+ *  for the task they sit inside. */
+export function groupingInput(timeline: AnalysisState[]) {
   return timeline
     .map((state, index) => ({ state, index }))
-    .filter(
-      ({ state }) =>
-        state.legibility === "high" &&
-        !state.sameStateAsPrevious &&
-        state.actionType !== "idle" &&
-        !(state.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(state.screenKind)),
-    );
+    .filter(({ state }) => isInventoryState(state))
+    .map(({ state, index }) => ({
+      index,
+      screenName: state.screenName,
+      action: state.action,
+      actionType: state.actionType,
+      screenKind: state.screenKind,
+      visibleText: state.visibleText,
+    }));
 }
 
 /**
- * Group a ready analysis's quality states into 2-5 Hebrew task sections
+ * Group a ready analysis's inventory states into 2-5 Hebrew task sections
  * ("פרסום פוסט"-style noun phrases — founder tone ruling 2026-08-25). Text
  * only, one cheap call plus at most one corrective, and every failure mode —
  * budget refusal, invalid output after the retry — ends as `done` with
- * sections left NULL: the grouping is a UI nicety and the flat grid is its
- * fallback, so it must never park the lane or surface as a customer-facing
+ * sections left NULL: the grouping is a UI nicety and time-range pages are
+ * its fallback, so it must never park the lane or surface as a customer-facing
  * failure. Transient API errors still ride the queue's ordinary retries.
  */
 export async function handleGroupAnalysisSections(job: Job, ctx: JobContext): Promise<JobResult> {
@@ -1270,8 +1275,8 @@ export async function handleGroupAnalysisSections(job: Job, ctx: JobContext): Pr
   if (analysis.sections !== null) return { kind: "done" };
 
   const timeline = analysisTimelineSchema.parse(analysis.timeline);
-  const quality = qualityPool(timeline);
-  if (quality.length === 0) return { kind: "done" };
+  const pool = groupingInput(timeline);
+  if (pool.length === 0) return { kind: "done" };
 
   const write = async (sections: AnalysisSection[], promptVersion: string) => {
     await ctx.db
@@ -1282,12 +1287,12 @@ export async function handleGroupAnalysisSections(job: Job, ctx: JobContext): Pr
 
   if (getEnv().DRY_RUN) {
     // Two fixed-title halves, so the keyless e2e exercises the sectioned UI.
-    const mid = Math.ceil(quality.length / 2);
+    const mid = Math.ceil(pool.length / 2);
     const sections: AnalysisSection[] = [
-      { title: "תחילת השימוש", stateIndexes: quality.slice(0, mid).map((q) => q.index) },
+      { title: "תחילת השימוש", stateIndexes: pool.slice(0, mid).map((q) => q.index) },
     ];
-    if (quality.length > mid) {
-      sections.push({ title: "התוצאה", stateIndexes: quality.slice(mid).map((q) => q.index) });
+    if (pool.length > mid) {
+      sections.push({ title: "התוצאה", stateIndexes: pool.slice(mid).map((q) => q.index) });
     }
     await write(sections, "group_analysis_states@dry-run");
     return { kind: "done" };
@@ -1306,16 +1311,9 @@ export async function handleGroupAnalysisSections(job: Job, ctx: JobContext): Pr
     return { kind: "done" };
   }
 
-  const promptStates = quality.map(({ state, index }) => ({
-    index,
-    screenName: state.screenName,
-    action: state.action,
-    actionType: state.actionType,
-    visibleText: state.visibleText,
-  }));
   const { text, promptVersion } = renderPrompt("group_analysis_states", {
-    states: JSON.stringify(promptStates, null, 2),
-    count: promptStates.length,
+    states: JSON.stringify(pool, null, 2),
+    count: pool.length,
   });
 
   const outputSchema = z.object({ sections: analysisSectionsSchema });

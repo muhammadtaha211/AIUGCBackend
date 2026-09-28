@@ -19,10 +19,23 @@ import type { AnalysisState } from "./pipelines/demo-analysis";
  * a real run picked the login screen and two tour steps despite the prompt.
  * "product", "other" and absent (v2-era analyses without screenKind) pass;
  * missing means "no information", so those states stay prompt-governed.
- * The Phase 8 picker groups/hides by the same set.
+ * The plan pass only: the wizard's inventory shows skip kinds like any other
+ * readable state (isInventoryState, decision 0064).
  */
 export const PLAN_SKIP_SCREEN_KINDS: ReadonlySet<NonNullable<AnalysisState["screenKind"]>> =
   new Set(["login", "loading", "onboarding", "error", "tour", "system"] as const);
+
+/**
+ * Whether a state belongs in the customer's inventory: every READABLE state,
+ * shown equally (decision 0064 — no "less fitting" tier; the model's quality
+ * preferences stay on the plan pass). Unreadable is out because
+ * updatePlanSteps rejects it for human edits. The wizard's pages and the
+ * group_analysis_states pool both use this, so the grouping covers exactly
+ * what the UI shows.
+ */
+export function isInventoryState(state: { legibility: string }): boolean {
+  return state.legibility !== "unreadable";
+}
 
 /** Hard ceiling on one caption, in characters. The wizard's label field and
  *  findPlanViolations must agree on it, and a client-side counter would be the
