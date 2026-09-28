@@ -14,6 +14,7 @@ export * from "./jobs";
 export { logger, type Logger } from "./logger";
 export { probe, type ProbeResult } from "./media/ffmpeg";
 export * from "./paths";
+export * from "./pipelines/analysis-audit";
 export * from "./pipelines/audio-script";
 export * from "./pipelines/bank";
 export * from "./pipelines/billing";

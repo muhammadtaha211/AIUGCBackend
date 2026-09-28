@@ -180,9 +180,9 @@ const ANALYSIS_FRAME_WIDTH = 768;
  * appearing, an in-app tour tooltip swapping) merge below that, and pass 2
  * skips those states anyway.
  */
-const MAX_HAMMING = 14;
+export const MAX_HAMMING = 14;
 /** A state must persist >=2 sampled frames — a single glare/shake frame is noise. */
-const MIN_CLUSTER_FRAMES = 2;
+export const MIN_CLUSTER_FRAMES = 2;
 
 /** Rough cost bookkeeping — same math as pipelines/copy.ts (2nd use; extract at the 3rd). */
 function llmCostAgorot(inputTokens: number, outputTokens: number): number {

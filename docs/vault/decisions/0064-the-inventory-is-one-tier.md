@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-09-28
-method: "Founder in chat, 2026-09-28, relayed verbatim in the task brief that built it: no moment is labelled less fitting, because 'the AI could get it wrong and label an important moment as less fitting.' Code read and built at 577272d (branch inventory-one-tier). The fixture line below is MEASURED-ON-FIXTURE 2026-09-28: the OLD pickerPools and isSkippedScreenKind, imported from apps/web/src/lib/service-a-ui.ts at 577272d BEFORE the change, run over every fixtures/timelines/*.json (state index = array position) with apps/cli/node_modules/.bin/tsx from apps/web; reasons counted inside the collapsed tier, overlaps allowed. NOT measured in production."
+method: "Founder in chat, 2026-09-28, relayed verbatim in the task brief that built it: no moment is labelled less fitting, because 'the AI could get it wrong and label an important moment as less fitting.' Code read and built at 577272d (branch inventory-one-tier). The fixture line below is MEASURED-ON-FIXTURE 2026-09-28: the OLD pickerPools and isSkippedScreenKind, imported from apps/web/src/lib/service-a-ui.ts at 577272d BEFORE the change, run over every fixtures/timelines/*.json (state index = array position) with apps/cli/node_modules/.bin/tsx from apps/web; reasons counted inside the collapsed tier, overlaps allowed. The PRODUCTION section is MEASURED 2026-09-28: `aiugc demo audit --all --json` at 44a5b7c, prod read-only, the same rule applied to every ready analysis's stored timeline."
 source: founder
 supersedes: "[[0003-sections-are-a-model-call]] (its pool only) and the two tiers recorded in [[8c-inventory-picker]]"
 ---
@@ -97,8 +97,27 @@ analyses), so their skip-kind 0 is by construction, not a finding.
 **REASONED, not measured:** on every real fixture the collapsed tier held more moments than the
 main grid — 41 to 75 behind the toggle against 5 to 29 in view — and the task sections organised
 only the main grid. A customer who scanned the grid saw a minority of the recording, sorted by a
-model's legibility and idle calls; that is the likeliest reason moments read as lost. No
-production analysis was counted, and nothing here says which moment the founder was looking for.
+model's legibility and idle calls; that is the likeliest reason moments read as lost. Production
+was counted afterwards and has the same shape (next section). Nothing here says which moment the
+founder was looking for.
+
+## MEASURED — the old collapsed tier in production
+
+2026-09-28, audit at 44a5b7c, prod read-only: the collapsed tier held 334 of 494 states across 10
+ready analyses (6 distinct recordings) — 58% to 85% of each analysis. Reasons, overlapping: low
+183, repeat 135, idle 193, skip-kind 42.
+
+- **The main grid held 154 states.** 6 unreadable states had no tile at all. In every one of the
+  ten analyses the collapsed tier held more states than the main grid. That makes the fixture
+  reading above measured in production.
+- **"low" was the second-largest reason, after idle.** Migration 0028 (`supabase/migrations/0028_split_legibility_gate.sql:5-7`) found on the first
+  five real analyses (2026-08-18) that "low" is the model's ordinary verdict on a filmed screen,
+  not a refilm signal. 183 of the 334 collapsed states carried it.
+- **Six distinct recordings.** Four of the analyses are one 57.5s recording and two are one 89.6s
+  recording. The tier still varied within a recording, from 31 to 39 across the first four and 34
+  or 41 across the other two, because the labels it sorts by are the model's per-run verdicts.
+
+Per-analysis table: [[old-collapsed-tier-held-most-production-states]].
 
 ## Deploy
 
