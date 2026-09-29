@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-29
+updated: 2026-09-30
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -336,7 +336,8 @@ Each with its date. This is the main thing a new session cannot recover on its o
        vitest runs; `test-runner` runs all seven.
     5. "Reachable only from the CLI" became "no customer-facing path";
        [[retired-formats-keep-two-live-web-routes]] records the two live routes, which stay.
-       Rulings 6 and 7 (branch per task, handovers retired) are
+       Rulings 6 and 7 (branch per task, handovers retired), and the 2026-09-30 ruling that the coding
+       principles live inline in CLAUDE.md instead of the `/karpathy-guidelines` skill, are
        [[0066-branch-per-task-and-no-handovers]].
 
 Recorded as recommendations the founder did not object to, 2026-09-21 — not decisions he stated:

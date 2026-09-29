@@ -58,16 +58,22 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 
 ## How to work — every task
 
-### 1. Start: branch, then load the guidelines skill
+### Coding principles (every task)
+
+Adapted from github.com/multica-ai/andrej-karpathy-skills (MIT). For a typo or a one-liner, use judgement; these are for non-trivial work.
+
+1. **Think before coding.** State your assumptions. If the request reads two ways, name both instead of picking silently. If there's a simpler route than the one asked for, say so. If you're confused, stop and ask; in an unattended run, stop and report BLOCKED with what's unclear.
+2. **Simplicity first.** Write the least code that solves the problem. No unrequested features, options or config, no handling for cases that can't happen, and no abstraction for a single caller (duplicate until a pattern has appeared ~3 times). If it could be a quarter of the length, rewrite it.
+3. **Surgical changes.** One task = one concern: every changed line traces to the task. Don't reformat, re-comment or refactor neighbouring code; match the existing style. Remove what your own change left unused; mention other dead code in the report, don't delete it. Anything else you notice broken goes in the report too; don't fix it silently.
+4. **Goal-driven execution.** Turn the task into checks you can run: a bug gets a failing test first, a refactor keeps tests green before and after, validation gets tests for the bad inputs. For multi-step work, state the plan as steps, each with its verification, and loop until every check passes.
+
+### 1. Start: branch
 
 One branch per task, in this checkout. `git fetch`, then create `<type>/<short-slug>` from `origin/main` (`feat/`, `fix/`, `docs/`, `tooling/`, …). If the working tree is dirty, stop. If the task depends on work that isn't on `origin/main`, stop and say so. Never `git push` to main, never merge, never force-push, never create a worktree. These branch rules and the end-of-task block belong to the session doing the founder's task; a subagent never branches, commits or pushes unless its prompt says so, and returns what its caller asked for.
 
-Invoke the `/karpathy-guidelines` skill at the beginning of every coding task and apply its concepts to all code written in that task. If the skill can't be found, stop and tell the founder instead of guessing, then proceed with its core principles as understood in this repo: simplest thing that works first; make it work before making it pretty; no premature abstraction (duplicate until a pattern has proven itself ~3 times); minimal dependencies — prefer stdlib/boring over clever; small increments that keep the repo runnable at every step; code the founder can hold in his head; delete aggressively.
-
 ### 2. During the task
 
-- Prefer editing existing code over adding new files; prefer deleting over adding.
-- One task = one concern. If you notice something else broken, note it at the end — don't fix it silently.
+- Prefer editing existing code over adding new files.
 - Pipeline logic lives in `packages/core/src/pipelines/` as importable functions callable from CLI, worker, and API alike. The web app is a thin shell over the same functions.
 - Every external API call (Anthropic, ElevenLabs, GPU, gateway) goes through one wrapper module per service: typed input/output, timeout, retry policy, and cost-relevant params logged. No inline `fetch` to third parties scattered around.
 - Jobs must be idempotent and resumable. Assume any step can crash mid-way and be retried.
