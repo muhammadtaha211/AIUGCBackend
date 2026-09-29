@@ -67,6 +67,25 @@ paired with `pg_stat_user_indexes.idx_scan` for an index the same migration crea
 movement also proves the planner uses it (used 2026-09-11 for PR #29). **Caveats:** the counter is
 cumulative since reset so only the DELTA means anything, and it proves a behaviour, not a SHA.
 
+**What exists is in `docs/repo-map.md`, generated since 2026-09-30**
+([[0067-what-exists-is-a-generated-repo-map]]; `tooling/repo-map`, pushed, NOT merged). `pnpm
+repo-map` derives it from the code. Every task reruns it after its last commit and commits it alone
+as `chore: repo-map` (CLAUDE.md §3). At its first run, six independent section checks and a
+docs-wide cross-check found nothing in the code that the map misses. What docs/ describes that does
+NOT exist (found, none fixed):
+
+- **Stale, written as live.** `phases/8e-render-step.md:90` says
+  `POST /api/businesses/[businessId]/a-sets/preview` and `POST …/a-sets` are "still deployed". Both
+  were deleted in `497fc24` (2026-09-01). `decisions/0027-…:55` names `aiugc script b`, which never
+  existed; the command is `copy b-script`.
+- **Written as gone, and gone.** The tables `persona_clips` (dropped in 0005) and `demo_segments`
+  (dropped in 0023); the 2026-07-16 onboarding spec's `/dashboard` and `/api/auth/*`; the probe
+  routes `/zz-probe`, `/zz-preview-error` and `/api/probe`; and `pending_changes`, the table 0053
+  rejected.
+- **Env names the map cannot show.** Neither `.env.example` declares `SUMIT_COMPANY_ID`,
+  `SUMIT_API_KEY` or `SUMIT_CHECKOUT_PAGES` (read at `packages/core/src/config.ts:16-19`), nor
+  `LOG_LEVEL` (`packages/core/src/logger.ts:6`).
+
 ## Security audit — paused for launch
 
 **Done: phases 0–4.** Fixes merged: AUTHZ-12 (PR #59, commit `21b7557`); INP-01 (commit `511fefc`);
