@@ -18,7 +18,7 @@ The older "full" format — demo under evenly-paced captions, an optional Eleven
 and the freeze/avatar ending when the VO outran the demo — together with everything that
 existed to serve it: the word budget, the `atempo` length fit in `synth_tts`, `planAOutro`,
 `outroMode`, the avatar-outro lip-sync slice, the `ServiceA` composition. Locked decision #4 in
-CLAUDE.md (loose VO sync) is moot; it is kept for the record.
+CLAUDE.md (loose VO sync) is moot; its record is [[0065-vo-sync-is-loose-by-design]].
 
 ## What is still in the tree
 

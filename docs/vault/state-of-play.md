@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-28
+updated: 2026-09-29
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -22,7 +22,8 @@ conversation, and the ordered queue. **If this file and the repo disagree, the r
 front of `requireAdmin`. Service A/B format and engine decisions are all in `decisions/` — start at
 [[0020-service-a-is-hook-and-steps-only]], [[0017-service-b-single-setting-selfie-talking-head]],
 [[0023-hook-is-a-remotion-animation-opener-clips-retired]],
-[[0024-hook-effect-is-a-render-param-the-customer-picks]], and CLAUDE.md rather than a summary here.
+[[0024-hook-effect-is-a-render-param-the-customer-picks]], and CLAUDE.md (Service B's detail is in
+`.claude/rules/service-b.md` since 2026-09-29) rather than a summary here.
 
 **Email confirmation is ON since 2026-09-11** — the live behaviour a new session is most likely to
 trip over. Every signup depends on a Resend delivery, ceiling 100/day
@@ -201,9 +202,10 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   long-lived process serves from.**
 - **An acceptance gate passed against code that existed nowhere but that box.** Confirm the tree is
   clean before believing a gate.
-- **Two promoted into CLAUDE.md in full, pointers only here:** a credential echoed in session output
-  three times (verify by connecting, report the outcome, never the value), and "`npx -y supabase`
-  because no CLI is installed" was false all along.
+- **Two promoted out of this file, pointers only here:** a credential echoed in session output
+  three times (verify by connecting, report the outcome, never the value — CLAUDE.md), and
+  "`npx -y supabase` because no CLI is installed" was false all along (`.claude/rules/migrations.md`
+  and [[production-migration-push-log]] since 2026-09-29).
 - **"Authorized origin" in Google Console was the wrong field** — _Authorized **domains**_, at publish.
 - **"Billing unwired, so account caps are the only bound" was backwards** — the credit balance is the
   bound, and _tighter_ because billing is unwired ([[no-self-serve-credit-grant-path]]).
@@ -309,6 +311,17 @@ Each with its date. This is the main thing a new session cannot recover on its o
     TEST subscription on his own card and must be excluded from revenue; the accountant has to be
     told the ₪150 receipt is a self-purchase. Refunding later is optional and only becomes possible
     once the Upay balance exceeds ₪150.
+13. **Three CLAUDE.md contradictions resolved by ruling, 2026-09-29** (the slim-CLAUDE.md brief; no
+    reasons given, so no decision note). (a) End of task NEVER applies a migration: say in Next step
+    that one is waiting and include the `db push --dry-run` output. This replaces "apply it
+    yourself". (b) The `npx -y supabase db push` line leaves CLAUDE.md's Commands; the recipe is
+    `.claude/rules/migrations.md`. (c) Vault notes are written only at the moments CLAUDE.md's vault
+    section lists; end of task still updates this file. **Knock-on questions from (a), OPEN:** does a
+    `db push --dry-run` count as a `db push` under "never without the founder's explicit instruction"
+    (CLAUDE.md now requires both)? What does the manual test for a migration task show, when
+    CLAUDE.md still says it is "how to verify it applied"? And does the "immediately run
+    `migration repair`" after a hand-apply need its own one-push instruction, when the gate says
+    "never `migration repair`" without one (both now in `.claude/rules/migrations.md`)?
 
 Recorded as recommendations the founder did not object to, 2026-09-21 — not decisions he stated:
 קטלוג ללא מע"מ stays unticked on the real org (deliberately unlike the test org, because a no-VAT
@@ -579,12 +592,16 @@ subscription row was written.
 **Migrations 0000–0048 applied, ledger clean at 49 rows, no gaps, nothing pending** — measured
 2026-09-21 against `supabase_migrations.schema_migrations` (count 49, first `0000`, last `0048`),
 matching the 49 files in `supabase/migrations/`. This corrected a stale "0000–0047 / 48 rows" here;
-**CLAUDE.md still says 0000–0047 and is now the stale copy.** Every push since
+**CLAUDE.md still says 0000–0047 and is now the stale copy.** (Not resolved: CLAUDE.md in the tree
+that sentence was written in, ec0a324, already said 0000–0048, since f4d079e that morning. Since
+2026-09-29 CLAUDE.md holds no ledger count; the other copy is [[production-migration-push-log]].)
+Every push since
 0036 was on the founder's explicit instruction **for that one push** — not standing permission — and
 `db push` recorded each version itself, so `migration repair` has been needed zero times in ten.
 History and read-backs live in `scripts/verify-migration-ledger.sql` §RESULTS (38 structural rows, 36
 true / 1 false (0022, expected — every other false is real) / 1 NULL (0020)); the guarded- and
-destructive-migration read-back rules are in CLAUDE.md. Do not re-narrate either here. Auth: Email on,
+destructive-migration read-back rules are in `.claude/rules/migrations.md` (moved out of CLAUDE.md
+2026-09-29). Do not re-narrate either here. Auth: Email on,
 Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.ai`; **Redirect URLs
 read 2026-09-22 — four and only four: `/auth/callback` + `/auth/recovery` on `https://tavnit.ai` and
 on `http://localhost:3000`, no `*.vercel.app`, no `www`** — every other origin falls back to the Site
