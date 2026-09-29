@@ -1,6 +1,6 @@
 # AIUGC — project vault
 
-Source of truth for the project — the Service A steps pipeline ([[0020-service-a-is-hook-and-steps-only]]) and the Service B talking-head pipeline ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Lives at `docs/vault/` inside the repo and is
+Source of truth for what is true and what was decided on the project — how to work, and the locked decisions, are CLAUDE.md's — covering the Service A steps pipeline ([[0020-service-a-is-hook-and-steps-only]]) and the Service B talking-head pipeline ([[0023-hook-is-a-remotion-animation-opener-clips-retired]]). Lives at `docs/vault/` inside the repo and is
 git-tracked, so a note changes in the same commit as the code it describes and `git log` gives every
 fact a provenance trail.
 

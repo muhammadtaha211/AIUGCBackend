@@ -103,4 +103,6 @@ travels).
 - The seam colour grade and pixel alignment (vault 0021, `facts/service-b-seam-constants.md`).
 - The wizard's opener step.
 
-The code is still in the tree, reachable only from the CLI's `render-b --opener`.
+The code is still in the tree with no customer-facing path; its render runs only from the CLI's
+`render-b --opener`. One leftover web route (`GET /api/personas/[personaId]/openers`) still answers a
+hand-built request: `docs/vault/defects/retired-formats-keep-two-live-web-routes.md`.

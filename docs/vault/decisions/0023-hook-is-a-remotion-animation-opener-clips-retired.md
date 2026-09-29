@@ -80,4 +80,6 @@ said "I like it".
 - [[atomic-inline-words-reverse-a-latin-run-in-rtl]] — a limit on the kinetic hook text
 - [[0022-heygen-expressiveness-medium-generic-motion-prompt]] — the engine settings
 - [[heygen-motion-prompt-two-draws]] — why staged actions cannot come from HeyGen
+- [[retired-formats-keep-two-live-web-routes]] — `GET /api/personas/[personaId]/openers` still
+  lists opener clips to a hand-built request (2026-09-29)
 - [[heygen-head-moves-before-speech-onset]] — the still window the animation opens on

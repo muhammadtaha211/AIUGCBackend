@@ -37,3 +37,5 @@ docs/02-jobs.md (the length-fit paragraph), docs/04-integrations.md (the props c
 
 - [[0017-service-b-single-setting-selfie-talking-head]] — Service B keeps its voiceover; this
   note is about A only
+- [[retired-formats-keep-two-live-web-routes]] — the render is CLI-only, but `POST /vo-script`
+  still answers a hand-built request (2026-09-29)

@@ -31,11 +31,13 @@ more.
 
 ## Rules
 
-1. Never `db push`, never `migration repair`, never ad-hoc DDL — except on the founder's explicit
-   instruction for that one push. An instruction covers that one push. It is never standing
-   permission.
-2. Never apply a migration at the end of a task. Say in Next step that one is waiting, and include
-   its `db push --dry-run` output.
+1. The gate covers anything that writes to the database or the migration ledger: `db push`,
+   `migration repair`, ad-hoc DDL or SQL writes. None of it runs without the founder's explicit
+   instruction for that one operation. An instruction covers that one operation; it is never
+   standing permission.
+2. Never apply a migration at the end of a task. Say in Next step that one is waiting, and put its
+   `db push --dry-run` output in a fenced block under that sentence. The task's manual test is the
+   read-back query the founder runs after he authorizes the `db push`, with the expected result.
 3. Apply with `supabase db push --db-url <url>`, where `<url>` is `DATABASE_URL` from `.env` with
    `:6543/` swapped to `:5432/` (session pooler). Every command takes the same `--db-url`, including
    `migration list` and the dry-run; nothing relies on link state
@@ -49,7 +51,8 @@ more.
    - Use the `.exe`, not the `.cmd` shim. Spawning a `.cmd` on Node 20+ needs `shell: true`, and a
      shell would put the connection string through cmd.exe quoting.
    - Never use `npx -y supabase`. It fetched a second copy every time.
-5. Pre-flight every push with a read-only `migration list` and `db push --dry-run`.
+5. `migration list` and `db push --dry-run` are read-only pre-flight and need no permission. Run both
+   before every push; the dry-run is also what rule 2 reports.
 6. **Guarded migration** (an `UPDATE` guarded on the old value): read the row through the code's
    own parse BEFORE the push and after it, not just after. A guard that matches nothing exits 0,
    prints the same output and still records its version. The ledger would then say applied while
@@ -62,8 +65,10 @@ more.
 9. 0039 had to go FIRST, ahead of its own code: `creditCostsSchema`
    makes its new key required, so a build carrying the schema key against a row without it throws on
    every quote path rather than mis-pricing.
-10. `db push` records the version itself, so a push needs no `migration repair`. If a migration is
-    ever applied by hand instead, immediately run
-    `supabase migration repair --status applied <version>` with the same `--db-url`. Otherwise the
-    ledger drifts again and `db push` goes back to being unusable.
+10. `db push` records the version itself, so a push needs no `migration repair`. `migration repair`
+    writes the ledger, so it takes the same explicit instruction as a push (rule 1). If you find a
+    hand-applied migration (applied but missing from the ledger), stop and report it; do not repair
+    it. Left unrepaired, the ledger drifts and `db push` goes back to being unusable, which is why
+    the report matters. With the instruction, the repair is
+    `supabase migration repair --status applied <version>` with the same `--db-url`.
 11. Post-apply proofs are in `scripts/verify-migration-ledger.sql` §RESULTS.

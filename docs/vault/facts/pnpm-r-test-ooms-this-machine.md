@@ -53,10 +53,11 @@ typed every time.
 
 `CLAUDE.md:110` used to document the script as `pnpm test  # core tests (PGlite, no Docker)`, which
 was doubly misleading: it fans out to **five** packages, not core alone, and it said nothing about
-the concurrency that makes it unusable here. The five commands above are now the gate in CLAUDE.md
-itself (`:112-117`, with the reasoning at `:125`; since the 2026-09-29 restructure `:108-113` and
-`:121`, and the `test-runner` subagent in `.claude/agents/` runs them), so a prompt that says "tests
-green" resolves to something runnable.
+the concurrency that makes it unusable here. The five commands above then became the gate in
+CLAUDE.md itself (then `:112-117`, with the reasoning at `:125`), so a prompt that says "tests
+green" resolves to something runnable. Since 2026-09-29 the gate is seven commands — `pnpm lint`, a one-package-at-a-time
+`pnpm typecheck`, then these five (`CLAUDE.md:116-123`, reasoning at `:131`) — and the `test-runner`
+subagent in `.claude/agents/` runs them.
 
 Still wrong elsewhere, and not corrected here: `facts/test-suite-inventory.md:53` says `pnpm test`
 "fans out to **four** independent runners" — it is five; `apps/worker` gained a `test` script on
