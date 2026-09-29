@@ -13,7 +13,7 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 
 ## Architecture (V0)
 
-- Single monorepo. `apps/web` = Next.js (App Router, TypeScript) on Vercel. `apps/worker` = one Node worker (queue consumer, ffmpeg, Remotion renders). `apps/admin` = the founder console. `apps/cli` = the entrypoint the founder actually uses (`aiugc ...`, ~45 commands). `packages/core` = pipeline logic, jobs, db and provider wrappers, with the pipelines themselves in `packages/core/src/pipelines/` as importable pure-ish functions. `packages/remotion` = every composition. There is no `packages/pipeline` — do not create one.
+- Single monorepo. `apps/web` = Next.js (App Router, TypeScript) on Vercel. `apps/worker` = one Node worker (queue consumer, ffmpeg, Remotion renders). `apps/admin` = the founder console. `apps/cli` = the entrypoint the founder actually uses (`aiugc ...`). `packages/core` = pipeline logic, jobs, db and provider wrappers, with the pipelines themselves in `packages/core/src/pipelines/` as importable pure-ish functions. `packages/remotion` = every composition. There is no `packages/pipeline` — do not create one.
 - Supabase: Postgres, Auth, Storage (signed URLs).
 - All heavy work (TTS, lip-sync GPU, renders) runs as async, retryable jobs on the worker. Nothing heavy in a Vercel function, ever.
 - External services: Anthropic API (`claude-sonnet-4-6`, all copywriting), ElevenLabs V3 (Hebrew TTS), HeyGen for avatar lip-sync (Service B; it replaced InfiniteTalk-on-fal in 2026-08 — see docs/04 and `providers/lipsync.ts`; `FAL_KEY` stays for nano-banana composites), Remotion via `@remotion/renderer` on the worker, ffmpeg/ffprobe for probing/normalize/stretch.
@@ -101,6 +101,8 @@ Branch: <the branch this task pushed>
 
 Before that block, in this order: (1) update the docs, and update `docs/vault/state-of-play.md` with the task's changes, decisions and discoveries — every task; (2) check `git branch --show-current` — other sessions share this checkout — and if it is not this task's branch, stop and report; (3) commit and `git push` the task's branch. `Branch: <name>` is always the report's last line.
 
+After the task's last commit and before the push, run `pnpm repo-map`; if `docs/repo-map.md` changed, commit it alone as `chore: repo-map`, so its header's sha is the task commit.
+
 Handovers are retired. Decisions arrive in task prompts and are recorded by the task that receives them, at the moments the vault section lists.
 
 The manual test must be runnable by the founder without reading the code. If the task produced something not directly runnable, the test is how to verify it; for a pending migration, it is the read-back query the founder runs after he authorizes the `db push`, with the expected result.
@@ -118,6 +120,7 @@ pnpm dev            # web app (onboarding) — http://localhost:3000
 pnpm dev:admin      # admin app (founder console) — http://localhost:3001
 pnpm typecheck      # all packages, four at a time (the gate runs them one at a time, below)
 pnpm lint / format  # prettier
+pnpm repo-map       # regenerate docs/repo-map.md: what exists, derived from the code (apps/cli/scripts/repo-map.ts)
 
 # THE TEST GATE — these seven, one at a time. Not `pnpm test`. See below before changing.
 pnpm lint                                    # prettier --check . (decision 0038)
@@ -141,7 +144,7 @@ Never run `next build` while `pnpm dev` is serving — the build replaces `.next
 The CLI is `apps/cli` and it is where the pipeline is driven today:
 
 ```
-pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI: demo (audit: read-only moment-loss accounting — needs ffmpeg; S1/S2 are exact only where it reports "recompute: exact"), plan, copy, script, set, bank (add-hook; add-opener is retired 2026-09-06 with the opener bank), persona, render-b, qc, work, status, costs
+pnpm --filter @aiugc/cli dev <cmd>     # aiugc CLI — every command, with its description: docs/repo-map.md
 pnpm --filter @aiugc/worker dev        # the job loop (also `aiugc work --once` to drain and exit)
 ```
 
