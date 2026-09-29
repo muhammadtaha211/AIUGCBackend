@@ -27,6 +27,6 @@ untracked, and entirely regenerable — `supabase link` rewrites it.
 Verified after removal: `migration list --db-url <new session pooler>` returns 32 rows with local
 and remote in agreement through `0031`. Nothing in the documented workflow needed the link state.
 
-**Do not re-link.** The loud failure is the feature — every command in `docs/08` and `CLAUDE.md`
-passes `--db-url` explicitly, so a resolvable link only re-creates the ambiguity about which of the
+**Do not re-link.** The loud failure is the feature — every command in `docs/08` and
+`.claude/rules/migrations.md` (CLAUDE.md until 2026-09-29) passes `--db-url` explicitly, so a resolvable link only re-creates the ambiguity about which of the
 two projects a command is about to touch.

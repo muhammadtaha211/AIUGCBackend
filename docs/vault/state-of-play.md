@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-28
+updated: 2026-09-30
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -22,7 +22,8 @@ conversation, and the ordered queue. **If this file and the repo disagree, the r
 front of `requireAdmin`. Service A/B format and engine decisions are all in `decisions/` — start at
 [[0020-service-a-is-hook-and-steps-only]], [[0017-service-b-single-setting-selfie-talking-head]],
 [[0023-hook-is-a-remotion-animation-opener-clips-retired]],
-[[0024-hook-effect-is-a-render-param-the-customer-picks]], and CLAUDE.md rather than a summary here.
+[[0024-hook-effect-is-a-render-param-the-customer-picks]], and CLAUDE.md (Service B's detail is in
+`.claude/rules/service-b.md` since 2026-09-29) rather than a summary here.
 
 **Email confirmation is ON since 2026-09-11** — the live behaviour a new session is most likely to
 trip over. Every signup depends on a Resend delivery, ceiling 100/day
@@ -201,9 +202,12 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   long-lived process serves from.**
 - **An acceptance gate passed against code that existed nowhere but that box.** Confirm the tree is
   clean before believing a gate.
-- **Two promoted into CLAUDE.md in full, pointers only here:** a credential echoed in session output
-  three times (verify by connecting, report the outcome, never the value), and "`npx -y supabase`
-  because no CLI is installed" was false all along.
+- **Two promoted out of this file, pointers only here:** a credential echoed in session output —
+  flagged twice, both 2026-08-26, both rotated; no third flagged incident is recorded, though
+  unflagged echoes predate the "three times" this line said ([[credential-echo-incidents]]) — verify by connecting, report the outcome, never the value
+  (CLAUDE.md), and
+  "`npx -y supabase` because no CLI is installed" was false all along (`.claude/rules/migrations.md`
+  and [[production-migration-push-log]] since 2026-09-29).
 - **"Authorized origin" in Google Console was the wrong field** — _Authorized **domains**_, at publish.
 - **"Billing unwired, so account caps are the only bound" was backwards** — the credit balance is the
   bound, and _tighter_ because billing is unwired ([[no-self-serve-credit-grant-path]]).
@@ -309,6 +313,32 @@ Each with its date. This is the main thing a new session cannot recover on its o
     TEST subscription on his own card and must be excluded from revenue; the accountant has to be
     told the ₪150 receipt is a self-purchase. Refunding later is optional and only becomes possible
     once the Upay balance exceeds ₪150.
+13. **Three CLAUDE.md contradictions resolved by ruling, 2026-09-29** (the slim-CLAUDE.md brief; kept
+    here on the founder’s instruction). (a) End of task NEVER applies a migration: say in Next step
+    that one is waiting and include the `db push --dry-run` output. This replaces "apply it
+    yourself". (b) The `npx -y supabase db push` line leaves CLAUDE.md's Commands; the recipe is
+    `.claude/rules/migrations.md`. (c) Vault notes are written only at the moments CLAUDE.md's vault
+    section lists; end of task still updates this file. **Follow-up rulings, 2026-09-29** (same
+    branch; they close the knock-on questions (a) raised):
+    1. The migration gate covers anything that writes to the database or the migration ledger.
+       `migration list` and `db push --dry-run` are read-only pre-flight and need no permission. For
+       a pending migration, the manual test is the read-back query the founder runs after he
+       authorizes the push, with the expected result. `migration repair` writes the ledger, so it
+       takes the same explicit instruction as a push; a hand-applied migration found mid-task is
+       reported, not repaired. All in `.claude/rules/migrations.md` rules 1, 2, 5 and 10.
+    2. Where the vault holds the decision, CLAUDE.md follows it, in the notes' wording: Payments
+       (0046, 0054, 0062), the Service B QC clause and locked #8's "permanently" (0036), falsified
+       notes (CONVENTIONS.md), the credential count ([[credential-echo-incidents]]), the four hook
+       effects (`hook-effect.ts`).
+    3. CLAUDE.md governs how to work and the locked decisions; the vault governs what is true and
+       what was decided. Both files' openings now say so.
+    4. The test gate is `pnpm lint`, `pnpm typecheck` (run one package at a time with `--no-bail` — the implementer’s precaution, not part of the ruling) and the five
+       vitest runs; `test-runner` runs all seven.
+    5. "Reachable only from the CLI" became "no customer-facing path";
+       [[retired-formats-keep-two-live-web-routes]] records the two live routes, which stay.
+       Rulings 6 and 7 (branch per task, handovers retired), and the 2026-09-30 ruling that the coding
+       principles live inline in CLAUDE.md instead of the `/karpathy-guidelines` skill, are
+       [[0066-branch-per-task-and-no-handovers]].
 
 Recorded as recommendations the founder did not object to, 2026-09-21 — not decisions he stated:
 קטלוג ללא מע"מ stays unticked on the real org (deliberately unlike the test org, because a no-VAT
@@ -579,12 +609,16 @@ subscription row was written.
 **Migrations 0000–0048 applied, ledger clean at 49 rows, no gaps, nothing pending** — measured
 2026-09-21 against `supabase_migrations.schema_migrations` (count 49, first `0000`, last `0048`),
 matching the 49 files in `supabase/migrations/`. This corrected a stale "0000–0047 / 48 rows" here;
-**CLAUDE.md still says 0000–0047 and is now the stale copy.** Every push since
+**CLAUDE.md still says 0000–0047 and is now the stale copy.** (Not resolved: CLAUDE.md in the tree
+that sentence was written in, ec0a324, already said 0000–0048, since f4d079e that morning. Since
+2026-09-29 CLAUDE.md holds no ledger count; the other copy is [[production-migration-push-log]].)
+Every push since
 0036 was on the founder's explicit instruction **for that one push** — not standing permission — and
 `db push` recorded each version itself, so `migration repair` has been needed zero times in ten.
 History and read-backs live in `scripts/verify-migration-ledger.sql` §RESULTS (38 structural rows, 36
 true / 1 false (0022, expected — every other false is real) / 1 NULL (0020)); the guarded- and
-destructive-migration read-back rules are in CLAUDE.md. Do not re-narrate either here. Auth: Email on,
+destructive-migration read-back rules are in `.claude/rules/migrations.md` (moved out of CLAUDE.md
+2026-09-29). Do not re-narrate either here. Auth: Email on,
 Google enabled, **Confirm email ON since 2026-09-11**, Site URL `https://tavnit.ai`; **Redirect URLs
 read 2026-09-22 — four and only four: `/auth/callback` + `/auth/recovery` on `https://tavnit.ai` and
 on `http://localhost:3000`, no `*.vercel.app`, no `www`** — every other origin falls back to the Site
@@ -663,6 +697,12 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Rotate the credentials found burned on 2026-09-29** ([[credential-echo-incidents]]). By key
+  name only: the `DATABASE_URL` password, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
+  `ELEVENLABS_API_KEY`, `FAL_KEY` and `HEYGEN_API_KEY` each appear in 2–3 local session
+  transcripts; the founder’s app-account password was printed by a research subagent that day.
+  CLAUDE.md says each has to be rotated; the order and timing are the founder’s. A rotated key
+  changes wherever it is set (the `.env` files, Vercel, the worker box).
 - **Put the worker box on the 0064 commit — `git pull` AND restart** (2026-09-28,
   [[0064-the-inventory-is-one-tier]]). The v2 grouping prompt is read per call, so a pull alone
   makes the box send v2's text over the OLD quality pool; the pool change and the `screenKind`
@@ -745,6 +785,13 @@ distinct, every inbound link uses the full filename), but `[[0047]]` is ambiguou
 0059 were taken **above** the highest number rather than filling a gap, because renumbering a
 published note breaks the links pointing at it. Renumber or leave it — a founder call.
 
+- **Three questions from the slim-CLAUDE.md branch — OPEN, 2026-09-29.** (1) Does the migration
+  gate's "anything that writes to the database" cover CLI, worker and local-web runs that write
+  production rows, or only schema/ledger/ad-hoc SQL writes? (2) What is the report's last line when
+  a task stops before it pushes (dirty tree, work not on `origin/main`, branch mismatch)? CLAUDE.md
+  requires `Branch: <name>` and says nothing for that case. (3) Should CLAUDE.md forbid agents from
+  reading `.env*` files and session transcripts, grepping tracked files only
+  ([[credential-echo-incidents]])? All three are the founder's to rule.
 - **Narrowing the ICP — RAISED AND DEFERRED, 2026-09-19**, as its own decision. The
   physical-product category STAYS: `WhatChooser` still offers `מוצר פיזי` first and the landing still
   addresses it. Recorded so the absence of narrowing reads as deferred, not overlooked.
@@ -783,43 +830,9 @@ ENOENT`) and `remotion.media` 403s for the Chromium Headless Shell (1 remotion t
 
 ---
 
-## How to hand over
+## How this file is kept
 
-This file is overwritten in place, never duplicated. `git log --follow` on it is the history. **If
-this file and the repo disagree, the repo wins** — treat anything here as a pointer, not a source of
-truth.
-
-### Closing a session — paste into the chat that's ending
-
-```
-Update docs/vault/state-of-play.md for handover. Rewrite the existing file in place —
-don't produce a new version, git history is the versioning.
-
-Cover: what actually changed this session (done / committed / still uncommitted);
-decisions made in conversation that never reached the repo, each named, with where it
-should eventually live in the vault — the main thing a new session cannot recover on its
-own; corrections, anything either of us asserted that turned out wrong, keep them, they're
-the cheapest lines in the file; the queue, reordered if this session changed the order,
-with reasoning wherever it isn't self-evident; and external state that changed.
-
-Be explicit about verified versus assumed — if something was true when written and you
-can't confirm it still holds, mark it rather than repeating it. Prune as you go: delete
-anything finished or graduated into a vault note, and tell me which ones graduated so I
-can confirm they landed. This file must not grow session over session.
-
-Separately, outside the file: what should I hand to Claude Code before I close this chat,
-and is anything still uncommitted or unpushed?
-```
-
-### Opening the next session — paste as the first message
-
-```
-Read docs/vault/state-of-play.md. It's the handover from my last session — the queue,
-external state, and the decisions that never made it into the repo.
-
-I'm working on: [what you're doing]
-
-Search the vault before answering, and tell me if anything in the state file looks out of
-date relative to the repo — project knowledge syncs on a delay, so the tree you can see
-may be ahead of it.
-```
+Handovers are retired ([[0066-branch-per-task-and-no-handovers]]). Decisions arrive in task prompts
+and are recorded by the task that receives them; every task updates this file at its end, in place
+(`git log --follow` is the history), marking what it could not re-verify and deleting what is
+finished or has graduated into a vault note.

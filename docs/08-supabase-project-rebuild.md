@@ -32,7 +32,7 @@ It was created with **"automatically expose new tables" OFF** and **"automatic R
 depends on both. If you ever do recreate it, use those same two settings.
 
 Everything from here is reversible by deleting the project and starting over, right up until §8
-flips the env vars. That is the line CLAUDE.md's migration gate draws.
+flips the env vars. That is the line the migration gate draws (`.claude/rules/migrations.md`, CLAUDE.md until 2026-09-29).
 
 ---
 

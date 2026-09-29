@@ -18,7 +18,7 @@ The older "full" format — demo under evenly-paced captions, an optional Eleven
 and the freeze/avatar ending when the VO outran the demo — together with everything that
 existed to serve it: the word budget, the `atempo` length fit in `synth_tts`, `planAOutro`,
 `outroMode`, the avatar-outro lip-sync slice, the `ServiceA` composition. Locked decision #4 in
-CLAUDE.md (loose VO sync) is moot; it is kept for the record.
+CLAUDE.md (loose VO sync) is moot; its record is [[0065-vo-sync-is-loose-by-design]].
 
 ## What is still in the tree
 
@@ -37,3 +37,5 @@ docs/02-jobs.md (the length-fit paragraph), docs/04-integrations.md (the props c
 
 - [[0017-service-b-single-setting-selfie-talking-head]] — Service B keeps its voiceover; this
   note is about A only
+- [[retired-formats-keep-two-live-web-routes]] — the render is CLI-only, but `POST /vo-script`
+  still answers a hand-built request (2026-09-29)
