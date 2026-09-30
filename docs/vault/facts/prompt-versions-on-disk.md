@@ -115,6 +115,10 @@ yet** — the first live plan after 2026-08-25 stamps it.
 > change edits `packages/core`, so the box needs `git pull` **and** a restart as one step
 > ([[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]]): a pulled-not-restarted box would
 > run v14's "your words will be marked" against old code that still fails plans on those words.
+>
+> _v14's branch merged 2026-09-16 as PR #39 (`1b30484`). It is an ancestor of `origin/main`
+> `d57b60a` (MEASURED 2026-10-01) and of `4100cc7`, the commit the box reported on 2026-09-21
+> (founder-reported). "Not yet deployed" above was true when it was written._
 
 ## The restart trap, stated precisely
 

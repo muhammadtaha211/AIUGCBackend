@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-09-30
+updated: 2026-10-01
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -29,6 +29,17 @@ front of `requireAdmin`. Service A/B format and engine decisions are all in `dec
 trip over. Every signup depends on a Resend delivery, ceiling 100/day
 ([[auth-email-runs-through-resend]]).
 
+**The first signup by someone other than the founder: 2026-10-01. FOUNDER-REPORTED**, except the
+two lines marked MEASURED. It was a non-fit, with adult-persona intent, and **no credits were
+granted**. The account is left as it is. MEASURED (code, `apps/web/src/lib/wizard-gate.ts`): a
+zero balance keeps an account out of both wizards. He attributes the signup to the Instagram videos
+because he has run no other promotion. MEASURED (grep): **the repo has no signup-source tracking**,
+so the attribution is his, not measured. This is the event 0041/0042 named, so
+[[live-account-census-2026-09-10]] is marked stale; no new census has been run. Nothing
+identifying about the signup is written anywhere in the repo, by instruction. The same day's
+decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
+[[0068-prices-stand-no-free-tier-trials-by-hand]].
+
 **Billing shipped 2026-09-17 and is all merged.** `origin/main` carries the engine (`54c6231`), the
 customer-facing half (`7ccb708`) and the legal/public pass (`d215eae`); migrations 0044–0047 applied.
 Read the notes, not a summary: 0052–0058 in `decisions/`. `UPDATED` in `(legal)/legal.tsx` is
@@ -50,11 +61,12 @@ REAL org, which activated only after the return leg was repaired
 
 **The go-live cost three env mistakes and one customer-visible failure.** The third told a paying
 customer "התשלום לא הושלם. אפשר לנסות שוב." while Sumit held his ₪150
-([[sumit-return-failure-invited-a-second-payment]]). The fix is on
-**`fix/sumit-return-unconfirmed` (`7ec6005`), pushed, NOT merged and NOT deployed** — a failure to
-verify now lands on `?checkout=unconfirmed` ("being confirmed, do not pay again") and is recorded
-in `gateway_events`. **Prices should not be announced until that branch is merged and live**, since
-until then any Sumit hiccup during a return repeats the same invitation to pay twice.
+([[sumit-return-failure-invited-a-second-payment]]). The fix **`fix/sumit-return-unconfirmed`
+(`7ec6005`) merged 2026-09-22 as PR #53 (`0cca4fa`)**. MEASURED 2026-10-01: it is an ancestor of
+`origin/main` `d57b60a`. Serving on Vercel production is **FOUNDER-REPORTED** (2026-10-01) and
+cannot be checked from the repo. A failure to verify now lands on `?checkout=unconfirmed` ("being
+confirmed, do not pay again") and is recorded in `gateway_events`. The customer who pays and never
+returns is still uncovered (queue item 14).
 
 **Two deploy checks worth keeping, neither with a vault note — both die with this file.** (1) Verify
 the deployed **artifact**, not the symptom: `git log -1` on the box, never "a render worked
@@ -68,7 +80,7 @@ movement also proves the planner uses it (used 2026-09-11 for PR #29). **Caveats
 cumulative since reset so only the DELTA means anything, and it proves a behaviour, not a SHA.
 
 **What exists is in `docs/repo-map.md`, generated since 2026-09-30**
-([[0067-what-exists-is-a-generated-repo-map]]; `tooling/repo-map`, pushed, NOT merged). `pnpm
+([[0067-what-exists-is-a-generated-repo-map]]; `tooling/repo-map`, merged as PR #71, `d57b60a`). `pnpm
 repo-map` derives it from the code. Every task reruns it after its last commit and commits it alone
 as `chore: repo-map` (CLAUDE.md §3). At its first run, six independent section checks and a
 docs-wide cross-check found nothing in the code that the map misses. What docs/ describes that does
@@ -89,10 +101,11 @@ NOT exist (found, none fixed):
 ## Security audit — paused for launch
 
 **Done: phases 0–4.** Fixes merged: AUTHZ-12 (PR #59, commit `21b7557`); INP-01 (commit `511fefc`);
-Next.js 15.5.20 → 15.5.26 (commit `bfa65ae`). **INP-08 (this branch — pending merge and box
-deploy):** `fix/inp-08-ffmpeg-inputs`, commit `65114f8761191468619dc29677b1b7575ec6a09a` (the fix —
-`-protocol_whitelist` on every ffmpeg/ffprobe input, a container allow-list on the demo ingest path)
-and this docs commit (the second of the two). Founder-reported: Resend is on a paid plan; an
+Next.js 15.5.20 → 15.5.26 (commit `bfa65ae`); INP-08 (`65114f8`, merged 2026-09-25 as PR #63,
+`93ba67e`, MEASURED 2026-10-01 as an ancestor of `origin/main` `d57b60a`). The INP-08 fix puts
+`-protocol_whitelist` on every ffmpeg/ffprobe input and a container allow-list on the demo ingest
+path. **It is worker code, and no box read since 2026-09-21 (`4100cc7`, which predates it) says the
+box runs it.** Founder-reported: Resend is on a paid plan; an
 Anthropic hard monthly spend limit is set. Measured 2026-09-24: box firewall and key-only SSH.
 
 **Deferred, each with its trigger — no file paths, line numbers, parameters or mechanics here; audit
@@ -122,7 +135,7 @@ detail lives only in `.work/security/` (gitignored, the founder's main checkout)
   classifier fail closed; otherwise it reopens INP-01.
 - Audit details live only in `.work/security/` (gitignored, the founder's main checkout).
 
-MEASURED (this session, packages/core + apps/worker, this machine's ffmpeg 8.1.2-full_build-www.gyan.dev,
+MEASURED (the INP-08 session, 2026-09-25, packages/core + apps/worker, this machine's ffmpeg 8.1.2-full_build-www.gyan.dev,
 Windows): INP-08's fix and its four new tests. Founder-reported: the Resend plan and the Anthropic
 spend limit, both above. REASONED: INP-08's behaviour on the box's Linux ffmpeg — not yet smoke-tested
 there (see the vault defect note). MEASURED 2026-09-24, carried from the prior session: the box
@@ -139,7 +152,7 @@ Three notes created, two updated:
 - **[[analysis-parse-failure-discards-the-whole-attempt]]** (new, defect) — one frame's bad
   `actionType` enum discarded a whole `analyze_demo` attempt, three times: 8m19s of latency for ~85s
   of work. Full measured timeline, both halves of the defect, the fix list, two observability holes.
-  **FIXED ON BRANCH 2026-09-20** — queue item 1 has the state; the note's head has the FIXED block.
+  **MERGED as PR #51 (`27ee842`)** — queue item 1 has the state; the note's head has the FIXED block.
 - **[[demo-analysis-latency-is-not-duration-bound]]** (new, fact) — a 90s 1080×1920 demo analyses in
   ~65s of real work, ~53 states, no thinning. Graduated out of this file.
 - **[[0059-emoji-in-burned-text-needs-a-second-font]]** (new, decision) — the tofu, the verified
@@ -246,6 +259,16 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   date read `passwordauthentication yes`, so password login for `aiugc` was open to the internet the
   whole time; 0 logged failed attempts in 30 days is luck observed after the fact, not evidence the
   setting was closed. [[worker-box-network-perimeter-2026-09-24]].
+
+**From 2026-10-01, assistant-side:**
+
+- **This file said "NOT merged" about merged code a fifth and a sixth time.** The founder reported
+  on 2026-10-01 that every fix branch is merged, `fix/sumit-return-unconfirmed` included, and git
+  confirms it. `fix/sumit-return-unconfirmed` merged 2026-09-22 (PR #53) and was called unmerged here for nine
+  days after that, while it was also the gate on announcing prices. `fix/inp-08-ffmpeg-inputs`
+  merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
+  by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
+  remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
 ## What landed (2026-09-19) — the landing repositioning, `landing/two-services`, MERGED as PR #49 (`495ac43`)
 
@@ -747,10 +770,12 @@ the 2026-09-26 custom domain (founder-reported):**
      defect this day is named for ([[first-real-purchase-2026-09-21]],
      [[sumit-return-failure-invited-a-second-payment]]). **Not refunded** — by decision, and a new
      terminal has no Upay balance to refund from anyway (queue item 0.4).
-  8. **Announce prices — STILL OPEN, and now gated on more than step 7.** Do not announce until
-     `fix/sumit-return-unconfirmed` is merged and live on the web: until then, any Sumit timeout or
-     5xx during a return tells a customer who has paid to pay again. **Do not touch
-     `developers/testterminal` on the real org.**
+  8. **Announce prices — STILL OPEN.** Its named gate, `fix/sumit-return-unconfirmed` merged and
+     live on the web, is **met**. The merge is MEASURED (PR #53, an ancestor of `origin/main`
+     `d57b60a`), and serving on Vercel production is FOUNDER-REPORTED 2026-10-01. Nothing else here
+     moves: steps 3 and 4 above are still open, and **do not touch `developers/testterminal` on the
+     real org.** The prices themselves stand
+     ([[0068-prices-stand-no-free-tier-trials-by-hand]]).
 - **Drop the last two landing stills** — `hookStudioShot` (step 3, a hook-studio screenshot) and
   `instagramShot` (`#proof`). Every clip slot was filled 2026-09-25 — `demoBefore`/`demoAfter`,
   the four hook clips, the presenter — from the founder's own files, web-encoded into
@@ -804,6 +829,10 @@ distinct, every inbound link uses the full filename), but `[[0047]]` is ambiguou
 0059 were taken **above** the highest number rather than filling a gap, because renumbering a
 published note breaks the links pointing at it. Renumber or leave it — a founder call.
 
+- **How a trial user is told about a hand grant — OPEN, 2026-10-01, the founder's call.** `/privacy`
+  promises operational email only, and a grant notice is not on its list unless it answers
+  something the person wrote. [[0068-prices-stand-no-free-tier-trials-by-hand]] §3. The free-tier
+  question itself reopens when there is trial data (do trial users pay?), not before.
 - **Three questions from the slim-CLAUDE.md branch — OPEN, 2026-09-29.** (1) Does the migration
   gate's "anything that writes to the database" cover CLI, worker and local-web runs that write
   production rows, or only schema/ledger/ad-hoc SQL writes? (2) What is the report's last line when

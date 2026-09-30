@@ -1,12 +1,42 @@
 ---
 type: fact
 status: verified
-verified: 2026-08-31
-method: "code read at f3a6778, NOT a production query: grep of every creditLedger insert (all five live in packages/core/src/pipelines/credits.ts), grep insert(subscriptions) repo-wide, grep 'FOR (INSERT|ALL|UPDATE|DELETE)' over supabase/migrations, callers of grantCredits/grantPeriod; independently re-checked by an adversarial pass that tried to refute it and could not"
+verified: 2026-10-01
+method: "code read at f3a6778, NOT a production query: grep of every creditLedger insert (all five live in packages/core/src/pipelines/credits.ts), grep insert(subscriptions) repo-wide, grep 'FOR (INSERT|ALL|UPDATE|DELETE)' over supabase/migrations, callers of grantCredits/grantPeriod; independently re-checked by an adversarial pass that tried to refute it and could not. RE-READ 2026-10-01 at origin/main d57b60a, the same method, still code only (no production query): every insert(creditLedger) outside tests is still one of the five in credits.ts (:67, :94, :115, :134, :169); grantCredits' only production caller is still apps/admin/src/app/api/admin/grants/route.ts:24; grantPeriod now has three production callers (packages/core/src/pipelines/checkout.ts:469, billing.ts:176, billing.ts:359) and one dev script (packages/core/scripts/seed-subscription.ts:103); insert(subscriptions) outside tests is checkout.ts:464 and that script's :92; getBillingGateway billing.ts:52-65; handle_new_user is still defined only in supabase/migrations/0002_supabase_rls.sql:11-26 and inserts into public.users alone; all 24 CREATE POLICY statements in supabase/migrations are FOR SELECT (counted with an awk pass over each statement's FOR clause)."
 source: code
 ---
 
 # An account that has never paid cannot reach a positive credit balance
+
+## Re-read 2026-10-01 at `d57b60a` — STILL HOLDS, for a different reason
+
+Billing went live on 2026-09-21 ([[0062-hosted-checkout-via-sumit-payment-pages]]), so the
+section below headed "Why `grantPeriod` cannot fire" describes the pre-billing tree and is no longer
+true. `grantPeriod` fires in production now. **The headline survives, because every production path
+to it sits behind a real payment:**
+
+| path to a positive row                                       | what stands in front of it                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `grantCredits` (`credits.ts:108`)                            | unchanged — the admin grant route, `requireAdmin`                                                                                                                                                                                                                                |
+| `completeCheckout` → `grantPeriod` (`checkout.ts:469`)       | a Sumit payment that Sumit reports valid, whose amount equals the intent's plan price (₪150 at the least), whose customer matches, and whose `ExternalIdentifier` is our intent id (`checkout.ts:384-401`). The only production insert into `subscriptions` (`:464`) is here too |
+| `processDueRenewals` → `grantPeriod` (`billing.ts:176`)      | an existing live subscription with a recurring ref, and a charge the gateway reports ok                                                                                                                                                                                          |
+| `changePlan` upgrade → `grantPeriod` (`billing.ts:359`)      | an `active` subscription, and a charge the gateway reports ok                                                                                                                                                                                                                    |
+| `packages/core/scripts/seed-subscription.ts` (`:92`, `:103`) | DEV ONLY and founder-run: a local script that refuses without `DRY_RUN`. It can write to production, because every local `.env` points there, so it is a founder action like the admin grant, not a customer path                                                                |
+
+`DryRunGateway`, the one gateway that reports a charge ok without money, now refuses to be built
+against the production database (`billing.ts:52-65`). A subscription for the renewal and upgrade
+rows to act on comes only from a paid checkout or the dev script. The signup trigger and the RLS
+picture are unchanged: `handle_new_user` inserts into `public.users` only, and all 24 policies the
+migrations create are `FOR SELECT`, so no client can write the ledger or a subscription directly.
+
+**What moved in "What this means" below:** the rates it cites are the pre-0043 ones. They are now
+`a_steps_credits` 25, `a_demo_analysis_credits` 20 and `b_minimum_credits` 75
+([[credit-costs-row]], carried, not re-queried), all positive, so a zero balance is still refused
+at confirm. `assertAffordable` is `packages/core/src/pipelines/sets.ts:975`. What the balance does
+not bound — the Claude calls behind the wizard pages, capped per account instead — is in
+[[0068-prices-stand-no-free-tier-trials-by-hand]] §4.
+
+## The 2026-08-31 read, kept as written
 
 **This is a code read at HEAD, not a production query.** Nobody ran a select against the live
 database; the claim is about what the code can do, not about what any ledger currently holds.

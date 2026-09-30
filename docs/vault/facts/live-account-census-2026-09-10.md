@@ -1,12 +1,27 @@
 ---
 type: fact
-status: verified
+status: superseded
+superseded_by: "[[0068-prices-stand-no-free-tier-trials-by-hand]]"
 verified: 2026-09-10
 method: "Founder ran `select email, role from users order by created_at;` against the live project (hyaqydcmwbnbaiqqufow) on 2026-09-10 and reported the result in chat, plus the statement that all six accounts are his own. Recorded independently in docs/legal/database-definitions-document.md:133-138. The email addresses are deliberately not reproduced — see below."
 source: founder
 ---
 
 # Six accounts on live, one admin, and all six are the founder's
+
+> **STALE since 2026-10-01: the event this note names has happened.** The founder reports that the
+> first person who is not the founder signed up that day
+> ([[0068-prices-stand-no-free-tier-trials-by-hand]] §4). So "zero third-party customers have ever
+> signed up" is no longer true, and six is no longer the account count. **No new census has been
+> run**, so the current count is not known here. The note is not falsified: it was true when it was
+> measured and it expired exactly the way it said it would. The body below is kept as written.
+>
+> **One thing this corrects elsewhere.** The 2026-09-11 banners on
+> [[0041-content-policy-is-accepted-not-fixed]] ("That event arrived") and
+> [[content-policy-classifier-never-runs]] describe this event as having arrived on 2026-09-11. It
+> had not, literally. [[0042-content-policy-is-wired-at-both-choke-points]] says what happened that
+> day: "The founder is opening the product to strangers. That is the event." The first non-founder
+> signup is 2026-10-01 (founder-reported). Those banners were left as written.
 
 `users` holds **six** rows: **one** `role='admin'` and **five** `role='customer'`. The admin account
 is the founder's (`hamodetaha.ht`, the address in CLAUDE.md's own context). **All six accounts are

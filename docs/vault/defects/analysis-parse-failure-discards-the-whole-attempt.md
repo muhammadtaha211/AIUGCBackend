@@ -10,6 +10,11 @@ source: code
 
 ## FIXED 2026-09-20 — the net, on branch `fix/analysis-frame-salvage`; NOT deployed to the worker box
 
+> **MERGED 2026-09-20 as PR #51 (`27ee842`), both commits.** It is an ancestor of `origin/main`
+> `d57b60a` (MEASURED 2026-10-01, `git merge-base --is-ancestor`) and of `4100cc7`. The box reported
+> `4100cc7` on 2026-09-21 (founder-reported, [[state-of-play]] queue item 1). The "not merged / not
+> deployed" lines in this note were true when they were written.
+
 **What shipped (commit 1 of 2, "one invalid frame drops that frame, not the whole attempt").** The
 rejection unit is now the frame, not the batch, and a billed call is in the ledger whatever its body
 holds. Read in the tree AFTER prettier:

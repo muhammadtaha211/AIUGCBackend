@@ -230,7 +230,9 @@ still breaks every checkout — it just fails politely now. No automatic retry w
 
 **Not merged, not deployed** when this was written: branch `fix/sumit-return-unconfirmed`. The
 Hebrew line for the new landing is marked COPY PENDING FOUNDER REVIEW in
-`apps/web/src/lib/plans-ui.ts`.
+`apps/web/src/lib/plans-ui.ts`. _(Merged 2026-09-22 as PR #53, `0cca4fa`. It is an ancestor of
+`origin/main` `d57b60a`, MEASURED 2026-10-01. Serving on Vercel production is founder-reported,
+2026-10-01.)_
 
 ## Related
 

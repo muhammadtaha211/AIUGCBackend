@@ -34,6 +34,11 @@ source: code
 
 ## FIXED 2026-09-25 on branch `fix/inp-08-ffmpeg-inputs`
 
+> **MERGED 2026-09-25 as PR #63 (`93ba67e`).** `65114f8` and the branch tip `61dc439` are ancestors
+> of `origin/main` `d57b60a` (MEASURED 2026-10-01, `git merge-base --is-ancestor`). **Whether the
+> worker box runs it is NOT known.** The last box commit on record is `4100cc7` (2026-09-21), which
+> does not contain it.
+
 **What was open.** Every ffmpeg/ffprobe spawn in the repo goes through one choke point —
 `runRaw`/`run` in `packages/core/src/media/ffmpeg.ts` — and none of them constrained what protocol
 an input could open (`-protocol_whitelist`) or what demuxer a container could be parsed with

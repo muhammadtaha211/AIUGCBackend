@@ -10,6 +10,11 @@ source: founder + code
 
 ## FIXED 2026-09-21 — on branch `fix/sumit-return-unconfirmed`; NOT merged, NOT deployed
 
+> **MERGED 2026-09-22 as PR #53 (`0cca4fa`).** `7ec6005` and the branch tip `f942d22` are ancestors
+> of `origin/main` `d57b60a`: MEASURED 2026-10-01 with `git merge-base --is-ancestor`. **Serving on
+> Vercel production** is FOUNDER-REPORTED 2026-10-01 and is not checkable from the repo. The heading
+> above was true when it was written. What this fix does not fix, listed below, still stands.
+
 The generic catch no longer lands on `?checkout=failed`. That landing — the only Hebrew line
 that invites another attempt — is now reachable **only** when Sumit positively answered that
 the payment is not valid (`CheckoutVerificationError` reason `payment_invalid`, i.e.
