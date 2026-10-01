@@ -184,6 +184,14 @@ export const MAX_HAMMING = 14;
 /** A state must persist >=2 sampled frames — a single glare/shake frame is noise. */
 export const MIN_CLUSTER_FRAMES = 2;
 
+/** The rate the recording is sampled at, clamped to >=1 (ffmpeg fails on 0).
+ *  Every stored timestampMs sits on its grid, round(i*1000/fps). The step plan
+ *  reads the same knob: a step's screen ends one sample after the last state
+ *  still on it (decision 0072). */
+export async function analysisFps(db: Db): Promise<number> {
+  return Math.max(1, await getConfigValueOr(db, "a_analysis_fps", z.number(), 5));
+}
+
 /** Rough cost bookkeeping — same math as pipelines/copy.ts (2nd use; extract at the 3rd). */
 function llmCostAgorot(inputTokens: number, outputTokens: number): number {
   return Math.ceil(((inputTokens * 3 + outputTokens * 15) / 1_000_000) * 370);
@@ -651,9 +659,12 @@ const REFILM_MESSAGE =
  * unreadable state, one duplicate and two login states so downstream rules
  * (the inventory's unreadable exclusion, the plan pass's
  * never-select-unreadable and never-select-skip-kind rules) run for real.
- * The six selectable product states sit >= MIN_STEP_MS apart on purpose —
- * the canned plan is the happy path, so it must select all of them under the
- * min-gap walk.
+ * Each of the five product screens is held by a second state after its first
+ * (a duplicate, a typing, a scroll, an unreadable frame), the way real
+ * clustering splits a screen. A step runs to its screen's end since 0070, so a
+ * screen caught by one state alone would give that state a one-sample clip and
+ * no caption; held like this, the five first states run 1.8-4s, sit >=
+ * MIN_GAP_MS apart, and the canned plan — the happy path — selects all five.
  */
 function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
   const states: Omit<AnalysisState, "thumbPath">[] = [
@@ -702,7 +713,7 @@ function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
       salienceNote: null,
     },
     {
-      timestampMs: 4000,
+      timestampMs: 4800,
       screenName: "מסך הבית",
       visibleText: ["הפרויקטים שלי"],
       action: "אותו מסך, כמעט ללא שינוי",
@@ -724,7 +735,7 @@ function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
       salienceNote: null,
     },
     {
-      timestampMs: 9000,
+      timestampMs: 8600,
       screenName: "פרויקט חדש",
       visibleText: ["שם הפרויקט", "קמפיין קיץ"],
       action: "הקלדת שם הפרויקט",
@@ -735,7 +746,7 @@ function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
       salienceNote: null,
     },
     {
-      timestampMs: 12000,
+      timestampMs: 9800,
       screenName: "בחירת תבנית",
       visibleText: ["בחרו תבנית", "מודעה", "פוסט"],
       action: "בחירת תבנית מהרשימה",
@@ -746,10 +757,10 @@ function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
       salienceNote: "בחירת תבניות מוכנות — לא מוזכר בשאלון",
     },
     {
-      timestampMs: 13500,
-      screenName: "עורך",
-      visibleText: [],
-      action: "גלילה בעורך — ברק על המסך",
+      timestampMs: 11600,
+      screenName: "בחירת תבנית",
+      visibleText: ["מודעה", "פוסט", "סטורי"],
+      action: "גלילה ברשימת התבניות — ברק על המסך",
       actionType: "scroll",
       screenKind: "product",
       sameStateAsPrevious: false,
@@ -757,18 +768,7 @@ function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
       salienceNote: null,
     },
     {
-      timestampMs: 14500,
-      screenName: "לא ברור",
-      visibleText: [],
-      action: "המסך לא קריא בפריים הזה",
-      actionType: "idle",
-      screenKind: "other",
-      sameStateAsPrevious: false,
-      legibility: "unreadable",
-      salienceNote: null,
-    },
-    {
-      timestampMs: 15500,
+      timestampMs: 12800,
       screenName: "עורך",
       visibleText: ["שמירה", "תצוגה מקדימה"],
       action: "לחיצה על שמירה",
@@ -779,7 +779,18 @@ function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
       salienceNote: null,
     },
     {
-      timestampMs: 18500,
+      timestampMs: 14400,
+      screenName: "עורך",
+      visibleText: [],
+      action: "המסך לא קריא בפריים הזה",
+      actionType: "idle",
+      screenKind: "other",
+      sameStateAsPrevious: false,
+      legibility: "unreadable",
+      salienceNote: null,
+    },
+    {
+      timestampMs: 16000,
       screenName: "הצלחה",
       visibleText: ["הקמפיין נוצר!", "שיתוף"],
       action: "מסך ההצלחה — הפרויקט מוכן",
@@ -966,7 +977,7 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
 
     // Knobs clamped to >=1: zero/negative values would loop forever (batch
     // slicing), reject good footage (empty subsample) or fail ffmpeg (fps).
-    const fps = Math.max(1, await getConfigValueOr(ctx.db, "a_analysis_fps", z.number(), 5));
+    const fps = await analysisFps(ctx.db);
     const hashes = await frameHashes(localDemo, { fps });
     const timestamps = hashes.map((_, i) => Math.round((i * 1000) / fps));
     const clusters = clusterStates(hashes, timestamps, {

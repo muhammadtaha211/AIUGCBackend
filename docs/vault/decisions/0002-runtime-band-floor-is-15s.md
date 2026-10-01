@@ -35,3 +35,14 @@ plan burned the corrective retry and failed. This is the deterministic half of t
 Reason: kills the failure class structurally without adding fabrication pressure. The uniform-3s
 pacing (every step exactly the floor) stands as the format's shipped behaviour; the per-kind table
 and caption-length timing rules stay in code, revivable via `app_config` rows.
+
+## Amended 2026-10-01
+
+The sentence "The uniform-3s pacing (every step exactly the floor) stands as the format's shipped
+behaviour" is superseded. The 3 s floor was an undecided default
+([[0071-the-3s-step-floor-was-an-undecided-default]]). Steps now run to their screen's end, capped at
+4 s, with no floor ([[0072-step-cap-no-padding-cut-early]]). So the per-kind table and the floor are
+deleted, not revivable through `app_config`.
+
+**The rest of this decision stands:** the band floor is 15 s, and the reason (never force padding)
+still binds the step-count bounds.

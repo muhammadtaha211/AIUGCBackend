@@ -62,23 +62,33 @@ function state(overrides: Partial<AnalysisState>): AnalysisState {
 }
 
 // The a179f069 shape in miniature: the success state (5) sits mid-recording
-// and the timeline keeps going after it. 3s apart so the only violation these
-// mocks produce is the one under test — states closer together than a step is
-// long are a violation of their own, and every plan below lands inside the
-// runtime band (each unsqueezed step runs the 3s floor).
+// and the timeline keeps going after it. One page worked down: every state
+// carries the same screenName and none after the first navigates, so no
+// screen change cuts a step (decision 0070) — each runs until the next
+// selected state, or the 4s cap. 3s apart so the only violation these mocks
+// produce is the one under test: states closer together than the shortest
+// caption are a violation of their own, and every plan below lands inside
+// the runtime band.
+const PAGE = "קמפיין חדש";
 const TIMELINE: AnalysisState[] = [
-  state({ timestampMs: 0, visibleText: ["פתיחה"], actionType: "navigate" }),
-  state({ timestampMs: 3000, visibleText: ["בחירה"] }),
-  state({ timestampMs: 6000, visibleText: ["הקלדה"], actionType: "type" }),
-  state({ timestampMs: 9000, visibleText: ["אישור"], actionType: "select" }),
-  state({ timestampMs: 12_000, visibleText: ["גלילה"], actionType: "scroll" }),
-  state({ timestampMs: 15_000, visibleText: ["הצלחה"], actionType: "result" }),
-  state({ timestampMs: 18_000, visibleText: ["המשך"], actionType: "navigate" }),
+  state({ timestampMs: 0, screenName: PAGE, visibleText: ["פתיחה"], actionType: "navigate" }),
+  state({ timestampMs: 3000, screenName: PAGE, visibleText: ["בחירה"] }),
+  state({ timestampMs: 6000, screenName: PAGE, visibleText: ["הקלדה"], actionType: "type" }),
+  state({ timestampMs: 9000, screenName: PAGE, visibleText: ["אישור"], actionType: "select" }),
+  state({ timestampMs: 12_000, screenName: PAGE, visibleText: ["גלילה"], actionType: "scroll" }),
+  state({ timestampMs: 15_000, screenName: PAGE, visibleText: ["הצלחה"], actionType: "result" }),
+  state({ timestampMs: 18_000, screenName: PAGE, visibleText: ["המשך"], actionType: "tap" }),
 ];
 
-/** 7 legal labels (21000ms at the 3s floor), success state selected mid-plan,
- *  ends past it — exactly one violation (the last-step shape rule), like
- *  a179f069's first call. */
+/** demos.duration_ms of this recording: the last step's ceiling. 20s gives
+ *  the success (15s) its full 4s cap and the trailing tap (18s) 2000ms —
+ *  without it the recording would end one sample after the tap, and a
+ *  200ms clip would put a read-time violation on top of the one under test. */
+const RECORDING_MS = 20_000;
+
+/** 7 legal labels (20000ms: six 3000ms gaps and the trailing tap's 2000ms),
+ *  success state selected mid-plan, ends past it — exactly one violation
+ *  (the last-step shape rule), like a179f069's first call. */
 const ENDS_PAST_SUCCESS = {
   object: {
     steps: [
@@ -97,8 +107,9 @@ const ENDS_PAST_SUCCESS = {
 };
 
 /** Still ends past the success state, but a DIFFERENT plan — state 1 dropped
- *  (6 steps, 18000ms, still only the last-step violation) — so the third
- *  call's prompt provably echoes THIS plan, not the first one. */
+ *  (6 steps, 18000ms: state 0 runs the 4s cap into the gap 1 left; still
+ *  only the last-step violation) — so the third call's prompt provably
+ *  echoes THIS plan, not the first one. */
 const STILL_PAST_SUCCESS = {
   object: {
     steps: [
@@ -116,9 +127,9 @@ const STILL_PAST_SUCCESS = {
 };
 
 /** The mechanical fix the violation message asks for: the trailing step
- *  dropped, leaving 6 steps (18000ms) ending on the success state. `notes` is
- *  null on purpose — it waives the last-step rule only, and this plan does
- *  not need waiving. */
+ *  dropped, leaving 6 steps (19000ms — the success, last now, runs the full
+ *  4s cap) ending on the success state. `notes` is null on purpose — it
+ *  waives the last-step rule only, and this plan does not need waiving. */
 const FIXED = {
   object: {
     steps: [
@@ -169,7 +180,11 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
       .mockResolvedValueOnce(ENDS_PAST_SUCCESS)
       .mockResolvedValueOnce(FIXED);
 
-    const draft = await generateStepPlan(db, { timeline: TIMELINE, questionnaire: QUESTIONNAIRE });
+    const draft = await generateStepPlan(db, {
+      timeline: TIMELINE,
+      questionnaire: QUESTIONNAIRE,
+      recordingMs: RECORDING_MS,
+    });
 
     expect(generateObject).toHaveBeenCalledTimes(2);
     const retryPrompt = (generateObject.mock.calls[1]![0] as { prompt: string }).prompt;
@@ -188,8 +203,10 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     expect(draft.steps[draft.steps.length - 1]!.actionType).toBe("result");
     expect(draft.notes).toBeNull();
     // One round per call; a clean second call closes with an empty round.
+    // The first round is the last-step rule alone — the clips on this
+    // timeline put no read-time or band violation beside it.
     expect(draft.retryViolations).toHaveLength(2);
-    expect(draft.retryViolations[0]!.length).toBeGreaterThan(0);
+    expect(draft.retryViolations[0]).toHaveLength(1);
     expect(draft.retryViolations[1]).toEqual([]);
   });
 
@@ -200,7 +217,11 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
       .mockResolvedValueOnce(STILL_PAST_SUCCESS)
       .mockResolvedValueOnce(FIXED);
 
-    const draft = await generateStepPlan(db, { timeline: TIMELINE, questionnaire: QUESTIONNAIRE });
+    const draft = await generateStepPlan(db, {
+      timeline: TIMELINE,
+      questionnaire: QUESTIONNAIRE,
+      recordingMs: RECORDING_MS,
+    });
 
     expect(generateObject).toHaveBeenCalledTimes(3);
     const thirdPrompt = (generateObject.mock.calls[2]![0] as { prompt: string }).prompt;
@@ -223,6 +244,7 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     const thrown = await generateStepPlan(db, {
       timeline: TIMELINE,
       questionnaire: QUESTIONNAIRE,
+      recordingMs: RECORDING_MS,
     }).then(
       () => null,
       (err: unknown) => err,
@@ -244,7 +266,11 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
   it("a clean first call never pays for a second", async () => {
     generateObject.mockReset().mockResolvedValueOnce(FIXED);
 
-    const draft = await generateStepPlan(db, { timeline: TIMELINE, questionnaire: QUESTIONNAIRE });
+    const draft = await generateStepPlan(db, {
+      timeline: TIMELINE,
+      questionnaire: QUESTIONNAIRE,
+      recordingMs: RECORDING_MS,
+    });
 
     expect(generateObject).toHaveBeenCalledTimes(1);
     expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3, 4, 5]);
@@ -261,7 +287,11 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     // and the word is stored on the step for the editor to mark.
     generateObject.mockReset().mockResolvedValueOnce(OFF_SCREEN);
 
-    const draft = await generateStepPlan(db, { timeline: TIMELINE, questionnaire: QUESTIONNAIRE });
+    const draft = await generateStepPlan(db, {
+      timeline: TIMELINE,
+      questionnaire: QUESTIONNAIRE,
+      recordingMs: RECORDING_MS,
+    });
 
     expect(generateObject).toHaveBeenCalledTimes(1);
     expect(draft.retryViolations).toEqual([[]]);
@@ -285,6 +315,7 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
       timeline: TIMELINE,
       questionnaire: QUESTIONNAIRE,
       demoDescription: "מצלמים את הקופה בסוף",
+      recordingMs: RECORDING_MS,
     });
     expect(generateObject).toHaveBeenCalledTimes(1);
     expect((generateObject.mock.calls[0]![0] as { prompt: string }).prompt).toContain(
@@ -298,7 +329,11 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     // v13 on disk with no demo_description in the vars fails every plan. The
     // sentinel is what makes the pair deployable.
     generateObject.mockReset().mockResolvedValueOnce(FIXED);
-    await generateStepPlan(db, { timeline: TIMELINE, questionnaire: QUESTIONNAIRE });
+    await generateStepPlan(db, {
+      timeline: TIMELINE,
+      questionnaire: QUESTIONNAIRE,
+      recordingMs: RECORDING_MS,
+    });
     expect((generateObject.mock.calls[0]![0] as { prompt: string }).prompt).toContain(
       "(אין — התבסס על השאלון והמסכים בלבד)",
     );
@@ -317,6 +352,8 @@ describe("handlePlanDemoSteps diagnostics (0029)", () => {
           status: "ready",
           rawPath: "assets/x/raw.mp4",
           description: "תיאור הדמו",
+          // The handler and updatePlanSteps read the recording's end here.
+          durationMs: RECORDING_MS,
         })
         .returning()
     )[0]!;

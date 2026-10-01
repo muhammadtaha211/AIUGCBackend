@@ -48,7 +48,16 @@
     "[2]: state 7 (5600ms) sits outside the drop zone and 3800ms after the pin, so it survives. The",
     "recording has genuine result states, so no allowNotes: a live run drifting from this set is DRIFT",
     "to read, not a failure to fix. Re-pin only from a live plan the founder has reviewed.",
-    ""
+    "",
+    "",
+    "2026-10-01 (decisions 0070/0072 — a step ends on a real screen change): recordingMs 89582 is",
+    "demos.duration_ms of 29c5ed05, read 2026-10-01. The pin moves 2 -> 1: the run [1, 2, 3, 5] sits",
+    "on the New Tab screen, which the code ends at 4400ms (one sample past state 5), and state 1",
+    "(1200ms) is the earliest candidate whose clip reaches that end inside the 4s cap — the pin now",
+    "shows the address typed through to the end, 3200ms. THE PIN, DERIVED above is superseded. The",
+    "live sourceIndexes take the new pin; dryRunSourceIndexes re-derived to [1, 14, 26, 29, 47, 49].",
+    "The live colour is unverified under plan_demo_steps@v15 until a paid regress — state 16 has",
+    "800ms to its screen's end and can no longer carry a caption."
   ],
   "questionnaire": {
     "wow": "test",
@@ -59,6 +68,7 @@
     "what_it_does": "test",
     "target_audience": "הורים לילדים קטנים"
   },
+  "recordingMs": 89582,
   "timeline": [
     {
       "action": "User has opened a new tab and the address bar shows recent search suggestions.",
@@ -1151,7 +1161,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [2, 7, 16, 23, 26, 44, 49],
-    "dryRunSourceIndexes": [2, 9, 14, 24, 29, 44, 49]
+    "sourceIndexes": [1, 7, 16, 23, 26, 44, 49],
+    "dryRunSourceIndexes": [1, 14, 26, 29, 47, 49]
   }
 }

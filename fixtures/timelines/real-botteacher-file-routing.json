@@ -19,7 +19,13 @@
     "v10: the 11->12 gap is exactly 1600ms, where v10's broken first row and readTimeMs agree, and",
     "v10 capped that band at three words too — it never licensed six. v10's row was wrong only",
     "for gaps in [1400, 1600). What went wrong here is the model not applying a rule the prompt",
-    "states correctly, which no table can fix."
+    "states correctly, which no table can fix.",
+    "",
+    "2026-10-01 (decisions 0070/0072 — a step ends on a real screen change): no recordingMs — this",
+    "recording's length was never kept with the fixture, so the last state gets one sample",
+    "(recordingEndMs). dryRunSourceIndexes re-derived from the canned planner under the screen",
+    "rule: [0, 12, 20, 29, 36] -> [3, 11, 12, 16, 39, 44, 58]. sourceIndexes (live) untouched and",
+    "unverified under plan_demo_steps@v15 until a paid regress."
   ],
   "questionnaire": {
     "category": "app_or_digital",
@@ -1403,6 +1409,6 @@
   ],
   "expected": {
     "sourceIndexes": [1, 2, 3, 12, 36],
-    "dryRunSourceIndexes": [0, 12, 20, 29, 36]
+    "dryRunSourceIndexes": [3, 11, 12, 16, 39, 44, 58]
   }
 }

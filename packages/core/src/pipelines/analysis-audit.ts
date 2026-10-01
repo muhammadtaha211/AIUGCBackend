@@ -10,6 +10,7 @@ import { WORK_DIR } from "../paths";
 import { PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
 import { getStorage } from "../storage";
 import {
+  analysisFps,
   analysisTimelineSchema,
   MAX_HAMMING,
   MIN_CLUSTER_FRAMES,
@@ -366,7 +367,7 @@ export async function auditDemo(
     )[0];
     if (!analysis) throw new Error(`demo ${demoId} has no ready analysis`);
     // Clamped exactly as handleAnalyzeDemo clamps them.
-    const fps = Math.max(1, await getConfigValueOr(tx as Db, "a_analysis_fps", z.number(), 5));
+    const fps = await analysisFps(tx as Db);
     const maxStates = Math.max(
       1,
       Math.floor(await getConfigValueOr(tx as Db, "a_analysis_max_states", z.number(), 80)),

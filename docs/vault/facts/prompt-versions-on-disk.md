@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-09-08
-method: "for d in prompts/*/; do ls $d | sort -V; done (2026-09-08; re-run 2026-09-28 — every family identical except group_analysis_states, which gained v2 for [[0064-the-inventory-is-one-tier]]; the DB reads below were NOT re-run); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run); b_script rows by version: select prompt_version, count(*) from scripts where kind = 'b_script' and created_at > now() - interval '30 days' group by 1 (2026-09-08 03:30 UTC: v12 19, v10 8, v9 12)"
+verified: 2026-10-01
+method: "for d in prompts/*/; do ls $d | sort -V; done (2026-09-08; re-run 2026-10-01 — plan_demo_steps gained v15, every other family as on 2026-09-28; re-run 2026-09-28 — every family identical except group_analysis_states, which gained v2 for [[0064-the-inventory-is-one-tier]]; the DB reads below were NOT re-run); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run); b_script rows by version: select prompt_version, count(*) from scripts where kind = 'b_script' and created_at > now() - interval '30 days' group by 1 (2026-09-08 03:30 UTC: v12 19, v10 8, v9 12)"
 source: code
 ---
 
@@ -16,7 +16,7 @@ content_policy        v1                                    (latest v1)
 group_analysis_states v1 v2                                 (latest v2, new 2026-09-28)
 hook_lines            v1..v7                                (latest v7)
 hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
-plan_demo_steps       v1..v14                               (latest v14, new 2026-09-15)
+plan_demo_steps       v1..v15                               (latest v15, new 2026-10-01)
 tts_enhance           v1..v4                                (latest v4)
 vo_script             v1..v9                                (latest v9, new 2026-09-11)
 ```
@@ -89,6 +89,14 @@ plan_demo_steps v13 (2026-08-25) adds `{{demo_description}}` — the new-var res
 the file landed while two pre-change workers were live, and both had to be restarted in the same
 session. Its other change deletes v12's "keep five and write the uncapped ones long" route, which
 was arithmetically false under the shipped constants ([[0002-runtime-band-floor-is-15s]]).
+
+plan_demo_steps v15 (2026-10-01, [[0072-step-cap-no-padding-cut-early]]) keeps v14's vars, so there is no
+new-var crash. But the code that fills them changed in the same commit: every `{{timeline}}` entry
+now carries `clipMs`, and `{{timing}}` explains it. v15's prose says a clip runs until its screen
+changes and leans on `clipMs`, so a process started before the pull would render it without
+`clipMs`. Pull and restart together; the box's usual recipe does both. v14's "cut off by the next
+state YOU selected" and "runs its floor length" were false after the change. **The model's behaviour
+under v15 is unverified until a paid regress.**
 
 ## Resolution is "highest number wins", numerically
 

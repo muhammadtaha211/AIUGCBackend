@@ -40,6 +40,27 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**Steps end on a real screen change** — branch `feat/steps-end-on-screen-change`, **pushed, NOT
+merged, NOT deployed, NOT on the box** ([[0070-a-step-ends-on-a-real-screen-change]],
+[[0071-the-3s-step-floor-was-an-undecided-default]], [[0072-step-cap-no-padding-cut-early]]).
+
+- **The rule.** A step's clip runs from the picked state to its screen's end (2 of 3 analysis
+  signals, cut one sample after the last state on the screen), at most 4 s, never past the next
+  selected step or the recording's end. There is no floor; CLAUDE.md #1 is amended.
+- **The evidence.** MEASURED: 24 of 95 stored plan steps ran past a screen change, and 12 released
+  renders carry a jump ([[stored-plans-under-the-screen-rule-2026-10-01]],
+  [[screen-change-signal-2026-10-01]]).
+- **To take effect** it needs the merge, Vercel, and a box pull + worker restart **together**: prompt
+  `plan_demo_steps@v15` reads `clipMs`, which only the new code sends.
+- **Waiting on the founder:**
+  - a paid `aiugc plan regress` to see v15's live behaviour;
+  - any backfill of the 17 stored plans. They keep their old durations until edited.
+- **For the founder to watch:** the local A/B renders of plan ca8d5b72 are in
+  `packages/core/.work/steps-screen/renders/` (gitignored, his machine only).
+
+**The demo-analysis refilm gate counts `unreadable` only since 2026-10-01** — branch
+`fix/legibility-gate-unreadable-only`. MEASURED 2026-10-01: its commit 0778c5a is an ancestor of
+`origin/main` 67448de (PR #72, merged). **No box read says the box runs it**
 **The hook line's colour is set per clip by the founder since 2026-10-01** — branch
 `feat/hook-text-color`, **migration 0049 APPLIED to production 2026-10-01, branch PUSHED, NOT
 merged, NOT on the box** — the push and the apply each on the founder's explicit go for that one
@@ -800,6 +821,17 @@ the 2026-09-26 custom domain (founder-reported):**
   it — `git pull`, `pnpm install`, restart, `git log -1`** (2026-10-01,
   [[0069-the-refilm-gate-counts-unreadable-only]], `docs/07-worker-box.md` §11). The gate runs only in the worker, so the Vercel deploy alone changes
   nothing. Gate the restart on no `running` jobs. Then re-upload the demo that `e4be3bce` rejected.
+  (MEASURED 2026-10-01: the merge is done — PR #72; the box half is still owed.)
+- **Review, merge and deploy `feat/steps-end-on-screen-change`** (2026-10-01,
+  [[0072-step-cap-no-padding-cut-early]]). It changes code on both axes: Vercel (the plan edit route,
+  the analysis route) and the box (the plan job).
+  - **The box must `git pull` and restart in one go.** Prompt v15 is read per call and expects the
+    `clipMs` only the new code sends.
+  - **Then decide two paid or data steps:**
+    - a live `aiugc plan regress` (CARRIED estimate ~₪0.50 per fixture, the six-word file's own figure; five files) to see v15's
+      behaviour;
+    - whether to re-save or backfill the stored plans whose released renders jump: ca8d5b72,
+      3799ef3b, bc429f16, ba616a37, f26f1fd1, e47f3ffb. Untouched, they render exactly as approved.
 - **Take the Sumit checkout live — DONE 2026-09-21 except step 8.** Kept with a status per step,
   because the order is the useful part and because a rebuild would follow it again:
   1. ~~Merge and deploy~~ **DONE** — PR #52, `4100cc7`, on Vercel and on the box.

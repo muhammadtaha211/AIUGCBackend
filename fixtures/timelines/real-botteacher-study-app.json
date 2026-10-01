@@ -46,7 +46,13 @@
     "  State 5 sits at exactly 10200ms = the drop zone's open end, so it is selectable — it is the",
     "  \"BotTeacher - מסך טעינה\" screen, legal here only because this v2-era analysis carries no",
     "  screenKind (the prompt's prose skips it live).",
-    "  expected.sourceIndexes (live) untouched: allowNotes keeps this fixture green on its note."
+    "  expected.sourceIndexes (live) untouched: allowNotes keeps this fixture green on its note.",
+    "",
+    "2026-10-01 (decisions 0070/0072 — a step ends on a real screen change): recordingMs 122561 is",
+    "CARRIED as in the six-word fixture, not re-measured. The pin moves 4 -> 1: the run [1, 4] sits",
+    "on one screen the code ends at 5600ms, and state 1 (2600ms) reaches that end inside the 4s cap,",
+    "running 3000ms. dryRunSourceIndexes re-derived to [1, 5, 20, 43, 52, 61, 78]. sourceIndexes",
+    "(live, allowNotes) untouched — it already holds state 1."
   ],
   "questionnaire": {
     "tone": "friendly",
@@ -60,6 +66,7 @@
     "what_it_does": "פלטפורמה שהופכת את כל חומרי הלימוד שלך לזיכרון אקדמי אחד, חי ומתעדכן: כל מורה AI כאן כבר מכיר את הקורסים, ההיסטוריה, הלו\"ז, המבחנים הקרובים והמטרות שלך, מהשנייה הראשונה.",
     "target_audience": "סטודנטים 18-30"
   },
+  "recordingMs": 122561,
   "timeline": [
     {
       "action": "User has opened a new browser tab and clicked the address bar.",
@@ -2021,6 +2028,6 @@
   "expected": {
     "sourceIndexes": [1, 13, 36, 42, 49, 56, 78, 79],
     "allowNotes": true,
-    "dryRunSourceIndexes": [4, 5, 20, 43, 50, 79]
+    "dryRunSourceIndexes": [1, 5, 20, 43, 52, 61, 78]
   }
 }
