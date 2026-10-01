@@ -232,7 +232,9 @@ export const demoStepPlans = pgTable(
     // AFTER that call (last entry empty on success). Written on success AND
     // failure: the per-rule/per-version failure rate is computed from this.
     // (0029) Shape rules only since 0049: label provenance never drives a
-    // round any more, it lands on each step's offScreenWords instead.
+    // round any more, it lands on each step's offScreenWords instead. A READY
+    // row whose last entry is non-empty was stored by the last-round repair
+    // (decision 0074); its prompt_version ends "+repaired".
     retryViolations: jsonb("retry_violations"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

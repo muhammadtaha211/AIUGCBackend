@@ -45,21 +45,50 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-change]],
 [[0071-the-3s-step-floor-was-an-undecided-default]], [[0072-step-cap-no-padding-cut-early]]).
 
-- **The first live v15 plan failed** (MEASURED, read-only, 2026-10-01). Plan `bd0913b4` (demo
-  `28161296`, the founder's own 84 s walkthrough of tavnit.ai, analysis `4219e82e`, 65 states) ended
-  `failed` / `fail_kind = validator` after all 3 calls (`usage_events`: 31 + 32 + 32 = 95 agorot).
-  - **Round 1:** state 9 was picked with a 1.2 s clip and a 7-word caption; total 14.8 s.
-  - **Round 2:** the retry said "cut it to 2 words or fewer". That is impossible under the 3-word
-    floor, so the model wrote 3 words, still 0.4 s short.
-  - **Round 3:** it swapped state 9 for a 4.0 s state and landed at 21.6 s, 0.6 s over. Dropping
-    the step would have given 17.6 s and passed.
-  - **The fix:** branch `fix/steps-plan-ladder`, not yet merged. The read-time message stops
-    offering a rewrite when no 3-word caption fits, and offers "drop this step" for a screen cut.
-    The too-short and too-long messages now give each step's run and the overshoot. Code only: no
-    prompt file or version change, and the box plan job is the only reader.
-  - **The fix's effect on the model is REASONED, not measured.** Replaying the reconstructed rounds
-    (their totals match the stored violations exactly) shows round 2 now offering the drop that
-    passes. Only a live retry shows what the model does with it.
+- **The first two live v15 plans both failed** (MEASURED, read-only, 2026-10-01), on the founder's
+  own 84 s walkthrough of tavnit.ai. It was uploaded three times that day (demos `dfa291b6`,
+  `28161296`, `24e348bf`, identical state timestamps); the failures are on the second and third.
+  - **`bd0913b4`** (demo `28161296`, analysis `4219e82e`, 65 states), created 12:41:56 UTC: `failed`
+    / `validator` after all 3 calls (`usage_events`: 31 + 32 + 32 = 95 agorot). Round 1 picked
+    state 9 on a 1.2 s clip; round 2 kept it; round 3 swapped it for a 4.0 s state and landed at
+    21.6 s, 0.6 s over.
+  - **`fix/steps-plan-ladder` is MERGED** as PR #75 (`a21da11` on `origin/main`, MEASURED by
+    `git log`): the read-time message offers "drop this step" when no 3-word caption fits, and the
+    band messages give each step's run. **FOUNDER-REPORTED:** the box showed `a21da11` by
+    `git log -1` and was restarted before the second failure.
+  - **`ce687d4a`** (demo `24e348bf`, analysis `6658999c`), created 15:17:58 UTC: `failed` /
+    `validator` again, on the new wording. The model moved one caption from state 12 to state 11
+    and back, both 200 ms clips, and never dropped it
+    ([[pr-75-retry-advice-gets-the-model-to-drop-the-step]]).
+  - **FOUNDER-REPORTED:** Vercel logged a 404 on `GET /api/demos/[id]/plan` at 12:39:13 and at
+    15:16:30 UTC. Each precedes its plan row (12:41:56 and 15:17:58, MEASURED). MEASURED in the
+    code: that route answers 404 while the demo has no plan row. REASONED from the two: these are
+    the wizard polling before the plan was requested, not a fault. The route's other 404, a demo
+    that is missing or not the caller's, is not ruled out by anything measured here.
+- **The answer: `fix/steps-plan-repair`, COMMITTED LOCALLY, NOT pushed** (2026-10-01,
+  [[0074-unpickable-moments-and-the-last-round-repair]]). Push, PR, deploy and the box wait for the
+  founder's OK.
+  - The model is sent only states whose own clip can carry a caption (1.6 s), plus the pin. A pick
+    of a hidden state is stripped.
+  - When the third call still violates, code drops the steps whose caption cannot be read, trims
+    a total over 21 s by the shortest step that is enough, and stores the plan as a ready draft:
+    not held to the 15 s floor or the 5-step minimum, never under 3 steps.
+  - Every model plan's `prompt_version` now carries `+pickable`; a repaired one adds `+repaired`.
+  - MEASURED with a mocked model on the two real timelines: `bd0913b4`'s last round is stored at
+    19.6 s, 5 steps; a `6658999c` last round carrying state 12 is stored without it.
+    **What the model does with the smaller timeline is unmeasured** until a live plan runs.
+  - Code only, no prompt change, no migration. **The box is the only axis:** `git pull` and a
+    worker restart.
+  - MEASURED: 51 of the 151 screens in the 14 ready analyses offer the model no moment, 24 of
+    them on screen for 1.6 s or longer ([[screens-with-no-pickable-moment-2026-10-01]]). The cut
+    rule is untouched; that count is evidence for a later call.
+  - MEASURED in the tree: a customer cannot regenerate from a ready draft. The wizard has no such
+    control; `aiugc demo plan` does it from the CLI.
+  - **Found while exporting test data:** the analyses of this recording carry other browser tabs'
+    titles and address-bar history rows in `visibleText` (the tab strip and the omnibox were in
+    frame). Those rows are in production as analysed and went to the plan model with the rest of
+    the timeline. Nothing of them is in the repo: the two test-data files hold placeholder tokens
+    in place of every word. A regex scan for emails and phone numbers finds none of it.
 
 - **The rule.** A step's clip runs from the picked state to its screen's end (2 of 3 analysis
   signals, cut one sample after the last state on the screen), at most 4 s, never past the next
@@ -70,8 +99,9 @@ restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-ch
 - **To take effect** it needed the merge, Vercel, and a box pull + worker restart **together**: prompt
   `plan_demo_steps@v15` reads `clipMs`, which only the new code sends. Done (see above).
 - **Waiting on the founder:**
-  - a paid `aiugc plan regress` to see v15's live behaviour. The one live data point so far is the
-    failure above;
+  - a paid `aiugc plan regress` to see v15's live behaviour. The live data points so far are the
+    two failures above. Every fixture's live pin now includes states the model is no longer shown
+    ([[timeline-fixtures]]), so that run reads as drift to review, not as green or red;
   - any backfill of the 17 stored plans. They keep their old durations until edited.
 - **For the founder to watch:** the local A/B renders of plan ca8d5b72 are in
   `packages/core/.work/steps-screen/renders/` (gitignored, his machine only).
@@ -839,11 +869,14 @@ the 2026-09-26 custom domain (founder-reported):**
   [[0069-the-refilm-gate-counts-unreadable-only]], `docs/07-worker-box.md` §11). The gate runs only in the worker, so the Vercel deploy alone changes
   nothing. Gate the restart on no `running` jobs. Then re-upload the demo that `e4be3bce` rejected.
   (MEASURED 2026-10-01: the merge is done — PR #72; the box half is still owed.)
-- **Review and merge `fix/steps-plan-ladder`, then `git pull` and restart the box** (2026-10-01).
-  The first live v15 plan failed on retry advice the model could not take (see "Steps end on a real
-  screen change" above). The plan job is the only reader, so Vercel changes nothing here. Then
-  retry the plan on demo `28161296` from the wizard (one paid ladder, at most ~₪1) and read the new
-  row's `retry_violations`.
+- **~~Review and merge `fix/steps-plan-ladder`~~ MERGED as PR #75 (`a21da11`); on the box
+  (founder-reported).** It did not stop the failure: the next live plan failed on the new wording.
+- **Review `fix/steps-plan-repair`, then say go for the push and the PR** (2026-10-01,
+  [[0074-unpickable-moments-and-the-last-round-repair]]). It is committed in this checkout and NOT
+  pushed. After the merge: `git pull` and restart the box (the plan job is the only reader, so
+  Vercel changes nothing here). Then retry the plan on demo `24e348bf` or `28161296` from the
+  wizard (one paid ladder, at most ~₪1) and read the new row's `prompt_version`, which must carry
+  `+pickable`, and its `retry_violations`.
 - **~~Review, merge and deploy `feat/steps-end-on-screen-change`~~ MERGED as PR #74, deployed and on
   the box** (2026-10-01, [[0072-step-cap-no-padding-cut-early]]; the deploy and the box restart are
   founder-reported).

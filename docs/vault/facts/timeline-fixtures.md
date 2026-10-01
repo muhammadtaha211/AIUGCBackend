@@ -2,7 +2,7 @@
 type: fact
 status: verified
 verified: 2026-10-01
-method: "2026-10-01: the DRY_RUN regress over all five (runPlanRegression) and node over each file's expected block after the screen-change re-pin. Earlier: node -e over each file for state counts and expected block; git show b60b5b6 -- fixtures/timelines/ for the last change; each file's own _comment quoted verbatim"
+method: "2026-10-01 (0074): timelineClipMs and planPromptTimeline over each fixture by inline tsx from packages/core (cap 4000, sample 200, the file's recordingMs), against expected.sourceIndexes, expected.dryRunSourceIndexes and every actionType result state. 2026-10-01: the DRY_RUN regress over all five (runPlanRegression) and node over each file's expected block after the screen-change re-pin. Earlier: node -e over each file for state counts and expected block; git show b60b5b6 -- fixtures/timelines/ for the last change; each file's own _comment quoted verbatim"
 source: code
 ---
 
@@ -46,6 +46,31 @@ now carries an optional `recordingMs`, the last step's ceiling:
 `plan_demo_steps@v15` until a paid run.** On tavnit, state 16 has 800 ms to its screen's end and can
 no longer carry a caption, so that live pin is expected red. Each fixture's `_comment` gained a
 dated paragraph explaining its moves.
+
+## The live pins against the pickable timeline (2026-10-01, decision 0074)
+
+[[0074-unpickable-moments-and-the-last-round-repair]] stops showing the model any state whose own
+clip is under 1 600 ms. **MEASURED** (`timelineClipMs` and `planPromptTimeline` over each file, cap
+4000, sample 200, the file's `recordingMs`; inline tsx from `packages/core`):
+
+| file           | offered / states | live pins the model is no longer shown (index:clip ms) | `result` states offered |
+| -------------- | ---------------- | ------------------------------------------------------ | ----------------------- |
+| campaign-app   | 4 / 12           | 6:200, 7:200, 10:200, 11:1500                          | none (11 hidden)        |
+| file-routing   | 27 / 61          | 1:200, 2:200, 36:200                                   | none (15, 36 hidden)    |
+| six-word-label | 28 / 80          | 47:200, 74:200, 79:1000                                | none (79 hidden)        |
+| study-app      | 36 / 80          | 13:1400, 42:200, 49:200, 79:1000                       | none (41, 45, 79)       |
+| tavnit         | 32 / 53          | 7:1200, 16:800, 44:200                                 | 26, 36, 49 (44 hidden)  |
+
+- **Every live `sourceIndexes` set is now unreachable**, not only tavnit's. A paid
+  `aiugc plan regress` cannot set-match four of them; study-app can still pass through `allowNotes`.
+  Re-pinning needs a live plan the founder has reviewed. The files' `expected` blocks and
+  `_comment`s were not touched.
+- **No `dryRunSourceIndexes` entry is hidden**, and the DRY_RUN branch returns before the model's
+  timeline is built, so the keyless regress is unchanged and still passes all five.
+- On four of the five, **no `result` state is offered**. Prompt `v15` then tells the model to end
+  on its best journey and write the customer-visible "no clear finish" note. On production the
+  same day, all 14 ready analyses keep at least one
+  ([[screens-with-no-pickable-moment-2026-10-01]]).
 
 ## Pinned values, as of `b60b5b6`
 

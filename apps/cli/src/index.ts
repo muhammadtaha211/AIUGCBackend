@@ -478,6 +478,10 @@ plan
           console.log(`     expected [${r.expected.join(", ")}]`);
           console.log(`     actual   [${r.actual.join(", ")}]`);
         }
+        if (r.repaired) {
+          console.log("     REPAIRED by code — not the model's own answer; its last call left:");
+          for (const v of r.repaired) console.log(`       - ${v}`);
+        }
         for (const s of r.steps) console.log(`     ${s.sourceIndex}: ${s.label}`);
         if (r.notes) console.log(`     note: ${r.notes}`);
       }

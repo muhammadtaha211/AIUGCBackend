@@ -33,8 +33,9 @@ import { createTestDb } from "./helpers/pglite";
  * plan — without the echo the model reinvents the plan blind (seen live: the
  * retry dropped the success state the first call had correctly selected).
  * The ladder is capped at MAX_CORRECTIVE_CALLS=2 correctives — 3 model calls
- * total, ever — and a still-violating third answer is a PlanViolationError
- * carrying the diagnostics the 0029 columns record.
+ * total, ever — and a still-violating third answer the last-round repair
+ * cannot store (plan-repair.test.ts) is a PlanViolationError carrying the
+ * diagnostics the 0029 columns record.
  */
 
 const QUESTIONNAIRE: Questionnaire = {
@@ -255,7 +256,9 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     const violation = thrown as PlanViolationError;
     expect(violation.message).toMatch(/after retry/);
     expect(violation.failKind).toBe("validator");
-    expect(violation.promptVersion).toMatch(/^plan_demo_steps@v\d+$/);
+    // "+pickable": the timeline the model saw held only pickable moments
+    // (decision 0074). No pin on this timeline, and nothing was repaired.
+    expect(violation.promptVersion).toMatch(/^plan_demo_steps@v\d+\+pickable$/);
     expect(violation.rounds).toHaveLength(3);
     for (const round of violation.rounds) expect(round.length).toBeGreaterThan(0);
     // The last-step rule is neither fabrication nor a skip-kind pick, so the
@@ -397,7 +400,7 @@ describe("handlePlanDemoSteps diagnostics (0029)", () => {
     expect(failed.status).toBe("failed");
     expect(failed.failKind).toBe("validator");
     // In hand before the throw — the NULL-on-failure defect, closed.
-    expect(failed.promptVersion).toMatch(/^plan_demo_steps@v\d+$/);
+    expect(failed.promptVersion).toMatch(/^plan_demo_steps@v\d+\+pickable$/);
     const rounds = failed.retryViolations as string[][];
     expect(rounds).toHaveLength(3);
     for (const round of rounds) expect(round.length).toBeGreaterThan(0);
