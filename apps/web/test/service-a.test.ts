@@ -107,6 +107,24 @@ describe("request schemas", () => {
     ).toBe(false);
   });
 
+  it("steps render body: the hook line's colour is never taken from the customer (0073)", () => {
+    // The founder sets it per clip; the render reads the clip row. A colour in
+    // the body is stripped, so the route has nothing to forward.
+    const parsed = aStepsRenderRequestSchema.safeParse({
+      demoId: UUID,
+      stepPlanId: UUID,
+      hookClipId: UUID,
+      hookLineScriptId: UUID,
+      textColor: "black",
+      hookTextColor: "black",
+      hookTextInk: { fill: "black", outline: "255,255,255" },
+    });
+    expect(parsed.success).toBe(true);
+    expect(Object.keys(parsed.data!).sort()).toEqual(
+      ["demoId", "hookClipId", "hookLineScriptId", "stepPlanId"].sort(),
+    );
+  });
+
   it("demo description caps at 500 chars; blank is fine (it clears)", () => {
     expect(demoDescriptionRequestSchema.safeParse({ description: "גלילה בתפריט" }).success).toBe(
       true,

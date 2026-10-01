@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { HOOK_TEXT_COLORS, type HookTextColor } from "@aiugc/core/hook-text-color";
+import { HOOK_TEXT_COLOR_LABEL } from "@/lib/hooks";
 import { apiFetch } from "@/lib/use-api";
 import type { PersonaOption } from "./hooks-manager";
 import { SafeAreaEditor, SafeAreaOverlay } from "./safe-area-editor";
@@ -13,6 +15,8 @@ export type HookClipCard = {
   durationMs: number;
   tags: Record<string, string>;
   textSafeArea: SafeRect;
+  /** The colour this clip's Service A hook line burns in (decision 0073). */
+  textColor: HookTextColor;
   active: boolean;
   /** Persona this clip belongs to; absent = shown to nobody (the wizard lists per persona). */
   personaId?: string;
@@ -30,8 +34,8 @@ type HookCardProps = {
 /**
  * One bank clip: looping muted preview with the safe-area rectangle drawn on
  * it, inline active toggle (the retire mechanism — there is no delete), the
- * safe-area editor for fixing coordinates after upload, a persona picker, and
- * the duplicate-to-persona action. Every action is a PATCH (or a prefill
+ * safe-area editor for fixing coordinates after upload, the hook line's text
+ * colour, a persona picker, and the duplicate-to-persona action. Every action is a PATCH (or a prefill
  * handoff) followed by router.refresh() — the server page owns the grid.
  */
 export function HookCard({ clip, personas, onDuplicate }: HookCardProps) {
@@ -88,7 +92,7 @@ export function HookCard({ clip, personas, onDuplicate }: HookCardProps) {
           }`}
         />
         {editing ? (
-          <SafeAreaEditor rect={rect} onChange={setRect} />
+          <SafeAreaEditor rect={rect} onChange={setRect} textColor={clip.textColor} />
         ) : (
           <SafeAreaOverlay rect={clip.textSafeArea} />
         )}
@@ -170,6 +174,21 @@ export function HookCard({ clip, personas, onDuplicate }: HookCardProps) {
 
         {!editing && (
           <div className="flex flex-col gap-1">
+            {/* The colour its Service A hook line burns in — the founder's
+                call per clip, never the customer's (decision 0073). */}
+            <select
+              value={clip.textColor}
+              disabled={busy}
+              onChange={(event) => void patch({ textColor: event.target.value })}
+              className="h-7 w-full rounded border border-white/10 bg-white/5 px-1 text-[11px] text-gray-300 focus:border-accent focus:outline-none"
+              aria-label="צבע הטקסט"
+            >
+              {HOOK_TEXT_COLORS.map((color) => (
+                <option key={color} value={color}>
+                  {HOOK_TEXT_COLOR_LABEL[color]}
+                </option>
+              ))}
+            </select>
             {/* The clip's own persona assignment. */}
             <select
               value={clip.personaId ?? ""}

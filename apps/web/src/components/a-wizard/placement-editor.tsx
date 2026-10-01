@@ -11,6 +11,7 @@ import {
   type FramePoint,
   type SafeRect,
 } from "@aiugc/core/hook-geometry";
+import { HOOK_TEXT_INK, type HookTextColor } from "@aiugc/core/hook-text-color";
 import { fitFontSize, HOOK_FONT } from "@aiugc/remotion/text-fit";
 
 /**
@@ -71,9 +72,17 @@ type PlacementEditorProps = {
   onChange: (rect: SafeRect) => void;
   /** The customer's current hook line — rendered live inside the rect. */
   text: string;
+  /** The clip's text colour (decision 0073); absent = white, which is what
+   *  Service B's effect step draws. */
+  textColor?: HookTextColor;
 };
 
-export function PlacementEditor({ rect, onChange, text }: PlacementEditorProps) {
+export function PlacementEditor({
+  rect,
+  onChange,
+  text,
+  textColor = "white",
+}: PlacementEditorProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
   const [displayWidth, setDisplayWidth] = useState(0);
@@ -91,6 +100,8 @@ export function PlacementEditor({ rect, onChange, text }: PlacementEditorProps) 
 
   const scale = displayWidth / HOOK_FRAME.width;
   const outline = 5 * scale;
+  const ink = HOOK_TEXT_INK[textColor];
+  const shade = `rgba(${ink.outline},0.92)`;
 
   function toFrame(event: React.PointerEvent): FramePoint {
     const bounds = boxRef.current!.getBoundingClientRect();
@@ -157,8 +168,8 @@ export function PlacementEditor({ rect, onChange, text }: PlacementEditorProps) 
             fontWeight: 800,
             fontSize: frameFontSize * scale,
             lineHeight: HOOK_FONT.lineHeight,
-            color: "white",
-            textShadow: `${outline}px ${outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${outline}px 0 rgba(0,0,0,0.92), ${outline}px ${-outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${-outline}px 0 rgba(0,0,0,0.92)`,
+            color: ink.fill,
+            textShadow: `${outline}px ${outline}px 0 ${shade}, ${-outline}px ${outline}px 0 ${shade}, ${outline}px ${-outline}px 0 ${shade}, ${-outline}px ${-outline}px 0 ${shade}`,
           }}
         >
           {/* isolate, not plaintext — must match HookLine in the composition:

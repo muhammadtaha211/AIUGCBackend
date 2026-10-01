@@ -247,6 +247,13 @@ export const serviceAStepsSchema = z.object({
   hookSrc: z.string(),
   hookLine: z.string(),
   hookTextSafeArea: textSafeAreaSchema,
+  /**
+   * The hook line's fill, and the rgb ("r,g,b") its outline is drawn in —
+   * the values behind the clip's colour name, resolved in core
+   * (hook-text-color.ts, decision 0073). Absent = white on the dark outline,
+   * the hook line every render burned before it. Step labels never take it.
+   */
+  hookTextInk: z.object({ fill: z.string(), outline: z.string() }).optional(),
   /** ONE demo file; every step mounts it with a different trim — no concat,
    *  no intermediate encode. */
   demoSrc: z.string(),

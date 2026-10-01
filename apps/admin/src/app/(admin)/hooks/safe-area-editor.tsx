@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { HOOK_TEXT_INK, type HookTextColor } from "@aiugc/core/hook-text-color";
 import { fitFontSize, HOOK_FONT } from "@aiugc/remotion/text-fit";
 import {
   HOOK_FRAME,
@@ -19,7 +20,8 @@ import {
  * its body to move, drag a corner to resize — all state in 1080x1920 frame
  * space, converted from pointer positions via the pure geometry in lib/hooks.
  * A sample Hebrew hook line renders inside at approximately composition
- * styling so the founder sees what actually fits before a render does.
+ * styling, in the clip's text colour, so the founder sees what actually fits
+ * and reads before a render does.
  */
 
 const SAMPLE_HOOK_LINE = "זה מה שאף אחד לא מספר לכם";
@@ -41,9 +43,11 @@ type DragState =
 type SafeAreaEditorProps = {
   rect: SafeRect;
   onChange: (rect: SafeRect) => void;
+  /** The colour the clip's hook line burns in (decision 0073); absent = white. */
+  textColor?: HookTextColor;
 };
 
-export function SafeAreaEditor({ rect, onChange }: SafeAreaEditorProps) {
+export function SafeAreaEditor({ rect, onChange, textColor = "white" }: SafeAreaEditorProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
   const [displayWidth, setDisplayWidth] = useState(0);
@@ -86,6 +90,8 @@ export function SafeAreaEditor({ rect, onChange }: SafeAreaEditorProps) {
 
   const scale = displayWidth / HOOK_FRAME.width;
   const outline = 5 * scale;
+  const ink = HOOK_TEXT_INK[textColor];
+  const shade = `rgba(${ink.outline},0.92)`;
 
   function toFrame(event: React.PointerEvent): FramePoint {
     const bounds = boxRef.current!.getBoundingClientRect();
@@ -152,8 +158,8 @@ export function SafeAreaEditor({ rect, onChange }: SafeAreaEditorProps) {
             fontWeight: 800,
             fontSize: frameFontSize * scale,
             lineHeight: HOOK_FONT.lineHeight,
-            color: "white",
-            textShadow: `${outline}px ${outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${outline}px 0 rgba(0,0,0,0.92), ${outline}px ${-outline}px 0 rgba(0,0,0,0.92), ${-outline}px ${-outline}px 0 rgba(0,0,0,0.92)`,
+            color: ink.fill,
+            textShadow: `${outline}px ${outline}px 0 ${shade}, ${-outline}px ${outline}px 0 ${shade}, ${outline}px ${-outline}px 0 ${shade}, ${-outline}px ${-outline}px 0 ${shade}`,
           }}
         >
           {/* isolate, not plaintext — must match HookLine in the composition:

@@ -61,6 +61,7 @@ export const PORTABLE_MIGRATIONS = [
   "0046_terms_acceptances.sql",
   "0047_feedback_anonymous.sql",
   "0048_checkout_intents.sql",
+  "0049_hook_clips_text_color.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

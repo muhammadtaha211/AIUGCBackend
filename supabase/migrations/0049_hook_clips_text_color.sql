@@ -1,0 +1,38 @@
+-- Hand-written. Portable SQL: applies to any Postgres (Supabase, PGlite, plain PG).
+
+-- hook_clips learns the colour its Service A hook line burns in (decision 0073,
+-- founder 2026-10-01: "just let me set the color to either black or white,
+-- from the admin page"). Legibility depends on the clip, the bank is
+-- founder-curated, so the founder sets it per clip in admin /hooks; the
+-- customer never sees or picks it.
+--
+--   text_color  'white' | 'black', stored as a NAME, never a hex. The values
+--               behind each name (fill + outline) live in
+--               packages/core/src/hook-text-color.ts, so a retune is a
+--               deploy, never a rewrite of these rows.
+--
+-- Text with a CHECK, not an enum (0048's reasoning): an enum value is its own
+-- migration. The constant DEFAULT fills every existing row with 'white' -- the
+-- hook line every clip burns today -- and covers any insert that names no
+-- colour (`aiugc bank add-hook`, the admin register without a choice). On
+-- PG11+ a constant default is metadata-only, no table rewrite.
+--
+-- One statement, idempotent: IF NOT EXISTS skips the whole column definition,
+-- its CHECK included, when the column is already there.
+ALTER TABLE "hook_clips" ADD COLUMN IF NOT EXISTS "text_color" text DEFAULT 'white' NOT NULL CONSTRAINT "hook_clips_text_color_check" CHECK ("text_color" IN ('white', 'black'));
+
+-- ---------------------------------------------------------------------------
+-- VERIFY BY READ-BACK, BEFORE AND AFTER:
+--
+--   select column_name, data_type, is_nullable, column_default
+--     from information_schema.columns
+--    where table_name = 'hook_clips' and column_name = 'text_color';
+--   select conname from pg_constraint
+--    where conrelid = 'public.hook_clips'::regclass
+--      and conname = 'hook_clips_text_color_check';
+--   select text_color, count(*) from hook_clips group by 1;
+--
+-- BEFORE expect zero rows from all three (the third errors: no such column).
+-- AFTER expect: text_color | text | NO | 'white'::text; the one constraint;
+-- and a single 'white' row counting every clip.
+-- ---------------------------------------------------------------------------

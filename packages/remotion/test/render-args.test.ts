@@ -9,7 +9,7 @@ import {
   renderServiceASteps,
   renderServiceB,
 } from "../src/render";
-import type { ServiceBProps } from "../src/schema";
+import type { ServiceAStepsProps, ServiceBProps } from "../src/schema";
 
 const BSF =
   "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1";
@@ -208,6 +208,40 @@ describe("renderServiceB props", () => {
     const props = selectComposition.mock.calls.at(-1)![0].inputProps as ServiceBProps;
     expect(props.brollSrcs).toEqual([]);
     expect(props.hookZoom?.sfxSrc).toBeUndefined();
+  });
+});
+
+/**
+ * The hook line's ink crosses an uncompiled mirror (core's
+ * RenderServiceAStepsProps is cast onto RenderServiceAStepsInput) and then a
+ * zod parse that strips unknown keys, so a dropped or renamed field would
+ * silently burn white. Pin that it reaches the composition (decision 0073).
+ */
+describe("renderServiceASteps props", () => {
+  async function stepsInputProps(hookTextInk?: { fill: string; outline: string }) {
+    for (const name of ["hook.mp4", "demo.mp4"]) writeFileSync(path.join(dir, name), "stub");
+    await renderServiceASteps(
+      {
+        hookClipPath: path.join(dir, "hook.mp4"),
+        hookLine: "בדיקה",
+        hookTextSafeArea: { x: 25, y: 1062, w: 1009, h: 179 },
+        ...(hookTextInk ? { hookTextInk } : {}),
+        demoPath: path.join(dir, "demo.mp4"),
+        steps: [{ startMs: 0, durationMs: 1000, label: "בדיקה" }],
+        watermark: false,
+      },
+      path.join(dir, "out.mp4"),
+    );
+    return selectComposition.mock.calls.at(-1)![0].inputProps as ServiceAStepsProps;
+  }
+
+  it("hands the clip's ink to the composition", async () => {
+    const ink = { fill: "black", outline: "255,255,255" };
+    expect((await stepsInputProps(ink)).hookTextInk).toEqual(ink);
+  });
+
+  it("without an ink the composition gets none — today's white", async () => {
+    expect((await stepsInputProps()).hookTextInk).toBeUndefined();
   });
 });
 

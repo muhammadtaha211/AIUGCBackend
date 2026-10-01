@@ -10,6 +10,7 @@ export * from "./handlers";
 export * from "./hook-effect";
 export * from "./hook-geometry";
 export * from "./hook-text";
+export * from "./hook-text-color";
 export * from "./jobs";
 export { logger, type Logger } from "./logger";
 export { probe, type ProbeResult } from "./media/ffmpeg";

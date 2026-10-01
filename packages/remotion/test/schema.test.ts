@@ -139,4 +139,16 @@ describe("serviceAStepsSchema", () => {
     const steps = [{ startMs: -1, durationMs: 2000, label: "צעד" }];
     expect(serviceAStepsSchema.safeParse({ ...validSteps, steps }).success).toBe(false);
   });
+
+  it("carries the hook line's ink when core sends one, and keeps it through the parse (0073)", () => {
+    const hookTextInk = { fill: "black", outline: "255,255,255" };
+    const parsed = serviceAStepsSchema.safeParse({ ...validSteps, hookTextInk });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.hookTextInk).toEqual(hookTextInk);
+    // Absent is today's white — the schema must not demand it.
+    expect(serviceAStepsSchema.safeParse(validSteps).data?.hookTextInk).toBeUndefined();
+    expect(
+      serviceAStepsSchema.safeParse({ ...validSteps, hookTextInk: { fill: "black" } }).success,
+    ).toBe(false);
+  });
 });

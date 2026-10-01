@@ -165,7 +165,7 @@ keyless (the e2e test relies on this).
   `{x: 25, y: 1062, w: 1009, h: 179}` — moved off the bottom band where TikTok and Instagram draw
   their own caption text and action rail, and sized as the measured two-line envelope. It is a
   **seed for new clip registration only**: the rect stays required at register, and "שכפול לדמות"
-  inherits the source clip's rect instead.
+  inherits the source clip's rect instead — and its hook-text colour, white or black (vault 0073).
 - **Banked for v8, not fixed**: `שרף` should move out of the general intensity list into the
   frustration frames only; POV lines need a one-clause word-order rule (if the speaker performs
   an action, subject first, with `את` where required — one live line came back
