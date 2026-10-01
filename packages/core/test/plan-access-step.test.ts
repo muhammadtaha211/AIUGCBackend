@@ -858,6 +858,15 @@ describe("the pin on a model plan (real DB, mocked Claude)", () => {
     [31, "הסרטון מוכן ליצירה"],
     [49, "הורידו את הסרטון המוכן"],
   ];
+  /** The journey running on past its success state — the ending-rule
+   *  violation the ladder tests need, on states the model is offered. */
+  const PAST_SUCCESS: [number, string][] = [
+    JOURNEY[0]!,
+    JOURNEY[1]!,
+    JOURNEY[3]!,
+    [49, "הורידו את הסרטון"],
+    [51, "צפו בסרטון"],
+  ];
 
   it("pins כנסו לכאן first, drops the model's own way-in and everything in the drop zone, keeps the journey", async () => {
     // The model followed the prompt's rule 4 on a `system` state (5, 4200ms)
@@ -882,7 +891,7 @@ describe("the pin on a model plan (real DB, mocked Claude)", () => {
     // The journey is intact, labels and all.
     expect(draft.steps.slice(1).map((s) => [s.sourceIndex, s.label])).toEqual(JOURNEY);
     // Pinned plans are distinguishable in the row.
-    expect(draft.promptVersion).toBe("plan_demo_steps@v15+access-pin");
+    expect(draft.promptVersion).toBe("plan_demo_steps@v15+pickable+access-pin");
 
     // The model was told: the reduced counts, the reduced band (15-21s minus
     // the pin's 3.2s), the notice.
@@ -915,12 +924,13 @@ describe("the pin on a model plan (real DB, mocked Claude)", () => {
   });
 
   it("the corrective prompt echoes the pin at index 0, and the fixed plan lands pinned", async () => {
-    // Ends past the success state (52 is a tap after the last result, 49).
+    // Ends past the success state: 51 is an idle state after the last result,
+    // 49. (The tap after it, 52, has a 1400ms clip — the model is never
+    // offered it and a pick of it is stripped, decision 0074.) Without 26 the
+    // plan runs 19.2s, so the ending rule is the only violation.
     generateObject
       .mockReset()
-      .mockResolvedValueOnce(
-        plan([...JOURNEY.slice(0, 4), [49, "הורידו את הסרטון"], [52, "צפו בסרטון"]]),
-      )
+      .mockResolvedValueOnce(plan(PAST_SUCCESS))
       .mockResolvedValueOnce(plan(JOURNEY));
 
     const draft = await generateStepPlan(db, tavnit);
@@ -1060,7 +1070,7 @@ describe("the pin on a model plan (real DB, mocked Claude)", () => {
     });
   });
 
-  it("no access moment: the prompt is v15 verbatim and the version is plain", async () => {
+  it("no access moment: the prompt is v15 verbatim and the version carries no pin", async () => {
     generateObject.mockReset().mockResolvedValueOnce(
       plan([
         [0, "פתיחה"],
@@ -1076,7 +1086,8 @@ describe("the pin on a model plan (real DB, mocked Claude)", () => {
       questionnaire: QUESTIONNAIRE,
       recordingMs: PLAIN_RECORDING_MS,
     });
-    expect(draft.promptVersion).toBe("plan_demo_steps@v15");
+    // "+pickable" is on every model plan (decision 0074); "+access-pin" is not here.
+    expect(draft.promptVersion).toBe("plan_demo_steps@v15+pickable");
     expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3, 4, 5]);
     const prompt = (generateObject.mock.calls[0]![0] as { prompt: string }).prompt;
     expect(prompt).not.toContain("The way in is already the first step");
@@ -1096,18 +1107,17 @@ describe("the pin on a model plan (real DB, mocked Claude)", () => {
 
   it("a plan that still violates after the ladder fails with the marked version", async () => {
     // Every call ends past the success state and the ladder is 3 calls, ever.
-    generateObject
-      .mockReset()
-      .mockResolvedValue(
-        plan([...JOURNEY.slice(0, 4), [49, "הורידו את הסרטון"], [52, "צפו בסרטון"]]),
-      );
+    // Nothing in it for the last-round repair to drop: the ending rule stands.
+    generateObject.mockReset().mockResolvedValue(plan(PAST_SUCCESS));
     const thrown = await generateStepPlan(db, tavnit).then(
       () => null,
       (err: unknown) => err,
     );
     expect(generateObject).toHaveBeenCalledTimes(3);
     expect(thrown).toBeInstanceOf(PlanViolationError);
-    expect((thrown as PlanViolationError).promptVersion).toBe("plan_demo_steps@v15+access-pin");
+    expect((thrown as PlanViolationError).promptVersion).toBe(
+      "plan_demo_steps@v15+pickable+access-pin",
+    );
   });
 });
 

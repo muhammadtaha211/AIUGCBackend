@@ -84,7 +84,9 @@ Options offered for the cut, all **MEASURED** on the same 64 steps:
 - **G1:** on the model path, a state whose own clip is under `MIN_GAP_MS` can carry no caption. So it
   is not a required success ending, and it is not counted toward the minimum-steps waiver or the
   reachability DP. **REASONED:** otherwise the ending rule and the read-time rule would demand
-  opposite things of one state, and the plan would die after its three calls.
+  opposite things of one state, and the plan would die after its three calls. **Since
+  [[0074-unpickable-moments-and-the-last-round-repair]]** the model is not shown such a state at
+  all, and a pick of one is stripped before the validator runs. One predicate serves both.
 - **G2:** the access pin's clip must carry "כנסו לכאן" (1200 ms), because the pin is re-pinned every
   round and a read-time violation on it could never be fixed. Which candidate on the address-bar
   screen gets pinned:
@@ -110,6 +112,8 @@ sample)`. `duration_ms` is the raw upload's container length. A missing length f
 
 - **Generated:** "too short" fires only when the exact reachability DP says 15 s is reachable on that
   timeline. The DP now uses screen-bounded clips. Otherwise the plan ships its honest, shorter length.
+  **Since [[0074-unpickable-moments-and-the-last-round-repair]]** "too short" drives the corrective
+  calls only: a plan still under 15 s after the last call is stored as a draft, down to 3 steps.
 - **Human-edited:** never band-checked, as before; the editor's total line shows the number.
 - **Stored plans:** untouched until re-saved. **MEASURED:** under the new rule, 4 of the 17 would land
   under 15 s and 2 over 21 s ([[stored-plans-under-the-screen-rule-2026-10-01]]).

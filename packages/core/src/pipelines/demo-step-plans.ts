@@ -140,6 +140,12 @@ function readTimeMsForWords(words: number): number {
  *  Derived, not a knob — it replaced the 3s step floor (decision 0072). */
 export const MIN_GAP_MS = readTimeMsForWords(MIN_LABEL_WORDS);
 
+/** Whether a state's own clip (timelineClipMs) can carry the shortest caption
+ *  the prompt allows. The ONE definition of a moment the model may pick
+ *  (decision 0074): the timeline it is shown, the picks code strips, the
+ *  validator's shape rules and the canned planner all read it. */
+const captionableClip = (clipMs: number): boolean => clipMs >= MIN_GAP_MS;
+
 /**
  * Every number in the prompt's timing section, GENERATED from readTimeMs and
  * the duration config instead of restated by hand in the markdown.
@@ -884,7 +890,9 @@ function accessNotice(
  * caption, so the shape rules treat it as unselectable: it is never the
  * required ending and never counted toward what the timeline can offer.
  * Otherwise the ending rule and the read-time rule would demand opposite
- * things of the same state and no retry could satisfy both.
+ * things of the same state and no retry could satisfy both. The generation
+ * path goes further (decision 0074): the model is never shown such a state
+ * and a pick of one is stripped before this function sees the plan.
  */
 export function findPlanViolations(
   steps: { sourceIndex: number; label: string }[],
@@ -922,7 +930,7 @@ export function findPlanViolations(
     s.timestampMs >= pinned.runStartMs &&
     s.timestampMs < pinned.dropUntilMs;
   const clips = shape ? timelineClipMs(timeline, shape.bounds) : [];
-  const captionable = (index: number): boolean => clips[index]! >= MIN_GAP_MS;
+  const captionable = (index: number): boolean => captionableClip(clips[index]!);
   /** The per-step legality the two bounds below count — the pin counts
    *  whatever its kind, exactly as the per-step check accepts it. */
   const selectable = (index: number, s: AnalysisState): boolean =>
@@ -1229,10 +1237,12 @@ export interface StepPlanDraft {
   notes: string | null;
   promptVersion: string;
   /** Per model call, the violations found AFTER that call — last entry empty
-   *  on success, [] under DRY_RUN (no calls). Persisted on the plan row so
-   *  the per-rule fix rate is measurable (0029). Shape rules only since 0049:
-   *  label provenance never drives a round, it lands on each step's
-   *  offScreenWords instead. */
+   *  on success, [] under DRY_RUN (no calls). Non-empty last entry on a
+   *  returned draft: the last-round repair stored it (decision 0074), and
+   *  that entry is what the repair cleared or waived. Persisted on the plan
+   *  row so the per-rule fix rate is measurable (0029). Shape rules only
+   *  since 0049: label provenance never drives a round, it lands on each
+   *  step's offScreenWords instead. */
   retryViolations: string[][];
 }
 
@@ -1250,8 +1260,9 @@ function violationCustomerMessage(finalRound: string[]): string {
 }
 
 /**
- * A model plan that still violates after every corrective call. Carries what
- * the diagnostics columns need — the prompt version that failed and every
+ * A model plan that still violates after every corrective call and that the
+ * last-round repair could not store (decision 0074). Carries what the
+ * diagnostics columns need — the prompt version that failed and every
  * round's violations — because the throw is the only channel between
  * generateStepPlan and the handler that writes the row.
  */
@@ -1350,6 +1361,118 @@ export function assembleSteps(
   });
 }
 
+/** The fewest steps the last-round repair may store, the pin counted: one or
+ *  two steps is a failure shown as a ready plan (founder, decision 0074). */
+const REPAIR_MIN_STEPS = 3;
+
+/**
+ * What code does to a model plan that still violates after the last
+ * corrective call, instead of failing it (decision 0074): drop the steps
+ * whose caption cannot be read in their clip, then bring a total over the
+ * band's ceiling under it by dropping steps. Returns the kept selection in
+ * chronological order — the caller decides whether it may be stored — or
+ * null when the plan is not one to repair: an index is outside the timeline
+ * or picked twice, which no drop rule here speaks to, or the caption that
+ * cannot be read is the ending's.
+ *
+ * The ending is the last selected result state. Neither pass drops it: a
+ * plan that loses its success screen is not a draft worth storing, whatever
+ * `notes` says about the ending rule, so an unreadable ending fails the plan
+ * as it always did (founder, decision 0074).
+ *
+ * Dropping a step never shortens another step, never lengthens the total and
+ * never brings two picks closer (a clip only ever gains the room its dropped
+ * neighbour held), so each pass is final:
+ *
+ * Read time — last step to first. A step's clip depends only on the next
+ * step still kept, so by the time a step is judged its clip is settled; a
+ * later drop can rescue an earlier step, never the reverse. A last step that
+ * is not a result state gets no protection here: what cannot be read is
+ * dropped, and the step before it becomes the last.
+ *
+ * Trim — while the total is over `maxMs`: when dropping one step is enough,
+ * the one that leaves the longest ad goes; otherwise the one that shortens it
+ * most, and look again. Ties go to the earlier step. Never the pin, the last
+ * step or the ending: the way in and the way out are what the format cannot
+ * lose. Every total is re-assembled, never subtracted — a dropped step's
+ * time is often absorbed by the step before it on the same screen.
+ */
+export function repairPlanSteps(
+  steps: { sourceIndex: number; label: string }[],
+  timeline: AnalysisState[],
+  bounds: ClipBounds,
+  opts: { maxMs: number; pinnedIndex?: number },
+): { sourceIndex: number; label: string }[] | null {
+  const seen = new Set<number>();
+  for (const { sourceIndex } of steps) {
+    if (!Number.isInteger(sourceIndex) || !timeline[sourceIndex] || seen.has(sourceIndex)) {
+      return null;
+    }
+    seen.add(sourceIndex);
+  }
+  let kept = [...steps].sort(
+    (a, b) => timeline[a.sourceIndex]!.timestampMs - timeline[b.sourceIndex]!.timestampMs,
+  );
+
+  const ending = [...kept].reverse().find((s) => timeline[s.sourceIndex]!.actionType === "result");
+
+  for (let i = kept.length - 1; i >= 0; i--) {
+    const step = assembleSteps(kept, timeline, bounds)[i]!;
+    if (step.durationMs >= readTimeMs(step.label)) continue;
+    if (kept[i] === ending) return null;
+    kept = kept.filter((_, k) => k !== i);
+  }
+
+  const totalOf = (plan: typeof kept): number =>
+    totalRuntimeMs(assembleSteps(plan, timeline, bounds));
+  while (totalOf(kept) > opts.maxMs) {
+    const options = kept
+      .filter((s, i) => s.sourceIndex !== opts.pinnedIndex && i !== kept.length - 1 && s !== ending)
+      .map((dropped) => ({ dropped, leftMs: totalOf(kept.filter((s) => s !== dropped)) }));
+    if (options.length === 0) break;
+    const enough = options.filter((o) => o.leftMs <= opts.maxMs);
+    // Strict comparisons over a chronological list: the earlier step wins a tie.
+    const { dropped } =
+      enough.length > 0
+        ? enough.reduce((a, b) => (b.leftMs > a.leftMs ? b : a))
+        : options.reduce((a, b) => (b.leftMs < a.leftMs ? b : a));
+    kept = kept.filter((s) => s !== dropped);
+  }
+  return kept;
+}
+
+/**
+ * The timeline as the model is shown it (decision 0074): every state whose
+ * own clip can carry a caption, plus the pinned access state — its caption
+ * needs less than the shortest model caption, and the access notice names
+ * it. A moment that cannot carry a caption is never offered, so entries keep
+ * their absolute `index` (the sourceIndex the plan speaks) and the indexes
+ * skip. `clipMs` (v15+) is how long a step started there runs before its
+ * screen changes.
+ */
+export function planPromptTimeline(
+  timeline: AnalysisState[],
+  clips: number[],
+  pinnedIndex?: number,
+) {
+  return timeline
+    .map((s, index) => ({
+      index,
+      timestampMs: s.timestampMs,
+      screenName: s.screenName,
+      visibleText: s.visibleText,
+      action: s.action,
+      actionType: s.actionType,
+      // undefined (v2-era analyses) drops out of the JSON entirely.
+      screenKind: s.screenKind,
+      sameStateAsPrevious: s.sameStateAsPrevious,
+      legibility: s.legibility,
+      salienceNote: s.salienceNote,
+      clipMs: clips[index]!,
+    }))
+    .filter((entry) => entry.index === pinnedIndex || captionableClip(entry.clipMs));
+}
+
 /**
  * The deterministic DRY_RUN plan, derived from the timeline (not hardcoded) so
  * fixtures with other timelines still produce sensible keyless plans: skip
@@ -1371,7 +1494,7 @@ function dryRunPlan(
 ): PlanOutput {
   const indexed = timeline
     .map((state, index) => ({ state, index }))
-    .filter(({ state, index }) => !exclude?.(index, state) && clips[index]! >= MIN_GAP_MS);
+    .filter(({ state, index }) => !exclude?.(index, state) && captionableClip(clips[index]!));
   // The quality pool the canned plan prefers, and the wider pool the validator
   // will actually accept. They are NOT the same set — "low" and idle states
   // are legal steps, they are just poor ones — so a timeline that is mostly
@@ -1504,8 +1627,10 @@ const MAX_CORRECTIVE_CALLS = 2;
 /**
  * Run pass 2 over one timeline: prompt -> zod-validated selection ->
  * deterministic violation check -> up to MAX_CORRECTIVE_CALLS corrective
- * re-requests naming the violations -> fail. Used by the job handler and by
- * `aiugc plan regress` (which is why it takes data, not row ids).
+ * re-requests naming the violations -> the last-round repair -> fail only
+ * when even the repaired plan cannot be stored (decision 0074). Used by the
+ * job handler and by `aiugc plan regress` (which is why it takes data, not
+ * row ids).
  */
 export async function generateStepPlan(
   db: Db,
@@ -1606,24 +1731,9 @@ export async function generateStepPlan(
       }
     : runtime;
 
-  const promptTimeline = opts.timeline.map((s, index) => ({
-    index,
-    timestampMs: s.timestampMs,
-    screenName: s.screenName,
-    visibleText: s.visibleText,
-    action: s.action,
-    actionType: s.actionType,
-    // undefined (v2-era analyses) drops out of the JSON entirely.
-    screenKind: s.screenKind,
-    sameStateAsPrevious: s.sameStateAsPrevious,
-    legibility: s.legibility,
-    salienceNote: s.salienceNote,
-    // v15+: how long a step started here runs before its screen changes.
-    clipMs: clips[index],
-  }));
   const rendered = renderPrompt("plan_demo_steps", {
     questionnaire: JSON.stringify(opts.questionnaire, null, 2),
-    timeline: JSON.stringify(promptTimeline, null, 2),
+    timeline: JSON.stringify(planPromptTimeline(opts.timeline, clips, access?.index), null, 2),
     min: modelMin,
     max: modelMax,
     // v11+. Older prompt files never reference {{timing}} and are unaffected —
@@ -1639,12 +1749,15 @@ export async function generateStepPlan(
     // say where the description would go.
     demo_description: opts.demoDescription?.trim() || "(אין — התבסס על השאלון והמסכים בלבד)",
   });
-  // No access moment: the prompt file verbatim, stamped with its version. A pin: the notice under
-  // it, stamped "+access-pin".
+  // No access moment: the prompt file verbatim. A pin: the notice under it,
+  // stamped "+access-pin". Every model plan is stamped "+pickable" first: the
+  // timeline it was given holds only pickable moments, and rows from before
+  // that (bare "@v15") were given every state — the boundary is on the row
+  // (founder, decision 0074).
   const text = access
     ? `${rendered.text}\n\n${accessNotice(access, opts.timeline, modelMin, modelMax)}`
     : rendered.text;
-  const promptVersion = markVersion(rendered.promptVersion);
+  const promptVersion = markVersion(`${rendered.promptVersion}+pickable`);
 
   // A BudgetError from a later call parks the JOB, and the resume re-runs
   // the first call. That re-pay is self-limiting — it only occurs when the
@@ -1665,10 +1778,23 @@ export async function generateStepPlan(
     return object;
   };
 
-  // Every check runs on the COMBINED plan: the pin first, the model's own
-  // steps after withPin has removed anything that duplicates or crowds it.
-  const combined = (output: PlanOutput): { sourceIndex: number; label: string }[] =>
+  // A model pick of a state it was never offered — its own clip cannot carry
+  // a caption (decision 0074). Stripped in every round, whatever the model
+  // returns, the way withPin strips the drop zone. Indexes outside the
+  // timeline pass through for the validator to name.
+  const isHiddenPick = (step: { sourceIndex: number }): boolean =>
+    Number.isInteger(step.sourceIndex) &&
+    opts.timeline[step.sourceIndex] !== undefined &&
+    step.sourceIndex !== access?.index &&
+    !captionableClip(clips[step.sourceIndex]!);
+  // The pin first, then the model's own steps after withPin has removed
+  // anything that duplicates or crowds it.
+  const pinnedPlan = (output: PlanOutput): { sourceIndex: number; label: string }[] =>
     withPin(output.steps, opts.timeline, access);
+  // Every check runs on the COMBINED plan: the pinned plan minus the picks the
+  // model was never offered.
+  const combined = (output: PlanOutput): { sourceIndex: number; label: string }[] =>
+    pinnedPlan(output).filter((step) => !isHiddenPick(step));
   const validate = (output: PlanOutput): string[] =>
     findPlanViolations(combined(output), opts.timeline, maxSteps, {
       minSteps,
@@ -1705,14 +1831,43 @@ export async function generateStepPlan(
     violations = validate(output);
     rounds.push(violations);
   }
+  let steps = combined(output);
+  // "+repaired" marks a stored plan that is not the model's last answer as
+  // given: a pick was stripped from it, or the repair below stored it. A pick
+  // inside the pin's drop zone is not one — withPin has always removed those.
+  let repaired = pinnedPlan(output).some(isHiddenPick);
   if (violations.length > 0) {
-    throw new PlanViolationError({ promptVersion, rounds });
+    // The last call is spent. Drop what dropping fixes, then hold the plan to
+    // the model's rules minus the two a short draft is forgiven — the runtime
+    // floor and the minimum step count (decision 0074: a short draft the
+    // customer can extend beats a failure). Anything else still violating,
+    // an unreadable ending, or fewer than REPAIR_MIN_STEPS left, fails
+    // exactly as it always did.
+    const fixed = repairPlanSteps(steps, opts.timeline, bounds, {
+      maxMs: runtime.maxMs,
+      pinnedIndex: access?.index,
+    });
+    if (
+      fixed === null ||
+      fixed.length < REPAIR_MIN_STEPS ||
+      findPlanViolations(fixed, opts.timeline, maxSteps, {
+        minSteps: 1,
+        notes: output.notes,
+        bounds,
+        runtime: { minMs: 0, maxMs: runtime.maxMs },
+        pinned,
+      }).length > 0
+    ) {
+      throw new PlanViolationError({ promptVersion, rounds });
+    }
+    steps = fixed;
+    repaired = true;
   }
 
   return {
     // The provenance highlight, computed once on the accepted plan (0049).
     steps: withOffScreenWords(
-      assembleSteps(combined(output), opts.timeline, bounds),
+      assembleSteps(steps, opts.timeline, bounds),
       opts.timeline,
       opts.questionnaire,
       opts.demoDescription,
@@ -1720,7 +1875,7 @@ export async function generateStepPlan(
     ),
     unexplainedMoments: output.unexplainedMoments,
     notes: output.notes,
-    promptVersion,
+    promptVersion: repaired ? `${promptVersion}+repaired` : promptVersion,
     retryViolations: rounds,
   };
 }
@@ -2060,12 +2215,18 @@ export interface PlanRegressionResult {
   steps: { sourceIndex: number; label: string }[];
   notes: string | null;
   error?: string;
+  /** Set when the plan printed is not the model's own answer — the last-round
+   *  repair stored it or a hidden pick was stripped (decision 0074): the
+   *  violations the model's last call left, [] for a strip alone. */
+  repaired?: string[];
 }
 
 /**
  * Re-run pass 2 over every saved fixture and diff the selection. Green/red is
  * the sourceIndex SET (labels vary run to run and are printed for eyeballing,
  * never asserted). Runs against fixture data directly — no rows are written.
+ * A repaired plan is never green: the regress measures the model's answer,
+ * and before the repair existed such a run failed outright.
  */
 export async function runPlanRegression(db: Db): Promise<PlanRegressionResult[]> {
   // A checkout without the directory is the same empty state as no fixtures.
@@ -2094,13 +2255,17 @@ export async function runPlanRegression(db: Db): Promise<PlanRegressionResult[]>
       const setMatch = JSON.stringify(actual) === JSON.stringify(expected);
       const explained =
         (fixture.expected.allowNotes ?? false) && draft.steps.length > 0 && !!draft.notes?.trim();
+      const repaired = draft.promptVersion.endsWith("+repaired");
       results.push({
         fixture: file,
-        pass: setMatch || explained,
+        pass: (setMatch || explained) && !repaired,
         expected,
         actual,
         steps: draft.steps.map((s) => ({ sourceIndex: s.sourceIndex, label: s.label })),
         notes: draft.notes,
+        ...(repaired
+          ? { repaired: draft.retryViolations[draft.retryViolations.length - 1] ?? [] }
+          : {}),
       });
     } catch (err) {
       results.push({
