@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, getStorage, schema } from "@aiugc/core";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import type { HookTextColor } from "@aiugc/core/hook-text-color";
 import { coreErrorResponse, requireUser, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -18,7 +19,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * Without ?personaId= the generic rows come back alone. That is the legacy,
  * CLI-shaped bank listing — no shipped customer flow requests it any more.
  * The clip's default safe area rides along to seed the wizard's placement
- * editor.
+ * editor, and its text colour so the preview draws the line the render burns
+ * (read-only: the founder sets it in admin, decision 0073).
  */
 export async function GET(request: Request) {
   const auth = await requireUser();
@@ -35,6 +37,7 @@ export async function GET(request: Request) {
         durationMs: schema.hookClips.durationMs,
         filePath: schema.hookClips.filePath,
         textSafeArea: schema.hookClips.textSafeArea,
+        textColor: schema.hookClips.textColor,
         personaId: schema.hookClips.personaId,
       })
       .from(schema.hookClips)
@@ -56,6 +59,7 @@ export async function GET(request: Request) {
         durationMs: row.durationMs,
         previewUrl: await storage.signedUrl(row.filePath, SIGNED_URL_TTL_SECONDS),
         textSafeArea: row.textSafeArea as SafeRect,
+        textColor: row.textColor as HookTextColor,
         personaId: row.personaId ?? undefined,
       });
     }

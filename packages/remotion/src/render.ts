@@ -45,6 +45,8 @@ export interface RenderServiceAStepsInput {
   hookClipPath: string;
   hookLine: string;
   hookTextSafeArea: TextSafeArea;
+  /** The hook line's fill + outline rgb (core's hook-text-color.ts); absent = white. */
+  hookTextInk?: { fill: string; outline: string };
   /** ONE demo file; every step trims it. */
   demoPath: string;
   /** Chronological — the server sorts by timestamp before rendering. */
@@ -285,6 +287,7 @@ export async function renderServiceASteps(
       hookSrc: served.urls[0]!,
       hookLine: input.hookLine,
       hookTextSafeArea: input.hookTextSafeArea,
+      hookTextInk: input.hookTextInk,
       demoSrc: served.urls[1]!,
       steps: input.steps,
       watermark: input.watermark,

@@ -3,9 +3,19 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { DEFAULT_HOOK_TEXT_RECT, type SafeRect } from "@aiugc/core/hook-geometry";
+import {
+  DEFAULT_HOOK_TEXT_COLOR,
+  HOOK_TEXT_COLORS,
+  type HookTextColor,
+} from "@aiugc/core/hook-text-color";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
-import { hookFileError, hookMetadataError } from "@/lib/hooks";
+import {
+  HOOK_TEXT_COLOR_LABEL,
+  hookFileError,
+  hookMetadataError,
+  type duplicatePrefill,
+} from "@/lib/hooks";
 import { postJson } from "@/lib/use-api";
 import type { PersonaOption } from "./hooks-manager";
 import { SafeAreaEditor } from "./safe-area-editor";
@@ -18,21 +28,15 @@ import { SafeAreaEditor } from "./safe-area-editor";
  *
  * `prefill` is the "שכפול לדמות" flow: the founder generated a persona-swapped
  * version of an existing clip offline, and the form opens with the source
- * clip's safe area, tags, and target persona already set, source_clip_id
- * recorded for lineage. The parent remounts the form per prefill (key), so
+ * clip's safe area, text colour, tags, and target persona already set,
+ * source_clip_id recorded for lineage. The parent remounts the form per prefill (key), so
  * state initializers below are enough.
  */
 
 const UPLOAD_FAILED = "ההעלאה נכשלה — בדקו את החיבור ונסו שוב.";
 const UNREADABLE = "לא הצלחנו לקרוא את קובץ הווידאו — נסו קובץ אחר.";
 
-export type UploadPrefill = {
-  sourceClipId: string;
-  personaId: string;
-  textSafeArea: SafeRect;
-  tags: Record<string, string>;
-  durationMs: number;
-};
+export type UploadPrefill = ReturnType<typeof duplicatePrefill>;
 
 /** Duration + dimensions off the file's metadata; null when the browser can't decode. */
 function readVideoMetadata(
@@ -75,6 +79,9 @@ export function UploadHook({
     height: number;
   } | null>(null);
   const [rect, setRect] = useState<SafeRect>(prefill?.textSafeArea ?? DEFAULT_HOOK_TEXT_RECT);
+  const [textColor, setTextColor] = useState<HookTextColor>(
+    prefill?.textColor ?? DEFAULT_HOOK_TEXT_COLOR,
+  );
   const [tags, setTags] = useState({
     energy: prefill?.tags.energy ?? "",
     gender: prefill?.tags.gender ?? "",
@@ -90,6 +97,7 @@ export function UploadHook({
     if (prepared) URL.revokeObjectURL(prepared.previewUrl);
     setPrepared(null);
     setRect(DEFAULT_HOOK_TEXT_RECT);
+    setTextColor(DEFAULT_HOOK_TEXT_COLOR);
     setTags({ energy: "", gender: "", vibe: "" });
     setPersonaId("");
     if (inputRef.current) inputRef.current.value = "";
@@ -158,6 +166,7 @@ export function UploadHook({
       width: prepared.width,
       height: prepared.height,
       textSafeArea: rect,
+      textColor,
       tags: trimmed,
       ...(personaId ? { personaId } : {}),
       ...(prefill ? { sourceClipId: prefill.sourceClipId } : {}),
@@ -181,8 +190,8 @@ export function UploadHook({
         {prefill && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg bg-accent/10 px-3 py-2 text-[13px] text-gray-200">
             <span>
-              מעלים גרסה של קליפ קיים לדמות {prefillPersona?.name ?? "?"} — אזור הטקסט והתגיות
-              הועתקו מהמקור
+              מעלים גרסה של קליפ קיים לדמות {prefillPersona?.name ?? "?"} — אזור הטקסט, צבע הטקסט
+              והתגיות הועתקו מהמקור
               <span dir="ltr" className="ms-1 text-gray-400">
                 ({(prefill.durationMs / 1000).toFixed(1)}s)
               </span>
@@ -218,7 +227,7 @@ export function UploadHook({
                   playsInline
                   className="absolute inset-0 size-full object-cover"
                 />
-                <SafeAreaEditor rect={rect} onChange={setRect} />
+                <SafeAreaEditor rect={rect} onChange={setRect} textColor={textColor} />
               </div>
               <p className="mt-1.5 text-[12px] text-gray-500">
                 גוררים על הווידאו כדי לצייר את אזור הטקסט, מזיזים מהאמצע ומשנים גודל מהפינות.
@@ -244,6 +253,22 @@ export function UploadHook({
                   {personas.map((persona) => (
                     <option key={persona.id} value={persona.id}>
                       {persona.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {/* The colour the hook line burns in over this clip (decision
+                  0073) — the preview above draws it live. */}
+              <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
+                צבע הטקסט
+                <select
+                  value={textColor}
+                  onChange={(event) => setTextColor(event.target.value as HookTextColor)}
+                  className="h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
+                >
+                  {HOOK_TEXT_COLORS.map((color) => (
+                    <option key={color} value={color}>
+                      {HOOK_TEXT_COLOR_LABEL[color]}
                     </option>
                   ))}
                 </select>

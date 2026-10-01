@@ -193,7 +193,12 @@ export function StepHookStudio({
               playsInline
               className="absolute inset-0 size-full object-cover"
             />
-            <PlacementEditor rect={shownRect} onChange={setRect} text={previewText} />
+            <PlacementEditor
+              rect={shownRect}
+              onChange={setRect}
+              text={previewText}
+              textColor={hook.textColor}
+            />
           </div>
           <p className="mt-1.5 text-[12px] text-ink/55">
             גוררים את המסגרת כדי להזיז את הטקסט, ומהפינות כדי לשנות גודל.

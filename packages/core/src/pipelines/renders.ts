@@ -23,6 +23,7 @@ import {
 } from "../db/schema";
 import { hookAnimation, isHookAnimation } from "../hook-effect";
 import { resolveHookTextSafeArea } from "../hook-geometry";
+import { HOOK_TEXT_INK, type HookTextColor } from "../hook-text-color";
 import { BudgetError, PermanentError, TransientError } from "../jobs/errors";
 import { assertPollDeadline } from "../jobs/poll";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
@@ -658,6 +659,11 @@ async function buildServiceAStepsProps(
       params.textSafeArea,
       hookClip.textSafeArea as TextSafeArea,
     ),
+    // Off the clip row, never params: the founder sets the colour per clip
+    // (decision 0073) and nothing on the customer path can carry it. Before
+    // demoPath and steps so the DRY_RUN echo's 2000-char prefix keeps it; an
+    // unknown name is undefined, which burns today's white.
+    hookTextInk: HOOK_TEXT_INK[hookClip.textColor as HookTextColor],
     demoPath,
     steps: steps.map((s) => ({ startMs: s.timestampMs, durationMs: s.durationMs, label: s.label })),
     watermark: render.watermarked,

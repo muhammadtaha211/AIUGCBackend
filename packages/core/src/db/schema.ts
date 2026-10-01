@@ -254,6 +254,10 @@ export const hookClips = pgTable("hook_clips", {
   personaId: uuid("persona_id").references(() => personas.id),
   // Lineage: the clip this one was swapped from (self-FK in the 0013 migration).
   sourceClipId: uuid("source_clip_id"),
+  // 0049: the colour this clip's Service A hook line burns in, set by the
+  // founder in admin (decision 0073). 'white' | 'black' — a CHECK in the
+  // migration, text here; the vocabulary is hook-text-color.ts.
+  textColor: text("text_color").notNull().default("white"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

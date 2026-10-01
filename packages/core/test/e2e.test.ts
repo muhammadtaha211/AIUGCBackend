@@ -99,6 +99,7 @@ describe("founder workflow (dry-run, end to end)", () => {
   let hookLineIds: string[];
   let captionScriptId: string;
   let releasedVariantId: string;
+  let stepPlanId: string;
 
   it("business + questionnaire + demo ingest", { timeout: 60_000 }, async () => {
     const business = await createBusiness(db, {
@@ -256,6 +257,7 @@ describe("founder workflow (dry-run, end to end)", () => {
       // The analysis is already ready: handleIngestDemo enqueued analyze_demo
       // at the ready exit and the first leg's drainAll ran it.
       const { planId } = await requestDemoPlan(db, demoId);
+      stepPlanId = planId;
       await drainAll();
       expect((await getStepPlan(db, planId))?.status).toBe("ready");
 
@@ -298,6 +300,9 @@ describe("founder workflow (dry-run, end to end)", () => {
       const renderedProps = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
       expect(renderedProps).toContain('"kind":"service_a_steps"');
       expect(renderedProps).toContain('"steps":[{');
+      // The clip came in through addHookClip (`aiugc bank add-hook`), which
+      // names no colour: the column default burns today's white (0073).
+      expect(renderedProps).toContain('"hookTextInk":{"fill":"white","outline":"0,0,0"}');
 
       // "More like this" carries the steps fields through the same gate.
       const { renders: more } = await moreLikeThis(db, { variantId: renders[0]!.id });
@@ -305,6 +310,55 @@ describe("founder workflow (dry-run, end to end)", () => {
       expect(moreParams.format).toBe("steps");
       expect(moreParams.stepPlanId).toBe(planId);
       await drainAll();
+    },
+  );
+
+  it(
+    "steps hook line burns the clip's colour, read off the row — never off params (0073)",
+    { timeout: 60_000 },
+    async () => {
+      const black = await addHookClip(db, {
+        filePath: tempFile("hook-black.mp4"),
+        durationMs: 2000,
+        textSafeArea: { x: 100, y: 200, w: 880, h: 400 },
+      });
+      // The founder's admin PATCH, as the route writes it.
+      await db
+        .update(dbSchema.hookClips)
+        .set({ textColor: "black" })
+        .where(sql`${dbSchema.hookClips.id} = ${black.id}`);
+
+      const { renders } = await createSet(db, {
+        businessId,
+        demoId,
+        grid: {
+          hookClipIds: [black.id],
+          hookLineScriptIds: [hookLineIds[0]!],
+          mode: "silent",
+          format: "steps",
+          stepPlanId,
+        },
+      });
+      // A colour salted into params (no route accepts one; this is the
+      // belt-and-braces case) must not reach the render: the row decides.
+      await db
+        .update(dbSchema.videoRenders)
+        .set({
+          params: sql`${dbSchema.videoRenders.params} || '{"textColor":"white","hookTextColor":"white","hookTextInk":{"fill":"white","outline":"0,0,0"}}'::jsonb`,
+        })
+        .where(sql`${dbSchema.videoRenders.id} = ${renders[0]!.id}`);
+      await drainAll();
+
+      const row = (
+        await db
+          .select()
+          .from(dbSchema.videoRenders)
+          .where(sql`${dbSchema.videoRenders.id} = ${renders[0]!.id}`)
+      )[0]!;
+      expect(row.status).toBe("released");
+      const renderedProps = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+      expect(renderedProps).toContain('"hookTextInk":{"fill":"black","outline":"255,255,255"}');
+      expect(renderedProps).not.toContain('"fill":"white"');
     },
   );
 

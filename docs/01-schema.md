@@ -52,6 +52,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   [04-integrations.md](04-integrations.md) §Hook-clip bank source, which also records why the
   ~60-char hook-line cap is calibrated to the long end.
   `text_safe_area` is required at register; `DEFAULT_HOOK_TEXT_RECT` only seeds the editor.
+  `text_color` (0049) is `'white' | 'black'` (a CHECK), default `'white'`: the colour the clip's
+  Service A hook line burns in, set by the founder in admin `/hooks` and read off the row at render
+  time — never from a customer ([vault 0073](vault/decisions/0073-hook-text-colour-is-set-per-clip-by-the-founder.md)).
 - **opener_clips** (0032) — **retired 2026-09-06** ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)): the table stays (no migration drops it) but no render reads it — the Service B hook is a Remotion animation over the one HeyGen clip. What it held: one founder-made clip per (selfie image × effect), stored play-ready…
   nothing processes it at render time). `persona_image_id`, `effect` (free key, e.g.
   `hand_cover`/`finger_snap`), `label` (Hebrew, shown to the customer), `file_path`,

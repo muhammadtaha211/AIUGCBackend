@@ -37,6 +37,8 @@ export async function POST(request: Request) {
         tags: body.data.tags,
         personaId: body.data.personaId,
         sourceClipId: body.data.sourceClipId,
+        // Absent = omitted from the insert, so the column default (white) applies.
+        textColor: body.data.textColor,
       })
       .returning({ id: schema.hookClips.id });
 

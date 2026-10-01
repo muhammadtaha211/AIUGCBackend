@@ -7,8 +7,9 @@ import { hookPatchSchema } from "@/lib/hooks";
 
 /**
  * One clip action per PATCH: active toggle (retire mechanism — variant params
- * reference clip ids, so rows are never deleted), safe-area update, or persona
- * (re)assignment (null unassigns it — out of every gallery until reassigned).
+ * reference clip ids, so rows are never deleted), safe-area update, persona
+ * (re)assignment (null unassigns it — out of every gallery until reassigned),
+ * or the hook line's text colour (decision 0073).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -35,6 +36,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ...(patch.active !== undefined ? { active: patch.active } : {}),
         ...(patch.textSafeArea !== undefined ? { textSafeArea: patch.textSafeArea } : {}),
         ...(patch.personaId !== undefined ? { personaId: patch.personaId } : {}),
+        ...(patch.textColor !== undefined ? { textColor: patch.textColor } : {}),
       })
       .where(eq(schema.hookClips.id, id));
     return NextResponse.json({ ok: true });

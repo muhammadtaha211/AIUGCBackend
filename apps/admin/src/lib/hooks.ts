@@ -1,4 +1,5 @@
-import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
+import { textSafeAreaSchema, type SafeRect } from "@aiugc/core/hook-geometry";
+import { hookTextColorSchema, type HookTextColor } from "@aiugc/core/hook-text-color";
 import { z } from "zod";
 
 /**
@@ -118,16 +119,50 @@ export const registerHookSchema = z.object({
   personaId: z.string().uuid().optional(),
   /** Lineage: the clip this swap was generated from ("שכפול לדמות"). */
   sourceClipId: z.string().uuid().optional(),
+  /** The hook line's colour (decision 0073); absent = the column default, white. */
+  textColor: hookTextColorSchema.optional(),
 });
 
-/** One PATCH per clip action: active toggle, safe-area update, or persona (re)assignment. */
+/** One PATCH per clip action: active toggle, safe-area update, persona (re)assignment, or text colour. */
 export const hookPatchSchema = z
   .object({
     active: z.boolean().optional(),
     textSafeArea: textSafeAreaSchema.optional(),
     /** null unassigns the clip (drops it out of every gallery until reassigned). */
     personaId: z.string().uuid().nullable().optional(),
+    textColor: hookTextColorSchema.optional(),
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined), {
     message: "empty patch",
   });
+
+/** The colour select's options, card and upload form alike. */
+export const HOOK_TEXT_COLOR_LABEL: Record<HookTextColor, string> = {
+  white: "טקסט לבן",
+  black: "טקסט שחור",
+};
+
+/**
+ * "שכפול לדמות": the upload form opens on the source clip's safe area, text
+ * colour, tags and duration, with source_clip_id recorded for lineage. The
+ * colour carries across exactly like the rect (decision 0073).
+ */
+export function duplicatePrefill(
+  clip: {
+    id: string;
+    textSafeArea: SafeRect;
+    textColor: HookTextColor;
+    tags: Record<string, string>;
+    durationMs: number;
+  },
+  personaId: string,
+) {
+  return {
+    sourceClipId: clip.id,
+    personaId,
+    textSafeArea: clip.textSafeArea,
+    textColor: clip.textColor,
+    tags: clip.tags,
+    durationMs: clip.durationMs,
+  };
+}
