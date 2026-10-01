@@ -8,6 +8,17 @@ source: founder
 
 # 0070 — A step ends on a real screen change
 
+> **2026-10-01 — decided, NOT YET BUILT:** "Step length follows the footage" is superseded by
+> [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]. Every step becomes a fixed 2 s
+> window inside its screen, slid earlier near the screen's end, and the step count becomes 5–10.
+> **"A step never runs into the next screen" stays.** Two lines below now read against 0076:
+>
+> - "10 steps × 2 s is dropped as a target" — 0076 sets 5–10 steps of 2 s each;
+> - the 15–21 s band listed as unchanged — 0076 retires it.
+>
+> See also [[0075-more-moments-over-fewer]]. Until 0076 is built the code runs this decision as
+> written.
+
 Decided 2026-10-01. Every item below is **FOUNDER-DECIDED** (his task prompt, not up for
 relitigation), except where a line says otherwise. How the code implements it, and the numbers, are
 [[0072-step-cap-no-padding-cut-early]].

@@ -8,6 +8,11 @@ source: founder
 
 # The steps runtime band floor is 15s, not 16s
 
+> **2026-10-01 — decided, NOT YET BUILT:** the 15–21 s band is retired by
+> [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]. Steps become 5–10 of a fixed 2 s each,
+> so a demo runs 10–20 s. The minimum of 5 keeps this note's reason, never force padding. Until
+> 0076 is built the code runs the band below.
+
 `MIN_RUNTIME_MS` = 15000 (`packages/core/src/pipelines/demo-step-plans.ts:125`). The finished ad is
 hook (~4s) + 15–21s of steps ≈ 19–25s.
 
