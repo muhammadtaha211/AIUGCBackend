@@ -66,8 +66,9 @@ export const A_STEPS_MIN_DEFAULT = 5;
  *  may have — the human edit path is never capped, the wizard just warns past
  *  it that the format works best short). Same drift deal as A_STEPS_MIN_DEFAULT:
  *  a seeded config row wins server-side until this constant is updated to match.
- *  7 is arithmetic, not taste: at the 3s step floor, 7 steps already fill the
- *  21s runtime ceiling exactly. */
+ *  Steps follow the footage, up to the 4s cap (decision 0072), so 7 is a bound
+ *  the band-coherence test checks, not a shape that fills the band exactly:
+ *  7 captionable steps fit under the 21s ceiling, 7 full-length ones do not. */
 export const A_STEPS_MAX_DEFAULT = 7;
 
 /** Fixed allowance before the label is being read at all: the 5-frame pop-in
@@ -78,16 +79,16 @@ export const LABEL_LEAD_MS = 400;
 export const LABEL_WORDS_PER_SECOND = 2.5;
 
 /**
- * How long a burned step label needs to stay up to be read. A GUESS, exactly
- * like DEFAULT_STEP_MS, and labelled as one: nobody has measured Israeli
- * viewers reading these. Exported and pure because pass 2's runtime check and
- * the wizard's still-preview must use the same number the plan was built with.
+ * How long a burned step label needs to stay up to be read. A GUESS, and
+ * labelled as one: nobody has measured Israeli viewers reading these.
+ * Exported and pure because pass 2's runtime check and the wizard's
+ * still-preview must use the same number the plan was built with.
  */
 export function readTimeMs(label: string): number {
   // Count only tokens carrying a letter or digit — the same set the word CAP
   // counts (its normalizeWord drops punctuation-only tokens like a spaced
   // dash). Counting raw whitespace tokens here let a cap-legal 6-word label
-  // read as 7 (3200ms > the 3s step floor), busting the 21s band on 7-step
+  // read as 7 (3200ms, over the 3s step floor of the time), busting the 21s band on 7-step
   // plans that the generated timing table licenses at the ceiling exactly.
   const words = label
     .trim()

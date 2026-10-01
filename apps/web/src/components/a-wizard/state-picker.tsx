@@ -50,9 +50,9 @@ type InventoryPanelProps = {
 const INVENTORY_ERROR = "לא הצלחנו לטעון את רשימת המסכים — רעננו את העמוד ונסו שוב.";
 
 /** An inventory state's preview window: no stored duration exists, so it
- *  plays the render-floor fallback (clipWindow's 3s). */
+ *  plays the state's own clip — what picking it buys. */
 function tileTarget(state: AnalysisStateWire): ClipTarget {
-  return { key: `tile:${state.index}`, ...clipWindow(state.timestampMs, 0) };
+  return { key: `tile:${state.index}`, ...clipWindow(state.timestampMs, 0, state.clipMs) };
 }
 
 export function InventoryPanel({

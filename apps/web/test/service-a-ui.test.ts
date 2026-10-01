@@ -246,12 +246,16 @@ describe("plan surface helpers", () => {
     expect(analysisIndexBatches([])).toEqual([]);
   });
 
-  it("clipWindow: stored duration plays as-is, zero falls back to the render floor", () => {
-    // A saved step previews exactly its assembled window; a draft-added step
-    // or raw inventory state (durationMs 0) previews the 3s floor every
-    // unsqueezed step actually renders.
-    expect(clipWindow(12_000, 3400)).toEqual({ startMs: 12_000, endMs: 15_400 });
-    expect(clipWindow(9000, 0)).toEqual({ startMs: 9000, endMs: 12_000 });
+  it("clipWindow: stored duration plays as-is, zero falls back to the state's own clip", () => {
+    // A saved step previews exactly its assembled window, even where the next
+    // step cut it shorter than the state's clip — that window is what renders.
+    expect(clipWindow(12_000, 3400, 4000)).toEqual({ startMs: 12_000, endMs: 15_400 });
+    // A row assembled before 0070 can outlast its screen; it still previews
+    // what it renders, not what a fresh pick would buy.
+    expect(clipWindow(5000, 3000, 1800)).toEqual({ startMs: 5000, endMs: 8000 });
+    // A draft-added step or raw inventory state (durationMs 0) previews the
+    // state's clipMs — to its screen's end, with no 3s floor under it.
+    expect(clipWindow(9000, 0, 2600)).toEqual({ startMs: 9000, endMs: 11_600 });
   });
 
   it("Hebrew failReason passes through untouched, with no raw leftover", () => {
@@ -760,6 +764,7 @@ describe("inventory picker (8c)", () => {
     actionType: "tap",
     sameStateAsPrevious: false,
     legibility: "high",
+    clipMs: 4000,
     ...over,
   });
 
@@ -906,6 +911,16 @@ describe("inventory picker (8c)", () => {
         added: true,
       });
       expect(draft).toHaveLength(2); // the input draft is untouched
+    });
+
+    it("carries the picked state's own clip, so the added step previews before its card loads", () => {
+      const next = insertDraftStep(draft, wire(2, { timestampMs: 2000, clipMs: 1800 }), "חדש");
+      expect(next[1]!.clipMs).toBe(1800);
+      // The preview plays that clip: no stored duration yet, no card state.
+      expect(clipWindow(next[1]!.timestampMs, next[1]!.durationMs, next[1]!.clipMs ?? 0)).toEqual({
+        startMs: 2000,
+        endMs: 3800,
+      });
     });
 
     it("an added step makes the draft dirty; removing it restores clean", () => {

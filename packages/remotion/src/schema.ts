@@ -234,9 +234,9 @@ export const serviceASchema = z.object({
 export const stepSegmentSchema = z.object({
   /** Where in the SOURCE demo this step's clip starts. */
   startMs: z.number().nonnegative(),
-  /** Positive by contract: a zero/negative window (e.g. a bad
-   *  a_step_ms_by_action config value) must fail at pay time, not render a
-   *  1-frame flash — the timeline's 1-frame floor is rounding safety only. */
+  /** Positive by contract: a zero/negative window (a malformed plan) must
+   *  fail at pay time, not render a 1-frame flash — the timeline's 1-frame
+   *  floor is rounding safety only. */
   durationMs: z.number().positive(),
   /** Short Hebrew line burned in the lower-third rect while the step plays. */
   label: z.string(),

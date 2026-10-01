@@ -1,8 +1,8 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "read packages/core/src/pipelines/demo-step-plans.ts:799-810 and renders.ts:598; compared every stored plan's last step against its demo's duration_ms (read-only) — all 12 currently fit"
+verified: 2026-10-01
+method: "2026-10-01: read assembleSteps, handlePlanDemoSteps and updatePlanSteps on feat/steps-end-on-screen-change (the FIXED section). Originally: read packages/core/src/pipelines/demo-step-plans.ts:799-810 and renders.ts:598; compared every stored plan's last step against its demo's duration_ms (read-only) — all 12 currently fit"
 source: code
 ---
 
@@ -88,3 +88,22 @@ the generate path; `updatePlanSteps` would need it passed in.
 
 Worth pairing with a runtime-band check: a truncated last step can drop the total below
 `MIN_RUNTIME_MS`, and today nothing notices.
+
+## FIXED — 2026-10-01, feat/steps-end-on-screen-change
+
+**MEASURED** in the tree. `assembleSteps` no longer gives the last step unlimited room. Every step now
+ends at `min(its screen's end, the 4 s cap, the recording's end, the next selected state)`
+([[0070-a-step-ends-on-a-real-screen-change]], [[0072-step-cap-no-padding-cut-early]]). The
+recording end is `max(floor(demos.duration_ms / sample) · sample, last state + 1 sample)`. Both
+callers now pass it:
+
+- the generation path, from the demo row `handlePlanDemoSteps` already loads;
+- `updatePlanSteps`, which now loads the demo row itself.
+
+So the wizard's numbers, the confirm total and the rendered frames agree. A test pins this through
+`serviceAStepsTimeline`. **The local re-render of plan ca8d5b72** came to 94 hook frames + 498 step
+frames, exactly its 16.6 s plan total.
+
+The runtime-band pairing suggested above is in: the band and its reachability escape run on the
+assembled lengths. **Stored plans keep their old durations until edited**, so the Remotion end clamp
+stays in place as the net for them.

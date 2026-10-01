@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-08-23
-method: "node -e over each file for state counts and expected block; git show b60b5b6 -- fixtures/timelines/ for the last change; each file's own _comment quoted verbatim"
+verified: 2026-10-01
+method: "2026-10-01: the DRY_RUN regress over all five (runPlanRegression) and node over each file's expected block after the screen-change re-pin. Earlier: node -e over each file for state counts and expected block; git show b60b5b6 -- fixtures/timelines/ for the last change; each file's own _comment quoted verbatim"
 source: code
 ---
 
@@ -27,6 +27,25 @@ core suite passed 339/339 on 2026-08-23 at commit `b60b5b6` ([[gate-results]]).
 | `real-botteacher-file-routing.json`   | 64,754 | 61     | `sourceIndexes` + `dryRunSourceIndexes`                | **RED** since `@v11` |
 | `real-botteacher-six-word-label.json` | 81,311 | 80     | `sourceIndexes` (placeholder) + `dryRunSourceIndexes`  | **RED** from birth   |
 | `real-botteacher-study-app.json`      | 80,726 | 80     | `sourceIndexes` + `allowNotes` + `dryRunSourceIndexes` | GREEN                |
+
+## Pinned values, as of 2026-10-01 (the screen-change re-pin)
+
+[[0072-step-cap-no-padding-cut-early]] made steps end at their screen's end, so every mechanical pin
+moved. There are five fixtures since `real-tavnit-system-opening.json` landed on 2026-09-23. Each
+now carries an optional `recordingMs`, the last step's ceiling:
+
+| file           | `recordingMs` (source)            | `sourceIndexes` (live)                           | `dryRunSourceIndexes`   |
+| -------------- | --------------------------------- | ------------------------------------------------ | ----------------------- |
+| campaign-app   | 20000 (the DRY_RUN stub length)   | `[3,5,6,7,10,11]`                                | `[1,3,5,8]`             |
+| file-routing   | absent (last state + one sample)  | `[1,2,3,12,36]`                                  | `[3,11,12,16,39,44,58]` |
+| six-word-label | 122561 (CARRIED, deleted project) | `[3,42,47,48,60,74,79]` (pin 2→3)                | `[3,9,42,48,60]`        |
+| study-app      | 122561 (CARRIED)                  | `[1,13,36,42,49,56,78,79]` (+`allowNotes: true`) | `[1,5,20,43,52,61,78]`  |
+| tavnit         | 89582 (MEASURED, demo 29c5ed05)   | `[1,7,16,23,26,44,49]` (pin 2→1)                 | `[1,14,26,29,47,49]`    |
+
+**MEASURED:** the DRY_RUN regress passes all five. **Every live colour is unverified under
+`plan_demo_steps@v15` until a paid run.** On tavnit, state 16 has 800 ms to its screen's end and can
+no longer carry a caption, so that live pin is expected red. Each fixture's `_comment` gained a
+dated paragraph explaining its moves.
 
 ## Pinned values, as of `b60b5b6`
 

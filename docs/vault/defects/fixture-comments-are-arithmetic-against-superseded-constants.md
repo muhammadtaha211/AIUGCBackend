@@ -1,7 +1,7 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
+verified: 2026-10-01
 method: "git show b60b5b6 -- packages/core/src/plan-format.ts packages/core/src/pipelines/demo-step-plans.ts fixtures/timelines/; then read each fixture's _comment against the new constants"
 source: code
 ---
@@ -77,3 +77,14 @@ comment labels its two reasons "(b)" and "(c)" with no "(a)" — it was born tha
 ## Related
 
 - [[timeline-fixtures]] — the current pins and what each fixture tests
+
+## 2026-10-01 — the screen-change re-pin did touch the comments
+
+[[0072-step-cap-no-padding-cut-early]] re-pinned every fixture's `dryRunSourceIndexes`. It also moved
+the access pin inside two live `sourceIndexes`: tavnit 2→1, six-word 2→3. Each file got a dated
+`_comment` paragraph saying what moved and why, and recording where its `recordingMs` came from:
+measured, carried, or the DRY_RUN stub. The tavnit and six-word notes name their older pin
+derivation as superseded.
+
+The older paragraphs were not rewritten, so they still reason against the 3 s floor. This defect
+therefore stays open for them; the new dated paragraph is the current word.

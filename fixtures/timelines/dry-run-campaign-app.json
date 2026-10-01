@@ -22,7 +22,15 @@
     "A plan obeying both drops one of the bunched pair. Beware the obvious replacement:",
     "[3, 5, 7, 10, 11] runs 9600ms at three-word captions and 10800ms at four, both under the",
     "band — it only lands inside with longer captions on the roomy steps. Re-pin only after a run",
-    "shows what the model reaches; do NOT relax the read-time rule to make this green."
+    "shows what the model reaches; do NOT relax the read-time rule to make this green.",
+    "",
+    "2026-10-01 (decisions 0070/0072 — a step ends on a real screen change): recordingMs 20000 is",
+    "the DRY_RUN stub length this synthetic timeline was laid inside, not a measurement. Each step",
+    "now runs to its screen's end (one sample past the last state on it), at most 4s, and is cut by",
+    "the next selected state. The success state 11 sits 1500ms before the recording ends — under a",
+    "three-word caption's 1600ms — so it is no longer a required ending, and the canned plan",
+    "re-derives to [1, 3, 5, 8]. sourceIndexes (live) is untouched: still red for (c), and",
+    "unverified under plan_demo_steps@v15 until a paid regress."
   ],
   "questionnaire": {
     "category": "app_or_digital",
@@ -32,6 +40,7 @@
     "target_audience": "בעלי עסקים קטנים",
     "tone": "friendly"
   },
+  "recordingMs": 20000,
   "timeline": [
     {
       "timestampMs": 0,
@@ -168,6 +177,6 @@
   ],
   "expected": {
     "sourceIndexes": [3, 5, 6, 7, 10, 11],
-    "dryRunSourceIndexes": [1, 3, 5, 7, 11]
+    "dryRunSourceIndexes": [1, 3, 5, 8]
   }
 }

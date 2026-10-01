@@ -47,7 +47,16 @@
     "  [42,47,48,60,74] (<= 6, so subsampleClusters is the identity) plus the ending 79, and the",
     "  spacing walk changes nothing. Only the pin is new. Still LOAD-BEARING under DRY_RUN.",
     "  expected.sourceIndexes (live) [42,47,48,60,74,79] -> [2,42,47,48,60,74,79]: still the",
-    "  PLACEHOLDER it always was, now carrying the pin every live plan on this timeline contains."
+    "  PLACEHOLDER it always was, now carrying the pin every live plan on this timeline contains.",
+    "",
+    "2026-10-01 (decisions 0070/0072 — a step ends on a real screen change): recordingMs 122561 is",
+    "CARRIED from docs/vault/defects/last-step-renders-shorter-than-the-wizard-promises.md (the",
+    "BotTeacher study-app recording, measured on the deleted project), not re-measured. The pin",
+    "moves 2 -> 3: the run [2, 3, 4, 5, 6] sits on one screen the code ends at 5800ms, and state 3",
+    "(3200ms) is the earliest candidate whose clip reaches that end inside the 4s cap (state 2 at",
+    "1200ms would be capped at 5200ms). The live sourceIndexes take the new pin; the derivation",
+    "above it is superseded. dryRunSourceIndexes re-derived to [3, 9, 42, 48, 60]. The live colour",
+    "is unverified under plan_demo_steps@v15 until a paid regress."
   ],
   "questionnaire": {
     "tone": "friendly",
@@ -61,6 +70,7 @@
     "what_it_does": "פלטפורמה שהופכת את כל חומרי הלימוד שלך לזיכרון אקדמי אחד, חי ומתעדכן: כל מורה AI כאן כבר מכיר את הקורסים, ההיסטוריה, הלו\"ז, המבחנים הקרובים והמטרות שלך, מהשנייה הראשונה.",
     "target_audience": "סטודנטים 18-30"
   },
+  "recordingMs": 122561,
   "timeline": [
     {
       "action": "User opens a new browser tab with the address bar focused",
@@ -2021,7 +2031,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [2, 42, 47, 48, 60, 74, 79],
-    "dryRunSourceIndexes": [2, 42, 47, 48, 60, 74, 79]
+    "sourceIndexes": [3, 42, 47, 48, 60, 74, 79],
+    "dryRunSourceIndexes": [3, 9, 42, 48, 60]
   }
 }

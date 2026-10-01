@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import {
   analysisSectionsSchema,
   analysisTimelineSchema,
+  clipBounds,
   getDb,
   getJobProgress,
   getLatestDemoAnalysis,
   getStorage,
   HEAVY_JOB_TYPES,
+  stepDurations,
+  timelineClipMs,
   type JobProgress,
 } from "@aiugc/core";
 import {
@@ -103,6 +106,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const sections = analysisSectionsSchema.safeParse(analysis.sections);
     if (sections.success && sections.data.length > 0) body.sections = sections.data;
 
+    // What a step started at each state would run — to its screen's end or
+    // the cap (0070) — computed by the same function the plan assembles with,
+    // so a picker preview plays exactly the clip a pick buys.
+    const clips = timelineClipMs(
+      timeline,
+      clipBounds(await stepDurations(db), timeline, found.demo.durationMs),
+    );
+
     // `index` is the absolute timeline position — it IS the sourceIndex the
     // plan routes speak — and survives paging. thumbPath stays server-side.
     const states = timeline.map((state, index) => ({
@@ -116,6 +127,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       sameStateAsPrevious: state.sameStateAsPrevious,
       legibility: state.legibility,
       salienceNote: state.salienceNote ?? undefined,
+      clipMs: clips[index]!,
     }));
 
     const query = new URL(request.url).searchParams;

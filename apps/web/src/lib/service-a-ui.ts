@@ -519,7 +519,8 @@ export function restoredDemo(
 // The step plan surface (read-only in 8a; the editor lands in 8b)
 // ---------------------------------------------------------------------------
 
-/** One stored plan step on the wire — durationMs is ASSEMBLED (gap-capped). */
+/** One stored plan step on the wire — durationMs is ASSEMBLED (to its screen's end, the
+ *  cap or the next step, whichever is first). */
 export type PlanStepWire = {
   timestampMs: number;
   actionType: string;
@@ -569,6 +570,9 @@ export type AnalysisStateWire = {
   sameStateAsPrevious: boolean;
   legibility: string;
   salienceNote?: string;
+  /** How long a step started here would run: to its screen's end or the cap
+   *  (core's timelineClipMs) — what a picker preview plays. */
+  clipMs: number;
   thumbUrl?: string;
 };
 
@@ -882,13 +886,18 @@ function timeRangePages(pool: AnalysisStateWire[]): InventoryPage[] {
 /** A plan step that exists only in the draft until the next save. The server
  *  assembles the real durationMs on PATCH; until then the card says so
  *  instead of showing a number that was never computed. */
-export type DraftStep = PlanStepWire & { added?: boolean };
+export type DraftStep = PlanStepWire & {
+  added?: boolean;
+  /** The picked state's own clip, carried from the picker so an added step
+   *  previews before its card's state arrives (or when that fetch fails). */
+  clipMs?: number;
+};
 
 /** Insert a picked state into the draft — chronological by construction:
  *  order derives from timestamp, and the server re-sorts anyway. */
 export function insertDraftStep(
   draft: DraftStep[],
-  state: Pick<AnalysisStateWire, "index" | "timestampMs" | "actionType">,
+  state: Pick<AnalysisStateWire, "index" | "timestampMs" | "actionType"> & { clipMs?: number },
   label: string,
 ): DraftStep[] {
   const step: DraftStep = {
@@ -898,6 +907,7 @@ export function insertDraftStep(
     label: label.trim(),
     durationMs: 0,
     added: true,
+    ...(state.clipMs !== undefined ? { clipMs: state.clipMs } : {}),
   };
   return [...draft, step].sort((a, b) => a.timestampMs - b.timestampMs);
 }
@@ -908,23 +918,17 @@ export function fmtTimestamp(ms: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-/** What an inventory state or a draft-added step previews for: the render
- *  floor every unsqueezed step actually runs (MIN_STEP_MS, server-side in
- *  demo-step-plans.ts — unimportable into a browser bundle, hence restated).
- *  A fixed window on purpose: raw gaps between neighbouring states range
- *  from ~400ms flashes to tens of seconds, neither of which previews what
- *  picking the state buys. */
-export const PREVIEW_FALLBACK_MS = 3000;
-
 /** The preview window for a clip. A stored step plays its assembled window;
- *  a draft-added step or an inventory state (durationMs 0/absent) plays the
- *  fallback. No clamp against the video's end — the <video> element's own
- *  `ended` event stops playback there. */
+ *  a draft-added step or an inventory state (durationMs 0) plays the state's
+ *  own clip — to its screen's end or the cap, the server's clipMs, so the
+ *  preview shows exactly what picking the state buys. Never past the
+ *  recording: clipMs is bounded by it server-side. */
 export function clipWindow(
   startMs: number,
   durationMs: number,
+  stateClipMs: number,
 ): { startMs: number; endMs: number } {
-  return { startMs, endMs: startMs + (durationMs > 0 ? durationMs : PREVIEW_FALLBACK_MS) };
+  return { startMs, endMs: startMs + (durationMs > 0 ? durationMs : stateClipMs) };
 }
 
 export type HookClip = {

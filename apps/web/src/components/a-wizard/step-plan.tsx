@@ -806,9 +806,10 @@ function PlanEditor({
   const hasMarks = draft.some((step) => (step.offScreenWords?.length ?? 0) > 0);
   // Mutually exclusive by arithmetic (< min vs > max), so one slot renders both.
   const countWarning = deleteWarning(draft.length) ?? addWarning(draft.length);
-  // Draft durations are the STORED assembly — a label/delete edit can widen a
-  // step's window server-side, so pre-save numbers are conservative and the
-  // save response corrects them.
+  // Draft durations are the STORED assembly — a label edit never moves them
+  // (a step runs to its screen's end, whatever its caption), a delete can
+  // widen the previous step's window server-side, so pre-save numbers are
+  // conservative and the save response corrects them.
   const totalMs = totalRuntimeMs(draft);
   return (
     <div className="mt-6">
@@ -873,7 +874,11 @@ function PlanEditor({
                   player,
                   target: {
                     key: `step:${step.sourceIndex}`,
-                    ...clipWindow(step.timestampMs, step.durationMs),
+                    ...clipWindow(
+                      step.timestampMs,
+                      step.durationMs,
+                      state?.clipMs ?? step.clipMs ?? 0,
+                    ),
                   },
                 }}
               />
@@ -940,8 +945,8 @@ function PlanEditor({
                         founder (user #1). */}
                     {headroom < 0 ? (
                       <p className="mt-1 text-[13px] text-amber-700">
-                        הצעד הזה קצר מדי לכיתוב — הוא ייחתך לצעד הבא לפני שיספיקו לקרוא אותו (חסרות{" "}
-                        {fmtSeconds(-headroom)} שנ׳). קצרו את הכיתוב.
+                        הצעד נגמר לפני שיספיקו לקרוא את הכיתוב (חסרות {fmtSeconds(-headroom)} שנ׳).
+                        קצרו את הכיתוב, או מחקו את הצעד ובחרו רגע אחר.
                       </p>
                     ) : (
                       <p className="mt-1 text-[13px] text-ink/45">
