@@ -1,4 +1,5 @@
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import type { HookTextColor } from "@aiugc/core/hook-text-color";
 import {
   A_STEPS_MAX_DEFAULT,
   A_STEPS_MIN_DEFAULT,
@@ -933,6 +934,9 @@ export type HookClip = {
   previewUrl: string;
   /** The clip's default safe area — seeds the hook studio's placement editor. */
   textSafeArea: SafeRect;
+  /** The colour the clip's hook line burns in — set by the founder, shown in
+   *  the hook studio's preview, never picked here (decision 0073). */
+  textColor: HookTextColor;
   /** Set on persona-swapped clips — every clip the wizard's gallery shows.
    *  Absent = a generic source clip, returned only by the legacy persona-less
    *  listing (no customer path). */

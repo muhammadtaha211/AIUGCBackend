@@ -9,7 +9,7 @@ import {
   type CalculateMetadataFunction,
 } from "remotion";
 import { HookLine } from "./ServiceA";
-import { ACTIVE_WORD_COLOR, Watermark } from "./overlays";
+import { ACTIVE_WORD_COLOR, TEXT_OUTLINE, Watermark } from "./overlays";
 import { FPS, HEIGHT, type ServiceAStepsProps } from "./schema";
 import { msToFrame, serviceAStepsTimeline } from "./timing";
 import { STEP_LABEL_RECT } from "./text-fit";
@@ -30,6 +30,7 @@ export const ServiceASteps: React.FC<ServiceAStepsProps> = ({
   hookSrc,
   hookLine,
   hookTextSafeArea,
+  hookTextInk,
   demoSrc,
   steps,
   watermark,
@@ -50,7 +51,17 @@ export const ServiceASteps: React.FC<ServiceAStepsProps> = ({
     <AbsoluteFill style={{ backgroundColor: "black" }}>
       <Sequence durationInFrames={timeline.hookFrames}>
         <OffthreadVideo src={hookSrc} muted style={COVER} />
-        <HookLine text={hookLine} area={hookTextSafeArea} />
+        {/* The clip's colour (decision 0073): TEXT_OUTLINE's own layers in
+            the ink's rgb, so black keeps today's outline weight, drawn light.
+            No ink = white on TEXT_OUTLINE, exactly as before. */}
+        <HookLine
+          text={hookLine}
+          area={hookTextSafeArea}
+          color={hookTextInk?.fill}
+          textShadow={
+            hookTextInk && TEXT_OUTLINE.replaceAll("rgba(0,0,0,", `rgba(${hookTextInk.outline},`)
+          }
+        />
       </Sequence>
 
       {timeline.steps.map((step, i) => (

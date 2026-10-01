@@ -40,8 +40,34 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**The hook line's colour is set per clip by the founder since 2026-10-01** — branch
+`feat/hook-text-color`, **committed locally, NOT pushed, NOT merged, NOT on the box, migration 0049
+NOT applied** — not pushed by the founder's instruction for this task (2026-10-01: "Do not apply
+the migration, push, merge or deploy. Each waits for my explicit OK"), not as a standing rule
+([[0073-hook-text-colour-is-set-per-clip-by-the-founder]]). Every bank clip carries
+`hook_clips.text_color`, `white` (the default for every existing clip, the CLI and an admin
+register without a choice) or `black`. The founder sets it on admin `/hooks`, per card or in the
+upload form, and "שכפול לדמות" copies it. A Service A steps render reads it off the clip row and
+burns the hook line black on a light outline (`TEXT_OUTLINE`'s layers in `255,255,255`). Labels,
+B's hook text, captions, the watermark and the retired paths are unchanged. The two previews follow
+it: the admin safe-area editor and the wizard's hook studio. **Deploy order, no step skipped:**
+(1) `db push` 0049 BEFORE MERGE — every build of this branch names `text_color` in its hook-clip
+selects, so a merged web/admin deploy or a box pull without it fails every hook-clip read, while
+main never names the column, so applying it first is safe. A pushed-but-unmerged branch's Vercel
+preview shares the one DB and 500s on `/hooks` and `GET /api/hooks` until 0049 lands; that is
+expected and touches no production path. (2) Merge, so Vercel deploys web + admin. (3) Box pull +
+restart (0039, `docs/07-worker-box.md` §11). (4) Only then set any clip black. MEASURED (local
+render, real bank clip `1b4a1a71`, 95-frame hook): two runs of the unchanged pipeline decode
+identically on frames 0–87, then drift run to run from frame 88 (still inside the hook) with min
+PSNR 41 dB. The white render on the new code decodes identically to the second of those runs on
+all 197 frames (`framemd5`). The frame grabs are under `packages/core/.work/hook-text-color/`
+(gitignored). **Merge-order note:** the unmerged `feat/steps-end-on-screen-change` (96e9873) also
+touches this file, `packages/remotion/src/schema.ts` and `apps/web/src/lib/service-a-ui.ts`, so
+whichever merges second checks those three and reruns `pnpm repo-map`.
+
 **The demo-analysis refilm gate counts `unreadable` only since 2026-10-01** — branch
-`fix/legibility-gate-unreadable-only`, **pushed, NOT merged, NOT on the box**
+`fix/legibility-gate-unreadable-only`, **MERGED** as PR #72 (`67448de` on `origin/main`, MEASURED by
+`git log`, 2026-10-01). Box state not re-verified here
 ([[0069-the-refilm-gate-counts-unreadable-only]]). `low` stops counting. The 0.75 cap on low +
 unreadable is deleted, and the unreadable threshold stays at 0.25. MEASURED: neither key has a live
 `app_config` row today, so no migration. **FOUNDER-REPORTED:** `analyze_demo` job `174c1063-bd8c-42a9-b858-122ae1109ab3`
@@ -663,9 +689,13 @@ Founder-reported from a dashboard unless a line says otherwise. **This section c
 subscription row was written.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0048 applied, ledger clean at 49 rows, no gaps, nothing pending** — measured
-2026-09-21 against `supabase_migrations.schema_migrations` (count 49, first `0000`, last `0048`),
-matching the 49 files in `supabase/migrations/`. This corrected a stale "0000–0047 / 48 rows" here;
+**Migrations 0000–0048 applied, ledger clean at 49 rows, no gaps — and since 2026-10-01 exactly
+ONE file pending, `0049_hook_clips_text_color.sql` on the unpushed `feat/hook-text-color`**
+(MEASURED 2026-10-01: `migration list` shows 0000–0048 local = remote and 0049 remote-empty;
+`db push --dry-run` would push 0049 alone). The 49-row count was measured 2026-09-21 against
+`supabase_migrations.schema_migrations` (count 49, first `0000`, last `0048`), matching the 49 files
+then in `supabase/migrations/`. Whoever runs the founder-authorized push of 0049 sets this line to
+"0000–0049 applied, 50 rows, nothing pending". This corrected a stale "0000–0047 / 48 rows" here;
 **CLAUDE.md still says 0000–0047 and is now the stale copy.** (Not resolved: CLAUDE.md in the tree
 that sentence was written in, ec0a324, already said 0000–0048, since f4d079e that morning. Since
 2026-09-29 CLAUDE.md holds no ledger count; the other copy is [[production-migration-push-log]].)
@@ -766,8 +796,8 @@ the 2026-09-26 custom domain (founder-reported):**
   field need the restart. The web half ships with Vercel. **Regrouping existing analyses under v2
   is NOT done and is the founder's call** — each is a paid call that overwrites a computed-once
   column; until then their other readable moments are placed by nearest neighbour.
-- **Merge `fix/legibility-gate-unreadable-only`, then put the box on it — `git pull`,
-  `pnpm install`, restart, `git log -1`** (2026-10-01,
+- **~~Merge `fix/legibility-gate-unreadable-only`~~ MERGED as PR #72 (`67448de`); put the box on
+  it — `git pull`, `pnpm install`, restart, `git log -1`** (2026-10-01,
   [[0069-the-refilm-gate-counts-unreadable-only]], `docs/07-worker-box.md` §11). The gate runs only in the worker, so the Vercel deploy alone changes
   nothing. Gate the restart on no `running` jobs. Then re-upload the demo that `e4be3bce` rejected.
 - **Take the Sumit checkout live — DONE 2026-09-21 except step 8.** Kept with a status per step,
@@ -842,8 +872,11 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Open decisions
 
-**Housekeeping, unresolved: `decisions/` has two 0046s, two 0047s and two 0049s** — six notes, three
-numbers, from concurrent sessions each taking "the next free number". Nothing is lost (slugs are
+**Housekeeping, unresolved: `decisions/` has two 0046s, two 0047s, two 0049s and two 0059s** —
+eight notes, four numbers, from concurrent sessions each taking "the next free number" (the 0059
+pair, `emoji-in-burned-text…` and `the-wait-clock…`, was missing from this line until 2026-10-01).
+The same race nearly happened again on 2026-10-01: the unmerged `feat/steps-end-on-screen-change`
+holds 0070–0072, so the hook-colour note took **0073** rather than reuse 0070. Nothing is lost (slugs are
 distinct, every inbound link uses the full filename), but `[[0047]]` is ambiguous. 0050, 0056–0058 and
 0059 were taken **above** the highest number rather than filling a gap, because renumbering a
 published note breaks the links pointing at it. Renumber or leave it — a founder call.

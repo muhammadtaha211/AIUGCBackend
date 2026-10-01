@@ -668,4 +668,53 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0049: hook_clips.text_color — existing clips backfill white, new ones default white, CHECK allows white|black only", async () => {
+    // The pre-0049 shape with a clip already in it, because every other test
+    // applies 0049 to an EMPTY hook_clips table and nothing else would ever
+    // run the backfill — the production case (decision 0073).
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0049")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    await pg.exec(`
+      INSERT INTO hook_clips (file_path, duration_ms, text_safe_area)
+      VALUES ('assets/bank/hook_clip/old/clip.mp4', 3000, '{"x":25,"y":1062,"w":1009,"h":179}');
+    `);
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0049_hook_clips_text_color.sql"), "utf8");
+    await pg.exec(migration);
+    // Idempotent: a second apply is a no-op, not a duplicate-constraint error.
+    await pg.exec(migration);
+
+    const existing = await pg.query<{ text_color: string }>("SELECT text_color FROM hook_clips");
+    expect(existing.rows).toEqual([{ text_color: "white" }]);
+    await pg.close();
+
+    const { db, pg: fresh } = await createTestDb();
+    const base = { durationMs: 3000, textSafeArea: { x: 25, y: 1062, w: 1009, h: 179 } };
+    const [unchosen] = await db
+      .insert(schema.hookClips)
+      .values({ ...base, filePath: "assets/a.mp4" })
+      .returning();
+    expect(unchosen!.textColor).toBe("white");
+    const [black] = await db
+      .insert(schema.hookClips)
+      .values({ ...base, filePath: "assets/b.mp4", textColor: "black" })
+      .returning();
+    expect(black!.textColor).toBe("black");
+
+    for (const bad of ["gray", "#000000", "White"]) {
+      await expect(
+        db.insert(schema.hookClips).values({ ...base, filePath: "assets/c.mp4", textColor: bad }),
+      ).rejects.toThrow(/hook_clips_text_color_check/);
+      await expect(
+        db
+          .update(schema.hookClips)
+          .set({ textColor: bad })
+          .where(eq(schema.hookClips.id, black!.id)),
+      ).rejects.toThrow(/hook_clips_text_color_check/);
+    }
+
+    await fresh.close();
+  });
 });

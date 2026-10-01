@@ -52,6 +52,14 @@ export interface RenderServiceAStepsProps {
   hookClipPath: string;
   hookLine: string;
   hookTextSafeArea: TextSafeArea;
+  /**
+   * The hook line's fill and outline rgb, from the clip's colour
+   * (hook-text-color.ts, decision 0073). Absent = today's white. Field name
+   * and shape MIRROR @aiugc/remotion's RenderServiceAStepsInput — nothing
+   * typechecks that mirror (see hookZoom below), so the remotion test and the
+   * DRY_RUN echo test pin it.
+   */
+  hookTextInk?: { fill: string; outline: string };
   /** ONE demo file; every step trims it — no concat, no intermediate encode.
    *  No duration field: the composition probes the stored file itself. */
   demoPath: string;

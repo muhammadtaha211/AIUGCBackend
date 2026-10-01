@@ -167,6 +167,8 @@ export const HookLine: React.FC<{
   text: string;
   area: TextSafeArea;
   color?: string;
+  /** Absent = TEXT_OUTLINE. Only the steps hook line passes one (decision 0073). */
+  textShadow?: string;
   /**
    * Kinetic hook text (Service B mock, timing.ts `hookTextRevealState`):
    * one 0..1 pop progress per whitespace-separated word. Absent = the whole
@@ -180,6 +182,7 @@ export const HookLine: React.FC<{
   area,
   // White for the hook line; the steps format burns its labels yellow.
   color = "white",
+  textShadow = TEXT_OUTLINE,
   wordProgress,
   exit = 0,
 }) => {
@@ -222,7 +225,7 @@ export const HookLine: React.FC<{
         fontSize,
         lineHeight: HOOK_FONT.lineHeight,
         color,
-        textShadow: TEXT_OUTLINE,
+        textShadow,
         transform:
           exit > 0
             ? `translateY(${(HOOK_EXIT_DY * exit).toFixed(1)}px) scale(${1 - (1 - HOOK_EXIT_SCALE) * exit})`

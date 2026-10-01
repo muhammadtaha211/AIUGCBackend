@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  duplicatePrefill,
   hookFileError,
   hookMetadataError,
   hookPatchSchema,
@@ -111,6 +112,18 @@ describe("register body schema", () => {
     expect(withPersona.success && withPersona.data.personaId).toBe(uuid);
     expect(registerHookSchema.safeParse({ ...valid, personaId: "not-a-uuid" }).success).toBe(false);
   });
+
+  it("text colour: white or black only; absent leaves it to the column default, white (0073)", () => {
+    for (const textColor of ["white", "black"] as const) {
+      const parsed = registerHookSchema.safeParse({ ...valid, textColor });
+      expect(parsed.success && parsed.data.textColor).toBe(textColor);
+    }
+    const unchosen = registerHookSchema.safeParse(valid);
+    expect(unchosen.success && unchosen.data.textColor).toBeUndefined();
+    for (const textColor of ["gray", "#000000", "Black", ""]) {
+      expect(registerHookSchema.safeParse({ ...valid, textColor }).success).toBe(false);
+    }
+  });
 });
 
 describe("clip patch schema", () => {
@@ -127,6 +140,36 @@ describe("clip patch schema", () => {
     expect(hookPatchSchema.safeParse({ personaId: uuid }).success).toBe(true);
     expect(hookPatchSchema.safeParse({ personaId: null }).success).toBe(true);
     expect(hookPatchSchema.safeParse({ personaId: "nope" }).success).toBe(false);
+  });
+
+  it("accepts a text colour change alone — white or black, nothing else (0073)", () => {
+    expect(hookPatchSchema.safeParse({ textColor: "black" }).success).toBe(true);
+    expect(hookPatchSchema.safeParse({ textColor: "white" }).success).toBe(true);
+    for (const textColor of ["gray", "#ffffff", "Black", null]) {
+      expect(hookPatchSchema.safeParse({ textColor }).success).toBe(false);
+    }
+  });
+});
+
+describe("שכפול לדמות prefill", () => {
+  it("carries the source clip's text colour across, exactly like its safe area (0073)", () => {
+    const source = {
+      id: "33333333-3333-4333-8333-333333333333",
+      textSafeArea: { x: 25, y: 1062, w: 1009, h: 179 },
+      textColor: "black" as const,
+      tags: { vibe: "מופתע" },
+      durationMs: 3200,
+    };
+    const personaId = "44444444-4444-4444-8444-444444444444";
+    expect(duplicatePrefill(source, personaId)).toEqual({
+      sourceClipId: source.id,
+      personaId,
+      textSafeArea: source.textSafeArea,
+      textColor: "black",
+      tags: source.tags,
+      durationMs: 3200,
+    });
+    expect(duplicatePrefill({ ...source, textColor: "white" }, personaId).textColor).toBe("white");
   });
 });
 

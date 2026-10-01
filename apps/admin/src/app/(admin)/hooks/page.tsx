@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getDb, getStorage, schema } from "@aiugc/core";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import type { HookTextColor } from "@aiugc/core/hook-text-color";
 import { adminSession, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 import { HooksManager } from "./hooks-manager";
 
@@ -33,6 +34,7 @@ export default async function AdminHooksPage() {
       durationMs: clip.durationMs,
       tags: clip.tags as Record<string, string>,
       textSafeArea: clip.textSafeArea as SafeRect,
+      textColor: clip.textColor as HookTextColor,
       active: clip.active,
       personaId: clip.personaId ?? undefined,
       personaName: clip.personaId ? personaName.get(clip.personaId) : undefined,

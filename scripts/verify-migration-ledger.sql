@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0048 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0049 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,10 +33,10 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 39 rows: **37 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 40 rows: **38 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
--- which this sentence had missed; 0044-0047 then added one each, to 38, and
--- 0048 one more on 2026-09-21, to 39.) Two of those
+-- which this sentence had missed; 0044-0047 then added one each, to 38,
+-- 0048 one more on 2026-09-21, to 39, and 0049 one on 2026-10-01, to 40.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -61,7 +61,7 @@
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
 -- 30 by 0040, 0043 took it to 34 with two ('0043', '0043-plans'), 0044-0047 to
--- 38 with one each, 0048 to **39**, and 0041/0042 before them took it to 32 with one row each — they are
+-- 38 with one each, 0048 to 39, 0049 to **40**, and 0041/0042 before them took it to 32 with one row each — they are
 -- kept separate, not paired like '0038+0040', because they assert different
 -- objects and either can fail without the other: 0041 owns the column, indexes
 -- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
@@ -650,6 +650,21 @@ WITH checks(migration, layer, applied, note) AS (VALUES
   AND NOT EXISTS (SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'checkout_intents')),
   'checkout_intents: 10 columns, (user_id,status) index, unique payment id + CHECK + 3 FKs, RLS on with no policy'),
+
+-- 0049: hook_clips.text_color (decision 0073) -- the column (text, NOT NULL,
+-- default 'white') AND its named white|black CHECK; a column that landed
+-- without the constraint would accept any string the code never wrote.
+('0049', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'hook_clips'
+      AND column_name = 'text_color' AND data_type = 'text'
+      AND is_nullable = 'NO' AND column_default = '''white''::text')
+  AND EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid = to_regclass('public.hook_clips') AND contype = 'c'
+      AND conname = 'hook_clips_text_color_check'
+      AND pg_get_constraintdef(oid) LIKE '%white%'
+      AND pg_get_constraintdef(oid) LIKE '%black%')),
+  'hook_clips.text_color: text NOT NULL default white + the white|black CHECK'),
 
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
