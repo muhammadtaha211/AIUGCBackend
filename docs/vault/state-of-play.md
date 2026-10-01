@@ -40,6 +40,21 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**The demo-analysis refilm gate counts `unreadable` only since 2026-10-01** — branch
+`fix/legibility-gate-unreadable-only`, **pushed, NOT merged, NOT on the box**
+([[0069-the-refilm-gate-counts-unreadable-only]]). `low` stops counting. The 0.75 cap on low +
+unreadable is deleted, and the unreadable threshold stays at 0.25. MEASURED: neither key has a live
+`app_config` row today, so no migration. **FOUNDER-REPORTED:** `analyze_demo` job `174c1063-bd8c-42a9-b858-122ae1109ab3`
+(demo `207c6421…`, analysis `e4be3bce…`) ran 2026-10-01 00:59–01:00 UTC on `hetzner:heavy`,
+`succeeded`, and its analysis was rejected with the refilm message. He judged the recording readable
+throughout, and reported 10 `high` / 10 `low` / 0 `unreadable` in the first 20 states, every `high`
+being the Chrome address bar. **MEASURED (read-only, same day):** all 65 states are 10 `high` / 55
+`low` / 0 `unreadable`, so 0.846 tripped the 0.75 cap. The first 20 are 9 / 11, not 10 / 10. All 55
+`low` frames carry transcribed Hebrew. The address-bar claim is not verified. **The fix does
+nothing until it is merged AND the box is pulled and restarted** (0039, `docs/07-worker-box.md`
+§11). The founder re-uploads only after that; `e4be3bce` itself stays rejected, neither re-run nor
+re-gated.
+
 **Billing shipped 2026-09-17 and is all merged.** `origin/main` carries the engine (`54c6231`), the
 customer-facing half (`7ccb708`) and the legal/public pass (`d215eae`); migrations 0044–0047 applied.
 Read the notes, not a summary: 0052–0058 in `decisions/`. `UPDATED` in `(legal)/legal.tsx` is
@@ -751,6 +766,10 @@ the 2026-09-26 custom domain (founder-reported):**
   field need the restart. The web half ships with Vercel. **Regrouping existing analyses under v2
   is NOT done and is the founder's call** — each is a paid call that overwrites a computed-once
   column; until then their other readable moments are placed by nearest neighbour.
+- **Merge `fix/legibility-gate-unreadable-only`, then put the box on it — `git pull`,
+  `pnpm install`, restart, `git log -1`** (2026-10-01,
+  [[0069-the-refilm-gate-counts-unreadable-only]], `docs/07-worker-box.md` §11). The gate runs only in the worker, so the Vercel deploy alone changes
+  nothing. Gate the restart on no `running` jobs. Then re-upload the demo that `e4be3bce` rejected.
 - **Take the Sumit checkout live — DONE 2026-09-21 except step 8.** Kept with a status per step,
   because the order is the useful part and because a rebuild would follow it again:
   1. ~~Merge and deploy~~ **DONE** — PR #52, `4100cc7`, on Vercel and on the box.

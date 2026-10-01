@@ -495,3 +495,78 @@ describe("the fill round at the production seam (a batch of 4 collapses to one e
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// The legibility gate at the seam
+// ---------------------------------------------------------------------------
+
+// The gate counts "unreadable" alone (decision 0069): "low" is the model's
+// ordinary verdict on a filmed screen and never a reason to refilm.
+describe("the legibility gate at the production seam (unreadable alone decides)", () => {
+  let legibility: string[] = [];
+
+  beforeAll(async () => {
+    // One batch of five: FIVE_STATES' five clusters under a batch size of 10.
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: 10 })
+      .where(eq(dbSchema.appConfig.key, "a_analysis_batch_size"));
+    frameHashes.mockResolvedValue(FIVE_STATES);
+    extractFrames.mockImplementation(
+      async (_input: string, outDir: string, opts: { fps: number }) => {
+        mkdirSync(outDir, { recursive: true });
+        return FIVE_STATES.map((_, i) => {
+          const file = path.join(outDir, `${i}.jpg`);
+          writeFileSync(file, `jpeg ${i}`);
+          return { path: file, timestampMs: Math.round((i * 1000) / opts.fps) };
+        });
+      },
+    );
+    generateRawWithImages.mockImplementation(
+      async (opts: { frames: unknown[] }): Promise<RawResult> =>
+        respond(opts.frames.map((_, i) => entry(i, { legibility: legibility[i] }))),
+    );
+  });
+
+  const analyse = async (labels: string[]) => {
+    legibility = labels;
+    const id = await seedReadyDemo();
+    const requested = await requestDemoAnalysis(db, id);
+    const gateJobId = (requested as { jobId: string }).jobId;
+    await runHeavyLane();
+    rmSync(path.join(WORK_DIR, "analysis", id), { recursive: true, force: true });
+    return {
+      job: await jobRowOf(gateJobId),
+      analysis: (await getLatestDemoAnalysis(db, id))!,
+    };
+  };
+
+  it(
+    "every state low and none unreadable: the analysis lands ready",
+    { timeout: 60_000 },
+    async () => {
+      const { job, analysis } = await analyse(["low", "low", "low", "low", "low"]);
+      expect(job.status).toBe("succeeded");
+      expect(analysis.status).toBe("ready");
+      expect(analysis.failReason).toBeNull();
+      const timeline = analysisTimelineSchema.parse(analysis.timeline);
+      expect(timeline.map((s) => s.legibility)).toEqual(["low", "low", "low", "low", "low"]);
+    },
+  );
+
+  it(
+    "unreadable above the threshold: rejected with the refilm message, timeline kept",
+    { timeout: 60_000 },
+    async () => {
+      // 2 of 5 unreadable = 0.4 > the 0.25 default.
+      const { job, analysis } = await analyse(["high", "unreadable", "high", "unreadable", "high"]);
+      expect(job.status).toBe("succeeded");
+      expect(analysis.status).toBe("rejected");
+      expect(analysis.failReason).toBe(
+        "חלק גדול מדי מהצילום לא קריא — צלמו שוב בתאורה בלי ברק על המסך וביד יציבה יותר",
+      );
+      expect(analysis.stateCount).toBe(5);
+      expect(analysisTimelineSchema.parse(analysis.timeline)).toHaveLength(5);
+    },
+  );
+});

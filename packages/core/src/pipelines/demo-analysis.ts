@@ -206,50 +206,28 @@ export function subsampleClusters<T>(clusters: T[], max: number): T[] {
   return kept;
 }
 
-/** Fraction of states the model could not read comfortably (low + unreadable). */
-export function illegibleFraction(states: { legibility: string }[]): number {
-  if (states.length === 0) return 1;
-  return states.filter((s) => s.legibility !== "high").length / states.length;
-}
-
-/** Fraction of states the model could not read at all — same empty-is-1 convention. */
+/** Fraction of states the model could not read at all; an empty timeline is 1. */
 export function unreadableFraction(states: { legibility: string }[]): number {
   if (states.length === 0) return 1;
   return states.filter((s) => s.legibility === "unreadable").length / states.length;
 }
 
-export type LegibilityVerdict =
-  | { ok: true }
-  | { ok: false; axis: "unreadable" | "illegible"; fraction: number; threshold: number };
+export type LegibilityVerdict = { ok: true } | { ok: false; fraction: number; threshold: number };
 
 /**
- * The two-axis footage gate as a pure decision: thresholds are parameters
- * (pricing.ts precedent — the caller loads config and passes it in). The
- * unreadable axis is checked first, so the axis is deterministic when both
- * trip. Empty timelines inherit the fractions' empty-is-1 convention and
- * always fail on the unreadable axis.
+ * The footage gate as a pure decision: only "unreadable" states count —
+ * "low" is usable everywhere downstream and never a reason to refilm
+ * (decision 0069). The threshold is a parameter (pricing.ts precedent — the
+ * caller loads config and passes it in). An empty timeline inherits the
+ * fraction's empty-is-1 convention and always fails.
  */
 export function legibilityVerdict(
   states: { legibility: string }[],
-  thresholds: { unreadableMax: number; illegibleMax: number },
+  thresholds: { unreadableMax: number },
 ): LegibilityVerdict {
   const unreadable = unreadableFraction(states);
   if (unreadable > thresholds.unreadableMax) {
-    return {
-      ok: false,
-      axis: "unreadable",
-      fraction: unreadable,
-      threshold: thresholds.unreadableMax,
-    };
-  }
-  const illegible = illegibleFraction(states);
-  if (illegible > thresholds.illegibleMax) {
-    return {
-      ok: false,
-      axis: "illegible",
-      fraction: illegible,
-      threshold: thresholds.illegibleMax,
-    };
+    return { ok: false, fraction: unreadable, threshold: thresholds.unreadableMax };
   }
   return { ok: true };
 }
@@ -1204,43 +1182,25 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       );
     }
 
-    // Two-axis footage gate, calibrated on the first five real analyses
-    // (2026-08-18). "low" turned out to be the model's ordinary verdict on a
-    // filmed screen, not a refilm signal — measured across all five:
-    //   states  unreadable  illegible
-    //   80      0.013       0.300
-    //   80      0.000       0.438
-    //   52      0.019       0.538
-    //   80      0.013       0.250
-    //   61      0.016       0.492
-    // so the original single 0.4 gate over low+unreadable rejected working
-    // footage. "unreadable" is the actual refilm signal: four of five sit at
-    // exactly one unreadable state (~1 per analysis is the observed rate), so
-    // 0.25 leaves ~13x headroom. Max observed illegible is 0.538 — 0.75 passes
-    // everything real while still rejecting footage the model could barely
-    // read anywhere. Migration 0028 backfilled the rows the 0.4 gate rejected.
+    // Footage gate: the fraction of "unreadable" states alone (decision 0069).
+    // "low" is the model's ordinary verdict on a filmed screen, not a refilm
+    // signal — the first five real analyses (2026-08-18) ran 0.25-0.54 low +
+    // unreadable, and the 0.75 cap 0028 put on that sum rejected analysis
+    // e4be3bce (job 174c1063, 2026-10-01: 55 low, 10 high, 0 unreadable,
+    // every low frame transcribed).
+    // Unreadable on those five was 0.000-0.019 — ~1 state per analysis — so
+    // 0.25 leaves ~13x headroom.
     const unreadableThreshold = await getConfigValueOr(
       ctx.db,
       "a_analysis_unreadable_threshold",
       z.number(),
       0.25,
     );
-    const legibilityThreshold = await getConfigValueOr(
-      ctx.db,
-      "a_analysis_legibility_threshold",
-      z.number(),
-      0.75,
-    );
-    const verdict = legibilityVerdict(assembled, {
-      unreadableMax: unreadableThreshold,
-      illegibleMax: legibilityThreshold,
-    });
+    const verdict = legibilityVerdict(assembled, { unreadableMax: unreadableThreshold });
     if (!verdict.ok) {
       // The job did its work — the verdict on the FOOTAGE lives on the domain
       // row, customer-readable, with the timeline kept for founder debugging.
-      // This branch is pinned by no test: DRY_RUN writes ready and returns
-      // before the gate, so reaching it needs a stubbed vision provider —
-      // separate work. The decision itself is tested via legibilityVerdict.
+      // Pinned at the seam by analysis-seam.test.ts (stubbed vision provider).
       await setAnalysis({
         status: "rejected",
         timeline: assembled,
