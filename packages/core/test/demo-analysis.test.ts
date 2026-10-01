@@ -14,7 +14,6 @@ import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import {
   analysisTimelineSchema,
   getLatestDemoAnalysis,
-  illegibleFraction,
   legibilityVerdict,
   requestDemoAnalysis,
   salvageBatchFrames,
@@ -128,10 +127,8 @@ describe("analyze_demo (dry-run chain)", () => {
       expect(states[0]!.screenKind).toBe("loading");
       expect(states.filter((s) => s.screenKind === "login")).toHaveLength(2);
       expect(states.every((s) => s.screenKind !== undefined)).toBe(true);
-      // The canned mix passes the split gate: 1/12 unreadable, 2/12 illegible.
-      expect(legibilityVerdict(states, { unreadableMax: 0.25, illegibleMax: 0.75 })).toEqual({
-        ok: true,
-      });
+      // The canned mix passes the gate: 1/12 unreadable.
+      expect(legibilityVerdict(states, { unreadableMax: 0.25 })).toEqual({ ok: true });
 
       // Thumbs exist in storage at the recorded paths.
       for (const s of states) {
@@ -284,20 +281,6 @@ describe("salvageBatchFrames", () => {
   });
 });
 
-describe("illegibleFraction", () => {
-  it("counts low and unreadable together, and treats empty as fully illegible", () => {
-    expect(
-      illegibleFraction([
-        { legibility: "high" },
-        { legibility: "low" },
-        { legibility: "unreadable" },
-        { legibility: "high" },
-      ]),
-    ).toBe(0.5);
-    expect(illegibleFraction([])).toBe(1);
-  });
-});
-
 describe("unreadableFraction", () => {
   it("counts only unreadable, and treats empty as fully unreadable", () => {
     expect(
@@ -312,7 +295,7 @@ describe("unreadableFraction", () => {
   });
 });
 
-describe("the split legibility gate on real footage", () => {
+describe("the legibility gate counts unreadable alone (0069)", () => {
   const loadTimeline = (name: string): { legibility: string }[] =>
     (
       JSON.parse(
@@ -322,66 +305,57 @@ describe("the split legibility gate on real footage", () => {
         ),
       ) as { timeline: { legibility: string }[] }
     ).timeline;
-  // handleAnalyzeDemo's config defaults for the two knobs
-  // (a_analysis_unreadable_threshold 0.25 / a_analysis_legibility_threshold 0.75).
-  const GATE_DEFAULTS = { unreadableMax: 0.25, illegibleMax: 0.75 };
+  // handleAnalyzeDemo's config default (a_analysis_unreadable_threshold 0.25).
+  const GATE_DEFAULTS = { unreadableMax: 0.25 };
+  const states = (counts: Record<string, number>) =>
+    Object.entries(counts).flatMap(([legibility, n]) =>
+      Array.from({ length: n }, () => ({ legibility })),
+    );
 
   it("passes both real-botteacher fixtures", () => {
     const study = loadTimeline("real-botteacher-study-app.json");
     expect(study).toHaveLength(80);
     expect(unreadableFraction(study)).toBe(1 / 80);
-    expect(illegibleFraction(study)).toBe(20 / 80);
     expect(legibilityVerdict(study, GATE_DEFAULTS)).toEqual({ ok: true });
 
     const routing = loadTimeline("real-botteacher-file-routing.json");
     expect(routing).toHaveLength(61);
     expect(unreadableFraction(routing)).toBe(1 / 61);
-    expect(illegibleFraction(routing)).toBe(30 / 61);
-    // 30/61 ≈ 0.49 rejected this real, usable recording under the old single
-    // 0.4 gate — the regression the split exists to fix.
-    expect(illegibleFraction(routing)).toBeGreaterThan(0.4);
     expect(legibilityVerdict(routing, GATE_DEFAULTS)).toEqual({ ok: true });
   });
 
-  it("rejects unreadable-heavy footage the overall axis alone would pass", () => {
-    // 3 of 10 unreadable, nothing merely low: illegible 0.3 clears both the
-    // old 0.4 gate and the new 0.75 axis — only the unreadable axis catches
-    // it. This combination is the entire reason the gate is split.
-    const states = [
-      ...Array.from({ length: 3 }, () => ({ legibility: "unreadable" })),
-      ...Array.from({ length: 7 }, () => ({ legibility: "high" })),
-    ];
-    expect(unreadableFraction(states)).toBe(0.3);
-    expect(illegibleFraction(states)).toBe(0.3);
-    expect(legibilityVerdict(states, GATE_DEFAULTS)).toEqual({
+  it("passes footage that is all low, with none unreadable", () => {
+    expect(legibilityVerdict(states({ low: 10 }), GATE_DEFAULTS)).toEqual({ ok: true });
+    // Job 174c1063's real mix (2026-10-01): its analysis e4be3bce was rejected
+    // by the retired 0.75 cap on low + unreadable at 55/65 ≈ 0.846.
+    expect(legibilityVerdict(states({ high: 10, low: 55 }), GATE_DEFAULTS)).toEqual({ ok: true });
+  });
+
+  it("never adds low to unreadable", () => {
+    // 2/10 unreadable passes on its own; with 6 low beside it the old sum was 0.8.
+    expect(legibilityVerdict(states({ unreadable: 2, low: 6, high: 2 }), GATE_DEFAULTS)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("rejects footage above the unreadable threshold, low or not", () => {
+    expect(legibilityVerdict(states({ unreadable: 3, high: 7 }), GATE_DEFAULTS)).toEqual({
       ok: false,
-      axis: "unreadable",
+      fraction: 0.3,
+      threshold: 0.25,
+    });
+    expect(legibilityVerdict(states({ unreadable: 3, low: 7 }), GATE_DEFAULTS)).toEqual({
+      ok: false,
       fraction: 0.3,
       threshold: 0.25,
     });
   });
 
-  it("rejects illegible-heavy footage on its own axis; unreadable wins when both trip", () => {
-    // 8/10 merely low: the unreadable axis passes, illegible 0.8 > 0.75.
-    const lowHeavy = [
-      ...Array.from({ length: 8 }, () => ({ legibility: "low" })),
-      ...Array.from({ length: 2 }, () => ({ legibility: "high" })),
-    ];
-    expect(legibilityVerdict(lowHeavy, GATE_DEFAULTS)).toEqual({
+  it("an empty timeline always fails", () => {
+    expect(legibilityVerdict([], GATE_DEFAULTS)).toEqual({
       ok: false,
-      axis: "illegible",
-      fraction: 0.8,
-      threshold: 0.75,
-    });
-    // Both axes trip — the reported axis must be deterministic: unreadable first.
-    const bothTrip = [
-      ...Array.from({ length: 3 }, () => ({ legibility: "unreadable" })),
-      ...Array.from({ length: 5 }, () => ({ legibility: "low" })),
-      ...Array.from({ length: 2 }, () => ({ legibility: "high" })),
-    ];
-    expect(legibilityVerdict(bothTrip, GATE_DEFAULTS)).toMatchObject({
-      ok: false,
-      axis: "unreadable",
+      fraction: 1,
+      threshold: 0.25,
     });
   });
 });
