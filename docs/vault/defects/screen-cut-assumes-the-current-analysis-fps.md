@@ -13,6 +13,13 @@ after its last state. `stepDurations` takes that sample from the `a_analysis_fps
 `demo_analyses` stores no fps, so the rate an old timeline was sampled at is unknown when it is
 re-planned, edited or previewed.
 
+> **Corrected 2026-10-01 — MEASURED:** the rate is not unknown. The analysis's `analyze_demo` job
+> stores it: its checkpoint's `resumeKey` is `<promptVersion>/<fps>/<batchSize>/…`
+> (`demo-analysis.ts`, where `resumeKey` is built). All 16 production jobs read fps 5, by a
+> read-only export of `jobs.state`. `demo_analyses` itself still stores none, and the code does not
+> read the job's value, so the defect below stands
+> ([[screen-spans-from-the-footage-2026-10-01]]).
+
 - **Raising the knob is safe.** The sample shrinks and the cut only moves earlier.
 - **Lowering the knob is the risk.** The sample grows past the old grid. For example, 5 fps → 2 fps
   turns 200 ms into 500 ms, so a stored screen's cut lands after that timeline's own next sample, and

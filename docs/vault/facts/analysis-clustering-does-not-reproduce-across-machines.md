@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-09-28
-method: "`DOTENV_CONFIG_PATH=<main checkout>/apps/cli/.env pnpm --filter @aiugc/cli dev demo audit --all --json` at 44a5b7c (branch analysis-loss-audit), run 2026-09-28 on the founder's Windows machine with ffmpeg 8.1.2-full_build-www.gyan.dev, production read-only. Each analysis-time kept set read from `jobs.state->>'resumeKey'` of the ready analysis's analyze_demo job, in a READ ONLY transaction, and compared representative by representative with the recompute's kept set (packages/core/.work/audit-facts-verify.ts, gitignored scratch). `jobs.locked_by` and the `a_analysis_%` rows of app_config read the same way."
+verified: 2026-10-01
+method: "`DOTENV_CONFIG_PATH=<main checkout>/apps/cli/.env pnpm --filter @aiugc/cli dev demo audit --all --json` at 44a5b7c (branch analysis-loss-audit), run 2026-09-28 on the founder's Windows machine with ffmpeg 8.1.2-full_build-www.gyan.dev, production read-only. Each analysis-time kept set read from `jobs.state->>'resumeKey'` of the ready analysis's analyze_demo job, in a READ ONLY transaction, and compared representative by representative with the recompute's kept set (packages/core/.work/audit-facts-verify.ts, gitignored scratch). `jobs.locked_by` and the `a_analysis_%` rows of app_config read the same way. Re-measured 2026-10-01: frameHashes -> clusterStates -> subsampleClusters at 5 fps on each distinct file compared with every analyze_demo job's resumeKey (packages/core/.work/screen-span/signals.ts, gitignored, same ffmpeg)."
 source: db
 ---
 
@@ -20,7 +20,9 @@ representative (the median frame), in both directions.
 `916bda89` are one 57.5s recording; `3915c8e2` and `29c5ed05` are one 89.6s recording. Within each
 group the checkpoint kept lists are identical strings and the recomputed runs (every span and
 anchor Hamming) are identical, so each group repeats one measurement; the distinct-recording counts are
-given alongside.
+given alongside. "Recording" here means a distinct file. Three of the six files (`66d53d7d`,
+`b398e96d`, `6e30f3e0`) are exports of one take (REASONED from frame similarity, 2026-10-01), so the
+six files are four takes ([[demo-recordings-by-file-and-take-2026-10-01]]).
 
 | demo (analysis)       | kept at analysis | kept by recompute | same frame | moved |
 | --------------------- | ---------------: | ----------------: | ---------: | ----: |
@@ -57,6 +59,12 @@ not.
 **All 10 were claimed by `hetzner:heavy`** (`jobs.locked_by`, which records only the last claim).
 No analysis matched this machine's recompute, so none of the ten was produced here. No
 `a_analysis_%` row exists in `app_config`: fps 5, cap 80 and batch size 10 are the code defaults.
+
+**Re-measured 2026-10-01** with the same ffmpeg (packages/core/.work/screen-span/signals.ts,
+gitignored). The six earlier files gave the same "same frame" counts as above: 26, 20, 33, 30, 31
+and 19. The 84 s file uploaded five times on 2026-10-01 (`752bf15a…`) reproduced 47 of 65. The box
+again gave every upload of one file the identical `resumeKey`: 5 of 5 for that file, 4 of 4 for
+the 57.5 s one. See [[demo-recordings-by-file-and-take-2026-10-01]].
 
 ## The cause — UNVERIFIED
 

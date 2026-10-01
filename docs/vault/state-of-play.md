@@ -40,14 +40,57 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**Every step becomes a fixed 2 s window inside its screen: DECIDED 2026-10-01, NOT YET BUILT**
+([[0075-more-moments-over-fewer]], [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]).
+
+- **What the founder decided:**
+  - more moments over fewer;
+  - every step a fixed 2 s;
+  - 5–10 steps, with the 15–21 s band retired;
+  - every inventory moment plays a 2 s window inside its screen, slid earlier near the screen's
+    end, with extra windows only where a long screen has too few moments.
+- **The code keeps running 0070 and 0072** until a later task builds this. 0002, 0070 and 0072
+  carry dated pointers.
+- **Open, his call:** screens shorter than 2 s, caption length at 2 s, and what counts as "its
+  screen".
+- **The measurement taken for those**, on branch `docs/screen-span-measurement` (docs only, no
+  product code, production read-only, no paid call):
+  - [[screen-spans-from-the-footage-2026-10-01]]
+  - [[the-84s-recording-against-the-founder-timeline-2026-10-01]]
+  - [[demo-recordings-by-file-and-take-2026-10-01]]
+  - [[repeat-analyses-of-one-file-2026-10-01]]
+  - [[founder-timeline-of-the-84s-recording]]
+
+  The headlines:
+  - **MEASURED:** the 15 ready analyses are 7 raw files; REASONED from frame similarity, 5 takes.
+  - **Analysis screens (MEASURED + REASONED):** 168, of which 45 are really under 2 s; 28 of those
+    45 are pieces of a longer real screen (REASONED). 46 pool moments have no clean 2 s window
+    inside their analysis screen. None lacks one inside a founder segment or a wizard page.
+  - **Real screens (REASONED):** 64, of which 11 are under 2 s, 7 of those blank or loading pages.
+  - **Windows by eye (REASONED):** no judged (slid) window inside an analysis screen crossed a
+    real screen change. 10 unslid ones do, where the analysis missed the change. Wizard-page
+    windows crossed in 23 of 44 (one analysis judged per file).
+  - **Missed changes (MEASURED + REASONED):** `isNewScreen` misses 9 real changes across 8 of the
+    15 analyses. Under the shipped 0072 rule, 18 pool moments there get a clip that runs into the
+    next screen ([[a-missed-screen-change-lets-a-step-run-into-the-next-screen]], NOT fixed).
+  - **The founder's timeline (REASONED):** his eight boundaries are all 0.5–2.3 s early, and his
+    1:00 is an in-place swap, not a navigation.
+  - **The spans are not stored anywhere (MEASURED).** REASONED: cluster spans should be free by
+    re-running the clustering on the box and checking each job's `resumeKey`.
+
+- **Kept off the repo:** footage, frames, strips and the per-moment table stay in
+  `packages/core/.work/screen-span/` (gitignored). The frames show private browser tabs.
+
 **Steps end on a real screen change** — branch `feat/steps-end-on-screen-change`, **MERGED** as PR
 #74 (`a212491` on `origin/main`, MEASURED by `git log`, 2026-10-01); deployed and the box pulled and
 restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-change]],
 [[0071-the-3s-step-floor-was-an-undecided-default]], [[0072-step-cap-no-padding-cut-early]]).
 
 - **The first two live v15 plans both failed** (MEASURED, read-only, 2026-10-01), on the founder's
-  own 84 s walkthrough of tavnit.ai. It was uploaded three times that day (demos `dfa291b6`,
-  `28161296`, `24e348bf`, identical state timestamps); the failures are on the second and third.
+  own 84 s walkthrough of tavnit.ai. That raw file was uploaded five times that day. `207c6421`'s
+  analysis was rejected; `dfa291b6`, `28161296`, `24e348bf` and `6a997717` are ready, with
+  identical state timestamps (MEASURED by storage eTag,
+  [[demo-recordings-by-file-and-take-2026-10-01]]). The failures are on `28161296` and `24e348bf`.
   - **`bd0913b4`** (demo `28161296`, analysis `4219e82e`, 65 states), created 12:41:56 UTC: `failed`
     / `validator` after all 3 calls (`usage_events`: 31 + 32 + 32 = 95 agorot). Round 1 picked
     state 9 on a 1.2 s clip; round 2 kept it; round 3 swapped it for a 4.0 s state and landed at
@@ -65,9 +108,19 @@ restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-ch
     code: that route answers 404 while the demo has no plan row. REASONED from the two: these are
     the wizard polling before the plan was requested, not a fault. The route's other 404, a demo
     that is missing or not the caller's, is not ruled out by anything measured here.
-- **The answer: `fix/steps-plan-repair`, COMMITTED LOCALLY, NOT pushed** (2026-10-01,
-  [[0074-unpickable-moments-and-the-last-round-repair]]). Push, PR, deploy and the box wait for the
-  founder's OK.
+- **The answer: `fix/steps-plan-repair`, MERGED** as PR #76 (`826399e` on `origin/main`, MEASURED
+  by `git log`, 2026-10-01; [[0074-unpickable-moments-and-the-last-round-repair]]).
+  **FOUNDER-REPORTED:** he tested it.
+  - **MEASURED, the box runs it.** The first plan after the merge, `d3864d05` (demo `6a997717`,
+    the fifth upload of the 84 s recording), was created 19:23:58 UTC. Its job `439f7ebc` was
+    claimed by `hetzner:light`. Its row reads `ready`, `plan_demo_steps@v15+pickable+access-pin`.
+    The first call had one read-time violation and the second was clean, so it was not repaired.
+    It holds 5 steps, 17.6 s, not approved.
+  - **FOUNDER-REPORTED:** a moment he added by hand from the inventory ran 0.4 s.
+  - **MEASURED:** no stored plan row holds a step under 1 s. Replaying every possible hand-add on
+    `d3864d05` through the shipped `assembleSteps`, exactly one moment runs 0.4 s: state 39,
+    cut by the next step 0.4 s later. 16 others would run 0.2 s
+    ([[the-84s-recording-against-the-founder-timeline-2026-10-01]]).
   - The model is sent only states whose own clip can carry a caption (1.6 s), plus the pin. A pick
     of a hidden state is stripped.
   - When the third call still violates, code drops the steps whose caption cannot be read, trims
@@ -76,7 +129,8 @@ restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-ch
   - Every model plan's `prompt_version` now carries `+pickable`; a repaired one adds `+repaired`.
   - MEASURED with a mocked model on the two real timelines: `bd0913b4`'s last round is stored at
     19.6 s, 5 steps; a `6658999c` last round carrying state 12 is stored without it.
-    **What the model does with the smaller timeline is unmeasured** until a live plan runs.
+    **What the model does with the smaller timeline is barely measured:** one live plan has run
+    since, `d3864d05` (below), with one violation on its first call and a clean second call.
   - Code only, no prompt change, no migration. **The box is the only axis:** `git pull` and a
     worker restart.
   - MEASURED: 51 of the 151 screens in the 14 ready analyses offer the model no moment, 24 of
@@ -100,7 +154,7 @@ restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-ch
   `plan_demo_steps@v15` reads `clipMs`, which only the new code sends. Done (see above).
 - **Waiting on the founder:**
   - a paid `aiugc plan regress` to see v15's live behaviour. The live data points so far are the
-    two failures above. Every fixture's live pin now includes states the model is no longer shown
+    two failures above and one clean `+pickable` plan, `d3864d05`. Every fixture's live pin now includes states the model is no longer shown
     ([[timeline-fixtures]]), so that run reads as drift to review, not as green or red;
   - any backfill of the 17 stored plans. They keep their old durations until edited.
 - **For the founder to watch:** the local A/B renders of plan ca8d5b72 are in
@@ -108,7 +162,8 @@ restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-ch
 
 **The demo-analysis refilm gate counts `unreadable` only since 2026-10-01** — branch
 `fix/legibility-gate-unreadable-only`. MEASURED 2026-10-01: its commit 0778c5a is an ancestor of
-`origin/main` 67448de (PR #72, merged). **No box read says the box runs it**
+`origin/main` 67448de (PR #72, merged). **The box runs it** (MEASURED 2026-10-01, see the paragraph
+below).
 **The hook line's colour is set per clip by the founder since 2026-10-01** — branch
 `feat/hook-text-color`, **migration 0049 APPLIED to production 2026-10-01, branch PUSHED, NOT
 merged, NOT on the box** — the push and the apply each on the founder's explicit go for that one
@@ -148,7 +203,14 @@ being the Chrome address bar. **MEASURED (read-only, same day):** all 65 states 
 `low` frames carry transcribed Hebrew. The address-bar claim is not verified. **The fix does
 nothing until it is merged AND the box is pulled and restarted** (0039, `docs/07-worker-box.md`
 §11). The founder re-uploads only after that; `e4be3bce` itself stays rejected, neither re-run nor
-re-gated.
+re-gated. **MEASURED 2026-10-01, the box runs the fix:**
+
+- the same raw file was re-uploaded as `dfa291b6`;
+- its analysis `4113d37d`, job `c2273990` on `hetzner:heavy`, came back `ready` at 02:51 UTC;
+- it is 9 `high` / 56 `low` / 0 `unreadable`, 0.862 `low`, which the old 0.75 cap would have
+  rejected;
+- three more re-uploads are ready too ([[demo-recordings-by-file-and-take-2026-10-01]]);
+- `67448de` is an ancestor of the `+pickable` code the box ran at 19:23 UTC.
 
 **Billing shipped 2026-09-17 and is all merged.** `origin/main` carries the engine (`54c6231`), the
 customer-facing half (`7ccb708`) and the legal/public pass (`d215eae`); migrations 0044–0047 applied.
@@ -868,15 +930,17 @@ the 2026-09-26 custom domain (founder-reported):**
   it — `git pull`, `pnpm install`, restart, `git log -1`** (2026-10-01,
   [[0069-the-refilm-gate-counts-unreadable-only]], `docs/07-worker-box.md` §11). The gate runs only in the worker, so the Vercel deploy alone changes
   nothing. Gate the restart on no `running` jobs. Then re-upload the demo that `e4be3bce` rejected.
-  (MEASURED 2026-10-01: the merge is done — PR #72; the box half is still owed.)
+  (MEASURED 2026-10-01: the merge is done — PR #72. **The box half is done too**: the re-upload
+  `4113d37d` passed the new gate at 02:51 UTC, at 0.862 `low`. See "The demo-analysis refilm
+  gate" above.)
 - **~~Review and merge `fix/steps-plan-ladder`~~ MERGED as PR #75 (`a21da11`); on the box
   (founder-reported).** It did not stop the failure: the next live plan failed on the new wording.
-- **Review `fix/steps-plan-repair`, then say go for the push and the PR** (2026-10-01,
-  [[0074-unpickable-moments-and-the-last-round-repair]]). It is committed in this checkout and NOT
-  pushed. After the merge: `git pull` and restart the box (the plan job is the only reader, so
-  Vercel changes nothing here). Then retry the plan on demo `24e348bf` or `28161296` from the
-  wizard (one paid ladder, at most ~₪1) and read the new row's `prompt_version`, which must carry
-  `+pickable`, and its `retry_violations`.
+- **~~Review `fix/steps-plan-repair`, then say go for the push and the PR~~ MERGED as PR #76
+  (`826399e`), tested by the founder (founder-reported), on the box** (2026-10-01,
+  [[0074-unpickable-moments-and-the-last-round-repair]]).
+  - MEASURED: the first plan after it, `d3864d05` on the new upload `6a997717`, carries `+pickable`
+    and two calls of `retry_violations`.
+  - The retry this item asked for ran on the new upload, not on `24e348bf` or `28161296`.
 - **~~Review, merge and deploy `feat/steps-end-on-screen-change`~~ MERGED as PR #74, deployed and on
   the box** (2026-10-01, [[0072-step-cap-no-padding-cut-early]]; the deploy and the box restart are
   founder-reported).
@@ -966,6 +1030,14 @@ distinct, every inbound link uses the full filename), but `[[0047]]` is ambiguou
 0059 were taken **above** the highest number rather than filling a gap, because renumbering a
 published note breaks the links pointing at it. Renumber or leave it — a founder call.
 
+- **Three open items of the fixed 2 s step — OPEN, 2026-10-01, the founder's call**
+  ([[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]):
+  - screens shorter than 2 s;
+  - caption length at 2 s;
+  - what counts as "its screen".
+
+  The facts for them are in [[screen-spans-from-the-footage-2026-10-01]].
+
 - **How a trial user is told about a hand grant — OPEN, 2026-10-01, the founder's call.** `/privacy`
   promises operational email only, and a grant notice is not on its list unless it answers
   something the person wrote. [[0068-prices-stand-no-free-tier-trials-by-hand]] §3. The free-tier
@@ -995,6 +1067,15 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   ([[0004-service-b-config-is-provisional]]).
 
 ## Unfinished measurement
+
+- **Cluster spans on the box — not run.**
+  - Re-running `frameHashes` → `clusterStates` on the box should reproduce every analysis's
+    clusters exactly. That is REASONED from the box giving identical kept sets for every re-upload
+    of a file.
+  - The check is mechanical: the recomputed kept list must equal the job's `resumeKey`.
+  - Off the box it does not reproduce ([[analysis-clustering-does-not-reproduce-across-machines]]).
+  - Needed only if 0076 is built on stored cluster bounds rather than the footage
+    ([[screen-spans-from-the-footage-2026-10-01]]).
 
 - **No cold render measured on the box** — one including the ~92 MB Chrome Headless Shell download.
   Matters only if the box is rebuilt from scratch rather than from a snapshot.

@@ -8,6 +8,17 @@ source: founder + db + code
 
 # 0072 — Steps: a 4 s cap, no padding, and cut early when unsure
 
+> **2026-10-01 — decided, NOT YET BUILT:**
+> [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]] replaces this note's 4 s cap and its
+> "no floor" with a fixed 2 s step. It also replaces the bounds this note kept from
+> [[0002-runtime-band-floor-is-15s]]: 5–7 steps and 15–21 s become 5–10 steps, with the band
+> retired. The code runs this note until 0076 is built.
+>
+> **Re-confirmed in code the same day:** a stored `timestampMs` is the lower median of its cluster
+> (`ffmpeg.ts` `clusterStates`), and `demo-analysis.ts` never reads a cluster's `startMs` or
+> `endMs`. Where screens really start and end was measured from the footage instead:
+> [[screen-spans-from-the-footage-2026-10-01]].
+
 How [[0070-a-step-ends-on-a-real-screen-change]] is built. Tags: **PROPOSED → APPROVED** (put to the
 founder in the plan and approved with it, 2026-10-01), **MEASURED** (the facts notes cited),
 **REASONED** (inference from what is cited).
