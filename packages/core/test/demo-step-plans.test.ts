@@ -1130,8 +1130,11 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
     // 3000 (cut by state 1) + 4000 + 4000 (the cap) = 11000ms.
     const v = shape(pick(0, 1, 5)).find((x) => x.includes("total"));
     expect(v).toContain("11000ms");
-    expect(v).toContain("too SHORT");
+    expect(v).toContain("too SHORT by 4000ms");
     expect(v).toContain("15000-21000ms");
+    // What each step runs, so the retry does not have to redo the clip
+    // arithmetic it just got wrong.
+    expect(v).toContain("state 0 runs 3000ms, state 1 runs 4000ms, state 5 runs 4000ms");
     // The retry prompt orders MINIMAL edits and every untouched step kept; a
     // live v4 retry read that as "do not add" and handed back the same short
     // plan with a note suggesting the very fix it would not make. So this
@@ -1153,7 +1156,10 @@ describe("the runtime band (steps only — the hook sits on top)", () => {
       runtime: { ...band, maxMs: 18_000 },
     }).find((x) => x.includes("total"));
     expect(v).toContain("19000ms");
-    expect(v).toContain("too LONG");
+    // Live (plan bd0913b4, 2026-10-01): the last retry swapped a 1.2s step
+    // for a 4.0s one and landed 600ms over; the overshoot is spelled out.
+    expect(v).toContain("too LONG by 1000ms");
+    expect(v).toContain("state 5 runs 4000ms");
   });
 
   it("is silent inside the band, and absent when no band is supplied", () => {
@@ -1478,10 +1484,53 @@ describe("a caption must outlast its own read time", () => {
     expect(hit).toContain("state 1");
     expect(hit).toContain("on screen for 1200ms but needs 1600ms");
     expect(hit).toContain("the app leaves that screen 1200ms after this state");
-    // (1200 - 400 lead) at 2.5 words/sec = 2 words.
-    expect(hit).toContain("cut it to 2 words");
+    // (1200 - 400 lead) at 2.5 words/sec = 2 words — under the 3-word floor,
+    // so no rewrite can fix it. Offering "cut it to 2 words" spent a retry
+    // live (plan bd0913b4, 2026-10-01): the model wrote 3 words, still short.
+    expect(hit).not.toContain("cut it to");
+    expect(hit).toContain("no caption of 3 or more words fits");
+    expect(hit).toContain("drop this step");
     expect(hit).toContain("select an earlier state on the same screen");
     expect(hit).not.toContain("drop one of the two states");
+  });
+
+  it("offers the shorter caption only when one of at least 3 words fits", () => {
+    // The same screen, left 2000ms after state 1: (2000 - 400) at 2.5
+    // words/sec = 4 words fit, so the rewrite is a real exit — and dropping
+    // the step is still offered beside it.
+    const roomier: AnalysisState[] = [
+      state({ timestampMs: 0, screenName: "בית", visibleText: ["אחת"], actionType: "navigate" }),
+      state({
+        timestampMs: 2000,
+        screenName: "בית",
+        visibleText: ["אחת", "שתיים"],
+        actionType: "tap",
+      }),
+      state({
+        timestampMs: 3800,
+        screenName: "בית",
+        visibleText: ["אחת", "שתיים"],
+        actionType: "idle",
+      }),
+      state({
+        timestampMs: 6000,
+        screenName: "סיום",
+        visibleText: ["נשמר"],
+        actionType: "result",
+      }),
+    ];
+    const hit = findPlanViolations(
+      [
+        { sourceIndex: 1, label: "אחת שתיים שלוש ארבע חמש שש" },
+        { sourceIndex: 3, label: "נשמר" },
+      ],
+      roomier,
+      8,
+      { minSteps: 1, notes: null, bounds: boundsOver(roomier), runtime: band },
+    ).find((v) => v.includes("but needs"));
+    expect(hit).toContain("on screen for 2000ms but needs 2800ms");
+    expect(hit).toContain("either cut it to 4 words or fewer");
+    expect(hit).toContain("drop this step");
   });
 
   it("stays silent when every caption fits its window", () => {

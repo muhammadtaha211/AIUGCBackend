@@ -40,9 +40,26 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**Steps end on a real screen change** — branch `feat/steps-end-on-screen-change`, **pushed, NOT
-merged, NOT deployed, NOT on the box** ([[0070-a-step-ends-on-a-real-screen-change]],
+**Steps end on a real screen change** — branch `feat/steps-end-on-screen-change`, **MERGED** as PR
+#74 (`a212491` on `origin/main`, MEASURED by `git log`, 2026-10-01); deployed and the box pulled and
+restarted (founder-reported, 2026-10-01) ([[0070-a-step-ends-on-a-real-screen-change]],
 [[0071-the-3s-step-floor-was-an-undecided-default]], [[0072-step-cap-no-padding-cut-early]]).
+
+- **The first live v15 plan failed** (MEASURED, read-only, 2026-10-01). Plan `bd0913b4` (demo
+  `28161296`, the founder's own 84 s walkthrough of tavnit.ai, analysis `4219e82e`, 65 states) ended
+  `failed` / `fail_kind = validator` after all 3 calls (`usage_events`: 31 + 32 + 32 = 95 agorot).
+  - **Round 1:** state 9 was picked with a 1.2 s clip and a 7-word caption; total 14.8 s.
+  - **Round 2:** the retry said "cut it to 2 words or fewer". That is impossible under the 3-word
+    floor, so the model wrote 3 words, still 0.4 s short.
+  - **Round 3:** it swapped state 9 for a 4.0 s state and landed at 21.6 s, 0.6 s over. Dropping
+    the step would have given 17.6 s and passed.
+  - **The fix:** branch `fix/steps-plan-ladder`, not yet merged. The read-time message stops
+    offering a rewrite when no 3-word caption fits, and offers "drop this step" for a screen cut.
+    The too-short and too-long messages now give each step's run and the overshoot. Code only: no
+    prompt file or version change, and the box plan job is the only reader.
+  - **The fix's effect on the model is REASONED, not measured.** Replaying the reconstructed rounds
+    (their totals match the stored violations exactly) shows round 2 now offering the drop that
+    passes. Only a live retry shows what the model does with it.
 
 - **The rule.** A step's clip runs from the picked state to its screen's end (2 of 3 analysis
   signals, cut one sample after the last state on the screen), at most 4 s, never past the next
@@ -50,10 +67,11 @@ merged, NOT deployed, NOT on the box** ([[0070-a-step-ends-on-a-real-screen-chan
 - **The evidence.** MEASURED: 24 of 95 stored plan steps ran past a screen change, and 12 released
   renders carry a jump ([[stored-plans-under-the-screen-rule-2026-10-01]],
   [[screen-change-signal-2026-10-01]]).
-- **To take effect** it needs the merge, Vercel, and a box pull + worker restart **together**: prompt
-  `plan_demo_steps@v15` reads `clipMs`, which only the new code sends.
+- **To take effect** it needed the merge, Vercel, and a box pull + worker restart **together**: prompt
+  `plan_demo_steps@v15` reads `clipMs`, which only the new code sends. Done (see above).
 - **Waiting on the founder:**
-  - a paid `aiugc plan regress` to see v15's live behaviour;
+  - a paid `aiugc plan regress` to see v15's live behaviour. The one live data point so far is the
+    failure above;
   - any backfill of the 17 stored plans. They keep their old durations until edited.
 - **For the founder to watch:** the local A/B renders of plan ca8d5b72 are in
   `packages/core/.work/steps-screen/renders/` (gitignored, his machine only).
@@ -83,9 +101,8 @@ render, real bank clip `1b4a1a71`, 95-frame hook): two runs of the unchanged pip
 identically on frames 0–87, then drift run to run from frame 88 (still inside the hook) with min
 PSNR 41 dB. The white render on the new code decodes identically to the second of those runs on
 all 197 frames (`framemd5`). The frame grabs are under `packages/core/.work/hook-text-color/`
-(gitignored). **Merge-order note:** the unmerged `feat/steps-end-on-screen-change` (96e9873) also
-touches this file, `packages/remotion/src/schema.ts` and `apps/web/src/lib/service-a-ui.ts`, so
-whichever merges second checks those three and reruns `pnpm repo-map`.
+(gitignored). ~~**Merge-order note:** …~~ Moot: both branches are merged (PR #73 `ab51a1b`, then
+PR #74 `a212491`, MEASURED by `git log`, 2026-10-01).
 
 **The demo-analysis refilm gate counts `unreadable` only since 2026-10-01** — branch
 `fix/legibility-gate-unreadable-only`, **MERGED** as PR #72 (`67448de` on `origin/main`, MEASURED by
@@ -822,12 +839,15 @@ the 2026-09-26 custom domain (founder-reported):**
   [[0069-the-refilm-gate-counts-unreadable-only]], `docs/07-worker-box.md` §11). The gate runs only in the worker, so the Vercel deploy alone changes
   nothing. Gate the restart on no `running` jobs. Then re-upload the demo that `e4be3bce` rejected.
   (MEASURED 2026-10-01: the merge is done — PR #72; the box half is still owed.)
-- **Review, merge and deploy `feat/steps-end-on-screen-change`** (2026-10-01,
-  [[0072-step-cap-no-padding-cut-early]]). It changes code on both axes: Vercel (the plan edit route,
-  the analysis route) and the box (the plan job).
-  - **The box must `git pull` and restart in one go.** Prompt v15 is read per call and expects the
-    `clipMs` only the new code sends.
-  - **Then decide two paid or data steps:**
+- **Review and merge `fix/steps-plan-ladder`, then `git pull` and restart the box** (2026-10-01).
+  The first live v15 plan failed on retry advice the model could not take (see "Steps end on a real
+  screen change" above). The plan job is the only reader, so Vercel changes nothing here. Then
+  retry the plan on demo `28161296` from the wizard (one paid ladder, at most ~₪1) and read the new
+  row's `retry_violations`.
+- **~~Review, merge and deploy `feat/steps-end-on-screen-change`~~ MERGED as PR #74, deployed and on
+  the box** (2026-10-01, [[0072-step-cap-no-padding-cut-early]]; the deploy and the box restart are
+  founder-reported).
+  - **Still to decide, two paid or data steps:**
     - a live `aiugc plan regress` (CARRIED estimate ~₪0.50 per fixture, the six-word file's own figure; five files) to see v15's
       behaviour;
     - whether to re-save or backfill the stored plans whose released renders jump: ca8d5b72,
