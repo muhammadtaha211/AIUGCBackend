@@ -1090,24 +1090,29 @@ export function findPlanViolations(
       // rewriting the label in place often cannot fix it, and merging the pair
       // into one caption is exactly what the ONE-CAPTION-PER-BEAT rule asks
       // for. The screen itself (or the recording's end): the state was picked
-      // too late on its screen, and only an earlier moment buys time.
+      // too late on its screen — drop the step, or an earlier moment buys time.
+      //
+      // A rewrite is only offered when a caption of MIN_LABEL_WORDS still
+      // fits: the prompt never allows fewer, so "cut it to 2 words" is advice
+      // the model cannot take (live, plan bd0913b4: it wrote 3 words, still
+      // short, and the retry was spent).
       assembled.forEach((step, i) => {
         const needed = readTimeMs(step.label);
         if (step.durationMs >= needed) return;
         const fits = Math.floor(
           ((step.durationMs - LABEL_LEAD_MS) / 1000) * LABEL_WORDS_PER_SECOND,
         );
-        const shorter =
-          fits >= 1
-            ? `either cut it to ${fits} word${fits === 1 ? "" : "s"} or fewer`
-            : "there is no label short enough to fit";
+        const so =
+          fits >= MIN_LABEL_WORDS
+            ? `so either cut it to ${fits} words or fewer, or`
+            : `and no caption of ${MIN_LABEL_WORDS} or more words fits in that, so`;
         const next = assembled[i + 1];
         const cutByNext =
           next !== undefined && step.durationMs === next.timestampMs - step.timestampMs;
         violations.push(
           cutByNext
-            ? `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — its window is cut by the next selected state, so ${shorter}, or drop one of the two states and let a single caption cover the whole beat`
-            : `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — the app leaves that screen ${step.durationMs}ms after this state (its clipMs), so ${shorter}, or select an earlier state on the same screen, or a different moment`,
+            ? `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — its window is cut by the next selected state, ${so} drop one of the two states and let a single caption cover the whole beat`
+            : `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — the app leaves that screen ${step.durationMs}ms after this state (its clipMs), ${so} drop this step, or select an earlier state on the same screen, or a different moment`,
         );
       });
       // The FLOOR needs the same unreachability escape as the minimum count.
@@ -1196,13 +1201,17 @@ export function findPlanViolations(
           }
         }
       }
+      // Each step's assembled run rides along: with per-state clips the total
+      // is arithmetic the model gets wrong (live, plan bd0913b4: the last
+      // retry swapped a 1.2s step for a 4.0s one and landed 600ms over).
+      const runs = assembled.map((s) => `state ${s.sourceIndex} runs ${s.durationMs}ms`).join(", ");
       if (total < shape.runtime.minMs && reachableMs >= shape.runtime.minMs) {
         violations.push(
-          `the steps total ${total}ms of video, under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
+          `the steps total ${total}ms of video (${runs}), under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT by ${shape.runtime.minMs - total}ms: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
         );
       } else if (total > shape.runtime.maxMs) {
         violations.push(
-          `the steps total ${total}ms of video, over the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too LONG: drop the least essential steps`,
+          `the steps total ${total}ms of video (${runs}), over the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too LONG by ${total - shape.runtime.maxMs}ms: drop the least essential steps`,
         );
       }
     }
