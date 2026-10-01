@@ -739,6 +739,37 @@ ORDER BY migration, layer DESC;
 -- ---------------------------------------------------------------------------
 -- RESULTS
 --
+-- 2026-10-01, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0049** (hook_clips.text_color, decision 0073) alone, on the founder's
+-- explicit instruction for this one push ("apply 0049, then publish the
+-- branch"): ledger read-back **50 rows, 0000-0049, NO GAPS, nothing unapplied
+-- and NO REPAIR NEEDED** -- `db push` recorded it itself, the TWELFTH time in a
+-- row. Pre-flight was `migration list` (0000-0048 local == remote, 0049 the
+-- only row with an empty remote) and `db push --dry-run`, which named
+-- 0049_hook_clips_text_color.sql alone. Same Docker catalog-cache warning as
+-- 0035-0048, not a failure; the apply printed "Applying migration
+-- 0049_hook_clips_text_color.sql..." and exited 0.
+--
+-- Read at BOTH ends through the code's own connection, inside a read-only
+-- transaction (packages/core/.work/readback-0049.ts -- the migration's own
+-- VERIFY block). BEFORE: no text_color column, no constraint, the group-by
+-- errored "column text_color does not exist", 30 hook_clips rows, ledger 49
+-- rows 0000-0048. AFTER: text_color | text | NO | 'white'::text;
+-- hook_clips_text_color_check = CHECK ((text_color = ANY (ARRAY['white'::text,
+-- 'black'::text]))); 30 rows, all 30 'white'; ledger 50 rows latest 0049. Pure
+-- additive DDL: the constant default filled every existing row, nothing deleted.
+--
+-- Applied through packages/core/.work/supabase-cli-scrubbed.mjs: the pinned
+-- local binary spawned directly, DATABASE_URL read out of `.env` by the
+-- wrapper, :6543/ swapped for :5432/, the URL scrubbed from every byte of
+-- output. Never typed, never printed.
+--
+-- THIS FILE was then run against production (packages/core/.work/
+-- run-ledger-sql.mjs, read-only) and returned **43 rows: 40 structural, 38 true
+-- / 1 false / 1 NULL**, with 0022 the only false and 0020 the NULL -- exactly
+-- the header's expectation -- and the new '0049' row true. The 3 data rows read
+-- 2 true / 1 false, as before.
+--
 -- 2026-09-21, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0048** (checkout_intents, decision 0062) alone, on the founder's written
 -- instruction in the Sumit-adapter brief ("apply to production only at the

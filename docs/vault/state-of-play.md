@@ -41,22 +41,23 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
 **The hook line's colour is set per clip by the founder since 2026-10-01** — branch
-`feat/hook-text-color`, **committed locally, NOT pushed, NOT merged, NOT on the box, migration 0049
-NOT applied** — not pushed by the founder's instruction for this task (2026-10-01: "Do not apply
-the migration, push, merge or deploy. Each waits for my explicit OK"), not as a standing rule
-([[0073-hook-text-colour-is-set-per-clip-by-the-founder]]). Every bank clip carries
+`feat/hook-text-color`, **migration 0049 APPLIED to production 2026-10-01, branch PUSHED, NOT
+merged, NOT on the box** — the push and the apply each on the founder's explicit go for that one
+operation ("apply 0049, then publish the branch … I'll do the merge"); he does the merge
+([[0073-hook-text-colour-is-set-per-clip-by-the-founder]]). MEASURED after the push, read-only:
+`text_color` text NOT NULL default `'white'`, `hook_clips_text_color_check` present, all 30 clips
+`white`, ledger 50 rows 0000–0049. Every bank clip carries
 `hook_clips.text_color`, `white` (the default for every existing clip, the CLI and an admin
 register without a choice) or `black`. The founder sets it on admin `/hooks`, per card or in the
 upload form, and "שכפול לדמות" copies it. A Service A steps render reads it off the clip row and
 burns the hook line black on a light outline (`TEXT_OUTLINE`'s layers in `255,255,255`). Labels,
 B's hook text, captions, the watermark and the retired paths are unchanged. The two previews follow
 it: the admin safe-area editor and the wizard's hook studio. **Deploy order, no step skipped:**
-(1) `db push` 0049 BEFORE MERGE — every build of this branch names `text_color` in its hook-clip
-selects, so a merged web/admin deploy or a box pull without it fails every hook-clip read, while
-main never names the column, so applying it first is safe. A pushed-but-unmerged branch's Vercel
-preview shares the one DB and 500s on `/hooks` and `GET /api/hooks` until 0049 lands; that is
-expected and touches no production path. (2) Merge, so Vercel deploys web + admin. (3) Box pull +
-restart (0039, `docs/07-worker-box.md` §11). (4) Only then set any clip black. MEASURED (local
+(1) ~~`db push` 0049 BEFORE MERGE~~ DONE 2026-10-01 — every build of this branch names
+`text_color` in its hook-clip selects, so it had to exist before any of them deployed; main never
+names it. (2) Merge (the founder), so Vercel deploys web + admin. (3) Box pull + restart (0039,
+`docs/07-worker-box.md` §11) — until then a black clip still burns white. (4) Only then set any
+clip black. MEASURED (local
 render, real bank clip `1b4a1a71`, 95-frame hook): two runs of the unchanged pipeline decode
 identically on frames 0–87, then drift run to run from frame 88 (still inside the hook) with min
 PSNR 41 dB. The white render on the new code decodes identically to the second of those runs on
@@ -689,13 +690,12 @@ Founder-reported from a dashboard unless a line says otherwise. **This section c
 subscription row was written.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0048 applied, ledger clean at 49 rows, no gaps — and since 2026-10-01 exactly
-ONE file pending, `0049_hook_clips_text_color.sql` on the unpushed `feat/hook-text-color`**
-(MEASURED 2026-10-01: `migration list` shows 0000–0048 local = remote and 0049 remote-empty;
-`db push --dry-run` would push 0049 alone). The 49-row count was measured 2026-09-21 against
-`supabase_migrations.schema_migrations` (count 49, first `0000`, last `0048`), matching the 49 files
-then in `supabase/migrations/`. Whoever runs the founder-authorized push of 0049 sets this line to
-"0000–0049 applied, 50 rows, nothing pending". This corrected a stale "0000–0047 / 48 rows" here;
+**Migrations 0000–0049 applied, ledger clean at 50 rows, no gaps, nothing pending** — MEASURED
+2026-10-01 right after the founder-authorized 0049 push, read-only against
+`supabase_migrations.schema_migrations` (count 50, first `0000`, last `0049`) and by
+`migration list` (0000–0049 local = remote). 0049's file lives on `feat/hook-text-color` until the
+merge, so `origin/main` holds 49 files against 50 ledger rows meanwhile — expected, not drift
+([[production-migration-push-log]]). The earlier 49-row line corrected a stale "0000–0047 / 48 rows" here;
 **CLAUDE.md still says 0000–0047 and is now the stale copy.** (Not resolved: CLAUDE.md in the tree
 that sentence was written in, ec0a324, already said 0000–0048, since f4d079e that morning. Since
 2026-09-29 CLAUDE.md holds no ledger count; the other copy is [[production-migration-push-log]].)

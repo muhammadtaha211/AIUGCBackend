@@ -124,7 +124,8 @@ So the choice belongs on the clip, made once, by the person who curates it.
 
 ## To take effect
 
-1. Apply 0049.
+1. Apply 0049. **Done 2026-10-01**, on the founder's go; read-back: all 30 clips `white`, ledger
+   50 rows ([[production-migration-push-log]]).
 2. Merge (Vercel deploys web + admin).
 3. Pull and restart the worker box. That is what makes black burn.
 4. Only then set any clip to black.

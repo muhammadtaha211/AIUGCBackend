@@ -1,8 +1,8 @@
 ---
 type: fact
 status: carried
-verified: 2026-09-21
-method: "Transcribed 2026-09-29 from CLAUDE.md at 83a9a4b (lines 79 and 138, where this history lived until it moved here) and cross-checked against scripts/verify-migration-ledger.sql §RESULTS (lines 725-1091), the commit messages of bf66041, e4cb08e, f86f1ea, 5bc9b84, 2828fd3 and 5ce8a6d (every SHA in the table was matched by date and subject with git show -s), docs/vault/facts/credit-costs-row.md:36-45 (0043) and docs/vault/defects/daily-caps-were-hand-edited-before-0036.md:5 (0036). Nothing was re-run against the database. The last actual measurement is the 2026-09-21 read-back after the 0048 push: select count(*), min(version), max(version) from supabase_migrations.schema_migrations -> 49 / 0000 / 0048. Re-checked read-only on 2026-09-29: git ls-files 'supabase/migrations/*.sql' -> 49 files, 0000_init.sql to 0048_checkout_intents.sql, contiguous; and grep -c for each project ref in the five env files of the main AIUGC checkout (counts only, no lines printed) -> the new ref in all five, the old ref in none."
+verified: 2026-10-01
+method: "Transcribed 2026-09-29 from CLAUDE.md at 83a9a4b (lines 79 and 138, where this history lived until it moved here) and cross-checked against scripts/verify-migration-ledger.sql §RESULTS (lines 725-1091), the commit messages of bf66041, e4cb08e, f86f1ea, 5bc9b84, 2828fd3 and 5ce8a6d (every SHA in the table was matched by date and subject with git show -s), docs/vault/facts/credit-costs-row.md:36-45 (0043) and docs/vault/defects/daily-caps-were-hand-edited-before-0036.md:5 (0036). Nothing was re-run against the database. The last actual measurement is the 2026-09-21 read-back after the 0048 push: select count(*), min(version), max(version) from supabase_migrations.schema_migrations -> 49 / 0000 / 0048. Re-checked read-only on 2026-09-29: git ls-files 'supabase/migrations/*.sql' -> 49 files, 0000_init.sql to 0048_checkout_intents.sql, contiguous; and grep -c for each project ref in the five env files of the main AIUGC checkout (counts only, no lines printed) -> the new ref in all five, the old ref in none. Measured 2026-10-01 after the 0049 push, read-only (packages/core/.work/readback-0049.ts): select count(*), min(version), max(version) from supabase_migrations.schema_migrations -> 50 / 0000 / 0049; supabase migration list -> 0000-0049 local == remote."
 source: db
 ---
 
@@ -38,9 +38,9 @@ indexes it rather than re-narrating it.
 
 ## The ledger
 
-**Clean at 0000–0048.** There are 49 files in `supabase/migrations/` and 49 ledger rows, with no
-gaps and nothing unapplied. This was measured 2026-09-21, right after the 0048 push. The directory
-tracks 53 files in all; the other four are `meta/0000-0002_snapshot.json` and `meta/_journal.json`.
+**Clean at 0000–0049.** There are 50 files in `supabase/migrations/` and 50 ledger rows, with no
+gaps and nothing unapplied. This was measured 2026-10-01, right after the 0049 push (the 0048 push
+on 2026-09-21 measured 49 / 49). The directory tracks 54 files in all; the other four are `meta/0000-0002_snapshot.json` and `meta/_journal.json`.
 
 Before that:
 
@@ -66,6 +66,7 @@ Before that:
 | 0043      | 2026-09-17 | the ₪0.15 credit unit and the three plans                                                                                                                              | `db push` (no §RESULTS entry; [[credit-costs-row]]:36-45, `docs/05-billing.md`:335-340)                                                  | 1f979d9 |
 | 0044–0047 | 2026-09-17 | Hebrew plan names + `subscriptions.gateway` default `'sumit'`; `subscriptions.scheduled_plan_code`; `terms_acceptances`; nullable `feedback.user_id` + contact columns | `db push` (verify:761-810)                                                                                                               | 54c6231 |
 | 0048      | 2026-09-21 | `checkout_intents`, the hosted-checkout intent row ([[0062-hosted-checkout-via-sumit-payment-pages]])                                                                  | `db push`; ledger 49 rows (verify:727-759)                                                                                               | f4d079e |
+| 0049      | 2026-10-01 | `hook_clips.text_color` (white or black), the founder-set hook-line colour ([[0073-hook-text-colour-is-set-per-clip-by-the-founder]])                                  | `db push`; ledger 50 rows (verify:742-771)                                                                                               | 8838c4f |
 
 CLAUDE.md (83a9a4b:138) listed 0034–0040, 0043, 0044–0047 and 0048 as pushed "each by a session on
 the founder's explicit instruction — those instructions were for that one push each, not a standing
