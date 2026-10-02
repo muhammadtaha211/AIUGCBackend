@@ -45,6 +45,18 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 - **demo_segments** — **dropped in 0023** (never held a row). The "a demo becomes an ordered
   list of segments" idea now lives in `demo_analyses` + `demo_step_plans` (the step-plan
   format), which add the plan-level status, approval gate and versioning this table lacked.
+- **demo_analysis_footage** (0050) — what `analyze_demo` knows about the recording itself, one row
+  per analysis (`analysis_id` is the primary key and the FK), written right before the analysis
+  lands. **Nothing reads it yet**; `demo_analyses.timeline` is unchanged. `fps` (the sampling
+  rate the moments were found at), `file_sha` (sha256 of the normalized file), `moments jsonb`
+  (`{ t, startMs, endMs, read }[]`: every kept moment with the first and last sample its picture
+  held on; `read: false` is a moment whose vision read failed, which the timeline drops and this
+  list keeps), `detector` + `instants jsonb` (`{ atMs, strength, abrupt }[]`: every instant the
+  picture changes, found from the footage alone; both NULL when not computed). An instant is not
+  a screen change: a popup or a content load is one too, and no model names them
+  ([vault 0077](vault/decisions/0077-moments-keep-their-real-start-and-end.md),
+  [0080](vault/decisions/0080-a-moment-is-never-dropped-for-a-failed-read.md),
+  [0083](vault/decisions/0083-no-model-names-the-instants-for-now.md)).
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
   `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips run **3–4 seconds**; the
   live bank holds 28 active clips across 7 personas, 4 each, plus 1 generic (`persona_id` NULL)
@@ -218,4 +230,5 @@ get read-only access. Policies:
   policy-less table needs no Supabase role and so stays portable
   ([vault 0035](vault/decisions/0035-a-policyless-table-keeps-its-rls-in-the-portable-file.md),
   measured in [facts](vault/facts/pglite-accepts-bare-enable-row-level-security.md)).
+  `demo_analysis_footage` (0050) follows the same pattern in its own file.
 - `handle_new_user()` trigger mirrors `auth.users` inserts into `public.users`.

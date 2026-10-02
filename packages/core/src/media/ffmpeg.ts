@@ -50,13 +50,18 @@ export function withProtocolWhitelist(args: string[]): string[] {
   return out;
 }
 
-/** Raw-bytes runner — rawvideo output would be corrupted by string decoding. */
-function runRaw(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<Buffer> {
+/** Hands stdout to `onChunk` as it arrives, so a caller that only needs a
+ *  running reduction (frameSignatures: ~100 MB of raw frames for a 90 s demo)
+ *  never holds the whole stream. */
+function runStream(
+  bin: "ffmpeg" | "ffprobe",
+  args: string[],
+  onChunk: (chunk: Buffer) => void,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, withProtocolWhitelist(args), { windowsHide: true });
-    const stdout: Buffer[] = [];
     let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => stdout.push(d));
+    proc.stdout.on("data", onChunk);
     proc.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
     proc.on("error", (err: NodeJS.ErrnoException) => {
       if (err.code === "ENOENT") {
@@ -66,10 +71,17 @@ function runRaw(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<Buffer> {
       }
     });
     proc.on("close", (code) => {
-      if (code === 0) resolve(Buffer.concat(stdout));
+      if (code === 0) resolve();
       else reject(new Error(`${bin} exited ${code}: ${stderr.slice(-800)}`));
     });
   });
+}
+
+/** Raw-bytes runner — rawvideo output would be corrupted by string decoding. */
+async function runRaw(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<Buffer> {
+  const stdout: Buffer[] = [];
+  await runStream(bin, args, (d) => stdout.push(d));
+  return Buffer.concat(stdout);
 }
 
 async function run(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<string> {
@@ -614,4 +626,124 @@ export function clusterStates(
     start = i;
   }
   return clusters;
+}
+
+// --- footage signatures (decision 0078) --------------------------------------
+
+/** The frame the signatures are computed on: gray, 9:16, small enough to
+ *  stream every native frame and large enough that a heading changing on a
+ *  filmed monitor still moves the edge layout (the 9x8 hash above cannot see
+ *  it — two wizard steps sit 3 bits apart, a scroll 80). */
+export const SIGNATURE_WIDTH = 144;
+export const SIGNATURE_HEIGHT = 256;
+const SIGNATURE_BLOCK = 8;
+const SIGNATURE_LUMA_SCALE = 4;
+
+export interface FrameSignature {
+  /** Where the detail sits: gradient energy per 8x8 block, as a share of the
+   *  frame's total — layout, not brightness, so exposure drift cancels. */
+  edges: Float32Array;
+  /** A 36x64 thumbnail with its mean removed and its spread divided out. It
+   *  exists for what `edges` is blind to: a blank page has no edges at all. */
+  luma: Float32Array;
+}
+
+/** One frame of SIGNATURE_WIDTH x SIGNATURE_HEIGHT gray bytes -> its signature. */
+export function signatureOf(frame: Uint8Array): FrameSignature {
+  const W = SIGNATURE_WIDTH;
+  const H = SIGNATURE_HEIGHT;
+  if (frame.length !== W * H) {
+    throw new Error(`signature frame is ${frame.length} bytes — expected ${W * H}`);
+  }
+  const blocksX = W / SIGNATURE_BLOCK;
+  const blocksY = H / SIGNATURE_BLOCK;
+  const edges = new Float32Array(blocksX * blocksY);
+  let total = 0;
+  for (let by = 0; by < blocksY; by++) {
+    for (let bx = 0; bx < blocksX; bx++) {
+      let sum = 0;
+      for (let y = 0; y < SIGNATURE_BLOCK; y++) {
+        const row = (by * SIGNATURE_BLOCK + y) * W + bx * SIGNATURE_BLOCK;
+        for (let x = 0; x < SIGNATURE_BLOCK; x++) {
+          const j = row + x;
+          const v = frame[j]!;
+          if (bx * SIGNATURE_BLOCK + x + 1 < W) sum += Math.abs(v - frame[j + 1]!);
+          if (by * SIGNATURE_BLOCK + y + 1 < H) sum += Math.abs(v - frame[j + W]!);
+        }
+      }
+      edges[by * blocksX + bx] = sum;
+      total += sum;
+    }
+  }
+  for (let k = 0; k < edges.length; k++) edges[k] = edges[k]! / (total || 1);
+
+  const lumaW = W / SIGNATURE_LUMA_SCALE;
+  const lumaH = H / SIGNATURE_LUMA_SCALE;
+  const cell = SIGNATURE_LUMA_SCALE * SIGNATURE_LUMA_SCALE;
+  const luma = new Float32Array(lumaW * lumaH);
+  let mean = 0;
+  for (let y = 0; y < lumaH; y++) {
+    for (let x = 0; x < lumaW; x++) {
+      let sum = 0;
+      for (let yy = 0; yy < SIGNATURE_LUMA_SCALE; yy++) {
+        for (let xx = 0; xx < SIGNATURE_LUMA_SCALE; xx++) {
+          sum += frame[(y * SIGNATURE_LUMA_SCALE + yy) * W + x * SIGNATURE_LUMA_SCALE + xx]!;
+        }
+      }
+      luma[y * lumaW + x] = sum / cell;
+      mean += sum / cell;
+    }
+  }
+  mean /= luma.length;
+  let variance = 0;
+  for (let k = 0; k < luma.length; k++) {
+    luma[k] = luma[k]! - mean;
+    variance += luma[k]! * luma[k]!;
+  }
+  // Floored: a flat frame's spread is sensor noise, and dividing by it would
+  // turn that noise into a full-scale picture.
+  const spread = Math.max(6, Math.sqrt(variance / luma.length));
+  for (let k = 0; k < luma.length; k++) luma[k] = luma[k]! / spread;
+  return { edges, luma };
+}
+
+/**
+ * One signature per frame of the whole recording at `fps`, in one decode pass.
+ * The frames are reduced as they stream: nothing but the signatures is kept.
+ */
+export async function frameSignatures(
+  input: string,
+  opts: { fps: number },
+): Promise<FrameSignature[]> {
+  const frameBytes = SIGNATURE_WIDTH * SIGNATURE_HEIGHT;
+  const signatures: FrameSignature[] = [];
+  let pending: Buffer = Buffer.alloc(0);
+  await runStream(
+    "ffmpeg",
+    [
+      "-i",
+      input,
+      "-vf",
+      `fps=${opts.fps},scale=${SIGNATURE_WIDTH}:${SIGNATURE_HEIGHT}:flags=area,format=gray`,
+      "-an",
+      "-f",
+      "rawvideo",
+      "-",
+    ],
+    (chunk) => {
+      pending = pending.length > 0 ? Buffer.concat([pending, chunk]) : chunk;
+      let offset = 0;
+      while (pending.length - offset >= frameBytes) {
+        signatures.push(signatureOf(pending.subarray(offset, offset + frameBytes)));
+        offset += frameBytes;
+      }
+      pending = pending.subarray(offset);
+    },
+  );
+  if (signatures.length === 0 || pending.length !== 0) {
+    throw new Error(
+      `rawvideo stream ended ${pending.length} bytes into a frame after ${signatures.length} frames`,
+    );
+  }
+  return signatures;
 }

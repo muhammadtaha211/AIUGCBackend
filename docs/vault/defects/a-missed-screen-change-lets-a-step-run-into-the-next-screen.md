@@ -34,3 +34,15 @@ between them.
 **Not fixed.** Production runs 0072 as written. [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]],
 decided and not yet built, keeps "a step never runs into the next screen". So what counts as "its
 screen" (open) decides whether this carries over.
+
+## 2026-10-02 — still not fixed; the data to fix it is now recorded for new analyses
+
+- **Built on `feat/analysis-footage-screens`, not deployed:** a new analysis stores every instant
+  the picture changes, found from the footage alone ([[0078-screen-changes-come-from-the-footage-first]]).
+  **MEASURED:** an instant sits within 0.4 s of 56 of the 57 real changes, these 9 included
+  ([[footage-screen-changes-2026-10-02]]).
+- **The cut does not read it.** `isNewScreen` and `timelineClipMs` are unchanged, so every clip
+  above still runs past its change. Existing analyses have no instants.
+- An instant is not a screen change, and no model says which are
+  ([[0083-no-model-names-the-instants-for-now]]). What the next task does with them is the
+  founder's open ruling ([[instant-free-windows-2026-10-02]]).

@@ -8,6 +8,26 @@ source: db
 
 # What one demo analysis actually costs
 
+> **Re-read 2026-10-02 — MEASURED**, production read-only
+> (`apps/cli/node_modules/.bin/tsx packages/core/.work/screens/cost-readback.ts`, gitignored: one
+> `set transaction read only` transaction joining `jobs` of type `analyze_demo` to `usage_events`
+> on `job_id`). The table below is the old project's jobs. On the current project, the **14 ready
+> analyses made in one attempt** cost **₪1.13–2.72, mean ₪1.82**, in 4–11 calls and 68 347–176 604
+> tokens:
+>
+> | take (file)     | moments | calls | cost       |
+> | --------------- | ------: | ----: | ---------- |
+> | T1 (`8b0dc639`) |   51–60 |   6–8 | ₪1.86–2.16 |
+> | T2 (`133a6304`) |      53 |     6 | ₪1.67      |
+> | T3 (3 exports)  |   38–46 |   4–6 | ₪1.13–1.54 |
+> | T4 (`b25923dd`) |   27–36 |     5 | ₪1.15–1.28 |
+> | T5 (`752bf15a`) |      65 |  8–11 | ₪2.20–2.72 |
+>
+> The ₪2.72 one is `28161296` (job `728d18e4`, 11 calls: fill-round re-sends). The rejected T5
+> analysis (`207c6421`) cost ₪2.35 and `3915c8e2`, with three retries, ₪1.69. An analysis earns
+> 20 credits = ₪3.00 ([[credit-costs-row]]). The takes are those of
+> [[demo-recordings-by-file-and-take-2026-10-01]].
+
 Each row below is one job, with every `usage_events` row that carries its `job_id`.
 
 | job        | attempts | Claude calls | tokens  | agorot | ILS   |

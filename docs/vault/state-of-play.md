@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-01
+updated: 2026-10-02
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -39,6 +39,40 @@ so the attribution is his, not measured. This is the event 0041/0042 named, so
 identifying about the signup is written anywhere in the repo, by instruction. The same day's
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
+
+**A new analysis keeps every moment, its span and the footage's instants: BUILT 2026-10-02
+(PR #78), MIGRATION 0050 PUSHED AND READ BACK THE SAME DAY, THE WORKER BOX NOT ON IT YET.**
+Nothing reads the new data: the plan rule, wizard and render are untouched and 0072 stays live.
+
+- **What the founder decided (2026-10-02):** D1–D6 of that day's task prompt, four rulings, and
+  then "build the model-free half, no model for now":
+  [[0077-moments-keep-their-real-start-and-end]],
+  [[0078-screen-changes-come-from-the-footage-first]], [[0079-when-unsure-it-is-a-change]],
+  [[0080-a-moment-is-never-dropped-for-a-failed-read]],
+  [[0081-existing-demos-keep-working-no-paid-re-analysis]],
+  [[0082-the-label-call-is-a-paid-call-tested-first]] and
+  [[0083-no-model-names-the-instants-for-now]]. 0070 carries a dated pointer.
+- **What a new analysis now writes** (once the box has the code): one
+  server-only `demo_analysis_footage` row with `fps`, `file_sha`, `moments` (every kept moment
+  with `startMs`, `endMs` and `read`, failed reads included) and `instants` (every instant the
+  picture changes, from the footage alone). `demo_analyses.timeline` is unchanged.
+- **An instant is not a screen change.** The detector has its own instant within 0.4 s of 56 of
+  57 real changes and repeats exactly, and fires 6–7 times for every real one
+  ([[footage-screen-changes-2026-10-02]]). The vision call tested to name them did not pass and
+  is not adopted ([[label-call-test-2026-10-02]], ₪14.20 of the ₪30 cap spent, the rest unspent
+  on his instruction). Its code was removed from the tree; it is in commit `5b49335`.
+- **MEASURED for his next ruling:** under the rule he proposed — a generated plan may only use a
+  moment with 2 s free of instants — 170 of the 536 moments a plan may pick qualify, 67 of 127
+  real-screen instances hold one, 13 of the 15 analyses have enough for a plan, and on the newest
+  take three of his nine segments hold none ([[instant-free-windows-2026-10-02]]). A window that
+  ends exactly at an instant can show up to 4 frames of the next screen; a 0.2 s margin removed
+  that on these recordings and leaves 106 moments and 11 of 15 analyses.
+- **Deploy, in the order he gave (2026-10-02):** the branch pushed and PR #78 opened; 0050 pushed
+  by the session on his instruction and read back (8 columns, RLS on, no policy, 0 rows, ledger
+  51 rows 0000–0050); PR #78 merged on his instruction. **Owed: he pulls and restarts the box.**
+  Until then analyses run the old code and write no footage row.
+- **Kept off the repo:** scripts, frames, labels and the spend ledger are in
+  `packages/core/.work/screens/` (gitignored). The frames show private browser tabs.
 
 **Every step becomes a fixed 2 s window inside its screen: DECIDED 2026-10-01, NOT YET BUILT**
 ([[0075-more-moments-over-fewer]], [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]).
@@ -914,6 +948,11 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Put the worker box on the merge of PR #78 — `git pull` AND restart** (2026-10-02). Migration
+  0050 is pushed and the PR is merged; until the box restarts a new analysis writes no
+  `demo_analysis_footage` row. After the first real analysis, read its `waitedMs` in the box log
+  ("analysis: footage instants") and the newest row of the table.
+
 - **Rotate the credentials found burned on 2026-09-29** ([[credential-echo-incidents]]). By key
   name only: the `DATABASE_URL` password, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
   `ELEVENLABS_API_KEY`, `FAL_KEY` and `HEYGEN_API_KEY` each appear in 2–3 local session
@@ -1021,6 +1060,21 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Open decisions
 
+**What the next task does with the instants (2026-10-02).** No model names them
+([[0083-no-model-names-the-instants-for-now]]). The founder proposed: a generated plan may only
+use a moment whose 2 s window holds no instant, every other moment stays for the customer to judge
+by eye. The measurement he asked for first is [[instant-free-windows-2026-10-02]]; he has not
+ruled. Two things it turned up are his to weigh: whole stretches (the opening of every take, 14 s
+of the newest one) have no such moment, and the window needs a 0.2 s margin from each instant or
+it can show a few frames of the next screen.
+
+**Whether an in-place swap is a screen change.** He said do not decide
+([[0079-when-unsure-it-is-a-change]]); it is the next task's.
+
+**Two kinds of footage the detector has never seen:** a clean screen recording and a phone-app
+demo. One of each from the founder, scored free, before anything relies on the instants
+([[footage-screen-changes-2026-10-02]]).
+
 **Housekeeping, unresolved: `decisions/` has two 0046s, two 0047s, two 0049s and two 0059s** —
 eight notes, four numbers, from concurrent sessions each taking "the next free number" (the 0059
 pair, `emoji-in-burned-text…` and `the-wait-clock…`, was missing from this line until 2026-10-01).
@@ -1067,6 +1121,16 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   ([[0004-service-b-config-is-provisional]]).
 
 ## Unfinished measurement
+
+- **The detector on the box (2026-10-02).** Every instant was scored on this machine, whose ffmpeg
+  scales frames differently from the box's. "Same box, same file, same instants" is reasoned, not
+  shown; a read-only run of the frozen detector on the box over the 7 files would show it. A box
+  action, so only on the founder's OK.
+- **Label agreement between runs** was never measured: no variant was worth repeating
+  ([[label-call-test-2026-10-02]]).
+- **Whether the footage decode delays an analysis on the box (2026-10-02).** It runs beside the
+  vision calls and is reasoned to finish under them; each analysis logs `waitedMs`
+  ("analysis: footage instants"). Read it off the box's log after the first real analysis.
 
 - **Cluster spans on the box — not run.**
   - Re-running `frameHashes` → `clusterStates` on the box should reproduce every analysis's

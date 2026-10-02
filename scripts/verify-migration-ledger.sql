@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0049 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0050 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,10 +33,11 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 40 rows: **38 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 41 rows: **39 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
 -- which this sentence had missed; 0044-0047 then added one each, to 38,
--- 0048 one more on 2026-09-21, to 39, and 0049 one on 2026-10-01, to 40.) Two of those
+-- 0048 one more on 2026-09-21, to 39, 0049 one on 2026-10-01, to 40, and 0050
+-- one on 2026-10-02, to 41.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -61,7 +62,7 @@
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
 -- 30 by 0040, 0043 took it to 34 with two ('0043', '0043-plans'), 0044-0047 to
--- 38 with one each, 0048 to 39, 0049 to **40**, and 0041/0042 before them took it to 32 with one row each — they are
+-- 38 with one each, 0048 to 39, 0049 to 40, 0050 to **41**, and 0041/0042 before them took it to 32 with one row each — they are
 -- kept separate, not paired like '0038+0040', because they assert different
 -- objects and either can fail without the other: 0041 owns the column, indexes
 -- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
@@ -666,6 +667,25 @@ WITH checks(migration, layer, applied, note) AS (VALUES
       AND pg_get_constraintdef(oid) LIKE '%black%')),
   'hook_clips.text_color: text NOT NULL default white + the white|black CHECK'),
 
+-- 0050: demo_analysis_footage (decisions 0077, 0078, 0080, 0083) -- the table,
+-- its eight columns, the primary key that is also the FK to demo_analyses, and
+-- RLS enabled with no policy (0048's pattern). to_regclass so a missing table
+-- reads false instead of erroring the file. Pushed to production 2026-10-02
+-- and read true the same day (RESULTS).
+('0050', 'structural', (SELECT
+  to_regclass('public.demo_analysis_footage') IS NOT NULL
+  AND (SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'demo_analysis_footage') = 8
+  AND (SELECT count(*) FROM pg_constraint
+    WHERE conrelid = to_regclass('public.demo_analysis_footage')
+      AND conname IN ('demo_analysis_footage_pkey',
+                      'demo_analysis_footage_analysis_id_demo_analyses_id_fk')) = 2
+  AND COALESCE((SELECT relrowsecurity FROM pg_class
+       WHERE oid = to_regclass('public.demo_analysis_footage')), false)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'demo_analysis_footage')),
+  'demo_analysis_footage: 8 columns, PK = FK to demo_analyses, RLS on with no policy'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -738,6 +758,37 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-10-02, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0050** (demo_analysis_footage, decisions 0077/0078/0080/0083) alone, on the
+-- founder's explicit instruction for this one push ("Push migration 0050
+-- yourself and run its read-back query"): ledger read-back **51 rows,
+-- 0000-0050, NO GAPS, nothing unapplied and NO REPAIR NEEDED** -- `db push`
+-- recorded it itself, the THIRTEENTH time in a row. Pre-flight was
+-- `migration list` (0000-0049 local == remote, 0050 the only row with an empty
+-- remote) and `db push --dry-run`, which named 0050_demo_analysis_footage.sql
+-- alone. Same Docker catalog-cache warning as 0035-0049, not a failure; the
+-- apply printed "Applying migration 0050_demo_analysis_footage.sql..." and
+-- exited 0.
+--
+-- Read at BOTH ends through the code's own connection, each query inside a
+-- read-only transaction (packages/core/.work/readback-0050.ts -- the
+-- migration's own VERIFY block). BEFORE: relation "public.demo_analysis_footage"
+-- does not exist, 0 columns, ledger 50 rows 0000-0049, demo_analyses 16 rows
+-- (15 ready). AFTER: relrowsecurity true; 8 columns (analysis_id uuid NOT NULL,
+-- fps real NOT NULL, file_sha text NOT NULL, moments jsonb NOT NULL, detector
+-- text, instants jsonb, created_at and updated_at timestamptz NOT NULL); the
+-- two constraints (demo_analysis_footage_pkey and the FK to demo_analyses); 0
+-- policies; 0 rows; demo_analyses still 16 rows (15 ready); ledger 51 rows
+-- latest 0050. Pure additive DDL: one new empty table, nothing else touched.
+--
+-- Applied through packages/core/.work/supabase-cli-scrubbed.mjs, as 0049 was.
+-- Never typed, never printed.
+--
+-- THIS FILE was then run against production (packages/core/.work/
+-- run-ledger-sql.mjs, read-only) and returned **44 rows: 41 structural, 39 true
+-- / 1 false / 1 NULL**, with 0022 the only false and 0020 the NULL -- exactly
+-- the header's prediction -- and the new 0050 row true.
 --
 -- 2026-10-01, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0049** (hook_clips.text_color, decision 0073) alone, on the founder's
