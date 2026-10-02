@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-01
+updated: 2026-10-02
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -39,6 +39,39 @@ so the attribution is his, not measured. This is the event 0041/0042 named, so
 identifying about the signup is written anywhere in the repo, by instruction. The same day's
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
+
+**The analysis is to keep moment spans, real screen changes and every moment: DECIDED
+2026-10-02, HALF MEASURED, NOT BUILT — WAITING ON THE FOUNDER.** Branch
+`feat/analysis-footage-screens`, **not pushed** (his instruction: no push without his OK).
+
+- **What the founder decided (2026-10-02):** D1–D6 of that day's task prompt and four rulings, in
+  [[0077-moments-keep-their-real-start-and-end]],
+  [[0078-screen-changes-come-from-the-footage-first]], [[0079-when-unsure-it-is-a-change]],
+  [[0080-a-moment-is-never-dropped-for-a-failed-read]],
+  [[0081-existing-demos-keep-working-no-paid-re-analysis]] and
+  [[0082-the-label-call-is-a-paid-call-tested-first]]. 0070 carries a dated pointer.
+- **MEASURED, the footage half works:** a pixel detector over every native frame has its own
+  instant within 0.4 s of 56 of the 57 real screen changes and all 14 keyed swaps, and repeats
+  exactly ([[footage-screen-changes-2026-10-02]]). It cannot tell what kind of change an instant
+  is: on T2 any cut that keeps every real change keeps 25 in-screen instants.
+- **MEASURED, the label call does not pass:** ₪14.20 of the ₪30 cap spent, 81 calls, eleven
+  variants, none with zero misses and at most 3 false changes per file. The one run on all seven
+  files found 50 of 57, missed 6, stored 16 false ([[label-call-test-2026-10-02]]). It costs
+  ₪0.24–0.74 per analysis. Analyses cost ₪1.13–2.72 today, mean ₪1.82, against the ₪3.00 an
+  analysis earns ([[analyze-demo-cost]], re-read).
+- **In the tree, tested, called by nothing:** `frameSignatures`, `extractFramesAt`
+  (`packages/core/src/media/ffmpeg.ts`); `footageEvents`, `analysisMoments`, `momentHold`,
+  `screenChanges` (`packages/core/src/pipelines/analysis-screens.ts`, 17 tests in
+  `packages/core/test/analysis-screens.test.ts`); a per-call timeout and retry count on
+  `generateRawWithImages`. The label vocabulary there is the last variant tested, not a rule.
+- **Not written:** migration 0050 and the `demo_analysis_footage` table, the write of spans and
+  failed-read moments in `analyze_demo`, any label job, the CLI print. No prompt was committed:
+  the drafts are in gitignored scratch.
+- **His call, before anything else is built:** what the model's part is now
+  ([[0082-the-label-call-is-a-paid-call-tested-first]], "Where that leaves it"). The model-free
+  part — spans and every moment (D1, D4) and the stored instants — does not depend on it.
+- **Kept off the repo:** scripts, frames, labels and the spend ledger are in
+  `packages/core/.work/screens/` (gitignored). The frames show private browser tabs.
 
 **Every step becomes a fixed 2 s window inside its screen: DECIDED 2026-10-01, NOT YET BUILT**
 ([[0075-more-moments-over-fewer]], [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]).
@@ -1021,6 +1054,18 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Open decisions
 
+**The model's part of the screen detector (2026-10-02).** The label call the founder chose failed
+its test ([[label-call-test-2026-10-02]]). Open, his: adopt it as measured; add the stored fields
+to it (1 miss in 112, about 4 false per analysis); ship the model-free half alone; or pay for a
+stronger model, untested. Until he rules, nothing more of `feat/analysis-footage-screens` is built.
+
+**Whether an in-place swap is a screen change.** He said do not decide
+([[0079-when-unsure-it-is-a-change]]); it is the next task's.
+
+**Two kinds of footage the detector has never seen:** a clean screen recording and a phone-app
+demo. One of each from the founder, scored free, before anything relies on the instants
+([[footage-screen-changes-2026-10-02]]).
+
 **Housekeeping, unresolved: `decisions/` has two 0046s, two 0047s, two 0049s and two 0059s** —
 eight notes, four numbers, from concurrent sessions each taking "the next free number" (the 0059
 pair, `emoji-in-burned-text…` and `the-wait-clock…`, was missing from this line until 2026-10-01).
@@ -1067,6 +1112,13 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   ([[0004-service-b-config-is-provisional]]).
 
 ## Unfinished measurement
+
+- **The detector on the box (2026-10-02).** Every instant was scored on this machine, whose ffmpeg
+  scales frames differently from the box's. "Same box, same file, same instants" is reasoned, not
+  shown; a read-only run of the frozen detector on the box over the 7 files would show it. A box
+  action, so only on the founder's OK.
+- **Label agreement between runs** was never measured: no variant was worth repeating
+  ([[label-call-test-2026-10-02]]).
 
 - **Cluster spans on the box — not run.**
   - Re-running `frameHashes` → `clusterStates` on the box should reproduce every analysis's

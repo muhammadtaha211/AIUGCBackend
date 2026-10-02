@@ -8,6 +8,15 @@ source: founder
 
 # 0070 — A step ends on a real screen change
 
+> **2026-10-02 — decided, NOT YET BUILT:** "'Same screen' is the analysis model's judgement, not
+> pixel distance alone … never a frame hash" below is amended by
+> [[0078-screen-changes-come-from-the-footage-first]]: real screen changes come from the footage
+> first and repeat for the same file, with the model only where the footage cannot tell. The
+> definitions here stay. Measured the same day: the footage finds when the picture changes and
+> cannot tell what kind of change it is ([[footage-screen-changes-2026-10-02]]), and the vision
+> call that was to tell it did not pass its test ([[label-call-test-2026-10-02]]). Until something
+> is built the code runs this decision as written.
+
 > **2026-10-01 — decided, NOT YET BUILT:** "Step length follows the footage" is superseded by
 > [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]. Every step becomes a fixed 2 s
 > window inside its screen, slid earlier near the screen's end, and the step count becomes 5–10.

@@ -8,6 +8,15 @@ source: db
 
 # A vision batch can collapse to one frame and survive the corrective retry
 
+> **Corrected 2026-10-02 — MEASURED in the code** (`packages/core/src/pipelines/demo-analysis.ts`,
+> `transcribeBatch`): since `175d3f7` (2026-09-28) a frame still missing after the corrective retry
+> is **re-sent alone, once** (the fill round), and only a frame whose fill also fails is dropped.
+> Both collapses below predate it. `analysis-batch-salvage.test.ts` replays `6548af7e`'s collapse
+> ("a batch of 10 that collapses to one entry twice re-sends the 9 missing frames alone") and
+> recovers all nine. The line numbers below have drifted: the merge is at `:533`, the gate at
+> `:1160-1175`. The gate itself is unchanged and still strict, and no test pins it. What a dropped
+> moment should leave behind is [[0080-a-moment-is-never-dropped-for-a-failed-read]].
+
 In **2 of 10** ready analyses, one vision batch of 10 frames put **1 state** into the timeline and
 dropped the other 9 (S3). This happened after `transcribeBatch`'s corrective retry: the retry's
 entries merged with the first response's (`packages/core/src/pipelines/demo-analysis.ts:524`) still
