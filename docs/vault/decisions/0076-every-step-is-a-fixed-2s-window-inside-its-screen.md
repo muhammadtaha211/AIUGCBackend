@@ -2,17 +2,35 @@
 type: decision
 status: verified
 verified: 2026-10-01
-method: "Founder decisions in chat, 2026-10-01, relayed in that day's task prompt (section 2, 'Decided … not up for relitigation'); the reasons are his. Recorded on branch docs/screen-span-measurement. NOT YET BUILT: the code still runs 0072 (4 s cap, no floor, 5–7 steps, 15–21 s)."
+method: "Founder decisions in chat, 2026-10-01, relayed in that day's task prompt (section 2, 'Decided … not up for relitigation'); the reasons are his. Recorded on branch docs/screen-span-measurement. Restated as D1-D3 in the 2026-10-02 task prompt and BUILT that day on feat/steps-fixed-2s-clips (STEP_MS, A_STEPS_MAX_DEFAULT and placeClips in packages/core/src)."
 source: founder
 supersedes: "the length rules of [[0070-a-step-ends-on-a-real-screen-change]] and [[0072-step-cap-no-padding-cut-early]], and the runtime band of [[0002-runtime-band-floor-is-15s]]; the code runs those until this is built"
 ---
 
 # 0076 — Every step is a fixed 2 s window inside its screen, 5–10 steps
 
-**DECIDED, NOT YET BUILT.** Every item below is **FOUNDER-DECIDED**: decided in chat on 2026-10-01,
-relayed in that day's task prompt, and not up for relitigation. Until a later task builds it,
-production keeps [[0072-step-cap-no-padding-cut-early]]: a clip runs to its screen's end, at most
-4 s, with no floor; 5–7 steps; 15–21 s.
+**DECIDED 2026-10-01, BUILT 2026-10-02 on `feat/steps-fixed-2s-clips`.** Every item below is
+**FOUNDER-DECIDED**: decided in chat on 2026-10-01, relayed in that day's task prompt, and not up
+for relitigation.
+
+> **2026-10-02 — how it was built, and what changed on the way.** He restated items 1–3 as D1–D3
+> of that day's task prompt, with the same reasons, and added for D3: "too many is an
+> inconvenience; too few burns the recording."
+>
+> - **"Inside its screen" is replaced.** No model judges a screen change, so a clip is placed
+>   from the footage instants, away from them when it can be
+>   ([[0084-clips-are-placed-from-the-footage-instants]], his D4). "A step never runs into the
+>   next screen" (item 1, last bullet) no longer holds as a rule
+>   ([[0085-a-draft-may-show-two-pages-and-says-so]], his D5).
+> - **"Extra windows where a long screen has too few moments"** (item 3) was not built and is
+>   not in the 2026-10-02 decisions: each moment has exactly one clip.
+> - **The three open items are closed:** screens shorter than 2 s and "its screen" by 0084
+>   (nothing is a screen); caption length by
+>   [[0086-captions-are-3-4-words-and-a-long-one-is-kept]].
+> - Also decided with it: [[0087-two-steps-never-share-footage]] and
+>   [[0088-stored-plans-are-untouched-until-edited]].
+> - **MEASURED:** a step renders exactly 60 frames only when its clip starts on the 30 fps frame
+>   grid, so clips are placed in frames ([[clip-placement-replay-2026-10-02]]).
 
 ## The decisions
 

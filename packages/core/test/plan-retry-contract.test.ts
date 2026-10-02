@@ -256,9 +256,8 @@ describe("generateStepPlan corrective ladder (real DB, mocked Claude)", () => {
     const violation = thrown as PlanViolationError;
     expect(violation.message).toMatch(/after retry/);
     expect(violation.failKind).toBe("validator");
-    // "+pickable": the timeline the model saw held only pickable moments
-    // (decision 0074). No pin on this timeline, and nothing was repaired.
-    expect(violation.promptVersion).toMatch(/^plan_demo_steps@v\d+\+pickable$/);
+    // The bare version: no pin on this timeline, and nothing was repaired.
+    expect(violation.promptVersion).toMatch(/^plan_demo_steps@v\d+$/);
     expect(violation.rounds).toHaveLength(3);
     for (const round of violation.rounds) expect(round.length).toBeGreaterThan(0);
     // The last-step rule is neither fabrication nor a skip-kind pick, so the
@@ -400,7 +399,7 @@ describe("handlePlanDemoSteps diagnostics (0029)", () => {
     expect(failed.status).toBe("failed");
     expect(failed.failKind).toBe("validator");
     // In hand before the throw — the NULL-on-failure defect, closed.
-    expect(failed.promptVersion).toMatch(/^plan_demo_steps@v\d+\+pickable$/);
+    expect(failed.promptVersion).toMatch(/^plan_demo_steps@v\d+$/);
     const rounds = failed.retryViolations as string[][];
     expect(rounds).toHaveLength(3);
     for (const round of rounds) expect(round.length).toBeGreaterThan(0);

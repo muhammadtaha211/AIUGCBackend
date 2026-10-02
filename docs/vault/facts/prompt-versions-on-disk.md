@@ -1,7 +1,7 @@
 ---
 type: fact
 status: verified
-verified: 2026-10-01
+verified: 2026-10-02
 method: "for d in prompts/*/; do ls $d | sort -V; done (2026-09-08; re-run 2026-10-01 — plan_demo_steps gained v15, every other family as on 2026-09-28; re-run 2026-09-28 — every family identical except group_analysis_states, which gained v2 for [[0064-the-inventory-is-one-tier]]; the DB reads below were NOT re-run); packages/core/src/prompts.ts:10-32 read directly; newest DB prompt_version from select ... from demo_step_plans order by created_at desc (DB check 2026-08-23 — not re-run); b_script rows by version: select prompt_version, count(*) from scripts where kind = 'b_script' and created_at > now() - interval '30 days' group by 1 (2026-09-08 03:30 UTC: v12 19, v10 8, v9 12)"
 source: code
 ---
@@ -16,7 +16,7 @@ content_policy        v1                                    (latest v1)
 group_analysis_states v1 v2                                 (latest v2, new 2026-09-28)
 hook_lines            v1..v7                                (latest v7)
 hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
-plan_demo_steps       v1..v15                               (latest v15, new 2026-10-01)
+plan_demo_steps       v1..v16                               (latest v16, new 2026-10-02)
 tts_enhance           v1..v4                                (latest v4)
 vo_script             v1..v9                                (latest v9, new 2026-09-11)
 ```
@@ -97,6 +97,16 @@ changes and leans on `clipMs`, so a process started before the pull would render
 `clipMs`. Pull and restart together; the box's usual recipe does both. v14's "cut off by the next
 state YOU selected" and "runs its floor length" were false after the change. **The model's behaviour
 under v15 is unverified until a paid regress.**
+
+plan_demo_steps v16 (2026-10-02, [[0084-clips-are-placed-from-the-footage-instants]]; `ls
+prompts/plan_demo_steps | sort -V` re-run that day, the other families not re-listed) keeps v15's
+vars again, and again the code that fills them changed with it: every `{{timeline}}` entry now
+carries `clipStartMs`, `calm` and (when set) `twoPages` instead of `clipMs`, and `{{timing}}`
+states the 2 s step, the two caption lengths and the no-shared-footage rule. v16 has no band, no
+cap and no `clipMs`. A process started before the pull would send v16's prose over a timeline
+with `clipMs` and none of the new fields, and stamp the row `plan_demo_steps@v16+pickable` — a
+stamp only such a process can write. Pull and restart together. **The model's behaviour under v16
+is unverified until the paid check the founder has yet to approve.**
 
 ## Resolution is "highest number wins", numerically
 

@@ -21,7 +21,7 @@ Context: solo founder, side-income scale (₪10–15k/mo target), vibecoded, pre
 
 ## Locked decisions — do not reopen, do not "improve"
 
-1. One format for Service A. No timeline editor. Steps are cut automatically from the analysis; the customer picks and captions moments, never trims. (Amended 2026-10-01 — vault 0070.)
+1. One format for Service A. No timeline editor. Steps are cut automatically from the analysis; the customer picks and captions moments, never trims. (Amended 2026-10-01 — vault 0070. Since 2026-10-02 every step is a fixed 2 s clip placed from the footage — vault 0076, 0084.)
 2. Hook clips come only from the pre-rendered bank. No runtime face/video generation for hooks.
 3. Hebrew captions are rendered in Remotion (browser bidi handles RTL correctly). Never ffmpeg `drawtext` for Hebrew text.
 4. _(Moot since 2026-09-05 — Service A has no voiceover; it governs only the retired "full" format. The rule, its 2026-08-08 amendment and the measurements behind it: `docs/vault/decisions/0065-vo-sync-is-loose-by-design.md`.)_

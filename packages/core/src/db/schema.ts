@@ -194,8 +194,10 @@ export const demoAnalyses = pgTable(
 );
 
 // 0050: what analyze_demo knows about the recording itself, one row per
-// analysis (decisions 0077, 0078, 0080, 0083). Server-only, and nothing reads
-// it yet — the timeline above stays exactly what it was.
+// analysis (decisions 0077, 0078, 0080, 0083). Server-only. Its instants are
+// what the plan job, the save path and the analysis route place every moment's
+// 2 s clip against (analysisInstants, decision 0084); the moments' spans are
+// read by nothing yet. The timeline above stays exactly what it was.
 export const demoAnalysisFootage = pgTable("demo_analysis_footage", {
   analysisId: uuid("analysis_id")
     .primaryKey()
@@ -215,8 +217,8 @@ export const demoAnalysisFootage = pgTable("demo_analysis_footage", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// The selection: 6-8 states chosen from the analysis, ordered by timestamp,
-// each with a Hebrew label. Cheap, regenerable, user-editable — until
+// The selection: 5-10 states chosen from the analysis, ordered by timestamp,
+// each with a Hebrew label and its 2 s clip (decision 0076). Cheap, regenerable, user-editable — until
 // approved_at is set. Edits to an approved plan fork a new row; renders
 // reference the plan by id exactly like audio_renders.script_id, so an old ad
 // keeps composing what the customer signed off on. Any edit clears approved_at.
@@ -232,10 +234,14 @@ export const demoStepPlans = pgTable(
       .references(() => demoAnalyses.id),
     status: stepPlanStatus("status").notNull().default("pending"),
     // PlanStep[]: { timestampMs, actionType, label, sourceIndex, durationMs,
-    // offScreenWords? } — offScreenWords is the label-provenance highlight
-    // (0049): the model's words that came from none of the screen, the
-    // questionnaire or the demo description. Absent on rows written before
-    // it, [] on every human-edited plan. No migration: jsonb absorbs it.
+    // startMs?, twoPages?, offScreenWords? }. startMs is where the step's
+    // 2 s clip starts (0084); a step stored before clips has none, starts at
+    // timestampMs and keeps the durationMs it was saved with. twoPages marks
+    // a clip that probably shows two pages (0085). offScreenWords is the
+    // label-provenance highlight (0049): the model's words that came from
+    // none of the screen, the questionnaire or the demo description. Absent
+    // on rows written before it, [] on every human-edited plan. No
+    // migration: jsonb absorbs all three.
     steps: jsonb("steps"),
     // { timestampMs, whatISaw, whyItMightMatter }[]
     unexplainedMoments: jsonb("unexplained_moments"),
@@ -255,8 +261,10 @@ export const demoStepPlans = pgTable(
     // failure: the per-rule/per-version failure rate is computed from this.
     // (0029) Shape rules only since 0049: label provenance never drives a
     // round any more, it lands on each step's offScreenWords instead. A READY
-    // row whose last entry is non-empty was stored by the last-round repair
-    // (decision 0074); its prompt_version ends "+repaired".
+    // row whose last entry is non-empty was stored anyway: the last-round
+    // repair dropped steps from it (decision 0074; its prompt_version then
+    // ends "+repaired"), or it was left a long caption or a short count for
+    // the editor (decision 0086).
     retryViolations: jsonb("retry_violations"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

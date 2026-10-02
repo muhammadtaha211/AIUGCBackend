@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MAX_LABEL_CHARS } from "@aiugc/core/plan-format";
+import { MAX_LABEL_CHARS, STEP_MS, type Clip } from "@aiugc/core/plan-format";
 import { Button } from "@/components/ui/button";
 import { ChevronBack, Play, Spinner } from "@/components/ui/icons";
 import {
@@ -10,8 +10,11 @@ import {
   fmtTimestamp,
   inventoryPages,
   labelWordWarning,
+  tileOverlapLine,
+  tileState,
   type AnalysisStateWire,
   type InventorySectionWire,
+  type PlanStepWire,
 } from "@/lib/service-a-ui";
 import { apiFetch } from "@/lib/use-api";
 import { ClipVideo, type ClipPlayer, type ClipTarget } from "./clip-player";
@@ -37,6 +40,12 @@ type InventoryPanelProps = {
   demoId: string;
   /** sourceIndexes already in the draft — their cards are marked, not hidden. */
   inPlan: Set<number>;
+  /** The draft's clips, in card order. A moment whose own clip shares footage
+   *  with one cannot be added (decision 0087) and says which step. */
+  planClips: Clip[];
+  /** The saved plan's steps: a moment among them shows the clip it was saved
+   *  with (tileState). */
+  savedSteps: PlanStepWire[];
   /** True while the editor has a request in flight — adding then would race
    *  the draft reseed and be silently dropped. */
   addDisabled: boolean;
@@ -49,15 +58,20 @@ type InventoryPanelProps = {
 
 const INVENTORY_ERROR = "לא הצלחנו לטעון את רשימת המסכים — רעננו את העמוד ונסו שוב.";
 
-/** An inventory state's preview window: no stored duration exists, so it
- *  plays the state's own clip — what picking it buys. */
+/** An inventory state's preview window: the moment's own 2 s clip — exactly
+ *  what picking it stores and the ad renders. */
 function tileTarget(state: AnalysisStateWire): ClipTarget {
-  return { key: `tile:${state.index}`, ...clipWindow(state.timestampMs, 0, state.clipMs) };
+  return {
+    key: `tile:${state.index}`,
+    ...clipWindow({ startMs: state.clipStartMs, durationMs: STEP_MS }),
+  };
 }
 
 export function InventoryPanel({
   demoId,
   inPlan,
+  planClips,
+  savedSteps,
   addDisabled,
   player,
   onAdd,
@@ -78,8 +92,14 @@ export function InventoryPanel({
   const [drafts, setDrafts] = useState<Map<number, string>>(new Map());
 
   const pages = useMemo(
-    () => (inventory ? inventoryPages(inventory, sectionsWire) : null),
-    [inventory, sectionsWire],
+    () =>
+      inventory
+        ? inventoryPages(
+            inventory.map((state) => tileState(state, savedSteps)),
+            sectionsWire,
+          )
+        : null,
+    [inventory, sectionsWire, savedSteps],
   );
 
   /** Sign thumbs for every wanted-but-missing index: every page opened so far
@@ -180,6 +200,7 @@ export function InventoryPanel({
     // inPlan disables the card, so re-check here or a confirm would append a
     // duplicate sourceIndex the server rejects with a generic 400.
     if (inPlan.has(state.index)) return;
+    if (tileOverlapLine(state, planClips) !== null) return;
     onAdd(state, label);
     setDrafts((prev) => {
       const next = new Map(prev);
@@ -273,6 +294,7 @@ export function InventoryPanel({
                 state={state}
                 thumbUrl={thumbs.get(state.index)}
                 taken={inPlan.has(state.index)}
+                overlapLine={inPlan.has(state.index) ? null : tileOverlapLine(state, planClips)}
                 draft={drafts.get(state.index) ?? ""}
                 addDisabled={addDisabled}
                 player={player}
@@ -293,6 +315,7 @@ function MomentCard({
   state,
   thumbUrl,
   taken,
+  overlapLine,
   draft,
   addDisabled,
   player,
@@ -303,6 +326,9 @@ function MomentCard({
   thumbUrl?: string;
   /** Already in the draft: stays in place, marked, its controls disabled. */
   taken: boolean;
+  /** Its clip shares footage with a step in the draft: it still previews, but
+   *  cannot be added until that step is deleted. Null = it can. */
+  overlapLine: string | null;
   draft: string;
   addDisabled: boolean;
   player: ClipPlayer;
@@ -312,7 +338,8 @@ function MomentCard({
   const target = tileTarget(state);
   const previewing = player.active?.key === target.key;
   const at = fmtTimestamp(state.timestampMs);
-  const canAdd = !taken && !addDisabled && draft.trim() !== "";
+  const blocked = taken || overlapLine !== null;
+  const canAdd = !blocked && !addDisabled && draft.trim() !== "";
   const warning = labelWordWarning(draft);
   return (
     <div className="rounded-lg border border-ink/[0.08] bg-white p-1.5">
@@ -365,7 +392,7 @@ function MomentCard({
           dir="rtl"
           value={draft}
           maxLength={MAX_LABEL_CHARS}
-          disabled={taken}
+          disabled={blocked}
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
@@ -386,6 +413,9 @@ function MomentCard({
         </Button>
       </div>
       {warning && <p className="mt-1 text-[12px] text-amber-700">{warning}</p>}
+      {/* A text line, not a badge on the thumb: the thumb is a button whose
+          aria-label would hide it from a screen reader. */}
+      {overlapLine && <p className="mt-1 text-[12px] text-ink/60">{overlapLine}</p>}
     </div>
   );
 }

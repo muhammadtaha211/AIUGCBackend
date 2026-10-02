@@ -47,7 +47,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   format), which add the plan-level status, approval gate and versioning this table lacked.
 - **demo_analysis_footage** (0050) — what `analyze_demo` knows about the recording itself, one row
   per analysis (`analysis_id` is the primary key and the FK), written right before the analysis
-  lands. **Nothing reads it yet**; `demo_analyses.timeline` is unchanged. `fps` (the sampling
+  lands. **Its instants are read** by the plan job, the plan save path and the analysis route,
+  to place every moment's 2 s clip (`analysisInstants`, vault 0084); the moments' spans are read
+  by nothing yet. `demo_analyses.timeline` is unchanged. `fps` (the sampling
   rate the moments were found at), `file_sha` (sha256 of the normalized file), `moments jsonb`
   (`{ t, startMs, endMs, read }[]`: every kept moment with the first and last sample its picture
   held on; `read: false` is a moment whose vision read failed, which the timeline drops and this

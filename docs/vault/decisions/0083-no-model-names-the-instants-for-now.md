@@ -56,7 +56,10 @@ box himself. Each was done on that instruction ([[production-migration-push-log]
   call was removed from the tree with it (it is in commit `5b49335`).
 - **Open, his:** what the next task does with the instants. He asked for one measurement first,
   [[instant-free-windows-2026-10-02]], and has not ruled.
+  - **Ruled 2026-10-02, later:** clips are placed from them, calm preferred
+    ([[0084-clips-are-placed-from-the-footage-instants]]).
 - **Still open from before:** whether an in-place swap counts as a change.
+  - **Closed 2026-10-02, later**, by the same ruling: nothing in the rule is called a screen.
 
 ## Related
 

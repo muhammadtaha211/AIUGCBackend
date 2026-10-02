@@ -57,7 +57,16 @@
     "shows the address typed through to the end, 3200ms. THE PIN, DERIVED above is superseded. The",
     "live sourceIndexes take the new pin; dryRunSourceIndexes re-derived to [1, 14, 26, 29, 47, 49].",
     "The live colour is unverified under plan_demo_steps@v15 until a paid regress — state 16 has",
-    "800ms to its screen's end and can no longer carry a caption."
+    "800ms to its screen's end and can no longer carry a caption.",
+    "",
+    "2026-10-02 (fixed 2 s clips — decisions 0076, 0084, 0087): every step is its moment's 2 s",
+    "clip, a plan is 5-10 steps, and two steps never share footage, so the mechanical pin moved:",
+    "dryRunSourceIndexes [1, 14, 26, 29, 47, 49] -> [2, 9, 14, 16, 24, 26, 41, 44, 47, 49]. This fixture carries no footage",
+    "instants, so every clip starts at its moment and nothing is calm.",
+    "The access pin moved 1 -> 2: the latest address-bar state whose 2 s clip still ends by the",
+    "address bar's end. Every state before the address bar's end is off the table beside it, so",
+    "sourceIndexes (live) opens on a state (1) no plan can hold any more — expected red, and",
+    "unverified under plan_demo_steps@v16 until the paid check re-takes it."
   ],
   "questionnaire": {
     "wow": "test",
@@ -1162,6 +1171,6 @@
   ],
   "expected": {
     "sourceIndexes": [1, 7, 16, 23, 26, 44, 49],
-    "dryRunSourceIndexes": [1, 14, 26, 29, 47, 49]
+    "dryRunSourceIndexes": [2, 9, 14, 16, 24, 26, 41, 44, 47, 49]
   }
 }

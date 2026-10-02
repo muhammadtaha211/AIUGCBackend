@@ -8,6 +8,13 @@ source: code
 
 # A screen missing from the timeline is invisible to the screen cut
 
+> **2026-10-02 — mostly moot.** Nothing is cut at a screen any more
+> ([[0084-clips-are-placed-from-the-footage-instants]]): a clip is 2 s, placed from the footage
+> instants, which are found on every frame whether or not a moment was kept there. A hidden
+> screen inside a clip is an instant, so the clip is not calm. What is left: with no moment on the
+> hidden screen the analysis has no page judgement across it, so the clip is not preferred away
+> from it by rule 3a and carries no two-pages line.
+
 **MEASURED in the code.** The screen cut ([[0072-step-cap-no-padding-cut-early]]) compares
 consecutive **timeline** states, but the timeline can skip clusters:
 

@@ -367,13 +367,13 @@ export function serviceAStepsTimeline(input: {
     const wantedEndFrame = msToFrame(step.startMs + step.durationMs);
     const endFrame = Math.min(wantedEndFrame, demoFrames);
     if (endFrame < wantedEndFrame && i < input.steps.length - 1) {
-      // Defensive net. @aiugc/core's assembleSteps caps every step at the gap
-      // to the next one, and every selected state is inside the recording, so
-      // a NON-LAST step can only reach this clamp if the plan is malformed —
-      // its cut point is then not the one that was approved. The last step is
-      // not logged: since decision 0070 assembleSteps ends it at the
-      // recording's end too, but plans stored before that still ask past it,
-      // and a net that fires on those healthy renders is one nobody reads.
+      // Defensive net. @aiugc/core places every step's clip inside the
+      // recording (placeClips, decision 0084; before it, assembleSteps capped
+      // a step at the gap to the next one), so a NON-LAST step can only reach
+      // this clamp if the plan is malformed — its cut point is then not the
+      // one that was approved. The last step is not logged: plans stored
+      // before decision 0070 still ask past the recording's end, and a net
+      // that fires on those healthy renders is one nobody reads.
       //
       // This prints at the render's pinned logLevel "error". Remotion passes a
       // browser console message's OWN level as the threshold, so a warn from

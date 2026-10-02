@@ -249,6 +249,68 @@ describe("step plan response shape", () => {
       ).requestedElapsedMs,
     ).toBe(0);
   });
+
+  /**
+   * Core owns the step schema and this layer picks no fields out of it — which
+   * is what carries a step's clip (`startMs`) and its two-pages flag to the
+   * editor. A field allowlist here would preview every step from its moment
+   * and drop the "watch this step" line without any error anywhere.
+   */
+  it("passes stored steps through untouched — startMs and twoPages reach the client", () => {
+    const steps = [
+      {
+        timestampMs: 12_000,
+        actionType: "tap",
+        label: "בחרו תבנית",
+        sourceIndex: 4,
+        startMs: 10_700,
+        durationMs: 2000,
+        twoPages: true,
+        offScreenWords: [],
+      },
+      // A row from before steps had clips: no startMs, its saved length.
+      {
+        timestampMs: 20_000,
+        actionType: "result",
+        label: "סיום",
+        sourceIndex: 9,
+        durationMs: 3400,
+      },
+    ];
+    const response = stepPlanResponse({
+      id: "p4",
+      demoId: "d1",
+      analysisId: "a1",
+      status: "ready",
+      steps,
+      unexplainedMoments: [],
+      notes: null,
+      failReason: null,
+      failKind: null,
+      approvedAt: null,
+      createdAt: new Date(0),
+    });
+    expect(response.steps).toBe(steps);
+    expect(response.steps).toEqual([
+      {
+        timestampMs: 12_000,
+        actionType: "tap",
+        label: "בחרו תבנית",
+        sourceIndex: 4,
+        startMs: 10_700,
+        durationMs: 2000,
+        twoPages: true,
+        offScreenWords: [],
+      },
+      {
+        timestampMs: 20_000,
+        actionType: "result",
+        label: "סיום",
+        sourceIndex: 9,
+        durationMs: 3400,
+      },
+    ]);
+  });
 });
 
 describe("analysis ?indexes= parsing", () => {

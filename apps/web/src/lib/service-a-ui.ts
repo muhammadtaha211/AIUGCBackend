@@ -3,12 +3,16 @@ import type { HookTextColor } from "@aiugc/core/hook-text-color";
 import {
   A_STEPS_MAX_DEFAULT,
   A_STEPS_MIN_DEFAULT,
-  MAX_LABEL_WORDS,
+  clipsOverlap,
   isInventoryState,
-  MIN_LABEL_WORDS,
-  readTimeMs,
+  labelTooLong,
+  overlappingPairs,
+  readableWords,
   splitWords,
+  STEP_MS,
+  stepClip,
   totalRuntimeMs,
+  type Clip,
 } from "@aiugc/core/plan-format";
 import { endingCostClause, VO_SHORT_ESTIMATE_NOTICE, VO_SHORT_MEASURED_NOTICE } from "./quote-ui";
 
@@ -520,14 +524,20 @@ export function restoredDemo(
 // The step plan surface (read-only in 8a; the editor lands in 8b)
 // ---------------------------------------------------------------------------
 
-/** One stored plan step on the wire — durationMs is ASSEMBLED (to its screen's end, the
- *  cap or the next step, whichever is first). */
+/** One stored plan step on the wire. A step saved since steps became 2 s clips
+ *  (decisions 0076, 0084) carries `startMs`, where its clip starts, and
+ *  durationMs 2000. An older one has no startMs: it plays from its moment for
+ *  the length it was saved with. Core's stepClip reads both. */
 export type PlanStepWire = {
   timestampMs: number;
   actionType: string;
   label: string;
   sourceIndex: number;
   durationMs: number;
+  startMs?: number;
+  /** The clip probably shows two different pages — the editor asks the
+   *  customer to watch the step before approving (decision 0085). */
+  twoPages?: boolean;
   /** The label's own tokens that came from none of the state's screen text,
    *  the questionnaire or the demo description (core's findOffScreenWords,
    *  decision 0049) — the editor marks them for the customer to check. Absent
@@ -571,9 +581,15 @@ export type AnalysisStateWire = {
   sameStateAsPrevious: boolean;
   legibility: string;
   salienceNote?: string;
-  /** How long a step started here would run: to its screen's end or the cap
-   *  (core's timelineClipMs) — what a picker preview plays. */
+  /** Always STEP_MS. Still sent for tabs opened before steps became 2 s
+   *  clips, which read it as the preview's length. */
   clipMs: number;
+  /** Where this moment's 2 s clip starts (core's placeClips): what a tile
+   *  preview plays and what adding the moment stores. */
+  clipStartMs: number;
+  /** That clip probably shows two different pages. Said on a STEP in the
+   *  plan, never on an inventory tile — the inventory is one tier (0064). */
+  clipTwoPages: boolean;
   thumbUrl?: string;
 };
 
@@ -666,16 +682,6 @@ export function retryOutcome(
   return response.planId === currentPlanId ? "already_running" : "started";
 }
 
-/**
- * Read-time headroom: how much longer the step stays up than the label needs.
- * Negative = the caption is on screen for less time than it takes to read —
- * the exact defect the model path rejects and the human path allows silently.
- * Uses the exported readTimeMs, never a client-side copy of the formula.
- */
-export function stepHeadroomMs(step: Pick<PlanStepWire, "label" | "durationMs">): number {
-  return step.durationMs - readTimeMs(step.label);
-}
-
 /** Chronological display order — order derives from timestamp, nothing else. */
 export function sortedPlanSteps(steps: PlanStepWire[]): PlanStepWire[] {
   return [...steps].sort((a, b) => a.timestampMs - b.timestampMs);
@@ -685,21 +691,19 @@ export function sortedPlanSteps(steps: PlanStepWire[]): PlanStepWire[] {
 // The plan editor (8b) — pure decisions behind step-plan.tsx's editor
 // ---------------------------------------------------------------------------
 
-/** Whitespace words, the same split readTimeMs counts. */
-export function labelWordCount(label: string): number {
-  return label.trim().split(/\s+/).filter(Boolean).length;
-}
-
 /**
- * The soft word warning, firing at MAX_LABEL_WORDS (the model path's hard
- * ceiling; the target band is 3–5). ADVISORY ONLY: the human edit path is
- * never rejected on word count, and nothing client-side ever validates a
- * label against visibleText — the provenance highlight below marks the
- * MODEL's off-screen words for the customer to check, and never blocks.
+ * The soft long-caption warning: the caption needs longer to read than its
+ * clip is on screen (core's labelTooLong — on a 2 s step, more than 4 words;
+ * the number named is what the clip's own length allows, so it is true on a
+ * step stored at an older length too). ADVISORY ONLY (decision 0086): the
+ * human edit path is never rejected on length, and nothing client-side ever
+ * validates a label against visibleText — the provenance highlight below
+ * marks the MODEL's off-screen words for the customer to check, and never
+ * blocks.
  */
-export function labelWordWarning(label: string): string | null {
-  return labelWordCount(label) >= MAX_LABEL_WORDS
-    ? `כיתוב ארוך — עדיף ${MIN_LABEL_WORDS}–${MAX_LABEL_WORDS - 1} מילים כדי שיספיקו לקרוא אותו.`
+export function labelWordWarning(label: string, durationMs: number = STEP_MS): string | null {
+  return labelTooLong(label, durationMs)
+    ? `כיתוב ארוך — בזמן שהצעד מוצג מספיקים לקרוא עד ${readableWords(durationMs)} מילים.`
     : null;
 }
 
@@ -774,16 +778,24 @@ export function addWarning(stepCount: number): string | null {
     : null;
 }
 
-/** A reason the draft cannot be saved, or null. Only the empty label — the
- *  input's own maxLength enforces MAX_LABEL_CHARS. */
-export function draftBlockedReason(draft: Pick<PlanStepWire, "label">[]): string | null {
-  return draft.some((step) => step.label.trim().length === 0)
-    ? "יש צעד בלי כיתוב — כתבו כיתוב או מחקו את הצעד."
-    : null;
+/** What the server answers a save whose steps share footage, and what the
+ *  editor says when it can see the overlap itself (decision 0087). */
+export const STEPS_OVERLAP_BLOCK = "יש צעדים חופפים — מחקו אחד מכל זוג כדי לשמור.";
+
+/** A reason the draft cannot be saved, or null: an empty label (the input's
+ *  own maxLength enforces MAX_LABEL_CHARS), or two steps sharing footage. */
+export function draftBlockedReason(
+  draft: Pick<PlanStepWire, "label">[],
+  overlapping = false,
+): string | null {
+  if (draft.some((step) => step.label.trim().length === 0)) {
+    return "יש צעד בלי כיתוב — כתבו כיתוב או מחקו את הצעד.";
+  }
+  return overlapping ? STEPS_OVERLAP_BLOCK : null;
 }
 
-/** The PATCH body: exactly what the customer can edit. The server re-derives
- *  timestamp/actionType/duration from sourceIndex and re-sorts by timestamp. */
+/** The PATCH body: exactly what the customer can edit. The server derives
+ *  timestamp, actionType and the clip from sourceIndex and orders by timestamp. */
 export function stepsPayload(
   draft: Pick<PlanStepWire, "sourceIndex" | "label">[],
 ): { sourceIndex: number; label: string }[] {
@@ -884,33 +896,115 @@ function timeRangePages(pool: AnalysisStateWire[]): InventoryPage[] {
   return pages;
 }
 
-/** A plan step that exists only in the draft until the next save. The server
- *  assembles the real durationMs on PATCH; until then the card says so
- *  instead of showing a number that was never computed. */
-export type DraftStep = PlanStepWire & {
-  added?: boolean;
-  /** The picked state's own clip, carried from the picker so an added step
-   *  previews before its card's state arrives (or when that fetch fails). */
-  clipMs?: number;
-};
+/** A step in the editor's draft. Since every step is its moment's 2 s clip an
+ *  added step is complete the moment it is picked — nothing is "computed on
+ *  save" any more — so a draft step is just a plan step. */
+export type DraftStep = PlanStepWire;
 
-/** Insert a picked state into the draft — chronological by construction:
- *  order derives from timestamp, and the server re-sorts anyway. */
+/**
+ * Insert a picked state into the draft — chronological by construction: order
+ * derives from timestamp, and the server orders anyway. The step carries its
+ * moment's clip, exactly what a save stores for a new step. `stored` is the
+ * saved plan's step for the same moment, when it has one: a step deleted and
+ * re-added gets back the clip it was saved with, which is the one the server
+ * keeps (a saved clip never moves — updatePlanSteps).
+ */
 export function insertDraftStep(
   draft: DraftStep[],
-  state: Pick<AnalysisStateWire, "index" | "timestampMs" | "actionType"> & { clipMs?: number },
+  state: Pick<
+    AnalysisStateWire,
+    "index" | "timestampMs" | "actionType" | "clipStartMs" | "clipTwoPages"
+  >,
   label: string,
+  stored?: Pick<PlanStepWire, "startMs" | "twoPages">,
 ): DraftStep[] {
+  const kept = stored?.startMs;
+  const twoPages = kept !== undefined ? stored?.twoPages : state.clipTwoPages;
   const step: DraftStep = {
     sourceIndex: state.index,
     timestampMs: state.timestampMs,
     actionType: state.actionType,
     label: label.trim(),
-    durationMs: 0,
-    added: true,
-    ...(state.clipMs !== undefined ? { clipMs: state.clipMs } : {}),
+    startMs: kept ?? state.clipStartMs,
+    durationMs: STEP_MS,
+    ...(twoPages ? { twoPages: true } : {}),
   };
   return [...draft, step].sort((a, b) => a.timestampMs - b.timestampMs);
+}
+
+/**
+ * The clip a draft step shows — and, once the draft is saved, renders.
+ *
+ * A step with a clip (`startMs`) shows it. A step stored before steps had
+ * clips shows what is stored while the draft is untouched — that is what
+ * approving it would render — and, once the draft is edited, its moment's
+ * 2 s clip: the next save places every such step, so the edited draft shows
+ * what that save will store. Until the step's card has loaded the placed clip
+ * is not known and the stored one stays.
+ */
+export function draftStepClip(
+  step: PlanStepWire,
+  state: Pick<AnalysisStateWire, "clipStartMs" | "clipTwoPages"> | undefined,
+  dirty: boolean,
+): Clip & { twoPages: boolean } {
+  if (step.startMs === undefined && dirty && state) {
+    return { startMs: state.clipStartMs, durationMs: STEP_MS, twoPages: state.clipTwoPages };
+  }
+  return { ...stepClip(step), twoPages: step.twoPages ?? false };
+}
+
+/** The amber line on a step whose clip probably shows two pages (decision
+ *  0085). On steps in a plan only — never on an inventory tile. */
+export const TWO_PAGES_LINE = "ייתכן שרואים כאן שני מסכים — צפו בצעד לפני האישור.";
+
+/** "צעד 3" / "צעדים 3 ו־4" / "צעדים 3, 4 ו־5" — step numbers as shown on the cards. */
+function stepsPhrase(numbers: number[]): string {
+  if (numbers.length === 1) return `צעד ${numbers[0]}`;
+  return `צעדים ${numbers.slice(0, -1).join(", ")} ו־${numbers[numbers.length - 1]}`;
+}
+
+/** Per draft position, the numbers (1-based, as the cards show them) of the
+ *  EARLIER steps whose clip shares footage with this one. Every pair, not
+ *  neighbours only. Only an old plan being edited can have any: adding a
+ *  moment that overlaps is refused at the tile. */
+export function overlapsBefore(clips: Clip[]): number[][] {
+  const earlier = clips.map((): number[] => []);
+  for (const [a, b] of overlappingPairs(clips)) earlier[b]!.push(a + 1);
+  return earlier;
+}
+
+/** The line on a step that shares footage with earlier ones. */
+export function stepOverlapLine(earlier: number[]): string | null {
+  return earlier.length === 0
+    ? null
+    : `חופף ל${stepsPhrase(earlier)} — אותן שניות בסרטון. מחקו אחד מהם.`;
+}
+
+/**
+ * An inventory moment as its tile shows it. A moment the saved plan holds with
+ * a clip gets that clip back when it is re-added (insertDraftStep), so its
+ * tile previews, and is judged for overlap, on the saved clip — today's
+ * placement of the moment can differ from it (a saved clip never moves).
+ */
+export function tileState<T extends Pick<AnalysisStateWire, "index" | "clipStartMs">>(
+  state: T,
+  saved: Pick<PlanStepWire, "sourceIndex" | "startMs">[],
+): T {
+  const kept = saved.find((step) => step.sourceIndex === state.index)?.startMs;
+  return kept === undefined ? state : { ...state, clipStartMs: kept };
+}
+
+/** Why an inventory moment cannot be added: its clip shares footage with
+ *  steps already in the draft (decision 0087). `planClips` are the draft's
+ *  clips in card order — as they will be once an add has made the draft
+ *  edited, which is what the save stores. Null = it can be added. */
+export function tileOverlapLine(
+  state: Pick<AnalysisStateWire, "clipStartMs">,
+  planClips: Clip[],
+): string | null {
+  const tile = { startMs: state.clipStartMs, durationMs: STEP_MS };
+  const hits = planClips.flatMap((clip, i) => (clipsOverlap(tile, clip) ? [i + 1] : []));
+  return hits.length === 0 ? null : `חופף ל${stepsPhrase(hits)} בתוכנית`;
 }
 
 /** m:ss position of a step inside the demo. */
@@ -919,17 +1013,10 @@ export function fmtTimestamp(ms: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
-/** The preview window for a clip. A stored step plays its assembled window;
- *  a draft-added step or an inventory state (durationMs 0) plays the state's
- *  own clip — to its screen's end or the cap, the server's clipMs, so the
- *  preview shows exactly what picking the state buys. Never past the
- *  recording: clipMs is bounded by it server-side. */
-export function clipWindow(
-  startMs: number,
-  durationMs: number,
-  stateClipMs: number,
-): { startMs: number; endMs: number } {
-  return { startMs, endMs: startMs + (durationMs > 0 ? durationMs : stateClipMs) };
+/** The preview window for a clip — the same start and length the render
+ *  uses, so the preview shows exactly the frames the ad will. */
+export function clipWindow(clip: Clip): { startMs: number; endMs: number } {
+  return { startMs: clip.startMs, endMs: clip.startMs + clip.durationMs };
 }
 
 export type HookClip = {

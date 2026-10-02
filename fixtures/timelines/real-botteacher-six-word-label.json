@@ -56,7 +56,16 @@
     "(3200ms) is the earliest candidate whose clip reaches that end inside the 4s cap (state 2 at",
     "1200ms would be capped at 5200ms). The live sourceIndexes take the new pin; the derivation",
     "above it is superseded. dryRunSourceIndexes re-derived to [3, 9, 42, 48, 60]. The live colour",
-    "is unverified under plan_demo_steps@v15 until a paid regress."
+    "is unverified under plan_demo_steps@v15 until a paid regress.",
+    "",
+    "2026-10-02 (fixed 2 s clips — decisions 0076, 0084, 0087): every step is its moment's 2 s",
+    "clip, a plan is 5-10 steps, and two steps never share footage, so the mechanical pin moved:",
+    "dryRunSourceIndexes [3, 9, 42, 48, 60] -> [4, 42, 47, 48, 60, 74, 79]. This fixture carries no footage",
+    "instants, so every clip starts at its moment and nothing is calm.",
+    "The access pin moved 3 -> 4: the latest address-bar state whose 2 s clip (3600-5600) still",
+    "ends by the address bar's end (5800). Every state before the address bar's end is off the",
+    "table beside it, so sourceIndexes (live) opens on a state (3) no plan can hold any more —",
+    "expected red, and unverified under plan_demo_steps@v16 until the paid check re-takes it."
   ],
   "questionnaire": {
     "tone": "friendly",
@@ -2032,6 +2041,6 @@
   ],
   "expected": {
     "sourceIndexes": [3, 42, 47, 48, 60, 74, 79],
-    "dryRunSourceIndexes": [3, 9, 42, 48, 60]
+    "dryRunSourceIndexes": [4, 42, 47, 48, 60, 74, 79]
   }
 }

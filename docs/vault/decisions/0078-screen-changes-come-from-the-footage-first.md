@@ -8,6 +8,12 @@ source: founder
 
 # 0078 — Real screen changes come from the footage first
 
+> **2026-10-02, later:** the box was pulled and restarted the same day (founder-reported), and the
+> first production row was read back ([[box-and-local-instants-agree-2026-10-02]]). The line below
+> about the box is the state when this note was written.
+> The instants are now read: clips are placed from them
+> ([[0084-clips-are-placed-from-the-footage-instants]]).
+
 **DECIDED. HALF BUILT 2026-10-02 (PR #78, migration 0050 pushed, the box not on it yet): the footage's instants are stored; no model
 names them ([[0083-no-model-names-the-instants-for-now]]). The measurement below contradicts part
 of the decision; the founder has been told and has ruled the model out for now.**

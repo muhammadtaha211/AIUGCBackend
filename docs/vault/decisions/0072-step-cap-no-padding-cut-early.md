@@ -8,6 +8,15 @@ source: founder + db + code
 
 # 0072 — Steps: a 4 s cap, no padding, and cut early when unsure
 
+> **2026-10-02 — SUPERSEDED IN THE CODE** by
+> [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]] and
+> [[0084-clips-are-placed-from-the-footage-instants]], built on `feat/steps-fixed-2s-clips`. Gone:
+> the 4 s cap (`MAX_STEP_MS`, `a_step_ms_max`), the cut one sample after a screen's last state
+> (`timelineClipMs`), `MIN_GAP_MS`, the 15–21 s band, the reachability bound, guards G1 and G2,
+> and prompt v15's `clipMs`. Kept: `isNewScreen` (it now ranks clips and bounds the access pin's
+> run), `recordingEndMs` (G3), and "a step is never padded". The tests listed under "Pinned by"
+> were rewritten for the new rule.
+
 > **2026-10-01 — decided, NOT YET BUILT:**
 > [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]] replaces this note's 4 s cap and its
 > "no floor" with a fixed 2 s step. It also replaces the bounds this note kept from

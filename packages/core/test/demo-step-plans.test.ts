@@ -10,6 +10,7 @@ import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { HEAVY_JOB_TYPES, runLane } from "../src/jobs/worker";
+import { SIGNATURE_FPS } from "../src/pipelines/analysis-screens";
 import {
   addDemoNote,
   createBusiness,
@@ -20,37 +21,49 @@ import {
 } from "../src/pipelines/businesses";
 import { getLatestDemoAnalysis, type AnalysisState } from "../src/pipelines/demo-analysis";
 import {
+  analysisInstants,
+  analysisSampleMs,
   approvePlan,
   assembleSteps,
-  clipBounds,
   findOffScreenWords,
   findPlanViolations,
   generateStepPlan,
   getStepPlan,
   isNewScreen,
-  MIN_GAP_MS,
+  momentClips,
   normalizeWord,
+  PLAN_STEPS_OVERLAP_MESSAGE,
+  placeClips,
+  planPromptTimeline,
   planStepsSchema,
   planTimingMarkdown,
   readTimeMs,
   recordingEndMs,
-  screenEnds,
-  splitWords,
-  tokenizeWords,
-  stepDurations,
-  stepRuntimeBand,
   requestDemoPlan,
   runPlanRegression,
-  timelineClipMs,
+  screenEnds,
+  splitWords,
+  STEP_MS,
+  stepClip,
+  tokenizeWords,
   totalRuntimeMs,
   unexplainedMomentsSchema,
   updatePlanSteps,
-  type ClipBounds,
-  type StepDurationConfig,
+  type PlacedClip,
+  type PlanStep,
 } from "../src/pipelines/demo-step-plans";
 import { createDemo } from "../src/pipelines/demos";
 import { FIXTURES_DIR, PROMPTS_DIR } from "../src/paths";
-import { A_STEPS_MAX_DEFAULT, A_STEPS_MIN_DEFAULT } from "../src/plan-format";
+import {
+  A_STEPS_MAX_DEFAULT,
+  A_STEPS_MIN_DEFAULT,
+  DEMO_FPS,
+  demoFrame,
+  labelTooLong,
+  MAX_LABEL_WORDS,
+  overlappingPairs,
+  readableWords,
+} from "../src/plan-format";
 import { latestPromptVersion, renderPrompt } from "../src/prompts";
 import { setStorage } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
@@ -58,8 +71,10 @@ import { tempStorage } from "./helpers/storage";
 
 /**
  * Pass 2 of the step-plan format in DRY_RUN: plan generation over the canned
- * analysis, the deterministic anti-fabrication rule, the edit/approve/fork
- * lifecycle, and the fixtures/timelines regression harness.
+ * analysis, the deterministic plan-shape rules and label highlight, the
+ * edit/approve/fork lifecycle with the 2s clip every stored step carries, and
+ * the fixtures/timelines regression harness. How a clip is placed around the
+ * footage's instants, and the model path, live in step-clips.test.ts.
  */
 
 let db: Db;
@@ -117,20 +132,64 @@ function state(overrides: Partial<AnalysisState>): AnalysisState {
   };
 }
 
-/** The shipped clip cap and analysis sample — what stepDurations returns with
- *  no app_config rows (pinned in "step durations" below). */
-const DURATIONS: StepDurationConfig = { maxMs: 4000, sampleMs: 200 };
+/** One analysis sample at the shipped a_analysis_fps — what analysisSampleMs
+ *  returns with no app_config row (pinned in "the shipped numbers" below). */
+const SAMPLE_MS = 200;
 
-/** Clip bounds over a recording that runs on `tailMs` past the last state —
- *  the cap by default, so no step in a shape test runs short for want of
- *  footage, only for the reason the test is about. */
-function boundsOver(timeline: AnalysisState[], tailMs = DURATIONS.maxMs): ClipBounds {
-  return clipBounds(DURATIONS, timeline, timeline[timeline.length - 1]!.timestampMs + tailMs);
+/** Every state's clip on a recording that runs `tailMs` past the last state,
+ *  with no footage instants known: each clip starts at its own moment. 4s by
+ *  default, so no clip in a shape test is slid back from the recording's end —
+ *  a test about that end passes a shorter tail. */
+function clipsOver(timeline: AnalysisState[], tailMs = 4000): PlacedClip[] {
+  return placeClips(timeline, {
+    sampleMs: SAMPLE_MS,
+    recordingEndMs: timeline[timeline.length - 1]!.timestampMs + tailMs,
+    instants: null,
+  });
+}
+
+/** A ready analysis carrying `timeline`, on a demo of its own (the stubbed 20s
+ *  recording, no footage row) — for the tests that need a plan row over chosen
+ *  moments rather than the canned ones. */
+async function analysedDemo(
+  file: string,
+  timeline: AnalysisState[],
+): Promise<{ demoId: string; analysisId: string }> {
+  const demo = await createDemo(db, { businessId, filePath: tempFile(file) });
+  await drainAll(); // ingest -> analysis ready
+  const analysis = (await getLatestDemoAnalysis(db, demo.id))!;
+  await db
+    .update(dbSchema.demoAnalyses)
+    .set({ timeline })
+    .where(eq(dbSchema.demoAnalyses.id, analysis.id));
+  return { demoId: demo.id, analysisId: analysis.id };
+}
+
+/** A ready plan row holding `steps` exactly as given — the way to put a plan
+ *  of any stored shape under updatePlanSteps. */
+async function readyPlan(
+  demo: { demoId: string; analysisId: string },
+  steps: PlanStep[],
+  approvedAt: Date | null = null,
+): Promise<string> {
+  const inserted = await db
+    .insert(dbSchema.demoStepPlans)
+    .values({ ...demo, status: "ready", steps, approvedAt })
+    .returning();
+  return inserted[0]!.id;
+}
+
+/** What a saved row stores per step: [sourceIndex, startMs, durationMs]. */
+function storedClips(steps: unknown): [number, number | undefined, number][] {
+  return planStepsSchema.parse(steps).map((s) => [s.sourceIndex, s.startMs, s.durationMs]);
 }
 
 interface TimelineFixture {
+  questionnaire: Questionnaire;
   timeline: AnalysisState[];
+  demoDescription?: string;
   recordingMs?: number;
+  instants?: number[];
   expected: { sourceIndexes: number[]; dryRunSourceIndexes?: number[] };
 }
 
@@ -141,9 +200,24 @@ function loadFixture(file: string): TimelineFixture {
   return JSON.parse(readFileSync(path.join(FIXTURES_DIR, file), "utf8")) as TimelineFixture;
 }
 
-/** A fixture's bounds exactly as generateStepPlan builds them. */
-function fixtureBounds(fixture: TimelineFixture): ClipBounds {
-  return clipBounds(DURATIONS, fixture.timeline, fixture.recordingMs);
+/** A fixture's clips exactly as generateStepPlan places them. */
+function fixtureClips(fixture: TimelineFixture) {
+  return momentClips(db, {
+    timeline: fixture.timeline,
+    recordingMs: fixture.recordingMs,
+    instants: fixture.instants ?? null,
+  });
+}
+
+/** A fixture's plan, asked for the way `aiugc plan regress` asks. */
+function fixturePlan(fixture: TimelineFixture) {
+  return generateStepPlan(db, {
+    timeline: fixture.timeline,
+    questionnaire: fixture.questionnaire,
+    demoDescription: fixture.demoDescription,
+    recordingMs: fixture.recordingMs,
+    instants: fixture.instants,
+  });
 }
 
 beforeAll(async () => {
@@ -191,14 +265,11 @@ describe("plan_demo_steps (dry-run chain)", () => {
 
     const steps = planStepsSchema.parse(plan!.steps);
     // The canned analysis holds each of its five product screens for a second
-    // state (a duplicate, a typing, a scroll, an unreadable frame), and since
-    // 0070 a step ends one sample after the last state on its screen. So the
-    // happy path selects the five first states — home, the new-project form,
-    // the template list, the editor, the success screen — each running to its
-    // own screen's end: home to the duplicate at 4800ms, the form to the typing
-    // at 8600ms, the templates to the scroll at 11600ms, the editor to its
-    // unreadable frame at 14400ms, success to the 4s cap inside the stubbed 20s
-    // recording.
+    // state (a duplicate, a typing, a scroll, an unreadable frame). The happy
+    // path selects the five first states — home, the new-project form, the
+    // template list, the editor, the success screen. The typing at 8600ms is
+    // a quality state too and stays out: its clip would share 800ms of footage
+    // with the template list's at 9800ms.
     expect(steps.map((s) => s.sourceIndex)).toEqual([3, 5, 7, 9, 11]);
     expect(steps.map((s) => s.label)).toEqual([
       "הפרויקטים שלי",
@@ -207,14 +278,18 @@ describe("plan_demo_steps (dry-run chain)", () => {
       "שמירה",
       "הקמפיין נוצר",
     ]);
-    expect(steps.map((s) => s.durationMs)).toEqual([2000, 2800, 2000, 1800, 4000]);
-    expect(totalRuntimeMs(steps)).toBe(12_600);
-    // No step runs into the next one's footage.
-    for (let i = 1; i < steps.length; i++) {
-      expect(steps[i - 1]!.timestampMs + steps[i - 1]!.durationMs).toBeLessThanOrEqual(
-        steps[i]!.timestampMs,
-      );
-    }
+    // Every step is one 2s clip, stored with where it starts. A DRY_RUN
+    // analysis writes no footage row, so nothing is known about the picture
+    // between the moments and each clip starts at its own moment — the last
+    // one ends at 18s of the stubbed 20s recording.
+    expect(steps.map((s) => s.timestampMs)).toEqual([3000, 6000, 9800, 12_800, 16_000]);
+    expect(steps.map((s) => s.startMs)).toEqual([3000, 6000, 9800, 12_800, 16_000]);
+    expect(steps.map((s) => s.durationMs)).toEqual([2000, 2000, 2000, 2000, 2000]);
+    expect(totalRuntimeMs(steps)).toBe(10_000);
+    // No two steps show the same footage.
+    expect(overlappingPairs(steps.map(stepClip))).toEqual([]);
+    // None of the five clips runs onto a moment the analysis put on another page.
+    expect(steps.some((s) => s.twoPages)).toBe(false);
     // Five is the minimum, so there is no shortfall to explain.
     expect(plan?.notes).toBeNull();
 
@@ -227,45 +302,48 @@ describe("plan_demo_steps (dry-run chain)", () => {
     "the canned plan reaches the minimum when index-even thinning would not",
     { timeout: 60_000 },
     async () => {
-      // subsampleClusters thins by INDEX, so a cluster of states close together
-      // can spend most of the cap before the min-gap walk runs — and the
-      // minimum-step waiver counts a forward greedy over the legal pool, sees
-      // the states the thinning threw away, and refuses to forgive the
-      // shortfall. generateStepPlan then threw "dry-run plan violates its own
-      // rules" on the path the whole suite, `aiugc plan regress` keyless and a
-      // DRY_RUN worker all run. Timestamps are on the analyser's real grid
-      // (multiples of 200ms, never closer than 400ms), all one screen, on a
-      // 15s recording so every state's clip is the full cap. At the 1.6s gap
-      // the thinning keeps states 0, 2, 5 and 9 — four — while walking back
-      // from the ending finds six (0, 2, 3, 5, 6, 9).
-      const ts = [0, 1600, 2800, 4400, 5800, 7200, 8800, 9600, 10_000, 11_000];
-      const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר"];
+      // subsampleClusters thins by INDEX, so a burst of states close together
+      // can spend most of the cap on clips that share footage — and the
+      // minimum-step waiver counts the largest set of separate clips over the
+      // whole legal pool, sees the states the thinning threw away, and refuses
+      // to forgive the shortfall. generateStepPlan would then throw "dry-run
+      // plan violates its own rules" on the path the whole suite, `aiugc plan
+      // regress` keyless and a DRY_RUN worker all run. Twelve states 400ms
+      // apart (the analyser's real grid), then four 2s apart ending on the
+      // success, all one screen on a 16s recording. Thinned to the cap of ten
+      // the pool is states 0, 1, 3, 4, 6, 8, 9, 11, 12 and 15, and dropping
+      // every clip that shares footage with a later one leaves 4, 9, 12 and
+      // 15. Walking back from the ending over every state finds seven.
+      const ts = [...Array.from({ length: 12 }, (_, i) => i * 400), 6000, 8000, 10_000, 12_000];
       const timeline = ts.map((t, i) =>
         state({
           timestampMs: t,
-          visibleText: [words[i]!],
+          visibleText: [`צעד ${i}`],
           actionType: i === ts.length - 1 ? "result" : "tap",
         }),
       );
       const draft = await generateStepPlan(db, {
         timeline,
         questionnaire: QUESTIONNAIRE,
-        recordingMs: 15_000,
+        recordingMs: 16_000,
       });
-      expect(draft.steps.length).toBeGreaterThanOrEqual(5);
       // The ending is the one state the format cannot lose.
-      expect(draft.steps[draft.steps.length - 1]!.sourceIndex).toBe(ts.length - 1);
+      expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 5, 10, 12, 13, 14, 15]);
+      expect(draft.steps.map((s) => s.startMs)).toEqual([
+        0, 2000, 4000, 6000, 8000, 10_000, 12_000,
+      ]);
+      expect(draft.notes).toBeNull();
     },
   );
 
   it("the minimum counts only states the ending rule allows", { timeout: 60_000 }, async () => {
     // Real recordings keep rolling after the success screen, and a state after
     // it can never be a step — the last-step rule forbids it. Counting those
-    // states as "selectable" demanded a plan the other rule rejects, which is
-    // the other half of the keyless throw: the canned plan stops at the ending
-    // and this walk did not. Here four states precede the success screen and
-    // four follow it, against a minimum of five. The recording runs 4s past
-    // the last state so all four after it are long enough to caption.
+    // states as "selectable" would demand a plan the other rule rejects, which
+    // is the other half of the keyless throw: the canned plan stops at the
+    // ending, and so must the count. Here four states precede the success
+    // screen and four follow it, against a minimum of five. The recording
+    // runs 4s past the last state, so every one of them has a full clip.
     const ts = [0, 3200, 6400, 20_000, 25_000, 26_600, 28_200, 29_800];
     const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
     const timeline = ts.map((t, i) =>
@@ -281,6 +359,8 @@ describe("plan_demo_steps (dry-run chain)", () => {
       recordingMs: 33_800,
     });
     expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3]);
+    // Short, and said so: the canned planner explains a shortfall in `notes`.
+    expect(draft.notes).not.toBeNull();
   });
 
   it("plan_demo_steps runs on the light lane", () => {
@@ -368,14 +448,14 @@ describe("plan lifecycle: edit, approve, fork", () => {
     expect(steps.map((s) => s.sourceIndex)).toEqual([1, 11]); // re-sorted
     expect(steps[0]!.timestampMs).toBe(1000);
     expect(steps[0]!.actionType).toBe("navigate");
-    // Derived, not client-supplied — and from the screens, not the labels.
-    // 1000ms -> 16000ms is a wide gap, so neither step is cut by the other:
-    // state 1's login screen holds through the typing at 2000ms and the app
-    // navigates home at 3000ms, so it runs to 2000 + 200; the success screen
-    // runs the 4s cap, inside the stubbed 20s recording. Step 0 is not padded
-    // for its label (its four words would ask 2000ms).
-    expect(steps[0]!.durationMs).toBe(1200);
-    expect(steps[1]!.durationMs).toBe(4000);
+    // Derived, not client-supplied — and from the moments, not the labels.
+    // The hand-added login state is stored with its own moment's 2s clip; the
+    // success step was stored with a clip already and keeps it under its new
+    // label.
+    expect(storedClips(updated.steps)).toEqual([
+      [1, 1000, 2000],
+      [11, 16_000, 2000],
+    ]);
   });
 
   it("rejects duplicate, out-of-range and empty-label steps", async () => {
@@ -402,37 +482,233 @@ describe("plan lifecycle: edit, approve, fork", () => {
     ).rejects.toThrow(/unreadable/);
   });
 
-  it("a human's too-close pair is accepted and stored short, never rewound", async () => {
-    // updatePlanSteps has no violation channel and no retry: whatever the
-    // customer ticked in the picker is what renders. Two states 400ms apart
-    // are a VIOLATION on the model path (below) and a 400ms clip here.
-    const tight = await createDemo(db, { businessId, filePath: tempFile("tight.mp4") });
-    await drainAll(); // ingest -> analysis ready
-    const analysis = (await getLatestDemoAnalysis(db, tight.id))!;
-    await db
-      .update(dbSchema.demoAnalyses)
-      .set({
-        timeline: [
-          state({ timestampMs: 0, visibleText: ["אחת"], actionType: "tap" }),
-          state({ timestampMs: 400, visibleText: ["סוף"], actionType: "result" }),
-        ],
-      })
-      .where(eq(dbSchema.demoAnalyses.id, analysis.id));
-    const inserted = await db
-      .insert(dbSchema.demoStepPlans)
-      .values({ demoId: tight.id, analysisId: analysis.id, status: "ready", steps: [] })
-      .returning();
+  it("a selection whose clips share footage is refused, and nothing is stored", async () => {
+    // updatePlanSteps has no violation channel and no retry: it stores what the
+    // customer ticked or it throws. Two states 400ms apart are a VIOLATION on
+    // the model path (below) and a refused save here — both clips would show
+    // the same 1.6s of the recording, and the customer deletes one.
+    const tight = await analysedDemo("tight.mp4", [
+      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "tap" }),
+      state({ timestampMs: 400, visibleText: ["סוף"], actionType: "result" }),
+    ]);
+    const tightPlanId = await readyPlan(tight, []);
 
-    const updated = await updatePlanSteps(db, {
-      planId: inserted[0]!.id,
+    await expect(
+      updatePlanSteps(db, {
+        planId: tightPlanId,
+        steps: [
+          { sourceIndex: 0, label: "אחת" },
+          { sourceIndex: 1, label: "סוף" },
+        ],
+      }),
+    ).rejects.toThrow(PLAN_STEPS_OVERLAP_MESSAGE);
+    expect((await getStepPlan(db, tightPlanId))!.steps).toEqual([]);
+
+    // Either of the two alone is a plan.
+    const alone = await updatePlanSteps(db, {
+      planId: tightPlanId,
+      steps: [{ sourceIndex: 1, label: "סוף" }],
+    });
+    expect(storedClips(alone.steps)).toEqual([[1, 400, 2000]]);
+  });
+
+  it("a stored clip never moves under the customer, whatever the footage row says by the next save", async () => {
+    // A clip the customer has watched in the editor is the clip that renders.
+    // The footage row can arrive after the plan was first saved (a backfill of
+    // an older analysis), and with it the same moment would be placed
+    // elsewhere — that must reach only steps that have no clip yet.
+    const timeline = [
+      state({ timestampMs: 0, visibleText: ["אפס"], actionType: "navigate" }),
+      state({ timestampMs: 5000, visibleText: ["אחת"], actionType: "tap" }),
+      state({ timestampMs: 10_000, visibleText: ["שתיים"], actionType: "type" }),
+      state({ timestampMs: 15_000, visibleText: ["סוף"], actionType: "result" }),
+    ];
+    const demo = await analysedDemo("kept.mp4", timeline);
+    const keptPlanId = await readyPlan(demo, []);
+
+    // No footage row yet: each clip starts at its own moment.
+    expect(await analysisInstants(db, demo.analysisId)).toBeNull();
+    const first = await updatePlanSteps(db, {
+      planId: keptPlanId,
       steps: [
-        { sourceIndex: 0, label: "אחת" },
-        { sourceIndex: 1, label: "סוף" },
+        { sourceIndex: 1, label: "אחת" },
+        { sourceIndex: 3, label: "סוף" },
       ],
     });
-    const steps = planStepsSchema.parse(updated.steps);
-    expect(steps[0]!.durationMs).toBe(400);
-    expect(steps[0]!.timestampMs + steps[0]!.durationMs).toBe(steps[1]!.timestampMs);
+    expect(storedClips(first.steps)).toEqual([
+      [1, 5000, 2000],
+      [3, 15_000, 2000],
+    ]);
+
+    // The footage arrives: the picture changes 1.5s after state 1 and 1s after
+    // state 2. Placed now, each of those two clips slides back until the
+    // change is 0.2s clear of its end — state 1's from 5000ms to 4300ms.
+    await db.insert(dbSchema.demoAnalysisFootage).values({
+      analysisId: demo.analysisId,
+      fps: 5,
+      fileSha: "0".repeat(64),
+      moments: [],
+      detector: "screens@1",
+      instants: [
+        { atMs: 6500, strength: 2, abrupt: 1 },
+        { atMs: 11_000, strength: 2, abrupt: 1 },
+      ],
+    });
+    const instants = await analysisInstants(db, demo.analysisId);
+    expect(instants).toEqual([6500, 11_000]);
+    const now = await momentClips(db, { timeline, recordingMs: 20_000, instants });
+    expect(now.clips).toEqual(
+      placeClips(timeline, { sampleMs: 200, recordingEndMs: 20_000, instants: [6500, 11_000] }),
+    );
+    expect(now.clips.map((c) => [c.startMs, c.calm])).toEqual([
+      [0, false],
+      [4300, true],
+      [8800, true],
+      [15_000, true],
+    ]);
+
+    // The next save relabels state 1 and adds state 2. State 1 keeps the clip
+    // it was stored with, whatever its label; state 2 has none and gets the
+    // one its moment is placed today.
+    const second = await updatePlanSteps(db, {
+      planId: keptPlanId,
+      steps: [
+        { sourceIndex: 1, label: "כיתוב אחר" },
+        { sourceIndex: 2, label: "שתיים" },
+        { sourceIndex: 3, label: "סוף" },
+      ],
+    });
+    expect(second.id).toBe(keptPlanId);
+    expect(storedClips(second.steps)).toEqual([
+      [1, 5000, 2000],
+      [2, 8800, 2000],
+      [3, 15_000, 2000],
+    ]);
+  });
+
+  it("a plan stored before steps had clips is re-placed to 2s clips on an edit", async () => {
+    // Plans saved before every step became a fixed clip carry no startMs and
+    // whatever length they were assembled with. Such a step plays from its
+    // moment for that length (stepClip) until the plan is edited; the edit
+    // stores every step — the untouched ones too — as its moment's 2s clip.
+    const demo = await analysedDemo("old-shape.mp4", [
+      state({ timestampMs: 0, visibleText: ["אפס"], actionType: "navigate" }),
+      state({ timestampMs: 3000, visibleText: ["אחת"], actionType: "tap" }),
+      state({ timestampMs: 6400, visibleText: ["שתיים"], actionType: "type" }),
+      state({ timestampMs: 9000, visibleText: ["סוף"], actionType: "result" }),
+    ]);
+    const old: PlanStep[] = [
+      {
+        sourceIndex: 1,
+        label: "כיתוב ראשון",
+        timestampMs: 3000,
+        actionType: "tap",
+        durationMs: 3400,
+      },
+      {
+        sourceIndex: 2,
+        label: "כיתוב אמצעי",
+        timestampMs: 6400,
+        actionType: "type",
+        durationMs: 2600,
+      },
+      {
+        sourceIndex: 3,
+        label: "כיתוב אחרון",
+        timestampMs: 9000,
+        actionType: "result",
+        durationMs: 4000,
+      },
+    ];
+    const oldPlanId = await readyPlan(demo, old);
+    expect(old.map(stepClip)).toEqual([
+      { startMs: 3000, durationMs: 3400 },
+      { startMs: 6400, durationMs: 2600 },
+      { startMs: 9000, durationMs: 4000 },
+    ]);
+
+    const edited = await updatePlanSteps(db, {
+      planId: oldPlanId,
+      steps: [
+        { sourceIndex: 1, label: "כיתוב ראשון" },
+        { sourceIndex: 2, label: "כיתוב חדש" },
+        { sourceIndex: 3, label: "כיתוב אחרון" },
+      ],
+    });
+    expect(edited.id).toBe(oldPlanId);
+    expect(storedClips(edited.steps)).toEqual([
+      [1, 3000, 2000],
+      [2, 6400, 2000],
+      [3, 9000, 2000],
+    ]);
+  });
+
+  it("an approved plan from before clips opens for editing as an exact copy, the original untouched", async () => {
+    // The editor's "edit a copy" PATCHes an approved plan with its own steps.
+    // Nothing was edited yet, so nothing is re-placed and nothing can be
+    // refused: the copy is the stored steps as they are. This plan could not
+    // be re-placed at all — its first two moments are 1600ms apart, so their
+    // 2s clips would share footage.
+    const demo = await analysedDemo("approved-old.mp4", [
+      state({ timestampMs: 0, visibleText: ["אפס"], actionType: "navigate" }),
+      state({ timestampMs: 1600, visibleText: ["אחת"], actionType: "tap" }),
+      state({ timestampMs: 5000, visibleText: ["סוף"], actionType: "result" }),
+    ]);
+    const old: PlanStep[] = [
+      {
+        sourceIndex: 0,
+        label: "כיתוב ראשון",
+        timestampMs: 0,
+        actionType: "navigate",
+        durationMs: 1600,
+        offScreenWords: ["ראשון"],
+      },
+      {
+        sourceIndex: 1,
+        label: "כיתוב אמצעי",
+        timestampMs: 1600,
+        actionType: "tap",
+        durationMs: 3400,
+        offScreenWords: [],
+      },
+      {
+        sourceIndex: 2,
+        label: "כיתוב אחרון",
+        timestampMs: 5000,
+        actionType: "result",
+        durationMs: 4000,
+        offScreenWords: [],
+      },
+    ];
+    const approvedId = await readyPlan(demo, old, new Date());
+    const own = old.map(({ sourceIndex, label }) => ({ sourceIndex, label }));
+
+    const copy = await updatePlanSteps(db, { planId: approvedId, steps: own });
+    expect(copy.id).not.toBe(approvedId);
+    expect(copy.approvedAt).toBeNull();
+    expect(copy.status).toBe("ready");
+    expect(copy.steps).toEqual(old);
+
+    // The approved original still renders exactly what was signed off.
+    const original = await getStepPlan(db, approvedId);
+    expect(original?.approvedAt).not.toBeNull();
+    expect(original?.steps).toEqual(old);
+
+    // The first real edit of the copy is where the clips are placed — and
+    // where the two moments 1600ms apart are refused until one of them goes.
+    const relabelled = own.map((s) => (s.sourceIndex === 2 ? { ...s, label: "כיתוב חדש" } : s));
+    await expect(updatePlanSteps(db, { planId: copy.id, steps: relabelled })).rejects.toThrow(
+      PLAN_STEPS_OVERLAP_MESSAGE,
+    );
+    const trimmed = await updatePlanSteps(db, {
+      planId: copy.id,
+      steps: relabelled.filter((s) => s.sourceIndex !== 0),
+    });
+    expect(trimmed.id).toBe(copy.id);
+    expect(storedClips(trimmed.steps)).toEqual([
+      [1, 1600, 2000],
+      [2, 5000, 2000],
+    ]);
   });
 
   it("marks are carried by sourceIndex, not by position — a deleted step moves nobody's", async () => {
@@ -547,16 +823,16 @@ describe("plan lifecycle: edit, approve, fork", () => {
 describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
   // Label provenance moved out to findOffScreenWords (decision 0049) — the
   // describe below carries those tests. 2s apart: these fixtures stand for
-  // VALID plans, and two states closer together than the shortest caption's
-  // read time are a violation in their own right. Every timeline here is one
-  // screen on a recording that runs on past it (boundsOver), so every clip is
-  // the full cap and none of these rules trips over a short one.
+  // VALID plans, and two states closer together than one step's clip show the
+  // same footage, a violation in its own right. Every timeline here sits on a
+  // recording that runs on past it with no footage instants known (clipsOver),
+  // so every clip starts at its own moment.
   const timeline: AnalysisState[] = [
     state({ timestampMs: 0, visibleText: ["פרויקט חדש", "שמירה"] }),
     state({ timestampMs: 2000, visibleText: ["הקמפיין נוצר!"], actionType: "result" }),
     state({ timestampMs: 4000, visibleText: [], legibility: "unreadable" }),
   ];
-  const bounds = boundsOver(timeline);
+  const clips = clipsOver(timeline);
 
   it("shape rules: model plans must end on the result state and explain under-min counts", () => {
     // Ends mid-journey while a selectable result state exists -> violation.
@@ -564,7 +840,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, 8, {
         minSteps: 1,
         notes: null,
-        bounds,
+        clips,
       }).some((v) => v.includes("result/success")),
     ).toBe(true);
     // Ending on the result state passes.
@@ -576,7 +852,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
         ],
         timeline,
         8,
-        { minSteps: 1, notes: null, bounds },
+        { minSteps: 1, notes: null, clips },
       ),
     ).toEqual([]);
     // Ends mid-journey but `notes` explains (the timeline's only "result"
@@ -585,7 +861,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], timeline, 8, {
         minSteps: 1,
         notes: "אין בהקלטה מסך סיום ברור",
-        bounds,
+        clips,
       }),
     ).toEqual([]);
     // No selectable result in the timeline -> the rule cannot apply.
@@ -594,7 +870,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       findPlanViolations([{ sourceIndex: 0, label: "שמירה" }], noResult, 8, {
         minSteps: 1,
         notes: null,
-        bounds: boundsOver(noResult),
+        clips: clipsOver(noResult),
       }),
     ).toEqual([]);
     // Under the minimum on a timeline that could carry more -> violation...
@@ -613,7 +889,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       findPlanViolations(short, roomy, 8, {
         minSteps: 5,
         notes: null,
-        bounds: boundsOver(roomy),
+        clips: clipsOver(roomy),
       }).some((v) => v.includes("fewer than the minimum")),
     ).toBe(true);
     // ...and `notes` does NOT waive it any more. That hatch belongs to the
@@ -623,7 +899,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       findPlanViolations(short, roomy, 8, {
         minSteps: 5,
         notes: "בסרטון אין יותר צעדים",
-        bounds: boundsOver(roomy),
+        clips: clipsOver(roomy),
       }).some((v) => v.includes("fewer than the minimum")),
     ).toBe(true);
     // The waiver is the timeline itself: two selectable states cannot make 6,
@@ -636,15 +912,15 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
         ],
         timeline,
         8,
-        { minSteps: 6, notes: null, bounds },
+        { minSteps: 6, notes: null, clips },
       ),
     ).toEqual([]);
   });
 
-  it("the min-step waiver counts SPACING, not just legal states", () => {
-    // Five legal states, but the last two sit 400ms apart: the min-gap rule
-    // means at most four can ever be steps, so a 4-step plan is the longest
-    // plan this timeline has and must not be flagged.
+  it("the min-step waiver counts clips that share no footage, not legal states", () => {
+    // Five legal states, but the last two sit 400ms apart: their clips share
+    // 1.6s of footage, so at most four can ever be steps. A 4-step plan is the
+    // longest plan this timeline has and must not be flagged.
     const bunched: AnalysisState[] = [
       state({ timestampMs: 0, visibleText: ["אחת"] }),
       state({ timestampMs: 2000, visibleText: ["שתיים"] }),
@@ -662,19 +938,87 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       findPlanViolations(four, bunched, 8, {
         minSteps: 5,
         notes: null,
-        bounds: boundsOver(bunched),
+        clips: clipsOver(bunched),
       }),
     ).toEqual([]);
-    // Space that pair out and the same 4-step plan IS a violation.
+    // Space that pair out and the same 4-step plan IS a violation — one that
+    // tells the retry how many separate clips there are to select from.
     const spread = bunched.map((s, i) => (i === 4 ? state({ ...s, timestampMs: 8000 }) : s));
     expect(
-      findPlanViolations(
-        four.map((s) => (s.sourceIndex === 4 ? { ...s } : s)),
-        spread,
-        8,
-        { minSteps: 5, notes: null, bounds: boundsOver(spread) },
-      ).some((v) => v.includes("fewer than the minimum")),
+      findPlanViolations(four, spread, 8, { minSteps: 5, notes: null, clips: clipsOver(spread) }),
+    ).toEqual([
+      "the plan has 4 steps, fewer than the minimum 5 — this timeline offers 5 selectable states whose clips do not overlap, so select more genuinely distinct ones; `notes` does not waive this, and never pad with loading, duplicate or otherwise skipped states",
+    ]);
+  });
+
+  it("the min-step waiver forgives a recording too short to hold the minimum", () => {
+    // Five clips are 10s of footage. On a 9s recording the success screen's
+    // clip cannot start at its 8000ms moment — it is slid back to end with the
+    // recording, onto the footage of the state before it — so four steps are
+    // all this recording has. One more second of recording and it has five.
+    const short: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["אחת"] }),
+      state({ timestampMs: 2000, visibleText: ["שתיים"] }),
+      state({ timestampMs: 4000, visibleText: ["שלוש"] }),
+      state({ timestampMs: 6000, visibleText: ["ארבע"] }),
+      state({ timestampMs: 8000, visibleText: ["חמש"], actionType: "result" }),
+    ];
+    const four = [
+      { sourceIndex: 0, label: "אחת" },
+      { sourceIndex: 1, label: "שתיים" },
+      { sourceIndex: 2, label: "שלוש" },
+      { sourceIndex: 4, label: "חמש" },
+    ];
+    const nineSeconds = clipsOver(short, 1000);
+    expect(nineSeconds.map((c) => c.startMs)).toEqual([0, 2000, 4000, 6000, 7000]);
+    expect(
+      findPlanViolations(four, short, 8, { minSteps: 5, notes: null, clips: nineSeconds }),
+    ).toEqual([]);
+    const tenSeconds = clipsOver(short, 2000);
+    expect(tenSeconds.map((c) => c.startMs)).toEqual([0, 2000, 4000, 6000, 8000]);
+    expect(
+      findPlanViolations(four, short, 8, {
+        minSteps: 5,
+        notes: null,
+        clips: tenSeconds,
+      }).some((v) => v.includes("this timeline offers 5 selectable states")),
     ).toBe(true);
+  });
+
+  it("the min-step waiver stops counting at the ending — post-success filming offers nothing", () => {
+    // Success at 6s, and the customer kept filming (the normal case, per the
+    // last-step rule's own comment). An ending-compliant plan tops out at four
+    // steps; the states at 8/10/12/14s can never be steps, so counting them
+    // would order the model to add pre-ending states that do not exist, burn
+    // the corrective calls, and fail the plan.
+    const ts = [0, 2000, 4000, 6000, 8000, 10_000, 12_000, 14_000];
+    const filmedOn: AnalysisState[] = ts.map((t, i) =>
+      state({
+        timestampMs: t,
+        visibleText: [`מסך ${i}`],
+        actionType: i === 3 ? "result" : "tap",
+      }),
+    );
+    const plan = [0, 1, 2, 3].map((i) => ({ sourceIndex: i, label: `מסך ${i}` }));
+    expect(
+      findPlanViolations(plan, filmedOn, 8, {
+        minSteps: 5,
+        notes: null,
+        clips: clipsOver(filmedOn),
+      }),
+    ).toEqual([]);
+    // The same eight moments with no success screen among them have no ending
+    // to stop at: all eight count, and the same four steps are short.
+    const noEnding = filmedOn.map((s) => state({ ...s, actionType: "tap" }));
+    expect(
+      findPlanViolations(plan, noEnding, 8, {
+        minSteps: 5,
+        notes: null,
+        clips: clipsOver(noEnding),
+      }),
+    ).toEqual([
+      "the plan has 4 steps, fewer than the minimum 5 — this timeline offers 8 selectable states whose clips do not overlap, so select more genuinely distinct ones; `notes` does not waive this, and never pad with loading, duplicate or otherwise skipped states",
+    ]);
   });
 
   it("names the success candidates when the plan continues past the result state (real a179f069)", () => {
@@ -698,7 +1042,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       ],
       continues,
       8,
-      { minSteps: 6, notes: null, bounds: boundsOver(continues) },
+      { minSteps: 6, notes: null, clips: clipsOver(continues) },
     );
     const shapeViolation = violations.find((v) => v.includes("result/success"));
     expect(shapeViolation).toBeDefined();
@@ -742,7 +1086,7 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       findPlanViolations([{ sourceIndex: 1, label: "דף הבית" }], kinds, 8, {
         minSteps: 1,
         notes: null,
-        bounds: boundsOver(kinds),
+        clips: clipsOver(kinds),
       }),
     ).toEqual([]);
   });
@@ -768,17 +1112,6 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
         v.includes("not in the timeline"),
       ),
     ).toBe(true);
-    // Six is the ceiling: five passes, seven does not.
-    expect(
-      findPlanViolations([{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש" }], timeline, 8),
-    ).toEqual([]);
-    expect(
-      findPlanViolations(
-        [{ sourceIndex: 0, label: "פרויקט חדש שמירה פרויקט חדש שמירה פרויקט" }],
-        timeline,
-        8,
-      ).some((v) => v.includes("over 6 words")),
-    ).toBe(true);
     expect(
       findPlanViolations(
         [
@@ -790,6 +1123,152 @@ describe("findPlanViolations (the plan-shape rules, deterministic)", () => {
       ).some((v) => v.includes("maximum is 1")),
     ).toBe(true);
     expect(findPlanViolations([], timeline, 8)).toEqual(["the plan has zero steps"]);
+  });
+
+  it("a caption over four words is a violation — what cannot be read in one step", () => {
+    // Four is the ceiling: four passes, five does not. The message carries the
+    // reason and the fix, because the retry has no other way to know either.
+    const four = "פרויקט חדש שמירה פרויקט";
+    const five = "פרויקט חדש שמירה פרויקט חדש";
+    expect(findPlanViolations([{ sourceIndex: 0, label: four }], timeline, 8)).toEqual([]);
+    expect(findPlanViolations([{ sourceIndex: 0, label: five }], timeline, 8)).toEqual([
+      `step 0: label "${five}" is over 4 words — a step is on screen for 2000ms and nothing longer can be read in it; cut it to 4 words or fewer`,
+    ]);
+    // The count is the viewer's: a spaced dash is not a word, here or in
+    // readTimeMs, so a four-word caption written with one still fits its step.
+    const dashed = "פרויקט חדש — שמירה פרויקט";
+    expect(readTimeMs(dashed)).toBe(2000);
+    expect(findPlanViolations([{ sourceIndex: 0, label: dashed }], timeline, 8)).toEqual([]);
+  });
+
+  it("allowLongLabels switches the word ceiling off, and nothing else", () => {
+    // The last-round re-check: after the last corrective call a long caption
+    // is kept for the editor's warning rather than failing the plan. Every
+    // other rule still holds on that re-check.
+    const long = "פרויקט חדש שמירה פרויקט חדש";
+    const plan = [
+      { sourceIndex: 0, label: long },
+      { sourceIndex: 1, label: "נוצר" },
+    ];
+    expect(findPlanViolations(plan, timeline, 8, { minSteps: 1, notes: null, clips })).toEqual([
+      `step 0: label "${long}" is over 4 words — a step is on screen for 2000ms and nothing longer can be read in it; cut it to 4 words or fewer`,
+    ]);
+    expect(
+      findPlanViolations(plan, timeline, 8, {
+        minSteps: 1,
+        notes: null,
+        clips,
+        allowLongLabels: true,
+      }),
+    ).toEqual([]);
+    // The 60-character ceiling is not a word rule and stays on.
+    const endless = Array.from({ length: 13 }, () => "שמירה").join(" ");
+    expect(endless.length).toBeGreaterThan(60);
+    expect(
+      findPlanViolations(
+        [
+          { sourceIndex: 0, label: endless },
+          { sourceIndex: 1, label: "נוצר" },
+        ],
+        timeline,
+        8,
+        { minSteps: 1, notes: null, clips, allowLongLabels: true },
+      ),
+    ).toEqual(["step 0: label is over 60 characters"]);
+  });
+});
+
+describe("two steps never show the same footage (decision 0087)", () => {
+  // Real timelines put states 400ms apart (fixtures/timelines: the botteacher
+  // recordings both do). Selecting both is a selection bug — the corrective
+  // retry has to see it, because both clips would play the same 1.6s.
+  const timeline: AnalysisState[] = [
+    state({ timestampMs: 0, visibleText: ["התחלה"] }),
+    state({ timestampMs: 400, visibleText: ["המשך"] }),
+    state({ timestampMs: 9000, visibleText: ["נשמר"], actionType: "result" }),
+  ];
+  const clips = clipsOver(timeline);
+  const all = [
+    { sourceIndex: 0, label: "התחלה" },
+    { sourceIndex: 1, label: "המשך" },
+    { sourceIndex: 2, label: "נשמר" },
+  ];
+
+  it("a pair whose clips overlap is a VIOLATION for the model, naming both clips", () => {
+    expect(findPlanViolations(all, timeline, 8, { minSteps: 1, notes: null, clips })).toEqual([
+      "states 0 and 1 show the same footage — their clips (0-2000ms and 400-2400ms) overlap, and two steps may never share footage; keep the one that shows the beat better (a `calm` one when there is one) and select a genuinely different state instead of the other",
+    ]);
+    // `notes` waives the last-step rule — it must NOT waive this one: nothing
+    // explains showing the viewer the same footage twice.
+    expect(
+      findPlanViolations(all, timeline, 8, { minSteps: 1, notes: "הקלטה קצרה", clips }),
+    ).toHaveLength(1);
+    // Far enough apart -> silent.
+    expect(
+      findPlanViolations([all[0]!, all[2]!], timeline, 8, { minSteps: 1, notes: null, clips }),
+    ).toEqual([]);
+  });
+
+  it("clips that only touch share nothing; one analysis sample closer and they do", () => {
+    const pair = (gapMs: number): string[] => {
+      const two: AnalysisState[] = [
+        state({ timestampMs: 0, visibleText: ["התחלה"] }),
+        state({ timestampMs: gapMs, visibleText: ["נשמר"], actionType: "result" }),
+      ];
+      return findPlanViolations(
+        [
+          { sourceIndex: 0, label: "התחלה" },
+          { sourceIndex: 1, label: "נשמר" },
+        ],
+        two,
+        8,
+        { minSteps: 1, notes: null, clips: clipsOver(two) },
+      );
+    };
+    expect(pair(2000)).toEqual([]);
+    expect(pair(1800)).toHaveLength(1);
+  });
+
+  it("when one of the pair is the ending, the message says which to give up", () => {
+    // Told only to keep whichever reads better, a retry may drop the success
+    // state and fail the ending rule instead.
+    const late: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחלה"] }),
+      state({ timestampMs: 5000, visibleText: ["המשך"] }),
+      state({ timestampMs: 5400, visibleText: ["נשמר"], actionType: "result" }),
+    ];
+    expect(
+      findPlanViolations(all, late, 8, { minSteps: 1, notes: null, clips: clipsOver(late) }),
+    ).toEqual([
+      "states 1 and 2 show the same footage — their clips (5000-7000ms and 5400-7400ms) overlap, and two steps may never share footage; state 2 is the ending, so drop state 1, or select an earlier moment in its place",
+    ]);
+  });
+
+  it("checks every pair, not neighbours only", () => {
+    // The validator reads the clips it is handed and leans on nothing about
+    // how they were placed. Here the third step's clip sits on the first
+    // step's footage and clear of the second's: only that pair is named.
+    const three: AnalysisState[] = [
+      state({ timestampMs: 0, visibleText: ["התחלה"] }),
+      state({ timestampMs: 4000, visibleText: ["המשך"] }),
+      state({ timestampMs: 8000, visibleText: ["נשמר"] }),
+    ];
+    const handPlaced: PlacedClip[] = [
+      { startMs: 0, calm: false, twoPages: false },
+      { startMs: 4000, calm: false, twoPages: false },
+      { startMs: 1000, calm: false, twoPages: false },
+    ];
+    expect(
+      findPlanViolations(all, three, 8, { minSteps: 1, notes: null, clips: handPlaced }),
+    ).toEqual([
+      "states 0 and 2 show the same footage — their clips (0-2000ms and 1000-3000ms) overlap, and two steps may never share footage; keep the one that shows the beat better (a `calm` one when there is one) and select a genuinely different state instead of the other",
+    ]);
+  });
+
+  it("never fires without `shape` — the human path has its own refusal", () => {
+    // Human edits go through updatePlanSteps, which never calls this at all
+    // and refuses an overlap itself (PLAN_STEPS_OVERLAP_MESSAGE, above).
+    expect(findPlanViolations(all, timeline, 8)).toEqual([]);
   });
 });
 
@@ -1101,541 +1580,88 @@ describe("findOffScreenWords (the provenance highlight, deterministic)", () => {
   });
 });
 
-describe("the runtime band (steps only — the hook sits on top)", () => {
-  /** The shipped band, as a literal (stepRuntimeBand pins the config path). */
-  const band = { minMs: 15_000, maxMs: 21_000 };
-  /** Six states 3s apart on one screen, ending on a result, on a recording
-   *  that runs 4s past it: every step runs the 3s gap to the next selected
-   *  state, the last one the 4s cap. Room for any plan shape. */
-  const wide: AnalysisState[] = [
-    state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
-    state({ timestampMs: 3000, visibleText: ["שתיים"], actionType: "tap" }),
-    state({ timestampMs: 6000, visibleText: ["שלוש"], actionType: "type" }),
-    state({ timestampMs: 9000, visibleText: ["ארבע"], actionType: "select" }),
-    state({ timestampMs: 12_000, visibleText: ["חמש"], actionType: "scroll" }),
-    state({ timestampMs: 15_000, visibleText: ["שש"], actionType: "result" }),
-  ];
-  const wideBounds = boundsOver(wide);
-  const pick = (...i: number[]) =>
-    i.map((n) => ({ sourceIndex: n, label: wide[n]!.visibleText[0]! }));
-  const shape = (steps: { sourceIndex: number; label: string }[]) =>
-    findPlanViolations(steps, wide, 8, {
-      minSteps: 1,
-      notes: null,
-      bounds: wideBounds,
-      runtime: band,
-    });
-
-  it("flags a plan that is too short, and says which way to move", () => {
-    // 3000 (cut by state 1) + 4000 + 4000 (the cap) = 11000ms.
-    const v = shape(pick(0, 1, 5)).find((x) => x.includes("total"));
-    expect(v).toContain("11000ms");
-    expect(v).toContain("too SHORT by 4000ms");
-    expect(v).toContain("15000-21000ms");
-    // What each step runs, so the retry does not have to redo the clip
-    // arithmetic it just got wrong.
-    expect(v).toContain("state 0 runs 3000ms, state 1 runs 4000ms, state 5 runs 4000ms");
-    // The retry prompt orders MINIMAL edits and every untouched step kept; a
-    // live v4 retry read that as "do not add" and handed back the same short
-    // plan with a note suggesting the very fix it would not make. So this
-    // message has to licence the addition — and bound it, because the one
-    // time a retry was told plainly to add states it padded with a loading
-    // screen.
-    expect(v).toContain("ADD one or two more distinct product states");
-    expect(v).toContain("never add a loading, duplicate or otherwise skipped state");
-  });
-
-  it("flags a plan that is too long", () => {
-    // Every state selected runs 5 x 3000 + 4000 = 19000ms, inside the shipped
-    // band — so squeeze the band instead; the rule is the comparison, not the
-    // constant.
-    const v = findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, 8, {
-      minSteps: 1,
-      notes: null,
-      bounds: wideBounds,
-      runtime: { ...band, maxMs: 18_000 },
-    }).find((x) => x.includes("total"));
-    expect(v).toContain("19000ms");
-    // Live (plan bd0913b4, 2026-10-01): the last retry swapped a 1.2s step
-    // for a 4.0s one and landed 600ms over; the overshoot is spelled out.
-    expect(v).toContain("too LONG by 1000ms");
-    expect(v).toContain("state 5 runs 4000ms");
-  });
-
-  it("is silent inside the band, and absent when no band is supplied", () => {
-    // 5 x 3000 + 4000 = 19000ms.
-    expect(shape(pick(0, 1, 2, 3, 4, 5))).toEqual([]);
-    expect(
-      findPlanViolations(pick(0, 1, 5), wide, 8, {
-        minSteps: 1,
-        notes: null,
-        bounds: wideBounds,
-      }),
-    ).toEqual([]);
-  });
-
-  it("measures ASSEMBLED windows, not the cap or each state's own clip", () => {
-    // Read nominally this plan is three steps at the cap (12000ms), or each
-    // state's own clip (3200 + 1200 + 4000 = 8400ms). The video shows
-    // neither: state 1 cuts step 0 at its 2000ms gap, the app leaves the home
-    // screen one sample after the idle frame at 3000ms so step 1 runs
-    // 1200ms, and the success screen runs the cap — 7200ms.
-    const tight: AnalysisState[] = [
-      state({ timestampMs: 0, screenName: "בית", visibleText: ["אחת"], actionType: "navigate" }),
-      state({
-        timestampMs: 2000,
-        screenName: "בית",
-        visibleText: ["אחת", "שתיים"],
-        actionType: "tap",
-      }),
-      state({
-        timestampMs: 3000,
-        screenName: "בית",
-        visibleText: ["אחת", "שתיים"],
-        actionType: "idle",
-      }),
-      state({
-        timestampMs: 4000,
-        screenName: "סיום",
-        visibleText: ["נשמר"],
-        actionType: "result",
-      }),
-    ];
-    const steps = [
-      { sourceIndex: 0, label: "אחת" },
-      { sourceIndex: 1, label: "שתיים" },
-      { sourceIndex: 3, label: "נשמר" },
-    ];
-    const tightBounds = boundsOver(tight);
-    expect(timelineClipMs(tight, tightBounds)).toEqual([3200, 1200, 200, 4000]);
-    expect(assembleSteps(steps, tight, tightBounds).map((s) => s.durationMs)).toEqual([
-      2000, 1200, 4000,
-    ]);
-    // Asserted through the CEILING, which has no escape and reports the same
-    // assembled number.
-    expect(
-      findPlanViolations(steps, tight, 8, {
-        minSteps: 1,
-        notes: null,
-        bounds: tightBounds,
-        runtime: { minMs: 5000, maxMs: 7000 },
-      }).find((x) => x.includes("total")),
-    ).toContain("7200ms");
-  });
-
-  it("waives the FLOOR when the recording is too short to reach it, never the ceiling", () => {
-    // demos.ts accepts an 8-second recording; this one is 10s. Every
-    // selectable state selected, perfectly spaced, assembles to the
-    // recording's own 10000ms — the success step is cut by the recording's
-    // end — so the 15s floor is unreachable and "ADD one or two more distinct
-    // product states" is advice about states that do not exist. Before the
-    // waiver this burned the retry and failed the plan permanently, with a
-    // Hebrew "try again" that never would.
-    const tenSeconds: AnalysisState[] = [
-      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
-      state({ timestampMs: 2000, visibleText: ["שתיים"], actionType: "tap" }),
-      state({ timestampMs: 4000, visibleText: ["שלוש"], actionType: "type" }),
-      state({ timestampMs: 6000, visibleText: ["ארבע"], actionType: "select" }),
-      state({ timestampMs: 8000, visibleText: ["חמש"], actionType: "result" }),
-    ];
-    const tenBounds = clipBounds(DURATIONS, tenSeconds, 10_000);
-    const everything = tenSeconds.map((s, i) => ({
-      sourceIndex: i,
-      label: s.visibleText[0]!,
-    }));
-    expect(totalRuntimeMs(assembleSteps(everything, tenSeconds, tenBounds))).toBe(10_000);
-    expect(
-      findPlanViolations(everything, tenSeconds, 8, {
-        minSteps: 5,
-        notes: null,
-        bounds: tenBounds,
-        runtime: band,
-      }),
-    ).toEqual([]);
-    // A short plan on a recording long enough to do better IS flagged — the
-    // waiver is about the timeline, never about the total.
-    expect(shape(pick(0, 1, 5)).some((v) => v.includes("too SHORT"))).toBe(true);
-    // And the ceiling never gets the escape: a long plan can always drop steps.
-    expect(
-      findPlanViolations(pick(0, 1, 2, 3, 4, 5), wide, 8, {
-        minSteps: 1,
-        notes: null,
-        bounds: wideBounds,
-        runtime: { minMs: 30_000, maxMs: 12_000 },
-      }).some((v) => v.includes("too LONG")),
-    ).toBe(true);
-  });
-
-  it("notes does not waive the band — a short ad is short however it is explained", () => {
-    expect(
-      findPlanViolations(pick(0, 1, 5), wide, 8, {
-        minSteps: 1,
-        notes: "בסרטון אין יותר מסכים",
-        bounds: wideBounds,
-        runtime: band,
-      }).some((x) => x.includes("too SHORT")),
-    ).toBe(true);
-  });
-
-  it("the floor's escape never strands the ending — a reachable floor stays enforced", () => {
-    // The leftmost greedy this replaced took every state at the earliest legal
-    // moment (maximum CARDINALITY) and then could not take the final state,
-    // 1400ms after its last pick — so it valued this timeline at 6 x 1600 +
-    // 4000 = 13600ms, declared the 15s floor unreachable and switched the
-    // check OFF. A 12800ms plan then shipped with zero violations. The floor
-    // IS reachable here: skipping 9600 to take 11000 assembles 5 x 1600 +
-    // 3000 + 4000 = 15000ms.
-    const ts = [0, 1600, 3200, 4800, 6400, 8000, 9600, 11_000];
-    const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה"];
-    const grid: AnalysisState[] = ts.map((t, i) =>
-      state({
-        timestampMs: t,
-        visibleText: [words[i]!],
-        actionType: i === ts.length - 1 ? "result" : "tap",
-      }),
-    );
-    const gridBounds = boundsOver(grid);
-    const plan = (...i: number[]) => i.map((n) => ({ sourceIndex: n, label: words[n]! }));
-    expect(totalRuntimeMs(assembleSteps(plan(0, 1, 2, 3, 4, 5, 7), grid, gridBounds))).toBe(15_000);
-    // 3 x 1600 + 4000 (the cap, under the 6200ms gap) + 4000 = 12800ms.
-    const short = plan(0, 1, 2, 3, 7);
-    expect(totalRuntimeMs(assembleSteps(short, grid, gridBounds))).toBe(12_800);
-    expect(
-      findPlanViolations(short, grid, 8, {
-        minSteps: 5,
-        notes: null,
-        bounds: gridBounds,
-        runtime: band,
-      }).some((v) => v.includes("too SHORT")),
-    ).toBe(true);
-  });
-
-  it("the floor's escape ignores states after the success — post-success filming cannot certify an unreachable floor", () => {
-    // Success at 9s of a 25s recording, customer kept filming after it (the
-    // normal case, per the last-step rule's own comment). An ending-compliant
-    // plan tops out at 4 steps, 3 x 3000 + 4000 = 13000ms; the states at
-    // 12/15/18/21s can never be steps, so counting their coverage (>= the 15s
-    // floor) would order the model to add pre-ending states that do not
-    // exist, burn the one retry, and fail the plan permanently. Bounded at
-    // the ending, the escape forgives the shortfall — shipped at the 3s-floor
-    // change, when the raised band moved this asymmetry onto ordinary short
-    // demos.
-    const ts = [0, 3000, 6000, 9000, 12_000, 15_000, 18_000, 21_000];
-    const grid: AnalysisState[] = ts.map((t, i) =>
-      state({
-        timestampMs: t,
-        visibleText: [`מסך ${i}`],
-        actionType: i === 3 ? "result" : "tap",
-      }),
-    );
-    const gridBounds = boundsOver(grid);
-    const plan = [0, 1, 2, 3].map((i) => ({ sourceIndex: i, label: `מסך ${i}` }));
-    expect(totalRuntimeMs(assembleSteps(plan, grid, gridBounds))).toBe(13_000);
-    expect(
-      findPlanViolations(plan, grid, 7, {
-        minSteps: 4,
-        notes: null,
-        bounds: gridBounds,
-        runtime: band,
-      }),
-    ).toEqual([]);
-  });
-
-  it("the floor's escape measures capped gaps, not wall clock", () => {
-    // Two states 30 seconds apart. The wall clock says 30s is available, but a
-    // step can only claim the gap to the state actually selected after it,
-    // capped at its own clip — so the most this timeline can ever assemble is
-    // 2 x 4000 = 8000ms and the 15s floor is unreachable. The old span-based
-    // bound read the 30s as claimable and ordered the model to add states
-    // that do not exist, burning the one retry on a permanent failure.
-    const twoStates: AnalysisState[] = [
-      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
-      state({ timestampMs: 30_000, visibleText: ["שש"], actionType: "result" }),
-    ];
-    expect(
-      findPlanViolations(
-        [
-          { sourceIndex: 0, label: "אחת" },
-          { sourceIndex: 1, label: "שש" },
-        ],
-        twoStates,
-        8,
-        { minSteps: 1, notes: null, bounds: boundsOver(twoStates), runtime: band },
-      ),
-    ).toEqual([]);
-  });
-});
-
-describe("a state too short to caption is not selectable for the shape rules", () => {
-  // The customer stops recording one second into the success screen. That
-  // state's clip (1000ms) is under MIN_GAP_MS: no caption fits on it, so the
-  // read-time rule would reject it as an ending while the ending rule
-  // demanded it, and no retry could satisfy both. Four product steps before
-  // it, a minimum of five, and a floor only that last second could reach —
-  // each rule would count the state if it were selectable.
-  const ts = [0, 2000, 4000, 6000, 10_000];
-  const words = ["אחת", "שתיים", "שלוש", "ארבע", "נשמר"];
-  const timeline: AnalysisState[] = ts.map((t, i) =>
-    state({
-      timestampMs: t,
-      visibleText: [words[i]!],
-      actionType: i === 4 ? "result" : "tap",
-    }),
-  );
-  const plan = [0, 1, 2, 3].map((i) => ({ sourceIndex: i, label: words[i]! }));
-  const check = (recordingEnd: number) =>
-    findPlanViolations(plan, timeline, 7, {
-      minSteps: 5,
-      notes: null,
-      bounds: { ...DURATIONS, recordingEndMs: recordingEnd },
-      runtime: { minMs: 11_000, maxMs: 21_000 },
-    });
-
-  it("is not the required ending, not counted toward the minimum, not counted toward the floor", () => {
-    expect(timelineClipMs(timeline, { ...DURATIONS, recordingEndMs: 11_000 })[4]).toBe(1000);
-    // 3 x 2000 + 4000 = 10000ms, all the four captionable states can make.
-    expect(
-      totalRuntimeMs(assembleSteps(plan, timeline, { ...DURATIONS, recordingEndMs: 11_000 })),
-    ).toBe(10_000);
-    expect(check(11_000)).toEqual([]);
-  });
-
-  it("with room to caption it, the same state is all three again", () => {
-    // Three more seconds of recording: its clip is the 4000ms cap.
-    const v = check(14_000);
-    expect(v.some((x) => x.includes("result/success"))).toBe(true);
-    expect(v.some((x) => x.includes("fewer than the minimum"))).toBe(true);
-    expect(v.some((x) => x.includes("too SHORT"))).toBe(true);
-  });
-});
-
-describe("a caption must outlast its own read time", () => {
-  const band = { minMs: 15_000, maxMs: 21_000 };
-  /** The shipped a179f069 shape: a long caption on a state only 1600ms before
-   *  the next selected one, so that state cuts its window. */
-  const squeezed: AnalysisState[] = [
-    state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate" }),
-    state({ timestampMs: 1600, visibleText: ["שתיים"], actionType: "select" }),
-    state({ timestampMs: 20_000, visibleText: ["שלוש"], actionType: "result" }),
-  ];
-  const steps = (first: string) => [
-    { sourceIndex: 0, label: first },
-    { sourceIndex: 1, label: "שתיים" },
-    { sourceIndex: 2, label: "שלוש" },
-  ];
-  const check = (first: string) =>
-    findPlanViolations(steps(first), squeezed, 8, {
-      minSteps: 1,
-      notes: null,
-      bounds: boundsOver(squeezed),
-      runtime: band,
-    });
-
-  it("flags the caption the next state squeezed, and names both exits", () => {
-    // Six words need 2800ms; the window is 1600ms because state 1 is 1600ms
-    // later. (1600 - 400 lead) at 2.5 words/sec = 3 words that would fit.
-    const hit = check("אחת אחת אחת אחת אחת אחת").find((v) => v.includes("but needs"));
-    expect(hit).toBeDefined();
-    expect(hit).toContain("state 0");
-    expect(hit).toContain("1600ms");
-    expect(hit).toContain("2800ms");
-    expect(hit).toContain("cut by the next selected state");
-    expect(hit).toContain("cut it to 3 words");
-    // Rewriting alone often cannot fix it, so the merge exit must be offered.
-    expect(hit).toContain("drop one of the two states");
-  });
-
-  it("names the screen when the app, not the next step, cut the window", () => {
-    // State 1 is picked late on its screen: the app navigates away after the
-    // idle frame at 3000ms, so the step runs 1200ms however far off the next
-    // selected state is. Dropping a neighbour cannot help; an earlier moment
-    // on the same screen can, and the message has to say so.
-    const late: AnalysisState[] = [
-      state({ timestampMs: 0, screenName: "בית", visibleText: ["אחת"], actionType: "navigate" }),
-      state({
-        timestampMs: 2000,
-        screenName: "בית",
-        visibleText: ["אחת", "שתיים"],
-        actionType: "tap",
-      }),
-      state({
-        timestampMs: 3000,
-        screenName: "בית",
-        visibleText: ["אחת", "שתיים"],
-        actionType: "idle",
-      }),
-      state({
-        timestampMs: 6000,
-        screenName: "סיום",
-        visibleText: ["נשמר"],
-        actionType: "result",
-      }),
-    ];
-    const hit = findPlanViolations(
-      [
-        { sourceIndex: 1, label: "אחת שתיים שלוש" },
-        { sourceIndex: 3, label: "נשמר" },
-      ],
-      late,
-      8,
-      { minSteps: 1, notes: null, bounds: boundsOver(late), runtime: band },
-    ).find((v) => v.includes("but needs"));
-    expect(hit).toBeDefined();
-    expect(hit).toContain("state 1");
-    expect(hit).toContain("on screen for 1200ms but needs 1600ms");
-    expect(hit).toContain("the app leaves that screen 1200ms after this state");
-    // (1200 - 400 lead) at 2.5 words/sec = 2 words — under the 3-word floor,
-    // so no rewrite can fix it. Offering "cut it to 2 words" spent a retry
-    // live (plan bd0913b4, 2026-10-01): the model wrote 3 words, still short.
-    expect(hit).not.toContain("cut it to");
-    expect(hit).toContain("no caption of 3 or more words fits");
-    expect(hit).toContain("drop this step");
-    expect(hit).toContain("select an earlier state on the same screen");
-    expect(hit).not.toContain("drop one of the two states");
-  });
-
-  it("offers the shorter caption only when one of at least 3 words fits", () => {
-    // The same screen, left 2000ms after state 1: (2000 - 400) at 2.5
-    // words/sec = 4 words fit, so the rewrite is a real exit — and dropping
-    // the step is still offered beside it.
-    const roomier: AnalysisState[] = [
-      state({ timestampMs: 0, screenName: "בית", visibleText: ["אחת"], actionType: "navigate" }),
-      state({
-        timestampMs: 2000,
-        screenName: "בית",
-        visibleText: ["אחת", "שתיים"],
-        actionType: "tap",
-      }),
-      state({
-        timestampMs: 3800,
-        screenName: "בית",
-        visibleText: ["אחת", "שתיים"],
-        actionType: "idle",
-      }),
-      state({
-        timestampMs: 6000,
-        screenName: "סיום",
-        visibleText: ["נשמר"],
-        actionType: "result",
-      }),
-    ];
-    const hit = findPlanViolations(
-      [
-        { sourceIndex: 1, label: "אחת שתיים שלוש ארבע חמש שש" },
-        { sourceIndex: 3, label: "נשמר" },
-      ],
-      roomier,
-      8,
-      { minSteps: 1, notes: null, bounds: boundsOver(roomier), runtime: band },
-    ).find((v) => v.includes("but needs"));
-    expect(hit).toContain("on screen for 2000ms but needs 2800ms");
-    expect(hit).toContain("either cut it to 4 words or fewer");
-    expect(hit).toContain("drop this step");
-  });
-
-  it("stays silent when every caption fits its window", () => {
-    expect(check("אחת").some((v) => v.includes("but needs"))).toBe(false);
-  });
-
-  it("never fires on the human path — no `shape`, no shape rules", () => {
-    // Human edits go through updatePlanSteps, which never calls this at all;
-    // this pins the same split the min-gap rule has, so a customer who picks
-    // two nearby states gets a short clip rather than a blocked save.
-    expect(findPlanViolations(steps("אחת אחת אחת אחת אחת אחת"), squeezed, 8)).toEqual([]);
-  });
-});
-
 describe("the prompt's timing block is generated from the code, not restated", () => {
   // The production defaults, spelled out rather than imported: a test that
   // reads the same constants the generator reads cannot catch either moving.
-  // This describe pinned the pre-b60b5b6 era (1400ms floor, 11-16s band,
-  // 8-step cap) long after production moved, which is how the band/floor
-  // contradiction shipped unnoticed — these literals must be the SHIPPED
-  // config, and the band-coherence describe below is what checks they can
-  // coexist.
-  const BAND = { minMs: 15_000, maxMs: 21_000 };
-  const block = planTimingMarkdown({ maxMs: 4000, runtime: BAND, minSteps: 5, maxSteps: 7 });
+  // (With no pinned access step the model is asked for exactly these counts.)
+  const block = planTimingMarkdown({ minSteps: 5, maxSteps: 10 });
   const label = (words: number) => Array.from({ length: words }, () => "אחת").join(" ");
 
-  /** Only the read-time violations, for a caption on state 0 with `gapMs` to
-   *  the next SELECTED state — the squeeze the gap ceiling describes. One
-   *  screen on a long recording, so only that gap can cut the window. */
-  const readTimeViolations = (gapMs: number, first: string): string[] => {
-    const timeline: AnalysisState[] = [
-      state({ timestampMs: 0, visibleText: ["אחת"], actionType: "tap" }),
-      state({ timestampMs: gapMs, visibleText: ["שתיים"], actionType: "tap" }),
-      state({ timestampMs: gapMs + 30_000, visibleText: ["שלוש"], actionType: "result" }),
-    ];
-    return findPlanViolations(
-      [
-        { sourceIndex: 0, label: first },
-        { sourceIndex: 1, label: "שתיים" },
-        { sourceIndex: 2, label: "שלוש" },
-      ],
-      timeline,
-      8,
-      { minSteps: 1, notes: null, bounds: boundsOver(timeline), runtime: BAND },
-    ).filter((v) => v.includes("but needs"));
-  };
+  /** The word-ceiling violations of a one-step plan captioned `caption`. */
+  const wordViolations = (caption: string): string[] =>
+    findPlanViolations(
+      [{ sourceIndex: 0, label: caption }],
+      [state({ timestampMs: 0, visibleText: ["אחת"] })],
+      10,
+    ).filter((v) => v.includes("words"));
 
   const readRows = [...block.matchAll(/^\| (\d+) words \| ([\d.]+)s \|$/gm)].map((m) => ({
     words: Number(m[1]),
     ms: Math.round(Number(m[2]) * 1000),
   }));
 
-  it("offers one row per legal caption length", () => {
-    expect(readRows.map((r) => r.words)).toEqual([3, 4, 5, 6]);
+  it("offers one row per legal caption length, with the seconds readTimeMs asks", () => {
+    expect(readRows).toEqual([
+      { words: 3, ms: 1600 },
+      { words: 4, ms: 2000 },
+    ]);
+    // v10 hand-wrote this table and its first row drifted from readTimeMs, so
+    // the prompt licensed plans the check then rejected. Each row is the
+    // function's own answer.
+    for (const row of readRows) expect(readTimeMs(label(row.words))).toBe(row.ms);
   });
 
-  it("every row is the gap findPlanViolations actually demands — v10's first row was not", () => {
-    // v10 hand-wrote "1.4-2.0s -> 3 words". readTimeMs asks 1600ms for three
-    // words, so the prompt licensed plans this very check then rejected — two
-    // of the campaign-app regression failures. Each row is now walked through
-    // the check itself: at the stated gap the caption is legal, 100ms under it
-    // is not. A row that drifts from readTimeMs fails one of the two.
-    for (const row of readRows) {
-      expect(readTimeMs(label(row.words))).toBe(row.ms);
-      expect(readTimeViolations(row.ms, label(row.words))).toEqual([]);
-      expect(readTimeViolations(row.ms - 100, label(row.words))).toHaveLength(1);
-    }
+  it("the longest row is the ceiling findPlanViolations enforces", () => {
+    // The prompt points the model at "the longest row of the table" as the
+    // hard ceiling: every row has to pass the check, the next length has to
+    // fail it, and the longest row has to fit the step it is read in.
+    for (const row of readRows) expect(wordViolations(label(row.words))).toEqual([]);
+    const longest = readRows[readRows.length - 1]!;
+    expect(longest.ms).toBe(2000);
+    expect(wordViolations(label(longest.words + 1))).toHaveLength(1);
   });
 
-  it("names the gap below which no pair is selectable — the shortest caption's read time", () => {
-    // With the 3s step floor gone (0072) nothing outruns the read time: under
-    // the read time of a floor-length caption no caption fits at all, so that
-    // is the gap — the same MIN_GAP_MS findPlanViolations holds a pair to.
-    const shortest = readRows[0]!;
-    expect(shortest.ms).toBe(1600);
-    expect(MIN_GAP_MS).toBe(shortest.ms);
-    expect(block).toContain("Under a 1.6s gap");
-  });
-
-  it("stops offering caption lengths a configured ceiling could never grant", () => {
-    // a_step_ms_max below a row's read time caps every step under it, so the
-    // row would advertise a window assembleSteps never hands out.
-    const tight = planTimingMarkdown({ maxMs: 2000, runtime: BAND, minSteps: 5, maxSteps: 7 });
-    const rows = (text: string) =>
-      [...text.matchAll(/^\| (\d+) words \| ([\d.]+)s \|$/gm)].map((m) => Number(m[1]));
-    expect(rows(tight)).toEqual([3, 4]);
-    // ...and never empties out, however low the ceiling goes.
-    expect(
-      rows(planTimingMarkdown({ maxMs: 800, runtime: BAND, minSteps: 5, maxSteps: 7 })),
-    ).toEqual([3]);
-  });
-
-  it("states the band and the clip rule, with no per-kind floor and no totals grid", () => {
-    expect(block).toContain("The steps must total 15.0-21.0s; aim near 18.0s.");
-    // clipMs is how the model learns where each step would end, and the cap.
-    expect(block).toContain("`clipMs`");
-    expect(block).toContain("never more than 4.0s");
-    // minSteps at the cap: 5 x 4.0s.
-    expect(block).toContain("5 full-length steps run 20.0s");
-    // Steps follow the footage, so the per-action lengths and the shape-by-
-    // length totals grid they fed have nothing left to say — nor a verdict.
-    expect(block).not.toMatch(/^\| \d+ \|/m);
-    expect(block).not.toMatch(/navigate|scroll|idle/);
+  it("states the step length, what each timeline entry carries, and the totals", () => {
+    expect(block).toContain("Every step runs exactly 2.0s: its clip.");
+    // The three fields the model reads off every timeline entry.
+    expect(block).toContain("`clipStartMs`");
+    expect(block).toContain("`calm`");
+    expect(block).toContain("`twoPages`");
+    // The total is the step count and nothing else: 5 x 2.0s and 10 x 2.0s.
+    expect(block).toContain(
+      "A plan runs its step count times 2.0s: 5 steps run 10.0s, 10 steps run 20.0s.",
+    );
+    // Arithmetic only — no verdict, and no length for the model to aim at.
+    expect(block).not.toContain("must total");
     expect(block).not.toContain("too SHORT");
     expect(block).not.toContain("passes");
+  });
+
+  it("names the distance two selected states must keep — the one the check holds a pair to", () => {
+    expect(block).toContain(
+      "Two selected states may never show the same footage: their `clipStartMs` values must be at least 2000 apart.",
+    );
+    // Walked through the check itself: at the stated distance a pair is legal,
+    // one analysis sample under it is not.
+    const pairViolations = (apartMs: number): string[] => {
+      const timeline: AnalysisState[] = [
+        state({ timestampMs: 0, visibleText: ["אחת"] }),
+        state({ timestampMs: apartMs, visibleText: ["שתיים"], actionType: "result" }),
+      ];
+      const clips = clipsOver(timeline);
+      expect(clips[1]!.startMs - clips[0]!.startMs).toBe(apartMs);
+      return findPlanViolations(
+        [
+          { sourceIndex: 0, label: "אחת" },
+          { sourceIndex: 1, label: "שתיים" },
+        ],
+        timeline,
+        10,
+        { minSteps: 1, notes: null, clips },
+      );
+    };
+    expect(pairViolations(2000)).toEqual([]);
+    expect(pairViolations(1800).filter((v) => v.includes("show the same footage"))).toHaveLength(1);
   });
 
   it("the latest prompt file asks for the block, and the caller's vars satisfy it", () => {
@@ -1651,7 +1677,7 @@ describe("the prompt's timing block is generated from the code, not restated", (
       questionnaire: "{}",
       timeline: "[]",
       min: 5,
-      max: 7,
+      max: 10,
       timing: block,
       // v13+ — same one-way compatibility as {{timing}}: extra vars are
       // ignored by older templates, absent ones throw on the latest.
@@ -1741,64 +1767,64 @@ describe("the one-beat test's calibration", () => {
   });
 });
 
-describe("step durations (the window model)", () => {
-  it("with no app_config rows the code constants are the configuration", async () => {
+describe("the shipped numbers", () => {
+  it("with no app_config row the analysis sample is 200ms, and it follows a_analysis_fps", async () => {
     // Spelled out, not imported: a test that reads the constant cannot notice
-    // the constant moving, and these two numbers ARE the shipped behaviour.
-    expect(await stepDurations(db)).toEqual({ maxMs: 4000, sampleMs: 200 });
+    // the constant moving, and this number IS the shipped behaviour — how far
+    // before its moment a clip may start is 2s less one of these.
+    expect(await analysisSampleMs(db)).toBe(200);
 
-    await db.insert(dbSchema.appConfig).values([
-      // Gone with the 3s floor (0072): a stale row changes nothing.
-      { key: "a_step_ms_min", value: 2000 },
-      { key: "a_step_ms_max", value: 3000 },
-      { key: "a_analysis_fps", value: 3 },
-    ]);
+    await db.insert(dbSchema.appConfig).values({ key: "a_analysis_fps", value: 3 });
     // The sample follows the analysis's own fps, floored (1000 / 3 -> 333) so
-    // a cut never passes the next sample on that grid.
-    expect(await stepDurations(db)).toEqual({ maxMs: 3000, sampleMs: 333 });
+    // it never passes the next sample on that grid.
+    expect(await analysisSampleMs(db)).toBe(333);
 
-    // A cap under one sample would leave a clip with no frame.
-    await db
-      .update(dbSchema.appConfig)
-      .set({ value: 100 })
-      .where(eq(dbSchema.appConfig.key, "a_step_ms_max"));
-    expect((await stepDurations(db)).maxMs).toBe(333);
-
-    await db
-      .delete(dbSchema.appConfig)
-      .where(
-        sql`${dbSchema.appConfig.key} in ('a_step_ms_min', 'a_step_ms_max', 'a_analysis_fps')`,
-      );
-    expect(await stepDurations(db)).toEqual({ maxMs: 4000, sampleMs: 200 });
+    await db.delete(dbSchema.appConfig).where(eq(dbSchema.appConfig.key, "a_analysis_fps"));
+    expect(await analysisSampleMs(db)).toBe(200);
   });
 
-  it("with no app_config rows the runtime band is the code constants", async () => {
-    // Every band in this file is a literal passed straight to
-    // findPlanViolations, so without this the shipped 15-21s band was the one
-    // duration default no test pinned: MIN_RUNTIME_MS could be edited to any
-    // value and the suite stayed green. Whether it still fits the cap and the
-    // step counts is the band-coherence describe's job.
-    expect(await stepRuntimeBand(db)).toEqual({ minMs: 15_000, maxMs: 21_000 });
-
-    await db.insert(dbSchema.appConfig).values([
-      { key: "a_steps_runtime_min_ms", value: 9000 },
-      { key: "a_steps_runtime_max_ms", value: 14_000 },
-    ]);
-    expect(await stepRuntimeBand(db)).toEqual({ minMs: 9000, maxMs: 14_000 });
-
-    // A pair the wrong way round must not make the band unsatisfiable.
+  it("an absurd a_analysis_fps leaves a one-millisecond sample, never NaN", async () => {
     await db
-      .update(dbSchema.appConfig)
-      .set({ value: 5000 })
-      .where(eq(dbSchema.appConfig.key, "a_steps_runtime_max_ms"));
-    expect((await stepRuntimeBand(db)).maxMs).toBe(9000); // floored at minMs
+      .insert(dbSchema.appConfig)
+      .values({ key: "a_analysis_fps", value: 2000 })
+      .onConflictDoUpdate({ target: dbSchema.appConfig.key, set: { value: 2000 } });
+    try {
+      const sampleMs = await analysisSampleMs(db);
+      expect(sampleMs).toBe(1);
+      expect(recordingEndMs(57_498, [{ timestampMs: 56_400 }], sampleMs)).toBe(57_498);
+    } finally {
+      await db.delete(dbSchema.appConfig).where(eq(dbSchema.appConfig.key, "a_analysis_fps"));
+    }
+  });
 
-    await db
-      .delete(dbSchema.appConfig)
-      .where(
-        sql`${dbSchema.appConfig.key} in ('a_steps_runtime_min_ms', 'a_steps_runtime_max_ms')`,
-      );
-    expect(await stepRuntimeBand(db)).toEqual({ minMs: 15_000, maxMs: 21_000 });
+  it("a step is 2s and a four-word caption reads in exactly that", () => {
+    expect(STEP_MS).toBe(2000);
+    // The word ceiling is not a second number: it is what can be read in one
+    // step. Four words take exactly the step; a fifth outlasts it.
+    expect(readTimeMs("אחת שתיים שלוש ארבע")).toBe(STEP_MS);
+    expect(readTimeMs("אחת שתיים שלוש ארבע חמש")).toBe(2400);
+    expect(readTimeMs("אחת שתיים שלוש ארבע חמש")).toBeGreaterThan(STEP_MS);
+    expect(readableWords(STEP_MS)).toBe(MAX_LABEL_WORDS);
+    // The wizard's soft warning is the same comparison.
+    expect(labelTooLong("אחת שתיים שלוש ארבע", STEP_MS)).toBe(false);
+    expect(labelTooLong("אחת שתיים שלוש ארבע חמש", STEP_MS)).toBe(true);
+  });
+
+  it("one frame rate: the normalized demo, the footage detector and the render", () => {
+    // Clips are placed in demo frames, the instants they are placed around are
+    // found on every frame at the detector's rate, and the render lays a step
+    // out in composition frames. Three constants in three modules; a clip is
+    // exactly 60 frames only while they agree.
+    expect(DEMO_FPS).toBe(30);
+    expect(SIGNATURE_FPS).toBe(DEMO_FPS);
+    // @aiugc/remotion keeps its FPS in schema.ts, which the timing subpath
+    // does not re-export: one second through its own conversion is the rate.
+    expect(msToFrame(1000)).toBe(DEMO_FPS);
+    expect(msToFrame(STEP_MS)).toBe(60);
+    // And the same rounding, on and off the frame grid.
+    for (const ms of [0, 16, 17, 400, 1033, 4300, 89_582]) {
+      expect(demoFrame(ms), `${ms}ms`).toBe(msToFrame(ms));
+    }
   });
 
   it("readTimeMs grows with the label — a 6-word label outlasts a 2-word one", () => {
@@ -1809,20 +1835,79 @@ describe("step durations (the window model)", () => {
     // constants: a test that imports the guess cannot catch the guess moving.
     expect(readTimeMs("בוחרים מוצר")).toBe(1200);
     expect(readTimeMs("מתחברים לאפליקציה בוחרים מוצר ומשלמים בהעברה")).toBe(2800);
-    // A punctuation-only token (spaced dash) is not a read word — and the
-    // 6-word cap already skips it, so counting it here made a cap-legal label
-    // read as 7 words and outgrow the 3s floor with the 7-step band at zero
-    // slack.
+    // A punctuation-only token (spaced dash) is not a read word — the word
+    // ceiling already skips it, so counting it here would make a caption the
+    // ceiling accepts read as one word longer than its step.
     expect(readTimeMs("פתחו את התפריט — בחרו פרויקט חדש")).toBe(
       readTimeMs("פתחו את התפריט בחרו פרויקט חדש"),
     );
     expect(readTimeMs("   ")).toBe(400); // no words: the lead alone
   });
+});
 
-  it("caps a step at the gap to the next state, never at its own clip", () => {
-    // The real defect (fixtures/timelines/real-botteacher-file-routing.json):
-    // a `type` state 1600ms before the next selected one, given `type`'s flat
-    // 2200ms, rendered 600ms of source twice.
+describe("assembleSteps (a selection as stored steps)", () => {
+  it("gives every step its moment's clip, ordered by the moment whatever order the selection arrives in", () => {
+    // The client sends steps unsorted (the picker is a grid), and labels as
+    // typed. Chronology is a property of the format, not a client convention.
+    const timeline: AnalysisState[] = [
+      state({ timestampMs: 0, actionType: "navigate" }),
+      state({ timestampMs: 2000, actionType: "tap" }),
+      state({ timestampMs: 4000, actionType: "type" }),
+      state({ timestampMs: 30_000, actionType: "result" }),
+    ];
+    const steps = assembleSteps(
+      [
+        { sourceIndex: 2, label: "שלוש" },
+        { sourceIndex: 0, label: "  אחת " },
+        { sourceIndex: 3, label: "סוף" },
+        { sourceIndex: 1, label: "שתיים" },
+      ],
+      timeline,
+      clipsOver(timeline),
+    );
+    expect(steps).toEqual([
+      {
+        sourceIndex: 0,
+        label: "אחת",
+        timestampMs: 0,
+        actionType: "navigate",
+        startMs: 0,
+        durationMs: 2000,
+      },
+      {
+        sourceIndex: 1,
+        label: "שתיים",
+        timestampMs: 2000,
+        actionType: "tap",
+        startMs: 2000,
+        durationMs: 2000,
+      },
+      {
+        sourceIndex: 2,
+        label: "שלוש",
+        timestampMs: 4000,
+        actionType: "type",
+        startMs: 4000,
+        durationMs: 2000,
+      },
+      {
+        sourceIndex: 3,
+        label: "סוף",
+        timestampMs: 30_000,
+        actionType: "result",
+        startMs: 30_000,
+        durationMs: 2000,
+      },
+    ]);
+  });
+
+  it("never refuses and never shortens: the clip is the moment's, whatever sits next to it or on it", () => {
+    // The real defect this format grew out of (fixtures/timelines/
+    // real-botteacher-file-routing.json): a `type` state 1600ms before the
+    // next selected one. A step is no longer cut to the gap — both moments get
+    // their full clip here, and the 400ms they share is for findPlanViolations
+    // (the model) and updatePlanSteps (the customer) to refuse, before
+    // anything is stored.
     const timeline: AnalysisState[] = [
       state({ timestampMs: 10_000, actionType: "type" }),
       state({ timestampMs: 11_600, actionType: "result" }),
@@ -1830,82 +1915,65 @@ describe("step durations (the window model)", () => {
     const steps = assembleSteps(
       [
         { sourceIndex: 0, label: "ממלאים פרטים" },
-        { sourceIndex: 1, label: "מוכן" },
+        // A caption nobody could read in 2s asks for no more of the recording.
+        { sourceIndex: 1, label: "אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע עשר" },
       ],
       timeline,
-      clipBounds(DURATIONS, timeline, 30_000),
+      clipsOver(timeline),
     );
-    expect(steps[0]!.durationMs).toBe(1600); // the gap, not its 4000ms clip
-    expect(steps[0]!.timestampMs + steps[0]!.durationMs).toBe(steps[1]!.timestampMs);
-    // The last step has no neighbour to hit: it runs its own clip, the cap.
-    expect(steps[1]!.durationMs).toBe(4000);
+    expect(readTimeMs(steps[1]!.label)).toBe(4400);
+    expect(steps.map(stepClip)).toEqual([
+      { startMs: 10_000, durationMs: 2000 },
+      { startMs: 11_600, durationMs: 2000 },
+    ]);
+    expect(overlappingPairs(steps.map(stepClip))).toEqual([[0, 1]]);
   });
 
-  it("never overlaps, whatever order the selection arrives in", () => {
-    // The client sends steps unsorted (the picker is a grid). Durations must
-    // be computed against the CHRONOLOGICAL neighbour, not the array one.
+  it("a kept clip wins over the placed one, and twoPages rides along only when set", () => {
     const timeline: AnalysisState[] = [
-      state({ timestampMs: 0, actionType: "navigate" }),
-      state({ timestampMs: 1500, actionType: "tap" }),
-      state({ timestampMs: 3000, actionType: "type" }),
-      state({ timestampMs: 30_000, actionType: "result" }),
+      state({ timestampMs: 5000, actionType: "tap" }),
+      state({ timestampMs: 10_000, actionType: "type" }),
+      state({ timestampMs: 15_000, actionType: "result" }),
     ];
-    const steps = assembleSteps(
-      [
-        { sourceIndex: 2, label: "שלוש" },
-        { sourceIndex: 0, label: "אחת" },
-        { sourceIndex: 3, label: "סוף" },
-        { sourceIndex: 1, label: "שתיים" },
-      ],
-      timeline,
-      boundsOver(timeline),
-    );
-    expect(steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3]);
-    for (let i = 0; i < steps.length - 1; i++) {
-      expect(steps[i]!.timestampMs + steps[i]!.durationMs).toBeLessThanOrEqual(
-        steps[i + 1]!.timestampMs,
-      );
-    }
-  });
-
-  it("a too-close pair renders short, never overlapping — and the cap holds whatever the caption asks", () => {
-    const timeline: AnalysisState[] = [
-      state({ timestampMs: 0, actionType: "tap" }),
-      // 400ms later: two states inside one caption's read time. The MODEL is
-      // stopped by findPlanViolations; a human edit reaches here and is
-      // HONOURED. 400ms of what the customer chose is honest; a longer clip
-      // would replay the next step's source, which nobody picked.
-      state({ timestampMs: 400, actionType: "result" }),
+    const placed: PlacedClip[] = [
+      { startMs: 4300, calm: true, twoPages: false },
+      { startMs: 8800, calm: false, twoPages: true },
+      { startMs: 15_000, calm: true, twoPages: false },
     ];
-    const tooClose = assembleSteps(
-      [
-        { sourceIndex: 0, label: "אחת" },
-        { sourceIndex: 1, label: "סוף" },
-      ],
-      timeline,
-      boundsOver(timeline),
-    );
-    expect(tooClose[0]!.durationMs).toBe(400);
-    expect(tooClose[0]!.timestampMs + tooClose[0]!.durationMs).toBe(tooClose[1]!.timestampMs);
+    const selection = [0, 1, 2].map((sourceIndex) => ({ sourceIndex, label: "כיתוב" }));
+    // What the footage says about a clip (`calm`) is for choosing it; it is
+    // not stored. What the customer must be told before approving is.
+    expect(assembleSteps(selection, timeline, placed).map((s) => [s.startMs, s.twoPages])).toEqual([
+      [4300, undefined],
+      [8800, true],
+      [15_000, undefined],
+    ]);
+    expect(assembleSteps(selection, timeline, placed)[0]).not.toHaveProperty("calm");
+    expect(assembleSteps(selection, timeline, placed)[0]).not.toHaveProperty("twoPages");
 
-    // Ceiling: a label nobody could read inside 4s, with all the room it wants.
-    const roomy: AnalysisState[] = [state({ timestampMs: 0, actionType: "result" })];
-    const long = assembleSteps(
-      [{ sourceIndex: 0, label: "אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע עשר" }],
-      roomy,
-      boundsOver(roomy, 30_000),
-    );
-    expect(readTimeMs("אחת שתיים שלוש ארבע חמש שש שבע שמונה תשע עשר")).toBe(4400);
-    expect(long[0]!.durationMs).toBe(4000);
+    // A clip already stored for a moment replaces the placed one whole — its
+    // start and its two-page mark both.
+    const keep = new Map([
+      [0, { startMs: 5000, twoPages: true }],
+      [1, { startMs: 10_000 }],
+    ]);
+    expect(
+      assembleSteps(selection, timeline, placed, keep).map((s) => [s.startMs, s.twoPages]),
+    ).toEqual([
+      [5000, true],
+      [10_000, undefined],
+      [15_000, undefined],
+    ]);
   });
+});
 
-  it("the canned DRY_RUN plan tops up from the legal pool rather than throwing", async () => {
+describe("the canned DRY_RUN plan", () => {
+  it("tops up from the legal pool rather than throwing", async () => {
     // dryRunPlan prefers "high"/non-idle states; findPlanViolations' min-step
     // waiver counts every LEGAL state, "low" and idle included. On mostly-dim
     // footage the quality pool alone lands under the minimum on a timeline the
     // waiver does not forgive, and the keyless path threw — on the very path
     // the whole suite, `aiugc plan regress` and a DRY_RUN worker all run.
-    // One screen on a 19s recording: every state's clip is the full cap.
     const dim: AnalysisState[] = [
       state({ timestampMs: 0, visibleText: ["אחת"], actionType: "navigate", legibility: "low" }),
       state({ timestampMs: 3000, visibleText: ["שתיים"], actionType: "tap", legibility: "low" }),
@@ -1921,16 +1989,16 @@ describe("step durations (the window model)", () => {
     });
     // The quality pool holds three states; the legal pool holds six, so the
     // plan tops up instead of dying under the 5-step minimum.
-    expect(draft.steps.length).toBeGreaterThanOrEqual(5);
+    expect(draft.steps.map((s) => s.sourceIndex)).toEqual([0, 1, 2, 3, 4, 5]);
     expect(draft.steps[draft.steps.length - 1]!.actionType).toBe("result");
   });
 
-  it("the canned DRY_RUN plan obeys the min-gap rule it is validated against", async () => {
+  it("obeys the no-shared-footage rule it is validated against", async () => {
     // dryRunPlan is run through the SAME findPlanViolations as a real plan, so
     // a canned plan that trips the rule throws instead of producing a plan —
     // and subsampleClusters always keeps its last element before lastResult is
     // appended, so (final candidate, success screen) is exactly the pair a
-    // real recording puts under the gap.
+    // real recording puts on the same footage.
     const tight: AnalysisState[] = [
       state({ timestampMs: 0, visibleText: ["פתיחה"], actionType: "navigate" }),
       state({ timestampMs: 4000, visibleText: ["בחירה"], actionType: "tap" }),
@@ -1943,63 +2011,10 @@ describe("step durations (the window model)", () => {
       questionnaire: QUESTIONNAIRE,
       recordingMs: 49_000,
     });
-    const picked = draft.steps.map((s) => s.timestampMs);
-    expect(picked).toContain(45_000); // the ending is the one state it cannot lose
-    expect(picked).not.toContain(44_600); // its too-close neighbour is dropped
-    for (let i = 1; i < picked.length; i++) {
-      expect(picked[i]! - picked[i - 1]!).toBeGreaterThanOrEqual(MIN_GAP_MS);
-    }
-  });
-
-  it("two states inside one caption's read time are a VIOLATION for the model, not a short clip", () => {
-    // Real timelines put states 400ms apart (fixtures/timelines: the botteacher
-    // recordings both do). Selecting both is a selection bug — the corrective
-    // retry has to see it, because no duration can honour both windows.
-    const timeline: AnalysisState[] = [
-      state({ timestampMs: 0, visibleText: ["התחלה"] }),
-      state({ timestampMs: 400, visibleText: ["המשך"] }),
-      state({ timestampMs: 9000, visibleText: ["נשמר"], actionType: "result" }),
-    ];
-    const bounds = boundsOver(timeline);
-    const violations = findPlanViolations(
-      [
-        { sourceIndex: 0, label: "התחלה" },
-        { sourceIndex: 1, label: "המשך" },
-        { sourceIndex: 2, label: "נשמר" },
-      ],
-      timeline,
-      8,
-      { minSteps: 1, notes: null, bounds },
-    );
-    const tooClose = violations.find((v) => v.includes("400ms apart"));
-    expect(tooClose).toBeDefined();
-    expect(tooClose).toContain("states 0 and 1");
-    // `notes` waives the shape rules above it — it must NOT waive this one:
-    // nothing explains a clip shorter than the eye can land on.
-    expect(
-      findPlanViolations(
-        [
-          { sourceIndex: 0, label: "התחלה" },
-          { sourceIndex: 1, label: "המשך" },
-          { sourceIndex: 2, label: "נשמר" },
-        ],
-        timeline,
-        8,
-        { minSteps: 1, notes: "הקלטה קצרה", bounds },
-      ).some((v) => v.includes("400ms apart")),
-    ).toBe(true);
-    // Far enough apart -> silent.
-    expect(
-      findPlanViolations(
-        [
-          { sourceIndex: 0, label: "התחלה" },
-          { sourceIndex: 2, label: "נשמר" },
-        ],
-        timeline,
-        8,
-        { minSteps: 1, notes: null, bounds },
-      ),
-    ).toEqual([]);
+    // The ending is the one state it cannot lose; the neighbour whose clip
+    // would share 1.6s with it is the one dropped.
+    expect(draft.steps.map((s) => s.timestampMs)).toEqual([0, 4000, 8000, 45_000]);
+    expect(overlappingPairs(draft.steps.map(stepClip))).toEqual([]);
   });
 });
 
@@ -2087,7 +2102,7 @@ describe("isNewScreen — two of three signals (decision 0070)", () => {
   });
 });
 
-describe("assembleSteps ends a step where its screen ends (decisions 0070, 0072)", () => {
+describe("screenEnds — when the analysis's own screen ends (decision 0070)", () => {
   /** The dashboard: a delete dialog opens over it at 800ms, a project name is
    *  typed at 1600ms, the list is scrolled at 2400ms — one screen throughout.
    *  The app navigates to settings at 6000ms. */
@@ -2123,108 +2138,23 @@ describe("assembleSteps ends a step where its screen ends (decisions 0070, 0072)
       actionType: "navigate",
     }),
   ];
-  const bounds: ClipBounds = { ...DURATIONS, recordingEndMs: 20_000 };
-  const one = (sourceIndex: number, b: ClipBounds = bounds) =>
-    assembleSteps([{ sourceIndex, label: "כיתוב" }], screens, b)[0]!;
 
   it("rides through a popup, a typing run and a scroll, and ends one sample after the screen's last state", () => {
-    expect(screenEnds(screens, bounds)).toEqual([2600, 2600, 2600, 2600, 20_000]);
-    // Not at the dialog (800), the typing (1600) or the scroll (2400) — and
-    // not at the cap (4000) or where the settings screen's first state sits
-    // (6000): one sample after the scroll, the last frame known to show the
-    // dashboard (cut early when unsure, 0072).
-    expect(one(0).durationMs).toBe(2400 + 200);
-    // Picked mid-screen, it ends at the same frame.
-    expect(one(1).durationMs).toBe(2600 - 800);
-  });
-
-  it("the next selected state still cuts it, sooner than the screen", () => {
-    const steps = assembleSteps(
-      [
-        { sourceIndex: 0, label: "כיתוב" },
-        { sourceIndex: 2, label: "כיתוב" },
-      ],
-      screens,
-      bounds,
-    );
-    // The 1600ms gap to state 2; then state 2 to its screen's end at 2600.
-    expect(steps.map((s) => s.durationMs)).toEqual([1600, 1000]);
-  });
-
-  it("the last step never outruns the recording, and no step outruns the cap", () => {
-    // Settings holds to the end of a 7s recording...
-    expect(one(4, { ...bounds, recordingEndMs: 7000 }).durationMs).toBe(1000);
-    // ...which is the upload's length floored to the 200ms grid (7150 -> 7000).
-    expect(one(4, clipBounds(DURATIONS, screens, 7150)).durationMs).toBe(1000);
-    // On a 20s recording it holds 14s, and the step runs the 4s cap.
-    expect(one(4).durationMs).toBe(4000);
-  });
-});
-
-/** Three product screens with nothing in common — names and text differ in
- *  words, not digits (the screen test drops one-character tokens). */
-const SCREENS = ["לוח בקרה", "פרויקט חדש", "בחירת תבנית"];
-const TEXTS = ["הפרויקטים שלי", "שם הפרויקט", "מודעה פוסט"];
-
-describe("the reachability bound and the sample guards (review of 0072)", () => {
-  it("the floor escape counts only plans that END on the success state", () => {
-    // Three 4s product screens, then a navigate X (clip 3000) and the success
-    // S (clip 2000) 1000ms apart on one screen. Ending on X would reach 15000,
-    // but a compliant plan ends on S: [0, 2, 4, 7] is the best there is, at
-    // 14000. "Too SHORT" there would order a retry no plan can satisfy, so it
-    // stands down.
-    const timeline: AnalysisState[] = [
-      ...[0, 4200, 8400].flatMap((t, k) => [
-        state({
-          timestampMs: t,
-          screenName: SCREENS[k]!,
-          visibleText: [TEXTS[k]!],
-          actionType: "navigate",
-        }),
-        state({
-          timestampMs: t + 3800,
-          screenName: SCREENS[k]!,
-          visibleText: [TEXTS[k]!],
-          actionType: "tap",
-        }),
-      ]),
-      state({
-        timestampMs: 12_600,
-        screenName: "שמירה",
-        visibleText: ["שמירה", "פרסום"],
-        actionType: "navigate",
-      }),
-      state({
-        timestampMs: 13_600,
-        screenName: "שמירה",
-        visibleText: ["שמירה", "פורסם"],
-        actionType: "result",
-      }),
-      state({
-        timestampMs: 15_400,
-        screenName: "שמירה",
-        visibleText: ["שמירה", "פורסם"],
-        actionType: "idle",
-      }),
-    ];
-    const bounds: ClipBounds = { ...DURATIONS, recordingEndMs: 15_600 };
-    expect(timelineClipMs(timeline, bounds)).toEqual([
-      4000, 200, 4000, 200, 4000, 200, 3000, 2000, 200,
+    // Not at the dialog (800), the typing (1600) or the scroll (2400), and not
+    // where the settings screen's first state sits (6000): one sample after
+    // the scroll, the last frame known to show the dashboard. The last screen
+    // runs to the recording's end.
+    expect(screenEnds(screens, { sampleMs: 200, recordingEndMs: 20_000 })).toEqual([
+      2600, 2600, 2600, 2600, 20_000,
     ]);
-    const plan = [0, 2, 4, 7].map((sourceIndex) => ({ sourceIndex, label: "שלוש מילים כאן" }));
-    expect(
-      findPlanViolations(plan, timeline, 7, {
-        minSteps: 5,
-        notes: null,
-        bounds,
-        runtime: { minMs: 15_000, maxMs: 21_000 },
-      }),
-    ).toEqual([]);
+    expect(screenEnds(screens, { sampleMs: 200, recordingEndMs: 7000 })).toEqual([
+      2600, 2600, 2600, 2600, 7000,
+    ]);
   });
 
-  it("a cut never passes the next screen's first state, whatever today's sample", () => {
+  it("an end never passes the next screen's first state, whatever today's sample", () => {
     // An analysis made on the 200ms grid, read after a_analysis_fps was
-    // lowered to 2 (a 500ms sample): the login screen's cut is bounded by the
+    // lowered to 2 (a 500ms sample): the login screen's end is bounded by the
     // dashboard's first state at 1400, not pushed to 1500 into it.
     const timeline: AnalysisState[] = [
       state({ timestampMs: 0, screenName: "התחברות", visibleText: ["אימייל"], actionType: "idle" }),
@@ -2241,22 +2171,9 @@ describe("the reachability bound and the sample guards (review of 0072)", () => 
         actionType: "navigate",
       }),
     ];
-    const stale: ClipBounds = { maxMs: 4000, sampleMs: 500, recordingEndMs: 2400 };
-    expect(screenEnds(timeline, stale)).toEqual([1400, 1400, 2400]);
-  });
-
-  it("an absurd a_analysis_fps leaves a one-millisecond sample, never NaN", async () => {
-    await db
-      .insert(dbSchema.appConfig)
-      .values({ key: "a_analysis_fps", value: 2000 })
-      .onConflictDoUpdate({ target: dbSchema.appConfig.key, set: { value: 2000 } });
-    try {
-      const durations = await stepDurations(db);
-      expect(durations).toEqual({ maxMs: 4000, sampleMs: 1 });
-      expect(recordingEndMs(57_498, [{ timestampMs: 56_400 }], durations.sampleMs)).toBe(57_498);
-    } finally {
-      await db.delete(dbSchema.appConfig).where(eq(dbSchema.appConfig.key, "a_analysis_fps"));
-    }
+    expect(screenEnds(timeline, { sampleMs: 500, recordingEndMs: 2400 })).toEqual([
+      1400, 1400, 2400,
+    ]);
   });
 });
 
@@ -2286,11 +2203,11 @@ describe("recordingEndMs (where the last step must stop)", () => {
 });
 
 describe("the tavnit recording's screens (measured)", () => {
-  it("ends every state's screen where the code measured it", () => {
+  it("ends every state's screen where the code measured it", async () => {
     const fixture = loadFixture("real-tavnit-system-opening.json");
     expect(fixture.recordingMs).toBe(89_582);
-    const bounds = fixtureBounds(fixture);
-    expect(bounds.recordingEndMs).toBe(89_400);
+    const { sampleMs, recordingEndMs: endMs } = await fixtureClips(fixture);
+    expect(endMs).toBe(89_400);
     // [first state, last state, where that screen ends]. The last screen runs
     // to the recording's end, floored to the 200ms grid.
     const runs: [number, number, number][] = [
@@ -2314,200 +2231,172 @@ describe("the tavnit recording's screens (measured)", () => {
       Array.from({ length: to - from + 1 }, () => end),
     );
     expect(fixture.timeline).toHaveLength(expected.length);
-    expect(screenEnds(fixture.timeline, bounds)).toEqual(expected);
+    expect(screenEnds(fixture.timeline, { sampleMs, recordingEndMs: endMs })).toEqual(expected);
   });
 });
 
-describe("every fixture: no step outruns its screen, its neighbour or the recording", () => {
-  const range = (from: number, to: number, step: number): number[] => {
-    const out: number[] = [];
-    for (let i = from; i < to; i += step) out.push(i);
-    return out;
-  };
-  /** Deterministic selections: every state, every 2nd/3rd/5th at each
-   *  offset, sliding windows of 5 and 7 — and the fixture's own pinned plans. */
-  const selections = (fixture: TimelineFixture): number[][] => {
-    const n = fixture.timeline.length;
-    const out: number[][] = [fixture.expected.sourceIndexes];
-    if (fixture.expected.dryRunSourceIndexes) out.push(fixture.expected.dryRunSourceIndexes);
-    for (const k of [1, 2, 3, 5]) for (let o = 0; o < k; o++) out.push(range(o, n, k));
-    for (const size of [5, 7]) for (let s = 0; s + size <= n; s++) out.push(range(s, s + size, 1));
-    return out;
-  };
-
-  it("holds for every assembled step of every selection", () => {
-    expect(FIXTURE_FILES.length).toBeGreaterThanOrEqual(5);
-    for (const file of FIXTURE_FILES) {
-      const fixture = loadFixture(file);
-      const { timeline } = fixture;
-      const bounds = fixtureBounds(fixture);
-      const ends = screenEnds(timeline, bounds);
-      // Read off isNewScreen directly, not off screenEnds: the first screen
-      // change after state i, or undefined when its screen runs to the end.
-      const changeAfter = (i: number): number | undefined => {
-        for (let j = i + 1; j < timeline.length; j++) {
-          if (isNewScreen(timeline[j - 1]!, timeline[j]!)) return j;
+describe("every fixture's canned plan: 2s clips, inside the recording, each on its moment", () => {
+  it(
+    "holds for every step of every fixture, and no two share footage",
+    { timeout: 60_000 },
+    async () => {
+      expect(FIXTURE_FILES.length).toBeGreaterThanOrEqual(5);
+      for (const file of FIXTURE_FILES) {
+        const fixture = loadFixture(file);
+        const { recordingEndMs: endMs } = await fixtureClips(fixture);
+        const { steps } = await fixturePlan(fixture);
+        expect(steps.length, file).toBeGreaterThanOrEqual(A_STEPS_MIN_DEFAULT);
+        expect(steps.length, file).toBeLessThanOrEqual(A_STEPS_MAX_DEFAULT);
+        for (const step of steps) {
+          const where = `${file} state ${step.sourceIndex}`;
+          expect(step.durationMs, where).toBe(2000);
+          // Stored, not left for stepClip to default to the moment.
+          expect(step.startMs, where).toBeTypeOf("number");
+          const startMs = step.startMs!;
+          // The clip holds its own moment...
+          expect(startMs, where).toBeLessThanOrEqual(step.timestampMs);
+          expect(step.timestampMs, where).toBeLessThan(startMs + 2000);
+          // ...and all of it is footage the recording has.
+          expect(startMs, where).toBeGreaterThanOrEqual(0);
+          expect(startMs + 2000, where).toBeLessThanOrEqual(endMs);
         }
-        return undefined;
-      };
-      for (const picked of selections(fixture)) {
-        const steps = assembleSteps(
-          picked.map((i) => ({ sourceIndex: i, label: "כיתוב" })),
-          timeline,
-          bounds,
-        );
-        steps.forEach((step, k) => {
-          const where = `${file} [${picked.join(",")}] state ${step.sourceIndex}`;
-          const end = step.timestampMs + step.durationMs;
-          expect(step.durationMs, where).toBeGreaterThanOrEqual(bounds.sampleMs);
-          expect(step.durationMs, where).toBeLessThanOrEqual(bounds.maxMs);
-          expect(end, where).toBeLessThanOrEqual(ends[step.sourceIndex]!);
-          expect(end, where).toBeLessThanOrEqual(bounds.recordingEndMs);
-          const next = steps[k + 1];
-          if (next) expect(end, where).toBeLessThanOrEqual(next.timestampMs);
-          // No clip crosses a screen change: it stops one sample after the
-          // last state before the change.
-          const j = changeAfter(step.sourceIndex);
-          if (j !== undefined) {
-            expect(end, where).toBeLessThanOrEqual(timeline[j - 1]!.timestampMs + bounds.sampleMs);
-          }
-        });
+        expect(overlappingPairs(steps.map(stepClip)), file).toEqual([]);
       }
-    }
-  });
+    },
+  );
+
+  it(
+    "an ending inside the recording's last 2s is slid back to end with it",
+    { timeout: 60_000 },
+    async () => {
+      // The one place a clip leaves its moment when no footage instants are
+      // known: the campaign-app success screen sits at 18.5s of a 20s recording.
+      const fixture = loadFixture("dry-run-campaign-app.json");
+      expect(fixture.recordingMs).toBe(20_000);
+      expect(fixture.instants).toBeUndefined();
+      const { steps } = await fixturePlan(fixture);
+      const ending = steps[steps.length - 1]!;
+      expect([ending.sourceIndex, ending.timestampMs, ending.startMs]).toEqual([
+        11, 18_500, 18_000,
+      ]);
+      // Every other step of that plan starts at its own moment.
+      for (const step of steps.slice(0, -1)) expect(step.startMs).toBe(step.timestampMs);
+    },
+  );
 });
 
-describe("timelineClipMs is what a one-step pick renders", () => {
-  it("for every state of every fixture", () => {
-    // The analysis route sends timelineClipMs to the picker as each state's
-    // clipMs, and the model reads the same number in its timeline: a pick of
-    // that state with nothing after it must render exactly that long.
+describe("the clip the model is shown is the clip a pick of that state stores", () => {
+  it("for every state of every fixture", async () => {
+    // The plan pass reads `clipStartMs` off its timeline and the picker shows
+    // the same clip; a pick of that state must store exactly it, or the model
+    // spaces its selection against clips that are not the ones rendered.
     for (const file of FIXTURE_FILES) {
       const fixture = loadFixture(file);
-      const bounds = fixtureBounds(fixture);
-      const clips = timelineClipMs(fixture.timeline, bounds);
-      fixture.timeline.forEach((_, i) => {
-        expect(
-          assembleSteps([{ sourceIndex: i, label: "כיתוב" }], fixture.timeline, bounds)[0]!
-            .durationMs,
-          `${file} state ${i}`,
-        ).toBe(clips[i]);
+      const { clips } = await fixtureClips(fixture);
+      const shown = planPromptTimeline(fixture.timeline, clips);
+      // Every state is offered: each has a full clip, so none is hidden.
+      expect(shown.map((entry) => entry.index)).toEqual(fixture.timeline.map((_, i) => i));
+      shown.forEach((entry, i) => {
+        const where = `${file} state ${i}`;
+        const step = assembleSteps(
+          [{ sourceIndex: i, label: "כיתוב" }],
+          fixture.timeline,
+          clips,
+        )[0]!;
+        expect(stepClip(step), where).toEqual({ startMs: entry.clipStartMs, durationMs: 2000 });
+        // `twoPages` rides along only when true, on the entry and on the step.
+        expect(entry.twoPages, where).toBe(step.twoPages);
+        expect(entry.twoPages === undefined || entry.twoPages === true, where).toBe(true);
+        // Without footage instants nothing is known to be calm.
+        if (!fixture.instants) expect(entry.calm, where).toBe(false);
       });
     }
   });
 });
 
 describe("the render lays the steps out at the length the customer was shown", () => {
-  it("every tavnit step at exactly its planned frames, none clamped at the demo's end", () => {
-    // totalRuntimeMs is the steps' length the wizard's plan step
-    // (step-plan.tsx) and the confirm screen (stepsShapeSummary) show the
-    // customer. The composition re-derives every step's frames from the same
-    // startMs/durationMs against the demo's length (serviceAStepsTimeline in
-    // packages/remotion), so a clamp at the recording's end or a rounding
-    // drift would render a different length from the one they were quoted.
-    const fixture = loadFixture("real-tavnit-system-opening.json");
-    const bounds = fixtureBounds(fixture);
-    const demoFrames = msToFrame(bounds.recordingEndMs);
-    const hookFrames = 120;
-    const picks = [
-      fixture.expected.sourceIndexes,
-      fixture.expected.dryRunSourceIndexes!,
-      // The last state, on the screen that runs to the recording's end.
-      [44, 47, 52],
-      fixture.timeline.map((_, i) => i).filter((i) => i % 3 === 0),
-    ];
-    for (const picked of picks) {
-      const steps = assembleSteps(
-        picked.map((i) => ({ sourceIndex: i, label: "כיתוב" })),
-        fixture.timeline,
-        bounds,
-      );
-      const laid = serviceAStepsTimeline({
-        hookFrames,
-        demoFrames,
-        steps: steps.map((s) => ({ startMs: s.timestampMs, durationMs: s.durationMs })),
-      });
+  it(
+    "every tavnit step at exactly 60 frames, none clamped at the demo's end",
+    { timeout: 60_000 },
+    async () => {
+      // totalRuntimeMs is the steps' length the wizard's plan step
+      // (step-plan.tsx) and the confirm screen (stepsShapeSummary) show the
+      // customer. The composition re-derives every step's frames from the same
+      // stepClip reading the render uses (renders.ts) against the demo's length
+      // (serviceAStepsTimeline in packages/remotion), so a clamp at the
+      // recording's end or a rounding drift would render a different length
+      // from the one they were quoted.
+      const fixture = loadFixture("real-tavnit-system-opening.json");
+      const { steps } = await fixturePlan(fixture);
+      expect(steps).toHaveLength(10);
+      expect(totalRuntimeMs(steps)).toBe(20_000);
+      // The demo's frames from the upload's own length (demos.duration_ms,
+      // 89582ms -> 2687 whole frames) — NOT from the recordingEndMs the clips
+      // were placed against, which would only prove placeClips agrees with
+      // itself. How many frames the normalized file really decodes to is
+      // checked elsewhere, not here.
+      const demoFrames = Math.floor((fixture.recordingMs! * 30) / 1000);
+      expect(demoFrames).toBe(2687);
+      const hookFrames = 120;
+      const laid = serviceAStepsTimeline({ hookFrames, demoFrames, steps: steps.map(stepClip) });
       // 30fps (FPS, packages/remotion/src/schema.ts).
+      expect(laid.steps.map((s) => s.durationInFrames)).toEqual(steps.map(() => 60));
       const frames = laid.steps.reduce((sum, s) => sum + s.durationInFrames, 0);
-      expect(frames, `[${picked.join(",")}]`).toBe((totalRuntimeMs(steps) * 30) / 1000);
+      expect(frames).toBe((totalRuntimeMs(steps) * 30) / 1000);
       expect(laid.durationInFrames).toBe(hookFrames + frames);
-      steps.forEach((s, k) => {
-        // Not clamped: the step's last wanted frame is inside the demo.
-        expect(msToFrame(s.timestampMs + s.durationMs)).toBeLessThanOrEqual(demoFrames);
-        expect(laid.steps[k]!.durationInFrames).toBe((s.durationMs * 30) / 1000);
-      });
-    }
-  });
+      // Each step plays from where its clip starts — which is not always its moment.
+      expect(laid.steps.map((s) => s.trimBeforeFrames)).toEqual(
+        steps.map((s) => msToFrame(s.startMs!)),
+      );
+      // Back to back, hard cuts, in the stored order.
+      expect(laid.steps.map((s) => s.fromFrame)).toEqual(steps.map((_, k) => hookFrames + 60 * k));
+    },
+  );
 });
 
 /**
- * The arithmetic the shipped constants must satisfy together. Steps follow
- * the footage since 0072, so no step count fills the band by construction any
- * more; what has to hold is that every count from the minimum to the maximum
- * CAN land inside it. b60b5b6 broke the older form of this — it raised the
- * band floor to 16s while every unsqueezed step clamped to the 3s floor, so
- * the 5-step minimum totalled 15s and could never validate; the prompt
- * licensed a shape the validator always rejected, and the live
- * 4-failures-in-a-row followed. Values re-read through the config path,
- * expectations spelled out: a test that recomputes from the constants cannot
- * catch them moving apart.
+ * The arithmetic the shipped constants must satisfy together. Every step is
+ * one 2s clip, so a plan's length is its step count and nothing else: what has
+ * to hold is that every count from the minimum to the maximum is a plan the
+ * validator accepts, on the shortest recording that can hold it. Constants
+ * that license a shape the validator always rejects fail every plan of that
+ * shape — b60b5b6 shipped such a pair, and four live failures in a row
+ * followed. Expectations spelled out: a test that recomputes from the
+ * constants cannot catch them moving apart.
  */
-describe("band coherence — every legal step count fits the shipped band", () => {
-  it("5 through 7 steps can each total inside the band and validate with zero violations", async () => {
-    const durations = await stepDurations(db);
-    const band = await stepRuntimeBand(db);
-    expect(durations).toEqual({ maxMs: 4000, sampleMs: 200 });
-    expect(band).toEqual({ minMs: 15_000, maxMs: 21_000 });
+describe("step-count coherence — every legal step count is a plan the validator accepts", () => {
+  it("5 through 10 steps each validate with zero violations and run 2s a step", () => {
     expect(A_STEPS_MIN_DEFAULT).toBe(5);
-    expect(A_STEPS_MAX_DEFAULT).toBe(7);
-    expect(MIN_GAP_MS).toBe(1600);
-    // The minimum at the cap does not top the ceiling (5 x 4s = 20s)...
-    expect(A_STEPS_MIN_DEFAULT * durations.maxMs).toBeLessThanOrEqual(band.maxMs);
+    expect(A_STEPS_MAX_DEFAULT).toBe(10);
 
-    const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע"];
+    const words = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר"];
     for (let n = A_STEPS_MIN_DEFAULT; n <= A_STEPS_MAX_DEFAULT; n++) {
-      // ...every count at the cap reaches the floor, and every count at the
-      // closest legal spacing fits under the ceiling.
-      expect(n * durations.maxMs).toBeGreaterThanOrEqual(band.minMs);
-      expect(n * MIN_GAP_MS).toBeLessThanOrEqual(band.maxMs);
-
-      // A recording of n screens, each held `stepMs` (a navigation in, an
-      // idle frame one sample before the next screen), so a step picked on a
-      // screen's first frame runs the whole screen. stepMs aims the total at
-      // the band's middle: 3600 x 5, 3000 x 6, 2400 x 7.
-      const stepMs = Math.min(
-        durations.maxMs,
-        Math.floor((band.minMs + band.maxMs) / 2 / n / durations.sampleMs) * durations.sampleMs,
+      // A recording of exactly n x 2s with a moment every 2s, ending on the
+      // success: the shortest footage n steps can be cut from — 10s for the
+      // minimum, 20s for the maximum.
+      const timeline: AnalysisState[] = Array.from({ length: n }, (_, k) =>
+        state({
+          timestampMs: k * 2000,
+          visibleText: [words[k]!],
+          actionType: k === n - 1 ? "result" : "tap",
+        }),
       );
-      const timeline: AnalysisState[] = Array.from({ length: n }, (_, k) => [
-        state({
-          timestampMs: k * stepMs,
-          screenName: `מסך ${words[k]}`,
-          visibleText: [words[k]!],
-          actionType: k === n - 1 ? "result" : "navigate",
-        }),
-        state({
-          timestampMs: (k + 1) * stepMs - durations.sampleMs,
-          screenName: `מסך ${words[k]}`,
-          visibleText: [words[k]!],
-          actionType: "idle",
-        }),
-      ]).flat();
-      const bounds = clipBounds(durations, timeline, n * stepMs);
+      const clips = placeClips(timeline, {
+        sampleMs: SAMPLE_MS,
+        recordingEndMs: n * 2000,
+        instants: null,
+      });
+      // Captions at the ceiling: four words each.
       const steps = Array.from({ length: n }, (_, k) => ({
-        sourceIndex: 2 * k,
-        label: `בוחרים את ${words[k]}`,
+        sourceIndex: k,
+        label: `בוחרים את מסך ${words[k]}`,
       }));
-      const total = totalRuntimeMs(assembleSteps(steps, timeline, bounds));
-      expect(total, `${n} steps`).toBe(n * stepMs);
-      expect(total).toBeGreaterThanOrEqual(band.minMs);
-      expect(total).toBeLessThanOrEqual(band.maxMs);
+      expect(totalRuntimeMs(assembleSteps(steps, timeline, clips)), `${n} steps`).toBe(n * 2000);
       expect(
         findPlanViolations(steps, timeline, A_STEPS_MAX_DEFAULT, {
           minSteps: A_STEPS_MIN_DEFAULT,
           notes: null,
-          bounds,
-          runtime: band,
+          clips,
         }),
         `${n} steps`,
       ).toEqual([]);
@@ -2547,14 +2436,21 @@ describe("demo notes (the questionnaire answer channel)", () => {
 });
 
 describe("plan regress (fixtures/timelines)", () => {
-  it("runs green on the shipped fixture", { timeout: 60_000 }, async () => {
+  it("runs green on every shipped fixture", { timeout: 60_000 }, async () => {
     const results = await runPlanRegression(db);
-    expect(results.length).toBeGreaterThanOrEqual(1);
-    const shipped = results.find((r) => r.fixture === "dry-run-campaign-app.json");
-    expect(shipped).toBeDefined();
-    expect(shipped!.error).toBeUndefined();
-    expect(shipped!.pass).toBe(true);
-    for (const r of results) expect(r.pass).toBe(true);
+    expect(results.map((r) => r.fixture).sort()).toEqual([...FIXTURE_FILES].sort());
+    expect(results.length).toBeGreaterThanOrEqual(5);
+    for (const r of results) {
+      expect(r.error, r.fixture).toBeUndefined();
+      expect(r.pass, r.fixture).toBe(true);
+      // Green means the plan's own answer: nothing dropped by the last-round
+      // repair and nothing left over from a last call (keyless there is none).
+      expect(r.repaired, r.fixture).toBeUndefined();
+      // Under DRY_RUN the selection pinned is the canned planner's.
+      const pinned = loadFixture(r.fixture).expected.dryRunSourceIndexes;
+      expect(pinned, r.fixture).toBeDefined();
+      expect(r.actual, r.fixture).toEqual([...pinned!].sort((a, b) => a - b));
+    }
   });
 });
 
@@ -2568,6 +2464,9 @@ describe("plan-format re-export identity", () => {
     const planFormat = await import("../src/plan-format");
     expect(readTimeMs).toBe(planFormat.readTimeMs);
     expect(totalRuntimeMs).toBe(planFormat.totalRuntimeMs);
+    // The one reading of a stored step: the render and the editor's preview
+    // must go through the same function, or they can disagree about a clip.
+    expect(stepClip).toBe(planFormat.stepClip);
     // The 0049 move: the tokenizer the editor's marks use is the one the
     // server flagged with — a drifted copy would mark the wrong words.
     expect(normalizeWord).toBe(planFormat.normalizeWord);
@@ -2577,16 +2476,17 @@ describe("plan-format re-export identity", () => {
 });
 
 /**
- * The 8b move: the label word band and the a_steps_min default live in
+ * The 8b move: the label word band and the step-count defaults live in
  * plan-format so the wizard's soft warnings share the server's numbers.
  * Value pins; the validator's own use of MAX_LABEL_WORDS is pinned by the
- * "over 6 words" violation test above.
+ * "over 4 words" violation test above.
  */
 describe("plan-format editor constants (8b move)", () => {
-  it("word band and min-steps default hold their shipped values", async () => {
+  it("word band and step-count defaults hold their shipped values", async () => {
     const planFormat = await import("../src/plan-format");
-    expect(planFormat.MAX_LABEL_WORDS).toBe(6);
+    expect(planFormat.MAX_LABEL_WORDS).toBe(4);
     expect(planFormat.MIN_LABEL_WORDS).toBe(3);
     expect(planFormat.A_STEPS_MIN_DEFAULT).toBe(5);
+    expect(planFormat.A_STEPS_MAX_DEFAULT).toBe(10);
   });
 });

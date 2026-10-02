@@ -25,7 +25,14 @@
     "recording's length was never kept with the fixture, so the last state gets one sample",
     "(recordingEndMs). dryRunSourceIndexes re-derived from the canned planner under the screen",
     "rule: [0, 12, 20, 29, 36] -> [3, 11, 12, 16, 39, 44, 58]. sourceIndexes (live) untouched and",
-    "unverified under plan_demo_steps@v15 until a paid regress."
+    "unverified under plan_demo_steps@v15 until a paid regress.",
+    "",
+    "2026-10-02 (fixed 2 s clips — decisions 0076, 0084, 0087): every step is its moment's 2 s",
+    "clip, a plan is 5-10 steps, and two steps never share footage, so the mechanical pin moved:",
+    "dryRunSourceIndexes [3, 11, 12, 16, 39, 44, 58] -> [0, 3, 15, 20, 26, 36]. This fixture carries no footage",
+    "instants, so every clip starts at its moment and nothing is calm.",
+    "sourceIndexes (live) is untouched and unverified under plan_demo_steps@v16 until the paid",
+    "check re-takes it."
   ],
   "questionnaire": {
     "category": "app_or_digital",
@@ -1409,6 +1416,6 @@
   ],
   "expected": {
     "sourceIndexes": [1, 2, 3, 12, 36],
-    "dryRunSourceIndexes": [3, 11, 12, 16, 39, 44, 58]
+    "dryRunSourceIndexes": [0, 3, 15, 20, 26, 36]
   }
 }

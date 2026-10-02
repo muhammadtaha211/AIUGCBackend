@@ -8,6 +8,30 @@ source: founder + db + code
 
 # 0074 — The model is offered only pickable moments, and the last round is repaired
 
+> **2026-10-02 — amended by the 2 s clip build** (`feat/steps-fixed-2s-clips`):
+>
+> - **D1 has nothing left to hide.** Every moment has a full 2 s clip
+>   ([[0084-clips-are-placed-from-the-footage-instants]]), so the model is shown every moment
+>   again and the `+pickable` stamp is gone. `plan_demo_steps@v15+pickable` rows are the ones
+>   generated under this note as written.
+> - **D2's repair now drops for two reasons only:** two steps sharing footage
+>   ([[0087-two-steps-never-share-footage]]) and more than 10 steps. The pin and the ending are
+>   still never dropped. Fewer than 3 steps left still fails, except on a recording that cannot
+>   offer 3, where a first answer of that size is stored too
+>   ([[0086-captions-are-3-4-words-and-a-long-one-is-kept]]). When it has to choose what to drop,
+>   a step the re-check would reject anyway (unreadable, a skipped kind) goes first.
+> - **A caption that cannot be read is no longer dropped, and an unreadable ending no longer fails
+>   the plan** — founder, 2026-10-02 ([[0086-captions-are-3-4-words-and-a-long-one-is-kept]]). It
+>   is kept with the editor's warning.
+> - **`+repaired` now means a step was dropped.** A plan stored with a long caption or a short
+>   count left over is not stamped; its last `retry_violations` entry is non-empty. So the first
+>   query under "What the row says" still finds every plan stored with something left, and the
+>   second (`+repaired` with an empty last round) finds nothing new. `aiugc plan regress` prints
+>   `REPAIRED by code` only for a dropped step, and `NOT CLEAN — stored as the model answered`
+>   for the rest; neither is green.
+> - **D3 stands:** a draft is not held to the 5-step minimum. The 15 s floor it also waived no
+>   longer exists.
+
 Decided 2026-10-01, on branch `fix/steps-plan-repair`. Tags: **FOUNDER-DECIDED** (his words or his
 pick among options), **PROPOSED → APPROVED** (put to him in the plan and approved with it),
 **MEASURED**, **REASONED**.

@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import {
+  analysisInstants,
   analysisSectionsSchema,
   analysisTimelineSchema,
-  clipBounds,
   getDb,
   getJobProgress,
   getLatestDemoAnalysis,
   getStorage,
   HEAVY_JOB_TYPES,
-  stepDurations,
-  timelineClipMs,
+  momentClips,
+  STEP_MS,
   type JobProgress,
 } from "@aiugc/core";
 import {
@@ -106,13 +106,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const sections = analysisSectionsSchema.safeParse(analysis.sections);
     if (sections.success && sections.data.length > 0) body.sections = sections.data;
 
-    // What a step started at each state would run — to its screen's end or
-    // the cap (0070) — computed by the same function the plan assembles with,
-    // so a picker preview plays exactly the clip a pick buys.
-    const clips = timelineClipMs(
+    // Every moment's 2 s clip (decision 0084), from the same function the plan
+    // job and the save path place with, so a picker preview plays exactly the
+    // clip a pick stores. A failed read of the footage instants fails the
+    // request like any other read here: clips placed without them would not be
+    // the ones the save stores.
+    const instants = await analysisInstants(db, analysis.id);
+    const { clips } = await momentClips(db, {
       timeline,
-      clipBounds(await stepDurations(db), timeline, found.demo.durationMs),
-    );
+      recordingMs: found.demo.durationMs,
+      instants,
+    });
 
     // `index` is the absolute timeline position — it IS the sourceIndex the
     // plan routes speak — and survives paging. thumbPath stays server-side.
@@ -127,7 +131,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       sameStateAsPrevious: state.sameStateAsPrevious,
       legibility: state.legibility,
       salienceNote: state.salienceNote ?? undefined,
-      clipMs: clips[index]!,
+      // Kept for tabs opened before clips were placed: they read it as the
+      // preview's length.
+      clipMs: STEP_MS,
+      clipStartMs: clips[index]!.startMs,
+      clipTwoPages: clips[index]!.twoPages,
     }));
 
     const query = new URL(request.url).searchParams;

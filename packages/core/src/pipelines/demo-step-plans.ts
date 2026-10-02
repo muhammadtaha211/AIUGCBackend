@@ -6,7 +6,7 @@ import { getConfigValueOr } from "../appConfig";
 import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { getEnv } from "../config";
 import type { Db } from "../db";
-import { demoAnalyses, demoStepPlans, demos, jobs } from "../db/schema";
+import { demoAnalyses, demoAnalysisFootage, demoStepPlans, demos, jobs } from "../db/schema";
 import { BudgetError, PermanentError } from "../jobs/errors";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -14,20 +14,26 @@ import { FIXTURES_DIR } from "../paths";
 import {
   A_STEPS_MAX_DEFAULT,
   A_STEPS_MIN_DEFAULT,
-  LABEL_LEAD_MS,
-  LABEL_WORDS_PER_SECOND,
+  clipsOverlap,
+  DEMO_FPS,
+  demoFrame,
   MAX_LABEL_CHARS,
   MAX_LABEL_WORDS,
   MIN_LABEL_WORDS,
   normalizeWord,
+  overlappingPairs,
   PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
   splitWords,
+  STEP_MS,
+  stepClip,
   tokenizeWords,
   totalRuntimeMs,
+  type Clip,
 } from "../plan-format";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
+import { DETECTOR_REACH_FRAMES, SCREENS_DETECTOR } from "./analysis-screens";
 import { questionnaireSchema, requireQuestionnaire, type Questionnaire } from "./businesses";
 import {
   ANALYSIS_ACTION_TYPES,
@@ -47,6 +53,8 @@ export {
   PLAN_SKIP_SCREEN_KINDS,
   readTimeMs,
   splitWords,
+  STEP_MS,
+  stepClip,
   tokenizeWords,
   totalRuntimeMs,
 };
@@ -69,6 +77,14 @@ export const planStepSchema = z.object({
   label: z.string(),
   sourceIndex: z.number(),
   durationMs: z.number(),
+  /** Where the step's clip starts in the demo (decision 0084) — its moment or
+   *  up to a little before it. Absent on every step stored before steps had
+   *  clips: those start at timestampMs (plan-format's stepClip is the one
+   *  reading of both shapes). */
+  startMs: z.number().optional(),
+  /** Set when the clip probably shows two different pages (placeClips); the
+   *  editor then asks the customer to watch the step (decision 0085). */
+  twoPages: z.boolean().optional(),
   /** The label's own tokens that came from none of the state's visibleText,
    *  the questionnaire or the demo description — findOffScreenWords, computed
    *  once on the accepted model plan and shown to the customer as unverified
@@ -89,7 +105,7 @@ export const planStepsSchema = z.array(planStepSchema);
 export const unexplainedMomentsSchema = z.array(unexplainedMomentSchema);
 
 /** What the model returns — everything else derives from sourceIndex in code
- *  (timestamp/actionType from the timeline, durationMs from the footage), so the
+ *  (timestamp/actionType from the timeline, the clip from placeClips), so the
  *  model cannot contradict the timeline it selected from. */
 const planOutputSchema = z.object({
   steps: z.array(z.object({ sourceIndex: z.number(), label: z.string() })),
@@ -104,97 +120,46 @@ const planOutputSchema = z.object({
 });
 type PlanOutput = z.infer<typeof planOutputSchema>;
 
-/** Ceiling on one step's clip, however long its screen stays up — it stops one
- *  step eating the ad. There is no floor: a step runs until the app leaves its
- *  screen, and is never padded past it to reach a minimum (decisions 0070,
- *  0072). Config `a_step_ms_max` overrides (no seeded row: a missing key IS
- *  the default). */
-const MAX_STEP_MS = 4000;
-
-/** The steps' own on-screen length — the hook clip is NOT counted, it sits on
- *  top. With the bank's ~4s hook this lands the finished ad at ~19-25s.
- *  15s since 2026-08-25 (decision 0002). Since steps follow the footage
- *  (0072) no step count fills the band by construction any more; what holds
- *  is coherence — minSteps full-length steps reach the floor without topping
- *  the ceiling, and maxSteps captionable steps fit under it (pinned by the
- *  band-coherence test). Recordings that cannot reach the floor pass through
- *  the reachability escape below; nothing is padded.
- *  Config `a_steps_runtime_min_ms` / `a_steps_runtime_max_ms` override
- *  (no seeded row: a missing key IS the default). */
-const MIN_RUNTIME_MS = 15_000;
-const MAX_RUNTIME_MS = 21_000;
-
-// MAX_LABEL_WORDS / MIN_LABEL_WORDS live in ../plan-format (imported above):
-// the wizard's soft word warning needs the ceiling, and this module's db/fs/
+// STEP_MS / MAX_LABEL_WORDS / MIN_LABEL_WORDS live in ../plan-format (imported
+// above): the wizard's soft word warning needs them, and this module's db/fs/
 // provider imports can't reach a browser bundle.
 
-/** readTimeMs by word count. The prompt's timing block and the runtime check
+/** readTimeMs by word count. The prompt's timing block and the word ceiling
  *  read the same function — which is the whole point of generating the block. */
 function readTimeMsForWords(words: number): number {
   return readTimeMs("x ".repeat(words));
 }
 
-/** The closest two selected states may sit: the read time of the shortest
- *  caption the prompt allows. A step is cut where the next selected state
- *  starts, so under this gap the earlier one can carry no caption at all.
- *  Derived, not a knob — it replaced the 3s step floor (decision 0072). */
-export const MIN_GAP_MS = readTimeMsForWords(MIN_LABEL_WORDS);
-
-/** Whether a state's own clip (timelineClipMs) can carry the shortest caption
- *  the prompt allows. The ONE definition of a moment the model may pick
- *  (decision 0074): the timeline it is shown, the picks code strips, the
- *  validator's shape rules and the canned planner all read it. */
-const captionableClip = (clipMs: number): boolean => clipMs >= MIN_GAP_MS;
-
 /**
  * Every number in the prompt's timing section, GENERATED from readTimeMs and
- * the duration config instead of restated by hand in the markdown.
+ * the step constants instead of restated by hand in the markdown.
  *
  * v10 hand-wrote the same table and its first row drifted: it licensed a
  * 3-word caption at a 1.4s gap when readTimeMs asks 1.6s, so the prompt
- * authorised plans findPlanViolations then rejected — two of the campaign-app
- * regression failures came from that one row. A table that can disagree with
- * the function is the bug, so the table comes from the function.
+ * authorised plans findPlanViolations then rejected. A table that can disagree
+ * with the function is the bug, so the table comes from the function.
  *
- * Arithmetic only, no prose: the argument for WHY a gap is a ceiling lives in
- * the versioned prompt file, where a change to it bumps the prompt version.
+ * Arithmetic only, no prose: WHY the rules are what they are lives in the
+ * versioned prompt file, where a change to it bumps the prompt version.
  */
-export function planTimingMarkdown(opts: {
-  /** The cap on one step's clip (StepDurationConfig.maxMs). */
-  maxMs: number;
-  runtime: { minMs: number; maxMs: number };
-  minSteps: number;
-  maxSteps: number;
-}): string {
-  const { maxMs, runtime, minSteps, maxSteps } = opts;
+export function planTimingMarkdown(opts: { minSteps: number; maxSteps: number }): string {
+  const { minSteps, maxSteps } = opts;
   const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
-  const range = (from: number, to: number): number[] =>
-    Array.from({ length: to - from + 1 }, (_, i) => from + i);
-
-  // Rows the cap could never grant are not offers. A configured a_step_ms_max
-  // below a row's read time caps every step under it, so the row would promise
-  // a window the code never hands out. Never empty: a ceiling under the
-  // shortest read time is a broken config, not a shorter table.
-  const grantable = range(MIN_LABEL_WORDS, MAX_LABEL_WORDS).filter(
-    (w) => readTimeMsForWords(w) <= maxMs,
-  );
-  const lengths = grantable.length > 0 ? grantable : [MIN_LABEL_WORDS];
-  const readRows = lengths.map((w) => `| ${w} words | ${secs(readTimeMsForWords(w))} |`);
+  const readRows: string[] = [];
+  for (let words = MIN_LABEL_WORDS; words <= MAX_LABEL_WORDS; words++) {
+    readRows.push(`| ${words} words | ${secs(readTimeMsForWords(words))} |`);
+  }
 
   return [
     "| caption | seconds it needs |",
     "| ------- | ---------------- |",
     ...readRows,
     "",
-    `Every timeline entry carries \`clipMs\`: how long a step that starts there runs before the app leaves that screen, never more than ${secs(maxMs)}. A selected step runs its \`clipMs\` — or less, when your next selected state starts sooner.`,
+    `Every step runs exactly ${secs(STEP_MS)}: its clip. Every timeline entry carries \`clipStartMs\`, where the clip of a step selected there starts (at the entry's own timestamp, or a little before it); \`calm\`, true when nothing in the picture changes during that clip; and \`twoPages\`, true when the clip probably shows two different pages.`,
     "",
-    `Under a ${secs(MIN_GAP_MS)} gap you may not select both states at all.`,
+    `Two selected states may never show the same footage: their \`clipStartMs\` values must be at least ${STEP_MS} apart.`,
     "",
-    `The steps must total ${(runtime.minMs / 1000).toFixed(1)}-${secs(runtime.maxMs)}; aim near ${secs(
-      Math.round((runtime.minMs + runtime.maxMs) / 2),
-    )}. Add up what each step you selected actually runs — its \`clipMs\`, or the gap to your next selected state when that is shorter — before you settle. ${minSteps} full-length steps run ${secs(
-      minSteps * maxMs,
-    )}; a ${minSteps}–${maxSteps}-step plan over the band needs its least essential step dropped, one under it needs another genuinely different beat.`,
+    `A plan runs its step count times ${secs(STEP_MS)}: ${minSteps} steps run ${secs(minSteps * STEP_MS)}, ${maxSteps} steps run ${secs(maxSteps * STEP_MS)}.`,
   ].join("\n");
 }
 
@@ -599,7 +564,9 @@ export function registrableDomain(link: string | null | undefined): string | und
 }
 
 // ---------------------------------------------------------------------------
-// Screens — where a step's clip ends (decisions 0070, 0072)
+// Pages — the analysis's own judgement of where one page gives way to another
+// (decision 0070). Since 0084 it ranks clips and bounds the access run; it no
+// longer cuts a step.
 // ---------------------------------------------------------------------------
 
 /** Words for the same-screen test: lowercase NFC tokens of 2+ characters,
@@ -674,12 +641,6 @@ export function isNewScreen(prev: ScreenFields, cur: ScreenFields): boolean {
   return votes.filter(Boolean).length >= 2;
 }
 
-/** What a step's clip is bounded by besides its own state and the next one
- *  selected: the cap, the analysis sample, the recording's end. */
-export interface ClipBounds extends StepDurationConfig {
-  recordingEndMs: number;
-}
-
 /**
  * Where the recording ends for step purposes. demos.duration_ms is the raw
  * upload's container length, so it is floored to the analysis grid; and never
@@ -698,31 +659,35 @@ export function recordingEndMs(
   return Math.max(Math.floor(durationMs / sampleMs) * sampleMs, afterLast);
 }
 
-export function clipBounds(
-  durations: StepDurationConfig,
-  timeline: { timestampMs: number }[],
-  durationMs: number | null | undefined,
-): ClipBounds {
-  return { ...durations, recordingEndMs: recordingEndMs(durationMs, timeline, durations.sampleMs) };
+/** One analysis sample in ms, from the analysis's own fps knob — floored so it
+ *  never passes the next sample on the round(i*1000/fps) grid, and never zero. */
+export async function analysisSampleMs(db: Db): Promise<number> {
+  return Math.max(1, Math.floor(1000 / (await analysisFps(db))));
+}
+
+/** What a clip is placed against besides the moments themselves. */
+export interface ClipContext {
+  /** One analysis sample: a moment's picture is still up this long after its
+   *  timestamp (a stored timestampMs is the lower median of a cluster of at
+   *  least two samples). */
+  sampleMs: number;
+  recordingEndMs: number;
+  /** Every instant the picture changes, in ms (demo_analysis_footage.instants).
+   *  null = not known for this analysis. */
+  instants: number[] | null;
 }
 
 /**
- * For every state, when its screen ends: one analysis sample after the last
- * state still on it, or the recording's end. A stored timestampMs is the LOWER
- * median of a cluster of at least two samples (ffmpeg.ts clusterStates), so
- * the next sample is still inside that cluster — the cut never shows a frame
- * of what follows unless isNewScreen missed the change. That is "cut early
- * when unsure" (decision 0072): measured on the footage, it cut 0 of 64 plan
- * steps late, at the price of a short clip for a state picked last on its
- * screen.
- *
- * The sample is today's a_analysis_fps; nothing stores the rate an analysis
- * ran at. Lowering that knob after the fact would push the cut past a stored
- * timeline's own next sample, so the cut never passes the next screen's first
- * state either — a bound, not the guarantee (defects/
- * screen-cut-assumes-the-current-analysis-fps.md).
+ * For every state, when the analysis's own screen ends: one sample after the
+ * last state still on it, or the recording's end. Since every step became a
+ * fixed 2 s clip (decisions 0076, 0084) no clip is cut here — only the access
+ * moment's run still reads it, to tell one typing of the address from the
+ * next.
  */
-export function screenEnds(timeline: AnalysisState[], bounds: ClipBounds): number[] {
+export function screenEnds(
+  timeline: AnalysisState[],
+  bounds: Pick<ClipContext, "sampleMs" | "recordingEndMs">,
+): number[] {
   const ends = new Array<number>(timeline.length);
   let end = bounds.recordingEndMs;
   for (let i = timeline.length - 1; i >= 0; i--) {
@@ -738,34 +703,199 @@ export function screenEnds(timeline: AnalysisState[], bounds: ClipBounds): numbe
   return ends;
 }
 
-/** Each state's own clip if a step started there: to its screen's end, never
- *  past the cap. What the model sees as `clipMs` and the inventory previews.
- *  A selected step is ALSO cut where the next selected state starts — that is
- *  assembleSteps' half. Always at least one sample (maxMs >= sampleMs). */
-export function timelineClipMs(timeline: AnalysisState[], bounds: ClipBounds): number[] {
-  const ends = screenEnds(timeline, bounds);
-  return timeline.map((s, i) => Math.min(s.timestampMs + bounds.maxMs, ends[i]!) - s.timestampMs);
+// ---------------------------------------------------------------------------
+// Clips — every moment's 2 s (decisions 0076, 0084)
+// ---------------------------------------------------------------------------
+
+/** Clips are placed in frames of the normalized demo, never in ms: the render
+ *  lays a step out as round(end·fps) − round(start·fps) frames, which is
+ *  exactly STEP_FRAMES only when the start sits on the frame grid. */
+const STEP_FRAMES = (STEP_MS * DEMO_FPS) / 1000;
+const toFrame = demoFrame;
+const frameMs = (frame: number): number => Math.round((frame * 1000) / DEMO_FPS);
+
+/** How far a clip keeps from an instant to count as calm: 0.2 s. Measured, the
+ *  picture really flips between 4 frames before its instant and 5 after
+ *  (docs/vault/facts/instant-free-windows-2026-10-02.md). An instant exactly
+ *  this far outside the clip is clear of it. */
+const INSTANT_CLEAR_FRAMES = 6;
+
+/** One moment's clip: STEP_MS of the demo, starting at startMs. */
+export interface PlacedClip {
+  startMs: number;
+  /** Nothing changes in the picture during the clip, as far as the footage
+   *  detector can tell. A generated plan prefers these. */
+  calm: boolean;
+  /** The clip probably shows two different pages: it crosses a change the
+   *  analysis itself also saw. The editor asks the customer to watch such a
+   *  step before approving (decision 0085). */
+  twoPages: boolean;
+}
+
+/** Lexicographic "a before b" over equal-length numeric keys. */
+function keyBefore(a: number[], b: number[]): boolean {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i]! < b[i]!;
+  }
+  return false;
+}
+
+/**
+ * Every moment's clip (decision 0084). One function, read by the inventory,
+ * the plan job, a hand-added step and — through what they store — the render,
+ * so the clip previewed is the clip rendered.
+ *
+ * A clip is STEP_MS long, holds its moment, and starts at the moment or up to
+ * STEP_MS less one analysis sample before it, never outside the recording
+ * (the recording wins a conflict). Among those starts:
+ *
+ * 1. Calm — no instant inside the clip or within INSTANT_CLEAR_FRAMES of
+ *    either end, and the clip clear of the recording's first and last
+ *    DETECTOR_REACH_FRAMES, where the detector cannot place an instant. If a
+ *    calm start exists, the one closest to the moment is used.
+ * 2. Otherwise the best-fitting start: the fewest instants at which the
+ *    analysis itself also saw a different page (isNewScreen between the two
+ *    moments either side of the instant; an instant before the first moment
+ *    or after the last counts as one); then the moment's own picture on
+ *    screen the longest — the stretch between the instants either side of it,
+ *    every instant treated as a change (decision 0079); then the least slide.
+ * 3. No instants known: nothing is calm and the clip starts at the moment.
+ *
+ * No model is asked anything here and no clip is ever shortened. Measured on
+ * the five takes: docs/vault/facts/clip-placement-replay-2026-10-02.md.
+ */
+export function placeClips(timeline: AnalysisState[], ctx: ClipContext): PlacedClip[] {
+  const endFrame = Math.floor((ctx.recordingEndMs * DEMO_FPS) / 1000);
+  const lastStart = Math.max(0, endFrame - STEP_FRAMES);
+  const lead = Math.max(0, STEP_FRAMES - Math.ceil((ctx.sampleMs * DEMO_FPS) / 1000));
+  // The last frame not after the moment — rounding to the nearest would start
+  // a clip after its moment when the analysis fps does not divide DEMO_FPS.
+  // The half millisecond absorbs the analysis's own rounding of a timestamp.
+  const moments = timeline.map((state) =>
+    Math.floor(((state.timestampMs + 0.5) * DEMO_FPS) / 1000),
+  );
+  const pageChange = timeline.map((state, i) => i > 0 && isNewScreen(timeline[i - 1]!, state));
+
+  if (ctx.instants === null) {
+    return timeline.map((_, i) => {
+      const startMs = frameMs(Math.min(moments[i]!, lastStart));
+      // The analysis alone: a later moment inside the clip that it put on a
+      // different page.
+      const twoPages = timeline.some(
+        (later, k) =>
+          pageChange[k]! && later.timestampMs > startMs && later.timestampMs < startMs + STEP_MS,
+      );
+      return { startMs, calm: false, twoPages };
+    });
+  }
+
+  const instants = [...new Set(ctx.instants.map(toFrame))].sort((a, b) => a - b);
+  /** Whether the analysis saw a different page across each instant: the pair
+   *  of moments with moment[k-1] < instant <= moment[k]. */
+  const confirmed = instants.map((instant) => {
+    const k = moments.findIndex((moment) => moment >= instant);
+    return k <= 0 ? true : pageChange[k]!;
+  });
+
+  return timeline.map((_, i) => {
+    const at = moments[i]!;
+    const latest = Math.min(at, lastStart);
+    const earliest = Math.min(Math.max(0, at - lead), latest);
+    let before = Number.NEGATIVE_INFINITY;
+    let after = Number.POSITIVE_INFINITY;
+    for (const instant of instants) {
+      if (instant <= at) before = instant;
+      else {
+        after = instant;
+        break;
+      }
+    }
+
+    let best: { start: number; key: number[]; twoPages: boolean } | undefined;
+    for (let start = latest; start >= earliest; start--) {
+      let near = 0;
+      let confirmedNear = 0;
+      for (let n = 0; n < instants.length; n++) {
+        const instant = instants[n]!;
+        if (instant <= start - INSTANT_CLEAR_FRAMES) continue;
+        if (instant >= start + STEP_FRAMES + INSTANT_CLEAR_FRAMES) break;
+        near++;
+        if (confirmed[n]) confirmedNear++;
+      }
+      if (
+        near === 0 &&
+        start >= DETECTOR_REACH_FRAMES &&
+        start + STEP_FRAMES <= endFrame - DETECTOR_REACH_FRAMES
+      ) {
+        return { startMs: frameMs(start), calm: true, twoPages: false };
+      }
+      const own = Math.max(0, Math.min(start + STEP_FRAMES, after) - Math.max(start, before));
+      const key = [confirmedNear, -own, at - start];
+      if (!best || keyBefore(key, best.key)) best = { start, key, twoPages: confirmedNear > 0 };
+    }
+    return { startMs: frameMs(best!.start), calm: false, twoPages: best!.twoPages };
+  });
+}
+
+/** A moment's clip as plan-format's Clip, for the overlap helpers. */
+const clipOf = (placed: PlacedClip): Clip => ({ startMs: placed.startMs, durationMs: STEP_MS });
+
+/**
+ * An analysis's stored instants in ms, or null when they are not known: no
+ * footage row (analyses from before 0050 until they are backfilled), a decode
+ * that failed, a detector this code was not measured against, or a shape that
+ * does not parse. Null is a normal answer, never an error — placeClips then
+ * calls nothing calm. A database error throws, as any read does.
+ */
+export async function analysisInstants(db: Db, analysisId: string): Promise<number[] | null> {
+  const rows = await db
+    .select({ detector: demoAnalysisFootage.detector, instants: demoAnalysisFootage.instants })
+    .from(demoAnalysisFootage)
+    .where(eq(demoAnalysisFootage.analysisId, analysisId))
+    .limit(1);
+  const row = rows[0];
+  if (!row || row.detector !== SCREENS_DETECTOR) return null;
+  const parsed = z.array(z.object({ atMs: z.number() })).safeParse(row.instants);
+  return parsed.success ? parsed.data.map((instant) => instant.atMs) : null;
+}
+
+/** Every moment's clip for one analysis, read the one way every caller must:
+ *  today's sample knob, the demo's recorded length, the analysis's instants. */
+export async function momentClips(
+  db: Db,
+  opts: {
+    timeline: AnalysisState[];
+    /** demos.duration_ms. */
+    recordingMs: number | null | undefined;
+    instants: number[] | null;
+  },
+): Promise<{ clips: PlacedClip[]; sampleMs: number; recordingEndMs: number }> {
+  const sampleMs = await analysisSampleMs(db);
+  const endMs = recordingEndMs(opts.recordingMs, opts.timeline, sampleMs);
+  return {
+    clips: placeClips(opts.timeline, { sampleMs, recordingEndMs: endMs, instants: opts.instants }),
+    sampleMs,
+    recordingEndMs: endMs,
+  };
 }
 
 export interface AccessMoment {
-  /** The pinned state. */
+  /** The pinned state. Its clip is its own placed clip, like every step's. */
   index: number;
-  /** Its assembled clip length — its screen's end or the cap, like every
-   *  step. Never a literal: the model-facing band and the drop zone read it. */
-  pinMs: number;
   /** The address-bar run: the candidates on the first candidate's screen. */
   run: number[];
+  runStartMs: number;
   /** When the run's screen ends (screenEnds). */
   runEndMs: number;
-  /** [runStartMs, dropUntilMs): the run plus the pin's clip, and never less
-   *  than MIN_GAP_MS past the pin — a state closer than that would be a
-   *  min-gap violation next to it. A step the model (or the canned planner)
-   *  puts in here is dropped — it is the moment the pin already shows. NOT
-   *  the search window: when the loaded site is
-   *  read as `other` and no loading screen was caught (2 of 6 production
-   *  analyses), the window runs to 15s and would swallow real product steps. */
-  runStartMs: number;
-  dropUntilMs: number;
+  /** States a plan may not select beside the pin: every state before the
+   *  run's screen ends — the run is one moment on screen, which the pin
+   *  already shows, and anything earlier would sit in front of the step that
+   *  is fixed first — and every state whose clip shares footage with the pin's
+   *  clip. A step the model (or the canned planner) puts here is dropped. NOT
+   *  the search window: when the loaded site is read as `other` and no loading
+   *  screen was caught (2 of 6 production analyses), the window runs to 15s
+   *  and would swallow real product steps. */
+  zone: ReadonlySet<number>;
 }
 
 /**
@@ -781,16 +911,18 @@ export interface AccessMoment {
  * Run: the candidates on the first candidate's screen (screenEnds) — one
  * moment on screen; a candidate on a later screen is a second typing, not
  * this one.
- * Pin: the EARLIEST run candidate whose clip reaches the screen's end inside
- * the cap and is long enough to read the caption, so the clip shows the
- * address being typed through to the moment the page leaves the address bar;
- * failing that, the latest candidate whose capped clip is long enough. No pin
- * at all when no candidate's clip can carry the caption: the pin is re-pinned
- * every round, so a read-time violation on it could never be fixed.
+ * Pin: the LATEST run candidate whose clip ends by the run's end — the
+ * address at its most typed, the whole clip still on the address bar; failing
+ * that, the candidate whose clip runs least past it (the later on a tie).
+ * "כנסו לכאן" reads in well under a step, so any candidate can carry it.
  */
 export function findAccessMoment(
   timeline: AnalysisState[],
-  opts: { bounds: ClipBounds; link?: string | null },
+  opts: Pick<ClipContext, "sampleMs" | "recordingEndMs"> & {
+    /** Every state's clip (placeClips). */
+    clips: PlacedClip[];
+    link?: string | null;
+  },
 ): AccessMoment | null {
   const domain = registrableDomain(opts.link);
   const carriesAddress = (entry: string): boolean =>
@@ -811,63 +943,102 @@ export function findAccessMoment(
   }
   if (candidates.length === 0) return null;
 
-  const ts = (i: number): number => timeline[i]!.timestampMs;
-  const ends = screenEnds(timeline, opts.bounds);
+  const ends = screenEnds(timeline, opts);
   const runEndMs = ends[candidates[0]!]!;
   const run = candidates.filter((c) => ends[c] === runEndMs);
-  const clips = timelineClipMs(timeline, opts.bounds);
-  const readable = (c: number): boolean => clips[c]! >= readTimeMs(ACCESS_LABEL);
-  const index =
-    run.find((c) => ts(c) + opts.bounds.maxMs >= runEndMs && readable(c)) ??
-    [...run].reverse().find(readable);
-  if (index === undefined) return null;
-  const pinMs = clips[index]!;
-  return {
-    index,
-    pinMs,
-    run,
-    runEndMs,
-    runStartMs: ts(run[0]!),
-    dropUntilMs: Math.max(runEndMs, ts(index) + pinMs, ts(index) + MIN_GAP_MS),
-  };
+  const pastRunMs = (c: number): number => Math.max(0, opts.clips[c]!.startMs + STEP_MS - runEndMs);
+  // Latest first, and a strict comparison: the later candidate wins a tie.
+  const index = [...run].reverse().reduce((best, c) => (pastRunMs(c) < pastRunMs(best) ? c : best));
+
+  const runStartMs = timeline[run[0]!]!.timestampMs;
+  const pinClip = clipOf(opts.clips[index]!);
+  const zone = new Set<number>();
+  timeline.forEach((s, i) => {
+    if (i === index) return;
+    const beforeRunEnds = s.timestampMs < runEndMs;
+    if (beforeRunEnds || clipsOverlap(clipOf(opts.clips[i]!), pinClip)) zone.add(i);
+  });
+  return { index, run, runStartMs, runEndMs, zone };
 }
 
 /** A selection with the access step pinned first. The selector's own pick of
- *  the same state and every step inside the drop zone go — the run and the
- *  pin's clip are one moment on screen and the pin already shows it — so the
- *  model can never duplicate or crowd it, whatever it returns. Out-of-range
+ *  the same state and every step inside the pin's zone go — the run and the
+ *  pin's clip are one moment on screen and the pin already shows it, and
+ *  nothing earlier may open the plan — so the model can never duplicate,
+ *  crowd or precede it, whatever it returns. Out-of-range
  *  indexes pass through for the validator to name. */
 function withPin(
   steps: { sourceIndex: number; label: string }[],
-  timeline: AnalysisState[],
   access: AccessMoment | null,
 ): { sourceIndex: number; label: string }[] {
   if (!access) return steps;
-  const kept = steps.filter((step) => {
-    if (step.sourceIndex === access.index) return false;
-    const state = Number.isInteger(step.sourceIndex) ? timeline[step.sourceIndex] : undefined;
-    if (!state) return true;
-    return state.timestampMs < access.runStartMs || state.timestampMs >= access.dropUntilMs;
-  });
+  const kept = steps.filter(
+    (step) => step.sourceIndex !== access.index && !access.zone.has(step.sourceIndex),
+  );
   return [{ sourceIndex: access.index, label: ACCESS_LABEL }, ...kept];
 }
 
 /** The model-facing notice appended under the rendered prompt when a pin
  *  exists. Appended in code, the way correctivePrompt appends, so the prompt
  *  file stays the shipped one and a recording with no access moment renders it
- *  verbatim. The numbers are the same ones findPlanViolations enforces on the
- *  combined plan, never restated by hand. */
+ *  verbatim. It names the rule by its heading, never by its number, so a
+ *  renumbered prompt cannot make it point at the wrong rule. */
 function accessNotice(
   access: AccessMoment,
   timeline: AnalysisState[],
   modelMin: number,
   modelMax: number,
 ): string {
+  const zone = [...access.zone].sort((a, b) => a - b);
+  const off =
+    zone.length > 0
+      ? `Never select state ${access.index} or any of states ${zone.join(", ")} — they come before the way in or show that same moment`
+      : `Never select state ${access.index}`;
   return [
     "## The way in is already the first step",
     "",
-    `Ignore rule 4 ("Open with the way in"): the system has fixed step 1 of this plan — state ${access.index} (${timeline[access.index]!.timestampMs}ms, the customer typing the address), captioned "${ACCESS_LABEL}", running ${(access.pinMs / 1000).toFixed(1)}s. It appears as index 0 in any plan echoed back to you; whether or not you repeat it, the system re-pins it — never move or recaption it. Never select state ${access.index}, any state from ${access.runStartMs}ms up to ${access.dropUntilMs}ms, or write a "go here" caption of your own. The ${modelMin}–${modelMax} steps and the runtime band above already exclude that step: select your own steps at ${access.dropUntilMs}ms or later, and end on the success state as before.`,
+    `Ignore the "Open with the way in" rule: the system has fixed step 1 of this plan — state ${access.index} (${timeline[access.index]!.timestampMs}ms, the customer typing the address), captioned "${ACCESS_LABEL}". It appears as index 0 in any plan echoed back to you; whether or not you repeat it, the system re-pins it — never move or recaption it. ${off}, and never write a "go here" caption of your own. The ${modelMin}–${modelMax} steps above already exclude that step: select your own steps from the other states, and end on the success state as before.`,
   ].join("\n");
+}
+
+/**
+ * The largest set of `pool` states whose clips share no footage, in
+ * chronological order. With `endings`, the set must END on one of them — the
+ * format ends on the success state — with every other pick before it. Every
+ * clip is STEP_MS long, so working back from the end and taking the
+ * latest-starting clip that still fits is optimal. The minimum-step waiver
+ * counts this set and the canned planner selects it, so the two cannot
+ * disagree about what a timeline can offer.
+ */
+function largestSeparateSelection(
+  pool: number[],
+  timeline: AnalysisState[],
+  clips: PlacedClip[],
+  endings: number[],
+): number[] {
+  const backFrom = (end: number | undefined): number[] => {
+    const picked: number[] = end === undefined ? [] : [end];
+    let cursor = end === undefined ? Number.POSITIVE_INFINITY : clips[end]!.startMs;
+    const beforeMs = end === undefined ? Number.POSITIVE_INFINITY : timeline[end]!.timestampMs;
+    const latestFirst = pool
+      .filter((i) => i !== end && timeline[i]!.timestampMs < beforeMs)
+      .sort((a, b) => clips[b]!.startMs - clips[a]!.startMs || b - a);
+    for (const i of latestFirst) {
+      if (clips[i]!.startMs + STEP_MS <= cursor) {
+        picked.push(i);
+        cursor = clips[i]!.startMs;
+      }
+    }
+    return picked.reverse();
+  };
+  if (endings.length === 0) return backFrom(undefined);
+  let best: number[] = [];
+  // Chronological endings and >=: the later ending wins a tie.
+  for (const end of endings) {
+    const selection = backFrom(end);
+    if (selection.length >= best.length) best = selection;
+  }
+  return best;
 }
 
 /**
@@ -880,19 +1051,15 @@ function accessNotice(
  * top of the per-step rules: the video must end on the success state (when
  * the timeline offers a selectable one and `notes` does not explain why it
  * cannot); a below-minimum plan is a violation unless the timeline itself
- * cannot offer that many selectable states; no two selected states may sit
- * closer than MIN_GAP_MS; and, when `shape.runtime` is supplied, every
- * assembled caption must be readable and the steps must total inside the
- * format's band. Human edits deliberately skip all of these — deleting steps
- * just makes the video shorter.
+ * cannot offer that many separate clips; and no two selected clips may share
+ * footage (decision 0087). Human edits skip the first two — deleting steps
+ * just makes the video shorter — and updatePlanSteps refuses an overlap
+ * itself.
  *
- * A state whose own clip (timelineClipMs) is under MIN_GAP_MS can carry no
- * caption, so the shape rules treat it as unselectable: it is never the
- * required ending and never counted toward what the timeline can offer.
- * Otherwise the ending rule and the read-time rule would demand opposite
- * things of the same state and no retry could satisfy both. The generation
- * path goes further (decision 0074): the model is never shown such a state
- * and a pick of one is stripped before this function sees the plan.
+ * Every step is one STEP_MS clip (decision 0076), so nothing here adds up a
+ * runtime or measures a caption against its clip: a plan runs its step count
+ * times STEP_MS, and a caption fits exactly when it is MAX_LABEL_WORDS words
+ * or fewer.
  */
 export function findPlanViolations(
   steps: { sourceIndex: number; label: string }[],
@@ -901,17 +1068,19 @@ export function findPlanViolations(
   shape?: {
     minSteps: number;
     notes: string | null;
-    /** What bounds each clip — the shape rules read every state's clip. */
-    bounds: ClipBounds;
-    /** Absent = do not check captions against their clips or the total. */
-    runtime?: { minMs: number; maxMs: number };
+    /** Every state's clip (placeClips). */
+    clips: PlacedClip[];
     /** The pinned access step, when the generation path pinned one. Its
      *  state may carry a skipped kind (the vision pass calls browser chrome
      *  `system`) — that one check is waived for it, nothing else is. The
-     *  waiver walk and the reachability bound also skip the drop zone, which
-     *  withPin makes unselectable: counting a state there would demand a
-     *  plan no retry can produce. */
+     *  waiver's count also leaves out its zone, which withPin makes
+     *  unselectable: counting a state there would demand a plan no retry can
+     *  produce. */
     pinned?: AccessMoment;
+    /** The last-round re-check: a caption over the word ceiling is kept and
+     *  left to the editor's warning rather than failing the plan (founder,
+     *  decision 0086). */
+    allowLongLabels?: boolean;
   },
 ): string[] {
   const violations: string[] = [];
@@ -924,21 +1093,12 @@ export function findPlanViolations(
   }
   const seen = new Set<number>();
   const pinned = shape?.pinned;
-  const inDropZone = (index: number, s: AnalysisState): boolean =>
-    pinned !== undefined &&
-    index !== pinned.index &&
-    s.timestampMs >= pinned.runStartMs &&
-    s.timestampMs < pinned.dropUntilMs;
-  const clips = shape ? timelineClipMs(timeline, shape.bounds) : [];
-  const captionable = (index: number): boolean => captionableClip(clips[index]!);
-  /** The per-step legality the two bounds below count — the pin counts
-   *  whatever its kind, exactly as the per-step check accepts it. */
+  const inZone = (index: number): boolean => pinned !== undefined && pinned.zone.has(index);
+  /** The per-step legality the waiver counts — the pin counts whatever its
+   *  kind, exactly as the per-step check accepts it. */
   const selectable = (index: number, s: AnalysisState): boolean =>
     index === pinned?.index ||
-    (s.legibility !== "unreadable" &&
-      !isSkippedKind(s) &&
-      !s.sameStateAsPrevious &&
-      captionable(index));
+    (s.legibility !== "unreadable" && !isSkippedKind(s) && !s.sameStateAsPrevious);
 
   steps.forEach((step, i) => {
     if (!Number.isInteger(step.sourceIndex) || !timeline[step.sourceIndex]) {
@@ -969,18 +1129,20 @@ export function findPlanViolations(
       violations.push(`step ${i}: label is empty`);
       return;
     }
-    if (words.length > MAX_LABEL_WORDS) {
-      violations.push(`step ${i}: label "${step.label}" is over ${MAX_LABEL_WORDS} words`);
+    if (words.length > MAX_LABEL_WORDS && !shape?.allowLongLabels) {
+      violations.push(
+        `step ${i}: label "${step.label}" is over ${MAX_LABEL_WORDS} words — a step is on screen for ${STEP_MS}ms and nothing longer can be read in it; cut it to ${MAX_LABEL_WORDS} words or fewer`,
+      );
     }
   });
 
   if (shape) {
+    const { clips } = shape;
     // The format invariant: the video ends on the success state. Enforceable
     // only when the timeline offers a selectable result state — the analysis
     // may have mistyped the success screen, and a plan cannot end on a state
     // that does not exist. A skip-kind "result" (a validation error the
-    // analysis mistyped) is not selectable either, so it cannot force the rule;
-    // nor is a success screen too short to caption.
+    // analysis mistyped) is not selectable either, so it cannot force the rule.
     const successCandidates = timeline
       .map((s, i) => ({ s, i }))
       .filter(
@@ -988,28 +1150,28 @@ export function findPlanViolations(
           s.actionType === "result" &&
           s.legibility !== "unreadable" &&
           !isSkippedKind(s) &&
-          !inDropZone(i, s) &&
-          captionable(i),
+          !inZone(i),
       );
     const valid = steps.filter((s) => Number.isInteger(s.sourceIndex) && timeline[s.sourceIndex]);
+    const last =
+      valid.length > 0
+        ? valid.reduce((a, b) =>
+            timeline[a.sourceIndex]!.timestampMs >= timeline[b.sourceIndex]!.timestampMs ? a : b,
+          )
+        : undefined;
     // `notes` waives the rule: the analysis may have typed error screens as
     // "result" (the timeline then OFFERS a result state that is not a genuine
     // success), and a plan cannot be forced to end on one. The model may end
     // elsewhere only by explaining why in `notes` — never silently.
-    if (successCandidates.length > 0 && valid.length > 0 && !shape.notes?.trim()) {
-      const last = valid.reduce((a, b) =>
-        timeline[a.sourceIndex]!.timestampMs >= timeline[b.sourceIndex]!.timestampMs ? a : b,
-      );
+    if (successCandidates.length > 0 && last && !shape.notes?.trim()) {
       if (timeline[last.sourceIndex]!.actionType !== "result") {
         // Real recordings keep going after the success moment (a179f069: the
         // success sits at 45s of an 80s recording), so "end on the result
         // state" is not enough — the retry needs the candidate indexes and an
         // explicit licence to drop the trailing steps, or it reshapes blind.
-        // The shortfall path used to be notes; it is not any more (the
-        // minimum-step rule below no longer reads notes). So the message has
-        // to name what may be added AND what may not: told plainly to "select
-        // additional states" a live retry padded with a loading screen — a
-        // fresh violation with no third call to fix it.
+        // The message has to name what may be added AND what may not: told
+        // plainly to "select additional states" a live retry padded with a
+        // loading screen — a fresh violation with no third call to fix it.
         violations.push(
           `the last step must be the result/success state — the video ends there. This timeline's success candidates are at sourceIndex ${successCandidates
             .map(({ i }) => i)
@@ -1022,206 +1184,57 @@ export function findPlanViolations(
     // `notes` does NOT waive this one. It was written for the last-step rule
     // above and waived both, which is how a 5-step plan with a 26-second hole
     // in the middle passed. The waiver is deterministic instead: a timeline
-    // that cannot offer minSteps selectable states has no longer plan to give,
-    // and "selectable" is exactly what the per-step rules above accept.
+    // that cannot offer minSteps separate clips has no longer plan to give —
+    // an 8-10 s recording never can, five clips are 10 s of footage. What it
+    // can offer is counted exactly (largestSeparateSelection): legal states
+    // outside the pin's zone, clips sharing no footage, ending on a success
+    // candidate when there is one — a state after the success screen can never
+    // be a step, so counting one would demand a plan the ending rule rejects.
+    //
+    // Deliberately NOT conditioned on `notes`: dryRunPlan sets notes to
+    // explain a shortfall, which would switch the count off in exactly the
+    // case it exists for. When notes does waive the last-step rule the model
+    // may end later than this, so the count under-counts and forgives a
+    // little more — the mild direction for a rule that only ever ADDS a
+    // violation.
     if (steps.length < shape.minSteps) {
-      // Spacing counts as well as legality: two legal states 400ms apart can
-      // never both be steps (the min-gap rule below), so a timeline whose
-      // legal states are bunched inside one step's length cannot reach
-      // minSteps however it is read. Walking chronologically and taking every
-      // state that clears the gap yields the largest legal selection there is.
-      //
-      // Bounded by the ENDING. A state after the success screen can never be a
-      // step — the rule above forbids it — so counting one here demands a plan
-      // the other rule rejects. That is not hypothetical: it is what kept
-      // dryRunPlan's shortfall alive, because the canned plan stops at the
-      // ending and this walk did not.
-      //
-      // Deliberately NOT conditioned on `notes`. Reading notes here is what 2e
-      // removed, and it bites immediately: dryRunPlan still sets notes to
-      // explain a shortfall, which would switch this bound back off in exactly
-      // the case it exists for. When notes does waive the last-step rule the
-      // model may end later than this, so the bound under-counts and forgives
-      // a little more — the mild direction for a rule that only ever ADDS a
-      // violation.
-      const endsAtMs =
-        successCandidates.length > 0
-          ? successCandidates[successCandidates.length - 1]!.s.timestampMs
-          : Number.POSITIVE_INFINITY;
-      let selectableCount = 0;
-      let lastMs = Number.NEGATIVE_INFINITY;
-      for (const [index, s] of timeline.entries()) {
-        if (!selectable(index, s) || inDropZone(index, s)) continue;
-        if (s.timestampMs > endsAtMs) break;
-        if (s.timestampMs - lastMs < MIN_GAP_MS) continue;
-        selectableCount++;
-        lastMs = s.timestampMs;
-      }
-      if (selectableCount >= shape.minSteps) {
-        violations.push(
-          `the plan has ${steps.length} steps, fewer than the minimum ${shape.minSteps} — this timeline offers ${selectableCount} selectable states, so select more genuinely distinct ones; \`notes\` does not waive this, and never pad with loading, duplicate or otherwise skipped states`,
-        );
-      }
-    }
-    // A step is cut where the next selected state starts, so two selections
-    // closer than the shortest caption's read time leave the first one no
-    // caption at all. Real timelines put states 400ms apart, so this is
-    // reachable. Named here so the corrective retry can drop one of the pair;
-    // the `notes` escape hatch does not apply, nothing explains a 400ms clip.
-    const chronological = [...seen].sort(
-      (a, b) => timeline[a]!.timestampMs - timeline[b]!.timestampMs,
-    );
-    for (let i = 1; i < chronological.length; i++) {
-      const before = chronological[i - 1]!;
-      const after = chronological[i]!;
-      const gap = timeline[after]!.timestampMs - timeline[before]!.timestampMs;
-      if (gap < MIN_GAP_MS) {
-        violations.push(
-          `states ${before} and ${after} are only ${gap}ms apart — a step ends where the next selected state starts, and no caption can be read in under ${MIN_GAP_MS}ms, so these two are the same moment on screen; keep whichever reads better and select a genuinely different state instead of the other`,
-        );
-      }
-    }
-    if (shape.runtime) {
-      // ASSEMBLED, never nominal: each clip runs to its screen's end or the
-      // cap, and the next selected state cuts it shorter, so only the
-      // assembled windows are what the video shows. The message carries the
-      // current total and the direction to move — the corrective retry has no
-      // other way to know which way that is.
-      const assembled = assembleSteps(valid, timeline, shape.bounds);
-      const total = totalRuntimeMs(assembled);
-      // A caption the eye cannot finish is not a caption, and the window is
-      // the only place that is visible. The shipped a179f069 plan burned two
-      // of six captions under their own read time, including a two-line one
-      // on screen 1600ms.
-      //
-      // The remedy depends on what cut the window. The NEXT selected state:
-      // rewriting the label in place often cannot fix it, and merging the pair
-      // into one caption is exactly what the ONE-CAPTION-PER-BEAT rule asks
-      // for. The screen itself (or the recording's end): the state was picked
-      // too late on its screen — drop the step, or an earlier moment buys time.
-      //
-      // A rewrite is only offered when a caption of MIN_LABEL_WORDS still
-      // fits: the prompt never allows fewer, so "cut it to 2 words" is advice
-      // the model cannot take (live, plan bd0913b4: it wrote 3 words, still
-      // short, and the retry was spent).
-      assembled.forEach((step, i) => {
-        const needed = readTimeMs(step.label);
-        if (step.durationMs >= needed) return;
-        const fits = Math.floor(
-          ((step.durationMs - LABEL_LEAD_MS) / 1000) * LABEL_WORDS_PER_SECOND,
-        );
-        const so =
-          fits >= MIN_LABEL_WORDS
-            ? `so either cut it to ${fits} words or fewer, or`
-            : `and no caption of ${MIN_LABEL_WORDS} or more words fits in that, so`;
-        const next = assembled[i + 1];
-        const cutByNext =
-          next !== undefined && step.durationMs === next.timestampMs - step.timestampMs;
-        violations.push(
-          cutByNext
-            ? `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — its window is cut by the next selected state, ${so} drop one of the two states and let a single caption cover the whole beat`
-            : `the caption on state ${step.sourceIndex} ("${step.label}") is on screen for ${step.durationMs}ms but needs ${needed}ms to be read — the app leaves that screen ${step.durationMs}ms after this state (its clipMs), ${so} drop this step, or select an earlier state on the same screen, or a different moment`,
-        );
-      });
-      // The FLOOR needs the same unreachability escape as the minimum count.
-      // demos.ts accepts an 8-second recording, and 8 seconds of source cannot
-      // make 11 seconds of steps however it is cut — telling the model to add
-      // states it does not have burns the retry and fails the plan
-      // permanently, with a customer-facing "try again" that never works. The
-      // CEILING gets no such escape — a long plan can always drop steps.
-      //
-      // How much video the best legal selection could possibly assemble. Both
-      // cheap approximations of this are wrong, in opposite directions:
-      //
-      //   wall-clock span  — counts dead air between states as claimable, so
-      //     it over-estimates and orders the model to add states that do not
-      //     exist, burning the one retry on a permanent failure;
-      //   leftmost greedy  — takes every state at the earliest legal moment,
-      //     which is maximum CARDINALITY but not maximum COVERAGE. It can
-      //     spend its last pick just under MIN_GAP_MS before the final state
-      //     and then be barred from it, stranding the very success screen the
-      //     plan is required to end on. That under-estimates, and an
-      //     under-estimate switches the floor check OFF — a genuinely short
-      //     ad then ships with no violation and no retry at all.
-      //
-      // So compute it exactly. maxSteps is single-digit and a timeline is tens of states,
-      // so the obvious O(n^2 * maxSteps) walk is free: best[i][k] is the most
-      // coverage a k+1-state selection ending at state i can have, each step
-      // worth its own clip or the gap to the next pick, whichever is shorter.
-      // Bounded by the ENDING, same argument as the minimum-step walk above:
-      // a state after the last success candidate can never be a step, so
-      // counting its coverage certifies a floor no ending-compliant plan can
-      // reach — the retry is then ordered to add pre-ending states that do
-      // not exist and the plan fails permanently. (Real recordings keep
-      // rolling after the success moment, so post-ending states are the
-      // normal case, not an edge.) When `notes` waives the ending rule the
-      // bound under-counts and this escape forgives a little more — the mild
-      // direction, exactly as the walk's comment argues.
-      //
-      // The ending also decides which selection may take the final whole
-      // clip: a compliant plan ENDS on a success candidate whenever one
-      // exists. With per-state clips, ending on a longer non-success state
-      // would out-score every compliant plan and order a retry that cannot
-      // succeed.
-      //
-      // And the pin is not optional: withPin puts it in every plan. Its clip
-      // is fixed (nothing selectable sits before dropUntilMs), so the bound is
-      // the pin plus the best maxSteps-1 picks after its drop zone. States
-      // before the pin are left out — the mild direction again.
-      const reachEndsAtMs =
-        successCandidates.length > 0
-          ? successCandidates[successCandidates.length - 1]!.s.timestampMs
-          : Number.POSITIVE_INFINITY;
-      const isSuccess = new Set(successCandidates.map(({ i }) => i));
-      const canEnd = (index: number): boolean => isSuccess.size === 0 || isSuccess.has(index);
-      const sel = timeline
+      const pool = timeline
         .map((s, index) => ({ s, index }))
-        .filter(
-          ({ s, index }) =>
-            selectable(index, s) &&
-            !inDropZone(index, s) &&
-            s.timestampMs <= reachEndsAtMs &&
-            (pinned === undefined ||
-              (index !== pinned.index && s.timestampMs >= pinned.dropUntilMs)),
-        );
-      const picks = pinned ? maxSteps - 1 : maxSteps;
-      const base = pinned ? pinned.pinMs : 0;
-      let reachableMs = pinned ? base : 0;
-      const best = sel.map(() => new Array<number>(Math.max(0, picks)).fill(-1));
-      for (let i = 0; i < sel.length && picks > 0; i++) {
-        best[i]![0] = 0; // a selection of one state: nothing before it yet
-        for (let j = 0; j < i; j++) {
-          const gap = sel[i]!.s.timestampMs - sel[j]!.s.timestampMs;
-          if (gap < MIN_GAP_MS) continue;
-          const runs = Math.min(gap, clips[sel[j]!.index]!);
-          for (let k = 1; k < picks; k++) {
-            const prev = best[j]![k - 1]!;
-            if (prev < 0) continue;
-            best[i]![k] = Math.max(best[i]![k]!, prev + runs);
-          }
-        }
-        // Whatever the selection, its LAST step has no neighbour to run into
-        // and so earns its own whole clip on top — when it may end the plan.
-        if (!canEnd(sel[i]!.index)) continue;
-        for (const coverage of best[i]!) {
-          if (coverage >= 0) {
-            reachableMs = Math.max(reachableMs, base + coverage + clips[sel[i]!.index]!);
-          }
-        }
-      }
-      // Each step's assembled run rides along: with per-state clips the total
-      // is arithmetic the model gets wrong (live, plan bd0913b4: the last
-      // retry swapped a 1.2s step for a 4.0s one and landed 600ms over).
-      const runs = assembled.map((s) => `state ${s.sourceIndex} runs ${s.durationMs}ms`).join(", ");
-      if (total < shape.runtime.minMs && reachableMs >= shape.runtime.minMs) {
+        .filter(({ s, index }) => index !== pinned?.index && selectable(index, s) && !inZone(index))
+        .map(({ index }) => index);
+      const offered =
+        largestSeparateSelection(
+          pool,
+          timeline,
+          clips,
+          successCandidates.map(({ i }) => i),
+        ).length + (pinned ? 1 : 0);
+      if (offered >= shape.minSteps) {
         violations.push(
-          `the steps total ${total}ms of video (${runs}), under the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too SHORT by ${shape.runtime.minMs - total}ms: ADD one or two more distinct product states from BEFORE the ending (adding a step IS the minimal edit this violation asks for), and never add a loading, duplicate or otherwise skipped state`,
-        );
-      } else if (total > shape.runtime.maxMs) {
-        violations.push(
-          `the steps total ${total}ms of video (${runs}), over the ${shape.runtime.minMs}-${shape.runtime.maxMs}ms this format needs — it is too LONG by ${total - shape.runtime.maxMs}ms: drop the least essential steps`,
+          `the plan has ${steps.length} steps, fewer than the minimum ${shape.minSteps} — this timeline offers ${offered} selectable states whose clips do not overlap, so select more genuinely distinct ones; \`notes\` does not waive this, and never pad with loading, duplicate or otherwise skipped states`,
         );
       }
+    }
+    // Two steps never show the same footage (decision 0087). Every pair, not
+    // neighbours only: with slid clips a step can clear the one before it and
+    // still overlap the one before that. The message names both clips and
+    // which state to give up — told only "keep whichever reads better", a
+    // retry may drop the ending and fail the ending rule instead.
+    const chosen = [...seen].sort((a, b) => timeline[a]!.timestampMs - timeline[b]!.timestampMs);
+    const span = (index: number): string =>
+      `${clips[index]!.startMs}-${clips[index]!.startMs + STEP_MS}ms`;
+    for (const [a, b] of overlappingPairs(chosen.map((index) => clipOf(clips[index]!)))) {
+      const earlier = chosen[a]!;
+      const later = chosen[b]!;
+      const advice =
+        earlier === pinned?.index
+          ? `state ${earlier} is the fixed first step, so drop state ${later}`
+          : later === last?.sourceIndex && timeline[later]!.actionType === "result"
+            ? `state ${later} is the ending, so drop state ${earlier}, or select an earlier moment in its place`
+            : `keep the one that shows the beat better (a \`calm\` one when there is one) and select a genuinely different state instead of the other`;
+      violations.push(
+        `states ${earlier} and ${later} show the same footage — their clips (${span(earlier)} and ${span(later)}) overlap, and two steps may never share footage; ${advice}`,
+      );
     }
   }
   return violations;
@@ -1238,8 +1251,9 @@ export interface StepPlanDraft {
   promptVersion: string;
   /** Per model call, the violations found AFTER that call — last entry empty
    *  on success, [] under DRY_RUN (no calls). Non-empty last entry on a
-   *  returned draft: the last-round repair stored it (decision 0074), and
-   *  that entry is what the repair cleared or waived. Persisted on the plan
+   *  returned draft: the plan was stored anyway (decisions 0074, 0086), and
+   *  that entry is what the repair cleared or what was left to the editor (a
+   *  long caption, a short count). Persisted on the plan
    *  row so the per-rule fix rate is measurable (0029). Shape rules only
    *  since 0049: label provenance never drives a round, it lands on each
    *  step's offScreenWords instead. */
@@ -1281,127 +1295,83 @@ export class PlanViolationError extends PermanentError {
   }
 }
 
-export interface StepDurationConfig {
-  /** The cap on one step's clip. */
-  maxMs: number;
-  /** One analysis sample — where a screen's cut sits past its last state. */
-  sampleMs: number;
-}
-
-/** Exported for the test that pins the defaults: with no app_config rows the
- *  code constants ARE the configuration, and nothing else observes them. The
- *  sample comes from the analysis's own fps knob, floored so the cut never
- *  passes the next sample on the round(i*1000/fps) grid. */
-export async function stepDurations(db: Db): Promise<StepDurationConfig> {
-  const sampleMs = Math.max(1, Math.floor(1000 / (await analysisFps(db))));
-  return {
-    // A cap under one sample would leave a clip with no frame.
-    maxMs: Math.max(sampleMs, await getConfigValueOr(db, "a_step_ms_max", z.number(), MAX_STEP_MS)),
-    sampleMs,
-  };
-}
-
-/** The format's total-runtime band, read the same way stepDurations reads its
- *  pair: a missing app_config row IS the default, so these constants are what
- *  production actually runs on. Exported for the same reason stepDurations is
- *  — the suite pins the shipped band here; every band passed to
- *  findPlanViolations in a test is a literal, so nothing else does. */
-export async function stepRuntimeBand(db: Db): Promise<{ minMs: number; maxMs: number }> {
-  const minMs = await getConfigValueOr(db, "a_steps_runtime_min_ms", z.number(), MIN_RUNTIME_MS);
-  return {
-    minMs,
-    // Same guard as a_steps_max/a_step_ms_max: a config pair the wrong way
-    // round must not make the band unsatisfiable.
-    maxMs: Math.max(
-      minMs,
-      await getConfigValueOr(db, "a_steps_runtime_max_ms", z.number(), MAX_RUNTIME_MS),
-    ),
-  };
-}
-
 /**
  * sourceIndex is the source of truth: timestamp and actionType come from the
- * selected state — chronological by construction.
+ * selected state — chronological by construction — and the clip from the
+ * state's placed clip (decisions 0076, 0084): every step is STEP_MS long and
+ * starts at `startMs`, which may be before its own moment.
  *
- * A step shows one screen (decision 0070): its clip starts at the picked
- * state and ends when the app leaves that screen, at the cap, or at the
- * recording's end, whichever comes first (timelineClipMs) — and never past
- * the next selected state, or 200ms of source would play twice back to back
- * (real: fixtures/timelines/real-botteacher-file-routing.json, proven in
- * pixels). Nothing pads a step: no floor, whatever its caption needs — a
- * caption longer than its screen is the validator's and the wizard's warning,
- * never a longer clip (0072).
+ * `keep` carries the clips of steps already stored with one (updatePlanSteps):
+ * a clip the customer has watched is never moved by a later save, whatever
+ * changed around it or in the footage row since.
  *
- * Two selections closer than MIN_GAP_MS are a violation on the model path
- * (findPlanViolations, which has a retry channel to fix them) but a
- * legitimate edit on the human path: updatePlanSteps has no violation
- * channel, and the founder's call is that the customer's pick is honoured. A
- * short clip is an honest render of what they selected. So a 400ms gap renders
- * a 400ms clip.
+ * Ordered by the moment. Two clips that share no footage, each holding its own
+ * moment, are in the same order by start as by moment — and an overlap is
+ * refused before anything is stored (findPlanViolations, updatePlanSteps), so
+ * this is also the order the render lays them out in.
  */
 export function assembleSteps(
   selected: { sourceIndex: number; label: string }[],
   timeline: AnalysisState[],
-  bounds: ClipBounds,
+  clips: PlacedClip[],
+  keep?: ReadonlyMap<number, { startMs: number; twoPages?: boolean }>,
 ): PlanStep[] {
-  const clips = timelineClipMs(timeline, bounds);
-  const ordered = selected
-    .map(({ sourceIndex, label }) => ({
-      timestampMs: timeline[sourceIndex]!.timestampMs,
-      actionType: timeline[sourceIndex]!.actionType,
-      label: label.trim(),
-      sourceIndex,
-    }))
+  return selected
+    .map(({ sourceIndex, label }) => {
+      const clip = keep?.get(sourceIndex) ?? clips[sourceIndex]!;
+      return {
+        timestampMs: timeline[sourceIndex]!.timestampMs,
+        actionType: timeline[sourceIndex]!.actionType,
+        label: label.trim(),
+        sourceIndex,
+        startMs: clip.startMs,
+        durationMs: STEP_MS,
+        ...(clip.twoPages ? { twoPages: true } : {}),
+      };
+    })
     .sort((a, b) => a.timestampMs - b.timestampMs);
-
-  return ordered.map((step, i) => {
-    const next = ordered[i + 1];
-    const room = next ? next.timestampMs - step.timestampMs : Number.POSITIVE_INFINITY;
-    return { ...step, durationMs: Math.min(clips[step.sourceIndex]!, room) };
-  });
 }
 
 /** The fewest steps the last-round repair may store, the pin counted: one or
- *  two steps is a failure shown as a ready plan (founder, decision 0074). */
+ *  two steps is a failure shown as a ready plan (founder, decision 0074) —
+ *  unless the recording itself offers no more, where a first answer of that
+ *  size is stored too. */
 const REPAIR_MIN_STEPS = 3;
 
 /**
  * What code does to a model plan that still violates after the last
- * corrective call, instead of failing it (decision 0074): drop the steps
- * whose caption cannot be read in their clip, then bring a total over the
- * band's ceiling under it by dropping steps. Returns the kept selection in
- * chronological order — the caller decides whether it may be stored — or
- * null when the plan is not one to repair: an index is outside the timeline
- * or picked twice, which no drop rule here speaks to, or the caption that
- * cannot be read is the ending's.
+ * corrective call, instead of failing it (decision 0074, as adapted to fixed
+ * 2 s clips): drop steps until no two share footage, then until the plan is
+ * within `maxSteps`. Returns the kept selection in chronological order — the
+ * caller decides whether it may be stored — or null when the plan is not one
+ * to repair: an index is outside the timeline or picked twice, which no drop
+ * rule here speaks to.
  *
- * The ending is the last selected result state. Neither pass drops it: a
- * plan that loses its success screen is not a draft worth storing, whatever
- * `notes` says about the ending rule, so an unreadable ending fails the plan
- * as it always did (founder, decision 0074).
+ * Captions are never touched and never a reason to drop: a caption over the
+ * word ceiling is kept and left to the editor's warning (founder, decision
+ * 0086 — under a fixed clip the remedy is cutting a word, not the step).
  *
- * Dropping a step never shortens another step, never lengthens the total and
- * never brings two picks closer (a clip only ever gains the room its dropped
- * neighbour held), so each pass is final:
+ * The pin and the ending (the last selected result state) are never dropped:
+ * the way in and the way out are what the format cannot lose.
  *
- * Read time — last step to first. A step's clip depends only on the next
- * step still kept, so by the time a step is judged its clip is settled; a
- * later drop can rescue an earlier step, never the reverse. A last step that
- * is not a result state gets no protection here: what cannot be read is
- * dropped, and the step before it becomes the last.
+ * Overlaps — the largest set of steps sharing no footage that holds the pin
+ * and the ending; among equally large sets, the one with more steps the
+ * re-check will accept (a pick of an unreadable or skipped-kind state still
+ * fails the plan, so it is the one to lose a tie), then more calm clips, then
+ * fewer two-page ones, then the earlier steps. Chosen as a set, not pair by
+ * pair: dropping A for overlapping B and then B for overlapping the ending
+ * can leave two steps where dropping B alone leaves three.
  *
- * Trim — while the total is over `maxMs`: when dropping one step is enough,
- * the one that leaves the longest ad goes; otherwise the one that shortens it
- * most, and look again. Ties go to the earlier step. Never the pin, the last
- * step or the ending: the way in and the way out are what the format cannot
- * lose. Every total is re-assembled, never subtracted — a dropped step's
- * time is often absorbed by the step before it on the same screen.
+ * Over the maximum — one step at a time: a pick the re-check would reject
+ * first, then a two-page clip, then a merely non-calm one, then a calm one;
+ * inside a class the step whose clip sits closest to a neighbour's; the
+ * earlier on a tie. Never the last step.
  */
 export function repairPlanSteps(
   steps: { sourceIndex: number; label: string }[],
   timeline: AnalysisState[],
-  bounds: ClipBounds,
-  opts: { maxMs: number; pinnedIndex?: number },
+  clips: PlacedClip[],
+  opts: { maxSteps: number; pinnedIndex?: number },
 ): { sourceIndex: number; label: string }[] | null {
   const seen = new Set<number>();
   for (const { sourceIndex } of steps) {
@@ -1410,67 +1380,96 @@ export function repairPlanSteps(
     }
     seen.add(sourceIndex);
   }
-  let kept = [...steps].sort(
-    (a, b) => timeline[a.sourceIndex]!.timestampMs - timeline[b.sourceIndex]!.timestampMs,
-  );
-
+  type Step = (typeof steps)[number];
+  const chronological = (list: Step[]): Step[] =>
+    [...list].sort(
+      (a, b) => timeline[a.sourceIndex]!.timestampMs - timeline[b.sourceIndex]!.timestampMs,
+    );
+  let kept = chronological(steps);
   const ending = [...kept].reverse().find((s) => timeline[s.sourceIndex]!.actionType === "result");
+  const isProtected = (s: Step): boolean => s.sourceIndex === opts.pinnedIndex || s === ending;
+  const clip = (s: Step): Clip => clipOf(clips[s.sourceIndex]!);
 
-  for (let i = kept.length - 1; i >= 0; i--) {
-    const step = assembleSteps(kept, timeline, bounds)[i]!;
-    if (step.durationMs >= readTimeMs(step.label)) continue;
-    if (kept[i] === ending) return null;
-    kept = kept.filter((_, k) => k !== i);
-  }
+  // Overlaps. The protected steps stay; everything sharing footage with one
+  // goes; the rest is weighted interval scheduling over equal-length clips.
+  const fixed = kept.filter(isProtected);
+  if (overlappingPairs(fixed.map(clip)).length > 0) return null;
+  const free = kept
+    .filter((s) => !isProtected(s) && !fixed.some((f) => clipsOverlap(clip(s), clip(f))))
+    .sort((a, b) => clip(a).startMs - clip(b).startMs);
+  /** A pick findPlanViolations rejects whatever else happens to the plan. */
+  const rejected = (s: Step): boolean => {
+    const state = timeline[s.sourceIndex]!;
+    return state.legibility === "unreadable" || isSkippedKind(state);
+  };
+  const weight = (s: Step): number[] => [
+    1,
+    rejected(s) ? 0 : 1,
+    clips[s.sourceIndex]!.calm ? 1 : 0,
+    clips[s.sourceIndex]!.twoPages ? 0 : 1,
+  ];
+  // best[i]: the best selection among the first i free steps.
+  const best: { score: number[]; picked: Step[] }[] = [{ score: [0, 0, 0, 0], picked: [] }];
+  free.forEach((step, i) => {
+    // Sorted by start and equally long, so the steps this one clears are a prefix.
+    let clear = 0;
+    while (clear < i && clip(free[clear]!).startMs + STEP_MS <= clip(step).startMs) clear++;
+    const w = weight(step);
+    const take = {
+      score: best[clear]!.score.map((value, k) => value + w[k]!),
+      picked: [...best[clear]!.picked, step],
+    };
+    // Strictly better only: on a tie the earlier steps stay.
+    best.push(keyBefore(best[i]!.score, take.score) ? take : best[i]!);
+  });
+  kept = chronological([...fixed, ...best[free.length]!.picked]);
 
-  const totalOf = (plan: typeof kept): number =>
-    totalRuntimeMs(assembleSteps(plan, timeline, bounds));
-  while (totalOf(kept) > opts.maxMs) {
-    const options = kept
-      .filter((s, i) => s.sourceIndex !== opts.pinnedIndex && i !== kept.length - 1 && s !== ending)
-      .map((dropped) => ({ dropped, leftMs: totalOf(kept.filter((s) => s !== dropped)) }));
-    if (options.length === 0) break;
-    const enough = options.filter((o) => o.leftMs <= opts.maxMs);
-    // Strict comparisons over a chronological list: the earlier step wins a tie.
-    const { dropped } =
-      enough.length > 0
-        ? enough.reduce((a, b) => (b.leftMs > a.leftMs ? b : a))
-        : options.reduce((a, b) => (b.leftMs < a.leftMs ? b : a));
-    kept = kept.filter((s) => s !== dropped);
+  const tier = (s: Step): number =>
+    rejected(s) ? -1 : clips[s.sourceIndex]!.twoPages ? 0 : clips[s.sourceIndex]!.calm ? 2 : 1;
+  while (kept.length > opts.maxSteps) {
+    const crowding = (i: number): number =>
+      Math.min(
+        i > 0 ? clip(kept[i]!).startMs - clip(kept[i - 1]!).startMs : Number.POSITIVE_INFINITY,
+        clip(kept[i + 1]!).startMs - clip(kept[i]!).startMs,
+      );
+    let drop: { at: number; key: number[] } | undefined;
+    // Never the last step, the pin or the ending.
+    for (let i = 0; i < kept.length - 1; i++) {
+      if (isProtected(kept[i]!)) continue;
+      const key = [tier(kept[i]!), crowding(i)];
+      if (!drop || keyBefore(key, drop.key)) drop = { at: i, key };
+    }
+    if (!drop) break;
+    const at = drop.at;
+    kept = kept.filter((_, i) => i !== at);
   }
   return kept;
 }
 
 /**
- * The timeline as the model is shown it (decision 0074): every state whose
- * own clip can carry a caption, plus the pinned access state — its caption
- * needs less than the shortest model caption, and the access notice names
- * it. A moment that cannot carry a caption is never offered, so entries keep
- * their absolute `index` (the sourceIndex the plan speaks) and the indexes
- * skip. `clipMs` (v15+) is how long a step started there runs before its
- * screen changes.
+ * The timeline as the model is shown it: every state, with where its clip
+ * starts and what the footage says about that clip (decision 0084). Every
+ * moment has a full STEP_MS clip, so none is too short to offer — the
+ * hidden-moment filter of decision 0074 has nothing left to hide. `twoPages`
+ * rides along only when true.
  */
-export function planPromptTimeline(
-  timeline: AnalysisState[],
-  clips: number[],
-  pinnedIndex?: number,
-) {
-  return timeline
-    .map((s, index) => ({
-      index,
-      timestampMs: s.timestampMs,
-      screenName: s.screenName,
-      visibleText: s.visibleText,
-      action: s.action,
-      actionType: s.actionType,
-      // undefined (v2-era analyses) drops out of the JSON entirely.
-      screenKind: s.screenKind,
-      sameStateAsPrevious: s.sameStateAsPrevious,
-      legibility: s.legibility,
-      salienceNote: s.salienceNote,
-      clipMs: clips[index]!,
-    }))
-    .filter((entry) => entry.index === pinnedIndex || captionableClip(entry.clipMs));
+export function planPromptTimeline(timeline: AnalysisState[], clips: PlacedClip[]) {
+  return timeline.map((s, index) => ({
+    index,
+    timestampMs: s.timestampMs,
+    screenName: s.screenName,
+    visibleText: s.visibleText,
+    action: s.action,
+    actionType: s.actionType,
+    // undefined (v2-era analyses) drops out of the JSON entirely.
+    screenKind: s.screenKind,
+    sameStateAsPrevious: s.sameStateAsPrevious,
+    legibility: s.legibility,
+    salienceNote: s.salienceNote,
+    clipStartMs: clips[index]!.startMs,
+    calm: clips[index]!.calm,
+    twoPages: clips[index]!.twoPages || undefined,
+  }));
 }
 
 /**
@@ -1484,17 +1483,17 @@ function dryRunPlan(
   questionnaire: Questionnaire,
   minSteps: number,
   maxSteps: number,
-  /** Every state's own clip (timelineClipMs). A state too short to caption is
-   *  not selectable on the model path, so the canned plan skips it too. */
-  clips: number[],
+  /** Every state's clip (placeClips): the canned plan obeys the no-shared-
+   *  footage rule it is validated against. */
+  clips: PlacedClip[],
   /** States the canned plan may not select — the pinned access step and its
-   *  drop zone, which withPin prepends and removes. Filtered ONCE, here, so
-   *  the ending lookup below cannot reach back into the zone either. */
-  exclude?: (index: number, state: AnalysisState) => boolean,
+   *  zone, which withPin prepends and removes. Filtered ONCE, here, so the
+   *  ending lookup below cannot reach back into the zone either. */
+  exclude?: (index: number) => boolean,
 ): PlanOutput {
   const indexed = timeline
     .map((state, index) => ({ state, index }))
-    .filter(({ state, index }) => !exclude?.(index, state) && captionableClip(clips[index]!));
+    .filter(({ index }) => !exclude?.(index));
   // The quality pool the canned plan prefers, and the wider pool the validator
   // will actually accept. They are NOT the same set — "low" and idle states
   // are legal steps, they are just poor ones — so a timeline that is mostly
@@ -1525,14 +1524,14 @@ function dryRunPlan(
       state.actionType === "result" && state.legibility !== "unreadable" && !isSkippedKind(state),
   );
   const lastResult = results[results.length - 1];
+  const startOf = (entry: (typeof indexed)[number]): number => clips[entry.index]!.startMs;
 
-  // Thin to the cap keeping the ending, then respect the min-gap rule.
+  // Thin to the cap keeping the ending, then make the clips share no footage.
   // subsampleClusters always keeps its last element and lastResult is appended
-  // straight after it, so (final candidate, success screen) is exactly the pair
-  // a real recording is most likely to have under the min gap — leaving it
-  // in would make the canned plan fail its own validation and throw. Walk
-  // backwards dropping the EARLIER of any too-close pair: the ending is the one
-  // state the format cannot lose.
+  // straight after it, so (final candidate, success screen) is exactly the
+  // pair most likely to overlap — leaving it in would make the canned plan
+  // fail its own validation and throw. Walk backwards dropping the EARLIER of
+  // any overlapping pair: the ending is the one state the format cannot lose.
   const pick = (pool: typeof indexed): typeof indexed => {
     let kept = subsampleClusters(pool, maxSteps);
     if (lastResult) {
@@ -1545,9 +1544,7 @@ function dryRunPlan(
     const spaced: typeof kept = [];
     for (let i = kept.length - 1; i >= 0; i--) {
       const next = spaced[spaced.length - 1];
-      if (!next || next.state.timestampMs - kept[i]!.state.timestampMs >= MIN_GAP_MS) {
-        spaced.push(kept[i]!);
-      }
+      if (!next || startOf(kept[i]!) + STEP_MS <= startOf(next)) spaced.push(kept[i]!);
     }
     return spaced.reverse();
   };
@@ -1557,27 +1554,22 @@ function dryRunPlan(
   // minimum-step waiver will NOT forgive (it counts the legal pool). When even
   // the legal pool is short the waiver does forgive it, so a short plan there
   // is correct rather than a throw.
-  // Maximum-cardinality selection that still ends on the success screen: walk
-  // BACKWARDS from the ending taking every state that clears the min gap.
-  // On a line that greedy is optimal, and it is the same walk the
-  // minimum-step waiver counts — which is the whole point. `pick` thins with
+  //
+  // The last resort is the very selection the waiver counts
+  // (largestSeparateSelection) — which is the whole point. `pick` thins with
   // subsampleClusters, which is index-even, so a burst of near-duplicate
-  // frames can spend most of the cap before the min-gap walk even runs; the
+  // frames can spend most of the cap before the overlap walk even runs; the
   // waiver then sees states the canned plan threw away and refuses to forgive
-  // the shortfall, and the keyless path throws. Widening the POOL cannot help
-  // when the loss is in the THINNING, which is what the earlier fix missed.
+  // the shortfall, and the keyless path throws.
   const dense = (pool: typeof indexed): typeof indexed => {
-    const end = lastResult ?? pool[pool.length - 1];
-    if (!end) return [];
-    const out = [end];
-    for (let i = pool.length - 1; i >= 0; i--) {
-      const c = pool[i]!;
-      if (c.index === end.index || c.state.timestampMs > end.state.timestampMs) continue;
-      if (out[out.length - 1]!.state.timestampMs - c.state.timestampMs >= MIN_GAP_MS) out.push(c);
-    }
-    // Newest-first while building; chronological out, trimmed off the FRONT so
-    // the ending always survives the cap.
-    return out.reverse().slice(-maxSteps);
+    const selection = largestSeparateSelection(
+      pool.map(({ index }) => index),
+      timeline,
+      clips,
+      results.map(({ index }) => index),
+    );
+    // Chronological; trimmed off the FRONT so the ending always survives the cap.
+    return selection.slice(-maxSteps).map((index) => ({ state: timeline[index]!, index }));
   };
 
   let kept = pick(quality);
@@ -1599,7 +1591,7 @@ function dryRunPlan(
       questionnaire.product_name
     )
       .split(/\s+/)
-      .slice(0, 4)
+      .slice(0, MAX_LABEL_WORDS)
       .join(" "),
   }));
   const unexplainedMoments = timeline
@@ -1639,9 +1631,12 @@ export async function generateStepPlan(
     questionnaire: Questionnaire;
     /** demos.description — reaches the prompt AND the label-word vocabulary. */
     demoDescription?: string | null;
-    /** demos.duration_ms — the last step's ceiling; null/absent falls back to
-     *  one sample past the last state (recordingEndMs). */
+    /** demos.duration_ms — where the recording ends; null/absent falls back
+     *  to one sample past the last state (recordingEndMs). */
     recordingMs?: number | null;
+    /** The analysis's footage instants in ms (analysisInstants); null/absent =
+     *  not known, and no clip is then called calm. */
+    instants?: number[] | null;
     businessId?: string;
     jobId?: string;
   },
@@ -1654,19 +1649,27 @@ export async function generateStepPlan(
     minSteps,
     await getConfigValueOr(db, "a_steps_max", z.number(), A_STEPS_MAX_DEFAULT),
   );
-  const bounds = clipBounds(await stepDurations(db), opts.timeline, opts.recordingMs);
-  const runtime = await stepRuntimeBand(db);
-  const clips = timelineClipMs(opts.timeline, bounds);
+  const {
+    clips,
+    sampleMs,
+    recordingEndMs: endMs,
+  } = await momentClips(db, {
+    timeline: opts.timeline,
+    recordingMs: opts.recordingMs,
+    instants: opts.instants ?? null,
+  });
 
   // The access moment, pinned as step 1 on both branches (see ACCESS_LABEL).
-  // The model or the canned planner fills the plan AROUND it: one step and
-  // its clip are already spoken for, so the counts and the band they see are
-  // reduced by exactly what the pin takes, while findPlanViolations checks
-  // the COMBINED plan against the full ones — consistent by construction.
-  // The prompt file is the shipped version; the pinned rendering is marked on
-  // the stored version so pinned plans are distinguishable in the row.
+  // The model or the canned planner fills the plan AROUND it: one step is
+  // already spoken for, so the counts they see are reduced by exactly that,
+  // while findPlanViolations checks the COMBINED plan against the full ones —
+  // consistent by construction. The prompt file is the shipped version; the
+  // pinned rendering is marked on the stored version so pinned plans are
+  // distinguishable in the row.
   const access = findAccessMoment(opts.timeline, {
-    bounds,
+    clips,
+    sampleMs,
+    recordingEndMs: endMs,
     link: opts.questionnaire.link,
   });
   const pinned = access ?? undefined;
@@ -1681,26 +1684,15 @@ export async function generateStepPlan(
       modelMin,
       modelMax,
       clips,
-      access
-        ? (index, state) =>
-            index === access.index ||
-            (state.timestampMs >= access.runStartMs && state.timestampMs < access.dropUntilMs)
-        : undefined,
+      access ? (index) => index === access.index || access.zone.has(index) : undefined,
     );
-    const steps = withPin(canned.steps, opts.timeline, access);
+    const steps = withPin(canned.steps, access);
     // The canned plan goes through the same enforcement as a real one, so the
     // whole validation path runs keyless; a violation here is a code bug.
-    //
-    // Minus the runtime band, deliberately. The canned labels are the first
-    // line of OCR off each screen, so their read-time — and therefore the
-    // assembled total — measures the recording's own text, not anything a
-    // writer chose. Holding a mechanical stub to a band that exists to size
-    // AUTHORED Hebrew would mean tuning the stub, not the format. The band is
-    // unit-tested directly and enforced on every model plan.
     const violations = findPlanViolations(steps, opts.timeline, maxSteps, {
       minSteps,
       notes: canned.notes,
-      bounds,
+      clips,
       pinned,
     });
     if (violations.length > 0) {
@@ -1709,7 +1701,7 @@ export async function generateStepPlan(
     return {
       // The highlight rides along so the keyless shape matches live.
       steps: withOffScreenWords(
-        assembleSteps(steps, opts.timeline, bounds),
+        assembleSteps(steps, opts.timeline, clips),
         opts.timeline,
         opts.questionnaire,
         opts.demoDescription,
@@ -1722,42 +1714,27 @@ export async function generateStepPlan(
     };
   }
 
-  // The band the model is asked to fill on its own — the full band minus the
-  // pin's clip, which the combined plan then has to total inside.
-  const modelRuntime = access
-    ? {
-        minMs: Math.max(0, runtime.minMs - access.pinMs),
-        maxMs: Math.max(0, runtime.maxMs - access.pinMs),
-      }
-    : runtime;
-
   const rendered = renderPrompt("plan_demo_steps", {
     questionnaire: JSON.stringify(opts.questionnaire, null, 2),
-    timeline: JSON.stringify(planPromptTimeline(opts.timeline, clips, access?.index), null, 2),
+    timeline: JSON.stringify(planPromptTimeline(opts.timeline, clips), null, 2),
     min: modelMin,
     max: modelMax,
     // v11+. Older prompt files never reference {{timing}} and are unaffected —
     // renderPrompt only substitutes what the template asks for.
-    timing: planTimingMarkdown({
-      maxMs: bounds.maxMs,
-      runtime: modelRuntime,
-      minSteps: modelMin,
-      maxSteps: modelMax,
-    }),
+    timing: planTimingMarkdown({ minSteps: modelMin, maxSteps: modelMax }),
     // v13+, same one-way compatibility as {{timing}}. The sentinel mirrors
     // the vo_script pattern (copy.ts): the template always has SOMETHING to
     // say where the description would go.
     demo_description: opts.demoDescription?.trim() || "(אין — התבסס על השאלון והמסכים בלבד)",
   });
   // No access moment: the prompt file verbatim. A pin: the notice under it,
-  // stamped "+access-pin". Every model plan is stamped "+pickable" first: the
-  // timeline it was given holds only pickable moments, and rows from before
-  // that (bare "@v15") were given every state — the boundary is on the row
-  // (founder, decision 0074).
+  // stamped "+access-pin". (v15 rows also carry "+pickable": the model was
+  // shown only moments long enough to caption, decision 0074. Since v16 every
+  // moment has a full clip and the whole timeline is shown again.)
   const text = access
     ? `${rendered.text}\n\n${accessNotice(access, opts.timeline, modelMin, modelMax)}`
     : rendered.text;
-  const promptVersion = markVersion(`${rendered.promptVersion}+pickable`);
+  const promptVersion = markVersion(rendered.promptVersion);
 
   // A BudgetError from a later call parks the JOB, and the resume re-runs
   // the first call. That re-pay is self-limiting — it only occurs when the
@@ -1778,29 +1755,15 @@ export async function generateStepPlan(
     return object;
   };
 
-  // A model pick of a state it was never offered — its own clip cannot carry
-  // a caption (decision 0074). Stripped in every round, whatever the model
-  // returns, the way withPin strips the drop zone. Indexes outside the
-  // timeline pass through for the validator to name.
-  const isHiddenPick = (step: { sourceIndex: number }): boolean =>
-    Number.isInteger(step.sourceIndex) &&
-    opts.timeline[step.sourceIndex] !== undefined &&
-    step.sourceIndex !== access?.index &&
-    !captionableClip(clips[step.sourceIndex]!);
-  // The pin first, then the model's own steps after withPin has removed
-  // anything that duplicates or crowds it.
-  const pinnedPlan = (output: PlanOutput): { sourceIndex: number; label: string }[] =>
-    withPin(output.steps, opts.timeline, access);
-  // Every check runs on the COMBINED plan: the pinned plan minus the picks the
-  // model was never offered.
+  // Every check runs on the COMBINED plan: the pin first, then the model's
+  // own steps after withPin has removed anything that duplicates or crowds it.
   const combined = (output: PlanOutput): { sourceIndex: number; label: string }[] =>
-    pinnedPlan(output).filter((step) => !isHiddenPick(step));
+    withPin(output.steps, access);
   const validate = (output: PlanOutput): string[] =>
     findPlanViolations(combined(output), opts.timeline, maxSteps, {
       minSteps,
       notes: output.notes,
-      bounds,
-      runtime,
+      clips,
       pinned,
     });
 
@@ -1817,7 +1780,7 @@ export async function generateStepPlan(
       .map((v) => `- ${v}`)
       .join(
         "\n",
-      )}\n\nReturn the same plan with the minimal edits that fix every violation named above. Keep every step and label the violations above do not implicate unchanged, and keep every label at 6 words maximum.`;
+      )}\n\nReturn the same plan with the minimal edits that fix every violation named above. Keep every step and label the violations above do not implicate unchanged, and keep every label at ${MAX_LABEL_WORDS} words maximum.`;
 
   let output = await callOnce(text);
   let violations = validate(output);
@@ -1833,41 +1796,44 @@ export async function generateStepPlan(
   }
   let steps = combined(output);
   // "+repaired" marks a stored plan that is not the model's last answer as
-  // given: a pick was stripped from it, or the repair below stored it. A pick
-  // inside the pin's drop zone is not one — withPin has always removed those.
-  let repaired = pinnedPlan(output).some(isHiddenPick);
+  // given: the repair below dropped a step from it. A plan stored with only a
+  // long caption or a short count left over is the model's own answer — its
+  // last retry_violations entry says what was left. A pick inside the pin's
+  // zone is not a repair either — withPin has always removed those.
+  let repaired = false;
   if (violations.length > 0) {
-    // The last call is spent. Drop what dropping fixes, then hold the plan to
-    // the model's rules minus the two a short draft is forgiven — the runtime
-    // floor and the minimum step count (decision 0074: a short draft the
-    // customer can extend beats a failure). Anything else still violating,
-    // an unreadable ending, or fewer than REPAIR_MIN_STEPS left, fails
-    // exactly as it always did.
-    const fixed = repairPlanSteps(steps, opts.timeline, bounds, {
-      maxMs: runtime.maxMs,
+    // The last call is spent. Drop what dropping fixes — shared footage, a
+    // count over the maximum — then hold the plan to the model's rules minus
+    // the two a draft is forgiven: the minimum step count (decision 0074: a
+    // short draft the customer can extend beats a failure) and a caption over
+    // the word ceiling (decision 0086: the editor warns, the customer cuts a
+    // word). Anything else still violating, or fewer than REPAIR_MIN_STEPS
+    // left on a recording that offers that many, fails exactly as it always
+    // did.
+    const fixed = repairPlanSteps(steps, opts.timeline, clips, {
+      maxSteps,
       pinnedIndex: access?.index,
     });
     if (
       fixed === null ||
-      fixed.length < REPAIR_MIN_STEPS ||
       findPlanViolations(fixed, opts.timeline, maxSteps, {
-        minSteps: 1,
+        minSteps: REPAIR_MIN_STEPS,
         notes: output.notes,
-        bounds,
-        runtime: { minMs: 0, maxMs: runtime.maxMs },
+        clips,
         pinned,
+        allowLongLabels: true,
       }).length > 0
     ) {
       throw new PlanViolationError({ promptVersion, rounds });
     }
+    repaired = fixed.length < steps.length;
     steps = fixed;
-    repaired = true;
   }
 
   return {
     // The provenance highlight, computed once on the accepted plan (0049).
     steps: withOffScreenWords(
-      assembleSteps(steps, opts.timeline, bounds),
+      assembleSteps(steps, opts.timeline, clips),
       opts.timeline,
       opts.questionnaire,
       opts.demoDescription,
@@ -2016,6 +1982,7 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
       questionnaire,
       demoDescription: demo.description,
       recordingMs: demo.durationMs,
+      instants: await analysisInstants(ctx.db, plan.analysisId),
       businessId: demo.businessId,
       jobId: job.id,
     });
@@ -2058,10 +2025,15 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
 // Edits + approval (the gate)
 // ---------------------------------------------------------------------------
 
+/** updatePlanSteps' refusal of a selection whose clips share footage (decision
+ *  0087). Exported so the web's error mapping matches the message, not a copy
+ *  of it. */
+export const PLAN_STEPS_OVERLAP_MESSAGE = "plan steps overlap in the footage";
+
 /**
  * Replace a plan's steps with the user's selection. The client sends only
- * {sourceIndex, label} — timestamp, actionType and duration are re-derived
- * server-side and the result re-sorted by timestamp: chronology is a property
+ * {sourceIndex, label} — timestamp, actionType and the clip are derived
+ * server-side and the result ordered by timestamp: chronology is a property
  * of the format, not a client convention. Labels are NOT run through
  * findOffScreenWords — the highlight is for the model's words. A step whose
  * label the customer CHANGED stores offScreenWords: [] (the words are theirs
@@ -2071,9 +2043,18 @@ export async function handlePlanDemoSteps(job: Job, ctx: JobContext): Promise<Jo
  * save that wiped every mark would take the highlight away from the labels
  * the customer never touched. An added step has no stored marks and gets [].
  *
+ * The clip (decisions 0076, 0084): a step already stored WITH a clip
+ * (`startMs`) keeps it, whatever its label — a clip the customer watched
+ * never moves under them. Every other step — newly added, or stored before
+ * steps had clips — gets its moment's placed 2 s clip. Two steps that would
+ * then share footage are refused (0087): the customer deletes one.
+ *
  * Before approval the row mutates in place. Any edit to an APPROVED plan forks
  * a new row (renders reference plans by id, like audio pins its script), and
- * any edit leaves approvedAt clear.
+ * any edit leaves approvedAt clear. A fork that changes nothing — the
+ * editor's "edit a copy" — copies the stored steps exactly as they are, so an
+ * approved plan can always be opened for editing, whatever its steps would
+ * look like re-placed (decision 0088).
  */
 export async function updatePlanSteps(
   db: Db,
@@ -2092,8 +2073,8 @@ export async function updatePlanSteps(
     .where(eq(demoAnalyses.id, plan.analysisId))
     .limit(1);
   const timeline = analysisTimelineSchema.parse(analysisRows[0]?.timeline ?? []);
-  // The recording's length is the last step's ceiling — the same row the
-  // generation path reads, so an edit can never lengthen a step past it.
+  // The recording's length bounds every clip — the same row the generation
+  // path reads, so an edit can never place a clip past it.
   const demoRows = await db
     .select({ durationMs: demos.durationMs })
     .from(demos)
@@ -2122,21 +2103,13 @@ export async function updatePlanSteps(
     }
   }
 
-  // The stored row's marks, by sourceIndex — carried only onto a step whose
-  // label is unchanged (trimmed, as assembleSteps stores it). A row from
-  // before 0049, or one whose steps fail to parse, carries none.
+  // The stored row's steps, by sourceIndex. A row whose steps fail to parse
+  // carries none.
   const stored = planStepsSchema.safeParse(plan.steps);
-  const storedBySource = new Map(
-    (stored.success ? stored.data : []).map((step) => [step.sourceIndex, step]),
-  );
-  const bounds = clipBounds(await stepDurations(db), timeline, demoRows[0]?.durationMs);
-  const steps = assembleSteps(opts.steps, timeline, bounds).map((step) => {
-    const before = storedBySource.get(step.sourceIndex);
-    const unchanged = before !== undefined && before.label.trim() === step.label;
-    return { ...step, offScreenWords: unchanged ? (before.offScreenWords ?? []) : [] };
-  });
+  const storedSteps = stored.success ? stored.data : [];
+  const storedBySource = new Map(storedSteps.map((step) => [step.sourceIndex, step]));
 
-  const fork = async (): Promise<StepPlan> => {
+  const fork = async (steps: PlanStep[]): Promise<StepPlan> => {
     const inserted = await db
       .insert(demoStepPlans)
       .values({
@@ -2152,7 +2125,36 @@ export async function updatePlanSteps(
     return inserted[0]!;
   };
 
-  if (plan.approvedAt) return fork();
+  // "Edit a copy": the same steps with the same labels. An exact copy, not a
+  // re-placed one — nothing was edited yet.
+  const unchanged =
+    opts.steps.length === storedSteps.length &&
+    opts.steps.every(
+      (step) => storedBySource.get(step.sourceIndex)?.label.trim() === step.label.trim(),
+    );
+  if (plan.approvedAt && unchanged) return fork(storedSteps);
+
+  const { clips } = await momentClips(db, {
+    timeline,
+    recordingMs: demoRows[0]?.durationMs,
+    instants: await analysisInstants(db, plan.analysisId),
+  });
+  const keep = new Map<number, { startMs: number; twoPages?: boolean }>();
+  for (const step of storedSteps) {
+    if (step.startMs !== undefined) {
+      keep.set(step.sourceIndex, { startMs: step.startMs, twoPages: step.twoPages });
+    }
+  }
+  const steps = assembleSteps(opts.steps, timeline, clips, keep).map((step) => {
+    const before = storedBySource.get(step.sourceIndex);
+    const same = before !== undefined && before.label.trim() === step.label;
+    return { ...step, offScreenWords: same ? (before.offScreenWords ?? []) : [] };
+  });
+  if (overlappingPairs(steps.map(stepClip)).length > 0) {
+    throw new Error(PLAN_STEPS_OVERLAP_MESSAGE);
+  }
+
+  if (plan.approvedAt) return fork(steps);
 
   const updated = await db
     .update(demoStepPlans)
@@ -2161,7 +2163,7 @@ export async function updatePlanSteps(
     .returning();
   // approvePlan may have won the race after our read — never overwrite what
   // the customer approved; fork exactly as if the approval had been seen.
-  if (!updated[0]) return fork();
+  if (!updated[0]) return fork(steps);
   return updated[0];
 }
 
@@ -2191,9 +2193,12 @@ const fixtureSchema = z.object({
   // demos.description as the live path would carry it — absent on every
   // pre-0029 fixture, which is exactly the no-description case.
   demoDescription: z.string().optional(),
-  // demos.duration_ms of the recording, when known — the last step's
-  // ceiling; absent falls back to one sample past the last state.
+  // demos.duration_ms of the recording, when known — where the recording
+  // ends; absent falls back to one sample past the last state.
   recordingMs: z.number().optional(),
+  // The analysis's footage instants in ms, when the recording's footage was
+  // decoded for the fixture; absent = not known, and nothing is then calm.
+  instants: z.array(z.number()).optional(),
   expected: z.object({
     // The live (real-key) selection. `dryRunSourceIndexes` overrides it under
     // DRY_RUN, where the deterministic keyless plan ignores the prompt's skip
@@ -2215,18 +2220,22 @@ export interface PlanRegressionResult {
   steps: { sourceIndex: number; label: string }[];
   notes: string | null;
   error?: string;
-  /** Set when the plan printed is not the model's own answer — the last-round
-   *  repair stored it or a hidden pick was stripped (decision 0074): the
-   *  violations the model's last call left, [] for a strip alone. */
+  /** Set when the plan printed is not the model's clean answer — the
+   *  last-round repair dropped steps from it (decision 0074), or it was stored
+   *  with something left over (a long caption, a short count): the violations
+   *  the model's last call left. */
   repaired?: string[];
+  /** Which of the two: true when the repair dropped steps. */
+  dropped?: true;
 }
 
 /**
  * Re-run pass 2 over every saved fixture and diff the selection. Green/red is
  * the sourceIndex SET (labels vary run to run and are printed for eyeballing,
  * never asserted). Runs against fixture data directly — no rows are written.
- * A repaired plan is never green: the regress measures the model's answer,
- * and before the repair existed such a run failed outright.
+ * A plan the repair changed, or one stored with a violation left over, is
+ * never green: the regress measures the model's answer, and before the
+ * repair existed such a run failed outright.
  */
 export async function runPlanRegression(db: Db): Promise<PlanRegressionResult[]> {
   // A checkout without the directory is the same empty state as no fixtures.
@@ -2250,12 +2259,17 @@ export async function runPlanRegression(db: Db): Promise<PlanRegressionResult[]>
         questionnaire: fixture.questionnaire,
         demoDescription: fixture.demoDescription,
         recordingMs: fixture.recordingMs,
+        instants: fixture.instants,
       });
       const actual = draft.steps.map((s) => s.sourceIndex).sort((a, b) => a - b);
       const setMatch = JSON.stringify(actual) === JSON.stringify(expected);
       const explained =
         (fixture.expected.allowNotes ?? false) && draft.steps.length > 0 && !!draft.notes?.trim();
-      const repaired = draft.promptVersion.endsWith("+repaired");
+      // Stored by the last-round repair, or stored with something the model's
+      // last call left behind (a long caption, a short count).
+      const leftover = draft.retryViolations[draft.retryViolations.length - 1] ?? [];
+      const dropped = draft.promptVersion.endsWith("+repaired");
+      const repaired = dropped || leftover.length > 0;
       results.push({
         fixture: file,
         pass: (setMatch || explained) && !repaired,
@@ -2263,9 +2277,8 @@ export async function runPlanRegression(db: Db): Promise<PlanRegressionResult[]>
         actual,
         steps: draft.steps.map((s) => ({ sourceIndex: s.sourceIndex, label: s.label })),
         notes: draft.notes,
-        ...(repaired
-          ? { repaired: draft.retryViolations[draft.retryViolations.length - 1] ?? [] }
-          : {}),
+        ...(repaired ? { repaired: leftover } : {}),
+        ...(dropped ? { dropped } : {}),
       });
     } catch (err) {
       results.push({

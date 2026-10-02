@@ -17,53 +17,90 @@ import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { enqueue } from "../src/jobs/queue";
 import { runLane } from "../src/jobs/worker";
+import { overlappingPairs } from "../src/plan-format";
+import { SCREENS_DETECTOR } from "../src/pipelines/analysis-screens";
 import { createBusiness, setQuestionnaire, type Questionnaire } from "../src/pipelines/businesses";
 import { analysisTimelineSchema, type AnalysisState } from "../src/pipelines/demo-analysis";
 import {
   ACCESS_LABEL,
   approvePlan,
-  clipBounds,
   findAccessMoment,
   generateStepPlan,
-  MIN_GAP_MS,
+  momentClips,
+  PLAN_SKIP_SCREEN_KINDS,
   planPromptTimeline,
   PlanViolationError,
   repairPlanSteps,
   runPlanRegression,
-  timelineClipMs,
+  STEP_MS,
+  stepClip,
   totalRuntimeMs,
+  type PlacedClip,
   type PlanStep,
 } from "../src/pipelines/demo-step-plans";
 import { createTestDb } from "./helpers/pglite";
 
 /**
- * Decision 0074: the model is never offered a moment that cannot carry a
- * caption, and a plan that still violates after the last corrective call is
- * repaired by dropping steps instead of failed.
+ * Decision 0074 on fixed 2 s clips (0076, 0084): every moment is offered to
+ * the model with its clip, and a plan that still violates after the last
+ * corrective call is repaired by dropping steps instead of failed.
  *
- * The two real timelines are the analyses behind the two plans that failed
- * live on 2026-10-01 — bd0913b4 (analysis 4219e82e) and ce687d4a (analysis
- * 6658999c), two uploads of the same 84s tavnit.ai recording. Their timing,
- * action types and screen structure are production's; their TEXT is not —
+ * Three real timelines. 4219e82e and 6658999c are the analyses behind the two
+ * plans that failed live on 2026-10-01 — bd0913b4 and ce687d4a, two uploads of
+ * the same 84s tavnit.ai recording. f6e343d1 is "T4", a 73s recording on which
+ * no moment a plan may select has a calm clip. Their timing, action types,
+ * screen structure and footage instants are production's; their TEXT is not —
  * every word is a placeholder token (test/data/, each file's _comment says
  * what was kept and why). Failed rows store no steps, so the model answers
- * below are reconstructions: bd0913b4's last round is the one whose total
- * matches the stored violation exactly (21600ms).
+ * below are picks by index made for each case, never a stored plan.
  */
 
-function analysis(id: string): { link: string; recordingMs: number; timeline: AnalysisState[] } {
+interface Analysis {
+  link: string;
+  recordingMs: number;
+  instants: number[];
+  timeline: AnalysisState[];
+}
+
+function analysis(id: string): Analysis {
   const raw = JSON.parse(
     readFileSync(new URL(`./data/analysis-${id}.json`, import.meta.url), "utf8"),
-  ) as { link: string; recordingMs: number; timeline: unknown };
+  ) as { link: string; recordingMs: number; instants: number[]; timeline: unknown };
   return {
     link: raw.link,
     recordingMs: raw.recordingMs,
+    instants: raw.instants,
     timeline: analysisTimelineSchema.parse(raw.timeline),
   };
 }
 
 const BD0913B4 = analysis("4219e82e");
 const CE687D4A = analysis("6658999c");
+const T4 = analysis("f6e343d1");
+
+/**
+ * Per recording: the access step code pins, the states it takes off the table
+ * with it, and one clean answer — moments a plan may select (readable, no
+ * skipped kind, not a duplicate frame, outside the pin's zone) whose clips
+ * share no footage, ending on the success state.
+ */
+const RECORDINGS = [
+  {
+    id: "4219e82e",
+    a: BD0913B4,
+    pin: 6,
+    zone: [0, 1, 2, 3, 4, 5, 7],
+    clean: [8, 11, 33, 41, 49, 57],
+  },
+  {
+    id: "6658999c",
+    a: CE687D4A,
+    pin: 6,
+    zone: [0, 1, 2, 3, 4, 5, 7],
+    clean: [8, 11, 33, 41, 49, 57],
+  },
+  { id: "f6e343d1", a: T4, pin: 2, zone: [0, 1, 3, 4], clean: [8, 9, 11, 13, 16, 19, 23] },
+];
 
 const QUESTIONNAIRE: Questionnaire = {
   category: "app_or_digital",
@@ -74,7 +111,6 @@ const QUESTIONNAIRE: Questionnaire = {
   tone: "friendly",
 };
 
-const DURATIONS = { maxMs: 4000, sampleMs: 200 };
 const usage = { inputTokens: 1000, outputTokens: 200 };
 const answer = (steps: [number, string][], notes: string | null = null) => ({
   object: {
@@ -84,6 +120,12 @@ const answer = (steps: [number, string][], notes: string | null = null) => ({
   },
   usage,
 });
+/** A three-word caption on each pick — inside the word ceiling, so a case's
+ *  violations are only the ones it sets up. */
+const say = (indexes: number[]): [number, string][] =>
+  indexes.map((sourceIndex) => [sourceIndex, `ממשיכים לשלב ${sourceIndex}`]);
+/** Six words: two over what a 2 s step can show. */
+const SIX_WORDS = "בוחרים את הדמות שתציג את המוצר";
 const picks = (steps: PlanStep[]): number[] => steps.map((s) => s.sourceIndex);
 const promptOf = (call: number): string =>
   (generateObject.mock.calls[call]![0] as { prompt: string }).prompt;
@@ -119,232 +161,254 @@ afterAll(async () => {
   await pg.close();
 });
 
-describe("the model is offered only moments that can carry a caption (0074, D1)", () => {
+/** Every moment's clip, read the one way the plan job reads it. */
+const clipsOf = (a: Analysis) =>
+  momentClips(db, { timeline: a.timeline, recordingMs: a.recordingMs, instants: a.instants });
+
+/** What every stored plan is, repaired or not: each step its moment's placed
+ *  2 s clip, and no footage shown twice. */
+async function expectPlacedSteps(a: Analysis, steps: PlanStep[]): Promise<void> {
+  const { clips } = await clipsOf(a);
+  for (const step of steps) {
+    expect(step.durationMs).toBe(STEP_MS);
+    expect(step.startMs).toBe(clips[step.sourceIndex]!.startMs);
+    expect(step.twoPages).toBe(clips[step.sourceIndex]!.twoPages ? true : undefined);
+  }
+  expect(overlappingPairs(steps.map(stepClip))).toEqual([]);
+  expect(totalRuntimeMs(steps)).toBe(steps.length * STEP_MS);
+}
+
+describe("every moment is offered to the model, with its clip (0084)", () => {
   it.each([
-    ["4219e82e", BD0913B4, 43],
-    ["6658999c", CE687D4A, 41],
-  ] as const)("analysis %s: nothing under 1600ms is offered, the pin excepted", (_id, a, shown) => {
-    const bounds = clipBounds(DURATIONS, a.timeline, a.recordingMs);
-    const clips = timelineClipMs(a.timeline, bounds);
-    const access = findAccessMoment(a.timeline, { bounds, link: a.link })!;
-    // D1 never touches the pin or its candidates: detection runs on the
-    // whole timeline, the address-bar run included.
-    expect(access).toMatchObject({ index: 0, pinMs: 3600, run: [0, 1, 2, 3, 4, 5, 6] });
+    { ...RECORDINGS[0]!, calm: 16, twoPages: 9 },
+    { ...RECORDINGS[1]!, calm: 16, twoPages: 11 },
+    { ...RECORDINGS[2]!, calm: 1, twoPages: 10 },
+  ])(
+    "analysis $id: no state is held back, and each says where its clip starts",
+    async ({ a, pin, zone, clean, calm, twoPages }) => {
+      const { clips, sampleMs, recordingEndMs } = await clipsOf(a);
+      const offered = planPromptTimeline(a.timeline, clips);
+      expect(offered).toHaveLength(a.timeline.length);
+      offered.forEach((entry, i) => {
+        // The index is the sourceIndex the model answers with.
+        expect(entry.index).toBe(i);
+        expect(entry.timestampMs).toBe(a.timeline[i]!.timestampMs);
+        expect(entry.clipStartMs).toBe(clips[i]!.startMs);
+        expect(entry.calm).toBe(clips[i]!.calm);
+        // Only when true, so a one-page clip carries no such key in the JSON.
+        expect(entry.twoPages).toBe(clips[i]!.twoPages ? true : undefined);
+      });
+      expect(offered.filter((entry) => entry.calm)).toHaveLength(calm);
+      expect(offered.filter((entry) => entry.twoPages)).toHaveLength(twoPages);
 
-    const offered = planPromptTimeline(a.timeline, clips, access.index);
-    expect(offered).toHaveLength(shown);
-    expect(offered[0]).toMatchObject({ index: 0, clipMs: 3600 });
-    for (const entry of offered) {
-      // The absolute index survives the gaps — it is the sourceIndex.
-      expect(entry.timestampMs).toBe(a.timeline[entry.index]!.timestampMs);
-      if (entry.index !== access.index) expect(entry.clipMs).toBeGreaterThanOrEqual(MIN_GAP_MS);
-    }
-    // And nothing that can carry a caption is held back.
-    const hidden = a.timeline.map((_, i) => i).filter((i) => !offered.some((e) => e.index === i));
-    for (const i of hidden) expect(clips[i]).toBeLessThan(MIN_GAP_MS);
-    // State 9 — picked in both failed plans — is one of them.
-    expect(hidden).toContain(9);
+      // The pin and the clean answer the cases below build on.
+      const access = findAccessMoment(a.timeline, {
+        clips,
+        sampleMs,
+        recordingEndMs,
+        link: a.link,
+      })!;
+      expect(access.index).toBe(pin);
+      expect([...access.zone].sort((x, y) => x - y)).toEqual(zone);
+      for (const index of clean) {
+        const s = a.timeline[index]!;
+        expect(s.legibility).not.toBe("unreadable");
+        expect(s.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(s.screenKind)).toBe(false);
+        expect(s.sameStateAsPrevious).toBe(false);
+        expect(access.zone.has(index)).toBe(false);
+      }
+      expect(a.timeline[clean[clean.length - 1]!]!.actionType).toBe("result");
+    },
+  );
+
+  it("no moment T4's plan may select has a calm clip", async () => {
+    const { clips } = await clipsOf(T4);
+    const selectable = T4.timeline
+      .map((s, index) => ({ s, index }))
+      .filter(
+        ({ s }) =>
+          s.legibility !== "unreadable" &&
+          !(s.screenKind !== undefined && PLAN_SKIP_SCREEN_KINDS.has(s.screenKind)) &&
+          !s.sameStateAsPrevious,
+      );
+    expect(selectable.map(({ index }) => index)).toEqual([
+      6, 7, 8, 9, 11, 12, 13, 16, 17, 18, 19, 21, 22, 23, 24, 25, 26,
+    ]);
+    expect(selectable.filter(({ index }) => clips[index]!.calm)).toEqual([]);
   });
 
-  it("the picks ce687d4a kept returning are not in its timeline at all", () => {
-    const bounds = clipBounds(DURATIONS, CE687D4A.timeline, CE687D4A.recordingMs);
-    const clips = timelineClipMs(CE687D4A.timeline, bounds);
-    // Round 1 picked 9 and 12, round 2 moved to 11, round 3 back to 12: each
-    // a 200ms or 1200ms clip.
-    expect([9, 11, 12].map((i) => clips[i])).toEqual([1200, 200, 200]);
-    const offered = planPromptTimeline(CE687D4A.timeline, clips, 0).map((e) => e.index);
-    expect(offered).not.toContain(9);
-    expect(offered).not.toContain(11);
-    expect(offered).not.toContain(12);
-  });
-
-  it("a pin whose own clip is under 1600ms stays in the timeline", () => {
-    // The pin's caption needs 1200ms (G2), so its clip may be shorter than
-    // any model caption could use.
-    const timeline = [
-      state({ timestampMs: 0 }),
-      state({ timestampMs: 1000 }),
-      state({ timestampMs: 2000 }),
-    ];
-    expect(planPromptTimeline(timeline, [1200, 200, 4000], 0).map((e) => e.index)).toEqual([0, 2]);
-    expect(planPromptTimeline(timeline, [1200, 200, 4000]).map((e) => e.index)).toEqual([2]);
-  });
-
-  it("the prompt carries exactly that timeline, stamped +pickable", async () => {
-    generateObject.mockReset().mockResolvedValueOnce(
-      answer([
-        [8, "נכנסים לדף הבית"],
-        [45, "המערכת בונה תוכנית צעדים"],
-        [51, "רואים איך המודעה תיבנה"],
-        [57, "המודעה מוכנה להורדה"],
-      ]),
-    );
-    const draft = await generateStepPlan(db, {
-      timeline: CE687D4A.timeline,
-      questionnaire: { ...QUESTIONNAIRE, link: CE687D4A.link },
-      recordingMs: CE687D4A.recordingMs,
-    });
-    const bounds = clipBounds(DURATIONS, CE687D4A.timeline, CE687D4A.recordingMs);
-    const offered = planPromptTimeline(
-      CE687D4A.timeline,
-      timelineClipMs(CE687D4A.timeline, bounds),
-      0,
-    );
-    expect(promptOf(0)).toContain(JSON.stringify(offered, null, 2));
-    expect(promptOf(0)).toMatch(/"index": 8,/);
-    expect(promptOf(0)).not.toMatch(/"index": 12,/);
-    // A clean plan: marked as generated from the pickable timeline, nothing more.
-    expect(draft.retryViolations).toEqual([[]]);
-    expect(draft.promptVersion).toMatch(/^plan_demo_steps@v\d+\+pickable\+access-pin$/);
-  });
+  it.each(RECORDINGS)(
+    "analysis $id: the prompt carries exactly that timeline",
+    async ({ a, clean }) => {
+      generateObject.mockReset().mockResolvedValueOnce(answer(say(clean)));
+      const draft = await generateStepPlan(db, {
+        timeline: a.timeline,
+        questionnaire: { ...QUESTIONNAIRE, link: a.link },
+        recordingMs: a.recordingMs,
+        instants: a.instants,
+      });
+      const offered = planPromptTimeline(a.timeline, (await clipsOf(a)).clips);
+      expect(promptOf(0)).toContain(JSON.stringify(offered, null, 2));
+      expect(promptOf(0)).toMatch(/"clipStartMs": \d+,\n\s+"calm": (true|false)/);
+      // A clean plan: the model's answer as given, the pin marked and nothing more.
+      expect(draft.retryViolations).toEqual([[]]);
+      expect(draft.promptVersion).toMatch(/^plan_demo_steps@v\d+\+access-pin$/);
+    },
+  );
 });
 
-describe("repairPlanSteps (0074, D2 — pure)", () => {
-  // Three screens. A: a0 0ms, a1 2400ms, a2 3800ms — it ends at 4000ms, so
-  // a0's own clip is 4000 and a1's 1600. B and C each open with a full 4s.
-  const SCREENS: AnalysisState[] = [
-    state({
-      timestampMs: 0,
-      screenName: "לוח בקרה",
-      visibleText: ["קורסים", "משימות"],
-      actionType: "navigate",
-    }),
-    state({ timestampMs: 2400, screenName: "לוח בקרה", visibleText: ["קורסים", "משימות"] }),
-    state({ timestampMs: 3800, screenName: "לוח בקרה", visibleText: ["קורסים", "משימות"] }),
-    state({
-      timestampMs: 5000,
-      screenName: "העלאת קובץ",
-      visibleText: ["גררו לכאן", "בחירה"],
-      actionType: "navigate",
-    }),
-    state({ timestampMs: 9000, screenName: "העלאת קובץ", visibleText: ["גררו לכאן", "בחירה"] }),
-    state({
-      timestampMs: 10_000,
-      screenName: "סיכום מוכן",
-      visibleText: ["הסיכום", "הורדה"],
-      actionType: "navigate",
-    }),
-    state({ timestampMs: 14_000, screenName: "סיכום מוכן", visibleText: ["הסיכום", "הורדה"] }),
-  ];
-  const screens = clipBounds(DURATIONS, SCREENS, 15_000);
-
-  // One page worked down, a state every 4s: every clip is the 4s cap.
-  const PAGE: AnalysisState[] = [0, 1, 2, 3, 4, 5, 6].map((i) =>
-    state({
-      timestampMs: i * 4000,
-      screenName: "קמפיין חדש",
-      visibleText: [`שלב ${i}`],
-      actionType: i === 0 ? "navigate" : i === 6 ? "result" : "tap",
-    }),
+describe("repairPlanSteps (0074 — pure)", () => {
+  // Seven moments, 3 s apart, the last one the success state. Only the order
+  // and the result state are read off the timeline; the clips are hand-made.
+  const MOMENTS: AnalysisState[] = [0, 1, 2, 3, 4, 5, 6].map((i) =>
+    state({ timestampMs: i * 3000, actionType: i === 6 ? "result" : "tap" }),
   );
-  const page = clipBounds(DURATIONS, PAGE, 28_000);
-  const all = (timeline: AnalysisState[]) =>
-    timeline.map((_, sourceIndex) => ({ sourceIndex, label: "כיתוב" }));
+  const at = (startMs: number, calm = true, twoPages = false): PlacedClip => ({
+    startMs,
+    calm,
+    twoPages,
+  });
+  /** Every clip calm and on its own moment — nothing shared — but the ones named. */
+  const placed = (named: Record<number, PlacedClip> = {}): PlacedClip[] =>
+    MOMENTS.map((s, i) => named[i] ?? at(s.timestampMs));
+  const sel = (...indexes: number[]) =>
+    indexes.map((sourceIndex) => ({ sourceIndex, label: "כיתוב" }));
   const kept = (steps: { sourceIndex: number; label: string }[] | null): number[] | null =>
     steps?.map((s) => s.sourceIndex) ?? null;
+  const repair = (
+    steps: { sourceIndex: number; label: string }[],
+    clips: PlacedClip[],
+    opts: { maxSteps?: number; pinnedIndex?: number } = {},
+  ) => kept(repairPlanSteps(steps, MOMENTS, clips, { maxSteps: 10, ...opts }));
 
-  it("the fixture's clips are what the cases below assume", () => {
-    expect(timelineClipMs(SCREENS, screens)).toEqual([4000, 1600, 200, 4000, 200, 4000, 1000]);
-    expect(timelineClipMs(PAGE, page)).toEqual([4000, 4000, 4000, 4000, 4000, 4000, 4000]);
+  it("of two steps sharing footage, the one with the calm clip stays", () => {
+    // 1 runs 3000-5000 and 2 runs 4000-6000.
+    expect(repair(sel(0, 1, 2, 6), placed({ 1: at(3000, false), 2: at(4000) }))).toEqual([0, 2, 6]);
+    expect(repair(sel(0, 1, 2, 6), placed({ 1: at(3000), 2: at(4000, false) }))).toEqual([0, 1, 6]);
   });
 
-  it("drops a step whose caption cannot be read in its clip, and only that step", () => {
-    const steps = [
-      { sourceIndex: 0, label: "פותחים את לוח הבקרה" }, // 2000ms in a 2400ms window
-      { sourceIndex: 1, label: "כל הקורסים והמשימות במקום אחד" }, // 2400ms in 1600ms
-      { sourceIndex: 3, label: "מעלים קובץ" },
-      { sourceIndex: 5, label: "הסיכום מוכן" },
-    ];
-    expect(kept(repairPlanSteps(steps, SCREENS, screens, { maxMs: 21_000 }))).toEqual([0, 3, 5]);
+  it("neither calm: the one whose clip does not show two pages stays", () => {
+    expect(
+      repair(sel(0, 1, 2, 6), placed({ 1: at(3000, false, true), 2: at(4000, false) })),
+    ).toEqual([0, 2, 6]);
+    expect(
+      repair(sel(0, 1, 2, 6), placed({ 1: at(3000, false), 2: at(4000, false, true) })),
+    ).toEqual([0, 1, 6]);
   });
 
-  it("works last to first: dropping a later step rescues the one it was cutting", () => {
-    // a0's six words need 2800ms and a1 cuts it at 2400ms; a1's four words
-    // need 2000ms of a 1600ms clip. First to last would drop both. Last to
-    // first drops a1, and a0 then runs its own 4000ms.
-    const steps = [
-      { sourceIndex: 0, label: "כל הקורסים והמשימות שלכם במקום אחד" },
-      { sourceIndex: 1, label: "בוחרים קורס מתוך הרשימה" },
-      { sourceIndex: 3, label: "מעלים קובץ" },
-      { sourceIndex: 5, label: "הסיכום מוכן" },
-    ];
-    expect(kept(repairPlanSteps(steps, SCREENS, screens, { maxMs: 21_000 }))).toEqual([0, 3, 5]);
-  });
-
-  it("over the ceiling: the shortest step that is enough goes", () => {
-    // 2400 + 1600 + 4000 + 4000 = 12000 against an 11000 ceiling. Dropping a1
-    // frees nothing (a0 absorbs its 1600ms: still 12000), b0 leaves 8000, a0
-    // leaves 9600 — the longest ad at or under the ceiling. Every total is
-    // re-assembled; subtracting a1's 1600ms would have "landed" at 10400.
-    const steps = [0, 1, 3, 5].map((sourceIndex) => ({ sourceIndex, label: "כיתוב" }));
-    expect(kept(repairPlanSteps(steps, SCREENS, screens, { maxMs: 11_000 }))).toEqual([1, 3, 5]);
-  });
-
-  it("when one drop is not enough the biggest cut goes first; ties go to the earlier step", () => {
-    // Seven 4s steps = 28000. No single drop reaches 21000, all cut the same
-    // 4000: the earliest goes, then again the earliest of the five that are
-    // each enough.
-    expect(kept(repairPlanSteps(all(PAGE), PAGE, page, { maxMs: 21_000 }))).toEqual([
-      2, 3, 4, 5, 6,
+  it("a tie keeps the earlier step", () => {
+    expect(repair(sel(0, 1, 2, 6), placed({ 2: at(4000) }))).toEqual([0, 1, 6]);
+    expect(repair(sel(0, 1, 2, 6), placed({ 1: at(3000, false), 2: at(4000, false) }))).toEqual([
+      0, 1, 6,
     ]);
   });
 
-  it("never trims the pin", () => {
-    expect(kept(repairPlanSteps(all(PAGE), PAGE, page, { maxMs: 21_000, pinnedIndex: 0 }))).toEqual(
-      [0, 3, 4, 5, 6],
-    );
+  it("overlaps are resolved as a set, not pair by pair", () => {
+    // 4 (not calm) shares footage with 5 (calm), and 5 with the ending. Pair
+    // by pair the calm 5 beats 4 and then loses to the ending: two steps.
+    // Dropping 5 alone leaves three.
+    const tail = placed({ 4: at(15_000, false), 5: at(16_000), 6: at(17_500) });
+    expect(repair(sel(0, 4, 5, 6), tail, { pinnedIndex: 0 })).toEqual([0, 4, 6]);
+    // The same between unprotected steps: 2 is the calm one, but 1 and 3
+    // clear each other, and two steps are more than one.
+    const chain = placed({ 1: at(3000, false), 2: at(4500), 3: at(6000, false) });
+    expect(repair(sel(1, 2, 3, 6), chain)).toEqual([1, 3, 6]);
   });
 
-  it("never trims the last step or the last selected result state", () => {
-    // The success state (1) is cut to 2000ms by a trailing tap (2): 4000 +
-    // 2000 + 4000 = 10000 against 8000. By length alone the success would go
-    // (it is the shortest step that is enough); it is the ending, so state 0
-    // goes instead.
-    const timeline = [
-      state({ timestampMs: 16_000, screenName: "קמפיין חדש", actionType: "navigate" }),
-      state({ timestampMs: 20_000, screenName: "קמפיין חדש", actionType: "result" }),
-      state({ timestampMs: 22_000, screenName: "קמפיין חדש" }),
-    ];
-    const bounds = clipBounds(DURATIONS, timeline, 26_000);
-    expect(kept(repairPlanSteps(all(timeline), timeline, bounds, { maxMs: 8000 }))).toEqual([1, 2]);
+  it("a step sharing footage with the pin or the ending is the one dropped", () => {
+    // 1 and 5 are the calm ones and still go: the way in and the way out are
+    // what the format cannot lose.
+    const clips = placed({ 0: at(0, false), 1: at(1000), 5: at(17_000), 6: at(18_000, false) });
+    expect(repair(sel(0, 1, 3, 5, 6), clips, { pinnedIndex: 0 })).toEqual([0, 3, 6]);
   });
 
-  it("an ending whose caption cannot be read is not dropped: the plan is not one to repair", () => {
-    // PAGE's last state is its result. Five words need 2400ms; a 26000ms
-    // recording leaves that state a 2000ms clip.
-    const short = clipBounds(DURATIONS, PAGE, 26_000);
+  it("the pin and the ending sharing footage: not a plan to repair", () => {
+    expect(repair(sel(3, 5, 6), placed({ 5: at(17_000) }), { pinnedIndex: 5 })).toBeNull();
+  });
+
+  // Nothing shared. 3 shows two pages; 2 and 4 are not calm, and 4's clip
+  // starts 2000ms before its neighbour's where 2's nearest is 3000ms away.
+  const CROWDED: PlacedClip[] = [
+    at(0),
+    at(2000),
+    at(5000, false),
+    at(9000, false, true),
+    at(12_000, false),
+    at(14_000),
+    at(20_000),
+  ];
+
+  it("over the maximum: a two-page step goes first, then a non-calm one, the most crowded first", () => {
+    const all = sel(0, 1, 2, 3, 4, 5, 6);
+    expect(repair(all, CROWDED, { maxSteps: 6 })).toEqual([0, 1, 2, 4, 5, 6]);
+    expect(repair(all, CROWDED, { maxSteps: 5 })).toEqual([0, 1, 2, 5, 6]);
+    expect(repair(all, CROWDED, { maxSteps: 4 })).toEqual([0, 1, 5, 6]);
+    // Only calm ones left. 0 and 1 are equally crowded: the earlier goes.
+    expect(repair(all, CROWDED, { maxSteps: 3 })).toEqual([1, 5, 6]);
+  });
+
+  it("over the maximum: never the pin, the ending or the last step", () => {
+    const all = sel(0, 1, 2, 3, 4, 5, 6);
+    expect(repair(all, CROWDED, { maxSteps: 3, pinnedIndex: 0 })).toEqual([0, 5, 6]);
+    // The success state (5) with a step after it (6): both stay, and with the
+    // pin they are all that is left — still over a maximum of 2, which is the
+    // caller's to refuse.
+    const trailing = MOMENTS.map((s, i) => ({
+      ...s,
+      actionType: i === 5 ? ("result" as const) : ("tap" as const),
+    }));
+    expect(kept(repairPlanSteps(all, trailing, CROWDED, { maxSteps: 2, pinnedIndex: 0 }))).toEqual([
+      0, 5, 6,
+    ]);
+  });
+
+  it("a pick the re-check will reject is the one to lose: the plan it would fail is not kept for it", () => {
+    // An unreadable or skipped-kind pick still fails the plan. Where one
+    // shares footage with a legal step, keeping it — it is the calm one —
+    // would turn a storable draft into a failure.
+    const withBad = (bad: Partial<AnalysisState>): AnalysisState[] =>
+      MOMENTS.map((s, i) => (i === 2 ? { ...s, ...bad } : s));
+    const clips = placed({ 1: at(3000, false), 2: at(4000) });
+    const run = (timeline: AnalysisState[], maxSteps = 10) =>
+      kept(repairPlanSteps(sel(0, 1, 2, 6), timeline, clips, { maxSteps }));
+    expect(run(MOMENTS)).toEqual([0, 2, 6]);
+    expect(run(withBad({ legibility: "unreadable" }))).toEqual([0, 1, 6]);
+    expect(run(withBad({ screenKind: "loading" }))).toEqual([0, 1, 6]);
+    // Over the maximum it is the first to go too, calm or not.
+    const apart = placed();
+    expect(
+      kept(
+        repairPlanSteps(sel(0, 1, 2, 6), withBad({ legibility: "unreadable" }), apart, {
+          maxSteps: 3,
+        }),
+      ),
+    ).toEqual([0, 1, 6]);
+  });
+
+  it("captions are never touched and never a reason to drop", () => {
     const steps = [
-      { sourceIndex: 4, label: "כיתוב" },
-      { sourceIndex: 5, label: "כיתוב" },
-      { sourceIndex: 6, label: "הקמפיין שלכם מוכן ועלה לאוויר" },
+      { sourceIndex: 0, label: SIX_WORDS },
+      { sourceIndex: 3, label: "" },
+      { sourceIndex: 6, label: "א".repeat(70) },
     ];
-    expect(repairPlanSteps(steps, PAGE, short, { maxMs: 21_000 })).toBeNull();
-    // The same unreadable caption on a last step that is NOT a result state
-    // is an ordinary step: it goes, and the plan ends one step earlier.
-    const noResult = PAGE.map((s) => ({ ...s, actionType: "tap" as const }));
-    expect(kept(repairPlanSteps(steps, noResult, short, { maxMs: 21_000 }))).toEqual([4, 5]);
+    expect(repairPlanSteps(steps, MOMENTS, placed(), { maxSteps: 10 })).toEqual(steps);
   });
 
   it("leaves a plan with nothing to drop exactly as it came, in chronological order", () => {
-    const steps = [5, 0, 3].map((sourceIndex) => ({ sourceIndex, label: "כיתוב" }));
-    expect(kept(repairPlanSteps(steps, SCREENS, screens, { maxMs: 21_000 }))).toEqual([0, 3, 5]);
+    expect(repair(sel(6, 0, 3), placed())).toEqual([0, 3, 6]);
   });
 
   it("does not speak to an index outside the timeline or one picked twice", () => {
-    const one = { sourceIndex: 0, label: "כיתוב" };
-    expect(
-      repairPlanSteps([one, { sourceIndex: 99, label: "כיתוב" }], SCREENS, screens, {
-        maxMs: 21_000,
-      }),
-    ).toBeNull();
-    expect(repairPlanSteps([one, one], SCREENS, screens, { maxMs: 21_000 })).toBeNull();
+    expect(repair(sel(0, 99), placed())).toBeNull();
+    expect(repair(sel(0, 1.5), placed())).toBeNull();
+    expect(repair(sel(0, 3, 0), placed())).toBeNull();
   });
 });
 
-describe("the last-round repair, through the plan job (0074, D2-D4)", () => {
+describe("the last-round repair, through the plan job (0074)", () => {
   async function seedPlanRow(
     email: string,
-    a: { link?: string; recordingMs: number; timeline: AnalysisState[] },
+    a: { link?: string; recordingMs: number; instants?: number[]; timeline: AnalysisState[] },
   ): Promise<string> {
     const business = await createBusiness(db, { ownerEmail: email, name: "עסק" });
     await setQuestionnaire(
@@ -374,6 +438,18 @@ describe("the last-round repair, through the plan job (0074, D2-D4)", () => {
         })
         .returning()
     )[0]!;
+    // The footage row the job reads the instants from — without it nothing is
+    // calm and every clip starts on its moment.
+    if (a.instants) {
+      await db.insert(dbSchema.demoAnalysisFootage).values({
+        analysisId: row.id,
+        fps: 5,
+        fileSha: "x",
+        moments: [],
+        detector: SCREENS_DETECTOR,
+        instants: a.instants.map((atMs) => ({ atMs, strength: 1, abrupt: 1 })),
+      });
+    }
     const plan = (
       await db
         .insert(dbSchema.demoStepPlans)
@@ -390,7 +466,7 @@ describe("the last-round repair, through the plan job (0074, D2-D4)", () => {
 
   async function run(
     email: string,
-    a: { link?: string; recordingMs: number; timeline: AnalysisState[] },
+    a: { link?: string; recordingMs: number; instants?: number[]; timeline: AnalysisState[] },
   ) {
     const planId = await seedPlanRow(email, a);
     await runLane(db, { workerId: "test", handlers: buildHandlers(), drainAndExit: true });
@@ -402,307 +478,259 @@ describe("the last-round repair, through the plan job (0074, D2-D4)", () => {
   const rounds = (row: { retryViolations: unknown }): string[][] =>
     row.retryViolations as string[][];
 
-  const REPAIRED = /^plan_demo_steps@v\d+\+pickable\+access-pin\+repaired$/;
-  const NOT_REPAIRED = /^plan_demo_steps@v\d+\+pickable\+access-pin$/;
+  const REPAIRED = /^plan_demo_steps@v\d+\+access-pin\+repaired$/;
+  const NOT_REPAIRED = /^plan_demo_steps@v\d+\+access-pin$/;
 
-  it("bd0913b4's last round (21.6s) is stored ready at 19.6s, the 2.0s step dropped", async () => {
-    // The plan's own steps, reconstructed: 3600 (pin) + 4000 + 2000 + 4000 +
-    // 4000 + 4000 = 21600ms — the total its stored round 3 names. Dropping
-    // 8, 45 or 51 would leave 17600; dropping 12 leaves 19600, the longest.
-    generateObject.mockReset().mockResolvedValue(
-      answer([
-        [8, "נכנסים לדף הבית של תבנית"],
-        [12, "בחרו דמות לפתיחה"],
-        [45, "המערכת בונה לכם תוכנית צעדים"],
-        [51, "רואים איך המודעה תיבנה"],
-        [57, "המודעה מוכנה להורדה ולפרסום"],
-      ]),
-    );
-    const { planId, row, steps } = await run("repair-bd0913b4@example.com", BD0913B4);
+  it.each(RECORDINGS)(
+    "analysis $id: a clean answer is stored as given — one call, 2 s clips, no mark",
+    async ({ id, a, pin, clean }) => {
+      generateObject.mockReset().mockResolvedValue(answer(say(clean)));
+      const { planId, row, steps } = await run(`clean-${id}@example.com`, a);
 
-    expect(generateObject).toHaveBeenCalledTimes(3);
-    expect(row.status).toBe("ready");
-    expect(row.failKind).toBeNull();
-    expect(row.failReason).toBeNull();
-    expect(picks(steps)).toEqual([0, 8, 45, 51, 57]);
-    expect(steps[0]!.label).toBe(ACCESS_LABEL);
-    expect(steps.map((s) => s.durationMs)).toEqual([3600, 4000, 4000, 4000, 4000]);
-    expect(totalRuntimeMs(steps)).toBe(19_600);
-    // Distinguishable on the row (D4): the mark, and the round that says why.
-    expect(row.promptVersion).toMatch(REPAIRED);
-    expect(rounds(row)).toHaveLength(3);
-    for (const round of rounds(row)) {
-      expect(round).toHaveLength(1);
-      expect(round[0]).toContain("the steps total 21600ms");
-      expect(round[0]).toContain("too LONG by 600ms");
-    }
-    // A repaired draft is an ordinary ready plan: it approves like any other.
-    expect((await approvePlan(db, planId)).approvedAt).not.toBeNull();
-  });
+      expect(generateObject).toHaveBeenCalledTimes(1);
+      expect(row.status).toBe("ready");
+      expect(row.failKind).toBeNull();
+      expect(row.failReason).toBeNull();
+      expect(picks(steps)).toEqual([pin, ...clean]);
+      expect(steps[0]!.label).toBe(ACCESS_LABEL);
+      await expectPlacedSteps(a, steps);
+      expect(rounds(row)).toEqual([[]]);
+      expect(row.promptVersion).toMatch(NOT_REPAIRED);
+      expect((await approvePlan(db, planId)).approvedAt).not.toBeNull();
+    },
+  );
 
-  it("4219e82e: state 9, the pick bd0913b4 made twice, is stripped and never echoed back", async () => {
-    // Round 1 is bd0913b4's last round plus state 9 (a 1200ms clip): without
-    // 9 it is the same 21.6s plan. Round 2 is clean and picks nothing hidden,
-    // so the stored plan is the model's answer as given — not marked.
-    generateObject
-      .mockReset()
-      .mockResolvedValueOnce(
-        answer([
-          [8, "נכנסים לדף הבית של תבנית"],
-          [9, "יוצרים תוכן שיווקי"],
-          [12, "בחרו דמות לפתיחה"],
-          [45, "המערכת בונה לכם תוכנית צעדים"],
-          [51, "רואים איך המודעה תיבנה"],
-          [57, "המודעה מוכנה להורדה ולפרסום"],
-        ]),
-      )
-      .mockResolvedValueOnce(
-        answer([
-          [8, "נכנסים לדף הבית של תבנית"],
-          [45, "המערכת בונה לכם תוכנית צעדים"],
-          [51, "רואים איך המודעה תיבנה"],
-          [57, "המודעה מוכנה להורדה ולפרסום"],
-        ]),
+  it.each([
+    // 35's clip is calm and 36's is not.
+    {
+      id: "4219e82e",
+      a: BD0913B4,
+      picked: [8, 35, 36, 45, 51, 57],
+      pair: "states 35 and 36",
+      stored: [6, 8, 35, 45, 51, 57],
+    },
+    // 18 and 19 were placed on one and the same clip, not calm: the earlier stays.
+    {
+      id: "6658999c",
+      a: CE687D4A,
+      picked: [8, 18, 19, 45, 51, 57],
+      pair: "states 18 and 19",
+      stored: [6, 8, 18, 45, 51, 57],
+    },
+    // Neither is calm, and 12's clip shows two pages.
+    {
+      id: "f6e343d1",
+      a: T4,
+      picked: [8, 9, 12, 13, 19, 23],
+      pair: "states 12 and 13",
+      stored: [2, 8, 9, 13, 19, 23],
+    },
+  ])(
+    "analysis $id: a last round with two steps on the same footage is stored ready with one of them",
+    async ({ id, a, picked, pair, stored }) => {
+      generateObject.mockReset().mockResolvedValue(answer(say(picked)));
+      const { planId, row, steps } = await run(`overlap-${id}@example.com`, a);
+
+      expect(generateObject).toHaveBeenCalledTimes(3);
+      expect(row.status).toBe("ready");
+      expect(row.failKind).toBeNull();
+      expect(row.failReason).toBeNull();
+      expect(picks(steps)).toEqual(stored);
+      await expectPlacedSteps(a, steps);
+      // Distinguishable on the row: the mark, and the round that says why.
+      expect(row.promptVersion).toMatch(REPAIRED);
+      expect(rounds(row)).toHaveLength(3);
+      for (const round of rounds(row)) {
+        expect(round).toEqual([expect.stringContaining(`${pair} show the same footage`)]);
+      }
+      // A repaired draft is an ordinary ready plan: it approves like any other.
+      expect((await approvePlan(db, planId)).approvedAt).not.toBeNull();
+    },
+  );
+
+  it.each(
+    RECORDINGS.flatMap((recording) => [
+      { ...recording, where: "a middle step", at: 1 },
+      { ...recording, where: "the ending", at: recording.clean.length - 1 },
+    ]),
+  )(
+    "analysis $id: a six-word caption on $where is kept for the editor to warn about — ready, not marked",
+    async ({ id, a, pin, clean, at }) => {
+      // Under a fixed clip the remedy is cutting a word, which is the
+      // customer's to do (decision 0086): the step stays, the ending included.
+      const captions = say(clean);
+      captions[at] = [clean[at]!, SIX_WORDS];
+      generateObject.mockReset().mockResolvedValue(answer(captions));
+      const { row, steps } = await run(`six-words-${at}-${id}@example.com`, a);
+
+      expect(generateObject).toHaveBeenCalledTimes(3);
+      expect(row.status).toBe("ready");
+      expect(picks(steps)).toEqual([pin, ...clean]);
+      // The pin is step 0 of the plan the violation numbers.
+      expect(steps[at + 1]!.label).toBe(SIX_WORDS);
+      await expectPlacedSteps(a, steps);
+      // Nothing was dropped, so the plan is the model's own answer: no mark.
+      // The last round is what tells it from a clean one.
+      expect(row.promptVersion).toMatch(NOT_REPAIRED);
+      expect(rounds(row)).toHaveLength(3);
+      for (const round of rounds(row)) {
+        expect(round).toEqual([
+          expect.stringContaining(`step ${at + 1}: label "${SIX_WORDS}" is over 4 words`),
+        ]);
+      }
+    },
+  );
+
+  it.each([
+    { id: "4219e82e", a: BD0913B4, picked: [45, 57], stored: [6, 45, 57], offers: 22 },
+    { id: "6658999c", a: CE687D4A, picked: [45, 57], stored: [6, 45, 57], offers: 22 },
+    { id: "f6e343d1", a: T4, picked: [19, 23], stored: [2, 19, 23], offers: 8 },
+  ])(
+    "analysis $id: a last round that is only short of the minimum is stored as it came",
+    async ({ id, a, picked, stored, offers }) => {
+      // Nothing for code to drop: 3 steps on a timeline that offers 5 and
+      // more. A short draft the customer can extend beats a failure.
+      generateObject.mockReset().mockResolvedValue(answer(say(picked)));
+      const { row, steps } = await run(`short-${id}@example.com`, a);
+
+      expect(generateObject).toHaveBeenCalledTimes(3);
+      expect(row.status).toBe("ready");
+      expect(picks(steps)).toEqual(stored);
+      await expectPlacedSteps(a, steps);
+      expect(row.promptVersion).toMatch(NOT_REPAIRED);
+      expect(rounds(row)).toHaveLength(3);
+      for (const round of rounds(row)) {
+        expect(round).toEqual([
+          expect.stringContaining(
+            `the plan has 3 steps, fewer than the minimum 5 — this timeline offers ${offers} selectable states`,
+          ),
+        ]);
+      }
+    },
+  );
+
+  it.each([
+    // 56's clip shares footage with the ending's (57).
+    { id: "4219e82e", a: BD0913B4, pin: 6, middle: 45, sharing: 56, ending: 57 },
+    { id: "6658999c", a: CE687D4A, pin: 6, middle: 45, sharing: 56, ending: 57 },
+    // And 22's with 23's.
+    { id: "f6e343d1", a: T4, pin: 2, middle: 19, sharing: 22, ending: 23 },
+  ])(
+    "analysis $id: a repair that leaves 3 steps is stored; one that leaves 2 fails as it always did",
+    async ({ id, a, pin, middle, sharing, ending }) => {
+      generateObject.mockReset().mockResolvedValue(answer(say([middle, sharing, ending])));
+      const three = await run(`floor-3-${id}@example.com`, a);
+      expect(three.row.status).toBe("ready");
+      expect(picks(three.steps)).toEqual([pin, middle, ending]);
+      expect(three.row.promptVersion).toMatch(REPAIRED);
+
+      // The same answer without the middle step: the pin and the ending are
+      // all that is left. One or two steps is a failure shown as a ready plan.
+      generateObject.mockReset().mockResolvedValue(answer(say([sharing, ending])));
+      const two = await run(`floor-2-${id}@example.com`, a);
+      expect(generateObject).toHaveBeenCalledTimes(3);
+      expect(two.row.status).toBe("failed");
+      expect(two.row.failKind).toBe("validator");
+      expect(two.row.failReason).toBe("יצירת תוכנית הצעדים נכשלה — נסו שוב");
+      expect(two.row.steps).toBeNull();
+      // Failed rows carry the generation mark too, and never the repair's.
+      expect(two.row.promptVersion).toMatch(NOT_REPAIRED);
+      expect(rounds(two.row)).toHaveLength(3);
+      expect(
+        rounds(two.row)[2]!.some((v) =>
+          v.includes(`states ${sharing} and ${ending} show the same footage`),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  // T4 has no such case: with the pin it offers 8 steps up to its success
+  // state (the count the short-plan violation above names), so no answer on
+  // it is still over the maximum once its shared footage is resolved.
+  it.each([
+    // 12 shows two pages and goes first; then, of the non-calm ones, 8 — its
+    // clip starts 2400ms after the pin's — and 15, tied with 18 and earlier.
+    { id: "4219e82e", a: BD0913B4, stored: [6, 9, 11, 18, 24, 33, 41, 45, 49, 57] },
+    // Here 12 and 15 both show two pages, and 8 is again the most crowded.
+    { id: "6658999c", a: CE687D4A, stored: [6, 9, 11, 18, 24, 33, 41, 45, 49, 57] },
+  ])(
+    "analysis $id: a last round of 13 steps is trimmed to the maximum 10",
+    async ({ id, a, stored }) => {
+      // No footage shared anywhere: the count alone is over.
+      const picked = [8, 9, 11, 12, 15, 18, 24, 33, 41, 45, 49, 57];
+      generateObject.mockReset().mockResolvedValue(answer(say(picked)));
+      const { row, steps } = await run(`over-max-${id}@example.com`, a);
+
+      expect(generateObject).toHaveBeenCalledTimes(3);
+      expect(row.status).toBe("ready");
+      expect(picks(steps)).toEqual(stored);
+      await expectPlacedSteps(a, steps);
+      expect(row.promptVersion).toMatch(REPAIRED);
+      expect(rounds(row)).toHaveLength(3);
+      for (const round of rounds(row)) {
+        expect(round).toEqual(["the plan has 13 steps — the maximum is 10"]);
+      }
+    },
+  );
+
+  it.each([
+    [
+      "does not end on the success state",
+      say([8, 9, 11, 13, 16, 19]),
+      "the last step must be the result/success state",
+    ],
+    ["selects a loading screen", say([5, 9, 11, 13, 19, 23]), 'state 5 is a "loading" screen'],
+    [
+      "selects an unreadable state",
+      say([9, 11, 15, 16, 19, 23]),
+      'state 15 is legibility "unreadable"',
+    ],
+    [
+      "carries an empty caption",
+      [...say([8, 9, 11, 13, 19]), [23, " "]] as [number, string][],
+      "label is empty",
+    ],
+    [
+      "carries a caption over 60 characters",
+      [...say([8, 9, 11, 13, 19]), [23, "א".repeat(61)]] as [number, string][],
+      "label is over 60 characters",
+    ],
+    [
+      "names a state outside the timeline",
+      say([8, 9, 11, 13, 19, 23, 99]),
+      "sourceIndex 99 is not in the timeline",
+    ],
+    ["selects a state twice", say([8, 9, 9, 13, 19, 23]), "sourceIndex 9 is selected twice"],
+  ])(
+    "a last round that %s still fails — dropping steps does not fix it",
+    async (_what, steps, names) => {
+      // T4, through the same code the job runs. None of these is shared footage
+      // or a count over the maximum, and none is one of the two things a draft
+      // is forgiven.
+      generateObject.mockReset().mockResolvedValue(answer(steps));
+      const thrown = await generateStepPlan(db, {
+        timeline: T4.timeline,
+        questionnaire: { ...QUESTIONNAIRE, link: T4.link },
+        recordingMs: T4.recordingMs,
+        instants: T4.instants,
+      }).then(
+        () => null,
+        (err: unknown) => err,
       );
-    const { row, steps } = await run("repair-state-9@example.com", BD0913B4);
+      expect(generateObject).toHaveBeenCalledTimes(3);
+      expect(thrown).toBeInstanceOf(PlanViolationError);
+      const violation = thrown as PlanViolationError;
+      expect(violation.rounds).toHaveLength(3);
+      expect(violation.rounds[2]!.some((v) => v.includes(names))).toBe(true);
+      expect(violation.promptVersion).toMatch(NOT_REPAIRED);
+    },
+  );
 
-    expect(generateObject).toHaveBeenCalledTimes(2);
-    // The only violation is the total, and state 9 is in neither the
-    // violation's list of runs nor the plan echoed to the model.
-    expect(rounds(row)[0]).toEqual([expect.stringContaining("the steps total 21600ms")]);
-    expect(rounds(row)[0]![0]).not.toContain("state 9 ");
-    const echoed = promptOf(1).slice(promptOf(1).indexOf("Your previous plan was:"));
-    expect(echoed).toMatch(/"sourceIndex": 8,/);
-    expect(echoed).not.toMatch(/"sourceIndex": 9,/);
-    expect(row.status).toBe("ready");
-    expect(picks(steps)).toEqual([0, 8, 45, 51, 57]);
-    expect(rounds(row)[1]).toEqual([]);
-    expect(row.promptVersion).toMatch(NOT_REPAIRED);
-  });
-
-  it("a pin whose clip is under 1600ms is never stripped as a hidden pick", async () => {
-    // The address bar leaves 1200ms after the pinned state: enough for
-    // "כנסו לכאן" (G2), under what any model caption needs. The pin stays in
-    // the model's timeline and in the plan; state 1, the same screen's last
-    // 200ms, does not.
-    const site: AnalysisState[] = [
-      state({
-        timestampMs: 1000,
-        actionType: "type",
-        screenName: "New Tab",
-        screenKind: "other",
-        visibleText: ["tavnit.ai"],
-      }),
-      state({
-        timestampMs: 2000,
-        actionType: "idle",
-        screenName: "New Tab",
-        screenKind: "other",
-        visibleText: ["tavnit.ai"],
-      }),
-      ...SHORT_ENDING.map((s) => ({ ...s, timestampMs: s.timestampMs + 3000 })),
-    ];
-    generateObject.mockReset().mockResolvedValueOnce(
-      answer([
-        [2, "פתיחה"],
-        [3, "בחירה"],
-        [4, "הקלדה"],
-        [5, "אישור"],
-        [6, "גלילה"],
-        [7, "הצלחה"],
-      ]),
-    );
-    const draft = await generateStepPlan(db, {
-      timeline: site,
-      questionnaire: { ...QUESTIONNAIRE, link: "tavnit.ai" },
-      recordingMs: 22_000,
-    });
-
-    expect(generateObject).toHaveBeenCalledTimes(1);
-    expect(draft.steps[0]).toMatchObject({ sourceIndex: 0, label: ACCESS_LABEL, durationMs: 1200 });
-    expect(picks(draft.steps)).toEqual([0, 2, 3, 4, 5, 6, 7]);
-    expect(draft.promptVersion).toMatch(NOT_REPAIRED);
-    expect(promptOf(0)).toMatch(/"index": 0,/);
-    expect(promptOf(0)).not.toMatch(/"index": 1,/);
-  });
-
-  it("6658999c: a pick of state 12 never reaches the plan — one call, ready, marked", async () => {
-    // State 12 is a one-state screen with a 200ms clip. The rest is a clean
-    // plan, so there is nothing to correct and nothing to repair; the mark
-    // records that the stored plan is not the model's answer as given.
-    generateObject.mockReset().mockResolvedValue(
-      answer([
-        [8, "נכנסים לדף הבית"],
-        [12, "בוחרים דמות לפתיח הסרטון"],
-        [45, "המערכת בונה תוכנית צעדים"],
-        [51, "רואים איך המודעה תיבנה"],
-        [57, "המודעה מוכנה להורדה"],
-      ]),
-    );
-    const { row, steps } = await run("repair-ce687d4a-clean@example.com", CE687D4A);
-
-    expect(generateObject).toHaveBeenCalledTimes(1);
-    expect(row.status).toBe("ready");
-    expect(picks(steps)).toEqual([0, 8, 45, 51, 57]);
-    expect(totalRuntimeMs(steps)).toBe(19_600);
-    expect(rounds(row)).toEqual([[]]);
-    expect(row.promptVersion).toMatch(REPAIRED);
-  });
-
-  it("6658999c: a last round carrying state 12 is stored ready without it, though only 4 steps are left", async () => {
-    // Without state 12 the plan is one step under the minimum on a timeline
-    // that offers more, so every round violates and the third is the last.
-    // The step code dropped counts: the draft is held to no minimum (D3).
-    generateObject.mockReset().mockResolvedValue(
-      answer([
-        [12, "בוחרים דמות לפתיח הסרטון"],
-        [45, "המערכת בונה תוכנית צעדים"],
-        [51, "רואים איך המודעה תיבנה"],
-        [57, "המודעה מוכנה להורדה"],
-      ]),
-    );
-    const { row, steps } = await run("repair-ce687d4a-last@example.com", CE687D4A);
-
-    expect(generateObject).toHaveBeenCalledTimes(3);
-    expect(row.status).toBe("ready");
-    expect(picks(steps)).toEqual([0, 45, 51, 57]);
-    expect(totalRuntimeMs(steps)).toBe(15_600);
-    expect(row.promptVersion).toMatch(REPAIRED);
-    expect(rounds(row)).toHaveLength(3);
-    for (const round of rounds(row)) {
-      expect(round).toHaveLength(1);
-      expect(round[0]).toContain("fewer than the minimum 5");
-    }
-    // The corrective prompt never showed the model the stripped step.
-    expect(promptOf(1)).not.toMatch(/"sourceIndex": 12,/);
-  });
-
-  it("a last round that is only too short is stored as it came", async () => {
-    // Nothing for code to drop: 3 steps, 11.6s, under the floor and the
-    // minimum on a timeline that could reach both. A short draft the
-    // customer can extend beats a failure (founder, 0074).
-    generateObject.mockReset().mockResolvedValue(
-      answer([
-        [45, "המערכת בונה תוכנית צעדים"],
-        [57, "המודעה מוכנה להורדה"],
-      ]),
-    );
-    const { row, steps } = await run("repair-short@example.com", BD0913B4);
-
-    expect(generateObject).toHaveBeenCalledTimes(3);
-    expect(row.status).toBe("ready");
-    expect(picks(steps)).toEqual([0, 45, 57]);
-    expect(totalRuntimeMs(steps)).toBe(11_600);
-    expect(row.promptVersion).toMatch(REPAIRED);
-    const last = rounds(row)[2]!;
-    expect(last.some((v) => v.includes("fewer than the minimum 5"))).toBe(true);
-    expect(last.some((v) => v.includes("too SHORT"))).toBe(true);
-  });
-
-  it("a repair that leaves 3 steps is stored; one that leaves 2 fails as it always did", async () => {
-    // State 12's clip is 2000ms and six words need 2800ms: the step goes.
-    const unreadable: [number, string] = [12, "בחרו את הדמות שתציג את המוצר"];
-    generateObject
-      .mockReset()
-      .mockResolvedValue(
-        answer([unreadable, [45, "המערכת בונה תוכנית צעדים"], [57, "המודעה מוכנה להורדה"]]),
-      );
-    const three = await run("repair-floor-3@example.com", BD0913B4);
-    expect(three.row.status).toBe("ready");
-    expect(picks(three.steps)).toEqual([0, 45, 57]);
-    expect(three.row.promptVersion).toMatch(REPAIRED);
-
-    // The same answer without state 45: the pin and the ending are all that
-    // is left. One or two steps is a failure shown as a ready plan.
-    generateObject.mockReset().mockResolvedValue(answer([unreadable, [57, "המודעה מוכנה להורדה"]]));
-    const two = await run("repair-floor-2@example.com", BD0913B4);
-    expect(generateObject).toHaveBeenCalledTimes(3);
-    expect(two.row.status).toBe("failed");
-    expect(two.row.failKind).toBe("validator");
-    expect(two.row.failReason).toBe("יצירת תוכנית הצעדים נכשלה — נסו שוב");
-    expect(two.row.steps).toBeNull();
-    // Failed rows carry the generation mark too, and never the repair's.
-    expect(two.row.promptVersion).toMatch(NOT_REPAIRED);
-    expect(rounds(two.row)).toHaveLength(3);
-  });
-
-  // One page worked down, no address typed: no pin. The success state's own
-  // clip is the 2000ms the recording has left after it.
+  // One page worked down, no address typed: no pin. No footage instants
+  // either, so every clip starts on its moment — and the clips of states 1
+  // and 2, 1400ms apart, share footage.
   const PAGE = "קמפיין חדש";
-  const SHORT_ENDING: AnalysisState[] = [
-    state({ timestampMs: 0, screenName: PAGE, visibleText: ["פתיחה"], actionType: "navigate" }),
-    state({ timestampMs: 3000, screenName: PAGE, visibleText: ["בחירה"] }),
-    state({ timestampMs: 6000, screenName: PAGE, visibleText: ["הקלדה"], actionType: "type" }),
-    state({ timestampMs: 9000, screenName: PAGE, visibleText: ["אישור"], actionType: "select" }),
-    state({ timestampMs: 12_000, screenName: PAGE, visibleText: ["גלילה"], actionType: "scroll" }),
-    state({ timestampMs: 15_000, screenName: PAGE, visibleText: ["הצלחה"], actionType: "result" }),
-  ];
-
-  it("an ending whose caption cannot be read is not dropped into a stored plan", async () => {
-    // Five words need 2400ms of the ending's 2000ms. A plan that loses its
-    // success state is not a draft worth storing, so the repair never drops
-    // it: the job fails as it always did (founder, 0074).
-    generateObject.mockReset().mockResolvedValue(
-      answer([
-        [0, "פתיחה"],
-        [1, "בחירה"],
-        [2, "הקלדה"],
-        [3, "אישור"],
-        [4, "גלילה"],
-        [5, "הקמפיין שלכם מוכן ועלה לאוויר"],
-      ]),
-    );
-    const thrown = await generateStepPlan(db, {
-      timeline: SHORT_ENDING,
-      questionnaire: QUESTIONNAIRE,
-      recordingMs: 17_000,
-    }).then(
-      () => null,
-      (err: unknown) => err,
-    );
-    expect(generateObject).toHaveBeenCalledTimes(3);
-    expect(thrown).toBeInstanceOf(PlanViolationError);
-    const violation = thrown as PlanViolationError;
-    expect(violation.rounds).toHaveLength(3);
-    expect(violation.rounds[2]).toHaveLength(1);
-    expect(violation.rounds[2]![0]).toContain("the caption on state 5");
-    expect(violation.promptVersion).toMatch(/^plan_demo_steps@v\d+\+pickable$/);
-  });
-
-  it("nor when the model's notes waive the ending rule", async () => {
-    // With notes set the validator no longer asks for a success ending, so
-    // nothing downstream would catch the missing step: the repair itself
-    // refuses to drop the last selected result state.
-    generateObject.mockReset().mockResolvedValue(
-      answer(
-        [
-          [0, "פתיחה"],
-          [1, "בחירה"],
-          [2, "הקלדה"],
-          [3, "אישור"],
-          [4, "גלילה"],
-          [5, "הקמפיין שלכם מוכן ועלה לאוויר"],
-        ],
-        "בהקלטה אין סיום ברור",
-      ),
-    );
-    const thrown = await generateStepPlan(db, {
-      timeline: SHORT_ENDING,
-      questionnaire: QUESTIONNAIRE,
-      recordingMs: 17_000,
-    }).then(
-      () => null,
-      (err: unknown) => err,
-    );
-    expect(generateObject).toHaveBeenCalledTimes(3);
-    expect(thrown).toBeInstanceOf(PlanViolationError);
-    expect((thrown as PlanViolationError).rounds[2]).toEqual([
-      expect.stringContaining("the caption on state 5"),
-    ]);
-  });
-
-  // The same page with two states 1400ms apart (1 and 2).
-  const CLOSE_PAIR: AnalysisState[] = [
+  const NO_PIN: AnalysisState[] = [
     state({ timestampMs: 0, screenName: PAGE, visibleText: ["פתיחה"], actionType: "navigate" }),
     state({ timestampMs: 3000, screenName: PAGE, visibleText: ["בחירה"] }),
     state({ timestampMs: 4400, screenName: PAGE, visibleText: ["הקלדה"], actionType: "type" }),
@@ -710,82 +738,139 @@ describe("the last-round repair, through the plan job (0074, D2-D4)", () => {
     state({ timestampMs: 12_000, screenName: PAGE, visibleText: ["גלילה"], actionType: "scroll" }),
     state({ timestampMs: 15_000, screenName: PAGE, visibleText: ["הצלחה"], actionType: "result" }),
   ];
-  const closePair = (earlier: string) =>
-    answer([
-      [0, "פתיחה"],
-      [1, earlier],
-      [2, "הקלדה"],
-      [3, "אישור"],
-      [4, "גלילה"],
-      [5, "הצלחה"],
+  const noPin = () =>
+    generateStepPlan(db, { timeline: NO_PIN, questionnaire: QUESTIONNAIRE, recordingMs: 19_000 });
+
+  it("without a pin the marks are the same, less +access-pin", async () => {
+    generateObject.mockReset().mockResolvedValue(answer(say([0, 1, 2, 3, 4, 5])));
+    const repaired = await noPin();
+    expect(generateObject).toHaveBeenCalledTimes(3);
+    expect(picks(repaired.steps)).toEqual([0, 1, 3, 4, 5]);
+    expect(repaired.steps.map((s) => s.startMs)).toEqual([0, 3000, 8000, 12_000, 15_000]);
+    expect(repaired.promptVersion).toMatch(/^plan_demo_steps@v\d+\+repaired$/);
+    // The violation names both clips, so the round on the row says what was shared.
+    expect(repaired.retryViolations[2]).toEqual([
+      expect.stringContaining(
+        "states 1 and 2 show the same footage — their clips (3000-5000ms and 4400-6400ms) overlap",
+      ),
     ]);
 
-  it("two picks under 1600ms apart: repaired when the earlier caption cannot be read in the gap", async () => {
-    // Three words need 1600ms of a 1400ms window: the step is dropped, and
-    // the too-close pair goes with it.
-    generateObject.mockReset().mockResolvedValue(closePair("בוחרים את הקמפיין"));
-    const draft = await generateStepPlan(db, {
-      timeline: CLOSE_PAIR,
-      questionnaire: QUESTIONNAIRE,
-      recordingMs: 19_000,
-    });
+    // Something left over and nothing dropped: the plain stamp.
+    generateObject
+      .mockReset()
+      .mockResolvedValue(answer([...say([0, 1, 3, 4]), [5, SIX_WORDS]] as [number, string][]));
+    const kept = await noPin();
     expect(generateObject).toHaveBeenCalledTimes(3);
-    expect(picks(draft.steps)).toEqual([0, 2, 3, 4, 5]);
-    expect(draft.promptVersion).toMatch(/^plan_demo_steps@v\d+\+pickable\+repaired$/);
-    expect(draft.retryViolations[2]!.some((v) => v.includes("only 1400ms apart"))).toBe(true);
-  });
+    expect(picks(kept.steps)).toEqual([0, 1, 3, 4, 5]);
+    expect(kept.steps[4]!.label).toBe(SIX_WORDS);
+    expect(kept.promptVersion).toMatch(/^plan_demo_steps@v\d+$/);
+    expect(kept.retryViolations[2]).toEqual([expect.stringContaining("is over 4 words")]);
 
-  it("two picks under 1600ms apart with a readable two-word caption still fail", async () => {
-    // Two words need 1200ms and have 1400ms: nothing the repair drops. The
-    // too-close rule is not one of the two it covers, so it stands.
-    generateObject.mockReset().mockResolvedValue(closePair("בוחרים קמפיין"));
-    const thrown = await generateStepPlan(db, {
-      timeline: CLOSE_PAIR,
-      questionnaire: QUESTIONNAIRE,
-      recordingMs: 19_000,
-    }).then(
+    // And a failure carries the same plain stamp.
+    generateObject.mockReset().mockResolvedValue(answer(say([0, 1, 3, 4])));
+    const thrown = await noPin().then(
       () => null,
       (err: unknown) => err,
     );
     expect(generateObject).toHaveBeenCalledTimes(3);
     expect(thrown).toBeInstanceOf(PlanViolationError);
-    expect((thrown as PlanViolationError).rounds[2]).toEqual([
-      expect.stringContaining("states 1 and 2 are only 1400ms apart"),
-    ]);
+    expect((thrown as PlanViolationError).promptVersion).toMatch(/^plan_demo_steps@v\d+$/);
+  });
+
+  it("a recording that offers two steps keeps a two-step plan, long caption or not", async () => {
+    // 10 s, and only the last two moments are the product. With short captions
+    // the first answer is stored (the minimum is waived: nothing more to
+    // select). A six-word caption is kept (0086), so the same two steps must
+    // not fail for being under the repair's floor.
+    const SHORT: AnalysisState[] = [
+      state({ timestampMs: 0, screenName: "כניסה", screenKind: "login" }),
+      state({ timestampMs: 2000, screenName: "טעינה", screenKind: "loading" }),
+      state({ timestampMs: 4000, screenName: PAGE, visibleText: ["בחירה"] }),
+      state({ timestampMs: 7000, screenName: PAGE, visibleText: ["הצלחה"], actionType: "result" }),
+    ];
+    const short = () =>
+      generateStepPlan(db, { timeline: SHORT, questionnaire: QUESTIONNAIRE, recordingMs: 10_000 });
+
+    generateObject.mockReset().mockResolvedValue(answer(say([2, 3])));
+    const clean = await short();
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(picks(clean.steps)).toEqual([2, 3]);
+
+    generateObject.mockReset().mockResolvedValue(answer([...say([2]), [3, SIX_WORDS]]));
+    const kept = await short();
+    expect(generateObject).toHaveBeenCalledTimes(3);
+    expect(picks(kept.steps)).toEqual([2, 3]);
+    expect(kept.steps[1]!.label).toBe(SIX_WORDS);
+    expect(kept.promptVersion).toMatch(/^plan_demo_steps@v\d+$/);
   });
 });
 
 describe("plan regress shows a repair (0074)", () => {
-  it("a plan code changed is never green, and the result carries what the model's last call left", async () => {
-    // The tavnit fixture's journey (plan-access-step.test.ts) plus state 44, a
-    // result state with a 200ms clip: stripped, and what is left is clean. The
-    // other fixtures get an index outside their timeline, which nothing
-    // repairs. The regress measures the model's own answer, so the stripped
-    // plan is red and says so — before the repair existed it could not occur.
-    generateObject.mockReset().mockImplementation(async ({ prompt }: { prompt: string }) =>
-      prompt.includes("הורים לילדים קטנים")
-        ? answer([
-            [14, "בחרו דמות שתציג את המוצר"],
-            [23, "התסריט נכתב לכם בעברית"],
-            [26, "האזינו להקלטה לפני שמאשרים"],
-            [31, "הסרטון מוכן ליצירה"],
-            [44, "הסרטון נוצר בהצלחה"],
-            [49, "הורידו את הסרטון המוכן"],
-          ])
-        : answer([[9999, "כיתוב"]]),
-    );
+  const isTavnit = (prompt: string) => prompt.includes("הורים לילדים קטנים");
+  // The study-app fixture: BotTeacher's questionnaire on the one analysis of
+  // it that carries no screenKind. Its expectation is `allowNotes`, so a plan
+  // with notes is green whatever it selects — the selection cannot be what
+  // turns it red below.
+  const isStudyApp = (prompt: string) =>
+    prompt.includes("BotTeacher") && !prompt.includes('"screenKind": "');
+  const STUDY_APP = [13, 36, 43, 49, 56, 64];
+  const NO_SUCCESS = "בהקלטה אין מסך הצלחה אמיתי";
+  const outside = answer([[9999, "כיתוב"]]);
+
+  it("a plan code changed, or one stored with something left over, is never green — and the result carries the model's last round", async () => {
+    // The tavnit fixture gets two steps on the same footage (20 and 21):
+    // repaired. The study-app fixture gets a six-word caption: stored as it
+    // came. The other fixtures get an index outside their timeline, which
+    // nothing repairs. The regress measures the model's own answer, so both
+    // stored plans are red and say why.
+    generateObject
+      .mockReset()
+      .mockImplementation(async ({ prompt }: { prompt: string }) =>
+        isTavnit(prompt)
+          ? answer(say([14, 20, 21, 23, 31, 49]))
+          : isStudyApp(prompt)
+            ? answer([[13, SIX_WORDS], ...say(STUDY_APP.slice(1))], NO_SUCCESS)
+            : outside,
+      );
     const results = await runPlanRegression(db);
+
     const tavnit = results.find((r) => r.fixture === "real-tavnit-system-opening.json")!;
     expect(tavnit.error).toBeUndefined();
-    expect(tavnit.actual).toEqual([1, 14, 23, 26, 31, 49]);
-    // A strip alone: the model's last call left no violation behind.
-    expect(tavnit.repaired).toEqual([]);
+    expect(tavnit.actual).toEqual([2, 14, 20, 23, 31, 49]);
+    expect(tavnit.repaired).toEqual([
+      expect.stringContaining("states 20 and 21 show the same footage"),
+    ]);
+    expect(tavnit.dropped).toBe(true);
     expect(tavnit.pass).toBe(false);
-    const others = results.filter((r) => r !== tavnit);
-    expect(others).toHaveLength(4);
+
+    const studyApp = results.find((r) => r.fixture === "real-botteacher-study-app.json")!;
+    expect(studyApp.error).toBeUndefined();
+    expect(studyApp.actual).toEqual([1, ...STUDY_APP]);
+    expect(studyApp.notes).toBe(NO_SUCCESS);
+    expect(studyApp.repaired).toEqual([expect.stringContaining("is over 4 words")]);
+    // Nothing was dropped: the CLI must not call it repaired by code.
+    expect(studyApp.dropped).toBeUndefined();
+    expect(studyApp.pass).toBe(false);
+
+    const others = results.filter((r) => r !== tavnit && r !== studyApp);
+    expect(others).toHaveLength(3);
     for (const r of others) {
       expect(r.error).toContain("sourceIndex 9999 is not in the timeline");
       expect(r.repaired).toBeUndefined();
     }
+  });
+
+  it("the same plan with nothing left over is green", async () => {
+    generateObject
+      .mockReset()
+      .mockImplementation(async ({ prompt }: { prompt: string }) =>
+        isStudyApp(prompt) ? answer(say(STUDY_APP), NO_SUCCESS) : outside,
+      );
+    const results = await runPlanRegression(db);
+    const studyApp = results.find((r) => r.fixture === "real-botteacher-study-app.json")!;
+    expect(studyApp.error).toBeUndefined();
+    expect(studyApp.actual).toEqual([1, ...STUDY_APP]);
+    expect(studyApp.repaired).toBeUndefined();
+    expect(studyApp.pass).toBe(true);
   });
 });

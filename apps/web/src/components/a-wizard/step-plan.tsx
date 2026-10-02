@@ -14,6 +14,7 @@ import {
   clipWindow,
   deleteWarning,
   draftBlockedReason,
+  draftStepClip,
   fmtTimestamp,
   insertDraftStep,
   isActivePlanStatus,
@@ -21,13 +22,15 @@ import {
   labelRuns,
   labelWordWarning,
   marksAfterEdit,
+  overlapsBefore,
   planWaitView,
   planFailureNotice,
   planStepsDirty,
   retryOutcome,
   sortedPlanSteps,
-  stepHeadroomMs,
+  stepOverlapLine,
   stepsPayload,
+  TWO_PAGES_LINE,
   type AnalysisStateWire,
   type DraftStep,
   type JobProgressWire,
@@ -57,8 +60,8 @@ type PlanAction = "save" | "approve" | "fork";
 /**
  * Step 4, the plan editor (8b): the generated step plan as chronological
  * cards — a live still preview (frame + label at render geometry), an editable
- * RTL label beside the state's visibleText, timestamp, ASSEMBLED duration and
- * live read-time headroom — plus delete, save, and the approve gate. Approved
+ * RTL label beside the state's visibleText, timestamp and clip length, with
+ * the clip itself one tap away — plus delete, save, and the approve gate. Approved
  * plans go read-only; the explicit "edit a copy" button PATCHes the stored
  * steps, which forks a fresh unapproved row server-side (updatePlanSteps), and
  * the wizard adopts the fork. No reordering, no trim, no timeline — ever.
@@ -391,10 +394,15 @@ export function StepPlan({ demoId, hookDurationMs, onContinue, onBack, onFatal }
       // one sourceIndex (duplicate card keys, and the server rejects the save
       // with a generic 400).
       if (d.some((step) => step.sourceIndex === state.index)) return d;
-      const next = insertDraftStep(d, state, label);
+      const next = insertDraftStep(
+        d,
+        state,
+        label,
+        plan?.steps.find((step) => step.sourceIndex === state.index),
+      );
       // Re-adding a deleted step with its stored label reproduces the saved
-      // plan exactly: reseed from it, restoring the real duration instead of
-      // leaving a permanent "computed on save" card no save can ever clear.
+      // plan exactly: reseed from it, so the draft is the stored row again —
+      // marks and all — and no longer reads as an unsaved change.
       return plan && !planStepsDirty(next, plan.steps) ? sortedPlanSteps(plan.steps) : next;
     });
   }
@@ -800,17 +808,30 @@ function PlanEditor({
     return () => clearTimeout(timer);
   }, [approved]);
   const dirty = planStepsDirty(draft, plan.steps);
-  const blocked = draftBlockedReason(draft);
+  /** What each step plays and how long it runs — the clip a save stores and
+   *  the render lays out (draftStepClip). */
+  const clips = draft.map((step) => draftStepClip(step, cards?.get(step.sourceIndex), dirty));
+  /** Steps sharing footage with an earlier one. Only an old plan being edited
+   *  can have any; the save is refused while one stands (decision 0087). */
+  const overlaps = overlapsBefore(clips);
+  const blocked = draftBlockedReason(
+    draft,
+    overlaps.some((earlier) => earlier.length > 0),
+  );
+  // A save, an approve or a fork hands back new steps: whatever was playing
+  // was a clip of the previous ones.
+  useEffect(() => {
+    player.stop();
+    // player is a fresh object every render; only the stored steps matter.
+  }, [plan.steps]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Any step still carrying the model's off-screen words (decision 0049) —
    *  the one hint line for the whole plan shows while this holds. */
   const hasMarks = draft.some((step) => (step.offScreenWords?.length ?? 0) > 0);
   // Mutually exclusive by arithmetic (< min vs > max), so one slot renders both.
   const countWarning = deleteWarning(draft.length) ?? addWarning(draft.length);
-  // Draft durations are the STORED assembly — a label edit never moves them
-  // (a step runs to its screen's end, whatever its caption), a delete can
-  // widen the previous step's window server-side, so pre-save numbers are
-  // conservative and the save response corrects them.
-  const totalMs = totalRuntimeMs(draft);
+  // Every step is its own clip, added ones included, so the total is exact
+  // before a save: nothing a save does lengthens or shortens another step.
+  const totalMs = totalRuntimeMs(clips);
   return (
     <div className="mt-6">
       {/* The reframe (founder, 2026-08-25): the draft is an OFFER, the
@@ -859,9 +880,10 @@ function PlanEditor({
       <ol className="mt-3 flex flex-col gap-2">
         {draft.map((step, position) => {
           const state = cards?.get(step.sourceIndex);
-          // Live: the draft label's read time against the stored duration.
-          const headroom = stepHeadroomMs(step);
-          const wordWarning = labelWordWarning(step.label);
+          const clip = clips[position]!;
+          // Live: the draft label's read time against the clip's length.
+          const wordWarning = labelWordWarning(step.label, clip.durationMs);
+          const overlapLine = stepOverlapLine(overlaps[position]!);
           return (
             <li
               key={step.sourceIndex}
@@ -872,14 +894,7 @@ function PlanEditor({
                 label={step.label}
                 clip={{
                   player,
-                  target: {
-                    key: `step:${step.sourceIndex}`,
-                    ...clipWindow(
-                      step.timestampMs,
-                      step.durationMs,
-                      state?.clipMs ?? step.clipMs ?? 0,
-                    ),
-                  },
+                  target: { key: `step:${step.sourceIndex}`, ...clipWindow(clip) },
                 }}
               />
               <div className="min-w-0 flex-1">
@@ -924,36 +939,18 @@ function PlanEditor({
                     )}
                   </p>
                 )}
-                {step.added ? (
-                  // A draft-only step: the server assembles its duration on
-                  // save (and may shorten its neighbours' windows too), so no
-                  // number is shown that was never computed.
-                  <p className="mt-1 text-[13px] text-ink/60">
-                    <span dir="ltr">{fmtTimestamp(step.timestampMs)}</span> בסרטון · משך ההצגה
-                    והמרווח יחושבו בשמירה
-                  </p>
-                ) : (
-                  <>
-                    <p className="mt-1 text-[13px] text-ink/60">
-                      <span dir="ltr">{fmtTimestamp(step.timestampMs)}</span> בסרטון · מוצג{" "}
-                      {fmtSeconds(step.durationMs)} שנ׳
-                    </p>
-                    {/* A caption on screen for less than its read time is the
-                        exact defect the model path rejects and a human edit
-                        allows. The copy names the consequence and the remedy —
-                        "displayed X less than its read time" confused the
-                        founder (user #1). */}
-                    {headroom < 0 ? (
-                      <p className="mt-1 text-[13px] text-amber-700">
-                        הצעד נגמר לפני שיספיקו לקרוא את הכיתוב (חסרות {fmtSeconds(-headroom)} שנ׳).
-                        קצרו את הכיתוב, או מחקו את הצעד ובחרו רגע אחר.
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-[13px] text-ink/45">
-                        מרווח קריאה {fmtSeconds(headroom)} שנ׳
-                      </p>
-                    )}
-                  </>
+                <p className="mt-1 text-[13px] text-ink/60">
+                  <span dir="ltr">{fmtTimestamp(step.timestampMs)}</span> בסרטון · מוצג{" "}
+                  {fmtSeconds(clip.durationMs)} שנ׳
+                </p>
+                {/* The clip probably crosses from one page to another: the
+                    draft is allowed to hold such a step, and the customer is
+                    asked to look before approving (decision 0085). */}
+                {!approved && clip.twoPages && (
+                  <p className="mt-1 text-[13px] text-amber-700">{TWO_PAGES_LINE}</p>
+                )}
+                {!approved && overlapLine && (
+                  <p className="mt-1 text-[13px] text-red-700">{overlapLine}</p>
                 )}
                 {state && state.visibleText.length > 0 && (
                   // In edit mode the list is the palette the customer picks
@@ -988,6 +985,11 @@ function PlanEditor({
         <InventoryPanel
           demoId={demoId}
           inPlan={new Set(draft.map((step) => step.sourceIndex))}
+          // Judged against the clips the draft has once an add has edited
+          // it — an untouched old plan's stored lengths are not what a save
+          // keeps (draftStepClip).
+          planClips={draft.map((step) => draftStepClip(step, cards?.get(step.sourceIndex), true))}
+          savedSteps={plan.steps}
           addDisabled={actionBusy !== null}
           player={player}
           onAdd={onAddStep}
@@ -1005,8 +1007,7 @@ function PlanEditor({
       )}
 
       <p className="mt-3 text-sm text-ink/60">
-        סך הצעדים: {fmtSeconds(totalMs)} שנ׳
-        {draft.some((step) => step.added) ? " (בלי הצעדים החדשים — יתעדכן בשמירה)" : ""} — בלי הפתיח
+        סך הצעדים: {fmtSeconds(totalMs)} שנ׳ — בלי הפתיח
         {hookDurationMs !== undefined
           ? `, שמוסיף עוד ${fmtSeconds(hookDurationMs)} שנ׳ בתחילת הסרטון`
           : ", שמתווסף בתחילת הסרטון"}

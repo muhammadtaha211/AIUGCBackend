@@ -40,9 +40,66 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**Every step is a 2 s clip placed from the footage instants: BUILT 2026-10-02 on
+`feat/steps-fixed-2s-clips`, NOT PUSHED. The paid check of `plan_demo_steps@v16` waits on the
+founder's OK.**
+
+- **What the founder decided (2026-10-02):** D1–D8 of that day's task prompt and four rulings in
+  the session. D1–D3 are [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]] restated;
+  the rest are [[0084-clips-are-placed-from-the-footage-instants]],
+  [[0085-a-draft-may-show-two-pages-and-says-so]],
+  [[0086-captions-are-3-4-words-and-a-long-one-is-kept]],
+  [[0087-two-steps-never-share-footage]] and [[0088-stored-plans-are-untouched-until-edited]].
+  0002, 0070, 0072, 0074, 0077, 0079, 0081 and 0083 carry dated pointers.
+  - **FOUNDER-REPORTED:** he accepted D5 (a generated draft may include a step with a flash of
+    the next screen) on 2026-10-02, and amended it the same day to "the customer **can** watch
+    each step", with the amber line on risky steps.
+  - **Deferred by him to a separate task:** showing failed-read moments in the inventory, and
+    the quarter gate.
+- **What changed in the product** (once deployed): every step is exactly 2 s (60 frames); a plan
+  is 5–10 steps; every inventory moment plays its own 2 s clip, which may start up to 1.8 s
+  before the moment; a generated plan is asked to prefer calm clips; two steps can never share
+  footage; a step whose clip probably shows two pages carries an amber line; the editor's preview
+  stops on the clip's last frame. The band, the 4 s cap and the 1.6 s gap are gone.
+- **MEASURED on the five takes, free** ([[clip-placement-replay-2026-10-02]]): every moment has a
+  2 s clip that holds it; 102 of 536 pickable moments are calm and no calm clip crosses a real
+  change, by the key or by frames; 35 of the 434 others hold a keyed change (37 by frames); every
+  analysis, T4 included, offers 9 to 27 clips usable together; the two-pages line is on 70 clips
+  and on 31 of those 35.
+- **MEASURED on production, read-only:** the first footage row exists and its 61 instants match
+  this machine's within one frame ([[box-and-local-instants-agree-2026-10-02]]). 19 ready plans
+  (11 approved, 8 drafts, all on the founder's accounts) keep their old lengths until edited.
+- **No migration.** A step's clip start is one new optional field in the plan row's `steps`
+  jsonb.
+- **The gate:** all seven green on the uncommitted tree, 2026-10-02: lint and typecheck clean; remotion 84, core 928, worker 7, web 569, admin 42 tests (1,630).
+- **An independent review of the diff ran before the commit.** Fixed from it: a moment from
+  before the way-in step can no longer open a generated plan; a two-step plan with a long caption,
+  on a recording that offers no more, is stored instead of failed
+  ([[0086-captions-are-3-4-words-and-a-long-one-is-kept]] — settled in the build, not his
+  ruling); the inventory request now fails, with its retry, when the instants cannot be read,
+  rather than previewing clips the save would not store; an inventory tile is judged on the clips
+  a save keeps. Recorded and not fixed, both older than this build:
+  [[the-canned-dry-run-caption-can-fail-its-own-validation]],
+  [[a-failed-preview-play-can-stop-another-clip]].
+- **Not measured:** what the model does under v16 (the paid check, capped at ₪12 by its own
+  script, `packages/core/.work/screens/v16-check.ts`, gitignored); the backfill on the box; the
+  wizard walked end to end by a person.
+- **Deploy order when he says go:** merge (Vercel redeploys the web); straight after, the box
+  `git pull` and restart together; then the backfill on the box, report first
+  (`docs/07-worker-box.md` §15). He declined a split PR: "I will not approve or render between
+  the merge and the box restart." Until the restart the old worker renders a new step from its
+  moment, not its clip's start, and generates old-length plans.
+- **Still true after it:** [[the-recording-end-is-the-raw-uploads-length]]; the 8 old drafts and a
+  copy of an old approved plan can be approved untouched and render at their old lengths; a
+  recording of 8–10 s cannot offer five steps; the detector has been run on five phone-filmed
+  takes of two web apps.
+- **Kept off the repo:** the replay, the test-data export and the paid-check script are in
+  `packages/core/.work/screens/` (gitignored).
+
 **A new analysis keeps every moment, its span and the footage's instants: BUILT 2026-10-02
-(PR #78), MIGRATION 0050 PUSHED AND READ BACK THE SAME DAY, THE WORKER BOX NOT ON IT YET.**
-Nothing reads the new data: the plan rule, wizard and render are untouched and 0072 stays live.
+(PR #78), MIGRATION 0050 PUSHED AND READ BACK THE SAME DAY, THE BOX ON IT (founder-reported; the
+first row read back the same day).** Its instants are now read to place clips (the block above);
+the moments' spans are read by nothing.
 
 - **What the founder decided (2026-10-02):** D1–D6 of that day's task prompt, four rulings, and
   then "build the model-free half, no model for now":
@@ -74,8 +131,10 @@ Nothing reads the new data: the plan rule, wizard and render are untouched and 0
 - **Kept off the repo:** scripts, frames, labels and the spend ledger are in
   `packages/core/.work/screens/` (gitignored). The frames show private browser tabs.
 
-**Every step becomes a fixed 2 s window inside its screen: DECIDED 2026-10-01, NOT YET BUILT**
+**Every step becomes a fixed 2 s window inside its screen: DECIDED 2026-10-01, BUILT 2026-10-02
+— see the first block above; "inside its screen" was replaced by placement from the instants**
 ([[0075-more-moments-over-fewer]], [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]).
+The bullets below are the state on 2026-10-01, kept for the measurement they point at.
 
 - **What the founder decided:**
   - more moments over fewer;
@@ -948,10 +1007,18 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
-- **Put the worker box on the merge of PR #78 — `git pull` AND restart** (2026-10-02). Migration
-  0050 is pushed and the PR is merged; until the box restarts a new analysis writes no
-  `demo_analysis_footage` row. After the first real analysis, read its `waitedMs` in the box log
-  ("analysis: footage instants") and the newest row of the table.
+- **Say whether the paid check of `plan_demo_steps@v16` may run** (2026-10-02). Capped at ₪12,
+  enforced by the script; ten runs, at most 30 calls; nothing stored but usage rows. The fixtures'
+  live pins (`expected.sourceIndexes`) were taken under v15 and are re-taken from it.
+- **Say when `feat/steps-fixed-2s-clips` may be pushed and merged** (2026-10-02). Then, straight
+  after the merge: **box `git pull` AND restart together**, and do not approve or render a Service A
+  plan in between.
+- **Run the footage backfill on the box, report first** (`docs/07-worker-box.md` §15, 2026-10-02).
+  Free; `--write` inserts at most one row per ready analysis without one (15 today). Until then
+  those analyses have no calm clip.
+- **~~Put the worker box on the merge of PR #78~~ DONE 2026-10-02** (founder-reported; the first
+  footage row was read back the same day). **Still owed from it:** the `waitedMs` of that analysis,
+  which is only in the box log ("analysis: footage instants").
 
 - **Rotate the credentials found burned on 2026-09-29** ([[credential-echo-incidents]]). By key
   name only: the `DATABASE_URL` password, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
@@ -1060,16 +1127,15 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Open decisions
 
-**What the next task does with the instants (2026-10-02).** No model names them
-([[0083-no-model-names-the-instants-for-now]]). The founder proposed: a generated plan may only
-use a moment whose 2 s window holds no instant, every other moment stays for the customer to judge
-by eye. The measurement he asked for first is [[instant-free-windows-2026-10-02]]; he has not
-ruled. Two things it turned up are his to weigh: whole stretches (the opening of every take, 14 s
-of the newest one) have no such moment, and the window needs a 0.2 s margin from each instant or
-it can show a few frames of the next screen.
+**~~What the next task does with the instants~~ RULED 2026-10-02:** clips are placed from them,
+calm preferred, the best-fitting one otherwise ([[0084-clips-are-placed-from-the-footage-instants]]).
+**~~Whether an in-place swap is a screen change~~ CLOSED** by the same ruling: nothing in the rule
+is called a screen.
 
-**Whether an in-place swap is a screen change.** He said do not decide
-([[0079-when-unsure-it-is-a-change]]); it is the next task's.
+**Whether a generated plan should be held to more than a request to prefer calm clips
+(2026-10-02).** Today the model is told which moments are calm and which probably show two pages,
+and asked to prefer the first and avoid the second; code does not enforce it. The paid check will
+show how far it follows. His call after it.
 
 **Two kinds of footage the detector has never seen:** a clean screen recording and a phone-app
 demo. One of each from the founder, scored free, before anything relies on the instants
@@ -1122,10 +1188,12 @@ published note breaks the links pointing at it. Renumber or leave it — a found
 
 ## Unfinished measurement
 
-- **The detector on the box (2026-10-02).** Every instant was scored on this machine, whose ffmpeg
-  scales frames differently from the box's. "Same box, same file, same instants" is reasoned, not
-  shown; a read-only run of the frozen detector on the box over the 7 files would show it. A box
-  action, so only on the founder's OK.
+- **The detector on the box (2026-10-02).** MEASURED on one file: the box's 61 instants for the
+  84 s recording match this machine's within one frame
+  ([[box-and-local-instants-agree-2026-10-02]]). The other six files are unmeasured until the
+  backfill runs; its report compares rows that share a file.
+- **`plan_demo_steps@v16` with the model (2026-10-02).** Unmeasured: the paid check waits on the
+  founder's OK.
 - **Label agreement between runs** was never measured: no variant was worth repeating
   ([[label-call-test-2026-10-02]]).
 - **Whether the footage decode delays an analysis on the box (2026-10-02).** It runs beside the
@@ -1140,6 +1208,8 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   - Off the box it does not reproduce ([[analysis-clustering-does-not-reproduce-across-machines]]).
   - Needed only if 0076 is built on stored cluster bounds rather than the footage
     ([[screen-spans-from-the-footage-2026-10-01]]).
+  - **2026-10-02:** 0076 was built on the footage instants, not the bounds. The backfill
+    (`aiugc demo footage-backfill`) is this check, per analysis, and writes only where it holds.
 
 - **No cold render measured on the box** — one including the ~92 MB Chrome Headless Shell download.
   Matters only if the box is rebuilt from scratch rather than from a snapshot.

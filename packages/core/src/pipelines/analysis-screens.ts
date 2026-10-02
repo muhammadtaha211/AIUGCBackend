@@ -28,6 +28,10 @@ export const SIGNATURE_FPS = 30;
 // measurement was taken with (facts/footage-screen-changes-2026-10-02).
 const GAP_FRAMES = 5;
 const HOLD_FRAMES = 6;
+/** How far from either end of the recording an instant can be placed at all:
+ *  the detector needs this many frames on both sides, so the first and last
+ *  DETECTOR_REACH_FRAMES of every recording are never looked at. */
+export const DETECTOR_REACH_FRAMES = GAP_FRAMES + HOLD_FRAMES;
 /** One instant per transition: the strongest within this many frames each way. */
 const PEAK_RADIUS_FRAMES = 9;
 /** Score at which each band alone makes an instant. */
@@ -62,7 +66,7 @@ function lumaDistance(a: FrameSignature, b: FrameSignature): number {
  */
 export function footageEvents(signatures: FrameSignature[], fps = SIGNATURE_FPS): FootageEvent[] {
   const n = signatures.length;
-  const reach = GAP_FRAMES + HOLD_FRAMES;
+  const reach = DETECTOR_REACH_FRAMES;
   const score = new Float64Array(n);
   const byEdges = new Uint8Array(n);
   for (let i = reach; i < n - reach; i++) {

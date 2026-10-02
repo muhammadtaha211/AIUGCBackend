@@ -670,10 +670,9 @@ const REFILM_MESSAGE =
  * never-select-unreadable and never-select-skip-kind rules) run for real.
  * Each of the five product screens is held by a second state after its first
  * (a duplicate, a typing, a scroll, an unreadable frame), the way real
- * clustering splits a screen. A step runs to its screen's end since 0070, so a
- * screen caught by one state alone would give that state a one-sample clip and
- * no caption; held like this, the five first states run 1.8-4s, sit >=
- * MIN_GAP_MS apart, and the canned plan — the happy path — selects all five.
+ * clustering splits a screen, and the screens sit far enough apart that their
+ * 2 s clips share no footage — so the canned plan, the happy path, reaches
+ * the minimum of five.
  */
 function dryRunTimeline(thumbPathAt: (ms: number) => string): AnalysisState[] {
   const states: Omit<AnalysisState, "thumbPath">[] = [

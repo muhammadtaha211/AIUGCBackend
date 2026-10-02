@@ -8,6 +8,17 @@ source: founder
 
 # 0081 — Existing demos keep working as they are; no paid re-analysis without his OK
 
+> **2026-10-02, later — the free half is BUILT, not yet run.** Asked how the first footage rows
+> should be made (a free backfill, one real upload, or both), he answered "Both". His upload
+> produced the first row ([[box-and-local-instants-agree-2026-10-02]]). The backfill is
+> `aiugc demo footage-backfill` (`packages/core/src/pipelines/footage-backfill.ts`), run on the
+> box: a read-only report by default, `--write` to insert. It follows the proposal below — spans by
+> re-clustering, accepted only when the kept moments equal the job's stored list and the read ones
+> equal the timeline; failed reads from the checkpoint; instants from one decode — and writes at
+> most one row per ready analysis that has none (15 on 2026-10-02). It needs his OK when run. Until
+> then those analyses have no instants and none of their clips is calm
+> ([[0084-clips-are-placed-from-the-footage-instants]]).
+
 ## The decision (FOUNDER-DECIDED, D6)
 
 Existing demos keep working as they are. No paid re-analysis without his OK. Whether old analyses
