@@ -41,7 +41,7 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
 **Every step is a 2 s clip placed from the footage instants: BUILT 2026-10-02 on
-`feat/steps-fixed-2s-clips`, NOT PUSHED. The paid check of `plan_demo_steps@v16` ran the same day
+`feat/steps-fixed-2s-clips`, PUSHED 2026-10-02 AS PR #79, NOT MERGED. The paid check of `plan_demo_steps@v16` ran the same day
 on the founder's OK: 10 of 10 plans ready, nothing repaired, ₪4.89
 ([[v16-paid-check-2026-10-02]]).**
 
@@ -72,7 +72,7 @@ on the founder's OK: 10 of 10 plans ready, nothing repaired, ₪4.89
   (11 approved, 8 drafts, all on the founder's accounts) keep their old lengths until edited.
 - **No migration.** A step's clip start is one new optional field in the plan row's `steps`
   jsonb.
-- **The gate:** all seven green on the uncommitted tree, 2026-10-02: lint and typecheck clean; remotion 84, core 928, worker 7, web 569, admin 42 tests (1,630).
+- **The gate:** all seven green on the uncommitted tree, 2026-10-02: lint and typecheck clean; remotion 84, core 928, worker 7, web 569, admin 42 tests (1,630). Re-run in full on `2fc4fe7` before the push, on the founder's instruction: the same counts, all green. The commits after `2fc4fe7` change only this file, one defect note and the repo map.
 - **An independent review of the diff ran before the commit.** Fixed from it: a moment from
   before the way-in step can no longer open a generated plan; a two-step plan with a long caption,
   on a recording that offers no more, is stored instead of failed
@@ -1014,9 +1014,12 @@ the 2026-09-26 custom domain (founder-reported):**
 
 - **~~Say whether the paid check of `plan_demo_steps@v16` may run~~ DONE 2026-10-02:** he said
   yes; it ran and passed ([[v16-paid-check-2026-10-02]]).
-- **Say when `feat/steps-fixed-2s-clips` may be pushed and merged** (2026-10-02). Then, straight
-  after the merge: **box `git pull` AND restart together**, and do not approve or render a Service A
-  plan in between.
+- **Merge PR #79 (`feat/steps-fixed-2s-clips`)** — pushed 2026-10-02 on his instruction. Then,
+  straight after the merge: **box `git pull` AND restart together**, and do not approve or render a
+  Service A plan in between.
+- **Say whether the inventory list should get a retry button on a failed first load**
+  ([[the-inventory-first-load-failure-has-no-retry-button]], 2026-10-02). He was told before the
+  merge; a small follow-up if wanted.
 - **Run the footage backfill on the box, report first** (`docs/07-worker-box.md` §15, 2026-10-02).
   Free; `--write` inserts at most one row per ready analysis without one (15 today). Until then
   those analyses have no calm clip.
@@ -1138,7 +1141,9 @@ is called a screen.
 
 **Whether a generated plan should be held to more than a request to prefer calm clips
 (2026-10-02).** Today the model is told which moments are calm and which probably show two pages,
-and asked to prefer the first and avoid the second; code does not enforce it. **MEASURED by the
+and asked to prefer the first and avoid the second; code does not enforce it. **RULED 2026-10-02
+after the paid check: "Calm stays a request for now. I will watch real drafts first."** Open again
+when he has. **MEASURED by the
 paid check, one run on each of five takes:** 7 of its 24 picks were calm where 0 to 12 calm clips
 were on offer, 4 carried the amber line, and 3 crossed a real change (all 3 amber). Both runs on
 the 84 s recording picked the same amber moment at 13.6 s with a calm one on offer in the same
