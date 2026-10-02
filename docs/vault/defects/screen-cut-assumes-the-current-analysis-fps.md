@@ -8,6 +8,14 @@ source: code
 
 # The screen cut assumes the analysis ran at today's `a_analysis_fps`
 
+> **2026-10-02 — changed.** The cut this note is about is gone
+> ([[0084-clips-are-placed-from-the-footage-instants]]). Today's `a_analysis_fps` is still read
+> for an old timeline in two places: `recordingEndMs` (the floor of the recording's length to one
+> sample) and the placement's lead (a clip may start up to 2 s less one sample before its moment),
+> plus the bound of the access pin's run. A new analysis stores its fps in the footage row; the
+> code does not read it there. All 17 production analyze jobs ran at 5 fps and no config row
+> changes it.
+
 **MEASURED in the code.** [[0072-step-cap-no-padding-cut-early]] ends a screen one analysis sample
 after its last state. `stepDurations` takes that sample from the `a_analysis_fps` in force **now**.
 `demo_analyses` stores no fps, so the rate an old timeline was sampled at is unknown when it is

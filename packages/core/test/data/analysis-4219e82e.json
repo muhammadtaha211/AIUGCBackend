@@ -18,10 +18,21 @@
     "identical to the production timeline's.",
     "",
     "recordingMs is demos.duration_ms; link is the business questionnaire's link;",
-    "demos.description was null."
+    "demos.description was null.",
+    "",
+    "instants: the worker box's stored footage instants (ms, detector screens@1) for analysis",
+    "ce83d265 — this same recording uploaded again on 2026-10-02, with the same 65 moment",
+    "timestamps. Numbers only; added by packages/core/.work/screens/export-testdata.ts."
   ],
   "link": "tavnit.ai",
   "recordingMs": 84230,
+  "instants": [
+    500, 833, 1733, 2367, 3000, 3433, 4000, 4933, 6200, 6733, 7200, 7700, 9900, 12633, 13433, 14000,
+    15300, 15933, 16867, 17600, 18333, 18867, 19533, 20333, 21267, 22133, 22700, 24600, 25567,
+    27100, 28867, 30533, 31500, 32133, 33133, 35900, 36800, 38367, 39400, 43133, 43967, 45167,
+    46033, 47367, 47800, 48567, 49100, 49600, 50100, 53667, 58600, 59567, 61033, 62367, 66233,
+    69300, 72367, 74600, 76300, 79733, 82600
+  ],
   "timeline": [
     {
       "action": "(not exported)",

@@ -8,8 +8,15 @@ source: founder
 
 # 0079 — When unsure, it is a change
 
-**DECIDED. No code carries it: the function that did was removed with the label call it served
-([[0083-no-model-names-the-instants-for-now]]).**
+**DECIDED. Carried since 2026-10-02 by the clip placement
+([[0084-clips-are-placed-from-the-footage-instants]]):** a clip is calm only when it is clear of
+every instant, whatever kind it is, and a clip that cannot be calm keeps the moment's own picture
+on screen as long as it can, every instant counted as a change. An instant with no pair of
+moments around it counts as a page change. The function this note first described was removed
+with the label call it served ([[0083-no-model-names-the-instants-for-now]]).
+
+> **2026-10-02 — the open swap question is closed** by his D4: "Nothing in the new rule is called
+> a 'screen', so the in-place-swap question is closed."
 
 ## The decisions (FOUNDER-DECIDED)
 

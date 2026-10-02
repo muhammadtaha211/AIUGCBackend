@@ -8,6 +8,12 @@ source: founder
 
 # The steps runtime band floor is 15s, not 16s
 
+> **2026-10-02 — BUILT:** the band is gone from the code
+> ([[0076-every-step-is-a-fixed-2s-window-inside-its-screen]], built on
+> `feat/steps-fixed-2s-clips`). `MIN_RUNTIME_MS`, `MAX_RUNTIME_MS` and the config keys
+> `a_steps_runtime_min_ms` / `a_steps_runtime_max_ms` no longer exist; a plan runs its step count
+> times 2 s. The line and number cited below are from before that change.
+
 > **2026-10-01 — decided, NOT YET BUILT:** the 15–21 s band is retired by
 > [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]]. Steps become 5–10 of a fixed 2 s each,
 > so a demo runs 10–20 s. The minimum of 5 keeps this note's reason, never force padding. Until

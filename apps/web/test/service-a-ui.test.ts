@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { backoffMs, DEMO_MAX_DURATION_MS, DEMO_MIN_DURATION_MS } from "@aiugc/core";
-import { readTimeMs } from "@aiugc/core/plan-format";
+import { readTimeMs, STEP_MS, stepClip } from "@aiugc/core/plan-format";
 import {
   addWarning,
   analysisBackgroundLine,
@@ -21,6 +21,7 @@ import {
   ingestStuckView,
   clipWindow,
   draftBlockedReason,
+  draftStepClip,
   endingForRemainder,
   endingSentence,
   estimatedEnding,
@@ -35,12 +36,12 @@ import {
   isAnalysisWorkingStatus,
   isIngestingDemoStatus,
   labelRuns,
-  labelWordCount,
   labelWordWarning,
   LONG_PARK_THRESHOLD_MS,
   marksAfterEdit,
   MAX_DEMO_SECONDS,
   MIN_DEMO_SECONDS,
+  overlapsBefore,
   pinnedPlanFrom,
   planFailureNotice,
   planWaitView,
@@ -54,11 +55,15 @@ import {
   shapeSummary,
   shouldSyncIdentity,
   sortedPlanSteps,
-  stepHeadroomMs,
+  stepOverlapLine,
+  STEPS_OVERLAP_BLOCK,
   stepsBalanceLine,
   stepsConfirmLabel,
   stepsPayload,
   stepsShapeSummary,
+  tileOverlapLine,
+  tileState,
+  TWO_PAGES_LINE,
   type AnalysisStateWire,
   type HookBatch,
   type HookLineOption,
@@ -246,16 +251,41 @@ describe("plan surface helpers", () => {
     expect(analysisIndexBatches([])).toEqual([]);
   });
 
-  it("clipWindow: stored duration plays as-is, zero falls back to the state's own clip", () => {
-    // A saved step previews exactly its assembled window, even where the next
-    // step cut it shorter than the state's clip — that window is what renders.
-    expect(clipWindow(12_000, 3400, 4000)).toEqual({ startMs: 12_000, endMs: 15_400 });
-    // A row assembled before 0070 can outlast its screen; it still previews
-    // what it renders, not what a fresh pick would buy.
-    expect(clipWindow(5000, 3000, 1800)).toEqual({ startMs: 5000, endMs: 8000 });
-    // A draft-added step or raw inventory state (durationMs 0) previews the
-    // state's clipMs — to its screen's end, with no 3s floor under it.
-    expect(clipWindow(9000, 0, 2600)).toEqual({ startMs: 9000, endMs: 11_600 });
+  /**
+   * The render reads a step through core's stepClip; the preview plays
+   * clipWindow of the same clip. Pinned over every shape a draft can hold, so
+   * the frames a card plays are the frames the ad shows.
+   */
+  it("clipWindow plays exactly the step's clip, whatever shape the step has", () => {
+    const base = { actionType: "tap", label: "צעד", sourceIndex: 4, timestampMs: 12_000 };
+    // A slid clip starts before its moment: the window follows the clip.
+    const slid: PlanStepWire = { ...base, startMs: 10_700, durationMs: 2000 };
+    expect(clipWindow(stepClip(slid))).toEqual({ startMs: 10_700, endMs: 12_700 });
+    // A step stored before steps had clips plays from its moment for the
+    // length it was saved with — what it has always rendered.
+    const old: PlanStepWire = { ...base, durationMs: 3400 };
+    expect(clipWindow(stepClip(old))).toEqual({ startMs: 12_000, endMs: 15_400 });
+    // An added step plays its moment's placed clip.
+    const state = {
+      index: 7,
+      timestampMs: 20_000,
+      actionType: "result",
+      clipStartMs: 19_200,
+      clipTwoPages: false,
+    };
+    const added = insertDraftStep([], state, "חדש")[0]!;
+    expect(clipWindow(stepClip(added))).toEqual({ startMs: 19_200, endMs: 21_200 });
+    // A re-added step plays the clip it was saved with, not a fresh placement.
+    const readded = insertDraftStep([], state, "חדש", { startMs: 18_500 })[0]!;
+    expect(clipWindow(stepClip(readded))).toEqual({ startMs: 18_500, endMs: 20_500 });
+
+    for (const step of [slid, old, added, readded]) {
+      const clip = stepClip(step);
+      expect(clipWindow(clip)).toEqual({
+        startMs: clip.startMs,
+        endMs: clip.startMs + clip.durationMs,
+      });
+    }
   });
 
   it("Hebrew failReason passes through untouched, with no raw leftover", () => {
@@ -333,19 +363,6 @@ describe("plan surface helpers", () => {
     expect(retryOutcome("plan-1", { planId: "plan-1" })).toBe("already_running");
     expect(retryOutcome("plan-1", { planId: "plan-2" })).toBe("started");
     expect(retryOutcome(null, { planId: "plan-1" })).toBe("started");
-  });
-
-  /**
-   * Pins that the surface uses the SHIPPED readTimeMs, not a client-side copy:
-   * 3 words at 2.5 w/s + 400ms lead = 1600ms. If plan-format's formula moves,
-   * this number moves with it and the assertion still holds; a private copy
-   * would freeze it and this test would catch the drift.
-   */
-  it("read-time headroom = assembled duration minus the shipped readTimeMs", () => {
-    const step = { label: "פותחים את האפליקציה", durationMs: 2000 };
-    expect(stepHeadroomMs(step)).toBe(2000 - readTimeMs(step.label));
-    // A caption on screen for less than its read time goes negative.
-    expect(stepHeadroomMs({ label: "אחת שתיים שלוש", durationMs: 1400 })).toBe(1400 - 1600);
   });
 
   it("display order derives from timestamp, nothing else", () => {
@@ -695,16 +712,36 @@ describe("plan editor helpers (8b)", () => {
     timestampMs = sourceIndex * 1000,
   ): PlanStepWire => ({ sourceIndex, label, timestampMs, actionType: "tap", durationMs: 1600 });
 
-  it("counts whitespace words the way readTimeMs does", () => {
-    expect(labelWordCount("לחצו על הכפתור")).toBe(3);
-    expect(labelWordCount("  מילה  ")).toBe(1);
-    expect(labelWordCount("   ")).toBe(0);
+  /**
+   * The boundary is exact, and it is the shipped readTimeMs that sets it, not
+   * a client-side copy: four words read in precisely one step, so four stays
+   * silent and the fifth is the first word the cut arrives before.
+   */
+  it("long-caption warning stays silent through 4 words on a 2 s step and fires at 5", () => {
+    const four = "אחת שתיים שלוש ארבע";
+    expect(readTimeMs(four)).toBe(STEP_MS);
+    expect(labelWordWarning("")).toBeNull();
+    expect(labelWordWarning("אחת שתיים שלוש")).toBeNull();
+    expect(labelWordWarning(four)).toBeNull();
+    expect(labelWordWarning(`${four} חמש`)).toBe(
+      "כיתוב ארוך — בזמן שהצעד מוצג מספיקים לקרוא עד 4 מילים.",
+    );
+    expect(labelWordWarning(`${four} חמש שש`)).toBe(
+      "כיתוב ארוך — בזמן שהצעד מוצג מספיקים לקרוא עד 4 מילים.",
+    );
+    // No duration given means the step length itself.
+    expect(labelWordWarning(`${four} חמש`, STEP_MS)).toBe(labelWordWarning(`${four} חמש`));
   });
 
-  it("soft word warning fires at 6 words and stays silent through 5", () => {
-    expect(labelWordWarning("אחת שתיים שלוש ארבע חמש")).toBeNull();
-    expect(labelWordWarning("אחת שתיים שלוש ארבע חמש שש")).not.toBeNull();
-    expect(labelWordWarning("אחת שתיים שלוש ארבע חמש שש שבע")).not.toBeNull();
+  it("long-caption warning measures against the step's own length and names what it allows", () => {
+    // A step stored at an older, longer length: 3400 ms reads seven words, so
+    // the line must say 7 — "up to 4" would be false on this card.
+    const seven = "אחת שתיים שלוש ארבע חמש שש שבע";
+    expect(labelWordWarning("אחת שתיים שלוש ארבע חמש", 3400)).toBeNull();
+    expect(labelWordWarning(seven, 3400)).toBeNull();
+    expect(labelWordWarning(`${seven} שמונה`, 3400)).toBe(
+      "כיתוב ארוך — בזמן שהצעד מוצג מספיקים לקרוא עד 7 מילים.",
+    );
   });
 
   it("delete warning names plans below the a_steps_min default only", () => {
@@ -714,18 +751,34 @@ describe("plan editor helpers (8b)", () => {
     expect(deleteWarning(1)).not.toBeNull();
   });
 
-  it("add warning names plans above the a_steps_max default only — 7 stays silent", () => {
-    expect(addWarning(6)).toBeNull();
+  it("add warning names plans above the a_steps_max default only — 10 stays silent", () => {
     expect(addWarning(7)).toBeNull();
-    expect(addWarning(8)).not.toBeNull();
-    expect(addWarning(12)).not.toBeNull();
+    expect(addWarning(10)).toBeNull();
+    expect(addWarning(11)).toBe(
+      "בתוכנית יותר מ-10 צעדים — הפורמט הזה עובד הכי טוב במודעות קצרות, שקלו להשאיר רק את הצעדים החשובים.",
+    );
+    expect(addWarning(14)).not.toBeNull();
   });
 
-  it("only an empty label blocks saving — content is never judged", () => {
+  it("an empty label blocks saving — content is never judged", () => {
     // The anti-fabrication rule constrains the MODEL; no helper here reads
     // visibleText, so any non-empty human label saves.
     expect(draftBlockedReason([step(0, "כיתוב"), step(1, "עוד כיתוב")])).toBeNull();
-    expect(draftBlockedReason([step(0, "כיתוב"), step(1, "   ")])).not.toBeNull();
+    expect(draftBlockedReason([step(0, "כיתוב"), step(1, "   ")])).toBe(
+      "יש צעד בלי כיתוב — כתבו כיתוב או מחקו את הצעד.",
+    );
+  });
+
+  it("steps sharing footage block saving too; an empty label is named first", () => {
+    const labelled = [step(0, "כיתוב"), step(1, "עוד כיתוב")];
+    expect(STEPS_OVERLAP_BLOCK).toBe("יש צעדים חופפים — מחקו אחד מכל זוג כדי לשמור.");
+    expect(draftBlockedReason(labelled, false)).toBeNull();
+    expect(draftBlockedReason(labelled, true)).toBe(STEPS_OVERLAP_BLOCK);
+    // One reason at a time: with both wrong, the customer reads the empty
+    // label, and the overlap line follows once it is filled in.
+    expect(draftBlockedReason([step(0, "כיתוב"), step(1, "   ")], true)).toBe(
+      "יש צעד בלי כיתוב — כתבו כיתוב או מחקו את הצעד.",
+    );
   });
 
   it("payload carries exactly sourceIndex + trimmed label, in draft order", () => {
@@ -752,6 +805,141 @@ describe("plan editor helpers (8b)", () => {
       expect(planStepsDirty([step(1, "ראשון", 1000)], stored)).toBe(true);
     });
   });
+
+  describe("draftStepClip (the clip a card shows, and a save renders)", () => {
+    const base = { sourceIndex: 4, label: "צעד", timestampMs: 12_000, actionType: "tap" };
+    /** The step's loaded card: where its moment's 2 s clip is placed today. */
+    const state = { clipStartMs: 11_300, clipTwoPages: true };
+
+    it("a step with a clip shows it, whatever the draft and the moment's placement say", () => {
+      // A saved clip never moves under the customer, so neither an edit
+      // elsewhere in the draft nor the state's own placement touches it.
+      const saved: PlanStepWire = { ...base, startMs: 10_700, durationMs: 2000 };
+      for (const dirty of [false, true]) {
+        for (const loaded of [state, undefined]) {
+          expect(draftStepClip(saved, loaded, dirty)).toEqual({
+            startMs: 10_700,
+            durationMs: 2000,
+            twoPages: false,
+          });
+        }
+      }
+      // The flag is the stored clip's own, not the state's.
+      expect(
+        draftStepClip(
+          { ...saved, twoPages: true },
+          { clipStartMs: 11_300, clipTwoPages: false },
+          true,
+        ),
+      ).toEqual({ startMs: 10_700, durationMs: 2000, twoPages: true });
+    });
+
+    it("a step stored before clips existed shows what is stored while the draft is untouched", () => {
+      // Approving an untouched plan renders the row as it is: from the moment,
+      // for the saved length — so that is what the card must play.
+      const old: PlanStepWire = { ...base, durationMs: 3400 };
+      expect(draftStepClip(old, state, false)).toEqual({
+        startMs: 12_000,
+        durationMs: 3400,
+        twoPages: false,
+      });
+      expect(draftStepClip(old, undefined, false)).toEqual({
+        startMs: 12_000,
+        durationMs: 3400,
+        twoPages: false,
+      });
+    });
+
+    it("once the draft is edited that step shows the clip the next save will place", () => {
+      const old: PlanStepWire = { ...base, durationMs: 3400 };
+      expect(draftStepClip(old, state, true)).toEqual({
+        startMs: 11_300,
+        durationMs: 2000,
+        twoPages: true,
+      });
+      // Until the card has loaded the placed clip is not known: the stored
+      // one stays rather than a guess.
+      expect(draftStepClip(old, undefined, true)).toEqual({
+        startMs: 12_000,
+        durationMs: 3400,
+        twoPages: false,
+      });
+    });
+
+    it("the two-pages line asks for a look before approval", () => {
+      expect(TWO_PAGES_LINE).toBe("ייתכן שרואים כאן שני מסכים — צפו בצעד לפני האישור.");
+    });
+  });
+
+  describe("overlapping steps (0087)", () => {
+    const clip = (startMs: number, durationMs = 2000) => ({ startMs, durationMs });
+
+    it("overlapsBefore checks every pair — a step can clear its neighbour and still overlap the one before", () => {
+      // A 10000–12000, B 8300–10300, C 11900–13900: C shares no footage with
+      // B, the card right above it, and 100 ms with A.
+      expect(overlapsBefore([clip(10_000), clip(8300), clip(11_900)])).toEqual([[], [1], [1]]);
+    });
+
+    it("clips that only touch share no footage", () => {
+      expect(overlapsBefore([clip(0), clip(2000), clip(4000)])).toEqual([[], [], []]);
+      expect(overlapsBefore([])).toEqual([]);
+    });
+
+    it("numbers are the cards' own (1-based) and only ever point backwards", () => {
+      // 0–2000, 1000–3000, 1500–3500, 1900–3900: every pair overlaps, and each
+      // card names only the ones above it — the first names nobody.
+      expect(overlapsBefore([clip(0), clip(1000), clip(1500), clip(1900)])).toEqual([
+        [],
+        [1],
+        [1, 2],
+        [1, 2, 3],
+      ]);
+    });
+
+    it("stepOverlapLine names one step, two, or a list — and nothing when the clip is free", () => {
+      expect(stepOverlapLine([])).toBeNull();
+      expect(stepOverlapLine([2])).toBe("חופף לצעד 2 — אותן שניות בסרטון. מחקו אחד מהם.");
+      expect(stepOverlapLine([2, 3])).toBe("חופף לצעדים 2 ו־3 — אותן שניות בסרטון. מחקו אחד מהם.");
+      expect(stepOverlapLine([2, 3, 4])).toBe(
+        "חופף לצעדים 2, 3 ו־4 — אותן שניות בסרטון. מחקו אחד מהם.",
+      );
+    });
+
+    /**
+     * How an overlap gets into a draft at all: a plan stored before steps had
+     * clips, whose steps were cut short of each other. Untouched it shows —
+     * and approves as — the stored cuts; the first edit shows the 2 s clips
+     * the save would place, and those are what collide.
+     */
+    it("an old plan's steps collide only once the draft is edited", () => {
+      const old = (sourceIndex: number, timestampMs: number): PlanStepWire => ({
+        sourceIndex,
+        label: "צעד",
+        timestampMs,
+        actionType: "tap",
+        durationMs: 1600,
+      });
+      const draft = [old(3, 10_000), old(5, 11_800)];
+      const cards = new Map([
+        [3, { clipStartMs: 10_000, clipTwoPages: false }],
+        [5, { clipStartMs: 11_800, clipTwoPages: false }],
+      ]);
+      const overlaps = (dirty: boolean) =>
+        overlapsBefore(draft.map((s) => draftStepClip(s, cards.get(s.sourceIndex), dirty)));
+
+      expect(overlaps(false)).toEqual([[], []]);
+      expect(overlaps(true)).toEqual([[], [1]]);
+      expect(stepOverlapLine(overlaps(true)[1]!)).toBe(
+        "חופף לצעד 1 — אותן שניות בסרטון. מחקו אחד מהם.",
+      );
+      expect(
+        draftBlockedReason(
+          draft,
+          overlaps(true).some((earlier) => earlier.length > 0),
+        ),
+      ).toBe(STEPS_OVERLAP_BLOCK);
+    });
+  });
 });
 
 describe("inventory picker (8c)", () => {
@@ -764,7 +952,9 @@ describe("inventory picker (8c)", () => {
     actionType: "tap",
     sameStateAsPrevious: false,
     legibility: "high",
-    clipMs: 4000,
+    clipMs: 2000,
+    clipStartMs: index * 1000,
+    clipTwoPages: false,
     ...over,
   });
 
@@ -888,47 +1078,112 @@ describe("inventory picker (8c)", () => {
   });
 
   describe("insertDraftStep (add-a-step)", () => {
-    const step = (sourceIndex: number, label: string, timestampMs: number): PlanStepWire => ({
+    const step = (
+      sourceIndex: number,
+      label: string,
+      timestampMs: number,
+      startMs = timestampMs,
+    ): PlanStepWire => ({
       sourceIndex,
       label,
       timestampMs,
       actionType: "tap",
-      durationMs: 1600,
+      startMs,
+      durationMs: 2000,
     });
-    const draft = [step(1, "ראשון", 1000), step(3, "אחרון", 3000)];
+    const draft = [step(1, "ראשון", 1000), step(3, "אחרון", 9000, 8400)];
 
-    it("inserts chronologically, trimmed, flagged, with no invented duration", () => {
+    it("inserts chronologically, trimmed, carrying its moment's clip", () => {
       const next = insertDraftStep(
         draft,
-        wire(2, { timestampMs: 2000, actionType: "result" }),
+        wire(2, { timestampMs: 5000, actionType: "result", clipStartMs: 4200 }),
         "  חדש  ",
       );
       expect(next.map((s) => s.sourceIndex)).toEqual([1, 2, 3]);
-      expect(next[1]).toMatchObject({
-        label: "חדש",
+      // Exactly what a save stores for a new step — it is complete the moment
+      // it is picked, so its card plays and measures its caption right away.
+      expect(next[1]).toEqual({
+        sourceIndex: 2,
+        timestampMs: 5000,
         actionType: "result",
-        durationMs: 0,
-        added: true,
+        label: "חדש",
+        startMs: 4200,
+        durationMs: 2000,
       });
       expect(draft).toHaveLength(2); // the input draft is untouched
     });
 
-    it("carries the picked state's own clip, so the added step previews before its card loads", () => {
-      const next = insertDraftStep(draft, wire(2, { timestampMs: 2000, clipMs: 1800 }), "חדש");
-      expect(next[1]!.clipMs).toBe(1800);
-      // The preview plays that clip: no stored duration yet, no card state.
-      expect(clipWindow(next[1]!.timestampMs, next[1]!.durationMs, next[1]!.clipMs ?? 0)).toEqual({
-        startMs: 2000,
-        endMs: 3800,
+    it("orders by the moment, not by where the clip starts", () => {
+      // A slid clip can start before an earlier step's own; the cards keep the
+      // order the server stores, which is the moments'.
+      const next = insertDraftStep(draft, wire(2, { timestampMs: 1500, clipStartMs: 300 }), "חדש");
+      expect(next.map((s) => s.sourceIndex)).toEqual([1, 2, 3]);
+      expect(next[1]!.startMs).toBe(300);
+    });
+
+    it("a moment whose clip shows two pages carries the flag; any other step carries no flag at all", () => {
+      const flagged = insertDraftStep(
+        draft,
+        wire(2, { timestampMs: 5000, clipTwoPages: true }),
+        "חדש",
+      );
+      expect(flagged[1]!.twoPages).toBe(true);
+      const plain = insertDraftStep(draft, wire(2, { timestampMs: 5000 }), "חדש");
+      expect("twoPages" in plain[1]!).toBe(false);
+    });
+
+    /**
+     * A saved clip never moves (updatePlanSteps keeps it), so a step deleted
+     * and re-added inside one draft has to show the clip the save will keep —
+     * not the moment's placement, which can differ from it.
+     */
+    it("a re-added step takes back the clip it was saved with, flag included", () => {
+      const state = wire(2, { timestampMs: 5000, clipStartMs: 4200, clipTwoPages: true });
+      const kept = insertDraftStep(draft, state, "חדש", { startMs: 3600 });
+      // Today's placement is flagged; the saved clip was not, and the flag
+      // describes the clip that shows.
+      expect("twoPages" in kept[1]!).toBe(false);
+      expect(kept[1]).toEqual({
+        sourceIndex: 2,
+        timestampMs: 5000,
+        actionType: "tap",
+        label: "חדש",
+        startMs: 3600,
+        durationMs: 2000,
       });
+      // The other way round: the saved clip was flagged, today's placement is not.
+      const flagged = insertDraftStep(
+        draft,
+        wire(2, { timestampMs: 5000, clipStartMs: 4200 }),
+        "חדש",
+        { startMs: 3600, twoPages: true },
+      );
+      expect(flagged[1]).toMatchObject({ startMs: 3600, durationMs: 2000, twoPages: true });
+    });
+
+    it("a stored step from before clips existed has no clip to give back — the moment's is used", () => {
+      const old: PlanStepWire = {
+        sourceIndex: 2,
+        label: "חדש",
+        timestampMs: 5000,
+        actionType: "tap",
+        durationMs: 3400,
+      };
+      const next = insertDraftStep(
+        draft,
+        wire(2, { timestampMs: 5000, clipStartMs: 4200, clipTwoPages: true }),
+        "חדש",
+        old,
+      );
+      expect(next[1]).toMatchObject({ startMs: 4200, durationMs: 2000, twoPages: true });
     });
 
     it("an added step makes the draft dirty; removing it restores clean", () => {
-      const next = insertDraftStep(draft, wire(2, { timestampMs: 2000 }), "חדש");
+      const next = insertDraftStep(draft, wire(2, { timestampMs: 5000 }), "חדש");
       expect(planStepsDirty(next, draft)).toBe(true);
       expect(
         planStepsDirty(
-          next.filter((s) => !s.added),
+          next.filter((s) => s.sourceIndex !== 2),
           draft,
         ),
       ).toBe(false);
@@ -936,11 +1191,102 @@ describe("inventory picker (8c)", () => {
 
     it("re-adding a deleted step with its stored label round-trips to clean", () => {
       // The addStep path relies on this: dirty=false after such a re-add is
-      // what lets the editor reseed from the stored plan (real durations)
-      // instead of keeping a permanent "computed on save" card.
-      const withoutLast = [step(1, "ראשון", 1000)];
-      const readded = insertDraftStep(withoutLast, wire(3, { timestampMs: 3000 }), "אחרון");
+      // what lets the editor reseed from the stored plan, so the draft is the
+      // saved row again rather than a look-alike unsaved change.
+      const withoutLast = [draft[0]!];
+      const readded = insertDraftStep(
+        withoutLast,
+        wire(3, { timestampMs: 9000, clipStartMs: 8800 }),
+        "אחרון",
+        draft[1],
+      );
       expect(planStepsDirty(readded, draft)).toBe(false);
+      // And the step it holds meanwhile is the saved one, clip and all.
+      expect(readded[1]).toEqual(draft[1]);
+    });
+  });
+
+  describe("tileOverlapLine (a moment that cannot be added — 0087)", () => {
+    const clip = (startMs: number) => ({ startMs, durationMs: 2000 });
+    // Cards 1-4: 0–2000, 4000–6000, 8000–10000, 10000–12000.
+    const planClips = [clip(0), clip(4000), clip(8000), clip(10_000)];
+
+    it("a moment whose clip is free of the plan can be added — touching is free", () => {
+      // 2000–4000 ends where card 2 starts and starts where card 1 ends.
+      expect(tileOverlapLine(wire(9, { clipStartMs: 2000 }), planClips)).toBeNull();
+      expect(tileOverlapLine(wire(9, { clipStartMs: 12_000 }), planClips)).toBeNull();
+      expect(tileOverlapLine(wire(9, { clipStartMs: 2000 }), [])).toBeNull();
+    });
+
+    it("names the one plan step it shares footage with", () => {
+      expect(tileOverlapLine(wire(9, { clipStartMs: 7000 }), planClips)).toBe(
+        "חופף לצעד 3 בתוכנית",
+      );
+    });
+
+    it("names both when its clip straddles two", () => {
+      expect(tileOverlapLine(wire(9, { clipStartMs: 9000 }), planClips)).toBe(
+        "חופף לצעדים 3 ו־4 בתוכנית",
+      );
+    });
+
+    it("measures the moment's placed clip, not the moment", () => {
+      // The moment sits at 13 s, clear of every card; its clip was slid back
+      // to 11 s and shares a second with card 4.
+      expect(
+        tileOverlapLine(wire(9, { timestampMs: 13_000, clipStartMs: 11_000 }), planClips),
+      ).toBe("חופף לצעד 4 בתוכנית");
+    });
+
+    it("an untouched old plan is judged on the clips an add will give it, not its stored lengths", () => {
+      // Stored before steps had clips: 3.4 s from its moment. Adding anything
+      // edits the draft, and the save then places it at its moment's 2 s clip
+      // (3000-5000) — which the tile's 5600-7600 does not touch.
+      const old: PlanStepWire = {
+        sourceIndex: 1,
+        timestampMs: 3000,
+        actionType: "tap",
+        label: "ישן",
+        durationMs: 3400,
+      };
+      const card = wire(1, { timestampMs: 3000, clipStartMs: 3000 });
+      const tile = wire(9, { timestampMs: 5600, clipStartMs: 5600 });
+      expect(tileOverlapLine(tile, [draftStepClip(old, card, false)])).toBe("חופף לצעד 1 בתוכנית");
+      // What the editor passes: the draft as edited.
+      expect(tileOverlapLine(tile, [draftStepClip(old, card, true)])).toBeNull();
+    });
+  });
+
+  describe("tileState (a saved moment shows its saved clip)", () => {
+    const saved: PlanStepWire[] = [
+      {
+        sourceIndex: 4,
+        timestampMs: 20_000,
+        actionType: "tap",
+        label: "שמור",
+        startMs: 20_000,
+        durationMs: 2000,
+      },
+      { sourceIndex: 6, timestampMs: 30_000, actionType: "tap", label: "ישן", durationMs: 3000 },
+    ];
+
+    it("a moment saved with a clip takes it over today's placement — preview and overlap both", () => {
+      // Saved at 20.0 s; the footage instants arrived later and today's
+      // placement is 18.2 s. A re-add restores 20.0 s, so the tile must too.
+      const tile = tileState(wire(4, { timestampMs: 20_000, clipStartMs: 18_200 }), saved);
+      expect(tile.clipStartMs).toBe(20_000);
+      const clip = (startMs: number) => ({ startMs, durationMs: 2000 });
+      // A step at 17.0-19.0 is clear of the saved clip, and one at 21.0-23.0 is not.
+      expect(tileOverlapLine(tile, [clip(17_000)])).toBeNull();
+      expect(tileOverlapLine(tile, [clip(21_000)])).toBe("חופף לצעד 1 בתוכנית");
+    });
+
+    it("any other moment keeps today's placement", () => {
+      const fresh = wire(9, { timestampMs: 40_000, clipStartMs: 39_000 });
+      expect(tileState(fresh, saved)).toBe(fresh);
+      // Saved without a clip (an old plan): the save places it, so today's it is.
+      const old = wire(6, { timestampMs: 30_000, clipStartMs: 29_400 });
+      expect(tileState(old, saved)).toBe(old);
     });
   });
 });

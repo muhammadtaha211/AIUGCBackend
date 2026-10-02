@@ -49,6 +49,7 @@ import {
   getLatestDemoAnalysis,
   requestDemoAnalysis,
 } from "../src/pipelines/demo-analysis";
+import { backfillAnalysisFootage } from "../src/pipelines/footage-backfill";
 import type { RawResult } from "../src/providers/anthropic";
 import { getStorage, setStorage, storageKey } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
@@ -905,4 +906,150 @@ describe("the footage row at the production seam (every moment, its span, the in
       }
     },
   );
+
+  // -------------------------------------------------------------------------
+  // The backfill (`aiugc demo footage-backfill`, decision 0081): the row for an
+  // analysis from before one was written, with no model call. The strongest
+  // statement of what it must do is the row the analysis itself writes — so
+  // each test lets an analysis write its row, takes the row away, and holds
+  // the backfill to it.
+  // -------------------------------------------------------------------------
+  describe("the backfill rebuilds the row without a model call", () => {
+    const dropRow = (analysisId: string) =>
+      db
+        .delete(dbSchema.demoAnalysisFootage)
+        .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysisId));
+
+    it(
+      "writes exactly the row the analysis wrote — the unread moment included — and only with --write",
+      { timeout: 60_000 },
+      async () => {
+        const { analysis, footage } = await analyse(["t=0.4s"]);
+        await dropRow(analysis.id);
+        const bought = generateRawWithImages.mock.calls.length;
+
+        const report = await backfillAnalysisFootage(db, analysis.id, { write: false });
+        expect(report).toMatchObject({
+          analysisId: analysis.id,
+          outcome: "would_write",
+          moments: 4,
+          unread: 1,
+          instants: 1,
+          // 90 decoded frames of footage; the demo's 2 s raw length puts the
+          // recording's end at frame 60.
+          frames: 90,
+          recordingEndFrame: 60,
+        });
+        expect(await footageOf(analysis.id)).toBeUndefined();
+
+        const written = await backfillAnalysisFootage(db, analysis.id, { write: true });
+        expect(written.outcome).toBe("written");
+        const row = (await footageOf(analysis.id))!;
+        for (const key of ["fps", "fileSha", "moments", "detector", "instants"] as const) {
+          expect(row[key]).toEqual(footage![key]);
+        }
+        expect(generateRawWithImages.mock.calls.length).toBe(bought);
+
+        // A second run finds the row and leaves it alone.
+        const again = await backfillAnalysisFootage(db, analysis.id, { write: true });
+        expect(again.outcome).toBe("has_row");
+        expect((await footageOf(analysis.id))!.updatedAt).toEqual(row.updatedAt);
+      },
+    );
+
+    it(
+      "fills the instants a failed decode left out, and nothing else on that row",
+      { timeout: 60_000 },
+      async () => {
+        frameSignatures.mockRejectedValueOnce(new Error("ffmpeg exited 1"));
+        const { analysis, footage } = await analyse();
+        expect(footage!.instants).toBeNull();
+
+        expect((await backfillAnalysisFootage(db, analysis.id, { write: false })).outcome).toBe(
+          "would_fill",
+        );
+        expect((await footageOf(analysis.id))!.instants).toBeNull();
+
+        expect((await backfillAnalysisFootage(db, analysis.id, { write: true })).outcome).toBe(
+          "filled",
+        );
+        const row = (await footageOf(analysis.id))!;
+        expect(row.instants).toHaveLength(1);
+        expect(row.detector).toBe("screens@1");
+        expect(row.moments).toEqual(footage!.moments);
+        expect(row.fileSha).toBe(footage!.fileSha);
+      },
+    );
+
+    it(
+      "a re-clustering that does not give the analysis's kept moments writes nothing",
+      { timeout: 60_000 },
+      async () => {
+        const { analysis } = await analyse();
+        await dropRow(analysis.id);
+        // Another machine's decode: three states where the analysis kept four.
+        frameHashes.mockResolvedValueOnce([A, A, B, B, B, B, C, C]);
+        const report = await backfillAnalysisFootage(db, analysis.id, { write: true });
+        expect(report.outcome).toBe("skipped");
+        expect(report.reason).toMatch(/re-clustering gives 3 moments that are not the 4/);
+        expect(await footageOf(analysis.id)).toBeUndefined();
+      },
+    );
+
+    it(
+      "a checkpoint that is not this analysis's last run writes nothing",
+      { timeout: 60_000 },
+      async () => {
+        // The checkpoint says all four were read; the timeline holds three.
+        const { analysis, job } = await analyse(["t=0.4s"]);
+        await dropRow(analysis.id);
+        const state = job.state as { batchResults: Record<string, unknown[]> };
+        state.batchResults["0"]![1] = state.batchResults["0"]![0]!;
+        await db.update(dbSchema.jobs).set({ state }).where(eq(dbSchema.jobs.id, job.id));
+        const report = await backfillAnalysisFootage(db, analysis.id, { write: true });
+        expect(report.outcome).toBe("skipped");
+        expect(report.reason).toMatch(/not the timeline's/);
+        expect(await footageOf(analysis.id)).toBeUndefined();
+
+        // And with no checkpoint at all there is nothing to verify against.
+        await db.update(dbSchema.jobs).set({ state: {} }).where(eq(dbSchema.jobs.id, job.id));
+        const lost = await backfillAnalysisFootage(db, analysis.id, { write: true });
+        expect(lost.outcome).toBe("skipped");
+        expect(lost.reason).toMatch(/checkpoint was not found/);
+      },
+    );
+
+    it(
+      "reports another analysis of the same file whose stored instants differ",
+      { timeout: 60_000 },
+      async () => {
+        const first = await analyse();
+        const second = await analyse();
+        await dropRow(second.analysis.id);
+        const same = await backfillAnalysisFootage(db, second.analysis.id, { write: false });
+        expect(same.sameFileDiffers).not.toContain(first.analysis.id);
+
+        await db
+          .update(dbSchema.demoAnalysisFootage)
+          .set({ instants: [{ atMs: 700, strength: 2, abrupt: 1 }] })
+          .where(eq(dbSchema.demoAnalysisFootage.analysisId, first.analysis.id));
+        const differs = await backfillAnalysisFootage(db, second.analysis.id, { write: false });
+        expect(differs.sameFileDiffers).toContain(first.analysis.id);
+      },
+    );
+
+    it("refuses to run under DRY_RUN", { timeout: 60_000 }, async () => {
+      const { analysis } = await analyse();
+      process.env.DRY_RUN = "1";
+      resetEnvCache();
+      try {
+        await expect(backfillAnalysisFootage(db, analysis.id, { write: false })).rejects.toThrow(
+          /refuses to run under DRY_RUN/,
+        );
+      } finally {
+        delete process.env.DRY_RUN;
+        resetEnvCache();
+      }
+    });
+  });
 });

@@ -514,3 +514,33 @@ sudo sshd -T
 
 plus the password-only test above (run **from the box**, against its own public IP — never from an
 untrusted host, and never with a real password typed anywhere it could be logged).
+
+## 15. One-off: the footage backfill (2026-10-02)
+
+Analyses made before migration 0050 have no `demo_analysis_footage` row, so none of their clips can
+be called calm (vault 0081, 0084). The row can be rebuilt for free — no model call — but only
+here: the moment spans come from re-running the clustering, and only the box reproduces its own
+clustering. Run it from another machine and every analysis is skipped, by design.
+
+The CLI has no `.env` of its own on the box, so it is pointed at the worker's:
+
+```
+cd ~/AIUGCBackend && DOTENV_CONFIG_PATH=$HOME/AIUGCBackend/apps/worker/.env pnpm --filter @aiugc/cli dev demo footage-backfill
+```
+
+That is a **read-only report**: one line per ready analysis saying what it would do
+(`would_write`, `has_row`, `skipped` and why) and, for one it could verify, how many moments and
+instants it found, the decoded frame count beside the frame the recording's end falls on, and
+whether its instants differ from another row of the same file. A skipped analysis prints only its
+reason. Nothing is written.
+
+To write, on the founder's OK for that run, add `--write`:
+
+```
+cd ~/AIUGCBackend && DOTENV_CONFIG_PATH=$HOME/AIUGCBackend/apps/worker/.env pnpm --filter @aiugc/cli dev demo footage-backfill --write
+```
+
+It inserts at most one row per analysis that verifies, never overwrites a row, and fills the
+instants of a row whose analysis-time decode had failed. It decodes each file twice (a few
+seconds each), so run it when no render is `running` (§11's query). It refuses to run under
+`DRY_RUN`.

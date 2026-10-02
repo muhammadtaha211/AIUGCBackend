@@ -30,6 +30,7 @@ export * from "./pipelines/demo-analysis";
 export * from "./pipelines/demo-step-plans";
 export * from "./pipelines/demos";
 export * from "./pipelines/feedback";
+export * from "./pipelines/footage-backfill";
 export * from "./pipelines/janitor";
 export * from "./pipelines/pronunciation";
 export * from "./pipelines/qc";

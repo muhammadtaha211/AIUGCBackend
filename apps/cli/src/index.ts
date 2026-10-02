@@ -14,6 +14,7 @@ import {
   approveAudio,
   approvePlan,
   auditDemo,
+  backfillAnalysisFootage,
   buildHandlers,
   closeDb,
   contentTypeForKey,
@@ -41,6 +42,7 @@ import {
   HOOK_TEXT_MAX_WORDS,
   planStepsSchema,
   listAuditableDemos,
+  listFootageBackfillCandidates,
   listQcQueue,
   moreLikeThis,
   normalizeHookClip,
@@ -60,6 +62,7 @@ import {
   servedContentType,
   setQuestionnaire,
   starVariant,
+  stepClip,
   syncPersonaImageCatalog,
   unexplainedMomentsSchema,
   updateScriptText,
@@ -366,6 +369,53 @@ function printAuditTotals(reports: DemoAuditReport[]): void {
 }
 
 demo
+  .command("footage-backfill [analysisId]")
+  .description(
+    "the footage row (moment spans + picture-change instants) for analyses from before it was written. Run ON THE WORKER BOX — only the box reproduces its own clustering. Default is a READ-ONLY report; --write inserts one row per analysis that verifies. Needs ffmpeg; no model call",
+  )
+  .option("--write", "insert the rows (without it nothing is written)")
+  .action(
+    run(async (analysisId: string | undefined, opts: { write?: boolean }) => {
+      const db = getDb();
+      const ids = analysisId ? [analysisId] : await listFootageBackfillCandidates(db);
+      const tally: Record<string, number> = {};
+      for (const id of ids) {
+        try {
+          const r = await backfillAnalysisFootage(db, id, { write: Boolean(opts.write) });
+          tally[r.outcome] = (tally[r.outcome] ?? 0) + 1;
+          const measured =
+            r.frames === undefined
+              ? ""
+              : ` — ${r.moments} moments (${r.unread} unread), ${r.instants} instants, ${r.frames} frames decoded, recording end at frame ${r.recordingEndFrame}${
+                  r.recordingEndFrame! > r.frames
+                    ? ` (PAST the file by ${r.recordingEndFrame! - r.frames})`
+                    : ""
+                }${
+                  r.sameFileDiffers && r.sameFileDiffers.length > 0
+                    ? `; instants DIFFER from the same file's row(s) ${r.sameFileDiffers.join(", ")}`
+                    : ""
+                }`;
+          console.log(
+            `analysis ${r.analysisId} (demo ${r.demoId}): ${r.outcome}${r.reason ? ` — ${r.reason}` : ""}${measured}`,
+          );
+        } catch (err) {
+          console.error(
+            `error: analysis ${id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          process.exitCode = 1;
+        }
+      }
+      console.log(
+        `${ids.length} analyses: ${
+          Object.entries(tally)
+            .map(([outcome, n]) => `${n} ${outcome}`)
+            .join(", ") || "none processed"
+        }${opts.write ? "" : " (report only — add --write to insert)"}`,
+      );
+    }),
+  );
+
+demo
   .command("audit [demoId]")
   .description(
     "READ-ONLY: where screen-recording moments are lost before the inventory — S1 noise, S2 cap, S3 transcription, S4 unreadable, and the old S5 tier. Needs ffmpeg; no model call, no write",
@@ -431,8 +481,11 @@ plan
         for (const [i, s] of steps.entries()) {
           const t = `${(s.timestampMs / 1000).toFixed(1)}s`.padStart(7);
           const d = `${(s.durationMs / 1000).toFixed(1)}s`;
+          // The clip the step plays: from its own start when it has one
+          // (2 s clips), else from its moment.
+          const from = `${(stepClip(s).startMs / 1000).toFixed(2)}s`.padStart(7);
           console.log(
-            `${String(i + 1).padStart(3)} ${t}  ${d.padStart(5)}  ${s.actionType.padEnd(8)} ${s.label}`,
+            `${String(i + 1).padStart(3)} ${t}  clip ${from} +${d.padStart(4)}${s.twoPages ? " two-pages?" : ""}  ${s.actionType.padEnd(8)} ${s.label}`,
           );
         }
         console.log(`    total steps runtime: ${(total / 1000).toFixed(1)}s`);
@@ -479,7 +532,11 @@ plan
           console.log(`     actual   [${r.actual.join(", ")}]`);
         }
         if (r.repaired) {
-          console.log("     REPAIRED by code — not the model's own answer; its last call left:");
+          console.log(
+            r.dropped
+              ? "     REPAIRED by code — not the model's own answer; its last call left:"
+              : "     NOT CLEAN — stored as the model answered; its last call left:",
+          );
           for (const v of r.repaired) console.log(`       - ${v}`);
         }
         for (const s of r.steps) console.log(`     ${s.sourceIndex}: ${s.label}`);

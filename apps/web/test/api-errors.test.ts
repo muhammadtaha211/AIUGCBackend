@@ -5,6 +5,7 @@ import {
   ContentPolicyError,
   InsufficientCreditsError,
   NotConfiguredGateway,
+  PLAN_STEPS_OVERLAP_MESSAGE,
   PlanChangeError,
 } from "@aiugc/core";
 import {
@@ -14,6 +15,7 @@ import {
   NOT_FOUND,
   PAYMENTS_SOON,
 } from "../src/lib/api-errors";
+import { STEPS_OVERLAP_BLOCK } from "../src/lib/service-a-ui";
 
 /**
  * The mapper decides what a customer reads when a pipeline refuses them, so
@@ -175,6 +177,43 @@ describe("coreErrorMapping — order is load-bearing", () => {
         mapped: true,
       });
     }
+  });
+
+  /**
+   * updatePlanSteps refusing two steps that share footage. The editor marks
+   * the pair itself whenever it can see it; this is what the customer reads
+   * when it could not, so it has to be the actionable line — the generic body
+   * error would leave them with a save that fails and nothing to delete.
+   * Thrown with core's own constant, so a reworded message cannot drift away
+   * from the mapping.
+   */
+  it("answers overlapping plan steps with their own 400 line, not an earlier mapping's", () => {
+    expect(coreErrorMapping(new Error(PLAN_STEPS_OVERLAP_MESSAGE))).toEqual({
+      status: 400,
+      error: "יש צעדים חופפים — מחקו אחד מכל זוג כדי לשמור.",
+      mapped: true,
+    });
+    // The same line the editor blocks a save with when it sees the overlap.
+    expect(coreErrorMapping(new Error(PLAN_STEPS_OVERLAP_MESSAGE)).error).toBe(STEPS_OVERLAP_BLOCK);
+  });
+
+  it("the overlap line sits above the step-shape mapping without taking its errors", () => {
+    // Every message updatePlanSteps throws for a malformed step, as it throws
+    // them: each still collapses to the generic body error.
+    for (const message of [
+      "sourceIndex 9 is not in the analysis timeline",
+      "sourceIndex 4 appears twice",
+      "sourceIndex 7 is an unreadable state — it cannot be shown",
+      "step 2 has an empty label",
+      "step 2 label is over 60 characters",
+    ]) {
+      expect(coreErrorMapping(new Error(message))).toEqual({
+        status: 400,
+        error: INVALID_BODY,
+        mapped: true,
+      });
+    }
+    expect(INVALID_BODY).not.toBe(STEPS_OVERLAP_BLOCK);
   });
 });
 

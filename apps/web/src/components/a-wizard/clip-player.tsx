@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { clipFrames, DEMO_FPS } from "@aiugc/core/plan-format";
 import { Spinner } from "@/components/ui/icons";
 import { apiFetch } from "@/lib/use-api";
 
@@ -70,9 +71,16 @@ export function useClipPlayer(demoId: string): ClipPlayer {
  * targets remounts and refires loadedmetadata (the seek-and-play hook);
  * the browser's HTTP cache absorbs the remount.
  *
- * Exits back to idle (the play icon reappearing, never a loop): timeupdate
- * crossing endMs (~250ms granularity — invisible overshoot on a 3s
- * preview), the file's own `ended`, or an error after its one URL retry.
+ * The preview shows the frames the render will (decision 0084): it seeks to
+ * the middle of the clip's first frame — a seek to the frame's own edge can
+ * land on the frame before it — and it stops on the clip's last frame, read
+ * per presented frame (requestVideoFrameCallback, or an animation-frame loop
+ * where that is missing). `timeupdate` only ticks about four times a second,
+ * which is wider than the 0.2 s a calm clip keeps from the next change, so it
+ * stays as a backstop only.
+ *
+ * Exits back to idle (the play icon reappearing, never a loop): the clip's
+ * end, the file's own `ended`, or an error after its one URL retry.
  */
 export function ClipVideo({ player }: { player: ClipPlayer }) {
   const target = player.active;
@@ -94,7 +102,38 @@ export function ClipVideo({ player }: { player: ClipPlayer }) {
       className="absolute inset-0 size-full object-cover"
       onLoadedMetadata={(event) => {
         const el = event.currentTarget;
-        el.currentTime = target.startMs / 1000;
+        const { startFrame, endFrame } = clipFrames({
+          startMs: target.startMs,
+          durationMs: target.endMs - target.startMs,
+        });
+        el.currentTime = (startFrame + 0.5) / DEMO_FPS;
+        // The last frame of the clip is endFrame - 1; half a frame of slack
+        // absorbs timestamp rounding.
+        const lastFrameAt = (endFrame - 1.5) / DEMO_FPS;
+        const finish = () => {
+          el.pause();
+          // Hold the last frame for its own duration, then hand back the
+          // still — unless another clip took over meanwhile (this element is
+          // then gone, and stop() would cancel that one).
+          setTimeout(() => {
+            if (el.isConnected) player.stop();
+          }, 1000 / DEMO_FPS);
+        };
+        if ("requestVideoFrameCallback" in el) {
+          const onFrame: VideoFrameRequestCallback = (_now, frame) => {
+            if (frame.mediaTime >= lastFrameAt) return finish();
+            el.requestVideoFrameCallback(onFrame);
+          };
+          el.requestVideoFrameCallback(onFrame);
+        } else {
+          const video: HTMLVideoElement = el;
+          const onTick = () => {
+            if (!video.isConnected) return;
+            if (video.currentTime >= lastFrameAt) return finish();
+            requestAnimationFrame(onTick);
+          };
+          requestAnimationFrame(onTick);
+        }
         void el.play().catch(() => player.stop());
       }}
       onTimeUpdate={(event) => {

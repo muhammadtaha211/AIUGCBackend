@@ -3,8 +3,10 @@ import {
   BudgetError,
   ContentPolicyError,
   InsufficientCreditsError,
+  PLAN_STEPS_OVERLAP_MESSAGE,
   PlanChangeError,
 } from "@aiugc/core";
+import { STEPS_OVERLAP_BLOCK } from "./service-a-ui";
 
 /**
  * Pure, unit-testable part of the HTTP error layer: the decision of which
@@ -107,6 +109,12 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
   }
   if (/needs at least one step/.test(message)) {
     return hit(400, "התוכנית צריכה לפחות צעד אחד.");
+  }
+  // updatePlanSteps refusing two steps that share footage (decision 0087). The
+  // editor marks the pair itself whenever it can see it; this is the line for
+  // when it could not (a step card that never loaded).
+  if (message.includes(PLAN_STEPS_OVERLAP_MESSAGE)) {
+    return hit(400, STEPS_OVERLAP_BLOCK);
   }
   // Step-shape rejections from updatePlanSteps: a well-behaved picker never
   // sends these (it mirrors the same filters), so the generic Hebrew suffices.

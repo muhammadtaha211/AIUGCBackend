@@ -20,7 +20,12 @@ import {
   updateScriptText,
 } from "../src/pipelines/copy";
 import { creditBalance } from "../src/pipelines/credits";
-import { approvePlan, getStepPlan, requestDemoPlan } from "../src/pipelines/demo-step-plans";
+import {
+  approvePlan,
+  getStepPlan,
+  planStepsSchema,
+  requestDemoPlan,
+} from "../src/pipelines/demo-step-plans";
 import { createDemo } from "../src/pipelines/demos";
 import { listQcQueue, releaseRender } from "../src/pipelines/qc";
 import { createBRender, createSet, moreLikeThis, starVariant } from "../src/pipelines/sets";
@@ -299,7 +304,12 @@ describe("founder workflow (dry-run, end to end)", () => {
       // composition got the plan's trims and labels — an .mp4 on disk.
       const renderedProps = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
       expect(renderedProps).toContain('"kind":"service_a_steps"');
-      expect(renderedProps).toContain('"steps":[{');
+      // Each step is its stored clip: 2 s from its own start (decision 0084).
+      const first = planStepsSchema.parse((await getStepPlan(db, planId))!.steps)[0]!;
+      expect(first.durationMs).toBe(2000);
+      expect(renderedProps).toContain(
+        `"steps":[${JSON.stringify({ startMs: first.startMs, durationMs: 2000, label: first.label })}`,
+      );
       // The clip came in through addHookClip (`aiugc bank add-hook`), which
       // names no colour: the column default burns today's white (0073).
       expect(renderedProps).toContain('"hookTextInk":{"fill":"white","outline":"0,0,0"}');
@@ -310,6 +320,64 @@ describe("founder workflow (dry-run, end to end)", () => {
       expect(moreParams.format).toBe("steps");
       expect(moreParams.stepPlanId).toBe(planId);
       await drainAll();
+    },
+  );
+
+  it(
+    "a plan approved before steps had clips renders the trims it was stored with",
+    { timeout: 60_000 },
+    async () => {
+      // The stored shape of every plan approved before decision 0084: no
+      // startMs, the lengths the old rule gave. Nothing re-places it.
+      const approved = (await getStepPlan(db, stepPlanId))!;
+      const oldShape = planStepsSchema
+        .parse(approved.steps)
+        .slice(0, 2)
+        .map(({ timestampMs, actionType, label, sourceIndex }, i) => ({
+          timestampMs,
+          actionType,
+          label,
+          sourceIndex,
+          durationMs: i === 0 ? 3400 : 2600,
+        }));
+      const inserted = await db
+        .insert(dbSchema.demoStepPlans)
+        .values({
+          demoId,
+          analysisId: approved.analysisId,
+          status: "ready",
+          steps: oldShape,
+          approvedAt: new Date(),
+        })
+        .returning();
+      const { renders } = await createSet(db, {
+        businessId,
+        demoId,
+        grid: {
+          hookClipIds: [hookClipId],
+          hookLineScriptIds: [hookLineIds[0]!],
+          mode: "silent" as const,
+          format: "steps" as const,
+          stepPlanId: inserted[0]!.id,
+        },
+      });
+      await drainAll();
+      const row = (
+        await db
+          .select()
+          .from(dbSchema.videoRenders)
+          .where(sql`${dbSchema.videoRenders.id} = ${renders[0]!.id}`)
+      )[0]!;
+      expect(row.status).toBe("released");
+      const renderedProps = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+      // From the moment, for the stored length — what it has always rendered.
+      expect(renderedProps).toContain(
+        `"steps":[${oldShape
+          .map((s) =>
+            JSON.stringify({ startMs: s.timestampMs, durationMs: s.durationMs, label: s.label }),
+          )
+          .join(",")}]`,
+      );
     },
   );
 

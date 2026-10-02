@@ -11,7 +11,8 @@ import { WORK_DIR } from "../paths";
 import { getStorage, storageKey } from "../storage";
 
 // Up to 90 seconds: step-plan demos are one continuous screen recording that
-// the analysis pass mines for states — the render uses ~16-21s of it.
+// the analysis pass mines for states — the render uses 10-20s of it (5-10
+// steps of 2 s, decision 0076).
 // Exported only so apps/web's seconds-valued mirror can be pinned against
 // them (apps/web/test/service-a-ui.test.ts). This is the only gate on total
 // demo duration — nothing re-checks at analysis, plan or render time, so

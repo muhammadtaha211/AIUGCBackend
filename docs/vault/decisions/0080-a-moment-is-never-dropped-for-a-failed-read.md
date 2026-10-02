@@ -8,6 +8,10 @@ source: founder
 
 # 0080 — A moment is never dropped because its vision read failed
 
+> **2026-10-02, later:** the box was pulled and restarted the same day (founder-reported), and the
+> first production row was read back ([[box-and-local-instants-agree-2026-10-02]]). The line below
+> about the box is the state when this note was written.
+
 **DECIDED. BUILT 2026-10-02 (PR #78); migration 0050 pushed the same day; the worker box is not
 on the code yet.**
 

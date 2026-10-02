@@ -8,6 +8,14 @@ source: founder
 
 # 0070 — A step ends on a real screen change
 
+> **2026-10-02 — BUILT, and one line below no longer holds:** every step is now a fixed 2 s clip
+> placed from the footage instants ([[0076-every-step-is-a-fixed-2s-window-inside-its-screen]],
+> [[0084-clips-are-placed-from-the-footage-instants]]). No clip is cut at a screen change any
+> more. **"A step never runs into the next screen" is no longer a rule:** a generated draft may
+> hold a clip that shows two pages, and the editor marks it
+> ([[0085-a-draft-may-show-two-pages-and-says-so]], founder D5). The analysis's page judgement
+> below survives as a ranking between clips and as the bound of the access pin's run.
+
 > **2026-10-02 — decided, NOT YET BUILT:** "'Same screen' is the analysis model's judgement, not
 > pixel distance alone … never a frame hash" below is amended by
 > [[0078-screen-changes-come-from-the-footage-first]]: real screen changes come from the footage

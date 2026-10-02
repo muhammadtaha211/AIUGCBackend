@@ -8,6 +8,15 @@ source: code + db + inference
 
 # A missed screen change lets a step run into the next screen
 
+> **2026-10-02 — changed, not closed.** No clip runs to a screen's end any more: every step is a
+> fixed 2 s clip placed away from the footage instants when it can be
+> ([[0084-clips-are-placed-from-the-footage-instants]]). A calm clip crosses no change the
+> detector saw. A clip that cannot be calm may still show two pages, and that is now allowed
+> ([[0085-a-draft-may-show-two-pages-and-says-so]]). What is left of this defect: the editor's
+> two-pages line relies on the same `isNewScreen`, so of the 35 pickable clips that hold a keyed
+> real change on the five takes, 4 carry no line ([[clip-placement-replay-2026-10-02]]). The
+> numbers below are for the rule that was live until then.
+
 [[0070-a-step-ends-on-a-real-screen-change]] says a step never runs into the next screen.
 [[0072-step-cap-no-padding-cut-early]] enforces that only where `isNewScreen` flags the change.
 Where it does not, the clip runs on to the cap.

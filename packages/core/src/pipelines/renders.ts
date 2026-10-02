@@ -59,6 +59,7 @@ import {
 import { serviceBTimeline } from "../service-b-timeline";
 import { getStorage, storageKey } from "../storage";
 import { refundRenderIfNeeded } from "./credits";
+import { stepClip } from "../plan-format";
 import { planStepsSchema } from "./demo-step-plans";
 import type { VariantParams } from "./sets";
 
@@ -665,7 +666,10 @@ async function buildServiceAStepsProps(
     // unknown name is undefined, which burns today's white.
     hookTextInk: HOOK_TEXT_INK[hookClip.textColor as HookTextColor],
     demoPath,
-    steps: steps.map((s) => ({ startMs: s.timestampMs, durationMs: s.durationMs, label: s.label })),
+    // stepClip is the one reading of a stored step, shared with the editor's
+    // preview: its 2 s clip, or — a plan stored before steps had clips — its
+    // moment and the length it was saved with, exactly as it always rendered.
+    steps: steps.map((s) => ({ ...stepClip(s), label: s.label })),
     watermark: render.watermarked,
   };
 }

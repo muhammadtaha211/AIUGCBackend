@@ -8,8 +8,15 @@ source: founder
 
 # 0077 — The analysis keeps each moment's real start and end
 
-**DECIDED. BUILT 2026-10-02 (PR #78); migration 0050 pushed the same day; the worker box is not
-on the code yet.**
+**DECIDED. BUILT 2026-10-02 (PR #78); migration 0050 pushed the same day. The box was pulled and
+restarted the same day (founder-reported), and the first production row was read back
+([[box-and-local-instants-agree-2026-10-02]]).**
+
+> **2026-10-02, later:** the 2 s clip rule that was to need the spans does not read them
+> ([[0084-clips-are-placed-from-the-footage-instants]] places from the instants). The spans are
+> stored for every new analysis and read by nothing yet. The backfill for older analyses is built
+> (`aiugc demo footage-backfill`) and not yet run
+> ([[0081-existing-demos-keep-working-no-paid-re-analysis]]).
 
 ## The decision (FOUNDER-DECIDED, D1)
 
