@@ -40,36 +40,36 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**The analysis is to keep moment spans, real screen changes and every moment: DECIDED
-2026-10-02, HALF MEASURED, NOT BUILT — WAITING ON THE FOUNDER.** Branch
-`feat/analysis-footage-screens`, **not pushed** (his instruction: no push without his OK).
+**A new analysis keeps every moment, its span and the footage's instants: BUILT 2026-10-02 on
+`feat/analysis-footage-screens`, NOT PUSHED, MIGRATION 0050 NOT PUSHED, NOTHING DEPLOYED.**
+Nothing reads the new data: the plan rule, wizard and render are untouched and 0072 stays live.
 
-- **What the founder decided (2026-10-02):** D1–D6 of that day's task prompt and four rulings, in
+- **What the founder decided (2026-10-02):** D1–D6 of that day's task prompt, four rulings, and
+  then "build the model-free half, no model for now":
   [[0077-moments-keep-their-real-start-and-end]],
   [[0078-screen-changes-come-from-the-footage-first]], [[0079-when-unsure-it-is-a-change]],
   [[0080-a-moment-is-never-dropped-for-a-failed-read]],
-  [[0081-existing-demos-keep-working-no-paid-re-analysis]] and
-  [[0082-the-label-call-is-a-paid-call-tested-first]]. 0070 carries a dated pointer.
-- **MEASURED, the footage half works:** a pixel detector over every native frame has its own
-  instant within 0.4 s of 56 of the 57 real screen changes and all 14 keyed swaps, and repeats
-  exactly ([[footage-screen-changes-2026-10-02]]). It cannot tell what kind of change an instant
-  is: on T2 any cut that keeps every real change keeps 25 in-screen instants.
-- **MEASURED, the label call does not pass:** ₪14.20 of the ₪30 cap spent, 81 calls, eleven
-  variants, none with zero misses and at most 3 false changes per file. The one run on all seven
-  files found 50 of 57, missed 6, stored 16 false ([[label-call-test-2026-10-02]]). It costs
-  ₪0.24–0.74 per analysis. Analyses cost ₪1.13–2.72 today, mean ₪1.82, against the ₪3.00 an
-  analysis earns ([[analyze-demo-cost]], re-read).
-- **In the tree, tested, called by nothing:** `frameSignatures`, `extractFramesAt`
-  (`packages/core/src/media/ffmpeg.ts`); `footageEvents`, `analysisMoments`, `momentHold`,
-  `screenChanges` (`packages/core/src/pipelines/analysis-screens.ts`, 17 tests in
-  `packages/core/test/analysis-screens.test.ts`); a per-call timeout and retry count on
-  `generateRawWithImages`. The label vocabulary there is the last variant tested, not a rule.
-- **Not written:** migration 0050 and the `demo_analysis_footage` table, the write of spans and
-  failed-read moments in `analyze_demo`, any label job, the CLI print. No prompt was committed:
-  the drafts are in gitignored scratch.
-- **His call, before anything else is built:** what the model's part is now
-  ([[0082-the-label-call-is-a-paid-call-tested-first]], "Where that leaves it"). The model-free
-  part — spans and every moment (D1, D4) and the stored instants — does not depend on it.
+  [[0081-existing-demos-keep-working-no-paid-re-analysis]],
+  [[0082-the-label-call-is-a-paid-call-tested-first]] and
+  [[0083-no-model-names-the-instants-for-now]]. 0070 carries a dated pointer.
+- **What a new analysis now writes** (once 0050 is pushed and the box has the code): one
+  server-only `demo_analysis_footage` row with `fps`, `file_sha`, `moments` (every kept moment
+  with `startMs`, `endMs` and `read`, failed reads included) and `instants` (every instant the
+  picture changes, from the footage alone). `demo_analyses.timeline` is unchanged.
+- **An instant is not a screen change.** The detector has its own instant within 0.4 s of 56 of
+  57 real changes and repeats exactly, and fires 6–7 times for every real one
+  ([[footage-screen-changes-2026-10-02]]). The vision call tested to name them did not pass and
+  is not adopted ([[label-call-test-2026-10-02]], ₪14.20 of the ₪30 cap spent, the rest unspent
+  on his instruction). Its code was removed from the tree; it is in commit `5b49335`.
+- **MEASURED for his next ruling:** under the rule he proposed — a generated plan may only use a
+  moment with 2 s free of instants — 170 of the 536 moments a plan may pick qualify, 67 of 127
+  real-screen instances hold one, 13 of the 15 analyses have enough for a plan, and on the newest
+  take three of his nine segments hold none ([[instant-free-windows-2026-10-02]]). A window that
+  ends exactly at an instant can show up to 4 frames of the next screen; a 0.2 s margin removed
+  that on these recordings and leaves 106 moments and 11 of 15 analyses.
+- **Deploy order when he says go:** he pushes 0050 and reads it back; merge; the box pulls and
+  restarts. The code survives running before the migration (a failed write is logged and the
+  analysis lands as before), but writes nothing until the table exists.
 - **Kept off the repo:** scripts, frames, labels and the spend ledger are in
   `packages/core/.work/screens/` (gitignored). The frames show private browser tabs.
 
@@ -947,6 +947,11 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Push migration 0050** (`demo_analysis_footage`, 2026-10-02), then merge
+  `feat/analysis-footage-screens`, then put the box on it — in that order, each on his OK. Until
+  the table exists a new analysis writes no footage row (and lands exactly as before). The read-back
+  is in the migration file's VERIFY block.
+
 - **Rotate the credentials found burned on 2026-09-29** ([[credential-echo-incidents]]). By key
   name only: the `DATABASE_URL` password, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
   `ELEVENLABS_API_KEY`, `FAL_KEY` and `HEYGEN_API_KEY` each appear in 2–3 local session
@@ -1054,10 +1059,13 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Open decisions
 
-**The model's part of the screen detector (2026-10-02).** The label call the founder chose failed
-its test ([[label-call-test-2026-10-02]]). Open, his: adopt it as measured; add the stored fields
-to it (1 miss in 112, about 4 false per analysis); ship the model-free half alone; or pay for a
-stronger model, untested. Until he rules, nothing more of `feat/analysis-footage-screens` is built.
+**What the next task does with the instants (2026-10-02).** No model names them
+([[0083-no-model-names-the-instants-for-now]]). The founder proposed: a generated plan may only
+use a moment whose 2 s window holds no instant, every other moment stays for the customer to judge
+by eye. The measurement he asked for first is [[instant-free-windows-2026-10-02]]; he has not
+ruled. Two things it turned up are his to weigh: whole stretches (the opening of every take, 14 s
+of the newest one) have no such moment, and the window needs a 0.2 s margin from each instant or
+it can show a few frames of the next screen.
 
 **Whether an in-place swap is a screen change.** He said do not decide
 ([[0079-when-unsure-it-is-a-change]]); it is the next task's.
@@ -1119,6 +1127,9 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   action, so only on the founder's OK.
 - **Label agreement between runs** was never measured: no variant was worth repeating
   ([[label-call-test-2026-10-02]]).
+- **Whether the footage decode delays an analysis on the box (2026-10-02).** It runs beside the
+  vision calls and is reasoned to finish under them; each analysis logs `waitedMs`
+  ("analysis: footage instants"). Read it off the box's log after the first real analysis.
 
 - **Cluster spans on the box — not run.**
   - Re-running `frameHashes` → `clusterStates` on the box should reproduce every analysis's

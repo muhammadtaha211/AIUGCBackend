@@ -35,3 +35,11 @@ is clamped to 1 ms.
 end to end. The full fix is to store the analysis fps on each analysis row, which needs a schema
 change, and to fall back to 5 for older rows. It is worth doing before anyone tunes
 `a_analysis_fps` down.
+
+## 2026-10-02 — the rate is now stored for new analyses; the cut still reads the knob
+
+Built on `feat/analysis-footage-screens`, not deployed: a new analysis stores the rate it was
+sampled at, `demo_analysis_footage.fps` (migration 0050,
+[[0077-moments-keep-their-real-start-and-end]]). `stepDurations` still takes the sample from
+`a_analysis_fps` as it is now, and analyses made before the table have no row, so the defect
+stands. The fix that remains is to read the stored rate and fall back to 5.

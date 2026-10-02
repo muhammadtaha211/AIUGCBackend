@@ -26,3 +26,14 @@ the noise filter. Whether any production analysis was thinned was not measured.
 
 **Not fixed.** The analysis keeps no record of what it thinned. Fixing it means persisting cluster
 spans or the dropped ranges, which is an analysis-side change outside 0072.
+
+## 2026-10-02 — one half measured, the other half recorded for new analyses; the cut unchanged
+
+- **Thinning, MEASURED:** no production analysis was thinned by the 80 cap. The 16 `analyze_demo`
+  jobs kept 36 to 65 moments ([[footage-screen-changes-2026-10-02]]). A thinned cluster is still
+  recorded nowhere.
+- **Dropped reads, built on `feat/analysis-footage-screens`, not deployed:** a new analysis records
+  every kept moment with its span, the ones whose vision read failed included, in
+  `demo_analysis_footage.moments` ([[0080-a-moment-is-never-dropped-for-a-failed-read]]). The
+  timeline still drops them.
+- **The cut does not read it**, so the defect stands as written. Existing analyses have no row.

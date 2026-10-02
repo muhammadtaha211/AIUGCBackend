@@ -8,8 +8,8 @@ source: founder
 
 # 0082 — The model's part is a paid label call, tested first; the test did not pass
 
-**DECIDED, TESTED, NOT ADOPTED. The test failed its bar, so the per-analysis call is not built and
-the founder's next ruling is pending.**
+**DECIDED, TESTED, NOT ADOPTED. The test failed its bar, the per-analysis call was not built, and
+the founder ruled it out for now on 2026-10-02: [[0083-no-model-names-the-instants-for-now]].**
 
 ## The decisions (FOUNDER-DECIDED)
 
@@ -51,7 +51,8 @@ Full numbers and commands: [[label-call-test-2026-10-02]].
 
 ## Where that leaves it
 
-The pipeline was not built: his condition and the plan both say stop here. Open, for him:
+The pipeline was not built: his condition and the plan both say stop here. Put to him, and
+**ruled the same day — the third, [[0083-no-model-names-the-instants-for-now]]:**
 
 - adopt the label call as measured, knowing it misses about one real change in ten;
 - add the stored fields to it: measured offline on the same run, the two together miss 1 of 112

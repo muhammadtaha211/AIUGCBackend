@@ -211,10 +211,6 @@ export async function generateRawWithImages(opts: {
   frames: VisionFrame[];
   format: WireOutputFormat;
   maxTokens?: number;
-  /** Per-call overrides of the SDK's 10-minute timeout and 2 retries, for a
-   *  caller that would rather go without an answer than hold its lane. */
-  timeoutMs?: number;
-  maxRetries?: number;
 }): Promise<RawResult> {
   const content: Anthropic.ContentBlockParam[] = opts.frames.flatMap(
     (frame): Anthropic.ContentBlockParam[] => [
@@ -227,20 +223,14 @@ export async function generateRawWithImages(opts: {
   );
   content.push({ type: "text", text: opts.prompt });
 
-  const response = await getClient().messages.create(
-    {
-      model: CLAUDE_MODEL,
-      max_tokens: opts.maxTokens ?? 8192,
-      system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
-      thinking: { type: "disabled" },
-      messages: [{ role: "user", content }],
-      output_config: { format: opts.format },
-    },
-    {
-      ...(opts.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
-      ...(opts.maxRetries !== undefined ? { maxRetries: opts.maxRetries } : {}),
-    },
-  );
+  const response = await getClient().messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: opts.maxTokens ?? 8192,
+    system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
+    thinking: { type: "disabled" },
+    messages: [{ role: "user", content }],
+    output_config: { format: opts.format },
+  });
 
   const text = response.content.find(
     (block): block is Anthropic.TextBlock => block.type === "text",

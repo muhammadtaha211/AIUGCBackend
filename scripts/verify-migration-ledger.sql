@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0049 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0050 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,10 +33,11 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 40 rows: **38 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 41 rows: **39 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
 -- which this sentence had missed; 0044-0047 then added one each, to 38,
--- 0048 one more on 2026-09-21, to 39, and 0049 one on 2026-10-01, to 40.) Two of those
+-- 0048 one more on 2026-09-21, to 39, 0049 one on 2026-10-01, to 40, and 0050
+-- one on 2026-10-02, to 41.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -61,7 +62,7 @@
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
 -- 30 by 0040, 0043 took it to 34 with two ('0043', '0043-plans'), 0044-0047 to
--- 38 with one each, 0048 to 39, 0049 to **40**, and 0041/0042 before them took it to 32 with one row each — they are
+-- 38 with one each, 0048 to 39, 0049 to 40, 0050 to **41**, and 0041/0042 before them took it to 32 with one row each — they are
 -- kept separate, not paired like '0038+0040', because they assert different
 -- objects and either can fail without the other: 0041 owns the column, indexes
 -- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
@@ -665,6 +666,26 @@ WITH checks(migration, layer, applied, note) AS (VALUES
       AND pg_get_constraintdef(oid) LIKE '%white%'
       AND pg_get_constraintdef(oid) LIKE '%black%')),
   'hook_clips.text_color: text NOT NULL default white + the white|black CHECK'),
+
+-- 0050: demo_analysis_footage (decisions 0077, 0078, 0080, 0083) -- the table,
+-- its eight columns, the primary key that is also the FK to demo_analyses, and
+-- RLS enabled with no policy (0048's pattern). to_regclass so a missing table
+-- reads false instead of erroring the file. Written 2026-10-02 BEFORE the
+-- migration was pushed: until the founder pushes 0050 this row reads false on
+-- production, and that false means "not pushed yet", nothing else.
+('0050', 'structural', (SELECT
+  to_regclass('public.demo_analysis_footage') IS NOT NULL
+  AND (SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'demo_analysis_footage') = 8
+  AND (SELECT count(*) FROM pg_constraint
+    WHERE conrelid = to_regclass('public.demo_analysis_footage')
+      AND conname IN ('demo_analysis_footage_pkey',
+                      'demo_analysis_footage_analysis_id_demo_analyses_id_fk')) = 2
+  AND COALESCE((SELECT relrowsecurity FROM pg_class
+       WHERE oid = to_regclass('public.demo_analysis_footage')), false)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'demo_analysis_footage')),
+  'demo_analysis_footage: 8 columns, PK = FK to demo_analyses, RLS on with no policy'),
 
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or

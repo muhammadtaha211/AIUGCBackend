@@ -717,4 +717,71 @@ describe("migrations", () => {
 
     await fresh.close();
   });
+
+  it("0050: demo_analysis_footage — server-only RLS, one row per analysis, the FK, idempotent", async () => {
+    const { db, pg } = await createTestDb();
+    // A second apply is a no-op, not a duplicate-table or duplicate-constraint error.
+    await pg.exec(readFileSync(join(MIGRATIONS_DIR, "0050_demo_analysis_footage.sql"), "utf8"));
+
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.demo_analysis_footage'::regclass",
+    );
+    expect(rls.rows[0]?.relrowsecurity).toBe(true);
+    expect(
+      (await pg.query("SELECT 1 FROM pg_policies WHERE tablename = 'demo_analysis_footage'")).rows,
+    ).toHaveLength(0);
+    const columns = await pg.query(
+      "SELECT 1 FROM information_schema.columns WHERE table_name = 'demo_analysis_footage'",
+    );
+    expect(columns.rows).toHaveLength(8);
+    const constraints = await pg.query<{ conname: string }>(
+      "SELECT conname FROM pg_constraint WHERE conrelid = 'public.demo_analysis_footage'::regclass ORDER BY conname",
+    );
+    expect(constraints.rows.map((r) => r.conname)).toEqual([
+      "demo_analysis_footage_analysis_id_demo_analyses_id_fk",
+      "demo_analysis_footage_pkey",
+    ]);
+
+    const base = {
+      fps: 5,
+      fileSha: "0".repeat(64),
+      moments: [{ t: 0, startMs: 0, endMs: 200, read: true }],
+    };
+    // The FK: a footage row needs its analysis.
+    await expect(
+      db
+        .insert(schema.demoAnalysisFootage)
+        .values({ ...base, analysisId: "00000000-0000-0000-0000-000000000009" }),
+    ).rejects.toThrow(/foreign key/i);
+
+    const [user] = await db
+      .insert(schema.users)
+      .values({ email: "footage@test.local" })
+      .returning();
+    const [business] = await db
+      .insert(schema.businesses)
+      .values({ ownerUserId: user!.id, name: "עסק" })
+      .returning();
+    const [demo] = await db
+      .insert(schema.demos)
+      .values({ businessId: business!.id, status: "ready" })
+      .returning();
+    const [analysis] = await db
+      .insert(schema.demoAnalyses)
+      .values({ demoId: demo!.id, status: "pending" })
+      .returning();
+
+    // Instants are optional: NULL is "not computed".
+    const [row] = await db
+      .insert(schema.demoAnalysisFootage)
+      .values({ ...base, analysisId: analysis!.id })
+      .returning();
+    expect(row).toMatchObject({ fps: 5, detector: null, instants: null, moments: base.moments });
+    // One row per analysis.
+    await expect(
+      db.insert(schema.demoAnalysisFootage).values({ ...base, analysisId: analysis!.id }),
+    ).rejects.toThrow(/demo_analysis_footage_pkey/);
+
+    await pg.close();
+  });
 });

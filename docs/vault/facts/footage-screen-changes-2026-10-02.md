@@ -125,4 +125,6 @@ fixtures from the old project hold exactly 80 states.
 ## Related
 
 - [[label-call-test-2026-10-02]] — the vision call that was to name each instant.
+- [[instant-free-windows-2026-10-02]] — where the picture flips relative to its instant (4 frames
+  before to 5 after, at the real changes), and which moments have 2 s with no instant in it.
 - [[0077-moments-keep-their-real-start-and-end]]

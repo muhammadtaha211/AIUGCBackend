@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
@@ -25,10 +26,13 @@ vi.mock("../src/providers/anthropic", async (importOriginal) => ({
 
 const frameHashes = vi.hoisted(() => vi.fn());
 const extractFrames = vi.hoisted(() => vi.fn());
+// The footage decode: no instants unless a test supplies signatures.
+const frameSignatures = vi.hoisted(() => vi.fn(async (): Promise<unknown[]> => []));
 vi.mock("../src/media/ffmpeg", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/media/ffmpeg")>()),
   frameHashes,
   extractFrames,
+  frameSignatures,
 }));
 
 import { resetEnvCache } from "../src/config";
@@ -36,6 +40,7 @@ import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { HEAVY_JOB_TYPES, runLane } from "../src/jobs/worker";
+import { signatureOf, SIGNATURE_HEIGHT, SIGNATURE_WIDTH } from "../src/media/ffmpeg";
 import { WORK_DIR } from "../src/paths";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import {
@@ -567,6 +572,337 @@ describe("the legibility gate at the production seam (unreadable alone decides)"
       );
       expect(analysis.stateCount).toBe(5);
       expect(analysisTimelineSchema.parse(analysis.timeline)).toHaveLength(5);
+      // A rejected analysis still records its moments; instants are not waited for.
+      const [footage] = await db
+        .select()
+        .from(dbSchema.demoAnalysisFootage)
+        .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysis.id));
+      expect(footage?.moments).toHaveLength(5);
+      expect(footage?.instants).toBeNull();
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// The footage row at the seam (decisions 0077, 0078, 0080)
+// ---------------------------------------------------------------------------
+
+// Eight samples, four states of two frames each — clusters at 0, 400, 800 and
+// 1200ms, each held for two samples — in one batch of four.
+const FOUR_STATES = [A, A, B, B, C, C, D, D];
+const FOUR_MOMENTS = [0, 400, 800, 1200].map((t) => ({ t, startMs: t, endMs: t + 200 }));
+const DEGRADED_MESSAGE = "חלק גדול מדי מהצילום לא נותח — צלמו את ההדגמה שוב ונסו מחדש";
+
+/** A deterministic textured signature frame (analysis-screens.test.ts's). */
+function signatureFrame(seed: number): Uint8Array {
+  const out = new Uint8Array(SIGNATURE_WIDTH * SIGNATURE_HEIGHT);
+  for (let y = 0; y < SIGNATURE_HEIGHT; y++) {
+    for (let x = 0; x < SIGNATURE_WIDTH; x++) {
+      const texel = (((x >> 3) * 73856093) ^ ((y >> 3) * 19349663) ^ (seed * 83492791)) >>> 0;
+      out[y * SIGNATURE_WIDTH + x] = 40 + (texel % 160);
+    }
+  }
+  return out;
+}
+// 1.5 s of one picture, a cut, 1.5 s of another: one instant, near 1500ms.
+const twoScreens = () => [
+  ...Array.from({ length: 45 }, () => signatureOf(signatureFrame(1))),
+  ...Array.from({ length: 45 }, () => signatureOf(signatureFrame(2))),
+];
+
+describe("the footage row at the production seam (every moment, its span, the instants)", () => {
+  // Frames whose vision read never comes back — not in the batch, not in the
+  // corrective retry, not alone — by the time in their label.
+  let unread: string[] = [];
+
+  beforeAll(async () => {
+    await db
+      .update(dbSchema.appConfig)
+      .set({ value: 10 })
+      .where(eq(dbSchema.appConfig.key, "a_analysis_batch_size"));
+    frameHashes.mockResolvedValue(FOUR_STATES);
+    extractFrames.mockImplementation(
+      async (_input: string, outDir: string, opts: { fps: number }) => {
+        mkdirSync(outDir, { recursive: true });
+        return FOUR_STATES.map((_, i) => {
+          const file = path.join(outDir, `${i}.jpg`);
+          writeFileSync(file, `jpeg ${i}`);
+          return { path: file, timestampMs: Math.round((i * 1000) / opts.fps) };
+        });
+      },
+    );
+    frameSignatures.mockImplementation(async () => twoScreens());
+    generateRawWithImages.mockImplementation(
+      async (opts: { frames: { label: string }[] }): Promise<RawResult> =>
+        respond(
+          opts.frames.flatMap((f, i) =>
+            unread.some((t) => f.label.endsWith(t)) ? [] : [entry(i)],
+          ),
+        ),
+    );
+  });
+
+  const analyse = async (failing: string[] = []) => {
+    unread = failing;
+    const id = await seedReadyDemo();
+    const requested = await requestDemoAnalysis(db, id);
+    const footageJobId = (requested as { jobId: string }).jobId;
+    await runHeavyLane();
+    rmSync(path.join(WORK_DIR, "analysis", id), { recursive: true, force: true });
+    const analysis = (await getLatestDemoAnalysis(db, id))!;
+    const footage = (
+      await db
+        .select()
+        .from(dbSchema.demoAnalysisFootage)
+        .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysis.id))
+    )[0];
+    return { job: await jobRowOf(footageJobId), analysis, footage };
+  };
+
+  it(
+    "a ready analysis records every moment with its span, the instants and the file's hash — and its timeline is what it always was",
+    { timeout: 60_000 },
+    async () => {
+      const { analysis, footage } = await analyse();
+      expect(analysis.status).toBe("ready");
+      const timeline = analysisTimelineSchema.parse(analysis.timeline);
+      expect(timeline.map((s) => s.timestampMs)).toEqual([0, 400, 800, 1200]);
+      // Nothing new rides in the timeline: the ten keys it has always had.
+      expect(Object.keys((analysis.timeline as object[])[0]!).sort()).toEqual(
+        Object.keys(analysisTimelineSchema.element.shape).sort(),
+      );
+
+      expect(footage).toMatchObject({
+        fps: 5,
+        fileSha: createHash("sha256").update("fake video bytes").digest("hex"),
+        moments: FOUR_MOMENTS.map((m) => ({ ...m, read: true })),
+        detector: "screens@1",
+      });
+      const instants = footage!.instants as { atMs: number; strength: number; abrupt: number }[];
+      expect(instants).toHaveLength(1);
+      expect(Math.abs(instants[0]!.atMs - 1500)).toBeLessThanOrEqual(200);
+      // start <= t <= end, and no span overlaps the next (decision 0077).
+      const moments = footage!.moments as { t: number; startMs: number; endMs: number }[];
+      moments.forEach((m, i) => {
+        expect(m.startMs).toBeLessThanOrEqual(m.t);
+        expect(m.t).toBeLessThanOrEqual(m.endMs);
+        if (i > 0) expect(m.startMs).toBeGreaterThan(moments[i - 1]!.endMs);
+      });
+    },
+  );
+
+  it(
+    "the same file analysed twice gives the same moments, spans and instants",
+    { timeout: 60_000 },
+    async () => {
+      const first = (await analyse()).footage!;
+      const second = (await analyse()).footage!;
+      expect(second.analysisId).not.toBe(first.analysisId);
+      for (const key of ["fps", "fileSha", "moments", "detector", "instants"] as const) {
+        expect(second[key]).toEqual(first[key]);
+      }
+    },
+  );
+
+  it(
+    "exactly a quarter of the reads lost: ready as before, the lost moment kept in the list and marked",
+    { timeout: 60_000 },
+    async () => {
+      // 1 of 4 = 0.25, and the gate is strictly greater-than.
+      const { job, analysis, footage } = await analyse(["t=0.4s"]);
+      expect(job.status).toBe("succeeded");
+      expect(analysis.status).toBe("ready");
+      expect(analysis.failReason).toBeNull();
+      // The timeline drops the unread state, as it always has.
+      const timeline = analysisTimelineSchema.parse(analysis.timeline);
+      expect(timeline.map((s) => s.timestampMs)).toEqual([0, 800, 1200]);
+      expect(analysis.stateCount).toBe(3);
+      // The footage row keeps it (decision 0080).
+      expect(footage!.moments).toEqual(FOUR_MOMENTS.map((m) => ({ ...m, read: m.t !== 400 })));
+      // The k-th read moment IS the k-th timeline state.
+      const moments = footage!.moments as { t: number; read: boolean }[];
+      expect(moments.filter((m) => m.read).map((m) => m.t)).toEqual(
+        timeline.map((s) => s.timestampMs),
+      );
+    },
+  );
+
+  it(
+    "more than a quarter lost: failed with the same message and no timeline, the moments still recorded",
+    { timeout: 60_000 },
+    async () => {
+      const { job, analysis, footage } = await analyse(["t=0.4s", "t=0.8s"]);
+      expect(job.status).toBe("failed");
+      expect(analysis.status).toBe("failed");
+      expect(analysis.failReason).toBe(DEGRADED_MESSAGE);
+      expect(analysis.timeline).toBeNull();
+      expect(footage!.moments).toEqual(
+        FOUR_MOMENTS.map((m) => ({ ...m, read: m.t !== 400 && m.t !== 800 })),
+      );
+      expect(footage!.instants).toBeNull();
+      expect(footage!.detector).toBeNull();
+    },
+  );
+
+  it(
+    "the footage decode fails: the analysis lands ready with its moments, instants not computed",
+    { timeout: 60_000 },
+    async () => {
+      frameSignatures.mockRejectedValueOnce(new Error("ffmpeg exited 1"));
+      const { job, analysis, footage } = await analyse();
+      expect(job.status).toBe("succeeded");
+      expect(analysis.status).toBe("ready");
+      expect(footage!.moments).toHaveLength(4);
+      expect(footage!.instants).toBeNull();
+      expect(footage!.detector).toBeNull();
+    },
+  );
+
+  it(
+    "a retry whose own decode fails keeps the instants an earlier attempt stored, and re-buys nothing",
+    { timeout: 60_000 },
+    async () => {
+      const { job, analysis, footage } = await analyse();
+      expect(footage!.instants).toHaveLength(1);
+      // As after an attempt that lost its connection between the footage write
+      // and the ready write: the row is back in flight, the job is queued again
+      // with its checkpoint.
+      await db
+        .update(dbSchema.demoAnalyses)
+        .set({ status: "analysing" })
+        .where(eq(dbSchema.demoAnalyses.id, analysis.id));
+      await db.execute(
+        sql`update jobs set status = 'queued', run_at = now() - interval '1 second' where id = ${job.id}::uuid`,
+      );
+      frameSignatures.mockRejectedValueOnce(new Error("ffmpeg exited 137"));
+      const bought = generateRawWithImages.mock.calls.length;
+      await runHeavyLane();
+      rmSync(path.join(WORK_DIR, "analysis", analysis.demoId), { recursive: true, force: true });
+
+      expect(generateRawWithImages.mock.calls.length).toBe(bought);
+      expect((await getLatestDemoAnalysis(db, analysis.demoId))?.status).toBe("ready");
+      const rows = await db
+        .select()
+        .from(dbSchema.demoAnalysisFootage)
+        .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysis.id));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.instants).toEqual(footage!.instants);
+      expect(rows[0]!.detector).toBe("screens@1");
+    },
+  );
+
+  // The handler seen while the decode is still running: the mock above always
+  // resolves at once, which would hide every ordering rule below.
+  const waitFor = async (what: string, check: () => Promise<boolean>) => {
+    for (let i = 0; i < 400; i++) {
+      if (await check()) return;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`timed out waiting for ${what}`);
+  };
+  const footageOf = async (analysisId: string) =>
+    (
+      await db
+        .select()
+        .from(dbSchema.demoAnalysisFootage)
+        .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysisId))
+    )[0];
+
+  it(
+    "the decode still running: ready waits for it, and the footage row is written before ready is",
+    { timeout: 60_000 },
+    async () => {
+      let release!: (signatures: unknown[]) => void;
+      frameSignatures.mockImplementationOnce(
+        () => new Promise<unknown[]>((resolve) => (release = resolve)),
+      );
+      unread = [];
+      const id = await seedReadyDemo();
+      const pendingJobId = ((await requestDemoAnalysis(db, id)) as { jobId: string }).jobId;
+      const lane = runHeavyLane();
+
+      // The one vision batch has returned and been checkpointed…
+      await waitFor("the vision batch", async () => (await usageRowsOf(pendingJobId)).length === 1);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      // …and the analysis is held, with no footage row yet.
+      const held = (await getLatestDemoAnalysis(db, id))!;
+      expect(held.status).toBe("analysing");
+      expect(await footageOf(held.id)).toBeUndefined();
+
+      release(twoScreens());
+      await lane;
+      rmSync(path.join(WORK_DIR, "analysis", id), { recursive: true, force: true });
+      expect((await getLatestDemoAnalysis(db, id))?.status).toBe("ready");
+      expect((await footageOf(held.id))?.instants).toHaveLength(1);
+    },
+  );
+
+  it(
+    "the decode still running: a degraded analysis fails at once, and only the job waits for the decode",
+    { timeout: 60_000 },
+    async () => {
+      let release!: (signatures: unknown[]) => void;
+      frameSignatures.mockImplementationOnce(
+        () => new Promise<unknown[]>((resolve) => (release = resolve)),
+      );
+      unread = ["t=0.4s", "t=0.8s"];
+      const id = await seedReadyDemo();
+      const pendingJobId = ((await requestDemoAnalysis(db, id)) as { jobId: string }).jobId;
+      const lane = runHeavyLane();
+
+      // The customer has the verdict while the decode is still pending…
+      await waitFor(
+        "the failed status",
+        async () => (await getLatestDemoAnalysis(db, id))?.status === "failed",
+      );
+      const failed = (await getLatestDemoAnalysis(db, id))!;
+      expect(failed.failReason).toBe(DEGRADED_MESSAGE);
+      expect((await footageOf(failed.id))?.moments).toHaveLength(4);
+      // …and the handler holds the job until ffmpeg has let go of the file.
+      expect((await jobRowOf(pendingJobId)).status).toBe("running");
+
+      release(twoScreens());
+      await lane;
+      rmSync(path.join(WORK_DIR, "analysis", id), { recursive: true, force: true });
+      expect((await jobRowOf(pendingJobId)).status).toBe("failed");
+      expect((await footageOf(failed.id))?.instants).toBeNull();
+    },
+  );
+
+  it(
+    "the table is not there (the code deployed ahead of migration 0050): the analysis lands ready exactly as before",
+    { timeout: 60_000 },
+    async () => {
+      await db.execute(sql`alter table demo_analysis_footage rename to demo_analysis_footage_gone`);
+      try {
+        unread = [];
+        const id = await seedReadyDemo();
+        const requested = await requestDemoAnalysis(db, id);
+        await runHeavyLane();
+        rmSync(path.join(WORK_DIR, "analysis", id), { recursive: true, force: true });
+        expect((await jobRowOf((requested as { jobId: string }).jobId)).status).toBe("succeeded");
+        const analysis = (await getLatestDemoAnalysis(db, id))!;
+        expect(analysis.status).toBe("ready");
+        expect(analysis.stateCount).toBe(4);
+        expect(
+          analysisTimelineSchema.parse(analysis.timeline).map((state) => state.timestampMs),
+        ).toEqual([0, 400, 800, 1200]);
+
+        // The degraded gate too: still a permanent failure with its own message.
+        unread = ["t=0.4s", "t=0.8s"];
+        const degradedId = await seedReadyDemo();
+        const degraded = await requestDemoAnalysis(db, degradedId);
+        await runHeavyLane();
+        rmSync(path.join(WORK_DIR, "analysis", degradedId), { recursive: true, force: true });
+        expect((await jobRowOf((degraded as { jobId: string }).jobId)).status).toBe("failed");
+        const failed = (await getLatestDemoAnalysis(db, degradedId))!;
+        expect(failed.status).toBe("failed");
+        expect(failed.failReason).toBe(DEGRADED_MESSAGE);
+      } finally {
+        await db.execute(
+          sql`alter table demo_analysis_footage_gone rename to demo_analysis_footage`,
+        );
+      }
     },
   );
 });

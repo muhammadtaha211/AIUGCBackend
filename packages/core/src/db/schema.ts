@@ -193,6 +193,28 @@ export const demoAnalyses = pgTable(
   ],
 );
 
+// 0050: what analyze_demo knows about the recording itself, one row per
+// analysis (decisions 0077, 0078, 0080, 0083). Server-only, and nothing reads
+// it yet — the timeline above stays exactly what it was.
+export const demoAnalysisFootage = pgTable("demo_analysis_footage", {
+  analysisId: uuid("analysis_id")
+    .primaryKey()
+    .references(() => demoAnalyses.id),
+  // The sampling rate the moments were found at; their times sit on its grid.
+  fps: real("fps").notNull(),
+  // sha256 of the normalized file: two analyses of one file carry the same.
+  fileSha: text("file_sha").notNull(),
+  // AnalysisMoment[]: { t, startMs, endMs, read } — every kept moment in
+  // order, the ones whose vision read failed included (read: false).
+  moments: jsonb("moments").notNull(),
+  // FootageEvent[]: { atMs, strength, abrupt } — every instant the picture
+  // changes, from the footage alone. NULL (with detector) = not computed.
+  detector: text("detector"),
+  instants: jsonb("instants"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // The selection: 6-8 states chosen from the analysis, ordered by timestamp,
 // each with a Hebrew label. Cheap, regenerable, user-editable — until
 // approved_at is set. Edits to an approved plan fork a new row; renders

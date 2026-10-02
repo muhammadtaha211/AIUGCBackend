@@ -2,13 +2,14 @@
 type: decision
 status: verified
 verified: 2026-10-02
-method: "Founder decisions in chat, 2026-10-02: D3 and the open swap question relayed in that day's task prompt (section 2); the failed-label-call rule in his reply approving the plan the same day. The reasons are his. Recorded on branch feat/analysis-footage-screens. The rule exists as code (packages/core/src/pipelines/analysis-screens.ts screenChanges, pinned by packages/core/test/analysis-screens.test.ts) and nothing in the pipeline calls it."
+method: "Founder decisions in chat, 2026-10-02: D3 and the open swap question relayed in that day's task prompt (section 2); the failed-label-call rule in his reply approving the plan the same day. The reasons are his. Recorded on branch feat/analysis-footage-screens. The rule was written and tested as a pure function with the label call (screenChanges, commit 5b49335) and REMOVED from the tree the same day, when the founder ruled the label call out (decision 0083). No code carries it now."
 source: founder
 ---
 
 # 0079 — When unsure, it is a change
 
-**DECIDED. The rule is written and tested as a pure function; nothing calls it yet.**
+**DECIDED. No code carries it: the function that did was removed with the label call it served
+([[0083-no-model-names-the-instants-for-now]]).**
 
 ## The decisions (FOUNDER-DECIDED)
 
@@ -22,16 +23,16 @@ source: founder
 Whether an in-place swap (same page, content replaced, e.g. "creating the ad" to "the ad is
 ready") counts as a change. It is to be **stored marked as a swap** so the next task can choose.
 
-## As written in the code
+## As it was written (commit `5b49335`, removed 2026-10-02)
 
-`screenChanges` turns judged instants into changes:
+`screenChanges` turned judged instants into changes:
 
 - no label → a change, `why: "unjudged"`;
 - a label the model was not sure of → a change, `why: "unsure"`, whatever it leaned towards;
 - `swap` → kind `swap`, kept marked whether sure or not;
 - a sure same-screen label → no change.
 
-One more branch is in the code as the last variant **tested, not decided**: a cut (`abrupt` 0.9 or
+One more branch was in it as the last variant **tested, not decided**: a cut (`abrupt` 0.9 or
 more) that the model explains as the camera or a scroll is a change, because a camera cannot
 change the picture in one frame. It recovered T5's 9.8 s change and added false ones
 ([[label-call-test-2026-10-02]], run `strip-192-f1`).

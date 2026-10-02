@@ -2,13 +2,13 @@
 type: decision
 status: verified
 verified: 2026-10-02
-method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D1, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. NOT YET BUILT: the helpers exist (packages/core/src/pipelines/analysis-screens.ts analysisMoments, momentHold) and nothing writes a span yet."
+method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D1, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. BUILT on that branch 2026-10-02 (packages/core/src/pipelines/demo-analysis.ts recordFootage, analysis-screens.ts analysisMoments; pinned by packages/core/test/analysis-seam.test.ts 'the footage row at the production seam'). Migration 0050 is written and NOT pushed; nothing is deployed."
 source: founder
 ---
 
 # 0077 — The analysis keeps each moment's real start and end
 
-**DECIDED, NOT YET BUILT.**
+**DECIDED. BUILT on the branch 2026-10-02; migration 0050 not pushed, nothing deployed.**
 
 ## The decision (FOUNDER-DECIDED, D1)
 
@@ -27,8 +27,9 @@ The analysis keeps each moment's real start and end.
   picture really stops up to one sample after `endMs`.
 - **MEASURED:** a cluster span is not always where the picture holds. 12 of the 57 real screen
   changes move the shipped hash by 14 bits or fewer, the clustering's own same-state threshold, so
-  a cluster can run straight across one ([[footage-screen-changes-2026-10-02]]). A span has to be
-  clipped at the changes on either side of the moment: `momentHold`.
+  a cluster can run straight across one ([[footage-screen-changes-2026-10-02]]). A reader that
+  wants where the picture really holds has to cut the span at the instants either side of the
+  moment; nothing does that yet.
 - **MEASURED:** the box gives every re-upload of one file the identical kept list, in all 16
   production jobs; off the box the clustering does not reproduce
   ([[analysis-clustering-does-not-reproduce-across-machines]]). So the spans can only be captured
@@ -46,7 +47,18 @@ Put to the founder in the plan and approved with it:
   `moments: { t, startMs, endMs, read }[]`, with the analysis `fps`. `demo_analyses.timeline` stays
   byte for byte what it is: it is a bare array that seven code paths parse and that plans index by
   position.
-- A migration is needed (0050). **Not written yet**; it is pushed only on his instruction.
+- A migration is needed (0050). Written 2026-10-02 on his approval
+  ([[0083-no-model-names-the-instants-for-now]]); **he pushes it himself.**
+
+## As built, 2026-10-02
+
+- A new analysis writes one `demo_analysis_footage` row right before it lands ready, rejected or
+  failed by the degraded gate: `fps`, `file_sha`, and `moments` with every kept moment's
+  `startMs` and `endMs`, the first and last sample its picture held on.
+- **Pinned by tests:** start ≤ timestamp ≤ end and no two spans overlap, for any hash sequence and
+  at the handler; the same file analysed twice gives the same row; a failed write (the table not
+  pushed yet) leaves the analysis ready exactly as before.
+- Existing analyses have no row ([[0081-existing-demos-keep-working-no-paid-re-analysis]]).
 
 ## Related
 

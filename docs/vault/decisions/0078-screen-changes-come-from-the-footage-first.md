@@ -2,14 +2,15 @@
 type: decision
 status: verified
 verified: 2026-10-02
-method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D2, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. The measurement taken against it the same day is facts/footage-screen-changes-2026-10-02.md and facts/label-call-test-2026-10-02.md. NOT YET BUILT."
+method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D2, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. The measurement taken against it the same day is facts/footage-screen-changes-2026-10-02.md and facts/label-call-test-2026-10-02.md. HALF BUILT on that branch 2026-10-02: the instants are stored per analysis (demo-analysis.ts, analysis-screens.ts footageEvents); nothing names which of them are screen changes (decision 0083). Migration 0050 not pushed, nothing deployed."
 source: founder
 ---
 
 # 0078 — Real screen changes come from the footage first
 
-**DECIDED, NOT YET BUILT. The measurement below contradicts part of it; the founder has been told
-and has not yet ruled on what follows.**
+**DECIDED. HALF BUILT on the branch 2026-10-02: the footage's instants are stored; no model
+names them ([[0083-no-model-names-the-instants-for-now]]). The measurement below contradicts part
+of the decision; the founder has been told and has ruled the model out for now.**
 
 ## The decision (FOUNDER-DECIDED, D2)
 
@@ -48,7 +49,22 @@ There was no menu for D2 itself. The options offered for the model's part, and h
 
 - A re-upload whose normalized file has the same sha256 copies the stored result instead of asking
   again. **REASONED:** it is the only way changes repeat for the same file once a model labels them,
-  since two label runs can differ. Not built.
+  since two label runs can differ. **Not built, and not needed while no model labels anything:**
+  the instants are a pure function of the file. `file_sha` is stored on each row, so two analyses
+  of one file can be compared.
+
+## As built, 2026-10-02
+
+- `analyze_demo` decodes the recording once more, on every native frame, while its vision calls
+  are in flight, and stores the instants (`atMs`, `strength`, `abrupt`) with the detector's name,
+  `screens@1`.
+- A failed decode stores the instants as not computed and never fails the analysis (test).
+- **REASONED, not measured on the box:** a fresh analysis waits no longer for it; a retry whose
+  vision batches are all checkpointed waits the whole decode before it turns ready. The decode takes
+  9–23 s on this machine. In production, on single-attempt jobs, 24–57 s pass before the first
+  vision call returns and another 11–51 s before the last (read-only, 16 jobs,
+  `packages/core/.work/screens/timing-readback.ts`). Each analysis logs `waitedMs`, the time it
+  was held for the decode after everything else was done.
 
 ## Related
 

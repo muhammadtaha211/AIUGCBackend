@@ -1,20 +1,20 @@
-import { z } from "zod";
 import type { FrameSignature, StateCluster } from "../media/ffmpeg";
 
 /**
- * Where the screen really changes (decisions 0077-0082). The footage decides
- * WHEN: footageEvents finds every instant the picture changes, on every native
- * frame, with no model — measured 2026-10-02, it has an instant at 56 of 57
- * real changes. WHAT each instant is — a new screen, the same screen with its
- * content replaced, or the same screen — the footage cannot tell, and the
- * label call that was to tell it did not pass its test
- * (facts/label-call-test-2026-10-02). So the label vocabulary and
- * screenChanges below are the last variant TESTED, not a shipped rule, and
- * nothing in the pipeline calls this module yet.
+ * What the footage itself says about a recording (decisions 0077, 0078, 0080,
+ * 0083), stored per analysis in demo_analysis_footage:
+ * - footageEvents: every instant the picture changes and then holds, on every
+ *   native frame, with no model. Measured 2026-10-02, it has an instant within
+ *   0.4 s of 56 of 57 real screen changes — and 6-7 instants for every real
+ *   one, because a popup, a content load or a camera move is an instant too.
+ *   WHAT an instant is, the footage cannot tell, and the vision call tested to
+ *   tell it was not adopted (0083). So these are instants, not screen changes.
+ * - analysisMoments: every kept moment with the span its picture held for,
+ *   the ones whose vision read failed included.
  */
 
 /** Bumped whenever a constant below, or the signature in media/ffmpeg.ts,
- *  changes — stored results are only copied between analyses of one detector. */
+ *  changes — every stored row names the detector that found its instants. */
 export const SCREENS_DETECTOR = "screens@1";
 
 /** The normalized demo's own rate (normalizeVideo): every frame is looked at. */
@@ -40,9 +40,7 @@ export interface FootageEvent {
   strength: number;
   /** How much of the change across the instant happened between two adjacent
    *  frames, 0-1. A cut is ~1; a scroll or a camera move, spread over the
-   *  whole gap, is ~0.1. Two stills cannot show this, so the label call is
-   *  told: without it the model reads a navigation as "scrolled to another
-   *  section" (measured 2026-10-02). */
+   *  whole gap, is ~0.1. */
   abrupt: number;
 }
 
@@ -121,53 +119,6 @@ export function footageEvents(signatures: FrameSignature[], fps = SIGNATURE_FPS)
   return events;
 }
 
-/** `moved`, `overlay` and `content` are the three ways of staying on the same
- *  screen. They are kept apart because the footage can check one of them:
- *  the camera or a scroll cannot change the picture in a single frame. */
-export const SCREEN_LABELS = ["new", "swap", "overlay", "content", "moved"] as const;
-export type ScreenLabel = (typeof SCREEN_LABELS)[number];
-
-/** `abrupt` at or above which an instant is a cut. Where the model calls a cut
- *  `moved`, the two witnesses contradict each other — and unsure is a change. */
-export const CUT_ABRUPT = 0.9;
-
-/** One instant as stored: where the footage put it, and what the model called
- *  it. `label: null` = the model never answered for it. */
-export interface JudgedEvent extends FootageEvent {
-  label: ScreenLabel | null;
-  sure: boolean;
-}
-
-export interface ScreenChange {
-  atMs: number;
-  /** `swap` = the same page with its content replaced. Stored marked, counted
-   *  as nothing yet: whether a swap ends a screen is the next task's call. */
-  kind: "change" | "swap";
-  why: "model" | "unsure" | "unjudged";
-}
-
-/**
- * The changes a set of judged instants amounts to. Decision 0079: when unsure,
- * it is a change — an instant with no label, one the model was not sure of,
- * or a cut the model explained as the camera or a scroll, is a change
- * whatever the model leaned towards; a swap keeps its mark either way.
- */
-export function screenChanges(events: JudgedEvent[]): ScreenChange[] {
-  const changes: ScreenChange[] = [];
-  for (const event of events) {
-    if (event.label === null) {
-      changes.push({ atMs: event.atMs, kind: "change", why: "unjudged" });
-    } else if (event.label === "swap") {
-      changes.push({ atMs: event.atMs, kind: "swap", why: event.sure ? "model" : "unsure" });
-    } else if (event.label === "new") {
-      changes.push({ atMs: event.atMs, kind: "change", why: event.sure ? "model" : "unsure" });
-    } else if (!event.sure || (event.label === "moved" && event.abrupt >= CUT_ABRUPT)) {
-      changes.push({ atMs: event.atMs, kind: "change", why: "unsure" });
-    }
-  }
-  return changes;
-}
-
 /** One kept moment as recorded: the cluster's representative and the first and
  *  last sample its picture was held on (inclusive, on the analysis fps grid —
  *  decision 0077), and whether its vision read came back (0080). */
@@ -190,35 +141,3 @@ export function analysisMoments(kept: StateCluster[], read: boolean[]): Analysis
     read: read[i]!,
   }));
 }
-
-/**
- * Where a moment's picture really holds: its cluster span, cut back to the
- * stretch between the changes on either side of `t`. A cluster can run
- * straight across a real change — 12 of the 57 measured ones move the hash
- * less than the clustering's own same-state threshold — so the raw span alone
- * is not the hold.
- */
-export function momentHold(
-  moment: AnalysisMoment,
-  changes: { atMs: number }[],
-): { startMs: number; endMs: number } {
-  let startMs = moment.startMs;
-  let endMs = moment.endMs;
-  for (const change of changes) {
-    if (change.atMs <= moment.t) startMs = Math.max(startMs, change.atMs);
-    else endMs = Math.min(endMs, change.atMs);
-  }
-  return { startMs, endMs };
-}
-
-/** What the model returns for one instant. Validated per element, like a
- *  vision batch frame: a bad entry leaves that instant unjudged, never the call. */
-export const labelEntrySchema = z.object({
-  index: z.number(),
-  // Written before the label on purpose: naming what differs ("camera zoomed
-  // in") is what stops a zoom being called a new screen. Never stored.
-  what: z.string(),
-  label: z.enum(SCREEN_LABELS),
-  sure: z.boolean(),
-});
-export const labelOutputSchema = z.object({ instants: z.array(labelEntrySchema) });

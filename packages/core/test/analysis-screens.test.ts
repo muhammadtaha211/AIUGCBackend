@@ -6,19 +6,12 @@ import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   clusterStates,
-  extractFramesAt,
   frameSignatures,
   signatureOf,
   SIGNATURE_HEIGHT,
   SIGNATURE_WIDTH,
 } from "../src/media/ffmpeg";
-import {
-  analysisMoments,
-  footageEvents,
-  momentHold,
-  screenChanges,
-  SIGNATURE_FPS,
-} from "../src/pipelines/analysis-screens";
+import { analysisMoments, footageEvents, SIGNATURE_FPS } from "../src/pipelines/analysis-screens";
 
 const exec = promisify(execFile);
 const W = SIGNATURE_WIDTH;
@@ -95,7 +88,7 @@ describe("footageEvents", () => {
   });
 });
 
-describe("analysisMoments and momentHold", () => {
+describe("analysisMoments", () => {
   // The same deterministic pseudo-random walk every run: no Math.random in a test.
   let state = 12345;
   const next = () => {
@@ -140,58 +133,9 @@ describe("analysisMoments and momentHold", () => {
     ]);
     expect(() => analysisMoments(kept, [true])).toThrow(/read flags/);
   });
-
-  it("cuts a span back to the changes on either side of its moment", () => {
-    const moment = { t: 5000, startMs: 2000, endMs: 9000, read: true };
-    expect(momentHold(moment, [])).toEqual({ startMs: 2000, endMs: 9000 });
-    // A cluster can run across a real change: the hold stops at it.
-    expect(momentHold(moment, [{ atMs: 3100 }, { atMs: 7400 }, { atMs: 8000 }])).toEqual({
-      startMs: 3100,
-      endMs: 7400,
-    });
-    expect(momentHold(moment, [{ atMs: 1000 }, { atMs: 9500 }])).toEqual({
-      startMs: 2000,
-      endMs: 9000,
-    });
-  });
 });
 
-describe("screenChanges — when unsure, it is a change (decision 0079)", () => {
-  const at = (atMs: number) => ({ atMs, strength: 2, abrupt: 0.5 });
-
-  it("an instant nobody judged is a change", () => {
-    expect(screenChanges([{ ...at(1000), label: null, sure: false }])).toEqual([
-      { atMs: 1000, kind: "change", why: "unjudged" },
-    ]);
-  });
-
-  it("an unsure answer is a change whatever it leaned towards; a sure same-screen answer is not", () => {
-    expect(
-      screenChanges([
-        { ...at(1000), label: "overlay", sure: true },
-        { ...at(2000), label: "content", sure: false },
-        { ...at(3000), label: "new", sure: true },
-      ]),
-    ).toEqual([
-      { atMs: 2000, kind: "change", why: "unsure" },
-      { atMs: 3000, kind: "change", why: "model" },
-    ]);
-  });
-
-  it("a swap stays marked as a swap, sure or not", () => {
-    expect(
-      screenChanges([
-        { ...at(1000), label: "swap", sure: true },
-        { ...at(2000), label: "swap", sure: false },
-      ]),
-    ).toEqual([
-      { atMs: 1000, kind: "swap", why: "model" },
-      { atMs: 2000, kind: "swap", why: "unsure" },
-    ]);
-  });
-});
-
-describe("frameSignatures and extractFramesAt against real ffmpeg", () => {
+describe("frameSignatures against real ffmpeg", () => {
   const dir = path.join(tmpdir(), "aiugc-analysis-screens");
   const twoScene = path.join(dir, "two-scene.mp4");
   // Two textured scenes of 2 s each at 30 fps, hard cut between them.
@@ -213,34 +157,5 @@ describe("frameSignatures and extractFramesAt against real ffmpeg", () => {
     const events = footageEvents(signatures);
     expect(events).toHaveLength(1);
     expect(Math.abs(events[0]!.atMs - 2000)).toBeLessThanOrEqual(200);
-  }, 30_000);
-
-  it("extracts a hundred named frames in one pass (a flat select of that many terms fails)", async () => {
-    const frameIndexes = Array.from({ length: 100 }, (_, i) => i);
-    const frames = await extractFramesAt(twoScene, path.join(dir, "frames"), {
-      fps: SIGNATURE_FPS,
-      width: 96,
-      frameIndexes,
-    });
-    expect(frames).toHaveLength(100);
-    expect(frames[99]!.timestampMs).toBe(3300);
-  }, 30_000);
-
-  it("tiles every four frames into one strip, stamped with its first frame's time", async () => {
-    const strips = await extractFramesAt(twoScene, path.join(dir, "strips"), {
-      fps: SIGNATURE_FPS,
-      width: 96,
-      frameIndexes: [3, 6, 9, 12, 60, 63, 66, 69],
-      tile: 4,
-    });
-    expect(strips.map((s) => s.timestampMs)).toEqual([100, 2000]);
-    await expect(
-      extractFramesAt(twoScene, path.join(dir, "strips"), {
-        fps: SIGNATURE_FPS,
-        width: 96,
-        frameIndexes: [1, 2, 3],
-        tile: 4,
-      }),
-    ).rejects.toThrow(/do not fill strips/);
   }, 30_000);
 });

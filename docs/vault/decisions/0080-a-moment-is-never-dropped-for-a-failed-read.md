@@ -2,13 +2,13 @@
 type: decision
 status: verified
 verified: 2026-10-02
-method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D4); the reason is his. His two rulings on how it is met were given the same day in answer to two questions put to him before the plan was finalised (failed reads: 'Separate list'; the gate: 'Keep the gate'). Recorded on branch feat/analysis-footage-screens. NOT YET BUILT."
+method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D4); the reason is his. His two rulings on how it is met were given the same day in answer to two questions put to him before the plan was finalised (failed reads: 'Separate list'; the gate: 'Keep the gate'). Recorded on branch feat/analysis-footage-screens. BUILT on that branch 2026-10-02 (demo-analysis.ts recordFootage; pinned by packages/core/test/analysis-seam.test.ts). Migration 0050 not pushed, nothing deployed."
 source: founder
 ---
 
 # 0080 — A moment is never dropped because its vision read failed
 
-**DECIDED, NOT YET BUILT.**
+**DECIDED. BUILT on the branch 2026-10-02; migration 0050 not pushed, nothing deployed.**
 
 ## The decision (FOUNDER-DECIDED, D4)
 
@@ -45,6 +45,16 @@ Both were put to him as questions because the brief contradicted itself.
   [[a-vision-batch-can-collapse-and-survive-the-retry]] predates the fill round and now says so.
 - **MEASURED:** a failed moment's thumbnail is already in storage: every kept frame is uploaded
   before any vision call.
+
+## As built, 2026-10-02
+
+- Every kept moment is in `demo_analysis_footage.moments`, with `read: false` on the ones whose
+  vision read never came back. The `timeline` array still drops them, as before: the k-th moment
+  with `read: true` is the k-th timeline state (test).
+- **The gate is now pinned by tests, at its edge:** exactly a quarter of the reads lost lands
+  ready; more fails with the same Hebrew message and no timeline. On both paths the moments are
+  recorded.
+- A legibility-rejected analysis records its moments too.
 
 ## Related
 

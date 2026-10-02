@@ -1,4 +1,5 @@
 import { and, desc, eq, isNull, like } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -6,7 +7,7 @@ import { getConfigValueOr } from "../appConfig";
 import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { getEnv } from "../config";
 import type { Db } from "../db";
-import { demoAnalyses, demos, jobs } from "../db/schema";
+import { demoAnalyses, demoAnalysisFootage, demos, jobs } from "../db/schema";
 import { BudgetError, PermanentError } from "../jobs/errors";
 import { enqueue, isLastAttempt, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -14,6 +15,7 @@ import {
   clusterStates,
   extractFrames,
   frameHashes,
+  frameSignatures,
   hamming,
   type StateCluster,
 } from "../media/ffmpeg";
@@ -28,6 +30,13 @@ import {
 } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { getStorage, storageKey } from "../storage";
+import {
+  analysisMoments,
+  footageEvents,
+  SCREENS_DETECTOR,
+  SIGNATURE_FPS,
+  type FootageEvent,
+} from "./analysis-screens";
 import { requireQuestionnaire } from "./businesses";
 
 /**
@@ -879,7 +888,9 @@ export async function requestDemoAnalysis(
 /**
  * Job handler (heavy lane): normalized demo -> frame hashes -> state clusters
  * -> representative JPEGs to storage -> batched vision transcription ->
- * demo_analyses.timeline. Resumable: the analysis row id and every completed
+ * demo_analyses.timeline, with what the footage itself says (every moment's
+ * span, every instant the picture changes) beside it in
+ * demo_analysis_footage. Resumable: the analysis row id and every completed
  * batch are checkpointed on the job, so a retry re-runs ffmpeg (cheap, local)
  * but never re-buys a finished vision batch.
  */
@@ -924,6 +935,11 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       id: demoId,
       filename: `states/${ms}.jpg`,
     });
+
+  // The footage decode (started below) runs beside the vision calls. Whatever
+  // becomes of the analysis, it is waited out before the handler returns, so a
+  // retry never rewrites demo.mp4 under a running ffmpeg. It never rejects.
+  let instants: Promise<FootageEvent[] | null> = Promise.resolve(null);
 
   try {
     if (getEnv().DRY_RUN) {
@@ -1035,6 +1051,21 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
     );
     const batches: StateCluster[][] = [];
     for (let i = 0; i < kept.length; i += batchSize) batches.push(kept.slice(i, i + batchSize));
+
+    // Decision 0078: every instant the picture changes, from the footage
+    // alone, on every frame. One more decode pass, run while the vision calls
+    // are in flight so a fresh analysis should wait no longer for it; a retry
+    // whose batches are all checkpointed waits the whole decode. A failure
+    // costs the instants (stored as not computed), never the analysis.
+    instants = frameSignatures(localDemo, { fps: SIGNATURE_FPS })
+      .then((signatures) => footageEvents(signatures))
+      .catch((err: unknown) => {
+        ctx.log.warn(
+          { demoId, err: err instanceof Error ? err.message : String(err) },
+          "analysis: footage instants failed — stored as not computed",
+        );
+        return null;
+      });
 
     const { text: system, promptVersion } = renderPrompt("analyze_demo", {
       questionnaire: JSON.stringify(questionnaire, null, 2),
@@ -1150,6 +1181,40 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       throw (budget ?? rejections[0]!).reason;
     }
 
+    // Decisions 0077 and 0080: every kept moment with the span its picture
+    // held for — the ones whose read never came back included, which the
+    // timeline below drops. Server-only and read by nothing yet, so a failed
+    // write (the table not pushed yet, a dropped connection) is logged and the
+    // analysis lands exactly as it did before this row existed.
+    const recordFootage = async (events: FootageEvent[] | null) => {
+      try {
+        const read = batches.flatMap((batch, bi) =>
+          batch.map((_, i) => Boolean(batchResults[bi]![i])),
+        );
+        const row = {
+          fps,
+          fileSha: createHash("sha256").update(readFileSync(localDemo)).digest("hex"),
+          moments: analysisMoments(kept, read),
+          updatedAt: new Date(),
+        };
+        const found = { detector: events ? SCREENS_DETECTOR : null, instants: events };
+        await ctx.db
+          .insert(demoAnalysisFootage)
+          .values({ analysisId: analysisId!, ...row, ...found })
+          // A retry with no instants of its own keeps the ones an earlier
+          // attempt stored: same analysis, same file.
+          .onConflictDoUpdate({
+            target: demoAnalysisFootage.analysisId,
+            set: events ? { ...row, ...found } : row,
+          });
+      } catch (err) {
+        ctx.log.warn(
+          { demoId, err: err instanceof Error ? err.message : String(err) },
+          "analysis: footage row not written — the analysis lands without it",
+        );
+      }
+    };
+
     // A batch still short after its own corrective retry is model behaviour on
     // this footage, not a transient fault — re-running the job will not help.
     // Losing a few states out of eighty is absorbed; past the fraction gate
@@ -1168,6 +1233,8 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       0.25,
     );
     if (droppedCount / kept.length > maxDegradedFraction) {
+      // The gate is unchanged; the moments it failed over are still recorded.
+      await recordFootage(null);
       throw new PermanentError(
         `analysis degraded: ${droppedCount} of ${kept.length} states unreturned after corrective retries`,
         { customerMessage: "חלק גדול מדי מהצילום לא נותח — צלמו את ההדגמה שוב ונסו מחדש" },
@@ -1212,6 +1279,7 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       // The job did its work — the verdict on the FOOTAGE lives on the domain
       // row, customer-readable, with the timeline kept for founder debugging.
       // Pinned at the seam by analysis-seam.test.ts (stubbed vision provider).
+      await recordFootage(null);
       await setAnalysis({
         status: "rejected",
         timeline: assembled,
@@ -1222,6 +1290,17 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       return { kind: "done" };
     }
 
+    // Before the row turns ready, so a ready analysis never lacks its footage
+    // row for a reader to trip over. waitedMs is how long the analysis was
+    // held for the decode after everything else was done — 0 when it finished
+    // under the vision calls, as intended.
+    const waitStart = Date.now();
+    const events = await instants;
+    ctx.log.info(
+      { demoId, instants: events?.length ?? null, waitedMs: Date.now() - waitStart },
+      "analysis: footage instants",
+    );
+    await recordFootage(events);
     await setAnalysis({
       status: "ready",
       timeline: assembled,
@@ -1242,6 +1321,8 @@ export async function handleAnalyzeDemo(job: Job, ctx: JobContext): Promise<JobR
       await setAnalysis({ status: "failed", failReason: "ניתוח הסרטון נכשל — נסו שוב" });
     }
     throw err;
+  } finally {
+    await instants;
   }
 }
 
