@@ -37,7 +37,13 @@
     "dryRunSourceIndexes [1, 3, 5, 8] -> [1, 3, 5, 7, 10, 11]. This fixture carries no footage",
     "instants, so every clip starts at its moment and nothing is calm.",
     "sourceIndexes (live) is untouched and unverified under plan_demo_steps@v16 until the paid",
-    "check re-takes it."
+    "check re-takes it.",
+    "",
+    "2026-10-02, later (the paid check of plan_demo_steps@v16, on the founder's OK): sourceIndexes",
+    "re-taken from one live run: [3, 5, 6, 7, 10, 11] ->",
+    "[3, 5, 7, 10, 11]. Ready on call 2 of 3, nothing repaired, no caption over 4 words.",
+    "One run: the model's selection varies from run to run, so a red here is a prompt to read the",
+    "plan, not proof of a regression."
   ],
   "questionnaire": {
     "category": "app_or_digital",
@@ -183,7 +189,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [3, 5, 6, 7, 10, 11],
+    "sourceIndexes": [3, 5, 7, 10, 11],
     "dryRunSourceIndexes": [1, 3, 5, 7, 10, 11]
   }
 }

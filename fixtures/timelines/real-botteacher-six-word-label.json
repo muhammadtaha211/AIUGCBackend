@@ -65,7 +65,13 @@
     "The access pin moved 3 -> 4: the latest address-bar state whose 2 s clip (3600-5600) still",
     "ends by the address bar's end (5800). Every state before the address bar's end is off the",
     "table beside it, so sourceIndexes (live) opens on a state (3) no plan can hold any more —",
-    "expected red, and unverified under plan_demo_steps@v16 until the paid check re-takes it."
+    "expected red, and unverified under plan_demo_steps@v16 until the paid check re-takes it.",
+    "",
+    "2026-10-02, later (the paid check of plan_demo_steps@v16, on the founder's OK): sourceIndexes",
+    "re-taken from one live run: [3, 42, 47, 48, 60, 74, 79] ->",
+    "[4, 42, 47, 48, 79]. Ready on call 2 of 3, nothing repaired, no caption over 4 words, with a note.",
+    "One run: the model's selection varies from run to run, so a red here is a prompt to read the",
+    "plan, not proof of a regression."
   ],
   "questionnaire": {
     "tone": "friendly",
@@ -2040,7 +2046,7 @@
     }
   ],
   "expected": {
-    "sourceIndexes": [3, 42, 47, 48, 60, 74, 79],
+    "sourceIndexes": [4, 42, 47, 48, 79],
     "dryRunSourceIndexes": [4, 42, 47, 48, 60, 74, 79]
   }
 }

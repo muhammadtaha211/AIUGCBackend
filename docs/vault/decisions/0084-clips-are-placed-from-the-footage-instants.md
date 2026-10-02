@@ -56,7 +56,10 @@ that clip.
   frame and this changes nothing.
 - **A generated plan prefers calm clips** by being told to (prompt `plan_demo_steps@v16`: each
   moment the model sees carries `calm`, and `twoPages` when its clip probably shows two pages).
-  The model sees every moment; none is hidden for being non-calm.
+  The model sees every moment; none is hidden for being non-calm. **MEASURED the same day, one
+  paid run on each of five takes:** 7 of the model's 24 picks were calm, and 3 crossed a real
+  change, each carrying the amber line ([[v16-paid-check-2026-10-02]]). The request moves the
+  model little; code does not enforce it.
 
 ## Options and what was measured
 

@@ -109,8 +109,9 @@ Of 536 pickable clips, 35 hold a keyed change.
 - **The instants here are this machine's.** On the one file the box has analysed since, the box's
   instants match this machine's within one frame ([[box-and-local-instants-agree-2026-10-02]]).
   The committed test data for T5 uses the box's.
-- **What the model does with `calm` and `twoPages` is unmeasured** until the paid check of
-  `plan_demo_steps@v16`.
+- **What the model does with `calm` and `twoPages`** was measured later the same day by the paid
+  check: [[v16-paid-check-2026-10-02]] (7 of its 24 picks calm, 3 crossing a real change, all 3
+  carrying the amber line).
 - **The key is model vision**, on a 0.2 s grid, except the founder's segments of T5.
 
 ## Related

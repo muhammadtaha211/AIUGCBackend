@@ -106,7 +106,8 @@ states the 2 s step, the two caption lengths and the no-shared-footage rule. v16
 cap and no `clipMs`. A process started before the pull would send v16's prose over a timeline
 with `clipMs` and none of the new fields, and stamp the row `plan_demo_steps@v16+pickable` — a
 stamp only such a process can write. Pull and restart together. **The model's behaviour under v16
-is unverified until the paid check the founder has yet to approve.**
+was checked the same day, paid, on ten timelines: all ten ended ready with nothing repaired
+([[v16-paid-check-2026-10-02]]).**
 
 ## Resolution is "highest number wins", numerically
 

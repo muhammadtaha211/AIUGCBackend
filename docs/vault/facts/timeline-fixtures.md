@@ -2,7 +2,7 @@
 type: fact
 status: verified
 verified: 2026-10-02
-method: "2026-10-02 (0084/0087): the DRY_RUN regress over all five on feat/steps-fixed-2s-clips (packages/core/test/demo-step-plans.test.ts runs runPlanRegression) and placeClips + findAccessMoment over the six-word and tavnit fixtures for the pin. 2026-10-01 (0074): timelineClipMs and planPromptTimeline over each fixture by inline tsx from packages/core (cap 4000, sample 200, the file's recordingMs), against expected.sourceIndexes, expected.dryRunSourceIndexes and every actionType result state. 2026-10-01: the DRY_RUN regress over all five (runPlanRegression) and node over each file's expected block after the screen-change re-pin. Earlier: node -e over each file for state counts and expected block; git show b60b5b6 -- fixtures/timelines/ for the last change; each file's own _comment quoted verbatim"
+method: "2026-10-02, later: expected.sourceIndexes re-taken from the paid v16 check (facts/v16-paid-check-2026-10-02.md, one live run per fixture). 2026-10-02 (0084/0087): the DRY_RUN regress over all five on feat/steps-fixed-2s-clips (packages/core/test/demo-step-plans.test.ts runs runPlanRegression) and placeClips + findAccessMoment over the six-word and tavnit fixtures for the pin. 2026-10-01 (0074): timelineClipMs and planPromptTimeline over each fixture by inline tsx from packages/core (cap 4000, sample 200, the file's recordingMs), against expected.sourceIndexes, expected.dryRunSourceIndexes and every actionType result state. 2026-10-01: the DRY_RUN regress over all five (runPlanRegression) and node over each file's expected block after the screen-change re-pin. Earlier: node -e over each file for state counts and expected block; git show b60b5b6 -- fixtures/timelines/ for the last change; each file's own _comment quoted verbatim"
 source: code
 ---
 
@@ -54,22 +54,25 @@ moved every mechanical pin again: each step is its moment's 2 s clip, a plan is 
 two steps share footage. No fixture carries footage instants, so every clip starts at its moment.
 The table above this section is the 2026-10-01 state.
 
-| file           | `sourceIndexes` (live, taken under v15) | `dryRunSourceIndexes`             |
-| -------------- | --------------------------------------- | --------------------------------- |
-| campaign-app   | `[3,5,6,7,10,11]`                       | `[1,3,5,7,10,11]`                 |
-| file-routing   | `[1,2,3,12,36]`                         | `[0,3,15,20,26,36]`               |
-| six-word-label | `[3,42,47,48,60,74,79]`                 | `[4,42,47,48,60,74,79]` (pin 3→4) |
-| study-app      | `[1,13,36,42,49,56,78,79]`              | `[1,5,19,40,43,49,52,64,79]`      |
-| tavnit         | `[1,7,16,23,26,44,49]`                  | `[2,9,14,16,24,26,41,44,47,49]`   |
+| file           | `sourceIndexes` (live, one v16 run) | was, under v15             | `dryRunSourceIndexes`             |
+| -------------- | ----------------------------------- | -------------------------- | --------------------------------- |
+| campaign-app   | `[3,5,7,10,11]`                     | `[3,5,6,7,10,11]`          | `[1,3,5,7,10,11]`                 |
+| file-routing   | `[1,3,12,15,36]`                    | `[1,2,3,12,36]`            | `[0,3,15,20,26,36]`               |
+| six-word-label | `[4,42,47,48,79]`                   | `[3,42,47,48,60,74,79]`    | `[4,42,47,48,60,74,79]` (pin 3→4) |
+| study-app      | `[1,13,51,52,64]` (+`allowNotes`)   | `[1,13,36,42,49,56,78,79]` | `[1,5,19,40,43,49,52,64,79]`      |
+| tavnit         | `[2,7,14,23,26,44,49]`              | `[1,7,16,23,26,44,49]`     | `[2,9,14,16,24,26,41,44,47,49]`   |
 
 - **MEASURED:** the DRY_RUN regress passes all five.
 - **The pin moved on two fixtures** (six-word 3→4, tavnit 1→2): it is now the latest address-bar
   state whose 2 s clip ends by the address bar's end. Every state before the address bar's end is
   off the table beside the pin, so those two live pins open on a state no plan can hold — expected
   red.
-- **Every live pin is stale.** They were taken under `plan_demo_steps@v15` and are re-taken from
-  the paid v16 check, which waits on the founder's OK. Each fixture's `_comment` has a 2026-10-02
-  paragraph.
+- **The live pins were re-taken on 2026-10-02 from the paid v16 check**
+  ([[v16-paid-check-2026-10-02]]): each is one live run that ended ready on its second call with
+  nothing repaired. One run each, and the model's selection varies run to run, so a red live
+  regress is a prompt to read the plan, not proof of a regression. Each fixture's `_comment` has
+  two 2026-10-02 paragraphs.
+- The "live colour" column in the first table of this note is older than both re-pins.
 
 ## The live pins against the pickable timeline (2026-10-01, decision 0074)
 

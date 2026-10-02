@@ -41,8 +41,9 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
 **Every step is a 2 s clip placed from the footage instants: BUILT 2026-10-02 on
-`feat/steps-fixed-2s-clips`, NOT PUSHED. The paid check of `plan_demo_steps@v16` waits on the
-founder's OK.**
+`feat/steps-fixed-2s-clips`, NOT PUSHED. The paid check of `plan_demo_steps@v16` ran the same day
+on the founder's OK: 10 of 10 plans ready, nothing repaired, ₪4.89
+([[v16-paid-check-2026-10-02]]).**
 
 - **What the founder decided (2026-10-02):** D1–D8 of that day's task prompt and four rulings in
   the session. D1–D3 are [[0076-every-step-is-a-fixed-2s-window-inside-its-screen]] restated;
@@ -81,9 +82,13 @@ founder's OK.**
   a save keeps. Recorded and not fixed, both older than this build:
   [[the-canned-dry-run-caption-can-fail-its-own-validation]],
   [[a-failed-preview-play-can-stop-another-clip]].
-- **Not measured:** what the model does under v16 (the paid check, capped at ₪12 by its own
-  script, `packages/core/.work/screens/v16-check.ts`, gitignored); the backfill on the box; the
-  wizard walked end to end by a person.
+- **MEASURED, paid, 2026-10-02** ([[v16-paid-check-2026-10-02]]): one live run on each of the
+  five fixtures and five real takes. All ten ended ready on the first or second call; no repair,
+  no shared footage in a stored plan, no caption over 4 words. On the five takes 7 of the model's
+  24 picks were calm and 3 crossed a real change, each carrying the amber line. The fixtures' live
+  pins were re-taken from it.
+- **Not measured:** run-to-run spread under v16 (one run each); the backfill on the box; the plan
+  job end to end on the box; the wizard walked end to end by a person.
 - **Deploy order when he says go:** merge (Vercel redeploys the web); straight after, the box
   `git pull` and restart together; then the backfill on the box, report first
   (`docs/07-worker-box.md` §15). He declined a split PR: "I will not approve or render between
@@ -1007,9 +1012,8 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
-- **Say whether the paid check of `plan_demo_steps@v16` may run** (2026-10-02). Capped at ₪12,
-  enforced by the script; ten runs, at most 30 calls; nothing stored but usage rows. The fixtures'
-  live pins (`expected.sourceIndexes`) were taken under v15 and are re-taken from it.
+- **~~Say whether the paid check of `plan_demo_steps@v16` may run~~ DONE 2026-10-02:** he said
+  yes; it ran and passed ([[v16-paid-check-2026-10-02]]).
 - **Say when `feat/steps-fixed-2s-clips` may be pushed and merged** (2026-10-02). Then, straight
   after the merge: **box `git pull` AND restart together**, and do not approve or render a Service A
   plan in between.
@@ -1134,8 +1138,11 @@ is called a screen.
 
 **Whether a generated plan should be held to more than a request to prefer calm clips
 (2026-10-02).** Today the model is told which moments are calm and which probably show two pages,
-and asked to prefer the first and avoid the second; code does not enforce it. The paid check will
-show how far it follows. His call after it.
+and asked to prefer the first and avoid the second; code does not enforce it. **MEASURED by the
+paid check, one run on each of five takes:** 7 of its 24 picks were calm where 0 to 12 calm clips
+were on offer, 4 carried the amber line, and 3 crossed a real change (all 3 amber). Both runs on
+the 84 s recording picked the same amber moment at 13.6 s with a calm one on offer in the same
+segment ([[v16-paid-check-2026-10-02]]). His call.
 
 **Two kinds of footage the detector has never seen:** a clean screen recording and a phone-app
 demo. One of each from the founder, scored free, before anything relies on the instants
@@ -1192,8 +1199,9 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   84 s recording match this machine's within one frame
   ([[box-and-local-instants-agree-2026-10-02]]). The other six files are unmeasured until the
   backfill runs; its report compares rows that share a file.
-- **`plan_demo_steps@v16` with the model (2026-10-02).** Unmeasured: the paid check waits on the
-  founder's OK.
+- **`plan_demo_steps@v16` with the model (2026-10-02).** Measured once per timeline
+  ([[v16-paid-check-2026-10-02]]). Unmeasured: the spread between runs, and which rules the eight
+  violating first calls broke (the script kept counts, not text).
 - **Label agreement between runs** was never measured: no variant was worth repeating
   ([[label-call-test-2026-10-02]]).
 - **Whether the footage decode delays an analysis on the box (2026-10-02).** It runs beside the
