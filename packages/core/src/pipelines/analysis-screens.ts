@@ -2,12 +2,15 @@ import { z } from "zod";
 import type { FrameSignature, StateCluster } from "../media/ffmpeg";
 
 /**
- * Where the screen really changes (decisions 0077-0080). The footage decides
+ * Where the screen really changes (decisions 0077-0082). The footage decides
  * WHEN: footageEvents finds every instant the picture changes, on every native
- * frame, with no model. A vision call decides WHAT each instant is — a new
- * screen, the same screen with its content replaced, or the same screen — and
- * anything it leaves unanswered or unsure is a change. Nothing here is read by
- * the plan rule yet (0072 stays live); this module only records.
+ * frame, with no model — measured 2026-10-02, it has an instant at 56 of 57
+ * real changes. WHAT each instant is — a new screen, the same screen with its
+ * content replaced, or the same screen — the footage cannot tell, and the
+ * label call that was to tell it did not pass its test
+ * (facts/label-call-test-2026-10-02). So the label vocabulary and
+ * screenChanges below are the last variant TESTED, not a shipped rule, and
+ * nothing in the pipeline calls this module yet.
  */
 
 /** Bumped whenever a constant below, or the signature in media/ffmpeg.ts,
@@ -35,6 +38,12 @@ export interface FootageEvent {
   atMs: number;
   /** Multiples of the threshold, one decimal: 1 is the weakest instant kept. */
   strength: number;
+  /** How much of the change across the instant happened between two adjacent
+   *  frames, 0-1. A cut is ~1; a scroll or a camera move, spread over the
+   *  whole gap, is ~0.1. Two stills cannot show this, so the label call is
+   *  told: without it the model reads a navigation as "scrolled to another
+   *  section" (measured 2026-10-02). */
+  abrupt: number;
 }
 
 function edgeDistance(a: FrameSignature, b: FrameSignature): number {
@@ -57,6 +66,7 @@ export function footageEvents(signatures: FrameSignature[], fps = SIGNATURE_FPS)
   const n = signatures.length;
   const reach = GAP_FRAMES + HOLD_FRAMES;
   const score = new Float64Array(n);
+  const byEdges = new Uint8Array(n);
   for (let i = reach; i < n - reach; i++) {
     const before = signatures[i - GAP_FRAMES]!;
     const after = signatures[i + GAP_FRAMES]!;
@@ -71,27 +81,55 @@ export function footageEvents(signatures: FrameSignature[], fps = SIGNATURE_FPS)
         Math.max(lumaDistance(holdBefore, before), lumaDistance(after, holdAfter)),
     );
     score[i] = Math.max(edge / EDGE_THRESHOLD, luma / LUMA_THRESHOLD);
+    byEdges[i] = edge / EDGE_THRESHOLD >= luma / LUMA_THRESHOLD ? 1 : 0;
   }
+  // In the band that made the instant: the largest single-frame step inside
+  // the gap, as a share of the whole change across it.
+  const abruptAt = (i: number): number => {
+    const distance = byEdges[i] ? edgeDistance : lumaDistance;
+    const across = distance(signatures[i - GAP_FRAMES]!, signatures[i + GAP_FRAMES]!);
+    let step = 0;
+    for (let j = i - GAP_FRAMES + 1; j <= i + GAP_FRAMES; j++) {
+      step = Math.max(step, distance(signatures[j - 1]!, signatures[j]!));
+    }
+    return across > 0 ? Math.min(1, Math.round((step / across) * 100) / 100) : 0;
+  };
   const events: FootageEvent[] = [];
   for (let i = reach; i < n - reach; i++) {
     const s = score[i]!;
     if (s < 1) continue;
     let peak = true;
     for (let k = i - PEAK_RADIUS_FRAMES; k <= i + PEAK_RADIUS_FRAMES; k++) {
-      if (k >= 0 && k < n && score[k]! > s) {
+      // A tie with an earlier frame is that frame's plateau, not a new peak.
+      if (k >= 0 && k < n && (score[k]! > s || (k < i && score[k] === s))) {
         peak = false;
         break;
       }
     }
-    if (peak) {
-      events.push({ atMs: Math.round((i * 1000) / fps), strength: Math.round(s * 10) / 10 });
-    }
+    if (!peak) continue;
+    // On a perfectly still picture (a clean screen recording) every frame
+    // whose gap straddles a cut scores the same: one instant, at the middle.
+    let end = i;
+    while (end + 1 < n - reach && score[end + 1] === s) end++;
+    const at = Math.floor((i + end) / 2);
+    events.push({
+      atMs: Math.round((at * 1000) / fps),
+      strength: Math.round(s * 10) / 10,
+      abrupt: abruptAt(at),
+    });
   }
   return events;
 }
 
-export const SCREEN_LABELS = ["new", "swap", "same"] as const;
+/** `moved`, `overlay` and `content` are the three ways of staying on the same
+ *  screen. They are kept apart because the footage can check one of them:
+ *  the camera or a scroll cannot change the picture in a single frame. */
+export const SCREEN_LABELS = ["new", "swap", "overlay", "content", "moved"] as const;
 export type ScreenLabel = (typeof SCREEN_LABELS)[number];
+
+/** `abrupt` at or above which an instant is a cut. Where the model calls a cut
+ *  `moved`, the two witnesses contradict each other — and unsure is a change. */
+export const CUT_ABRUPT = 0.9;
 
 /** One instant as stored: where the footage put it, and what the model called
  *  it. `label: null` = the model never answered for it. */
@@ -110,8 +148,9 @@ export interface ScreenChange {
 
 /**
  * The changes a set of judged instants amounts to. Decision 0079: when unsure,
- * it is a change — an instant with no label, or one the model was not sure of,
- * is a change whatever it leaned towards; a swap keeps its mark either way.
+ * it is a change — an instant with no label, one the model was not sure of,
+ * or a cut the model explained as the camera or a scroll, is a change
+ * whatever the model leaned towards; a swap keeps its mark either way.
  */
 export function screenChanges(events: JudgedEvent[]): ScreenChange[] {
   const changes: ScreenChange[] = [];
@@ -122,7 +161,7 @@ export function screenChanges(events: JudgedEvent[]): ScreenChange[] {
       changes.push({ atMs: event.atMs, kind: "swap", why: event.sure ? "model" : "unsure" });
     } else if (event.label === "new") {
       changes.push({ atMs: event.atMs, kind: "change", why: event.sure ? "model" : "unsure" });
-    } else if (!event.sure) {
+    } else if (!event.sure || (event.label === "moved" && event.abrupt >= CUT_ABRUPT)) {
       changes.push({ atMs: event.atMs, kind: "change", why: "unsure" });
     }
   }
@@ -176,6 +215,9 @@ export function momentHold(
  *  vision batch frame: a bad entry leaves that instant unjudged, never the call. */
 export const labelEntrySchema = z.object({
   index: z.number(),
+  // Written before the label on purpose: naming what differs ("camera zoomed
+  // in") is what stops a zoom being called a new screen. Never stored.
+  what: z.string(),
   label: z.enum(SCREEN_LABELS),
   sure: z.boolean(),
 });

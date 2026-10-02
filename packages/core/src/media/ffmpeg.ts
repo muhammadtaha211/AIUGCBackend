@@ -756,7 +756,7 @@ export async function frameSignatures(
 export async function extractFramesAt(
   input: string,
   outDir: string,
-  opts: { fps: number; width: number; frameIndexes: number[] },
+  opts: { fps: number; width: number; frameIndexes: number[]; tile?: number },
 ): Promise<ExtractedFrame[]> {
   mkdirSync(outDir, { recursive: true });
   for (const f of readdirSync(outDir)) {
@@ -764,12 +764,25 @@ export async function extractFramesAt(
   }
   const indexes = [...new Set(opts.frameIndexes)].sort((a, b) => a - b);
   if (indexes.length === 0) return [];
+  // tile: every `tile` consecutive frames side by side in one image, in time
+  // order — one strip per instant, at about the token cost of a single frame.
+  const tile = opts.tile ?? 1;
+  if (indexes.length % tile !== 0) {
+    throw new Error(`${indexes.length} distinct frames do not fill strips of ${tile}`);
+  }
+  // A flat a+b+c+… of 150 terms nests 150 deep in ffmpeg's expression parser
+  // and fails to initialise ("Cannot allocate memory"); halving keeps it ~8.
+  const anyOf = (terms: string[]): string => {
+    if (terms.length === 1) return terms[0]!;
+    const half = Math.ceil(terms.length / 2);
+    return `(${anyOf(terms.slice(0, half))})+(${anyOf(terms.slice(half))})`;
+  };
   await run("ffmpeg", [
     "-y",
     "-i",
     input,
     "-vf",
-    `fps=${opts.fps},select='${indexes.map((n) => `eq(n\\,${n})`).join("+")}',scale=${opts.width}:-2`,
+    `fps=${opts.fps},select='${anyOf(indexes.map((n) => `eq(n\\,${n})`))}',scale=${opts.width}:-2${tile > 1 ? `,tile=${tile}x1` : ""}`,
     "-fps_mode",
     "passthrough",
     "-an",
@@ -780,11 +793,11 @@ export async function extractFramesAt(
   const files = readdirSync(outDir)
     .filter((f) => /^\d{5,}\.jpg$/.test(f))
     .sort();
-  if (files.length !== indexes.length) {
-    throw new Error(`asked for ${indexes.length} frames, ffmpeg wrote ${files.length}`);
+  if (files.length !== indexes.length / tile) {
+    throw new Error(`asked for ${indexes.length / tile} images, ffmpeg wrote ${files.length}`);
   }
   return files.map((file, i) => ({
     path: path.join(outDir, file),
-    timestampMs: Math.round((indexes[i]! * 1000) / opts.fps),
+    timestampMs: Math.round((indexes[i * tile]! * 1000) / opts.fps),
   }));
 }
