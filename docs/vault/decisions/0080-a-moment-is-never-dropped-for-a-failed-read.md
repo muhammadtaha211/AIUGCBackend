@@ -2,13 +2,14 @@
 type: decision
 status: verified
 verified: 2026-10-02
-method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D4); the reason is his. His two rulings on how it is met were given the same day in answer to two questions put to him before the plan was finalised (failed reads: 'Separate list'; the gate: 'Keep the gate'). Recorded on branch feat/analysis-footage-screens. BUILT on that branch 2026-10-02 (demo-analysis.ts recordFootage; pinned by packages/core/test/analysis-seam.test.ts). Migration 0050 not pushed, nothing deployed."
+method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D4); the reason is his. His two rulings on how it is met were given the same day in answer to two questions put to him before the plan was finalised (failed reads: 'Separate list'; the gate: 'Keep the gate'). Recorded on branch feat/analysis-footage-screens. BUILT on that branch 2026-10-02 (demo-analysis.ts recordFootage; pinned by packages/core/test/analysis-seam.test.ts). Migration 0050 was pushed to production 2026-10-02 on the founder's instruction; the worker box is not on the code yet."
 source: founder
 ---
 
 # 0080 — A moment is never dropped because its vision read failed
 
-**DECIDED. BUILT on the branch 2026-10-02; migration 0050 not pushed, nothing deployed.**
+**DECIDED. BUILT 2026-10-02 (PR #78); migration 0050 pushed the same day; the worker box is not
+on the code yet.**
 
 ## The decision (FOUNDER-DECIDED, D4)
 

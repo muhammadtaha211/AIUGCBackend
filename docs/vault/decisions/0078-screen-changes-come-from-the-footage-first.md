@@ -2,13 +2,13 @@
 type: decision
 status: verified
 verified: 2026-10-02
-method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D2, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. The measurement taken against it the same day is facts/footage-screen-changes-2026-10-02.md and facts/label-call-test-2026-10-02.md. HALF BUILT on that branch 2026-10-02: the instants are stored per analysis (demo-analysis.ts, analysis-screens.ts footageEvents); nothing names which of them are screen changes (decision 0083). Migration 0050 not pushed, nothing deployed."
+method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D2, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. The measurement taken against it the same day is facts/footage-screen-changes-2026-10-02.md and facts/label-call-test-2026-10-02.md. HALF BUILT on that branch 2026-10-02: the instants are stored per analysis (demo-analysis.ts, analysis-screens.ts footageEvents); nothing names which of them are screen changes (decision 0083). Migration 0050 was pushed to production 2026-10-02 on the founder's instruction; the worker box is not on the code yet."
 source: founder
 ---
 
 # 0078 — Real screen changes come from the footage first
 
-**DECIDED. HALF BUILT on the branch 2026-10-02: the footage's instants are stored; no model
+**DECIDED. HALF BUILT 2026-10-02 (PR #78, migration 0050 pushed, the box not on it yet): the footage's instants are stored; no model
 names them ([[0083-no-model-names-the-instants-for-now]]). The measurement below contradicts part
 of the decision; the founder has been told and has ruled the model out for now.**
 

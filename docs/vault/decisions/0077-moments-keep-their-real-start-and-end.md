@@ -2,13 +2,14 @@
 type: decision
 status: verified
 verified: 2026-10-02
-method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D1, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. BUILT on that branch 2026-10-02 (packages/core/src/pipelines/demo-analysis.ts recordFootage, analysis-screens.ts analysisMoments; pinned by packages/core/test/analysis-seam.test.ts 'the footage row at the production seam'). Migration 0050 is written and NOT pushed; nothing is deployed."
+method: "Founder decision in chat, 2026-10-02, relayed in that day's task prompt (section 2, D1, 'not up for relitigation'); the reason is his. Recorded on branch feat/analysis-footage-screens. BUILT on that branch 2026-10-02 (packages/core/src/pipelines/demo-analysis.ts recordFootage, analysis-screens.ts analysisMoments; pinned by packages/core/test/analysis-seam.test.ts 'the footage row at the production seam'). Migration 0050 was pushed to production 2026-10-02 on the founder's instruction (facts/production-migration-push-log.md); the worker box is not on the code yet."
 source: founder
 ---
 
 # 0077 — The analysis keeps each moment's real start and end
 
-**DECIDED. BUILT on the branch 2026-10-02; migration 0050 not pushed, nothing deployed.**
+**DECIDED. BUILT 2026-10-02 (PR #78); migration 0050 pushed the same day; the worker box is not
+on the code yet.**
 
 ## The decision (FOUNDER-DECIDED, D1)
 
@@ -48,7 +49,9 @@ Put to the founder in the plan and approved with it:
   byte for byte what it is: it is a bare array that seven code paths parse and that plans index by
   position.
 - A migration is needed (0050). Written 2026-10-02 on his approval
-  ([[0083-no-model-names-the-instants-for-now]]); **he pushes it himself.**
+  ([[0083-no-model-names-the-instants-for-now]]). Later that day he instructed the session to
+  push it and run the read-back; it was pushed and read back
+  ([[production-migration-push-log]]).
 
 ## As built, 2026-10-02
 

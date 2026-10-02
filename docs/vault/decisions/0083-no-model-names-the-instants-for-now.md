@@ -21,6 +21,10 @@ Put to him as two decisions after the label call failed its test
    - **His reasons:** it missed about one real change in ten, it is not repeatable, and it pushes
      the costliest analysis past what it earns.
 
+Later the same day, after the build was reported, he instructed the session to push the branch
+and open the PR, push migration 0050 and run its read-back, and merge; he pulls and restarts the
+box himself. Each was done on that instruction ([[production-migration-push-log]]).
+
 ## Options offered for the model's part
 
 | option                                              | what was measured                                                                      |

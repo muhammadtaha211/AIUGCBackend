@@ -670,9 +670,8 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- 0050: demo_analysis_footage (decisions 0077, 0078, 0080, 0083) -- the table,
 -- its eight columns, the primary key that is also the FK to demo_analyses, and
 -- RLS enabled with no policy (0048's pattern). to_regclass so a missing table
--- reads false instead of erroring the file. Written 2026-10-02 BEFORE the
--- migration was pushed: until the founder pushes 0050 this row reads false on
--- production, and that false means "not pushed yet", nothing else.
+-- reads false instead of erroring the file. Pushed to production 2026-10-02
+-- and read true the same day (RESULTS).
 ('0050', 'structural', (SELECT
   to_regclass('public.demo_analysis_footage') IS NOT NULL
   AND (SELECT count(*) FROM information_schema.columns
@@ -759,6 +758,37 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-10-02, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0050** (demo_analysis_footage, decisions 0077/0078/0080/0083) alone, on the
+-- founder's explicit instruction for this one push ("Push migration 0050
+-- yourself and run its read-back query"): ledger read-back **51 rows,
+-- 0000-0050, NO GAPS, nothing unapplied and NO REPAIR NEEDED** -- `db push`
+-- recorded it itself, the THIRTEENTH time in a row. Pre-flight was
+-- `migration list` (0000-0049 local == remote, 0050 the only row with an empty
+-- remote) and `db push --dry-run`, which named 0050_demo_analysis_footage.sql
+-- alone. Same Docker catalog-cache warning as 0035-0049, not a failure; the
+-- apply printed "Applying migration 0050_demo_analysis_footage.sql..." and
+-- exited 0.
+--
+-- Read at BOTH ends through the code's own connection, each query inside a
+-- read-only transaction (packages/core/.work/readback-0050.ts -- the
+-- migration's own VERIFY block). BEFORE: relation "public.demo_analysis_footage"
+-- does not exist, 0 columns, ledger 50 rows 0000-0049, demo_analyses 16 rows
+-- (15 ready). AFTER: relrowsecurity true; 8 columns (analysis_id uuid NOT NULL,
+-- fps real NOT NULL, file_sha text NOT NULL, moments jsonb NOT NULL, detector
+-- text, instants jsonb, created_at and updated_at timestamptz NOT NULL); the
+-- two constraints (demo_analysis_footage_pkey and the FK to demo_analyses); 0
+-- policies; 0 rows; demo_analyses still 16 rows (15 ready); ledger 51 rows
+-- latest 0050. Pure additive DDL: one new empty table, nothing else touched.
+--
+-- Applied through packages/core/.work/supabase-cli-scrubbed.mjs, as 0049 was.
+-- Never typed, never printed.
+--
+-- THIS FILE was then run against production (packages/core/.work/
+-- run-ledger-sql.mjs, read-only) and returned **44 rows: 41 structural, 39 true
+-- / 1 false / 1 NULL**, with 0022 the only false and 0020 the NULL -- exactly
+-- the header's prediction -- and the new 0050 row true.
 --
 -- 2026-10-01, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0049** (hook_clips.text_color, decision 0073) alone, on the founder's

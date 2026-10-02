@@ -40,8 +40,8 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**A new analysis keeps every moment, its span and the footage's instants: BUILT 2026-10-02 on
-`feat/analysis-footage-screens`, NOT PUSHED, MIGRATION 0050 NOT PUSHED, NOTHING DEPLOYED.**
+**A new analysis keeps every moment, its span and the footage's instants: BUILT 2026-10-02
+(PR #78), MIGRATION 0050 PUSHED AND READ BACK THE SAME DAY, THE WORKER BOX NOT ON IT YET.**
 Nothing reads the new data: the plan rule, wizard and render are untouched and 0072 stays live.
 
 - **What the founder decided (2026-10-02):** D1–D6 of that day's task prompt, four rulings, and
@@ -52,7 +52,7 @@ Nothing reads the new data: the plan rule, wizard and render are untouched and 0
   [[0081-existing-demos-keep-working-no-paid-re-analysis]],
   [[0082-the-label-call-is-a-paid-call-tested-first]] and
   [[0083-no-model-names-the-instants-for-now]]. 0070 carries a dated pointer.
-- **What a new analysis now writes** (once 0050 is pushed and the box has the code): one
+- **What a new analysis now writes** (once the box has the code): one
   server-only `demo_analysis_footage` row with `fps`, `file_sha`, `moments` (every kept moment
   with `startMs`, `endMs` and `read`, failed reads included) and `instants` (every instant the
   picture changes, from the footage alone). `demo_analyses.timeline` is unchanged.
@@ -67,9 +67,10 @@ Nothing reads the new data: the plan rule, wizard and render are untouched and 0
   take three of his nine segments hold none ([[instant-free-windows-2026-10-02]]). A window that
   ends exactly at an instant can show up to 4 frames of the next screen; a 0.2 s margin removed
   that on these recordings and leaves 106 moments and 11 of 15 analyses.
-- **Deploy order when he says go:** he pushes 0050 and reads it back; merge; the box pulls and
-  restarts. The code survives running before the migration (a failed write is logged and the
-  analysis lands as before), but writes nothing until the table exists.
+- **Deploy, in the order he gave (2026-10-02):** the branch pushed and PR #78 opened; 0050 pushed
+  by the session on his instruction and read back (8 columns, RLS on, no policy, 0 rows, ledger
+  51 rows 0000–0050); PR #78 merged on his instruction. **Owed: he pulls and restarts the box.**
+  Until then analyses run the old code and write no footage row.
 - **Kept off the repo:** scripts, frames, labels and the spend ledger are in
   `packages/core/.work/screens/` (gitignored). The frames show private browser tabs.
 
@@ -947,10 +948,10 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
-- **Push migration 0050** (`demo_analysis_footage`, 2026-10-02), then merge
-  `feat/analysis-footage-screens`, then put the box on it — in that order, each on his OK. Until
-  the table exists a new analysis writes no footage row (and lands exactly as before). The read-back
-  is in the migration file's VERIFY block.
+- **Put the worker box on the merge of PR #78 — `git pull` AND restart** (2026-10-02). Migration
+  0050 is pushed and the PR is merged; until the box restarts a new analysis writes no
+  `demo_analysis_footage` row. After the first real analysis, read its `waitedMs` in the box log
+  ("analysis: footage instants") and the newest row of the table.
 
 - **Rotate the credentials found burned on 2026-09-29** ([[credential-echo-incidents]]). By key
   name only: the `DATABASE_URL` password, `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
