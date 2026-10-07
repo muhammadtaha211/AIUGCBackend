@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-07
-method: "Founder decisions 4–8 and 12 of the 2026-10-07 task prompt, plus its planning defaults A–C, which the prompt marks as assumed by planning and not ruled; the reasons are his. MEASURED in the tree at feat/service-c-text-block: packages/remotion/src/ServiceC.tsx, packages/remotion/src/render.ts (renderServiceC), packages/remotion/src/text-fit.ts, packages/remotion/src/overlays.tsx:15-22, packages/core/src/text-block.ts, packages/core/src/hook-geometry.ts (DEFAULT_TEXT_BLOCK_RECT), packages/core/src/pipelines/bank.ts (normalizeStoredClip), packages/core/src/media/ffmpeg.ts:182-219 (normalizeVideo), apps/admin/src/lib/text-blocks.ts. The example lengths were counted with a node one-liner over the Appendix A strings (code points, whitespace-split words). Amended 2026-10-07: ruling 4 from the founder's planning chat of 2026-10-07/08 (relayed by the phase 1b task prompt); his clip and screenshots measured with ffprobe and ffmpeg volumedetect, the look compared on ffmpeg frame crops of render:sample:c renders of his clip against the screenshots, all under packages/core/.work/text-block/ (gitignored)."
+method: "Founder decisions 4–8 and 12 of the 2026-10-07 task prompt, plus its planning defaults A–C, which the prompt marks as assumed by planning and not ruled; the reasons are his. MEASURED in the tree at feat/service-c-text-block: packages/remotion/src/ServiceC.tsx, packages/remotion/src/render.ts (renderServiceC), packages/remotion/src/text-fit.ts, packages/remotion/src/overlays.tsx:15-22, packages/core/src/text-block.ts, packages/core/src/hook-geometry.ts (DEFAULT_TEXT_BLOCK_RECT), packages/core/src/pipelines/bank.ts (normalizeStoredClip), packages/core/src/media/ffmpeg.ts:182-219 (normalizeVideo), apps/admin/src/lib/text-blocks.ts. The example lengths were counted with a node one-liner over the Appendix A strings (code points, whitespace-split words). Amended 2026-10-07: ruling 4 from the founder's planning chat of 2026-10-07/08 (relayed by the phase 1b task prompt); his clip and screenshots measured with ffprobe and ffmpeg volumedetect, the look compared on ffmpeg frame crops of render:sample:c renders of his clip against the screenshots, all under packages/core/.work/text-block/ (gitignored). Amended again 2026-10-07 for text_block v2: the 450 cap from the founder's planning chat of 2026-10-07 (relayed by the v2 task prompt), MEASURED in packages/core/src/text-block.ts and the core text-block tests at feat/text-block-v2; the fit check is facts/text-block-450-chars-fit-the-default-area.md."
 source: founder
 ---
 
@@ -121,7 +121,8 @@ composition is the one `<OffthreadVideo>` from frame 0 with the block over every
 ## Amended 2026-10-07 (founder, planning chat of 2026-10-07/08, relayed by the phase 1b task prompt)
 
 **FOUNDER-REPORTED, ruling 4: the cap is 400 characters**, superseding planning default B's 300
-(§4). His reason: it is "the longer end of the wall of text format", and the format is "built to
+(§4). _(As the hard cap, superseded later on 2026-10-07: the render refuses past 450, and the
+prompt still asks for 400 at most. See the `text_block` v2 amendment below.)_ His reason: it is "the longer end of the wall of text format", and the format is "built to
 withstand that kind of length". **MEASURED:** `TEXT_BLOCK_MAX_CHARS = 400` already, now commented
 as his ruling, and pinned by `text-block.test.ts`. The prompt's length rule now reads: "Most texts
 stay short: around 25 to 40 words … 400 is the ceiling, for a text whose joke needs the room,
@@ -185,9 +186,36 @@ block was wider than theirs, and lines were set looser. Tuned:
 - `.../tavnit-longest.mp4`: Tavnit's `instead`, 318 code points, with the bracketed aside on its
   own last line.
 
+## Amended 2026-10-07, `text_block` v2 (founder, planning chat of 2026-10-07, relayed by the v2 task prompt)
+
+**FOUNDER-REPORTED, the cap: `TEXT_BLOCK_MAX_CHARS` becomes 450, and the prompt keeps "400 is the
+ceiling".** This supersedes the 400 hard cap of ruling 4 above. The 400 the prompt asks for
+stands.
+
+- **His reason.** One text over the cap fails the whole batch after one retry, and `instead` now
+  runs at 390 to 396 characters. The extra 50 are a margin, not a target.
+- **His condition.** The raise depended on a fit check.
+
+**MEASURED, the fit check:** [[text-block-450-chars-fit-the-default-area]]. A 450-character text
+in three paragraphs fits the default area at 44 to 48 px, above the 40 px floor. On a real render
+the ink stays inside the area. A text that does not fit is drawn at the 40 px floor and spills
+evenly above and below the area, unclipped. The look was not changed.
+
+**MEASURED, what changed in the tree:**
+
+- `TEXT_BLOCK_MAX_CHARS` in `packages/core/src/text-block.ts` is now 450. `text-block.test.ts`
+  pins the cap and refuses the 451st code point, and `text-block-generate.test.ts` passes a
+  450-code-point generated text.
+- `prompts/text_block/v2.md` reads: "Never more than 400 characters: 400 is the ceiling, for a
+  text whose joke needs the room, never the target". It never names 450, and
+  `text-block-prompt.test.ts` pins both facts.
+- No admin code changed. The studio's counter and the edit route's error message both read the
+  constant, so they now show 450.
+
 ## Related
 
 - [[0089-service-c-text-block-exists-admin-only-phase-1]], [[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]].
+- [[text-block-450-chars-fit-the-default-area]] — the fit check behind the 450 cap.
 - [[0059-emoji-in-burned-text-needs-a-second-font]] — still pending; moot for this format while the set refuses emoji.
 - [[0061-landing-positioning-two-services-no-results-claims]] §4 — the steps format's muted render, the opposite choice.
 - [[0073-hook-text-colour-is-set-per-clip-by-the-founder]] — the colour vocabulary.

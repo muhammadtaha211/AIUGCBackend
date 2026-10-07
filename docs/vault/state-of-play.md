@@ -40,20 +40,22 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**Service C, גוש טקסט, phase 1 + 1b (admin-only): BUILT 2026-10-07 on `feat/service-c-text-block`,
-PUSHED, NOT MERGED; migrations 0051 + 0052 PUSHED TO PRODUCTION 2026-10-07 and read back (ledger
-0000–0052, 53 rows); the box NOT on it.**
+**Service C, גוש טקסט, phase 1 + 1b (admin-only): BUILT 2026-10-07, MERGED as PR #80 (`59a2ff1`
+on `origin/main`, MEASURED by `git log`, 2026-10-07); migrations 0051 + 0052 PUSHED TO PRODUCTION
+2026-10-07 and read back (ledger 0000–0052, 53 rows). Whether the box has pulled it is not
+recorded in the repo. `text_block` v2: BUILT 2026-10-07 on `feat/text-block-v2`, PUSHED, NOT
+MERGED.**
 The decisions are [[0089-service-c-text-block-exists-admin-only-phase-1]] (exists, built before
 the hand-test reports, two phases with a stop, 25 credits recorded for phase 2 only, landing /
 pricing / legal untouched), [[0090-text-block-format-clip-once-with-its-own-sound]] (the format
-and the planning defaults: cap 400, clip 3–60 s, the look's numbers),
+and the planning defaults: cap 400, since v2 asked of the model with 450 as the hard cap, clip 3–60 s, the look's numbers),
 [[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]] (the ten skeletons, what the
 generator may write, the free edit) and
 [[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]] (Appendix C: the seven
 Service B tests and his rulings; what happens to Service B itself is OPEN).
 
 - **What exists (MEASURED in the tree):** `text_block_clips` (0052) and the `c` / `text_block`
-  enum values (0051); `prompts/text_block/v1.md` with the ten skeletons and the founder's
+  enum values (0051); `prompts/text_block/v1.md` (frozen) and `v2.md` with the ten skeletons and the founder's
   examples verbatim; `generateTextBlocks` (one text per fitting skeleton, in the clip's speaker
   gender, burn check + one re-request, skipped skeletons returned unstored, DRY_RUN = the ten
   examples); `createTextBlockRender` (admin-owned businesses only, the burn check, the
@@ -106,13 +108,45 @@ Service B tests and his rulings; what happens to Service B itself is OPEN).
     was retuned to weight 600, a 3 px edge, line height 1.2 and a narrower centred default area.
   - **The push.** 0051 + 0052 were pushed on his conditional approval after all four conditions
     were checked (push log; verify §RESULTS 2026-10-07).
+- **FOUNDER-REPORTED, 2026-10-07, not repo-verified:**
+  - Tavnit's questionnaire was fixed to describe video ads, and its batch was regenerated. He
+    reviewed all ten texts; the v2 rulings below came from that review.
+  - His first Service C post, the same day, reached about 200 views within a few hours. His
+    posts usually take a day to get there. Its average watch time was 6 s on the 10 s clip. This
+    is one post.
+- **`text_block` v2, 2026-10-07 (his rulings from that review; 0090 and 0091 amended):**
+  - **The prompt.** `prompts/text_block/v2.md` is a new file; v1 stays byte for byte, pinned by its
+    SHA-256. v2 carries a closing reaction line on `reframe`, `shoutout_hack`, `envy_portrait`
+    and `cautionary_confession`, and `instead`'s order (opener alone, good outcome then bad, a
+    human reaction, the aside only after it). It adds the familiar tool in `reframe`,
+    `envy_portrait`'s payoff, a third person's gender read from the audience, and a signature
+    phrase per skeleton with nothing else lifted. Five examples changed and two second examples
+    were added, all on his approval. The Truth block changed on one point: a type's exaggerated
+    win.
+  - **The cap.** The render refuses past 450; the prompt still asks for 400 at most. A
+    450-character text in three paragraphs fits the default area at 44–48 px
+    ([[text-block-450-chars-fit-the-default-area]]).
+  - **Where it runs.** Generation, the edit check and render creation all run in `apps/admin`
+    on Vercel, so v2 and the 450 cap take effect with the admin deploy that follows the merge. The
+    box does not read either.
+  - **The v2 fixture run**, on his ₪3 OK: the same four batches as v1, 40 texts, 94 agorot over
+    five calls (one retry). The texts are in `packages/core/.work/text-block/fixture-texts-v2.md`
+    and the findings in `fixture-findings-v2.md`, both gitignored.
+    - **What improved over v1.** There is no singular address and no feminine plural, and every
+      `instead` follows his order. `זה לא נשמע מרגש, אבל זה ההבדל בין` and the small hours are
+      gone.
+    - **What still breaks** (0091, amended):
+      - every `founder_ask` still ends `נו, כן או לא?`, and every `instead` aside is the
+        example's;
+      - three `cautionary_confession` texts close on the example's `אל תשאלו`;
+      - five texts invent a figure;
+      - both course batches wrote `discovery` with no `wow`, as v1's run did.
 - **Waiting on the founder, in order:**
-  1. Read the 40 texts and the two renders.
-  2. Merge.
-  3. Pull and restart the box together, once no job is running (new handler, new composition,
-     the 600 weight; `docs/07-worker-box.md` §11).
-  4. Rule on the prompt findings above, which would be a `text_block` v2, and on the one planning
-     default 0090 still names: clips 3–60 s.
+  1. Read the v2 texts and the findings.
+  2. Merge `feat/text-block-v2`.
+  3. Rule on what a `text_block` v3 should do about the lifted lines, the invented figures and
+     `discovery` without a `wow`.
+  4. Rule on the one planning default 0090 still names: clips 3–60 s.
 - **Phase 2 is NOT started.** What it needs is in 0089 §3.
 
 **Every step is a 2 s clip placed from the footage instants: BUILT 2026-10-02 on
