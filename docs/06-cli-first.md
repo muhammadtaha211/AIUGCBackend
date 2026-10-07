@@ -6,6 +6,10 @@ production pipeline**, not a shortcut. `DRY_RUN=1` runs the whole thing keyless.
 
 ## Founder workflow (cold-outreach sample, today)
 
+Service C (גוש טקסט, 2026-10-07, [vault 0089](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md))
+has no CLI path: the founder registers clips and makes a sample in the admin console
+(`/text-blocks`, `/text-blocks/new`); `aiugc work` runs its two jobs like any other.
+
 ```sh
 # one-time
 aiugc business create --name "מסעדת הבית" --email founder@me.com --admin   # admin = no credits/watermark

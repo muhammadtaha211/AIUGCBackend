@@ -784,4 +784,73 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0051: service_kind gains 'c' and script_kind gains 'text_block', last, idempotently", async () => {
+    const { pg } = await createTestDb();
+    await pg.exec(readFileSync(join(MIGRATIONS_DIR, "0051_service_c_enums.sql"), "utf8"));
+
+    const labels = async (type: string) =>
+      (
+        await pg.query<{ enumlabel: string }>(
+          `SELECT enumlabel FROM pg_enum WHERE enumtypid = '${type}'::regtype ORDER BY enumsortorder`,
+        )
+      ).rows.map((r) => r.enumlabel);
+    expect(await labels("public.service_kind")).toEqual(["a", "b", "c"]);
+    expect(await labels("public.script_kind")).toEqual([
+      "hook_line",
+      "benefit_captions",
+      "vo_script",
+      "b_script",
+      "text_block",
+    ]);
+    await pg.close();
+  });
+
+  it("0052: text_block_clips — server-only RLS, the two CHECKs, white by default, idempotent", async () => {
+    const { db, pg } = await createTestDb();
+    await pg.exec(readFileSync(join(MIGRATIONS_DIR, "0052_text_block_clips.sql"), "utf8"));
+
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.text_block_clips'::regclass",
+    );
+    expect(rls.rows[0]?.relrowsecurity).toBe(true);
+    expect(
+      (await pg.query("SELECT 1 FROM pg_policies WHERE tablename = 'text_block_clips'")).rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await pg.query(
+          "SELECT 1 FROM information_schema.columns WHERE table_name = 'text_block_clips'",
+        )
+      ).rows,
+    ).toHaveLength(8);
+    const constraints = await pg.query<{ conname: string }>(
+      "SELECT conname FROM pg_constraint WHERE conrelid = 'public.text_block_clips'::regclass ORDER BY conname",
+    );
+    expect(constraints.rows.map((r) => r.conname)).toEqual([
+      "text_block_clips_pkey",
+      "text_block_clips_speaker_gender_check",
+      "text_block_clips_text_color_check",
+    ]);
+
+    const base = {
+      filePath: "assets/bank/text_block_clip/x/clip.mp4",
+      durationMs: 10_000,
+      textSafeArea: { x: 80, y: 360, w: 820, h: 1040 },
+    };
+    const [row] = await db
+      .insert(schema.textBlockClips)
+      .values({ ...base, speakerGender: "female" })
+      .returning();
+    expect(row).toMatchObject({ textColor: "white", active: true, speakerGender: "female" });
+    await expect(
+      db.insert(schema.textBlockClips).values({ ...base, speakerGender: "other" }),
+    ).rejects.toThrow(/text_block_clips_speaker_gender_check/);
+    await expect(
+      db
+        .insert(schema.textBlockClips)
+        .values({ ...base, speakerGender: "male", textColor: "gray" }),
+    ).rejects.toThrow(/text_block_clips_text_color_check/);
+    await pg.close();
+  });
 });

@@ -268,12 +268,35 @@ export const serviceAStepsSchema = z.object({
   demoDurationInFrames: z.number().optional(),
 });
 
+/**
+ * Service C, גוש טקסט (decisions 0089–0090): one bank clip, played once from
+ * its first frame to its last WITH its own sound, under one Hebrew text block
+ * burned for the whole length. No hook, no cut, no caption track.
+ */
+export const serviceCSchema = z.object({
+  /** The bank clip — NOT muted: its recorded sound is the ad's audio track. */
+  clipSrc: z.string(),
+  /** The text block, newlines included (quiz and founder_ask carry them). */
+  text: z.string().min(1),
+  textSafeArea: textSafeAreaSchema,
+  /**
+   * The block's fill, and the rgb ("r,g,b") its edge and shadow are drawn in —
+   * the values behind the clip's colour name, resolved in core
+   * (hook-text-color.ts). Absent = white on a dark edge.
+   */
+  textInk: z.object({ fill: z.string(), outline: z.string() }).optional(),
+  watermark: z.boolean(),
+  /** Filled in by `calculateServiceCMetadata` (which probes the clip), not by the caller. */
+  clipDurationInFrames: z.number().optional(),
+});
+
 export type WordTiming = z.infer<typeof wordTimingSchema>;
 export type CaptionChunk = z.infer<typeof captionChunkSchema>;
 export type ServiceBProps = z.infer<typeof serviceBSchema>;
 export type ServiceBTimeline = z.infer<typeof serviceBTimelineSchema>;
 export type ServiceAProps = z.infer<typeof serviceASchema>;
 export type ServiceAStepsProps = z.infer<typeof serviceAStepsSchema>;
+export type ServiceCProps = z.infer<typeof serviceCSchema>;
 export type StepSegment = z.infer<typeof stepSegmentSchema>;
 export type TextSafeArea = z.infer<typeof textSafeAreaSchema>;
 

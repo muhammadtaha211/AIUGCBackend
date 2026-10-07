@@ -50,7 +50,14 @@ keyless (the e2e test relies on this).
   `llm_tokens` row behind `assertBudget` like `tts_enhance`; `aiugc script edit` runs it for a
   `b_script` and `updateScriptText` merges the result into the one new immutable row),
   `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;
-  v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses).
+  v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses),
+  `text_block` (v1, Service C — [vault 0091](vault/decisions/0091-text-block-texts-ten-skeletons-truth-rules-free-edit.md):
+  the ten skeletons with the founder's examples verbatim as a frame library, one text per
+  skeleton that fits and the rest returned in `skipped`; the Truth block — never the speaker
+  using the product, never an invented figure; the house rules for burned text plus the no
+  em-dash rule; variables exactly `{{questionnaire}}` and `{{speaker_gender}}` from the clip
+  row; output `{texts: [{skeleton, text}], skipped: [{skeleton, reason}]}` at 8192 max tokens,
+  checked by `textBlockBatchProblem` and re-requested once; DRY_RUN returns the ten examples).
   The caps live in the client-safe `@aiugc/core/hook-text` (`HOOK_TEXT_MAX_WORDS`,
   `HOOK_TEXT_MAX_CHARS`, `hookTextError`). Since 2026-09-08 the **validator** and the
   **prompts** deliberately disagree by one word: `HOOK_TEXT_MAX_WORDS` is **8**, while every
@@ -363,6 +370,12 @@ The Service A hook bank is generated on **Seedance** and registered by hand thro
 console. No code calls it and no key exists in `.env`; it is recorded here because the
 generator's output length sets the format.
 
+The גוש טקסט bank (Service C, `text_block_clips`, vault 0090) is the same arrangement: clips the
+founder makes offline (the launch clip on Seedance 2.5 via Atlas, founder-reported) and registers
+by hand in admin `/text-blocks`, with the speaker gender, the text area and the colour. 3–60 s,
+≤100 MB, near 9:16; the worker's `normalize_text_block_clip` re-encodes only a clip that is not
+30 fps and keeps its audio, because the render plays the clip with its own sound.
+
 - **Hook clips run 3–4 seconds** (founder, 2026-08-09). The live bank holds 28 active clips
   across 7 personas — 4 female (טליה, נועה, נטלי, שירה), 3 male (גלעד, נהוראי, עומרי) — 4 clips
   each, plus 1 generic (`persona_id` NULL) row; 2 rows are inactive (30 total). Active-clip
@@ -437,8 +450,18 @@ this reasoning behind them.
   through a specifier held in a variable so no bundler follows it — the Next.js server build must
   never carry React, webpack and the renderer's native binaries; only the worker (under `tsx`)
   resolves the workspace source.
-- **Compositions** (`src/Root.tsx`): `ServiceA` and `ServiceB` are what the pipeline renders.
-  `ServiceB-Watermarked` and `PlaceholderTalkingHead` are founder preview scaffolding.
+- **Compositions** (`src/Root.tsx`): `ServiceASteps`, `ServiceB` and `ServiceC` are what the
+  pipeline renders (`ServiceA` is the retired full format). `ServiceB-Watermarked` and
+  `PlaceholderTalkingHead` are founder preview scaffolding.
+- **`ServiceC`** (`src/ServiceC.tsx`, vault 0090) — גוש טקסט: the bank clip mounted **unmuted**
+  (its own recorded sound is the track; `renderServiceC` passes neither `muted` nor
+  `enforceAudioTrack:false`, so the default aac encode carries it) from its first frame to its
+  last (`calculateServiceCMetadata` probes the clip for the frame count), under one Hebrew text
+  block burned for the whole length: Heebo 600, `fitParagraphFontSize` with
+  `TEXT_BLOCK_FONT` (54 → 40 px at line height 1.2, line breaks honoured for the quiz; tuned
+  against the founder's screenshots on 2026-10-07, vault 0090), a thin edge plus a soft
+  shadow in the clip's ink, no box, one isolated span. No hook, no cut, no caption track. Sample:
+  `pnpm --filter @aiugc/remotion render:sample:c` (`--quiz`, `--clip <file>`, `--ink black`).
 - **`ServiceA`** (`src/ServiceA.tsx`) — **retired 2026-09-05** (founder: Service A is the hook
   and the steps demo, nothing else; reachable only from the CLI's `format: "full"`, kept in the
   tree pending deletion): muted bank hook clip with the burned hook line
@@ -490,8 +513,9 @@ this reasoning behind them.
 - **`brollSrcs` is accepted and ignored.** The prop is validated and passed through, but cutaway
   logic (when to cut away, for how long, how to hide the lip-sync) is unbuilt. Empty is the
   normal case and renders cleanly.
-- **Font**: Heebo 800 (`hebrew` + `latin` subsets) via `@remotion/google-fonts/Heebo` — never a
-  system font, since the render box is headless Chrome. **`loadFont` fetches from Google at
+- **Font**: Heebo 800, and 600 for the Service C text block (`hebrew` + `latin` subsets, one
+  `loadFont` call) via `@remotion/google-fonts/Heebo` — never a system font, since the render box
+  is headless Chrome. **`loadFont` fetches from Google at
   render time, so the render host needs outbound network**; a font fetch failure is one of the
   transient failures worth a retry.
 - **Loopback file server** (`src/serve-files.ts`): Remotion's asset downloader rejects `file://`,

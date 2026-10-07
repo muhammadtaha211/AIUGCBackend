@@ -15,7 +15,8 @@
     "./plan-change": "./src/plan-change.ts",
     "./plan-format": "./src/plan-format.ts",
     "./pricing": "./src/pricing.ts",
-    "./service-b-timeline": "./src/service-b-timeline.ts"
+    "./service-b-timeline": "./src/service-b-timeline.ts",
+    "./text-block": "./src/text-block.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

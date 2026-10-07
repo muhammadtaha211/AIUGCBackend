@@ -5,13 +5,22 @@ import { assertBudget, recordUsage } from "../budget";
 import { getEnv, wordsPerSecondSchema } from "../config";
 import type { Db } from "../db";
 import { describeCloser, pickClosers } from "../closer-templates";
-import { demos, events, personas, scripts, structures } from "../db/schema";
+import { demos, events, personas, scripts, structures, textBlockClips } from "../db/schema";
 import { hookTextError } from "../hook-text";
 import { pickHookTemplates } from "../hook-templates";
 import { PermanentError } from "../jobs/errors";
 import { logger } from "../logger";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
+import {
+  findGeneratedTextBlockDash,
+  isTextBlockSkeletonId,
+  normalizeTextBlockText,
+  speakerGenderSchema,
+  TEXT_BLOCK_EXAMPLES,
+  TEXT_BLOCK_SKELETON_IDS,
+  textBlockTextError,
+} from "../text-block";
 import { requireQuestionnaire } from "./businesses";
 
 type Script = typeof scripts.$inferSelect;
@@ -27,9 +36,10 @@ async function callClaude<T>(
   promptName: string,
   vars: Record<string, string | number>,
   schema: z.ZodType<T>,
+  maxTokens?: number,
 ): Promise<{ object: T; promptVersion: string }> {
   const { text, promptVersion } = renderPrompt(promptName, vars);
-  const { object, usage } = await generateObject({ prompt: text, schema });
+  const { object, usage } = await generateObject({ prompt: text, schema, maxTokens });
   await recordUsage(db, {
     provider: "anthropic",
     kind: "llm_tokens",
@@ -203,6 +213,141 @@ export async function generateHookLines(
     )
     .returning();
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Text blocks (Service C, גוש טקסט — decisions 0089–0091)
+// ---------------------------------------------------------------------------
+
+// `skeleton` stays a free string on the wire: the ids are checked against the
+// list in text-block.ts after the call, so an unknown one is a violation the
+// retry can catch, not a parse failure nobody can read.
+const textBlocksOutput = z.object({
+  texts: z.array(z.object({ skeleton: z.string(), text: z.string() })),
+  skipped: z.array(z.object({ skeleton: z.string(), reason: z.string() })),
+});
+
+/**
+ * Ten Hebrew texts of up to 400 characters each, plus the skipped list, do
+ * not fit generateObject's 4096 default (Hebrew tokenises at roughly one token
+ * per character or two).
+ */
+const TEXT_BLOCK_MAX_TOKENS = 8192;
+
+export type TextBlockBatch = {
+  texts: Script[];
+  /** Skeletons the model judged a poor fit for this business, with its reason — returned, never stored. */
+  skipped: { skeleton: string; reason: string }[];
+};
+
+/**
+ * Why a generated batch cannot be stored, or undefined when it can: every
+ * skeleton id is one of the ten, none repeats, every text passes the burn
+ * check (the character set and the cap) AND carries no en or em dash — the
+ * generation-only rule (0091, amended 2026-10-07: an edited text is not
+ * checked for it) — and there is at least one. The model is re-asked once on
+ * a violation, with the same prompt (the hook-line pattern), then the batch
+ * fails.
+ */
+export function textBlockBatchProblem(
+  texts: { skeleton: string; text: string }[],
+): string | undefined {
+  if (texts.length === 0) return "the batch is empty";
+  const seen = new Set<string>();
+  for (const entry of texts) {
+    if (!isTextBlockSkeletonId(entry.skeleton)) return `unknown skeleton "${entry.skeleton}"`;
+    if (seen.has(entry.skeleton)) return `skeleton "${entry.skeleton}" appears twice`;
+    seen.add(entry.skeleton);
+    const problem = textBlockTextError(entry.text);
+    if (problem) return `${entry.skeleton}: ${problem}`;
+    const dash = findGeneratedTextBlockDash(entry.text);
+    if (dash) return `${entry.skeleton}: a long dash (${dash}) where a plain hyphen belongs`;
+  }
+  return undefined;
+}
+
+/**
+ * One text per skeleton that fits the business, in the speaker gender of the
+ * clip it will burn over (text-block.ts has the rules). Each text is a
+ * scripts row of kind text_block; the skipped skeletons come back with the
+ * model's reason and are stored nowhere.
+ */
+export async function generateTextBlocks(
+  db: Db,
+  opts: { businessId: string; clipId: string },
+): Promise<TextBlockBatch> {
+  const questionnaire = await requireQuestionnaire(db, opts.businessId);
+  const clip = (
+    await db.select().from(textBlockClips).where(eq(textBlockClips.id, opts.clipId)).limit(1)
+  )[0];
+  if (!clip) throw new Error(`text block clip ${opts.clipId} not found`);
+  if (!clip.active) throw new Error(`text block clip ${opts.clipId} is not active`);
+  const speakerGender = speakerGenderSchema.parse(clip.speakerGender);
+
+  const vars = {
+    questionnaire: JSON.stringify(questionnaire, null, 2),
+    speaker_gender: speakerGender,
+  };
+
+  let texts: { skeleton: string; text: string }[];
+  let skipped: { skeleton: string; reason: string }[];
+  let promptVersion: string;
+  if (getEnv().DRY_RUN) {
+    // Dry-run still renders the template so prompt_version stays traceable and
+    // a template/vars mismatch surfaces in tests, not in production.
+    ({ promptVersion } = renderPrompt("text_block", vars));
+    texts = TEXT_BLOCK_SKELETON_IDS.map((skeleton) => ({
+      skeleton,
+      text: TEXT_BLOCK_EXAMPLES[skeleton],
+    }));
+    skipped = [];
+  } else {
+    const generate = async () => {
+      const result = await callClaude(
+        db,
+        opts.businessId,
+        "text_block",
+        vars,
+        textBlocksOutput,
+        TEXT_BLOCK_MAX_TOKENS,
+      );
+      return { ...result.object, promptVersion: result.promptVersion };
+    };
+
+    // Reject-and-retry, never sanitise — the same stance as the hook lines: the
+    // text is the artifact that gets burned, so nothing is dropped or trimmed
+    // on its way to the frame.
+    let batch = await generate();
+    let problem = textBlockBatchProblem(batch.texts);
+    if (problem) {
+      logger.warn(
+        { businessId: opts.businessId, problem },
+        "text blocks failed the text check — regenerating once",
+      );
+      batch = await generate();
+      problem = textBlockBatchProblem(batch.texts);
+      if (problem) {
+        throw new Error(
+          `text blocks failed the text check (${problem}) — regenerated once and it recurred`,
+        );
+      }
+    }
+    ({ texts, skipped, promptVersion } = batch);
+  }
+
+  const rows = await db
+    .insert(scripts)
+    .values(
+      texts.map((entry) => ({
+        businessId: opts.businessId,
+        kind: "text_block" as const,
+        text: normalizeTextBlockText(entry.text),
+        params: { skeleton: entry.skeleton, textBlockClipId: clip.id, speakerGender },
+        promptVersion,
+      })),
+    )
+    .returning();
+  return { texts: rows, skipped };
 }
 
 // ---------------------------------------------------------------------------

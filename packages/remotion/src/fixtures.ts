@@ -103,6 +103,18 @@ export const sampleOpenerTimeline = {
 export const sampleHookText = "ככה מזמינים בלי לחכות";
 
 /**
+ * Service C preview text: a Latin brand name, a number and a question mark in
+ * one Hebrew block, so the RTL check on the cropped frames (0059's lesson) has
+ * every island it needs. ~28 words, inside the 25–40 aim.
+ */
+export const sampleTextBlock =
+  "עשרים הודעות מלקוחות ב-8 בערב ואף אחד לא עונה? יש כלים כמו Sederly שעונים בשבילכם, ואתם רק מאשרים. אין לי מושג איך עשיתם את זה ידנית עד עכשיו, אבל שאפו.";
+
+/** The quiz skeleton's shape: line breaks and numbered lines (mirrors core's example). */
+export const sampleTextBlockQuiz =
+  "רוב הישראלים לא עונים נכון אפילו על אחת מאלה\n\n1. איזו עיר בארץ הכי גבוהה מעל פני הים?\n2. מי היה ראש הממשלה השני של ישראל?\n3. מאיפה מגיע השם תל אביב?\n\n(עוד שאלות כאלה ב-Eretzy)";
+
+/**
  * Preview steps for the lavfi clock demo (fixtures/steps-demo.mp4, 24s): six
  * windows in the 12–17s target shape. The demo's on-screen clock jumps at
  * every cut, so a wrong trim is visible by eye, and the last step's window

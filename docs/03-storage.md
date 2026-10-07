@@ -19,8 +19,10 @@ Path convention: `<bucket>/<business_id|bank>/<entity>/<id>/<filename>`
 | `renders` | audio previews (`audio/<id>/audio.mp3`), Service B lip-sync plates + upscaled clips (`video/<id>/lipsync-plate.mp4`, `lipsync-upscaled.mp4`), final videos (`video/<id>/final.mp4`), video thumbs | tts, lipsync/upscale + render handlers            |
 | `catalog` | **public** — content-addressed copies of persona reference images (`bank/persona_image/<id>/<hash>.<ext>`, year-long cache-control), served to the pickers via `publicUrl()`                      | `addPersonaImage`, `persona sync-catalog`         |
 
-Founder bank assets use the `bank/` prefix (no business). Everything is 1080×1920 H.264 MP4
-after normalization; audio is mp3 44.1kHz.
+Founder bank assets use the `bank/` prefix (no business): `bank/hook_clip/<id>/clip.mp4`,
+`bank/text_block_clip/<uuid>/clip.mp4` (Service C, 0052 — the one bank clip whose audio track is
+played, so normalization keeps it as AAC). Everything is 1080×1920 H.264 MP4 after normalization;
+audio is mp3 44.1kHz.
 
 ## Retention & lifecycle
 

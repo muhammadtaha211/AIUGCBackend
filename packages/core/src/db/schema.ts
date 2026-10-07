@@ -48,6 +48,8 @@ export const scriptKind = pgEnum("script_kind", [
   "benefit_captions",
   "vo_script",
   "b_script",
+  // 0051: the Service C text block (גוש טקסט), one row per generated text.
+  "text_block",
 ]);
 
 export const audioStatus = pgEnum("audio_status", ["queued", "generating", "ready", "failed"]);
@@ -61,7 +63,9 @@ export const compositeStatus = pgEnum("composite_status", [
 
 export const alignmentSource = pgEnum("alignment_source", ["elevenlabs", "whisperx"]);
 
-export const serviceKind = pgEnum("service_kind", ["a", "b"]);
+// 0051 added "c": Service C, גוש טקסט — a bank clip under one text block,
+// admin-only in phase 1 (decision 0089).
+export const serviceKind = pgEnum("service_kind", ["a", "b", "c"]);
 
 export const renderStatus = pgEnum("render_status", [
   "queued",
@@ -289,6 +293,29 @@ export const hookClips = pgTable("hook_clips", {
   // 0049: the colour this clip's Service A hook line burns in, set by the
   // founder in admin (decision 0073). 'white' | 'black' — a CHECK in the
   // migration, text here; the vocabulary is hook-text-color.ts.
+  textColor: text("text_color").notNull().default("white"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The גוש טקסט bank (Service C, decision 0089/0090): founder-made 9:16 clips,
+ * registered by hand in admin, each played once under one Hebrew text block
+ * with its own recorded sound. Its own table, not a kind on hook_clips, so
+ * Service A's hook listings can never return one and the speaker gender is a
+ * typed column (Hebrew first person is gendered, 0090 §12). Server-only RLS
+ * in phase 1 (0052); the customer select policy is phase 2's.
+ */
+export const textBlockClips = pgTable("text_block_clips", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  filePath: text("file_path").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  // 'female' | 'male' — a CHECK in the migration; the prompt's {{speaker_gender}}.
+  speakerGender: text("speaker_gender").notNull(),
+  // {x, y, w, h} in 1080x1920 space where the text block is fitted and burned.
+  textSafeArea: jsonb("text_safe_area").notNull(),
+  // 'white' | 'black' — a CHECK in the migration; same vocabulary and ink
+  // table as hook_clips.text_color (hook-text-color.ts, decision 0073).
   textColor: text("text_color").notNull().default("white"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

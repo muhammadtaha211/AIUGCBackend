@@ -50,10 +50,13 @@ export function isActiveRenderStatus(status: string): boolean {
   return status === "queued" || status === "rendering" || status === "qc_pending";
 }
 
-/** Which pipeline made it — the library labels each tile, the strip doesn't. */
-export const SERVICE_LABELS: Record<"a" | "b", string> = {
+/** Which pipeline made it — the library labels each tile, the strip doesn't.
+ *  "c" is גוש טקסט (Service C, admin-only in phase 1): a founder's own
+ *  business can hold one, so its tile needs a label like any other. */
+export const SERVICE_LABELS: Record<"a" | "b" | "c", string> = {
   a: "הוק + דמו",
   b: "דמות AI",
+  c: "גוש טקסט",
 };
 
 /** The /home/renders library pages renders 24 at a time (route + page agree). */
@@ -84,7 +87,7 @@ export function rendersPageCount(total: number): number {
 /** One row of GET /api/businesses/[id]/renders — strip and library alike. */
 export type RenderRow = {
   id: string;
-  service: "a" | "b";
+  service: "a" | "b" | "c";
   status: string;
   createdAt: string;
   /** Signed only after release — the customer never sees a render pre-QC. */

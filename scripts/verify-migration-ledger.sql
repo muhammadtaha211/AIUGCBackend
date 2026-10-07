@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0050 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0052 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,11 +33,12 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 41 rows: **39 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 43 rows: **41 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
 -- which this sentence had missed; 0044-0047 then added one each, to 38,
--- 0048 one more on 2026-09-21, to 39, 0049 one on 2026-10-01, to 40, and 0050
--- one on 2026-10-02, to 41.) Two of those
+-- 0048 one more on 2026-09-21, to 39, 0049 one on 2026-10-01, to 40, 0050
+-- one on 2026-10-02, to 41, and 0051/0052 one each on 2026-10-07, to 43 —
+-- written with the feature branch, before any push, like 0049 and 0050.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -62,7 +63,7 @@
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
 -- 30 by 0040, 0043 took it to 34 with two ('0043', '0043-plans'), 0044-0047 to
--- 38 with one each, 0048 to 39, 0049 to 40, 0050 to **41**, and 0041/0042 before them took it to 32 with one row each — they are
+-- 38 with one each, 0048 to 39, 0049 to 40, 0050 to 41, 0051/0052 to **43**, and 0041/0042 before them took it to 32 with one row each — they are
 -- kept separate, not paired like '0038+0040', because they assert different
 -- objects and either can fail without the other: 0041 owns the column, indexes
 -- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
@@ -686,6 +687,38 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     WHERE schemaname = 'public' AND tablename = 'demo_analysis_footage')),
   'demo_analysis_footage: 8 columns, PK = FK to demo_analyses, RLS on with no policy'),
 
+-- 0051: the two enum values Service C rides on (decision 0089) -- 'c' on
+-- service_kind and 'text_block' on script_kind, each LAST in its type's sort
+-- order, which is where ADD VALUE puts them. Written 2026-10-07 with the
+-- feature, before any push.
+('0051', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM pg_enum
+    WHERE enumtypid = 'public.service_kind'::regtype AND enumlabel = 'c')
+  AND EXISTS (SELECT 1 FROM pg_enum
+    WHERE enumtypid = 'public.script_kind'::regtype AND enumlabel = 'text_block')
+  AND (SELECT count(*) FROM pg_enum WHERE enumtypid = 'public.service_kind'::regtype) = 3
+  AND (SELECT count(*) FROM pg_enum WHERE enumtypid = 'public.script_kind'::regtype) = 5),
+  'service_kind has a, b, c; script_kind has its four plus text_block'),
+
+-- 0052: text_block_clips (decisions 0089, 0090) -- the table, its eight
+-- columns, the primary key and the two named CHECKs (speaker gender, text
+-- colour), RLS enabled with no policy (0050's pattern). to_regclass so a
+-- missing table reads false instead of erroring the file.
+('0052', 'structural', (SELECT
+  to_regclass('public.text_block_clips') IS NOT NULL
+  AND (SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'text_block_clips') = 8
+  AND (SELECT count(*) FROM pg_constraint
+    WHERE conrelid = to_regclass('public.text_block_clips')
+      AND conname IN ('text_block_clips_pkey',
+                      'text_block_clips_speaker_gender_check',
+                      'text_block_clips_text_color_check')) = 3
+  AND COALESCE((SELECT relrowsecurity FROM pg_class
+       WHERE oid = to_regclass('public.text_block_clips')), false)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'text_block_clips')),
+  'text_block_clips: 8 columns, PK + speaker_gender and text_color CHECKs, RLS on with no policy'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -758,6 +791,36 @@ ORDER BY migration, layer DESC;
 --
 -- ---------------------------------------------------------------------------
 -- RESULTS
+--
+-- 2026-10-07, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0051 + 0052** (Service C: the 'c' and 'text_block' enum values, the
+-- text_block_clips table; decisions 0089/0090) together, on the founder's
+-- explicit approval for this push, given on conditions the phase 1b task
+-- prompt listed and the session checked first: 0052 enables RLS (read in the
+-- file), `migration list` showed 0000-0050 local == remote with 0051 and 0052
+-- the only rows with an empty remote, `db push --dry-run` named exactly
+-- 0051_service_c_enums.sql and 0052_text_block_clips.sql, and the full test
+-- gate was green on the pushed tree (9f043be). Both pre-flights were run
+-- twice, the second time minutes before the push. The apply printed
+-- "Applying migration 0051_service_c_enums.sql..." and "Applying migration
+-- 0052_text_block_clips.sql..." and exited 0; the same Docker catalog-cache
+-- warning as 0035-0050, not a failure. `db push` recorded both itself, the
+-- FOURTEENTH push in a row with no repair.
+--
+-- Read at BOTH ends through the code's own connection inside a read-only
+-- transaction (packages/core/.work/readback-0051-0052.ts -- both migrations'
+-- VERIFY blocks plus this file). BEFORE: service_kind a,b; script_kind
+-- hook_line,benefit_captions,vo_script,b_script; text_block_clips absent (no
+-- relation, 0 columns, no constraints, 0 policies, the row count errors);
+-- ledger 51 rows 0000-0050; this file 46 rows, 41 true, the 0051 and 0052
+-- rows false. AFTER: service_kind a,b,c; script_kind the four plus
+-- text_block, last; text_block_clips present, relrowsecurity true, 8 columns
+-- (id, file_path, duration_ms, speaker_gender, text_safe_area, text_color,
+-- active, created_at), the three constraints (text_block_clips_pkey,
+-- _speaker_gender_check, _text_color_check), 0 policies, 0 rows; ledger 53
+-- rows 0000-0052, NO GAPS; this file 46 rows, 43 true -- every structural
+-- row true but 0020 (NULL by design) and 0022 (the expected false), and the
+-- data row 0028 false as its note predicts on the rebuilt project.
 --
 -- 2026-10-02, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0050** (demo_analysis_footage, decisions 0077/0078/0080/0083) alone, on the

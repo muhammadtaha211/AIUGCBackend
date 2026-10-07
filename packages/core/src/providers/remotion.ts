@@ -132,7 +132,26 @@ export interface RenderServiceBProps {
   captions: CaptionChunk[];
 }
 
-export type RenderVideoProps = RenderServiceAProps | RenderServiceAStepsProps | RenderServiceBProps;
+export interface RenderServiceCProps {
+  kind: "service_c";
+  /** The bank clip (text_block_clips.file_path, downloaded locally) — played once, with its own sound. */
+  clipPath: string;
+  /** The FINAL text block, as pinned on the render's params. */
+  text: string;
+  textSafeArea: TextSafeArea;
+  /**
+   * The block's fill and edge rgb, from the clip's colour (hook-text-color.ts).
+   * Absent = white on a dark edge. MIRRORS @aiugc/remotion's
+   * RenderServiceCInput like hookTextInk above; nothing typechecks the mirror.
+   */
+  textInk?: { fill: string; outline: string };
+  watermark: boolean;
+  /* The clip's own audio IS the audio track (decision 0090 §5): the
+   * composition mounts it unmuted and the render keeps the default encode. */
+}
+
+export type RenderVideoProps =
+  RenderServiceAProps | RenderServiceAStepsProps | RenderServiceBProps | RenderServiceCProps;
 
 /** renderMedia's 0-1 frame fraction, surfaced so the worker can checkpoint
  *  honest render progress for the customer poll. */
@@ -152,6 +171,11 @@ interface RemotionRenderModule {
   ): Promise<void>;
   renderServiceB(
     props: Omit<RenderServiceBProps, "kind">,
+    outPath: string,
+    onProgress?: RenderProgressCallback,
+  ): Promise<void>;
+  renderServiceC(
+    props: Omit<RenderServiceCProps, "kind">,
     outPath: string,
     onProgress?: RenderProgressCallback,
   ): Promise<void>;
@@ -192,6 +216,9 @@ export async function renderVideo(
     } else if (props.kind === "service_a_steps") {
       const { kind, ...serviceASteps } = props;
       await remotion.renderServiceASteps(serviceASteps, outPath, onProgress);
+    } else if (props.kind === "service_c") {
+      const { kind, ...serviceC } = props;
+      await remotion.renderServiceC(serviceC, outPath, onProgress);
     } else {
       const { kind, ...serviceB } = props;
       await remotion.renderServiceB(serviceB, outPath, onProgress);

@@ -5,9 +5,11 @@ import {
   sampleHookText,
   sampleOpenerTimeline,
   sampleSteps,
+  sampleTextBlock,
+  sampleTextBlockQuiz,
   sampleTimeline,
 } from "../src/fixtures";
-import { renderServiceA, renderServiceASteps, renderServiceB } from "../src/render";
+import { renderServiceA, renderServiceASteps, renderServiceB, renderServiceC } from "../src/render";
 import { FPS } from "../src/schema";
 import {
   ensureFixtures,
@@ -15,6 +17,7 @@ import {
   STEPS_DEMO_FIXTURE,
   STEPS_HOOK_FIXTURE,
   TALKING_HEAD_FIXTURE,
+  TEXT_BLOCK_FIXTURE,
   VOICEOVER_FIXTURE,
 } from "./make-fixtures";
 
@@ -33,33 +36,61 @@ import {
  * renders ServiceB with the synthetic opener clip in front: the clip from its
  * first frame under the hook text, the hard cut at the reveal (the text
  * outliving it), the handheld sway over the whole picture, and the VO
- * starting 250ms after the cut.
+ * starting 250ms after the cut. `--text-block` renders the ServiceC
+ * composition: the tone-carrying lavfi clip (or `--clip <file>`, e.g. the
+ * founder's real clip) once, with its sound, under the sample block —
+ * `--quiz` for the line-broken quiz shape, `--text "<text>"` (`\n` for a
+ * break) for any other, `--ink black` for a black block on a light edge,
+ * `--safe-area x,y,w,h` for the rect.
  */
 
 const watermark = process.argv.includes("--watermark");
 const serviceA = process.argv.includes("--service-a");
 const steps = process.argv.includes("--steps");
 const opener = process.argv.includes("--opener");
+const textBlock = process.argv.includes("--text-block");
+const quiz = process.argv.includes("--quiz");
 
 function argValue(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
   return index === -1 ? undefined : process.argv[index + 1];
 }
-const name = steps
-  ? "sample-steps"
-  : serviceA
-    ? "sample-a"
-    : opener
-      ? "sample-b-opener"
-      : watermark
-        ? "sample-watermarked"
-        : "sample";
+const name = textBlock
+  ? quiz
+    ? "sample-c-quiz"
+    : "sample-c"
+  : steps
+    ? "sample-steps"
+    : serviceA
+      ? "sample-a"
+      : opener
+        ? "sample-b-opener"
+        : watermark
+          ? "sample-watermarked"
+          : "sample";
 const outPath = fileURLToPath(new URL(`../out/${name}.mp4`, import.meta.url));
 
 await ensureFixtures();
 console.log(`rendering ${name}…`);
 const startedAt = Date.now();
-if (steps) {
+if (textBlock) {
+  // The clip once, with its own sound (the fixture's tone), the block over
+  // every frame. The default rect mirrors DEFAULT_TEXT_BLOCK_RECT.
+  const [x, y, w, h] = (argValue("--safe-area") ?? "180,400,720,1040").split(",").map(Number);
+  await renderServiceC(
+    {
+      clipPath: argValue("--clip") ?? TEXT_BLOCK_FIXTURE,
+      text:
+        argValue("--text")?.replaceAll("\\n", "\n") ??
+        (quiz ? sampleTextBlockQuiz : sampleTextBlock),
+      textSafeArea: { x: x!, y: y!, w: w!, h: h! },
+      textInk:
+        argValue("--ink") === "black" ? { fill: "black", outline: "255,255,255" } : undefined,
+      watermark,
+    },
+    outPath,
+  );
+} else if (steps) {
   // Silent by design — the output mp4 has NO audio stream; the lavfi demo's
   // clock jumps at every cut, so the trims are verifiable by eye.
   const [x, y, w, h] = (argValue("--safe-area") ?? "25,1062,1009,179").split(",").map(Number);

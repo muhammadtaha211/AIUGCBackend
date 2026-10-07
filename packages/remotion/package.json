@@ -18,7 +18,8 @@
     "render:sample:watermark": "tsx scripts/render-sample.ts --watermark",
     "render:sample:a": "tsx scripts/render-sample.ts --service-a",
     "render:sample:steps": "tsx scripts/render-sample.ts --steps",
-    "render:sample:b-opener": "tsx scripts/render-sample.ts --opener"
+    "render:sample:b-opener": "tsx scripts/render-sample.ts --opener",
+    "render:sample:c": "tsx scripts/render-sample.ts --text-block"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.499",

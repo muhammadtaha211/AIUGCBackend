@@ -45,6 +45,18 @@ export const DEFAULT_HOOK_TEXT_RECT: SafeRect = { x: 25, y: 1062, w: 1009, h: 17
 export const CENTRED_HOOK_TEXT_RECT: SafeRect = { x: 25, y: 768, w: 1055, h: 473 };
 
 /**
+ * Where a fresh גוש טקסט clip's rect starts in the admin register editor
+ * (Service C, decision 0090). A seed like DEFAULT_HOOK_TEXT_RECT, adjusted per
+ * clip. A tall mid-frame area, 720 wide and centred on the frame: the
+ * founder's reference screenshots wrap their text at roughly 55–75% of the
+ * frame width (measured 2026-10-07; it was 820 from x 80 before), the right
+ * edge at 900 stays clear of the TikTok/Reels action rail, the bottom at 1440
+ * inside the captions overlay's own clearance (1480), and the centre sits at
+ * y 920, near the frame's 960.
+ */
+export const DEFAULT_TEXT_BLOCK_RECT: SafeRect = { x: 180, y: 400, w: 720, h: 1040 };
+
+/**
  * The legibility floor: below this fitted font size (px at 1080x1920) a burned
  * hook line reads poorly on a phone. Advisory only — the wizard shows a gentle
  * note, nothing blocks (inform, never restrict).

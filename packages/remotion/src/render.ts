@@ -10,11 +10,13 @@ import {
   serviceASchema,
   serviceAStepsSchema,
   serviceBSchema,
+  serviceCSchema,
   type CaptionChunk,
   type ServiceAProps,
   type ServiceAStepsProps,
   type ServiceBProps,
   type ServiceBTimeline,
+  type ServiceCProps,
   type TextSafeArea,
   type GradeCurve,
 } from "./schema";
@@ -84,6 +86,16 @@ export interface RenderServiceBInput {
     durationMs: number;
     push?: { fromMs: number; to: number };
   };
+  watermark: boolean;
+}
+
+export interface RenderServiceCInput {
+  /** The bank clip, played once with its own sound (core: text_block_clips.file_path, local). */
+  clipPath: string;
+  text: string;
+  textSafeArea: TextSafeArea;
+  /** The block's fill + edge rgb (core's hook-text-color.ts); absent = white on dark. */
+  textInk?: { fill: string; outline: string };
   watermark: boolean;
 }
 
@@ -403,6 +415,37 @@ export async function renderServiceB(
   }
 }
 
+/**
+ * Service C: the clip once, start to finish, under the text block. No muted,
+ * no enforceAudioTrack — the defaults keep the clip's own track and encode it
+ * as AAC, the same way ServiceB's <Audio> reaches the file.
+ */
+export async function renderServiceC(
+  input: RenderServiceCInput,
+  outPath: string,
+  onProgress?: (fraction: number) => void,
+): Promise<void> {
+  const files = [input.clipPath];
+  assertFilesExist(files);
+
+  const served = await serveLocalFiles(files);
+  try {
+    const props = serviceCSchema.safeParse({
+      clipSrc: served.urls[0]!,
+      text: input.text,
+      textSafeArea: input.textSafeArea,
+      textInk: input.textInk,
+      watermark: input.watermark,
+    } satisfies ServiceCProps);
+    if (!props.success) {
+      throw new RenderPropsError(`invalid ServiceC props: ${props.error.message}`);
+    }
+    await runRender("ServiceC", props.data, outPath, { onProgress });
+  } finally {
+    await served.close();
+  }
+}
+
 function assertFilesExist(files: (string | undefined)[]): void {
   for (const file of files) {
     // `!file` covers an untyped caller dropping a required path: that has to
@@ -414,8 +457,8 @@ function assertFilesExist(files: (string | undefined)[]): void {
 }
 
 async function runRender(
-  id: "ServiceA" | "ServiceASteps" | "ServiceB",
-  inputProps: ServiceAProps | ServiceAStepsProps | ServiceBProps,
+  id: "ServiceA" | "ServiceASteps" | "ServiceB" | "ServiceC",
+  inputProps: ServiceAProps | ServiceAStepsProps | ServiceBProps | ServiceCProps,
   outPath: string,
   opts?: {
     enforceAudioTrack?: boolean;

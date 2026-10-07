@@ -3,15 +3,25 @@ import { Audio, Composition, interpolate, staticFile, useCurrentFrame } from "re
 import { ServiceA, calculateServiceAMetadata } from "./ServiceA";
 import { ServiceASteps, calculateServiceAStepsMetadata } from "./ServiceASteps";
 import { ServiceB, calculateServiceBMetadata } from "./ServiceB";
+import { ServiceC, calculateServiceCMetadata } from "./ServiceC";
 import {
   sampleCaptions,
   sampleDurationInFrames,
   sampleHookText,
   sampleOpenerTimeline,
   sampleSteps,
+  sampleTextBlock,
   sampleTimeline,
 } from "./fixtures";
-import { FPS, HEIGHT, WIDTH, serviceASchema, serviceAStepsSchema, serviceBSchema } from "./schema";
+import {
+  FPS,
+  HEIGHT,
+  WIDTH,
+  serviceASchema,
+  serviceAStepsSchema,
+  serviceBSchema,
+  serviceCSchema,
+} from "./schema";
 
 /**
  * `ServiceA` and `ServiceB` are the compositions the pipeline renders. The
@@ -62,8 +72,29 @@ const previewPropsSteps = {
   watermark: false,
 };
 
+/** Service C: the lavfi clip with a tone (`pnpm fixtures`) under the sample block. */
+const previewPropsC = {
+  clipSrc: staticFile("fixtures/text-block.mp4"),
+  text: sampleTextBlock,
+  // Mirrors DEFAULT_TEXT_BLOCK_RECT in @aiugc/core/hook-geometry — a literal
+  // for the same reason as the hook rect above.
+  textSafeArea: { x: 180, y: 400, w: 720, h: 1040 },
+  watermark: false,
+};
+
 export const RemotionRoot: React.FC = () => (
   <>
+    <Composition
+      id="ServiceC"
+      component={ServiceC}
+      schema={serviceCSchema}
+      defaultProps={previewPropsC}
+      calculateMetadata={calculateServiceCMetadata}
+      width={WIDTH}
+      height={HEIGHT}
+      fps={FPS}
+      durationInFrames={sampleDurationInFrames}
+    />
     <Composition
       id="ServiceA"
       component={ServiceA}

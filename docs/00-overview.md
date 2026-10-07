@@ -64,6 +64,15 @@ One pnpm monorepo, boring-tech throughout:
   picked and nowhere to continue to, so choosing steps and writing their labels is reachable without
   starting an ad. It needs no changes to `step-plan.tsx`: the component takes `onContinue` as
   optional and every route it calls is ownership-gated on the demo id alone.
+- **Service C, גוש טקסט, is admin-only in phase 1** (2026-10-07,
+  [vault 0089](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md)): a
+  founder-made bank clip played once with its own sound under one Hebrew text block. It has no
+  web wizard; the founder works in `apps/admin` — `/text-blocks` registers clips,
+  `/text-blocks/new` picks a business and a clip, generates the batch (`generateTextBlocks`, one
+  text per skeleton that fits, `prompts/text_block`), edits, renders (`createTextBlockRender`,
+  admin-owned businesses only, no credit key) and downloads. The library on `/home/renders`
+  labels a `c` render "גוש טקסט" because the founder's own business can hold one. Phase 2 (the
+  customer wizard, credits, the dashboard card) is a separate prompt.
 
 ## Repo layout
 
@@ -78,7 +87,7 @@ packages/core/src/
                         whisperx (dormant fallback)
   media/ffmpeg.ts       probe/normalize/thumbnail/atempo
   pipelines/            businesses · demos · copy · pronunciation · tts · composites · sets ·
-                        renders · qc · credits · billing · janitor · bank
+                        renders · qc · credits · billing · janitor · bank · text-blocks
   storage.ts            Supabase Storage / local filesystem backends
   captions.ts           word alignment -> 2–4-word karaoke chunks (pure, tested)
   budget.ts             rolling-24h spend caps + usage recording

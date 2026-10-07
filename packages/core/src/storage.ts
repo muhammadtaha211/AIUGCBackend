@@ -97,6 +97,7 @@ export function storageKey(parts: {
     | "demo"
     | "hook_clip"
     | "opener_clip"
+    | "text_block_clip"
     | "persona_image"
     | "audio"
     | "video"

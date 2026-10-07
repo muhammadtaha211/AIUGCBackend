@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-02
+updated: 2026-10-07
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -40,8 +40,84 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**Service C, גוש טקסט, phase 1 + 1b (admin-only): BUILT 2026-10-07 on `feat/service-c-text-block`,
+PUSHED, NOT MERGED; migrations 0051 + 0052 PUSHED TO PRODUCTION 2026-10-07 and read back (ledger
+0000–0052, 53 rows); the box NOT on it.**
+The decisions are [[0089-service-c-text-block-exists-admin-only-phase-1]] (exists, built before
+the hand-test reports, two phases with a stop, 25 credits recorded for phase 2 only, landing /
+pricing / legal untouched), [[0090-text-block-format-clip-once-with-its-own-sound]] (the format
+and the planning defaults: cap 400, clip 3–60 s, the look's numbers),
+[[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]] (the ten skeletons, what the
+generator may write, the free edit) and
+[[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]] (Appendix C: the seven
+Service B tests and his rulings; what happens to Service B itself is OPEN).
+
+- **What exists (MEASURED in the tree):** `text_block_clips` (0052) and the `c` / `text_block`
+  enum values (0051); `prompts/text_block/v1.md` with the ten skeletons and the founder's
+  examples verbatim; `generateTextBlocks` (one text per fitting skeleton, in the clip's speaker
+  gender, burn check + one re-request, skipped skeletons returned unstored, DRY_RUN = the ten
+  examples); `createTextBlockRender` (admin-owned businesses only, the burn check, the
+  content-policy gate wired, `service: "c"`, the text pinned on params); the `render_video`
+  handler's `c` branch and a release line that puts C beside A, never in `qc_pending`; the
+  `ServiceC` composition (the clip once, **unmuted**, Heebo 600, `fitParagraphFontSize`,
+  54 → 40 px at line height 1.2, a 3 px edge, `DEFAULT_TEXT_BLOCK_RECT` 180,400,720,1040 — tuned
+  2026-10-07 against his screenshots, 0090 amended); admin `/text-blocks`
+  (register with gender / area / colour, the preview in the burned look, card actions) and
+  `/text-blocks/new` (business → clip → generate → edit → render → download, self-refreshing while
+  a render runs) behind six `requireAdmin` routes; `normalize_text_block_clip` (shares the hook
+  bank's check; audio kept); the web library label `c: "גוש טקסט"`. Service A and B behaviour
+  unchanged; shared code that moved under them: the one `loadFont` call now fetches a second
+  Heebo weight on every render (a failed fetch is the same transient retry as before),
+  `normalizeHookClip`'s body is now `normalizeStoredClip`, `assertContentPolicy` is exported,
+  the admin hook editor takes optional children and exports `readVideoMetadata`.
+- **Tests added (MEASURED, all green on the branch):** core 5 files (validator, prompt pins,
+  generation, render end to end under DRY_RUN with `auto_release_b` forced false, migrations
+  0051/0052); remotion 3 (the unmuted mount and the ink, the paragraph fitter, the encode
+  arguments); admin 2 (lib bounds and schemas; every new route 403s with no session and with a
+  customer session, the core functions never called); web 1 (both `/api/hooks` forms and the A
+  persona catalog never return a text block clip). `apps/admin/vitest.config.ts` was added for
+  the `@/` alias, and `apps/admin/next.config.ts` gained the `prompts/**` tracing include the
+  generate route needs on Vercel.
+- **FOUNDER-REPORTED context from the planning chat, none repo-verified:** the launch clip is
+  10 s, made by hand on Seedance 2.5 (Atlas, reference-to-video, generated audio, no voice): a
+  woman in a blue hoodie struggles to cut a watermelon with a blunt knife; not posted yet. The 12
+  reference posts come from a third-party collection; their view counts are that site's.
+  Marketing so far: about 8 videos per account, 100–200 views on average; the first 7 advertised
+  Service B with no engagement; video 8, a Service A demo, got 3 saves and 2 likes from strangers
+  and no signups. ICP, his guess: solo founders who built software and want to market it on a
+  small budget. Service B today "comes out ok but not amazing"; he can tell it is AI by the
+  repeated motion and is embarrassed to use it for Tavnit. Replicate flagged his persona image as
+  sensitive on Seedance; Atlas accepted it.
+- **Phase 1b, 2026-10-07 (his rulings of 2026-10-07/08; 0089–0091 amended):**
+  - **The copy.** `text_block` v1 was edited in place. His examples are the exemplars, with
+    `shoutout_hack` replaced by his new text. The rules were reworded until all ten obey them, with
+    "never an ad" as the governing test. The cap is 400, his ruling. The long dashes are refused in
+    generated text only; an edit may carry them.
+  - **The fixture run.** It made real calls for Tavnit, a Haifa plumber and an Excel course, at
+    the female speaker his clip has, plus the course once with a male clip: 40 texts, no skeleton
+    skipped, no retry, 64 agorot. Every text is in `packages/core/.work/text-block/fixture-texts.md`
+    (gitignored). Read by eye, not fixed: 3 texts address the viewer in the singular, 1 uses a
+    feminine plural for the audience, closing lines are copied whole from the examples (all four
+    `founder_ask` end `נו, כן או לא?`), and 2 small invented general figures.
+  - **His clip and twelve screenshots** sit in `.work/text-block/`, gitignored. The clip was
+    normalised the bank's way (24 → 30 fps, sound kept within 0.2 dB) and rendered with the
+    shortest and the longest Tavnit text: `.work/text-block/renders/tavnit-shortest.mp4`,
+    `tavnit-longest.mp4`. The crops and side-by-sides are in `.work/text-block/crops/`. The look
+    was retuned to weight 600, a 3 px edge, line height 1.2 and a narrower centred default area.
+  - **The push.** 0051 + 0052 were pushed on his conditional approval after all four conditions
+    were checked (push log; verify §RESULTS 2026-10-07).
+- **Waiting on the founder, in order:**
+  1. Read the 40 texts and the two renders.
+  2. Merge.
+  3. Pull and restart the box together, once no job is running (new handler, new composition,
+     the 600 weight; `docs/07-worker-box.md` §11).
+  4. Rule on the prompt findings above, which would be a `text_block` v2, and on the one planning
+     default 0090 still names: clips 3–60 s.
+- **Phase 2 is NOT started.** What it needs is in 0089 §3.
+
 **Every step is a 2 s clip placed from the footage instants: BUILT 2026-10-02 on
-`feat/steps-fixed-2s-clips`, PUSHED 2026-10-02 AS PR #79, NOT MERGED. The paid check of `plan_demo_steps@v16` ran the same day
+`feat/steps-fixed-2s-clips`, PUSHED 2026-10-02 AS PR #79, MERGED (`2a503a4` on `origin/main`,
+MEASURED by `git log`, 2026-10-07). The paid check of `plan_demo_steps@v16` ran the same day
 on the founder's OK: 10 of 10 plans ready, nothing repaired, ₪4.89
 ([[v16-paid-check-2026-10-02]]).**
 
@@ -666,6 +742,13 @@ the older launch items. Item 0 no longer outranks everything the way it did — 
 taken a real payment — but what is left of it is still the part that decides whether the next
 payment is kept.
 
+**Service C phase 2 — NOT QUEUED until the founder's own posts decide it** (2026-10-07,
+[[0089-service-c-text-block-exists-admin-only-phase-1]] §3): the customer wizard over the same
+three core functions, the 25-credit key seeded before its schema key, the quote/debit in
+`createTextBlockRender`, the customer clip listing + the SELECT policy on `text_block_clips`, the
+dashboard card, the customer edit route, then the landing / `/pricing` / legal copy. Phase 1's
+own remaining gates (merge + box) are under "Owed founder actions".
+
 **0. The Sumit adapter.** MERGED and LIVE 2026-09-21 — PR #52, `4100cc7` —
 [[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway`
 because `SUMIT_COMPANY_ID` + `SUMIT_API_KEY` are set on Vercel and on the box without `DRY_RUN`, and
@@ -1012,10 +1095,23 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Service C phase 1 (2026-10-07).** Done the same day on his rulings:
+  - the push of 0051 + 0052;
+  - the fixture run, 64 agorot, whose texts are in `packages/core/.work/text-block/fixture-texts.md`;
+  - the clip and the screenshots, attached and rendered;
+  - the cap, 400.
+
+  Still owed, in order:
+  1. Read the texts and the two renders in `packages/core/.work/text-block/renders/`.
+  2. Merge `feat/service-c-text-block`.
+  3. Pull and restart the box together, once no job is running.
+  4. Rule on the prompt findings in [[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]]
+     (amended) and on clips 3–60 s in [[0090-text-block-format-clip-once-with-its-own-sound]].
+
 - **~~Say whether the paid check of `plan_demo_steps@v16` may run~~ DONE 2026-10-02:** he said
   yes; it ran and passed ([[v16-paid-check-2026-10-02]]).
-- **Merge PR #79 (`feat/steps-fixed-2s-clips`)** — pushed 2026-10-02 on his instruction. Then,
-  straight after the merge: **box `git pull` AND restart together**, and do not approve or render a
+- **~~Merge PR #79 (`feat/steps-fixed-2s-clips`)~~ MERGED (`2a503a4` on `origin/main`, by
+  `git log` 2026-10-07).** Still owed after it: **box `git pull` AND restart together**, and do not approve or render a
   Service A plan in between.
 - **Say whether the inventory list should get a retry button on a failed first load**
   ([[the-inventory-first-load-failure-has-no-retry-button]], 2026-10-02). He was told before the
@@ -1133,6 +1229,16 @@ the 2026-09-26 custom domain (founder-reported):**
   the closing section of `docs/legal-review.md`.
 
 ## Open decisions
+
+**Service C's two planning defaults (2026-10-07, his call):** the hard cap on a text block is
+**400** code points, not the prompt's proposed 300, because his own `instead` example is 396
+and he asked for the examples verbatim; and a clip registers at **3–60 s, ≤100 MB**. Both are
+marked PLANNING DEFAULT in [[0090-text-block-format-clip-once-with-its-own-sound]]; a ruling
+changes one constant each (`TEXT_BLOCK_MAX_CHARS`, `TEXT_BLOCK_DURATION`).
+
+**What happens to Service B itself (2026-10-07): park the revamp, add backgrounds, or leave it
+as it is.** Open in [[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]]; the
+overlay and re-sync routes are dead by his ruling, locked #12 stays locked.
 
 **~~What the next task does with the instants~~ RULED 2026-10-02:** clips are placed from them,
 calm preferred, the best-fitting one otherwise ([[0084-clips-are-placed-from-the-footage-instants]]).

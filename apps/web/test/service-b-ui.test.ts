@@ -406,6 +406,9 @@ describe("SERVICE_LABELS (the library's per-tile service name)", () => {
   it("labels both pipelines — video_renders.service is the service_kind enum", () => {
     expect(SERVICE_LABELS.a).toBe("הוק + דמו");
     expect(SERVICE_LABELS.b).toBe("דמות AI");
+    // Service C (גוש טקסט, admin-only in phase 1): the founder's own business
+    // can hold one, so the library tile has a name for it.
+    expect(SERVICE_LABELS.c).toBe("גוש טקסט");
   });
 });
 
