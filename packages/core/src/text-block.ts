@@ -52,12 +52,14 @@ export function textBlockSkeletonLabel(id: string): string {
 }
 
 /**
- * The hard cap, in code points: 400, the founder's ruling of 2026-10-07/08
- * ("the longer end of the wall of text format"), superseding planning default
- * B's 300. Most texts stay far shorter; the prompt says so. A render-time
- * rule: at the 40 px floor a 400-character block still fits the default area.
+ * The hard cap, in code points: 450 (founder, planning chat of 2026-10-07,
+ * superseding his 400 of 2026-10-07/08). The prompt still asks for 400 at
+ * most; the 50 above it are a margin, so one text that runs a little long
+ * does not fail the whole batch after its one retry. A render-time rule: a
+ * 450-character text in three paragraphs fits the default area at 44–48 px,
+ * above the 40 px floor (0090, amended).
  */
-export const TEXT_BLOCK_MAX_CHARS = 400;
+export const TEXT_BLOCK_MAX_CHARS = 450;
 
 export const SPEAKER_GENDERS = ["female", "male"] as const;
 export type SpeakerGender = (typeof SPEAKER_GENDERS)[number];
@@ -69,8 +71,8 @@ export const SPEAKER_GENDER_LABEL: Record<SpeakerGender, string> = {
 
 /**
  * Characters that survive the burn: the hook-line set (copy.ts
- * ILLEGAL_HOOK_LINE_CHAR, en and em dash included) plus the newline `quiz`,
- * `founder_ask` and a closing bracketed aside need. Everything outside the
+ * ILLEGAL_HOOK_LINE_CHAR, en and em dash included) plus the newline the
+ * skeletons' line breaks need. Everything outside the
  * set — Arabic script, zero-width and formatting marks, emoji — either burns
  * as a stray glyph or corrupts the line invisibly. The long dashes burn fine;
  * keeping them out of generated text is findGeneratedTextBlockDash's job.
@@ -79,7 +81,7 @@ export const SPEAKER_GENDER_LABEL: Record<SpeakerGender, string> = {
 // reorders in every editor that renders bidi.
 const ILLEGAL_TEXT_BLOCK_CHAR = new RegExp(
   "[^" +
-    "\\u000A" + // newline — two skeletons and the closing aside
+    "\\u000A" + // newline, for the line breaks the skeletons ask for
     "\\u0020-\\u007E" + // space, digits, Latin, ASCII punctuation (incl. `-`)
     "\\u0590-\\u05FF" + // the Hebrew block
     "\\u2013\\u2014\\u2018\\u2019\\u201C\\u201D\\u2026\\u20AA" + // – — ‘ ’ “ ” … ₪
@@ -152,19 +154,22 @@ export function textBlockTextError(text: string): string | null {
 }
 
 /**
- * The founder's example for each skeleton: nine verbatim from the 2026-10-07
- * brief (Appendix A), casual spelling and spacing included, and
- * `shoutout_hack` as he replaced it on 2026-10-07/08. They are the exemplars
- * the prompt's rules were written to match (0091, amended). The DRY_RUN batch,
- * and what the prompt tests pin. Brand names are invented placeholders.
+ * The founder's first example for each skeleton as `text_block` v2 carries
+ * it: v1's ten with the five changes he approved verbatim on 2026-10-07
+ * (`instead`'s opener on its own line, and a closing line of its own on
+ * `reframe`, `shoutout_hack`, `envy_portrait` and `cautionary_confession`),
+ * casual spelling and spacing included. They are the exemplars the prompt's
+ * rules were written to match (0091, amended). The DRY_RUN batch, and what the
+ * prompt tests pin; the two second examples live in the prompt only. Brand
+ * names are invented placeholders.
  */
 export const TEXT_BLOCK_EXAMPLES: Record<TextBlockSkeletonId, string> = {
   reframe:
-    "ללמוד ערבית נשמע כמו רעיון טוב, עד שמבינים שאף אחד לא באמת מדבר כמו שמלמדים בבית הספר. זה קשה, אלא אם משתמשים באפליקציה שמלמדת ערבית מדוברת דרך שיחות אמיתיות, כמו Kalam או דברים בסגנון, ולא סתם עוד רשימת מילים שרק אנשים משנות ה 60 עדיין משתמשים בהם",
+    "ללמוד ערבית נשמע כמו רעיון טוב, עד שמבינים שאף אחד לא באמת מדבר כמו שמלמדים בבית הספר. זה קשה, אלא אם נעזרים ביוטיוב או באפליקציה שמלמדת ערבית מדוברת דרך שיחות אמיתיות, כמו Kalam או דברים בסגנון, ולא סתם עוד רשימת מילים שרק אנשים משנות ה 60 עדיין משתמשים בהם\n\nאני עוד תקועה ב'שוקראן'",
   instead:
-    "קחו את זה ממני, אל תחפשו רואה חשבון רק כשמגיע מכתב ממס הכנסה. במקום זה תסגרו את הפינה הזאת פעם אחת עם פלטפורמות כמו Sfarimo, שמפיקה חשבוניות ומגישה דוחות בשבילכם. זה לא נשמע מרגש, אבל זה ההבדל בין סוף שנה רגוע לבין סוף שנה שבו אתם מבלים את הלילה מול אקסל, מתחילים להזיע מכל הודעה מהבנק ומבינים ב-4 בבוקר שאתם כנראה חייבים למדינה יותר כסף ממה שיש לכם בחשבון.\n\n(ממש ממש ממש לא מניסיון אישי בכלל...)",
+    "קחו את זה ממני\n\nאל תחפשו רואה חשבון רק כשמגיע מכתב ממס הכנסה. במקום זה תסגרו את הפינה הזאת פעם אחת עם פלטפורמות כמו Sfarimo, שמפיקה חשבוניות ומגישה דוחות בשבילכם. זה לא נשמע מרגש, אבל זה ההבדל בין סוף שנה רגוע לבין סוף שנה שבו אתם מבלים את הלילה מול אקסל, מתחילים להזיע מכל הודעה מהבנק ומבינים ב-4 בבוקר שאתם כנראה חייבים למדינה יותר כסף ממה שיש לכם בחשבון.\n\n(ממש ממש ממש לא מניסיון אישי בכלל...)",
   shoutout_hack:
-    "שאפו למי שגילה שאם כותבים את המשימה הכי מעצבנת ראשונה ברשימה, פתאום כל השאר נראות קלות. ושאפו כפול למי שהמציא את ה-Mesima הזאת, שמזכירה את המשימה בדיוק כשיושבים מול המחשב. נגמרו התירוציםםם",
+    "שאפו למי שגילה שאם כותבים את המשימה הכי מעצבנת ראשונה ברשימה, פתאום כל השאר נראות קלות. ושאפו כפול למי שהמציא את ה-Mesima הזאת, שמזכירה את המשימה בדיוק כשיושבים מול המחשב.\n\nנגמרו התירוציםםם",
   wish_more_knew:
     "הלוואי שיותר אנשים היו יודעים שרוב צמחי הבית מתים מעודף השקיה, לא ממחסור. אצבע באדמה לפני כל השקיה, וזהו. ולמי שאין כוח לנחש, ב-Yarokli כל עציץ מגיע עם הוראות טיפול שכתובות בשפה שבן אדם יכול להבין אותה",
   founder_ask:
@@ -175,7 +180,7 @@ export const TEXT_BLOCK_EXAMPLES: Record<TextBlockSkeletonId, string> = {
   discovery:
     "לא רוצה להלחיץ אף אחד, אבל יש אפליקציה שמראה לכם כל מסלול טיול בצפון בצילום אמיתי, מטר אחרי מטר, עוד לפני שיצאתם מהבית. קוראים לה Shvilo, היא כבר באוויר, ומי שעדיין מתכנן טיולים מתמונות באינסטגרם… בהצלחה",
   envy_portrait:
-    "יש את הבחורה הזאת בכל משרד: מגיעה בתשע עם קפה ביד, יוצאת בחמש, אף פעם לא לחוצה לפני דדליין, בונה מצגות ב-Slidy במקום שקף שקף ביד, ואיכשהו גם מספיקה חדר כושר.",
+    "יש את הבחורה הזאת בכל משרד: מגיעה בתשע עם קפה ביד, יוצאת בחמש, אף פעם לא לחוצה לפני דדליין, בונה מצגות ב-Slidy במקום שקף שקף ביד, ואיכשהו דווקא המצגות שלה הן אלה שכולם מעתיקים.\n\nמישהו יכול להסביר לי את זה?",
   cautionary_confession:
-    "בשנה הראשונה של העסק מאוד מפתה לשמור את כל הקבצים רק על הלפטופ. אל תעשו את זה, כי תגמרו כמוני. בשביל זה בדיוק יש גיבויים אוטומטיים כמו Zikaroni או דברים בסגנון ואז לא תצטרכו לבכות ב 3 בבוקר כי איבדתם את כל הקבצים פתאום",
+    "בשנה הראשונה של העסק מאוד מפתה לשמור את כל הקבצים רק על הלפטופ. אל תעשו את זה, כי תגמרו כמוני. בשביל זה בדיוק יש גיבויים אוטומטיים כמו Zikaroni או דברים בסגנון ואז לא תצטרכו לבכות ב 3 בבוקר כי איבדתם את כל הקבצים פתאום\n\nאל תשאלו",
 };

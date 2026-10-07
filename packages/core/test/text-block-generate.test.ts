@@ -56,8 +56,9 @@ describe("textBlockBatchProblem", () => {
     expect(textBlockBatchProblem([{ skeleton: "quiz", text: "שאלה 🔥" }])).toMatch(
       /^quiz: .*U\+1F525/,
     );
-    expect(textBlockBatchProblem([{ skeleton: "quiz", text: "א".repeat(401) }])).toMatch(
-      /^quiz: .*401/,
+    expect(textBlockBatchProblem([{ skeleton: "quiz", text: "א".repeat(450) }])).toBeUndefined();
+    expect(textBlockBatchProblem([{ skeleton: "quiz", text: "א".repeat(451) }])).toMatch(
+      /^quiz: .*451/,
     );
   });
 
@@ -145,7 +146,7 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
     expect(result.texts[0]).toMatchObject({
       businessId,
       text: CLEAN[0]!.text,
-      promptVersion: "text_block@v1",
+      promptVersion: "text_block@v2",
       userEdited: false,
       params: { skeleton: "reframe", textBlockClipId: clipId, speakerGender: "female" },
     });
@@ -232,7 +233,7 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
       for (const [i, id] of TEXT_BLOCK_SKELETON_IDS.entries()) {
         expect(result.texts[i]!.text).toBe(TEXT_BLOCK_EXAMPLES[id]);
         expect((result.texts[i]!.params as { skeleton: string }).skeleton).toBe(id);
-        expect(result.texts[i]!.promptVersion).toBe("text_block@v1");
+        expect(result.texts[i]!.promptVersion).toBe("text_block@v2");
       }
     } finally {
       delete process.env.DRY_RUN;
