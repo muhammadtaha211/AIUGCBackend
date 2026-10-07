@@ -196,21 +196,41 @@ describe("createTextBlockRender", () => {
       createTextBlockRender(db, { businessId: adminBusinessId, clipId, scriptId: hookLine!.id }),
     ).rejects.toThrow(/not a text block/);
 
-    // An edit is free of content rules, not of render rules: the dash the
-    // generator is told never to write is refused here too.
-    const [dashed] = await db
+    // An edit is free of content rules, not of render rules: a glyph that
+    // cannot burn is refused here too.
+    const [emoji] = await db
       .insert(schema.scripts)
       .values({
         businessId: adminBusinessId,
         kind: "text_block",
-        text: "זה — זה",
+        text: "זה 🔥 זה",
         params: {},
         userEdited: true,
       })
       .returning();
     await expect(
-      createTextBlockRender(db, { businessId: adminBusinessId, clipId, scriptId: dashed!.id }),
-    ).rejects.toThrow(/קו מפריד ארוך/);
+      createTextBlockRender(db, { businessId: adminBusinessId, clipId, scriptId: emoji!.id }),
+    ).rejects.toThrow(/U\+1F525/);
+  });
+
+  it("renders an edited text with an em or en dash: the dash rule is the generator's, never the edit's (0091, amended)", async () => {
+    const [dashed] = await db
+      .insert(schema.scripts)
+      .values({
+        businessId: adminBusinessId,
+        kind: "text_block",
+        text: "אין לי מושג — אבל שאפו – באמת",
+        params: {},
+        userEdited: true,
+      })
+      .returning();
+    const render = await createTextBlockRender(db, {
+      businessId: adminBusinessId,
+      clipId,
+      scriptId: dashed!.id,
+    });
+    expect(render.service).toBe("c");
+    expect((render.params as { text: string }).text).toBe("אין לי מושג — אבל שאפו – באמת");
   });
 
   it("refuses a text written for one speaker gender over the other gender's clip", async () => {

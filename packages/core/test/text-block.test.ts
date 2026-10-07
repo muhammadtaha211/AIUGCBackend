@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  findGeneratedTextBlockDash,
   findIllegalTextBlockChar,
   isTextBlockSkeletonId,
   normalizeTextBlockText,
@@ -13,9 +14,10 @@ import {
 } from "../src/text-block";
 
 /**
- * The גוש טקסט burn rules (decisions 0090–0091): the character set is the hook
- * line's plus the newline and minus the long dashes, the cap is 400 code
- * points, and an edited text gets exactly these checks and nothing more.
+ * The גוש טקסט rules (decisions 0090–0091, amended 2026-10-07): the burn
+ * check is the hook line's character set plus the newline, en and em dash
+ * included, and the 400-code-point cap — an edited text gets exactly these and
+ * nothing more. The long dashes are refused in generated text only.
  */
 describe("text block vocabulary", () => {
   it("has the ten skeletons of the 2026-10-07 brief, in its order, each with a Hebrew label", () => {
@@ -40,7 +42,11 @@ describe("text block vocabulary", () => {
     expect(textBlockSkeletonLabel("unknown")).toBe("unknown");
   });
 
-  it("every founder example passes the burn check as written — the cap is 400 because `instead` is 396", () => {
+  it("labels relatable_observation by its new move, in the founder's own words", () => {
+    expect(textBlockSkeletonLabel("relatable_observation")).toBe("אין לי מושג איך אתם עושים את זה");
+  });
+
+  it("every founder example passes the burn check as written; the cap is 400, the founder's ruling", () => {
     for (const id of TEXT_BLOCK_SKELETON_IDS) {
       expect(textBlockTextError(TEXT_BLOCK_EXAMPLES[id]), id).toBeNull();
     }
@@ -49,7 +55,7 @@ describe("text block vocabulary", () => {
   });
 });
 
-describe("findIllegalTextBlockChar", () => {
+describe("findIllegalTextBlockChar (the burn check's character set)", () => {
   it("passes Hebrew, Latin brand names, digits, ASCII punctuation, straight quotes, a hyphen and a newline", () => {
     expect(
       findIllegalTextBlockChar(
@@ -58,12 +64,9 @@ describe("findIllegalTextBlockChar", () => {
     ).toBeUndefined();
   });
 
-  it("rejects the em dash and the en dash the founder banned for this format", () => {
-    expect(findIllegalTextBlockChar("אין לי מושג — אבל שאפו")).toEqual({
-      char: "—",
-      codepoint: "U+2014",
-    });
-    expect(findIllegalTextBlockChar("אין לי מושג – אבל שאפו")?.codepoint).toBe("U+2013");
+  it("passes the em dash and the en dash: they burn, and an edit may carry them", () => {
+    expect(findIllegalTextBlockChar("אין לי מושג — אבל שאפו")).toBeUndefined();
+    expect(findIllegalTextBlockChar("אין לי מושג – אבל שאפו")).toBeUndefined();
   });
 
   it("rejects emoji, a tatweel, a zero-width space and a bidi control", () => {
@@ -74,7 +77,21 @@ describe("findIllegalTextBlockChar", () => {
   });
 });
 
-describe("textBlockTextError (the one check for generation, edit and render)", () => {
+describe("findGeneratedTextBlockDash (generated text only)", () => {
+  it("finds the em dash and the en dash, and nothing in a plain or joining hyphen", () => {
+    expect(findGeneratedTextBlockDash("אין לי מושג — אבל שאפו")).toBe("U+2014");
+    expect(findGeneratedTextBlockDash("אין לי מושג – אבל שאפו")).toBe("U+2013");
+    expect(findGeneratedTextBlockDash("ב-Sederly - אין לי מושג, ב-8 בערב")).toBeUndefined();
+  });
+
+  it("finds nothing in any of the ten founder examples", () => {
+    for (const id of TEXT_BLOCK_SKELETON_IDS) {
+      expect(findGeneratedTextBlockDash(TEXT_BLOCK_EXAMPLES[id]), id).toBeUndefined();
+    }
+  });
+});
+
+describe("textBlockTextError (the burn check for generation, edit and render)", () => {
   it("accepts a clean block and trims Windows line endings on the way", () => {
     expect(textBlockTextError("  שורה אחת\r\nשורה שנייה  ")).toBeNull();
     expect(normalizeTextBlockText("  שורה אחת\r\nשורה שנייה  ")).toBe("שורה אחת\nשורה שנייה");
@@ -94,8 +111,9 @@ describe("textBlockTextError (the one check for generation, edit and render)", (
     expect(textBlockTextError(`${text}ב`)).toMatch(/400 תווים.*401/);
   });
 
-  it("names the long dash as its own case, other glyphs by codepoint", () => {
-    expect(textBlockTextError("זה — זה")).toMatch(/קו מפריד ארוך/);
+  it("accepts a long dash — an edited text is not checked for it — and names other glyphs by codepoint", () => {
+    expect(textBlockTextError("זה — זה")).toBeNull();
+    expect(textBlockTextError("זה – זה")).toBeNull();
     expect(textBlockTextError("זה 🔥 זה")).toMatch(/U\+1F525/);
   });
 });

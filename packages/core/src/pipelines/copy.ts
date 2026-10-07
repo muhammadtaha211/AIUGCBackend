@@ -13,6 +13,7 @@ import { logger } from "../logger";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import {
+  findGeneratedTextBlockDash,
   isTextBlockSkeletonId,
   normalizeTextBlockText,
   speakerGenderSchema,
@@ -242,9 +243,11 @@ export type TextBlockBatch = {
 /**
  * Why a generated batch cannot be stored, or undefined when it can: every
  * skeleton id is one of the ten, none repeats, every text passes the burn
- * check (the character set and the cap), and there is at least one. The model
- * is re-asked once on a violation, with the same prompt (the hook-line
- * pattern), then the batch fails.
+ * check (the character set and the cap) AND carries no en or em dash — the
+ * generation-only rule (0091, amended 2026-10-07: an edited text is not
+ * checked for it) — and there is at least one. The model is re-asked once on
+ * a violation, with the same prompt (the hook-line pattern), then the batch
+ * fails.
  */
 export function textBlockBatchProblem(
   texts: { skeleton: string; text: string }[],
@@ -257,6 +260,8 @@ export function textBlockBatchProblem(
     seen.add(entry.skeleton);
     const problem = textBlockTextError(entry.text);
     if (problem) return `${entry.skeleton}: ${problem}`;
+    const dash = findGeneratedTextBlockDash(entry.text);
+    if (dash) return `${entry.skeleton}: a long dash (${dash}) where a plain hyphen belongs`;
   }
   return undefined;
 }
@@ -317,13 +322,13 @@ export async function generateTextBlocks(
     if (problem) {
       logger.warn(
         { businessId: opts.businessId, problem },
-        "text blocks failed the burn check — regenerating once",
+        "text blocks failed the text check — regenerating once",
       );
       batch = await generate();
       problem = textBlockBatchProblem(batch.texts);
       if (problem) {
         throw new Error(
-          `text blocks failed the burn check (${problem}) — regenerated once and it recurred`,
+          `text blocks failed the text check (${problem}) — regenerated once and it recurred`,
         );
       }
     }

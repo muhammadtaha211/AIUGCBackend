@@ -57,8 +57,8 @@ export async function POST(request: Request) {
     if (/has no questionnaire yet/.test(message)) {
       return jsonError(400, "לעסק הזה אין עדיין שאלון — ממלאים אותו באפליקציה קודם.");
     }
-    if (/failed the burn check/.test(message)) {
-      return jsonError(502, "המודל החזיר טקסט שאי אפשר לצרוב, פעמיים — נסו שוב.");
+    if (/failed the text check/.test(message)) {
+      return jsonError(502, "המודל החזיר פעמיים טקסט שלא עומד בכללים — נסו שוב.");
     }
     return coreErrorResponse(err);
   }

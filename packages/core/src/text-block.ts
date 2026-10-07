@@ -13,7 +13,14 @@ import { z } from "zod";
  * new prompt version, never a code change. Only the ids (for the validator)
  * and a Hebrew label (for the admin UI) live here. The examples are repeated
  * below as the DRY_RUN stand-in; a test asserts the prompt carries each one
- * verbatim, so the two cannot drift apart.
+ * verbatim, and another pins each to the founder's literal text, so neither
+ * can drift.
+ *
+ * Two checks, two scopes (0091, amended 2026-10-07): `textBlockTextError` is
+ * the render rule — what can be burned — and runs on generation, on the
+ * admin's edit and at render creation. `findGeneratedTextBlockDash` is a
+ * generation rule only: the model's output is refused for an em or en dash;
+ * an edited text is not checked for it.
  */
 
 export const TEXT_BLOCK_SKELETONS = [
@@ -22,7 +29,7 @@ export const TEXT_BLOCK_SKELETONS = [
   { id: "shoutout_hack", label: "שאפו למי שגילה" },
   { id: "wish_more_knew", label: "הלוואי שיותר אנשים היו יודעים" },
   { id: "founder_ask", label: "רעיון גרוע או גאוני?" },
-  { id: "relatable_observation", label: "רמה אחרת של" },
+  { id: "relatable_observation", label: "אין לי מושג איך אתם עושים את זה" },
   { id: "quiz", label: "חידון" },
   { id: "discovery", label: "לא רוצה להלחיץ" },
   { id: "envy_portrait", label: "יש את האחד הזה בכל" },
@@ -45,10 +52,10 @@ export function textBlockSkeletonLabel(id: string): string {
 }
 
 /**
- * The hard cap, in code points. Planning default B of the 2026-10-07 prompt
- * said 300; the founder's own `instead` example is 396, so the cap is 400 and
- * the 25–40-word aim stays a prompt instruction. A render-time rule: at the
- * 40 px floor a 400-character block still fits the default area.
+ * The hard cap, in code points: 400, the founder's ruling of 2026-10-07/08
+ * ("the longer end of the wall of text format"), superseding planning default
+ * B's 300. Most texts stay far shorter; the prompt says so. A render-time
+ * rule: at the 40 px floor a 400-character block still fits the default area.
  */
 export const TEXT_BLOCK_MAX_CHARS = 400;
 
@@ -62,23 +69,38 @@ export const SPEAKER_GENDER_LABEL: Record<SpeakerGender, string> = {
 
 /**
  * Characters that survive the burn: the hook-line set (copy.ts
- * ILLEGAL_HOOK_LINE_CHAR) plus the newline `quiz` and `founder_ask` need,
- * MINUS the en and em dashes — the founder's rule for this format: an em dash
- * reads as machine-written, a plain `-` is what people type. Everything else
- * outside the set — Arabic script, zero-width and formatting marks, emoji —
- * either burns as a stray glyph or corrupts the line invisibly.
+ * ILLEGAL_HOOK_LINE_CHAR, en and em dash included) plus the newline `quiz`,
+ * `founder_ask` and a closing bracketed aside need. Everything outside the
+ * set — Arabic script, zero-width and formatting marks, emoji — either burns
+ * as a stray glyph or corrupts the line invisibly. The long dashes burn fine;
+ * keeping them out of generated text is findGeneratedTextBlockDash's job.
  */
 // Written as escapes, not literals: a Hebrew range inside a character class
 // reorders in every editor that renders bidi.
 const ILLEGAL_TEXT_BLOCK_CHAR = new RegExp(
   "[^" +
-    "\\u000A" + // newline — line breaks are part of two skeletons
+    "\\u000A" + // newline — two skeletons and the closing aside
     "\\u0020-\\u007E" + // space, digits, Latin, ASCII punctuation (incl. `-`)
     "\\u0590-\\u05FF" + // the Hebrew block
-    "\\u2018\\u2019\\u201C\\u201D\\u2026\\u20AA" + // ‘ ’ “ ” … ₪ (no – —)
+    "\\u2013\\u2014\\u2018\\u2019\\u201C\\u201D\\u2026\\u20AA" + // – — ‘ ’ “ ” … ₪
     "]",
   "u",
 );
+
+/**
+ * The en and em dash, refused in the MODEL's output only (founder ruling
+ * 2026-10-07/08: "it makes it come off as obviously AI"; the en dash with it,
+ * planning's wording). A generated text with one gets the house
+ * reject-and-retry; an edited text is never checked for it.
+ */
+const GENERATED_TEXT_BLOCK_DASH = /[–—]/u;
+
+/** The first long dash in a generated text, as `U+2013` or `U+2014`, or undefined. */
+export function findGeneratedTextBlockDash(text: string): "U+2013" | "U+2014" | undefined {
+  const char = GENERATED_TEXT_BLOCK_DASH.exec(text)?.[0];
+  if (char === undefined) return undefined;
+  return char === "–" ? "U+2013" : "U+2014";
+}
 
 /** The first unrenderable character in a text, described for an error message. */
 export function findIllegalTextBlockChar(
@@ -115,6 +137,7 @@ export function textBlockLength(text: string): number {
  * Why a text cannot be burned, in Hebrew, or null when it can. The one check
  * generation, the edit route and the render creation all run — the format
  * adds no content rule to an edited text (0091 §11); these are render rules.
+ * The dash rule is not one of them (findGeneratedTextBlockDash).
  */
 export function textBlockTextError(text: string): string | null {
   const normalized = normalizeTextBlockText(text);
@@ -124,18 +147,16 @@ export function textBlockTextError(text: string): string | null {
     return `הטקסט ארוך מדי — עד ${TEXT_BLOCK_MAX_CHARS} תווים, ויש בו ${length}.`;
   }
   const bad = findIllegalTextBlockChar(normalized);
-  if (bad) {
-    return bad.codepoint === "U+2014" || bad.codepoint === "U+2013"
-      ? "הטקסט מכיל קו מפריד ארוך (—) — משתמשים במקף רגיל (-)."
-      : `הטקסט מכיל תו שלא ניתן לצרוב (${bad.codepoint}).`;
-  }
+  if (bad) return `הטקסט מכיל תו שלא ניתן לצרוב (${bad.codepoint}).`;
   return null;
 }
 
 /**
- * The founder's example for each skeleton, verbatim from the 2026-10-07 brief
- * (Appendix A): the DRY_RUN batch, and what the prompt test pins. Brand names
- * are invented placeholders.
+ * The founder's example for each skeleton: nine verbatim from the 2026-10-07
+ * brief (Appendix A), casual spelling and spacing included, and
+ * `shoutout_hack` as he replaced it on 2026-10-07/08. They are the exemplars
+ * the prompt's rules were written to match (0091, amended). The DRY_RUN batch,
+ * and what the prompt tests pin. Brand names are invented placeholders.
  */
 export const TEXT_BLOCK_EXAMPLES: Record<TextBlockSkeletonId, string> = {
   reframe:
@@ -143,7 +164,7 @@ export const TEXT_BLOCK_EXAMPLES: Record<TextBlockSkeletonId, string> = {
   instead:
     "קחו את זה ממני, אל תחפשו רואה חשבון רק כשמגיע מכתב ממס הכנסה. במקום זה תסגרו את הפינה הזאת פעם אחת עם פלטפורמות כמו Sfarimo, שמפיקה חשבוניות ומגישה דוחות בשבילכם. זה לא נשמע מרגש, אבל זה ההבדל בין סוף שנה רגוע לבין סוף שנה שבו אתם מבלים את הלילה מול אקסל, מתחילים להזיע מכל הודעה מהבנק ומבינים ב-4 בבוקר שאתם כנראה חייבים למדינה יותר כסף ממה שיש לכם בחשבון.\n\n(ממש ממש ממש לא מניסיון אישי בכלל...)",
   shoutout_hack:
-    "שאפו למי שגילה שאם כותבים את המשימה הכי מעצבנת ראשונה ברשימה, פתאום כל השאר נראות קלות. ושאפו כפול למי שהמציא את ה-Mesima הזאת, היא מזכירה לי את המשימה בדיוק כשאני מול המחשב. בחיים לא הייתי פרודוקטיבית כזאתתת",
+    "שאפו למי שגילה שאם כותבים את המשימה הכי מעצבנת ראשונה ברשימה, פתאום כל השאר נראות קלות. ושאפו כפול למי שהמציא את ה-Mesima הזאת, שמזכירה את המשימה בדיוק כשיושבים מול המחשב. נגמרו התירוציםםם",
   wish_more_knew:
     "הלוואי שיותר אנשים היו יודעים שרוב צמחי הבית מתים מעודף השקיה, לא ממחסור. אצבע באדמה לפני כל השקיה, וזהו. ולמי שאין כוח לנחש, ב-Yarokli כל עציץ מגיע עם הוראות טיפול שכתובות בשפה שבן אדם יכול להבין אותה",
   founder_ask:

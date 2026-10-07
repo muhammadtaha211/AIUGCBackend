@@ -20,7 +20,7 @@ import { createTestDb } from "./helpers/pglite";
 
 /**
  * generateTextBlocks (decisions 0090–0091): one scripts row per text the model
- * returns, in the clip's speaker gender, with the burn check run on the batch
+ * returns, in the clip's speaker gender, with the text check run on the batch
  * and one re-request on a violation. The prompt is rendered on both paths so
  * prompt_version is always `text_block@v<N>`.
  */
@@ -47,12 +47,29 @@ describe("textBlockBatchProblem", () => {
       /unknown skeleton "pov_scene"/,
     );
     expect(textBlockBatchProblem([CLEAN[0]!, CLEAN[0]!])).toMatch(/"reframe" appears twice/);
-    expect(textBlockBatchProblem([{ skeleton: "quiz", text: "שאלה — תשובה" }])).toMatch(
-      /^quiz: .*קו מפריד ארוך/,
+    expect(textBlockBatchProblem([{ skeleton: "quiz", text: "שאלה — תשובה" }])).toBe(
+      "quiz: a long dash (U+2014) where a plain hyphen belongs",
+    );
+    expect(textBlockBatchProblem([{ skeleton: "quiz", text: "שאלה – תשובה" }])).toBe(
+      "quiz: a long dash (U+2013) where a plain hyphen belongs",
+    );
+    expect(textBlockBatchProblem([{ skeleton: "quiz", text: "שאלה 🔥" }])).toMatch(
+      /^quiz: .*U\+1F525/,
     );
     expect(textBlockBatchProblem([{ skeleton: "quiz", text: "א".repeat(401) }])).toMatch(
       /^quiz: .*401/,
     );
+  });
+
+  it("passes all ten founder examples as a generated batch: every one obeys the generation rules", () => {
+    expect(
+      textBlockBatchProblem(
+        TEXT_BLOCK_SKELETON_IDS.map((skeleton) => ({
+          skeleton,
+          text: TEXT_BLOCK_EXAMPLES[skeleton],
+        })),
+      ),
+    ).toBeUndefined();
   });
 });
 
@@ -153,6 +170,19 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
     expect(generateObject.mock.calls[0]![0].prompt).toBe(generateObject.mock.calls[1]![0].prompt);
     expect(result.texts.map((r) => r.text)).toEqual(CLEAN.map((t) => t.text));
     expect(result.texts.some((r) => r.text.includes("—"))).toBe(false);
+  });
+
+  it("an en dash twice fails the batch: the dash is refused on generated text, retried once, then raised", async () => {
+    const before = (await db.select().from(schema.scripts)).length;
+    generateObject
+      .mockReset()
+      .mockResolvedValue(batch([{ skeleton: "reframe", text: "קשה – עד שמבינים" }]));
+
+    await expect(generateTextBlocks(db, { businessId, clipId })).rejects.toThrow(
+      /failed the text check \(reframe: a long dash \(U\+2013\).*recurred/,
+    );
+    expect(generateObject).toHaveBeenCalledTimes(2);
+    expect((await db.select().from(schema.scripts)).length).toBe(before);
   });
 
   it("a second failure raises, naming the problem, and inserts nothing", async () => {
