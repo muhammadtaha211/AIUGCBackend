@@ -16,7 +16,7 @@ import {
 /**
  * The גוש טקסט rules (decisions 0090–0091, amended 2026-10-07): the burn
  * check is the hook line's character set plus the newline, en and em dash
- * included, and the 400-code-point cap — an edited text gets exactly these and
+ * included, and the 450-code-point cap — an edited text gets exactly these and
  * nothing more. The long dashes are refused in generated text only.
  */
 describe("text block vocabulary", () => {
@@ -46,12 +46,12 @@ describe("text block vocabulary", () => {
     expect(textBlockSkeletonLabel("relatable_observation")).toBe("אין לי מושג איך אתם עושים את זה");
   });
 
-  it("every founder example passes the burn check as written; the cap is 400, the founder's ruling", () => {
+  it("every founder example passes the burn check as written; the hard cap is 450, a margin over the prompt's 400", () => {
     for (const id of TEXT_BLOCK_SKELETON_IDS) {
       expect(textBlockTextError(TEXT_BLOCK_EXAMPLES[id]), id).toBeNull();
     }
     expect(textBlockLength(TEXT_BLOCK_EXAMPLES.instead)).toBe(396);
-    expect(TEXT_BLOCK_MAX_CHARS).toBe(400);
+    expect(TEXT_BLOCK_MAX_CHARS).toBe(450);
   });
 });
 
@@ -105,10 +105,10 @@ describe("textBlockTextError (the burn check for generation, edit and render)", 
     expect(textBlockTextError("   \n  ")).toBe("הטקסט ריק.");
   });
 
-  it("refuses the 401st code point and names the count", () => {
-    const text = "א".repeat(400);
+  it("refuses the 451st code point and names the count", () => {
+    const text = "א".repeat(450);
     expect(textBlockTextError(text)).toBeNull();
-    expect(textBlockTextError(`${text}ב`)).toMatch(/400 תווים.*401/);
+    expect(textBlockTextError(`${text}ב`)).toMatch(/450 תווים.*451/);
   });
 
   it("accepts a long dash — an edited text is not checked for it — and names other glyphs by codepoint", () => {

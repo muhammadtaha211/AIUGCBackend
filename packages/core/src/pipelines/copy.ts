@@ -228,7 +228,7 @@ const textBlocksOutput = z.object({
 });
 
 /**
- * Ten Hebrew texts of up to 400 characters each, plus the skipped list, do
+ * Ten Hebrew texts of up to 450 characters each, plus the skipped list, do
  * not fit generateObject's 4096 default (Hebrew tokenises at roughly one token
  * per character or two).
  */
