@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-07
-method: 'Founder decisions from the planning chat of 2026-10-07, recorded from that day''s task prompt ("Claude Code prompt: גוש טקסט (Service C), phase 1"), which states them as decided and not up for relitigation; the reasons are his. Phase 1 built on branch feat/service-c-text-block from origin/main 2a503a4 the same day — what exists is MEASURED in that tree: packages/core/src/pipelines/text-blocks.ts, packages/core/src/text-block.ts, packages/core/src/pipelines/copy.ts (generateTextBlocks), packages/remotion/src/ServiceC.tsx, apps/admin/src/app/(admin)/text-blocks/**, apps/admin/src/app/api/admin/text-blocks/**, supabase/migrations/0051_service_c_enums.sql and 0052_text_block_clips.sql, prompts/text_block/v1.md. No production query, no paid call for this note.'
+method: 'Founder decisions from the planning chat of 2026-10-07, recorded from that day''s task prompt ("Claude Code prompt: גוש טקסט (Service C), phase 1"), which states them as decided and not up for relitigation; the reasons are his. Phase 1 built on branch feat/service-c-text-block from origin/main 2a503a4 the same day — what exists is MEASURED in that tree: packages/core/src/pipelines/text-blocks.ts, packages/core/src/text-block.ts, packages/core/src/pipelines/copy.ts (generateTextBlocks), packages/remotion/src/ServiceC.tsx, apps/admin/src/app/(admin)/text-blocks/**, apps/admin/src/app/api/admin/text-blocks/**, supabase/migrations/0051_service_c_enums.sql and 0052_text_block_clips.sql, prompts/text_block/v1.md. No production query, no paid call for this note. Amended 2026-10-07: ruling 7 (the conditional push approval) from the planning chat of 2026-10-07/08, relayed by the phase 1b task prompt; the push measured by `supabase migration list` / `db push --dry-run` before and the read-only packages/core/.work/readback-0051-0052.ts at both ends.'
 source: founder
 ---
 
@@ -85,6 +85,28 @@ phase 1 charges nothing because `createTextBlockRender` never calls `quoteContex
   `apps/admin/src/lib/text-blocks.ts`.
 - `prompts/text_block/v1.md`; migrations 0051, 0052.
 
+## Amended 2026-10-07 (founder, planning chat of 2026-10-07/08, relayed by the phase 1b task prompt)
+
+**FOUNDER-REPORTED, ruling 7: the migration push is approved, on conditions.** His words: "I
+approve the spend and the pushes and everything after all the important things you mentioned are
+confirmed". The task prompt named the conditions: 0052 turns row-level security on for
+`text_block_clips`, `migration list` shows the remote at 0050, `db push --dry-run` lists exactly
+0051 and 0052, and the test gate is green.
+
+**MEASURED, 2026-10-07:**
+
+- **The conditions held.** RLS is read in the file. The list showed 0000–0050 local == remote,
+  with 0051 and 0052 local only. The dry run named exactly those two. The full seven-command gate
+  was green on the pushed tree, 9f043be.
+- **The push.** 0051 and 0052 were applied together by `db push`, and the ledger now holds 53 rows,
+  0000–0052.
+- **The read-back.** `service_kind` reads a, b, c, and `script_kind` ends with `text_block`.
+  `text_block_clips` has 8 columns and 3 constraints, RLS on, 0 policies and 0 rows. The full
+  record is the push log and `scripts/verify-migration-ledger.sql` §RESULTS, the 2026-10-07 entry.
+- **What is still owed.** Production now holds the schema phase 1 runs on. The merge and the box
+  pull and restart are the founder's; nothing on `main` reads the new values or table, so the
+  order is safe.
+
 ## Related
 
 - [[0090-text-block-format-clip-once-with-its-own-sound]] — the format.
@@ -92,3 +114,4 @@ phase 1 charges nothing because `createTextBlockRender` never calls `quoteContex
 - [[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]] — why Service B's revamp is closed.
 - [[0036-auto-release-b-is-always-on]] — the release line a C render joins the A side of.
 - [[0073-hook-text-colour-is-set-per-clip-by-the-founder]] — the colour vocabulary the bank reuses.
+- [[production-migration-push-log]] — the 0051–0052 push, with its conditions.

@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-07
-method: "Founder decisions 4–8 and 12 of the 2026-10-07 task prompt, plus its planning defaults A–C, which the prompt marks as assumed by planning and not ruled; the reasons are his. MEASURED in the tree at feat/service-c-text-block: packages/remotion/src/ServiceC.tsx, packages/remotion/src/render.ts (renderServiceC), packages/remotion/src/text-fit.ts, packages/remotion/src/overlays.tsx:15-22, packages/core/src/text-block.ts, packages/core/src/hook-geometry.ts (DEFAULT_TEXT_BLOCK_RECT), packages/core/src/pipelines/bank.ts (normalizeStoredClip), packages/core/src/media/ffmpeg.ts:182-219 (normalizeVideo), apps/admin/src/lib/text-blocks.ts. The example lengths were counted with a node one-liner over the Appendix A strings (code points, whitespace-split words)."
+method: "Founder decisions 4–8 and 12 of the 2026-10-07 task prompt, plus its planning defaults A–C, which the prompt marks as assumed by planning and not ruled; the reasons are his. MEASURED in the tree at feat/service-c-text-block: packages/remotion/src/ServiceC.tsx, packages/remotion/src/render.ts (renderServiceC), packages/remotion/src/text-fit.ts, packages/remotion/src/overlays.tsx:15-22, packages/core/src/text-block.ts, packages/core/src/hook-geometry.ts (DEFAULT_TEXT_BLOCK_RECT), packages/core/src/pipelines/bank.ts (normalizeStoredClip), packages/core/src/media/ffmpeg.ts:182-219 (normalizeVideo), apps/admin/src/lib/text-blocks.ts. The example lengths were counted with a node one-liner over the Appendix A strings (code points, whitespace-split words). Amended 2026-10-07: ruling 4 from the founder's planning chat of 2026-10-07/08 (relayed by the phase 1b task prompt); his clip and screenshots measured with ffprobe and ffmpeg volumedetect, the look compared on ffmpeg frame crops of render:sample:c renders of his clip against the screenshots, all under packages/core/.work/text-block/ (gitignored)."
 source: founder
 ---
 
@@ -76,7 +76,9 @@ White or the clip's colour, medium weight, a thin dark edge or soft shadow, no b
 lines, clearly lighter and smaller than `HookLine` and the captions. **FOUNDER-REPORTED;** the
 reference screenshots were to be attached and were **not found** in the repo, the scratchpad or
 any session folder on 2026-10-07, so the numbers below are the build's reading of the words, to
-be tuned against the screenshots when they arrive.
+be tuned against the screenshots when they arrive. _(They arrived the same day and the numbers
+were tuned: see the amendment, which supersedes the weight, edge, line height and default area
+below.)_
 
 **MEASURED, the numbers:** Heebo **500** (a second weight in the one `loadFont` call,
 `overlays.tsx:15-22`; `docs/07-worker-box.md` §8 amended), `TEXT_BLOCK_FONT = { base: 54, min: 40,
@@ -111,11 +113,77 @@ composition is the one `<OffthreadVideo>` from frame 0 with the block over every
 
 ## Not verified
 
-- The founder's clip (10 s, Seedance 2.5 on Atlas, a woman in a blue hoodie with a blunt knife
-  and a watermelon — **FOUNDER-REPORTED**) was not attached, so the look was judged on the lavfi
-  fixture with the tone, not on his footage.
+- ~~The founder's clip … was not attached~~ — superseded 2026-10-07: it was attached and rendered;
+  see the amendment below.
 - No real render has run on the box; the box needs a pull and a restart for the new handler, the
   composition and the second font weight (`docs/07-worker-box.md` §11).
+
+## Amended 2026-10-07 (founder, planning chat of 2026-10-07/08, relayed by the phase 1b task prompt)
+
+**FOUNDER-REPORTED, ruling 4: the cap is 400 characters**, superseding planning default B's 300
+(§4). His reason: it is "the longer end of the wall of text format", and the format is "built to
+withstand that kind of length". **MEASURED:** `TEXT_BLOCK_MAX_CHARS = 400` already, now commented
+as his ruling, and pinned by `text-block.test.ts`. The prompt's length rule now reads: "Most texts
+stay short: around 25 to 40 words … 400 is the ceiling, for a text whose joke needs the room,
+never the target". §4's "Aim for 25–40 Hebrew words" wording is gone from the prompt; the aim
+stands as "most". §3's character set now also admits `–` and `—` ([[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]], amended: refused
+in generated text only).
+
+**MEASURED, his clip and the screenshots.** He attached `cuttingwatermelown.mp4` and twelve
+reference screenshots. Copies sit in `packages/core/.work/text-block/{clip,screenshots}/`,
+gitignored and never committed.
+
+- **The clip as he gave it** (ffprobe): 1080×1920, h264 at **24 fps**, video 10.042 s, AAC
+  32 kHz stereo at 177 kb/s, 10.080 s. `volumedetect` reads mean −28.8 dB and max −3.1 dB.
+- **Through the bank's own normalisation** (`normalizeVideo`, because `needsNormalize(24)` is
+  true): 30 fps, video 10.033 s. The AAC stays 32 kHz stereo, re-encoded to 130 kb/s, still
+  10.080 s, at mean −28.9 dB and max −3.3 dB. The sound survives, within 0.2 dB.
+- **Rendered through `render:sample:c --clip`:** h264 1080×1920 at 30 fps, 10.067 s, plus AAC
+  48 kHz stereo at 10.112 s, at mean −28.9 dB and max −3.3 dB. That is the clip's own sound at its
+  own level, on every frame.
+
+**MEASURED, the look against the screenshots, before → after** (frame crops and side-by-sides in
+`.work/text-block/crops/`). What the screenshots set:
+
+- **The typeface** is TikTok's classic text: a sans at semibold with a crisp dark edge, no box,
+  centred.
+- **Size.** Lines sit about 60–71 px apart at 1080 wide.
+- **Width.** Lines wrap at roughly 55–75% of the frame, median about 63%.
+- **Placement.** The block is centred near mid-frame, often over the face.
+
+On his clip the phase 1 look read thinner and its edge went soft over the bright ceiling, the
+block was wider than theirs, and lines were set looser. Tuned:
+
+| Constant                                                                                          | Before                                                 | After                                                                                                        |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `TEXT_BLOCK_WEIGHT` (`ServiceC.tsx`), `loadFont` weights (`overlays.tsx`), admin preview `WEIGHT` | 500                                                    | **600**                                                                                                      |
+| `textBlockShadow` (render and admin preview)                                                      | `0 0 2px rgba(ink,0.9)` ×2, `0 2px 12px rgba(ink,0.5)` | `0 0 3px rgba(ink,0.95)` ×2, `0 2px 10px rgba(ink,0.6)`                                                      |
+| `TEXT_BLOCK_FONT.lineHeight` (`text-fit.ts`)                                                      | 1.3                                                    | **1.2**                                                                                                      |
+| `DEFAULT_TEXT_BLOCK_RECT` (`hook-geometry.ts`), the sample and Studio defaults                    | `{x:80, y:360, w:820, h:1040}`                         | `{x:180, y:400, w:720, h:1040}`: 67% wide, centred on x 540, centre y 920, right edge still 900, bottom 1440 |
+| `TEXT_BLOCK_FONT` base / min                                                                      | 54 / 40                                                | unchanged                                                                                                    |
+
+**REASONED, what still differs.**
+
+- **The typeface.** It is Heebo, not the app's own; Heebo is the house font and the closest
+  geometric Hebrew sans we load.
+- **Over a bright background**, a 3 px edge is still lighter than the app's, which reads almost
+  as an outline.
+- **Placement.** The default area puts a short text across her face, as most screenshots do; the
+  area is his to draw per clip at register.
+
+**MEASURED, RTL on crops** (0059's lesson):
+
+- `Sfarimo,` and `ב-Tavnit` sit as LTR islands in their RTL lines.
+- The wrapped aside's brackets mirror correctly, at 4× zoom: the opening one at the right end
+  encloses to its left, and the closing one sits after the ellipsis at the left end.
+- `—` and `–` both burn as real Heebo 600 glyphs (`renders/dash-proof.mp4`).
+
+**The two renders he asked for**, both with the default area:
+
+- `packages/core/.work/text-block/renders/tavnit-shortest.mp4`: Tavnit's `relatable_observation`,
+  147 code points.
+- `.../tavnit-longest.mp4`: Tavnit's `instead`, 318 code points, with the bracketed aside on its
+  own last line.
 
 ## Related
 

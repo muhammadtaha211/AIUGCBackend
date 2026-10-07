@@ -792,6 +792,36 @@ ORDER BY migration, layer DESC;
 -- ---------------------------------------------------------------------------
 -- RESULTS
 --
+-- 2026-10-07, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0051 + 0052** (Service C: the 'c' and 'text_block' enum values, the
+-- text_block_clips table; decisions 0089/0090) together, on the founder's
+-- explicit approval for this push, given on conditions the phase 1b task
+-- prompt listed and the session checked first: 0052 enables RLS (read in the
+-- file), `migration list` showed 0000-0050 local == remote with 0051 and 0052
+-- the only rows with an empty remote, `db push --dry-run` named exactly
+-- 0051_service_c_enums.sql and 0052_text_block_clips.sql, and the full test
+-- gate was green on the pushed tree (9f043be). Both pre-flights were run
+-- twice, the second time minutes before the push. The apply printed
+-- "Applying migration 0051_service_c_enums.sql..." and "Applying migration
+-- 0052_text_block_clips.sql..." and exited 0; the same Docker catalog-cache
+-- warning as 0035-0050, not a failure. `db push` recorded both itself, the
+-- FOURTEENTH push in a row with no repair.
+--
+-- Read at BOTH ends through the code's own connection inside a read-only
+-- transaction (packages/core/.work/readback-0051-0052.ts -- both migrations'
+-- VERIFY blocks plus this file). BEFORE: service_kind a,b; script_kind
+-- hook_line,benefit_captions,vo_script,b_script; text_block_clips absent (no
+-- relation, 0 columns, no constraints, 0 policies, the row count errors);
+-- ledger 51 rows 0000-0050; this file 46 rows, 41 true, the 0051 and 0052
+-- rows false. AFTER: service_kind a,b,c; script_kind the four plus
+-- text_block, last; text_block_clips present, relrowsecurity true, 8 columns
+-- (id, file_path, duration_ms, speaker_gender, text_safe_area, text_color,
+-- active, created_at), the three constraints (text_block_clips_pkey,
+-- _speaker_gender_check, _text_color_check), 0 policies, 0 rows; ledger 53
+-- rows 0000-0052, NO GAPS; this file 46 rows, 43 true -- every structural
+-- row true but 0020 (NULL by design) and 0022 (the expected false), and the
+-- data row 0028 false as its note predicts on the rebuilt project.
+--
 -- 2026-10-02, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0050** (demo_analysis_footage, decisions 0077/0078/0080/0083) alone, on the
 -- founder's explicit instruction for this one push ("Push migration 0050

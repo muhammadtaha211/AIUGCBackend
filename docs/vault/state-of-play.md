@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-02
+updated: 2026-10-07
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -40,8 +40,9 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**Service C, גוש טקסט, phase 1 (admin-only): BUILT 2026-10-07 on `feat/service-c-text-block`,
-PUSHED, NOT MERGED; migrations 0051 + 0052 WRITTEN, DRY-RUN ONLY, NOT PUSHED; the box NOT on it.**
+**Service C, גוש טקסט, phase 1 + 1b (admin-only): BUILT 2026-10-07 on `feat/service-c-text-block`,
+PUSHED, NOT MERGED; migrations 0051 + 0052 PUSHED TO PRODUCTION 2026-10-07 and read back (ledger
+0000–0052, 53 rows); the box NOT on it.**
 The decisions are [[0089-service-c-text-block-exists-admin-only-phase-1]] (exists, built before
 the hand-test reports, two phases with a stop, 25 credits recorded for phase 2 only, landing /
 pricing / legal untouched), [[0090-text-block-format-clip-once-with-its-own-sound]] (the format
@@ -58,8 +59,9 @@ Service B tests and his rulings; what happens to Service B itself is OPEN).
   examples); `createTextBlockRender` (admin-owned businesses only, the burn check, the
   content-policy gate wired, `service: "c"`, the text pinned on params); the `render_video`
   handler's `c` branch and a release line that puts C beside A, never in `qc_pending`; the
-  `ServiceC` composition (the clip once, **unmuted**, Heebo 500, `fitParagraphFontSize`,
-  54 → 40 px, the thin edge, `DEFAULT_TEXT_BLOCK_RECT` 80,360,820,1040); admin `/text-blocks`
+  `ServiceC` composition (the clip once, **unmuted**, Heebo 600, `fitParagraphFontSize`,
+  54 → 40 px at line height 1.2, a 3 px edge, `DEFAULT_TEXT_BLOCK_RECT` 180,400,720,1040 — tuned
+  2026-10-07 against his screenshots, 0090 amended); admin `/text-blocks`
   (register with gender / area / colour, the preview in the burned look, card actions) and
   `/text-blocks/new` (business → clip → generate → edit → render → download, self-refreshing while
   a render runs) behind six `requireAdmin` routes; `normalize_text_block_clip` (shares the hook
@@ -86,17 +88,31 @@ Service B tests and his rulings; what happens to Service B itself is OPEN).
   small budget. Service B today "comes out ok but not amazing"; he can tell it is AI by the
   repeated motion and is embarrassed to use it for Tavnit. Replicate flagged his persona image as
   sensitive on Seedance; Atlas accepted it.
-- **NOT attached, 2026-10-07:** the clip and the two or three reference screenshots the prompt
-  said to attach were in no session folder, the scratchpad or the repo. The render proofs ran on
-  the tone-carrying lavfi fixture; the look is the build's reading of "typed in the app", to be
-  tuned against the screenshots when they land (put them under `packages/core/.work/text-block/`,
-  gitignored).
-- **Waiting on the founder, each separately:** (1) `db push` of 0051 and 0052 (dry-run output in
-  the task report); (2) the spend OK for the fixture run — Tavnit's own business plus two fixture
-  questionnaires, real model calls, cap ₪15, through a gitignored scratch script against PGlite
-  so no production row is written; (3) the merge, then the box `git pull` + restart together
-  (new handler, new composition, the second font weight — `docs/07-worker-box.md` §11); (4) his
-  rulings on the two planning defaults 0090 names (cap 400 over 300; clips 3–60 s).
+- **Phase 1b, 2026-10-07 (his rulings of 2026-10-07/08; 0089–0091 amended):**
+  - **The copy.** `text_block` v1 was edited in place. His examples are the exemplars, with
+    `shoutout_hack` replaced by his new text. The rules were reworded until all ten obey them, with
+    "never an ad" as the governing test. The cap is 400, his ruling. The long dashes are refused in
+    generated text only; an edit may carry them.
+  - **The fixture run.** It made real calls for Tavnit, a Haifa plumber and an Excel course, at
+    the female speaker his clip has, plus the course once with a male clip: 40 texts, no skeleton
+    skipped, no retry, 64 agorot. Every text is in `packages/core/.work/text-block/fixture-texts.md`
+    (gitignored). Read by eye, not fixed: 3 texts address the viewer in the singular, 1 uses a
+    feminine plural for the audience, closing lines are copied whole from the examples (all four
+    `founder_ask` end `נו, כן או לא?`), and 2 small invented general figures.
+  - **His clip and twelve screenshots** sit in `.work/text-block/`, gitignored. The clip was
+    normalised the bank's way (24 → 30 fps, sound kept within 0.2 dB) and rendered with the
+    shortest and the longest Tavnit text: `.work/text-block/renders/tavnit-shortest.mp4`,
+    `tavnit-longest.mp4`. The crops and side-by-sides are in `.work/text-block/crops/`. The look
+    was retuned to weight 600, a 3 px edge, line height 1.2 and a narrower centred default area.
+  - **The push.** 0051 + 0052 were pushed on his conditional approval after all four conditions
+    were checked (push log; verify §RESULTS 2026-10-07).
+- **Waiting on the founder, in order:**
+  1. Read the 40 texts and the two renders.
+  2. Merge.
+  3. Pull and restart the box together, once no job is running (new handler, new composition,
+     the 600 weight; `docs/07-worker-box.md` §11).
+  4. Rule on the prompt findings above, which would be a `text_block` v2, and on the one planning
+     default 0090 still names: clips 3–60 s.
 - **Phase 2 is NOT started.** What it needs is in 0089 §3.
 
 **Every step is a 2 s clip placed from the footage instants: BUILT 2026-10-02 on
@@ -731,7 +747,7 @@ payment is kept.
 three core functions, the 25-credit key seeded before its schema key, the quote/debit in
 `createTextBlockRender`, the customer clip listing + the SELECT policy on `text_block_clips`, the
 dashboard card, the customer edit route, then the landing / `/pricing` / legal copy. Phase 1's
-own gates (push, spend OK, merge + box) are under "Owed founder actions".
+own remaining gates (merge + box) are under "Owed founder actions".
 
 **0. The Sumit adapter.** MERGED and LIVE 2026-09-21 — PR #52, `4100cc7` —
 [[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway`
@@ -1079,17 +1095,23 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
-- **Service C phase 1 (2026-10-07), four separate calls, none taken yet:** (1) authorise
-  `db push` of 0051 + 0052 (dry-run output in the task report; 0051 goes first and alone, per
-  0019's rule); (2) the spend OK for the fixture run with real model calls (cap ₪15; the script
-  is `packages/core/.work/text-block/fixture-run.ts`, gitignored); (3) merge
-  `feat/service-c-text-block`, then the box `git pull` + restart together; (4) attach the clip
-  and the reference screenshots (`packages/core/.work/text-block/`), and rule on the two planning
-  defaults in [[0090-text-block-format-clip-once-with-its-own-sound]] (cap 400; clips 3–60 s).
+- **Service C phase 1 (2026-10-07).** Done the same day on his rulings:
+  - the push of 0051 + 0052;
+  - the fixture run, 64 agorot, whose texts are in `packages/core/.work/text-block/fixture-texts.md`;
+  - the clip and the screenshots, attached and rendered;
+  - the cap, 400.
+
+  Still owed, in order:
+  1. Read the texts and the two renders in `packages/core/.work/text-block/renders/`.
+  2. Merge `feat/service-c-text-block`.
+  3. Pull and restart the box together, once no job is running.
+  4. Rule on the prompt findings in [[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]]
+     (amended) and on clips 3–60 s in [[0090-text-block-format-clip-once-with-its-own-sound]].
+
 - **~~Say whether the paid check of `plan_demo_steps@v16` may run~~ DONE 2026-10-02:** he said
   yes; it ran and passed ([[v16-paid-check-2026-10-02]]).
-- **Merge PR #79 (`feat/steps-fixed-2s-clips`)** — pushed 2026-10-02 on his instruction. Then,
-  straight after the merge: **box `git pull` AND restart together**, and do not approve or render a
+- **~~Merge PR #79 (`feat/steps-fixed-2s-clips`)~~ MERGED (`2a503a4` on `origin/main`, by
+  `git log` 2026-10-07).** Still owed after it: **box `git pull` AND restart together**, and do not approve or render a
   Service A plan in between.
 - **Say whether the inventory list should get a retry button on a failed first load**
   ([[the-inventory-first-load-failure-has-no-retry-button]], 2026-10-02). He was told before the
