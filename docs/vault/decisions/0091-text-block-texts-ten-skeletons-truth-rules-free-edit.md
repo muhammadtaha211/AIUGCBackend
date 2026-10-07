@@ -56,10 +56,21 @@ benefiting from the product, in any tense"; "Never invent a number, price, stati
 timeframe or result"; "stated as the business's claim and never as the speaker's experience"; no
 health or money promises; nothing negative about a named company) is pinned by
 `text-block-prompt.test.ts`. The standing house rules for burned text ride along: the naming
-policy, Latin brand names stay Latin, the `רגע` tick rule in 0046's wording, the character set
-with straight quotes, no calendar year, and — new for this format, the founder's rule in
-Appendix A — never an em or en dash, a plain hyphen instead; the validator refuses U+2013 and
-U+2014 so the rule is enforced, not only asked.
+policy, Latin brand names stay Latin, the `רגע` tick rule in 0046's wording (its natural-use
+example pluralised to this format's plural audience, `תראו את זה רגע`), the character set with
+straight quotes (asked of the model, not refused by the validator — the hook line's stance), no
+calendar year, and — new for this format, the founder's rule in Appendix A — never an em or en
+dash, a plain hyphen instead; the validator refuses U+2013 and U+2014 so that rule is enforced,
+not only asked.
+
+**Three of the founder's examples sit against the rules above, and the prompt says so under each
+rather than rewriting his copy (REASONED, the smallest honest fix):** `shoutout_hack`'s last two
+sentences have the speaker using the product and reporting a result — the note under it says
+not to copy that part; `instead` runs to 396 characters and ends on an aside after a blank line
+— the note says yours is one paragraph inside the aim; `cautionary_confession`'s `אל תעשו את
+זה` is a warning, which the call-to-action rule now defines as not a call to action. The rules
+win over the examples, and the prompt says that too. His ruling on the examples themselves is
+owed.
 
 ## 3. The customer's edit is free (decision 11)
 
@@ -78,6 +89,6 @@ old one for any render pinned on it.
 ## Related
 
 - [[0089-service-c-text-block-exists-admin-only-phase-1]], [[0090-text-block-format-clip-once-with-its-own-sound]].
-- [[0046-the-rega-ban-targets-the-hesitation-tick-not-the-word]] — the tick rule, carried verbatim.
+- [[0046-the-rega-ban-targets-the-hesitation-tick-not-the-word]] — the tick rule, in its wording.
 - [[0033-b-script-may-write-an-allowed-brand-name-in-latin]] — Latin brand names, the same stance.
 - [[0042-content-policy-is-wired-at-both-choke-points]] — `createTextBlockRender` is the third choke point; it returns early for admin-owned businesses, so in phase 1 the classifier never runs.

@@ -151,6 +151,25 @@ describe("Service C routes refuse non-admins", () => {
     });
   }
 
+  it("generate refuses a customer-owned business for an admin session, before any metering or model call", async () => {
+    const db = fixture.db as ReturnType<typeof core.getDb>;
+    const [admin] = await db
+      .insert(core.schema.users)
+      .values({ email: "admin@example.com", role: "admin" })
+      .returning();
+    const [business] = await db
+      .insert(core.schema.businesses)
+      .values({ ownerUserId: customer.id, name: "עסק של לקוח" })
+      .returning();
+    fixture.user = { id: admin!.id, email: admin!.email };
+    const response = await generate.POST(
+      json("POST", "/api/admin/text-blocks/generate", { businessId: business!.id, clipId: UUID }),
+    );
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toMatch(/עסק של מנהל/);
+    expect(fixture.generateTextBlocks).not.toHaveBeenCalled();
+  });
+
   it("nothing behind the guard ran: no storage, no model, no render, no edit", () => {
     expect(fixture.getStorage).not.toHaveBeenCalled();
     expect(fixture.generateTextBlocks).not.toHaveBeenCalled();

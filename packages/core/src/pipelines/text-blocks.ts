@@ -58,6 +58,15 @@ export async function createTextBlockRender(
   if (script.businessId !== opts.businessId) {
     throw new Error(`script ${opts.scriptId} belongs to a different business`);
   }
+  // Hebrew first person is gendered (0090 §6): a text generated in one
+  // speaker's voice must not burn over the other's clip. Any clip of the same
+  // gender is fine — the texts never refer to the clip.
+  const scriptGender = (script.params as { speakerGender?: string }).speakerGender;
+  if (scriptGender && scriptGender !== clip.speakerGender) {
+    throw new Error(
+      `script ${opts.scriptId} was written for a ${scriptGender} speaker; the clip's speaker is ${clip.speakerGender}`,
+    );
+  }
   // Re-checked here, not only at generation and edit: the render is where a
   // bad character or an over-long text would otherwise burn.
   const text = normalizeTextBlockText(script.text);

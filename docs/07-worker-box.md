@@ -223,7 +223,7 @@ chmod 600 ~/AIUGCBackend/apps/worker/.env
 ## 8. Hebrew fonts — nothing to install, and here is the proof
 
 This was checked against the code, not assumed. The compositions load their one font family, in
-two weights since 2026-10-07, through Remotion's own loader — `packages/remotion/src/overlays.tsx:15`:
+two weights since 2026-10-07, through Remotion's own loader — `packages/remotion/src/overlays.tsx:19`:
 
 ```ts
 import { loadFont } from "@remotion/google-fonts/Heebo";

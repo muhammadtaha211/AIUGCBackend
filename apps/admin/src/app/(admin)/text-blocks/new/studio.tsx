@@ -88,9 +88,33 @@ export function TextBlockStudio({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The first signed URL per clip, kept for the session: every refresh below
+  // re-signs the URLs server-side, and a changed `src` would restart (and
+  // re-download) the preview video every few seconds while a render runs.
+  // Signed URLs live an hour; a longer studio session reloads the page.
+  const [clipUrls] = useState(() => new Map(clips.map((c) => [c.id, c.url])));
 
   const clip = clips.find((c) => c.id === clipId);
+  const clipUrl = clip ? (clipUrls.get(clip.id) ?? clip.url) : undefined;
   const focusedDraft = drafts.find((d) => d.scriptId === focused) ?? drafts[0];
+
+  /**
+   * Drafts belong to the business and the clip they were generated for: the
+   * prompt wrote them in that clip's speaker gender, and the render creator
+   * refuses a script for another business or another gender. A new pick
+   * starts over rather than offering stale texts.
+   */
+  function pick(next: { businessId?: string; clipId?: string }) {
+    if (next.businessId !== undefined) setBusinessId(next.businessId);
+    if (next.clipId !== undefined) setClipId(next.clipId);
+    if (drafts.length > 0) {
+      setDrafts([]);
+      setSkipped([]);
+      setFocused(null);
+      setNotice("הבחירה השתנתה — הטקסטים נוקו. לוחצים צרו טקסטים מחדש.");
+    }
+    setError(null);
+  }
 
   // While a render is queued or rendering, re-read the page every few seconds
   // so the row moves to "מוכן" with its download link on its own.
@@ -180,7 +204,7 @@ export function TextBlockStudio({
           עסק
           <select
             value={businessId}
-            onChange={(event) => setBusinessId(event.target.value)}
+            onChange={(event) => pick({ businessId: event.target.value })}
             className={SELECT_CLASS}
           >
             {businesses.length === 0 && <option value="">אין עסקים של מנהל</option>}
@@ -195,7 +219,7 @@ export function TextBlockStudio({
           קליפ
           <select
             value={clipId}
-            onChange={(event) => setClipId(event.target.value)}
+            onChange={(event) => pick({ clipId: event.target.value })}
             className={SELECT_CLASS}
           >
             {clips.length === 0 && <option value="">אין קליפים פעילים</option>}
@@ -232,7 +256,7 @@ export function TextBlockStudio({
           <div className="lg:sticky lg:top-6 lg:self-start">
             <div className="relative aspect-[9/16] w-72 overflow-hidden rounded-lg border border-white/10">
               <video
-                src={clip.url}
+                src={clipUrl}
                 muted
                 loop
                 autoPlay

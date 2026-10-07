@@ -63,8 +63,11 @@ Service B tests and his rulings; what happens to Service B itself is OPEN).
   (register with gender / area / colour, the preview in the burned look, card actions) and
   `/text-blocks/new` (business → clip → generate → edit → render → download, self-refreshing while
   a render runs) behind six `requireAdmin` routes; `normalize_text_block_clip` (shares the hook
-  bank's check; audio kept); the web library label `c: "גוש טקסט"`. Service A and B untouched
-  beyond the three two-service lines (dispatch, release, labels).
+  bank's check; audio kept); the web library label `c: "גוש טקסט"`. Service A and B behaviour
+  unchanged; shared code that moved under them: the one `loadFont` call now fetches a second
+  Heebo weight on every render (a failed fetch is the same transient retry as before),
+  `normalizeHookClip`'s body is now `normalizeStoredClip`, `assertContentPolicy` is exported,
+  the admin hook editor takes optional children and exports `readVideoMetadata`.
 - **Tests added (MEASURED, all green on the branch):** core 5 files (validator, prompt pins,
   generation, render end to end under DRY_RUN with `auto_release_b` forced false, migrations
   0051/0052); remotion 3 (the unmuted mount and the ink, the paragraph fitter, the encode

@@ -6,6 +6,7 @@ import {
   BudgetError,
   generateTextBlocks,
   getDb,
+  isAdminOwned,
 } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireAdmin } from "@/lib/api";
 import { generateTextBlocksSchema } from "@/lib/text-blocks";
@@ -26,6 +27,15 @@ export async function POST(request: Request) {
     const body = generateTextBlocksSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
     const { businessId, clipId } = body.data;
+
+    // Phase 1 is admin-only end to end: the same guard createTextBlockRender
+    // applies, here before a customer's cap is metered or a script is planted
+    // on a business that could never render it. The guard is the route's, not
+    // generateTextBlocks', so phase 2's wizard can call the generator for the
+    // customer's own business.
+    if (!(await isAdminOwned(db, businessId))) {
+      return jsonError(400, "בשלב הזה אפשר ליצור גוש טקסט רק לעסק של מנהל.");
+    }
 
     await assertAccountBudget(db, "llm_tokens", businessId);
     await assertBudget(db, "llm_tokens");

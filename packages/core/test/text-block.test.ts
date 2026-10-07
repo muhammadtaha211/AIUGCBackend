@@ -80,6 +80,10 @@ describe("textBlockTextError (the one check for generation, edit and render)", (
     expect(normalizeTextBlockText("  שורה אחת\r\nשורה שנייה  ")).toBe("שורה אחת\nשורה שנייה");
   });
 
+  it("collapses runs of spaces inside a line and trims line ends — pre-wrap keeps what the fitter measures", () => {
+    expect(normalizeTextBlockText("א  ב\t ג \n\n ד")).toBe("א ב ג\n\nד");
+  });
+
   it("refuses an empty text", () => {
     expect(textBlockTextError("   \n  ")).toBe("הטקסט ריק.");
   });

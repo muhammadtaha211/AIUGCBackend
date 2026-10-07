@@ -31,6 +31,12 @@ export async function POST(request: Request) {
     if (/is not active|never finished uploading/.test(message)) {
       return jsonError(400, "הקליפ הזה לא זמין — בחרו קליפ פעיל.");
     }
+    if (/was written for a (female|male) speaker/.test(message)) {
+      return jsonError(
+        400,
+        "הטקסט נכתב בקול של דובר/ת אחר/ת — בחרו קליפ עם אותו מגדר, או צרו טקסטים מחדש.",
+      );
+    }
     if (/is not a text block|different business/.test(message)) {
       return jsonError(400, INVALID_BODY);
     }

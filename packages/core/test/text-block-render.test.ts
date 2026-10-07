@@ -212,6 +212,13 @@ describe("createTextBlockRender", () => {
       createTextBlockRender(db, { businessId: adminBusinessId, clipId, scriptId: dashed!.id }),
     ).rejects.toThrow(/קו מפריד ארוך/);
   });
+
+  it("refuses a text written for one speaker gender over the other gender's clip", async () => {
+    // scriptId was generated over the female clip; blackClipId is the male one.
+    await expect(
+      createTextBlockRender(db, { businessId: adminBusinessId, clipId: blackClipId, scriptId }),
+    ).rejects.toThrow(/written for a female speaker; the clip's speaker is male/);
+  });
 });
 
 describe("the render job", () => {

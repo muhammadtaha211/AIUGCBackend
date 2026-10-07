@@ -90,9 +90,20 @@ export function findIllegalTextBlockChar(
   return { char, codepoint: `U+${hex}` };
 }
 
-/** Windows line endings to `\n`, outer whitespace trimmed — what is stored and burned. */
+/**
+ * Windows line endings to `\n`, runs of spaces and tabs inside a line to one
+ * space, line ends and the outer edges trimmed — what is stored and burned.
+ * The composition draws the block `pre-wrap`, which keeps every space, while
+ * the fitter measures single-spaced lines; collapsing here keeps the two in
+ * agreement for an edited text.
+ */
 export function normalizeTextBlockText(text: string): string {
-  return text.replace(/\r\n?/g, "\n").trim();
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .trim();
 }
 
 /** Code points, the way a phone counts characters. */

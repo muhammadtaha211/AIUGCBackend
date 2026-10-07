@@ -25,10 +25,14 @@ closed it.
 **MEASURED, what "exists" means in the tree after phase 1:** a third `service_kind` value `c`
 (0051), its own bank table `text_block_clips` (0052), a prompt `text_block@v1`, a `ServiceC`
 Remotion composition, a render creator `createTextBlockRender`, and two admin pages
-(`/text-blocks`, `/text-blocks/new`) with six routes under `/api/admin/text-blocks`. Service A
-and Service B code paths are untouched except the three places that had to learn a third value
-(the `render_video` dispatch and release line in `pipelines/renders.ts`, and the web library's
-`SERVICE_LABELS` / `RenderRow.service`).
+(`/text-blocks`, `/text-blocks/new`) with six routes under `/api/admin/text-blocks`. Service A and Service B BEHAVIOUR is unchanged; the shared code that changed, besides the three places that
+had to learn a third value (the `render_video` dispatch and release line in `pipelines/renders.ts`,
+and the web library's `SERVICE_LABELS` / `RenderRow.service`): the one `loadFont` call now fetches a
+second Heebo weight on every render, A and B included (a failed 500 fetch fails an A or B render
+the same transient, retried way a failed 800 fetch always did — `docs/07-worker-box.md` §8);
+`normalizeHookClip`'s body moved into a private `normalizeStoredClip` with the same signature and
+behaviour; `assertContentPolicy` is exported from `pipelines/sets.ts`; the admin hook editor
+gained an optional `children` prop and `readVideoMetadata` is exported.
 
 ## 2. It is built before the hand test reports
 
