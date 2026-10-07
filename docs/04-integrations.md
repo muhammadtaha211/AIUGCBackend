@@ -457,8 +457,9 @@ this reasoning behind them.
   (its own recorded sound is the track; `renderServiceC` passes neither `muted` nor
   `enforceAudioTrack:false`, so the default aac encode carries it) from its first frame to its
   last (`calculateServiceCMetadata` probes the clip for the frame count), under one Hebrew text
-  block burned for the whole length: Heebo 500, `fitParagraphFontSize` with
-  `TEXT_BLOCK_FONT` (54 → 40 px, line breaks honoured for the quiz), a thin edge plus a soft
+  block burned for the whole length: Heebo 600, `fitParagraphFontSize` with
+  `TEXT_BLOCK_FONT` (54 → 40 px at line height 1.2, line breaks honoured for the quiz; tuned
+  against the founder's screenshots on 2026-10-07, vault 0090), a thin edge plus a soft
   shadow in the clip's ink, no box, one isolated span. No hook, no cut, no caption track. Sample:
   `pnpm --filter @aiugc/remotion render:sample:c` (`--quiz`, `--clip <file>`, `--ink black`).
 - **`ServiceA`** (`src/ServiceA.tsx`) — **retired 2026-09-05** (founder: Service A is the hook
@@ -512,7 +513,7 @@ this reasoning behind them.
 - **`brollSrcs` is accepted and ignored.** The prop is validated and passed through, but cutaway
   logic (when to cut away, for how long, how to hide the lip-sync) is unbuilt. Empty is the
   normal case and renders cleanly.
-- **Font**: Heebo 800, and 500 for the Service C text block (`hebrew` + `latin` subsets, one
+- **Font**: Heebo 800, and 600 for the Service C text block (`hebrew` + `latin` subsets, one
   `loadFont` call) via `@remotion/google-fonts/Heebo` — never a system font, since the render box
   is headless Chrome. **`loadFont` fetches from Google at
   render time, so the render host needs outbound network**; a font fetch failure is one of the

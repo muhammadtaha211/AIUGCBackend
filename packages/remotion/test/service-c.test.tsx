@@ -44,7 +44,7 @@ const { ServiceC, TextBlock, calculateServiceCMetadata, textBlockShadow } =
 const { sampleTextBlock, sampleTextBlockQuiz } = await import("../src/fixtures");
 
 const RECT = { x: 80, y: 360, w: 820, h: 1040 };
-const DARK = "0 0 2px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9), 0 2px 12px rgba(0,0,0,0.5)";
+const DARK = "0 0 3px rgba(0,0,0,0.95), 0 0 3px rgba(0,0,0,0.95), 0 2px 10px rgba(0,0,0,0.6)";
 
 describe("ServiceC composition", () => {
   it("mounts the clip without muted — the clip's own sound is the audio track", () => {
@@ -64,9 +64,10 @@ describe("ServiceC composition", () => {
     expect(props.trimBefore).toBeUndefined();
   });
 
-  it("burns the block in the typed look: weight 500, white on the dark edge, pre-wrap, one isolated span", () => {
+  it("burns the block in the typed look: weight 600, white on the dark edge, pre-wrap, one isolated span", () => {
     const html = renderToStaticMarkup(<TextBlock text={sampleTextBlockQuiz} area={RECT} />);
-    expect(html).toContain("font-weight:500");
+    expect(html).toContain("font-weight:600");
+    expect(html).toContain("line-height:1.2");
     expect(html).toContain("color:white");
     expect(html).toContain(`text-shadow:${DARK}`);
     expect(html).toContain("white-space:pre-wrap");

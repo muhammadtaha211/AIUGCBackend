@@ -12,12 +12,13 @@ import { activeChunkIndex, activeWordIndex } from "./timing";
 
 // Never rely on system fonts: the render box is headless Chrome and the design
 // target is Israeli UGC. Heebo has full Hebrew coverage at heavy weights. Two
-// weights: 800 for the hook line, captions, labels and watermark; 500 for the
-// Service C text block, which is typed-in-the-app light on purpose (0090 §8).
+// weights: 800 for the hook line, captions, labels and watermark; 600 for the
+// Service C text block, which is typed-in-the-app lighter on purpose (0090 §8,
+// tuned from 500 against the founder's screenshots on 2026-10-07).
 // Each weight is one more WOFF2 per subset fetched at render time — the same
 // mechanism, no file on the box (docs/07-worker-box.md §8).
 export const { fontFamily } = loadFont("normal", {
-  weights: ["500", "800"],
+  weights: ["600", "800"],
   subsets: ["hebrew", "latin"],
 });
 

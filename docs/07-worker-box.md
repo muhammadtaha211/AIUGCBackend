@@ -223,19 +223,19 @@ chmod 600 ~/AIUGCBackend/apps/worker/.env
 ## 8. Hebrew fonts — nothing to install, and here is the proof
 
 This was checked against the code, not assumed. The compositions load their one font family, in
-two weights since 2026-10-07, through Remotion's own loader — `packages/remotion/src/overlays.tsx:19`:
+two weights since 2026-10-07, through Remotion's own loader — `packages/remotion/src/overlays.tsx:20`:
 
 ```ts
 import { loadFont } from "@remotion/google-fonts/Heebo";
 export const { fontFamily } = loadFont("normal", {
-  weights: ["500", "800"],
+  weights: ["600", "800"],
   subsets: ["hebrew", "latin"],
 });
 ```
 
 with the comment above it saying exactly why: _"Never rely on system fonts."_ Every text surface —
 captions, hook line, step labels, watermark — draws with this `fontFamily` at 800; the Service C
-text block (`ServiceC.tsx`, vault 0090) draws at 500. Headless Chrome fetches the Heebo WOFF2s
+text block (`ServiceC.tsx`, vault 0090) draws at 600 (500 until its tuning on 2026-10-07). Headless Chrome fetches the Heebo WOFF2s
 (one per weight, Hebrew + Latin subsets) from Google Fonts **at render time**, so a bare Ubuntu
 with zero fonts installed renders Hebrew correctly. **System Hebrew fonts are a non-issue by
 construction.** The failure mode is also safe: if a font fetch fails (network blip), the render

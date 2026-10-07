@@ -78,7 +78,7 @@ const previewPropsC = {
   text: sampleTextBlock,
   // Mirrors DEFAULT_TEXT_BLOCK_RECT in @aiugc/core/hook-geometry — a literal
   // for the same reason as the hook rect above.
-  textSafeArea: { x: 80, y: 360, w: 820, h: 1040 },
+  textSafeArea: { x: 180, y: 400, w: 720, h: 1040 },
   watermark: false,
 };
 

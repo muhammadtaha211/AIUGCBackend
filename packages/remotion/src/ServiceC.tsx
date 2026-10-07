@@ -17,18 +17,21 @@ import { TEXT_BLOCK_FONT, fitParagraphFontSize } from "./text-fit";
 const COVER: React.CSSProperties = { width: "100%", height: "100%", objectFit: "cover" };
 
 /**
- * The typed-in-the-app look (0090 §8): medium weight, a thin dark edge plus a
- * soft shadow, no box, centred lines — clearly lighter and smaller than the
- * hook line's 800 / 5px hard outline. The edge and the shadow are drawn in the
- * ink's outline rgb, so a black block on a bright clip gets a light edge.
+ * The typed-in-the-app look (0090 §8): semibold, a thin dark edge plus a soft
+ * shadow, no box, centred lines — clearly lighter and smaller than the hook
+ * line's 800 / 5px hard outline. Tuned 2026-10-07 against the founder's
+ * reference screenshots and his clip (0090, amended): 500 read thinner than
+ * TikTok's classic text and its 2px edge went soft over a bright background,
+ * so 600 and a 3px edge. The edge and the shadow are drawn in the ink's
+ * outline rgb, so a black block on a bright clip gets a light edge.
  */
-export const TEXT_BLOCK_WEIGHT = 500;
+export const TEXT_BLOCK_WEIGHT = 600;
 
 export function textBlockShadow(outlineRgb: string): string {
   return [
-    `0 0 2px rgba(${outlineRgb},0.9)`,
-    `0 0 2px rgba(${outlineRgb},0.9)`,
-    `0 2px 12px rgba(${outlineRgb},0.5)`,
+    `0 0 3px rgba(${outlineRgb},0.95)`,
+    `0 0 3px rgba(${outlineRgb},0.95)`,
+    `0 2px 10px rgba(${outlineRgb},0.6)`,
   ].join(", ");
 }
 

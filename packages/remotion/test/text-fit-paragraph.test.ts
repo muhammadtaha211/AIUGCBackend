@@ -6,7 +6,8 @@ import { fitParagraphFontSize, TEXT_BLOCK_FONT } from "../src/text-fit";
  * breaks honoured. A fake 0.5em-per-character measure, like timing.test.ts.
  */
 const measure = (text: string, size: number) => text.length * size * 0.5;
-const fit = (text: string, maxWidth = 820, maxHeight = 1040) =>
+// The box is DEFAULT_TEXT_BLOCK_RECT's (core hook-geometry.ts): 720 x 1040 since 2026-10-07.
+const fit = (text: string, maxWidth = 720, maxHeight = 1040) =>
   fitParagraphFontSize({ text, maxWidth, maxHeight, ...TEXT_BLOCK_FONT, measure });
 
 describe("fitParagraphFontSize", () => {
@@ -15,11 +16,11 @@ describe("fitParagraphFontSize", () => {
   });
 
   it("honours explicit line breaks: three short lines need three lines of height", () => {
-    // At 54px with lineHeight 1.3 a line is ~70px; a box of 150px holds two
+    // At 54px with lineHeight 1.2 a line is ~65px; a box of 150px holds two
     // lines, not three — so the breaks force the size down, where the same
     // words on one line would not.
     expect(fit("א\nב\nג", 820, 150)).toBeLessThan(TEXT_BLOCK_FONT.base);
-    expect(fit("א ב ג", 820, 150)).toBe(TEXT_BLOCK_FONT.base);
+    expect(fit("א ב ג", 720, 150)).toBe(TEXT_BLOCK_FONT.base);
   });
 
   it("a blank line keeps its height", () => {

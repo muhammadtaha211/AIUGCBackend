@@ -7,7 +7,7 @@ import { fitParagraphFontSize, TEXT_BLOCK_FONT } from "@aiugc/remotion/text-fit"
 
 /**
  * The גוש טקסט look, previewed in CSS at the numbers the render uses: Heebo
- * 500 (the app font is the same family), `fitParagraphFontSize` with
+ * 600 (the app font is the same family), `fitParagraphFontSize` with
  * TEXT_BLOCK_FONT, a thin edge plus a soft shadow in the ink's outline rgb,
  * `pre-wrap` so the quiz's line breaks show. Canvas measureText approximates
  * the render's measurement — close enough to show what fits and at what size;
@@ -18,7 +18,7 @@ import { fitParagraphFontSize, TEXT_BLOCK_FONT } from "@aiugc/remotion/text-fit"
  * `rect.w`, so it needs no scale from its parent.
  */
 
-const WEIGHT = 500;
+const WEIGHT = 600;
 
 export function TextBlockPreview({
   text,
@@ -67,8 +67,8 @@ export function TextBlockPreview({
 
   const scale = displayWidth > 0 ? displayWidth / rect.w : 0;
   const ink = HOOK_TEXT_INK[textColor];
-  const edge = `rgba(${ink.outline},0.9)`;
-  const shadow = `rgba(${ink.outline},0.5)`;
+  const edge = `rgba(${ink.outline},0.95)`;
+  const shadow = `rgba(${ink.outline},0.6)`;
 
   return (
     <div
@@ -81,7 +81,7 @@ export function TextBlockPreview({
         fontSize: frameFontSize * scale,
         lineHeight: TEXT_BLOCK_FONT.lineHeight,
         color: ink.fill,
-        textShadow: `0 0 ${2 * scale}px ${edge}, 0 0 ${2 * scale}px ${edge}, 0 ${2 * scale}px ${12 * scale}px ${shadow}`,
+        textShadow: `0 0 ${3 * scale}px ${edge}, 0 0 ${3 * scale}px ${edge}, 0 ${2 * scale}px ${10 * scale}px ${shadow}`,
         whiteSpace: "pre-wrap",
       }}
     >

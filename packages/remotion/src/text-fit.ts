@@ -23,10 +23,12 @@ export const HOOK_FONT = { base: 92, min: 40, lineHeight: 1.2 } as const;
 export const STEP_LABEL_RECT = { x: 60, y: 1250, w: 960, h: 230 } as const;
 /**
  * The גוש טקסט block's sizing envelope (Service C, decision 0090 §8): clearly
- * smaller than the hook line, and it floors at the same 40px. Lives here so
- * the admin editor previews with the numbers the render uses.
+ * smaller than the hook line, and it floors at the same 40px. Lines sit at
+ * 1.2 — tightened from 1.3 against the founder's reference screenshots
+ * (2026-10-07), where the app's text is set close. Lives here so the admin
+ * editor previews with the numbers the render uses.
  */
-export const TEXT_BLOCK_FONT = { base: 54, min: 40, lineHeight: 1.3 } as const;
+export const TEXT_BLOCK_FONT = { base: 54, min: 40, lineHeight: 1.2 } as const;
 
 /**
  * Shrink-to-fit for a paragraph: the hook-line fitter with explicit line

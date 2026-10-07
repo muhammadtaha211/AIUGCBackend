@@ -76,7 +76,7 @@ const startedAt = Date.now();
 if (textBlock) {
   // The clip once, with its own sound (the fixture's tone), the block over
   // every frame. The default rect mirrors DEFAULT_TEXT_BLOCK_RECT.
-  const [x, y, w, h] = (argValue("--safe-area") ?? "80,360,820,1040").split(",").map(Number);
+  const [x, y, w, h] = (argValue("--safe-area") ?? "180,400,720,1040").split(",").map(Number);
   await renderServiceC(
     {
       clipPath: argValue("--clip") ?? TEXT_BLOCK_FIXTURE,
