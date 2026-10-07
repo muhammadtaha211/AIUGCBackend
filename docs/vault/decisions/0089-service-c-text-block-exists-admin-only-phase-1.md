@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-07
-method: "Founder decisions from the planning chat of 2026-10-07, recorded from that day's task prompt (\"Claude Code prompt: גוש טקסט (Service C), phase 1\"), which states them as decided and not up for relitigation; the reasons are his. Phase 1 built on branch feat/service-c-text-block from origin/main 2a503a4 the same day — what exists is MEASURED in that tree: packages/core/src/pipelines/text-blocks.ts, packages/core/src/text-block.ts, packages/core/src/pipelines/copy.ts (generateTextBlocks), packages/remotion/src/ServiceC.tsx, apps/admin/src/app/(admin)/text-blocks/**, apps/admin/src/app/api/admin/text-blocks/**, supabase/migrations/0051_service_c_enums.sql and 0052_text_block_clips.sql, prompts/text_block/v1.md. No production query, no paid call for this note."
+method: 'Founder decisions from the planning chat of 2026-10-07, recorded from that day''s task prompt ("Claude Code prompt: גוש טקסט (Service C), phase 1"), which states them as decided and not up for relitigation; the reasons are his. Phase 1 built on branch feat/service-c-text-block from origin/main 2a503a4 the same day — what exists is MEASURED in that tree: packages/core/src/pipelines/text-blocks.ts, packages/core/src/text-block.ts, packages/core/src/pipelines/copy.ts (generateTextBlocks), packages/remotion/src/ServiceC.tsx, apps/admin/src/app/(admin)/text-blocks/**, apps/admin/src/app/api/admin/text-blocks/**, supabase/migrations/0051_service_c_enums.sql and 0052_text_block_clips.sql, prompts/text_block/v1.md. No production query, no paid call for this note.'
 source: founder
 ---
 

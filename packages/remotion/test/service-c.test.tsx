@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from "vitest";
  * 0073 test's pattern, with OffthreadVideo spied so its props are read.
  */
 
-const offthreadVideo = vi.hoisted(() => vi.fn(() => null));
+const offthreadVideo = vi.hoisted(() => vi.fn((_props: Record<string, unknown>) => null));
 
 vi.mock("remotion", async () => {
   const { interpolate } = await import("remotion/no-react");
@@ -58,7 +58,7 @@ describe("ServiceC composition", () => {
       />,
     );
     expect(offthreadVideo).toHaveBeenCalledTimes(1);
-    const props = offthreadVideo.mock.calls[0]![0] as Record<string, unknown>;
+    const props = offthreadVideo.mock.calls[0]![0];
     expect(props.src).toBe("http://127.0.0.1/clip.mp4");
     expect(props.muted).toBeUndefined();
     expect(props.trimBefore).toBeUndefined();
