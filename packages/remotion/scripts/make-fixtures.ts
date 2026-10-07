@@ -25,6 +25,9 @@ export const STEPS_DEMO_FIXTURE = `${FIXTURE_DIR}steps-demo.mp4`;
 /** Service B opener stand-in: a 2.4s silent lavfi clip whose pattern makes the
  *  reveal cut into the gradient talking head unmistakable by eye. */
 export const OPENER_FIXTURE = `${FIXTURE_DIR}opener.mp4`;
+/** Service C stand-in: a 10s lavfi clip WITH a 440Hz tone, so a sample that
+ *  comes out silent is audible as a bug (the clip's own sound is the track). */
+export const TEXT_BLOCK_FIXTURE = `${FIXTURE_DIR}text-block.mp4`;
 
 export async function ensureFixtures(): Promise<void> {
   mkdirSync(FIXTURE_DIR, { recursive: true });
@@ -41,6 +44,12 @@ export async function ensureFixtures(): Promise<void> {
   // sampleOpenerTimeline (src/fixtures.ts) is built for exactly this length
   // and a 1.6s reveal; the moving pattern shows whether the hold really froze.
   ensureLavfiFixture(OPENER_FIXTURE, "testsrc2=size=1080x1920:rate=30:duration=2.4");
+  ensureLavfiFixture(
+    TEXT_BLOCK_FIXTURE,
+    "testsrc2=size=1080x1920:rate=30:duration=10",
+    [],
+    "sine=frequency=440:duration=10",
+  );
 
   // The tones must exist before bundling: Remotion copies public/ into the
   // bundle, and the compositions load them with staticFile().
@@ -78,7 +87,13 @@ export async function ensureFixtures(): Promise<void> {
  *  to a temp name and renames on success: ffmpeg creates the output before
  *  encoding, so an interrupted run must not leave a truncated file that the
  *  existsSync guard then trusts forever. */
-function ensureLavfiFixture(file: string, source: string, extraArgs: string[] = []): void {
+function ensureLavfiFixture(
+  file: string,
+  source: string,
+  extraArgs: string[] = [],
+  /** A second lavfi source muxed as an AAC track (Service C's fixture carries sound). */
+  audioSource?: string,
+): void {
   if (existsSync(file)) return;
   const tmp = file.replace(/\.mp4$/, ".tmp.mp4");
   const result = spawnSync(
@@ -89,6 +104,7 @@ function ensureLavfiFixture(file: string, source: string, extraArgs: string[] = 
       "lavfi",
       "-i",
       source,
+      ...(audioSource ? ["-f", "lavfi", "-i", audioSource] : []),
       ...extraArgs,
       "-pix_fmt",
       "yuv420p",
@@ -96,6 +112,7 @@ function ensureLavfiFixture(file: string, source: string, extraArgs: string[] = 
       "libx264",
       "-crf",
       "20",
+      ...(audioSource ? ["-c:a", "aac", "-shortest"] : []),
       tmp,
     ],
     { stdio: ["ignore", "ignore", "pipe"] },

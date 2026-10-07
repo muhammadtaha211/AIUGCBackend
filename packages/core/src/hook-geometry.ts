@@ -45,6 +45,16 @@ export const DEFAULT_HOOK_TEXT_RECT: SafeRect = { x: 25, y: 1062, w: 1009, h: 17
 export const CENTRED_HOOK_TEXT_RECT: SafeRect = { x: 25, y: 768, w: 1055, h: 473 };
 
 /**
+ * Where a fresh גוש טקסט clip's rect starts in the admin register editor
+ * (Service C, decision 0090). A seed like DEFAULT_HOOK_TEXT_RECT, adjusted per
+ * clip. A paragraph of 25–40 words needs a tall mid-frame area: the right edge
+ * at 900 stays clear of the TikTok/Reels action rail, the bottom at 1400 of
+ * the caption band (the captions overlay's own clearance ends at 1480), and
+ * the centre sits at y 880, near the frame's 960.
+ */
+export const DEFAULT_TEXT_BLOCK_RECT: SafeRect = { x: 80, y: 360, w: 820, h: 1040 };
+
+/**
  * The legibility floor: below this fitted font size (px at 1080x1920) a burned
  * hook line reads poorly on a phone. Advisory only — the wizard shows a gentle
  * note, nothing blocks (inform, never restrict).

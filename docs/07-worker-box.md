@@ -222,25 +222,27 @@ chmod 600 ~/AIUGCBackend/apps/worker/.env
 
 ## 8. Hebrew fonts — nothing to install, and here is the proof
 
-This was checked against the code, not assumed. The compositions load their one font through
-Remotion's own loader — `packages/remotion/src/overlays.tsx:15`:
+This was checked against the code, not assumed. The compositions load their one font family, in
+two weights since 2026-10-07, through Remotion's own loader — `packages/remotion/src/overlays.tsx:15`:
 
 ```ts
 import { loadFont } from "@remotion/google-fonts/Heebo";
 export const { fontFamily } = loadFont("normal", {
-  weights: ["800"],
+  weights: ["500", "800"],
   subsets: ["hebrew", "latin"],
 });
 ```
 
 with the comment above it saying exactly why: _"Never rely on system fonts."_ Every text surface —
-captions, hook line, step labels, watermark — draws with this `fontFamily`. Headless Chrome fetches
-the Heebo WOFF2 (Hebrew + Latin subsets) from Google Fonts **at render time**, so a bare Ubuntu
+captions, hook line, step labels, watermark — draws with this `fontFamily` at 800; the Service C
+text block (`ServiceC.tsx`, vault 0090) draws at 500. Headless Chrome fetches the Heebo WOFF2s
+(one per weight, Hebrew + Latin subsets) from Google Fonts **at render time**, so a bare Ubuntu
 with zero fonts installed renders Hebrew correctly. **System Hebrew fonts are a non-issue by
-construction.** The failure mode is also safe: if the font fetch fails (network blip), the render
+construction.** The failure mode is also safe: if a font fetch fails (network blip), the render
 _errors loudly_ and retries as transient (`packages/core/src/providers/remotion.ts` names "font
-fetches" in its transient list) — it does not silently ship tofu. The acceptance test in §12 still
-ends with a human watching real Hebrew, because that is the only proof that closes the loop.
+fetches" in its transient list) — it does not silently ship tofu for a fetch failure (a missing
+glyph is another matter: vault 0059). The acceptance test in §12 still ends with a human watching
+real Hebrew, because that is the only proof that closes the loop.
 
 ## 9. The disk — bundle leak fixed in code; the cron stays as a backstop
 

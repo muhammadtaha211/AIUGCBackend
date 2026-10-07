@@ -207,7 +207,7 @@ export async function planAOutro(
  * from within the try — today neither does, so the two checks above are what
  * actually fire.
  */
-async function assertContentPolicy(
+export async function assertContentPolicy(
   db: Db,
   businessId: string,
   extra: { label: string; text?: string | null }[],

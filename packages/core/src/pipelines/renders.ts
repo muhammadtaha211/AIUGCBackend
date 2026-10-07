@@ -19,6 +19,7 @@ import {
   personaImages,
   scripts,
   sets,
+  textBlockClips,
   videoRenders,
 } from "../db/schema";
 import { hookAnimation, isHookAnimation } from "../hook-effect";
@@ -62,6 +63,7 @@ import { refundRenderIfNeeded } from "./credits";
 import { stepClip } from "../plan-format";
 import { planStepsSchema } from "./demo-step-plans";
 import type { VariantParams } from "./sets";
+import type { TextBlockRenderParams } from "./text-blocks";
 
 /**
  * ~agorot per GPU second, by the resolution we pin on the submit body (HeyGen:
@@ -439,7 +441,9 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
         ? format === "steps"
           ? await buildServiceAStepsProps(ctx.db, render, localDir)
           : await buildServiceAProps(ctx.db, render, localDir)
-        : await buildServiceBProps(ctx.db, render, localDir);
+        : render.service === "c"
+          ? await buildServiceCProps(ctx.db, render, localDir)
+          : await buildServiceBProps(ctx.db, render, localDir);
 
     const outPath = path.join(localDir, "final.mp4");
     // Whole percents on the job's state jsonb, throttled — renderMedia calls
@@ -491,7 +495,9 @@ export async function handleRenderVideo(job: Job, ctx: JobContext): Promise<JobR
     }
 
     const autoReleaseB = await getConfigValue(ctx.db, "auto_release_b", z.boolean());
-    const released = render.service === "a" || autoReleaseB;
+    // Service A and Service C release unconditionally; only B has a QC gate,
+    // and that gate is the config flag (vault 0036; Service C per 0089).
+    const released = render.service === "a" || render.service === "c" || autoReleaseB;
     await ctx.db
       .update(videoRenders)
       .set({
@@ -670,6 +676,43 @@ async function buildServiceAStepsProps(
     // preview: its 2 s clip, or — a plan stored before steps had clips — its
     // moment and the length it was saved with, exactly as it always rendered.
     steps: steps.map((s) => ({ ...stepClip(s), label: s.label })),
+    watermark: render.watermarked,
+  };
+}
+
+/**
+ * Service C, גוש טקסט: the bank clip played once under the text pinned on the
+ * render (text-blocks.ts). The clip's colour is read off its row, never
+ * params, like the steps hook line (decision 0073).
+ */
+async function buildServiceCProps(
+  db: Db,
+  render: typeof videoRenders.$inferSelect,
+  localDir: string,
+): Promise<RenderVideoProps> {
+  const params = render.params as TextBlockRenderParams;
+  if (!params.text || !params.textSafeArea) {
+    throw new PermanentError("text block render has no text or no rect");
+  }
+  const clip = (
+    await db
+      .select()
+      .from(textBlockClips)
+      .where(eq(textBlockClips.id, params.textBlockClipId))
+      .limit(1)
+  )[0];
+  if (!clip) throw new PermanentError("text block clip not found");
+  if (!clip.filePath.includes("/")) throw new PermanentError("text block clip has no file");
+
+  const clipPath = path.join(localDir, "clip.mp4");
+  await getStorage().download(clip.filePath, clipPath);
+
+  return {
+    kind: "service_c",
+    clipPath,
+    text: params.text,
+    textSafeArea: params.textSafeArea,
+    textInk: HOOK_TEXT_INK[clip.textColor as HookTextColor],
     watermark: render.watermarked,
   };
 }

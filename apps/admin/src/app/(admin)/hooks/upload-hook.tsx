@@ -38,8 +38,9 @@ const UNREADABLE = "לא הצלחנו לקרוא את קובץ הווידאו �
 
 export type UploadPrefill = ReturnType<typeof duplicatePrefill>;
 
-/** Duration + dimensions off the file's metadata; null when the browser can't decode. */
-function readVideoMetadata(
+/** Duration + dimensions off the file's metadata; null when the browser can't decode.
+ *  Exported: the גוש טקסט upload form reads its clip the same way. */
+export function readVideoMetadata(
   url: string,
 ): Promise<{ durationMs: number; width: number; height: number } | null> {
   return new Promise((resolve) => {

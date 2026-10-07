@@ -11,6 +11,7 @@ import {
   personaImages,
   personas,
   structures,
+  textBlockClips,
   videoRenders,
 } from "../db/schema";
 import { textSafeAreaSchema } from "../hook-geometry";
@@ -97,14 +98,27 @@ export async function normalizeHookClip(
   const clip = rows[0];
   if (!clip) throw new PermanentError(`hook clip ${clipId} not found`);
   if (!clip.filePath.includes("/")) throw new PermanentError(`hook clip ${clipId} has no file`);
+  return normalizeStoredClip(clip.filePath, clipId, opts);
+}
 
+/**
+ * The bank-clip rate check, shared by the hook bank and the גוש טקסט bank:
+ * download, probe, re-encode to 30fps only when the rate is off, upload back
+ * over the same key. The clip's audio survives either way — a clip at rate is
+ * left byte for byte, and normalizeVideo keeps the track as AAC.
+ */
+async function normalizeStoredClip(
+  filePath: string,
+  clipId: string,
+  opts: { checkOnly?: boolean },
+): Promise<{ fps: number; normalized: boolean }> {
   // Unique per run: the founder's `aiugc work` and the deployed worker share
   // one database, so two runners can hold the same clip at the same time.
   mkdirSync(path.join(WORK_DIR, "bank"), { recursive: true });
   const dir = mkdtempSync(path.join(WORK_DIR, "bank", `${clipId}-`));
   try {
     const local = path.join(dir, "clip.mp4");
-    await getStorage().download(clip.filePath, local);
+    await getStorage().download(filePath, local);
     const { fps } = await probe(local);
     if (!needsNormalize(fps) || opts.checkOnly) return { fps, normalized: false };
 
@@ -112,12 +126,49 @@ export async function normalizeHookClip(
     await normalizeVideo(local, normalized);
     // Back to the same storage path: file_path is what every picker and render
     // reads, so a new key would just strand the old bytes behind it.
-    const { bucket, key } = splitPath(clip.filePath);
+    const { bucket, key } = splitPath(filePath);
     await getStorage().put(bucket, key, normalized);
     return { fps, normalized: true };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Same check for a גוש טקסט clip (Service C): the composition plays the clip
+ * once with its own sound, so the rate has to be the composition's and the
+ * audio has to survive — normalizeStoredClip does both.
+ */
+export async function normalizeTextBlockClip(
+  db: Db,
+  clipId: string,
+  opts: { checkOnly?: boolean } = {},
+): Promise<{ fps: number; normalized: boolean }> {
+  const rows = await db.select().from(textBlockClips).where(eq(textBlockClips.id, clipId)).limit(1);
+  const clip = rows[0];
+  if (!clip) throw new PermanentError(`text block clip ${clipId} not found`);
+  if (!clip.filePath.includes("/")) {
+    throw new PermanentError(`text block clip ${clipId} has no file`);
+  }
+  return normalizeStoredClip(clip.filePath, clipId, opts);
+}
+
+/** Queue the worker to check a גוש טקסט clip's frame rate. */
+export async function requestTextBlockClipNormalize(db: Db, clipId: string): Promise<void> {
+  await enqueue(db, {
+    type: "normalize_text_block_clip",
+    idempotencyKey: `normalize_text_block_clip:${clipId}`,
+    payload: { clipId },
+  });
+}
+
+export async function handleNormalizeTextBlockClip(job: Job, ctx: JobContext): Promise<JobResult> {
+  const { clipId } = job.payload as { clipId: string };
+  // DRY_RUN files are text stubs, not media — ffprobe rejects every one.
+  if (getEnv().DRY_RUN) return { kind: "done" };
+  const result = await normalizeTextBlockClip(ctx.db, clipId);
+  ctx.log.info({ clipId, ...result }, "bank: checked text block clip frame rate");
+  return { kind: "done" };
 }
 
 /** Queue the worker to check a clip's frame rate. */

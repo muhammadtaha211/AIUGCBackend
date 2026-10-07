@@ -45,9 +45,20 @@ type SafeAreaEditorProps = {
   onChange: (rect: SafeRect) => void;
   /** The colour the clip's hook line burns in (decision 0073); absent = white. */
   textColor?: HookTextColor;
+  /**
+   * What to draw inside the rect instead of the sample hook line — the
+   * גוש טקסט editor passes its own block preview, so the drag/resize
+   * implementation is shared and the look is each bank's own.
+   */
+  children?: React.ReactNode;
 };
 
-export function SafeAreaEditor({ rect, onChange, textColor = "white" }: SafeAreaEditorProps) {
+export function SafeAreaEditor({
+  rect,
+  onChange,
+  textColor = "white",
+  children,
+}: SafeAreaEditorProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
   const [displayWidth, setDisplayWidth] = useState(0);
@@ -150,22 +161,24 @@ export function SafeAreaEditor({ rect, onChange, textColor = "white" }: SafeArea
         className="absolute cursor-move border-2 border-accent bg-accent/10"
         style={{ left: pctW(rect.x), top: pctH(rect.y), width: pctW(rect.w), height: pctH(rect.h) }}
       >
-        <div
-          className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden"
-          style={{
-            direction: "rtl",
-            textAlign: "center",
-            fontWeight: 800,
-            fontSize: frameFontSize * scale,
-            lineHeight: HOOK_FONT.lineHeight,
-            color: ink.fill,
-            textShadow: `${outline}px ${outline}px 0 ${shade}, ${-outline}px ${outline}px 0 ${shade}, ${outline}px ${-outline}px 0 ${shade}, ${-outline}px ${-outline}px 0 ${shade}`,
-          }}
-        >
-          {/* isolate, not plaintext — must match HookLine in the composition:
-              plaintext flips a `POV:`-opening line to LTR base direction. */}
-          <span style={{ unicodeBidi: "isolate" }}>{SAMPLE_HOOK_LINE}</span>
-        </div>
+        {children ?? (
+          <div
+            className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden"
+            style={{
+              direction: "rtl",
+              textAlign: "center",
+              fontWeight: 800,
+              fontSize: frameFontSize * scale,
+              lineHeight: HOOK_FONT.lineHeight,
+              color: ink.fill,
+              textShadow: `${outline}px ${outline}px 0 ${shade}, ${-outline}px ${outline}px 0 ${shade}, ${outline}px ${-outline}px 0 ${shade}, ${-outline}px ${-outline}px 0 ${shade}`,
+            }}
+          >
+            {/* isolate, not plaintext — must match HookLine in the composition:
+                plaintext flips a `POV:`-opening line to LTR base direction. */}
+            <span style={{ unicodeBidi: "isolate" }}>{SAMPLE_HOOK_LINE}</span>
+          </div>
+        )}
         {(Object.keys(HANDLE_STYLE) as Corner[]).map((corner) => (
           <span
             key={corner}
