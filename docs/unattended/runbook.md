@@ -76,8 +76,7 @@ comes after the merge). The run itself follows `protocol.md`.
   branch's `log.md` says where it stopped. To continue, start a new session on that branch and say:
   "Continue the run in `docs/unattended/runs/<date>-<slug>/log.md`."
 - **`PAID_CHECK_ANTHROPIC_KEY` appeared in any output.** Replace the key in the Console, then update
-  the environment variable. The key's workspace has a $20/month spend limit, as you reported on
-  2026-10-08.
+  the environment variable. You reported a $20/month spend limit on that scoped key on 2026-10-08.
 - **A refusal looks wrong to you too.** Hooks and settings change in a local session only, through a
   normal reviewed branch.
 
