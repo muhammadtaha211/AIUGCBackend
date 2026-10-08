@@ -41,8 +41,9 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
 **Every Claude call moves to `claude-sonnet-5-5`, thinking off: BUILT 2026-10-08 on
-`feat/sonnet-5-5` (`495384c`), PUSHED, NOT MERGED. The five paid checks PASS, ₪3.85 of a ₪10
-cap ([[sonnet-5-5-paid-check-2026-10-08]]).**
+`feat/sonnet-5-5` (`495384c`), MERGED as PR #82 (`7f7489f` on `origin/main`, 2026-10-08 06:05
++0300, MEASURED by `git log`). The five paid checks PASS, ₪3.85 of a ₪10 cap
+([[sonnet-5-5-paid-check-2026-10-08]]). The box restart is still owed.**
 
 - **Decisions:**
   - [[0093-every-claude-call-runs-on-sonnet-5-5]] (the founder's, 2026-10-07: everything at once);
@@ -821,12 +822,27 @@ three core functions, the 25-credit key seeded before its schema key, the quote/
 dashboard card, the customer edit route, then the landing / `/pricing` / legal copy. Phase 1's
 own remaining gates (merge + box) are under "Owed founder actions".
 
-**Next test: low-effort thinking on גוש טקסט** (the founder's ruling, 2026-10-08,
-[[0095-thinking-stays-off-for-the-sonnet-5-5-switch]]). Thinking stayed off for the switch so that
-the checks measured the model alone. The next test runs the same four batches with adaptive
-thinking at effort `low`, measured against the 5.5 thinking-off set in
-`packages/core/.work/text-block/fixture-texts-55.md`. It needs his spend OK, and the switch merged
-first.
+**Low-effort thinking on גוש טקסט: TESTED 2026-10-08 on `feat/text-block-thinking-low`, ₪1.65 of a
+₪5 cap ([[text-block-thinking-low-test-2026-10-08]]). Production is unchanged: every call still
+sends `between_tools`.**
+
+- **What was built:** `generateObject` takes `thinking: "low"` (adaptive thinking, effort
+  `low`), passed through `generateTextBlocks`, for this test only. No production caller passes it.
+  `anthropic-request.test.ts` and `text-block-generate.test.ts` pin the default.
+- **The model did not think at `low`:** 0 thinking tokens on 8 of 8 calls, and no thinking block.
+  So the two sides differed by the effort level alone.
+- **Time and cost were the same:** 72–76 s and 54–57 agorot for each run of four batches. No
+  cut-off and no retry.
+- **Judged blind, for him to confirm:** the sides split. `low` had fewer Hebrew mistakes (7 against 11) and fewer invented figures (1 against 6). It had more copied closing lines (10 against 3; 6
+  against 2 verbatim) and more truth breaks (2 against 1).
+- **Waiting on his ruling:** keep `low` for גוש טקסט or not. If not, remove the test-only option.
+  If he wants thinking itself measured, it needs a level where the model thinks (`medium`), which
+  is a new paid run.
+- **Found, not fixed: `discovery` placeholders.** For the course, which has no `wow`, 7 of 8 batches
+  across the four runs put a placeholder (`skip`, `skipped`, `discovery`) in `texts`.
+  `textBlockBatchProblem` passes it and `generateTextBlocks` stores it as a `text_block` row.
+  At least three of the seven also listed `discovery` in `skipped` (off-r1's skip list was not
+  recorded).
 
 **0. The Sumit adapter.** MERGED and LIVE 2026-09-21 — PR #52, `4100cc7` —
 [[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway`
@@ -1175,8 +1191,9 @@ the 2026-09-26 custom domain (founder-reported):**
 ## Owed founder actions
 
 - **The switch to `claude-sonnet-5-5` (2026-10-08, `feat/sonnet-5-5`).** In order:
-  1. Merge the PR. Vercel redeploys web and admin: hook lines, the B script, hook text, the
-     classifier and גוש טקסט run on 5.5 from that deploy. Record the date here.
+  1. ~~Merge the PR~~ MERGED as PR #82 (`7f7489f`, 2026-10-08 06:05 +0300). Vercel redeploys web
+     and admin: hook lines, the B script, hook text, the classifier and גוש טקסט run on 5.5 from
+     that deploy.
   2. No env change: the model is a constant.
   3. The box: when `select id, type, status from jobs where status = 'running';` is empty, run
      `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`. Then
