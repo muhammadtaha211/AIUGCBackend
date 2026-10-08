@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 const generateObject = vi.hoisted(() => vi.fn());
 vi.mock("../src/providers/anthropic", () => ({
   generateObject,
-  CLAUDE_MODEL: "claude-sonnet-4-6",
+  CLAUDE_MODEL: "claude-sonnet-5-5",
 }));
 
 import { chunkWords, type WordTiming } from "../src/captions";

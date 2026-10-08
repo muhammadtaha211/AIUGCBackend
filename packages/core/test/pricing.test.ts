@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   creditCostsSchema,
+  llmCostAgorot,
   quoteAssemblyRemix,
   quoteEndingReroll,
   quoteServiceA,
@@ -284,6 +285,18 @@ describe("the config shape expresses the models D1 rejected — code never learn
     expect(demo35Avatar6(HYBRID)).toBe(
       quoteServiceB({ durationMs: 15_000, costs: HYBRID }).credits,
     );
+  });
+});
+
+describe("llmCostAgorot — claude-sonnet-5-5 at $2 in / $10 out per MTok, 370 agorot/USD", () => {
+  it("prices a million input tokens at $2 and a million output tokens at $10", () => {
+    expect(llmCostAgorot(1_000_000, 0)).toBe(740);
+    expect(llmCostAgorot(0, 1_000_000)).toBe(3700);
+  });
+
+  it("rounds the whole call up once", () => {
+    expect(llmCostAgorot(10_000, 1_000)).toBe(12); // 11.1 agorot
+    expect(llmCostAgorot(0, 0)).toBe(0);
   });
 });
 

@@ -1,12 +1,24 @@
 ---
 type: defect
 status: verified
-verified: 2026-08-23
-method: "grep -rn 'function llmCostAgorot' packages/core/src — four hits; md5 of each body's return line — all four are 7832a8b4612d"
+verified: 2026-10-08
+method: "2026-08-23: grep -rn 'function llmCostAgorot' packages/core/src — four hits; md5 of each body's return line — all four are 7832a8b4612d. Re-measured 2026-10-08 on feat/sonnet-5-5, before the fix: still four, byte-identical, at copy.ts:29-31, tts.ts:138-140, demo-analysis.ts:205-207, demo-step-plans.ts:167-169. After it: the same grep returns one hit, packages/core/src/pricing.ts; grep -rn 'llmCostAgorot(' packages/core/src — five call sites, all importing it from ../pricing."
 source: code
 ---
 
 # `llmCostAgorot` is copy-pasted four times, and the comment policing it says three
+
+## FIXED 2026-10-08 on branch `feat/sonnet-5-5`
+
+The rate change this note warned about arrived: every call moved to `claude-sonnet-5-5`
+([[0093-every-claude-call-runs-on-sonnet-5-5]]), costed at $2 / $10
+([[0094-claude-usage-costed-at-sonnet-5-5-price]]). The fix is the shape below. One exported
+`llmCostAgorot` in `packages/core/src/pricing.ts`, all four private copies deleted along with their
+comments (the miscounting one included). The five call sites are `copy.ts` (`callClaude`),
+`tts.ts`, two in `demo-analysis.ts`, and `demo-step-plans.ts`. `pricing.test.ts` pins the rate,
+which nothing did before.
+
+What follows is the defect as it stood, with its 2026-08-23 line numbers.
 
 Four private copies, all byte-identical:
 

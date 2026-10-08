@@ -68,7 +68,8 @@ last changed in `21b7557` (2026-09-23, AUTHZ-12).
   unchanged.
 - **Spend.** Yes, unless `DRY_RUN` (`copy.ts:326`). One Anthropic call per request:
   `generateVoScript` → `callClaude` with prompt `vo_script` (`copy.ts:338-341`) →
-  `generateObject`, `claude-sonnet-4-6`, `max_tokens` 4096
+  `generateObject`, `claude-sonnet-4-6` (`claude-sonnet-5-5` since the switch,
+  [[0093-every-claude-call-runs-on-sonnet-5-5]]), `max_tokens` 4096
   (`packages/core/src/providers/anthropic.ts:14`, `47-48`), on a client built with the SDK's
   defaults (`anthropic.ts:22`). The prompt is on disk (`prompts/vo_script/v1.md`–`v9.md`). Usage
   is recorded against the business (`copy.ts:33-39`).

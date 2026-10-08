@@ -21,6 +21,7 @@ import {
 } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
 import { isInventoryState } from "../plan-format";
+import { llmCostAgorot } from "../pricing";
 import {
   generateObject,
   generateRawWithImages,
@@ -199,11 +200,6 @@ export const MIN_CLUSTER_FRAMES = 2;
  *  still on it (decision 0072). */
 export async function analysisFps(db: Db): Promise<number> {
   return Math.max(1, await getConfigValueOr(db, "a_analysis_fps", z.number(), 5));
-}
-
-/** Rough cost bookkeeping — same math as pipelines/copy.ts (2nd use; extract at the 3rd). */
-function llmCostAgorot(inputTokens: number, outputTokens: number): number {
-  return Math.ceil(((inputTokens * 3 + outputTokens * 15) / 1_000_000) * 370);
 }
 
 /**

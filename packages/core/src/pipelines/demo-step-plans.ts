@@ -31,6 +31,7 @@ import {
   totalRuntimeMs,
   type Clip,
 } from "../plan-format";
+import { llmCostAgorot } from "../pricing";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import { DETECTOR_REACH_FRAMES, SCREENS_DETECTOR } from "./analysis-screens";
@@ -161,11 +162,6 @@ export function planTimingMarkdown(opts: { minSteps: number; maxSteps: number })
     "",
     `A plan runs its step count times ${secs(STEP_MS)}: ${minSteps} steps run ${secs(minSteps * STEP_MS)}, ${maxSteps} steps run ${secs(maxSteps * STEP_MS)}.`,
   ].join("\n");
-}
-
-/** Rough cost bookkeeping — same math as pipelines/copy.ts (3rd use is Phase 6's problem). */
-function llmCostAgorot(inputTokens: number, outputTokens: number): number {
-  return Math.ceil(((inputTokens * 3 + outputTokens * 15) / 1_000_000) * 370);
 }
 
 // ---------------------------------------------------------------------------

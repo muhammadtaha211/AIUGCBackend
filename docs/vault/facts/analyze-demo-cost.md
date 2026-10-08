@@ -124,3 +124,13 @@ extract at the 3rd"; the third and fourth have landed and the extraction has not
 
 _(This paragraph cited `demo-analysis.ts:113`, `copy.ts:17` and `demo-step-plans.ts:219` until
 2026-09-18. All three had drifted, and the count was one short. Re-read at `f84e931`.)_
+
+**Since the switch to `claude-sonnet-5-5` the above is history**
+([[0093-every-claude-call-runs-on-sonnet-5-5]]). On the box, the switch is its first restart after
+that merge.
+
+- The four copies are one `llmCostAgorot` in `packages/core/src/pricing.ts`, at $2 / $10 per Mtok
+  and the same 3.70 ILS/USD ([[0094-claude-usage-costed-at-sonnet-5-5-price]]).
+- The agorot and token figures in this note were measured on 4.6 and stay as they were.
+- Neither compares directly with a 5.5 row: the rate changed, and 5.5's tokenizer makes more
+  tokens for the same text (0094).

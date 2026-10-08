@@ -14,6 +14,7 @@ import type { JobContext, JobResult } from "../jobs/worker";
 import type { Logger } from "../logger";
 import { atempoStretch, measureDurationMs } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
+import { llmCostAgorot } from "../pricing";
 import { generateObject } from "../providers/anthropic";
 import { synthesize } from "../providers/elevenlabs";
 import { forcedAlign } from "../providers/whisperx";
@@ -133,11 +134,6 @@ export async function approveAudio(db: Db, audioRenderId: string): Promise<void>
 // ---------------------------------------------------------------------------
 
 const enhanceOutput = z.object({ enhanced: z.string() });
-
-/** Rough cost bookkeeping (mirrors pipelines/copy.ts): sonnet $3/$15 per MTok, ~370 agorot/USD. */
-function llmCostAgorot(inputTokens: number, outputTokens: number): number {
-  return Math.ceil(((inputTokens * 3 + outputTokens * 15) / 1_000_000) * 370);
-}
 
 /** The text minus bracketed tags — what the voice actually says. */
 export function stripAudioTags(text: string): string {
