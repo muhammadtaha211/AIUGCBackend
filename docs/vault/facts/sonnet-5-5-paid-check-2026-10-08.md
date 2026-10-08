@@ -90,9 +90,19 @@ made-up weight-loss supplement promising a guaranteed 10 kg a month.
 
 **Lifted wording.**
 
-- Gone from 5.5: `נו, כן או לא?` and the `מניסיון אישי` aside.
-- Still there: `אין לי מושג איך אתם` (3 of 4 batches), and `אוקיי, בכנות` (4 of 4).
-- New in 5.5: one repeat of its own, `נו מה אתם אומרים` (3 of 4).
+All five are on v2.md's lifted-before list or were flagged in the v2 findings.
+
+| phrase                              | v2 on 4.6 | 5.5 |
+| ----------------------------------- | --------: | --: |
+| `נו, כן או לא?`                     |         4 |   0 |
+| the `מניסיון אישי` aside            |         4 |   2 |
+| `אין לי מושג איך אתם`               |         2 |   3 |
+| `אוקיי, בכנות`                      |         4 |   4 |
+| `זה לא נשמע מרגש, אבל זה ההבדל בין` |         0 |   2 |
+
+Counts are batches out of four, by regex over both JSON files. The last phrase was gone in v2 and
+is back on 5.5. 5.5 also
+repeats one closing question of its own, `נו מה אתם אומרים`, in 3 of 4 batches.
 
 ## 4. The steps planner, `plan regress` — PASS: 5 of 5 ready, nothing repaired
 
