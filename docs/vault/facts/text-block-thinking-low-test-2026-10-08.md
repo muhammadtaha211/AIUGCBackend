@@ -2,7 +2,7 @@
 type: fact
 status: verified
 verified: 2026-10-08
-method: "PAID, on the founder's approval in chat, 2026-10-08 (cap ₪5). Branch feat/text-block-thinking-low. Scratch in packages/core/.work/text-block-thinking/ (gitignored), run from packages/core with ../../apps/cli/node_modules/.bin/tsx. run.ts <off|low> <tag>: the shipped generateTextBlocks on PGlite, loading ANTHROPIC_API_KEY only, so it cannot reach production; an observer on the SDK's Messages.create records each call's seconds, stop_reason and usage, output_tokens_details.thinking_tokens included, without touching the request. Runs in this order: low-r1, off-r2, low-r2. off-r1 is the 2026-10-08 run (.work/text-block/fixture-texts-55.json, [[sonnet-5-5-paid-check-2026-10-08]]). mechanics.mjs: shape, skips, figure candidates, lifted wording and shared phrases, by the logic of the 10-08 scripts; it reproduces 10-08's off-r1 counts. Judging: judge-workflow.js, blind over blind/set-A..D (key in blind-key.json), the 10-08 judge prompts verbatim plus one truth item; output judging.json; tally.mjs unblinds it into report.md."
+method: "PAID, on the founder's approval in chat, 2026-10-08 (cap ₪5). Branch feat/text-block-thinking-low. Scratch in packages/core/.work/text-block-thinking/ (gitignored), run from packages/core with ../../apps/cli/node_modules/.bin/tsx. run.ts <off|low> <tag>: the shipped generateTextBlocks on PGlite, loading ANTHROPIC_API_KEY only, so it cannot reach production; an observer on the SDK's Messages.create records each call's seconds, stop_reason and usage, output_tokens_details.thinking_tokens included, without touching the request. The `low` side needs the thinking option of commit cd7fbf0, which ca2f816 removed after the founder's ruling: on a later tree generateTextBlocks ignores the setting and a `low` run goes out as between_tools, so check out cd7fbf0 to re-run it. Runs in this order: low-r1, off-r2, low-r2. off-r1 is the 2026-10-08 run (.work/text-block/fixture-texts-55.json, [[sonnet-5-5-paid-check-2026-10-08]]). mechanics.mjs: shape, skips, figure candidates, lifted wording and shared phrases, by the logic of the 10-08 scripts; it reproduces 10-08's off-r1 counts. Judging: judge-workflow.js, blind over blind/set-A..D (key in blind-key.json), the 10-08 judge prompts verbatim plus one truth item; output judging.json; tally.mjs unblinds it into report.md."
 source: code + inference
 ---
 
@@ -13,6 +13,19 @@ The test [[0095-thinking-stays-off-for-the-sonnet-5-5-switch]] queued. It ran `t
 batches: Tavnit, the Haifa plumber, and the Excel course at female and at male. There were two
 runs per side. **Tags:** MEASURED is the calls and the scripts; REASONED is the judging.
 
+## The founder's ruling, 2026-10-08 — FOUNDER
+
+In his words: "No on low, and no medium-effort test for now." And: "Leave the discovery placeholder
+for v3." He gave no reason in chat.
+
+- **Thinking stays off on every call:** `between_tools`, as
+  [[0095-thinking-stays-off-for-the-sonnet-5-5-switch]] set it.
+- **The test-only option is gone.** `ca2f816` reverts `cd7fbf0`, which had added
+  `generateObject({thinking: "low"})` and passed it through `generateTextBlocks`. The code is
+  back to what `origin/main` had.
+- **No medium-effort test is queued.**
+- **The `discovery` placeholder below is left for `text_block` v3.**
+
 ## Spend: 165 agorot of the ₪5 cap — MEASURED
 
 12 calls, one per batch. That is ₪1.65 by the code's own `llmCostAgorot`. The `usage_events` rows
@@ -20,8 +33,8 @@ of each batch agree with the observer, call for call.
 
 ## What was sent, and what came back — MEASURED
 
-- **`low`:** `thinking: {type: "adaptive"}` and `output_config: {effort: "low", format}` (the new
-  `generateObject({thinking: "low"})`).
+- **`low`:** `thinking: {type: "adaptive"}` and `output_config: {effort: "low", format}`
+  (`generateObject({thinking: "low"})`, in the tree from `cd7fbf0` until `ca2f816` removed it).
 - **`off`:** `thinking: {type: "between_tools"}` and no effort, which is production.
 - **The model never thought at `low`.** None of the 8 `low` calls carried a thinking block, and
   every one reported `output_tokens_details.thinking_tokens: 0`. The field was there and was zero;

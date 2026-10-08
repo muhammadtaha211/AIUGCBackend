@@ -184,7 +184,9 @@ Service B tests and his rulings; what happens to Service B itself is OPEN).
   3. Rule on what a `text_block` v3 should do about the lifted lines, the invented figures and
      `discovery` without a `wow`. On 5.5 (2026-10-08) the course at female still wrote a
      `discovery` with no wow, and the course at male stored the word `skipped` as its `discovery`
-     text, which the batch check passes ([[sonnet-5-5-paid-check-2026-10-08]]).
+     text, which the batch check passes ([[sonnet-5-5-paid-check-2026-10-08]]). The thinking test
+     put a placeholder (`skip`, `skipped`, `discovery`) in `texts` in 7 of 8 course batches; he
+     left it for v3 (2026-10-08, [[text-block-thinking-low-test-2026-10-08]]).
   4. Rule on the one planning default 0090 still names: clips 3–60 s.
 - **Phase 2 is NOT started.** What it needs is in 0089 §3.
 
@@ -822,27 +824,29 @@ three core functions, the 25-credit key seeded before its schema key, the quote/
 dashboard card, the customer edit route, then the landing / `/pricing` / legal copy. Phase 1's
 own remaining gates (merge + box) are under "Owed founder actions".
 
-**Low-effort thinking on גוש טקסט: TESTED 2026-10-08 on `feat/text-block-thinking-low`, ₪1.65 of a
-₪5 cap ([[text-block-thinking-low-test-2026-10-08]]). Production is unchanged: every call still
-sends `between_tools`.**
+**Low-effort thinking on גוש טקסט: TESTED and RULED OUT 2026-10-08 on
+`feat/text-block-thinking-low`, ₪1.65 of a ₪5 cap
+([[text-block-thinking-low-test-2026-10-08]]). Every call still sends `between_tools`, as 0095 set
+it.**
 
-- **What was built:** `generateObject` takes `thinking: "low"` (adaptive thinking, effort
-  `low`), passed through `generateTextBlocks`, for this test only. No production caller passes it.
-  `anthropic-request.test.ts` and `text-block-generate.test.ts` pin the default.
-- **The model did not think at `low`:** 0 thinking tokens on 8 of 8 calls, and no thinking block.
-  So the two sides differed by the effort level alone.
-- **Time and cost were the same:** 72–76 s and 54–57 agorot for each run of four batches. No
-  cut-off and no retry.
-- **Judged blind, for him to confirm:** the sides split. `low` had fewer Hebrew mistakes (7 against 11) and fewer invented figures (1 against 6). It had more copied closing lines (10 against 3; 6
-  against 2 verbatim) and more truth breaks (2 against 1).
-- **Waiting on his ruling:** keep `low` for גוש טקסט or not. If not, remove the test-only option.
-  If he wants thinking itself measured, it needs a level where the model thinks (`medium`), which
-  is a new paid run.
-- **Found, not fixed: `discovery` placeholders.** For the course, which has no `wow`, 7 of 8 batches
-  across the four runs put a placeholder (`skip`, `skipped`, `discovery`) in `texts`.
-  `textBlockBatchProblem` passes it and `generateTextBlocks` stores it as a `text_block` row.
-  At least three of the seven also listed `discovery` in `skipped` (off-r1's skip list was not
-  recorded).
+- **The ruling, in his words:** "No on low, and no medium-effort test for now." And: "Leave the
+  discovery placeholder for v3." He gave no reason in chat.
+- **The code is back to `origin/main`:** `ca2f816` reverts `cd7fbf0`, the test-only
+  `thinking: "low"` on `generateObject` and `generateTextBlocks`.
+- **What the test measured:**
+  - **The model did not think at `low`:** 0 thinking tokens on 8 of 8 calls, and no thinking
+    block. So the sides differed by the effort level alone.
+  - **Time and cost:** the same on both sides, 72–76 s and 54–57 agorot for each run of four
+    batches. No cut-off and no retry.
+  - **Judged blind:** the sides split. `low` had fewer Hebrew mistakes (7 against 11) and fewer
+    invented figures (1 against 6). It had more copied closing lines (10 against 3; 6 against 2
+    verbatim) and more truth breaks (2 against 1).
+- **Not queued:** a medium-effort test.
+- **Left for `text_block` v3:** the `discovery` placeholder. For the course, which has no `wow`, 7
+  of 8 batches across the four runs put `skip`, `skipped` or `discovery` in `texts`.
+  `textBlockBatchProblem` passes it and `generateTextBlocks` stores it as a `text_block` row. At
+  least three of the seven also listed `discovery` in `skipped`; off-r1's skip list was not
+  recorded.
 
 **0. The Sumit adapter.** MERGED and LIVE 2026-09-21 — PR #52, `4100cc7` —
 [[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway`
