@@ -7,7 +7,7 @@ import type { z } from "zod";
 const generateObject = vi.hoisted(() => vi.fn());
 vi.mock("../src/providers/anthropic", () => ({
   generateObject,
-  CLAUDE_MODEL: "claude-sonnet-4-6",
+  CLAUDE_MODEL: "claude-sonnet-5-5",
 }));
 
 import { resetEnvCache } from "../src/config";

@@ -10,8 +10,16 @@ export interface VisionFrame {
   jpeg: Buffer;
 }
 
-/** Locked product decision (handover §6): all copywriting runs on claude-sonnet-4-6. */
-export const CLAUDE_MODEL = "claude-sonnet-4-6";
+/** Every Claude call runs on claude-sonnet-5-5 (vault 0093; claude-sonnet-4-6 before it). */
+export const CLAUDE_MODEL = "claude-sonnet-5-5";
+
+/**
+ * Thinking off on every call (vault 0095): `between_tools` is claude-sonnet-5-5's
+ * lowest setting — no extended thinking, which is what 4.6 did with the field
+ * omitted. Omitting it on 5.5 runs adaptive thinking, and `disabled` is a 400.
+ * Cast because SDK 0.111.0's ThinkingConfigParam predates `between_tools`.
+ */
+const NO_THINKING = { type: "between_tools" } as unknown as Anthropic.ThinkingConfigParam;
 
 let client: Anthropic | undefined;
 
@@ -30,7 +38,7 @@ export interface GenerateResult<T> {
 }
 
 /**
- * One structured-output call. Prefills are not supported on claude-sonnet-4-6;
+ * One structured-output call. Prefills are not supported on claude-sonnet-5-5;
  * output_config.format constrains the JSON instead — to the schema's types,
  * required keys and no extra keys. That is all the grammar enforces on this
  * wire: enum, const and min/max reach the API as description prose (see
@@ -46,6 +54,7 @@ export async function generateObject<T>(opts: {
   const response = await getClient().messages.parse({
     model: CLAUDE_MODEL,
     max_tokens: opts.maxTokens ?? 4096,
+    thinking: NO_THINKING,
     messages: [{ role: "user", content: opts.prompt }],
     output_config: { format: zodOutputFormat(opts.schema) },
   });
@@ -200,7 +209,7 @@ export interface RawResult {
  * call belongs in the ledger whatever its body holds — and then owns the
  * parse and the validation, per element if it wants to. The system block
  * carries cache_control so parallel batches pay for the prompt + questionnaire
- * prefix once; thinking is explicitly disabled — frame transcription is
+ * prefix once; thinking is off (NO_THINKING) — frame transcription is
  * reading, not reasoning, and thinking across many images is slow for no
  * accuracy gain. Like generateObject, DRY_RUN is the caller's concern — this
  * always calls.
@@ -227,7 +236,7 @@ export async function generateRawWithImages(opts: {
     model: CLAUDE_MODEL,
     max_tokens: opts.maxTokens ?? 8192,
     system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
-    thinking: { type: "disabled" },
+    thinking: NO_THINKING,
     messages: [{ role: "user", content }],
     output_config: { format: opts.format },
   });

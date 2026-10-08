@@ -184,3 +184,13 @@ export function quoteServiceASteps(opts: {
 export function quoteAssemblyRemix(opts: { costs: CreditCosts }): Quote {
   return settle([{ kind: "remix", credits: opts.costs.a_remix_assembly_credits }], 0);
 }
+
+/**
+ * What one Claude call costs US, not what a customer pays: the agorot written to
+ * `usage_events.cost_estimate_agorot` for every `llm_tokens` row. claude-sonnet-5-5
+ * at $2 in / $10 out per MTok (vault 0094), ~370 agorot/USD. A local estimate
+ * against a hard-coded rate, never an invoice; the token counts are the API's.
+ */
+export function llmCostAgorot(inputTokens: number, outputTokens: number): number {
+  return Math.ceil(((inputTokens * 2 + outputTokens * 10) / 1_000_000) * 370);
+}

@@ -5,9 +5,16 @@ mapping into the job failure taxonomy (4xx→Permanent, 5xx/429/network→Transi
 recording into `usage_events`. `DRY_RUN=1` swaps deterministic stubs so the full pipeline runs
 keyless (the e2e test relies on this).
 
-## Anthropic (all copywriting) — `providers/anthropic.ts`
+## Anthropic (every Claude call) — `providers/anthropic.ts`
 
-- **Model locked by product decision: `claude-sonnet-4-6`** (`CLAUDE_MODEL`).
+- **Every Claude call runs on `claude-sonnet-5-5`** (`CLAUDE_MODEL`, a constant, not env): copy,
+  the demo analysis (vision batches and sections), the steps planner, the content-policy
+  classifier, the TTS tags and גוש טקסט (vault 0093). It ended the `claude-sonnet-4-6` lock.
+- Both wrappers send `thinking: {type: "between_tools"}` (vault 0095). That is 5.5's lowest
+  setting: no extended thinking, as on 4.6. On 5.5 an omitted `thinking` runs adaptive thinking,
+  and `disabled` is a 400.
+- `usage_events` records no model. A row's model follows the deploy of the process that wrote it:
+  Vercel from the merge, the box from its restart (0093).
 - Official SDK (`@anthropic-ai/sdk`), **structured outputs** via
   `client.messages.parse` + `zodOutputFormat(schema)` — assistant prefills 400 on this model.
   What `output_config.format` actually enforces on that wire is the schema's types, required keys
@@ -104,8 +111,8 @@ keyless (the e2e test relies on this).
   `generateBScript` and `generateHookLines` each do persona → `gender` → warn → default female.
   That is the rule-of-three threshold: extract a `speakerGenderOf` helper the next time one of
   them is touched.
-- Usage: one `usage_events` row per call (`llm_tokens`, in+out; cost estimated at $3/$15 per
-  MTok). **Fixed 2026-09-23 (AUTHZ-12):** `pipelines/copy.ts` itself still checks nothing —
+- Usage: one `usage_events` row per call (`llm_tokens`, in+out; cost estimated at $2/$10 per
+  MTok by the one `llmCostAgorot` in `pricing.ts`, vault 0094). **Fixed 2026-09-23 (AUTHZ-12):** `pipelines/copy.ts` itself still checks nothing —
   `callClaude` only `recordUsage`s, on purpose, because `generateHookLines`, `generateBScript`
   and `generateVoScript` are also reachable from the `generate_copy` job handler
   (`packages/core/src/handlers.ts`), and a `BudgetError` thrown mid-job parks it instead of

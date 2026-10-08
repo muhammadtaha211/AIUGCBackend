@@ -8,7 +8,7 @@ const generateObject = vi.hoisted(() => vi.fn());
 vi.mock("../src/providers/anthropic", () => ({
   generateObject,
   generateRawWithImages: vi.fn(),
-  CLAUDE_MODEL: "claude-sonnet-4-6",
+  CLAUDE_MODEL: "claude-sonnet-5-5",
 }));
 
 import { resetEnvCache } from "../src/config";

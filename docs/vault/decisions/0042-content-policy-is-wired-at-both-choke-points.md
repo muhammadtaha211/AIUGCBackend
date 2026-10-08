@@ -115,7 +115,8 @@ the `content_policy_flag` event `contentPolicyCheck` already wrote itself.
 
 ## Cost and latency
 
-One `claude-sonnet-4-6` call on the confirm path, with the questionnaire and a short amount of copy
+One `claude-sonnet-4-6` call on the confirm path (on `claude-sonnet-5-5` since the switch,
+[[0093-every-claude-call-runs-on-sonnet-5-5]]), with the questionnaire and a short amount of copy
 as input — the same shape as the other `callClaude` sites in `copy.ts`. **Estimated** added latency
 at confirm: on the order of one Claude round trip, a second or two; **not measured**, because
 measuring it costs a live call and this run spends nothing at a provider. Usage is recorded through

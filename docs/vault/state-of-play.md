@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-07
+updated: 2026-10-08
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -40,11 +40,47 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**Every Claude call moves to `claude-sonnet-5-5`, thinking off: BUILT 2026-10-08 on
+`feat/sonnet-5-5` (`495384c`), PUSHED, NOT MERGED. The five paid checks PASS, ₪3.85 of a ₪10
+cap ([[sonnet-5-5-paid-check-2026-10-08]]).**
+
+- **Decisions:**
+  - [[0093-every-claude-call-runs-on-sonnet-5-5]] (the founder's, 2026-10-07: everything at once);
+  - [[0094-claude-usage-costed-at-sonnet-5-5-price]] (one `llmCostAgorot` in `pricing.ts`, $2 /
+    $10; [[llm-cost-formula-is-copied-four-times]] FIXED);
+  - [[0095-thinking-stays-off-for-the-sonnet-5-5-switch]] (the founder's, 2026-10-08:
+    `between_tools` on both wrappers, because 5.5 rejects `disabled` and turns adaptive thinking
+    on when the field is omitted; a failed analysis check would have blocked the box).
+- **What changed in code:**
+  - the constant and the thinking setting in `providers/anthropic.ts`;
+  - the four cost-formula copies removed;
+  - `anthropic-request.test.ts` and `pricing.test.ts` pin the model, the thinking setting and the
+    rate.
+  - Nothing else changed: no prompt, cap, schema, migration or env.
+  - The gate was all green on the tree: lint, typecheck, and remotion 97, core 988, worker 7,
+    web 572, admin 65 (1,729).
+- **The checks, against 4.6:**
+  - **Classifier:** the same verdicts on a pass and a flag text.
+  - **Copy for Tavnit:** passes. The one B script addressed the viewer as a woman, where the
+    prompt reads the address from `target_audience`.
+  - **גוש טקסט:** 40 texts, 69 agorot against 94. The course at male stored the word `skipped`
+    as a text. Judged blind against v2 on 4.6 by one method, for him to confirm: 6 Hebrew
+    mistakes against 21, 4 invented figures against 6, no copied or restating closing line
+    against 7.
+  - **Planner:** 5 of 5 ready, nothing repaired, 7 calls against 10, ₪1.51 against ₪2.82.
+  - **T5 analysis, run locally:** `ready` on attempt 0, 8 calls, ₪1.38. The box took ₪2.20–2.72
+    on 4.6.
+  - **First-call tokens on identical planner input run 1.15–1.24× 4.6's (the tokenizer).** Token
+    caps bind that much sooner per action. They were not changed.
+- **Going live (owed, under "Owed founder actions"):** merge, with no env change; then the box
+  pull and restart. Until the restart the box keeps calling 4.6, which still works.
+  `usage_events` has no model column, so record both moments here when they happen.
+
 **Service C, גוש טקסט, phase 1 + 1b (admin-only): BUILT 2026-10-07, MERGED as PR #80 (`59a2ff1`
 on `origin/main`, MEASURED by `git log`, 2026-10-07); migrations 0051 + 0052 PUSHED TO PRODUCTION
 2026-10-07 and read back (ledger 0000–0052, 53 rows). Whether the box has pulled it is not
-recorded in the repo. `text_block` v2: BUILT 2026-10-07 on `feat/text-block-v2`, PUSHED, NOT
-MERGED.**
+recorded in the repo. `text_block` v2: BUILT 2026-10-07 on `feat/text-block-v2`, MERGED as PR #81
+(`691c9bf` on `origin/main`, MEASURED by `git log`, 2026-10-08).**
 The decisions are [[0089-service-c-text-block-exists-admin-only-phase-1]] (exists, built before
 the hand-test reports, two phases with a stop, 25 credits recorded for phase 2 only, landing /
 pricing / legal untouched), [[0090-text-block-format-clip-once-with-its-own-sound]] (the format
@@ -143,9 +179,11 @@ Service B tests and his rulings; what happens to Service B itself is OPEN).
       - both course batches wrote `discovery` with no `wow`, as v1's run did.
 - **Waiting on the founder, in order:**
   1. Read the v2 texts and the findings.
-  2. Merge `feat/text-block-v2`.
+  2. ~~Merge `feat/text-block-v2`~~ MERGED as PR #81 (`691c9bf`).
   3. Rule on what a `text_block` v3 should do about the lifted lines, the invented figures and
-     `discovery` without a `wow`.
+     `discovery` without a `wow`. On 5.5 (2026-10-08) the course at female still wrote a
+     `discovery` with no wow, and the course at male stored the word `skipped` as its `discovery`
+     text, which the batch check passes ([[sonnet-5-5-paid-check-2026-10-08]]).
   4. Rule on the one planning default 0090 still names: clips 3–60 s.
 - **Phase 2 is NOT started.** What it needs is in 0089 §3.
 
@@ -783,6 +821,13 @@ three core functions, the 25-credit key seeded before its schema key, the quote/
 dashboard card, the customer edit route, then the landing / `/pricing` / legal copy. Phase 1's
 own remaining gates (merge + box) are under "Owed founder actions".
 
+**Next test: low-effort thinking on גוש טקסט** (the founder's ruling, 2026-10-08,
+[[0095-thinking-stays-off-for-the-sonnet-5-5-switch]]). Thinking stayed off for the switch so that
+the checks measured the model alone. The next test runs the same four batches with adaptive
+thinking at effort `low`, measured against the 5.5 thinking-off set in
+`packages/core/.work/text-block/fixture-texts-55.md`. It needs his spend OK, and the switch merged
+first.
+
 **0. The Sumit adapter.** MERGED and LIVE 2026-09-21 — PR #52, `4100cc7` —
 [[0062-hosted-checkout-via-sumit-payment-pages]]. `getBillingGateway()` returns `SumitGateway`
 because `SUMIT_COMPANY_ID` + `SUMIT_API_KEY` are set on Vercel and on the box without `DRY_RUN`, and
@@ -1129,6 +1174,18 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **The switch to `claude-sonnet-5-5` (2026-10-08, `feat/sonnet-5-5`).** In order:
+  1. Merge the PR. Vercel redeploys web and admin: hook lines, the B script, hook text, the
+     classifier and גוש טקסט run on 5.5 from that deploy. Record the date here.
+  2. No env change: the model is a constant.
+  3. The box: when `select id, type, status from jobs where status = 'running';` is empty, run
+     `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`. Then
+     check that `git log -1 --oneline` is the merge and `systemctl is-active aiugc-worker` says
+     active. Record the date here. The analysis check passed, so 0095's gate is open. The pull also
+     ships PRs #79–#81 if the box has not taken them: the footage backfill and "no approving or
+     rendering between merge and restart" below still apply.
+  4. Optional: the Console's rate limits for Sonnet 5.5, which has its own pool.
+
 - **Service C phase 1 (2026-10-07).** Done the same day on his rulings:
   - the push of 0051 + 0052;
   - the fixture run, 64 agorot, whose texts are in `packages/core/.work/text-block/fixture-texts.md`;
@@ -1137,7 +1194,7 @@ the 2026-09-26 custom domain (founder-reported):**
 
   Still owed, in order:
   1. Read the texts and the two renders in `packages/core/.work/text-block/renders/`.
-  2. Merge `feat/service-c-text-block`.
+  2. ~~Merge `feat/service-c-text-block`~~ MERGED as PR #80 (`59a2ff1`).
   3. Pull and restart the box together, once no job is running.
   4. Rule on the prompt findings in [[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]]
      (amended) and on clips 3–60 s in [[0090-text-block-format-clip-once-with-its-own-sound]].

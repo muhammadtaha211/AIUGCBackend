@@ -10,6 +10,7 @@ import { hookTextError } from "../hook-text";
 import { pickHookTemplates } from "../hook-templates";
 import { PermanentError } from "../jobs/errors";
 import { logger } from "../logger";
+import { llmCostAgorot } from "../pricing";
 import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import {
@@ -24,11 +25,6 @@ import {
 import { requireQuestionnaire } from "./businesses";
 
 type Script = typeof scripts.$inferSelect;
-
-/** Rough cost bookkeeping: sonnet input $3 / output $15 per MTok, ~370 agorot/USD. */
-function llmCostAgorot(inputTokens: number, outputTokens: number): number {
-  return Math.ceil(((inputTokens * 3 + outputTokens * 15) / 1_000_000) * 370);
-}
 
 async function callClaude<T>(
   db: Db,
