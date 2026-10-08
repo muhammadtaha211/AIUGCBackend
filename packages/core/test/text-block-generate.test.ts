@@ -136,16 +136,10 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
     const result = await generateTextBlocks(db, { businessId, clipId });
 
     expect(generateObject).toHaveBeenCalledTimes(1);
-    const call = generateObject.mock.calls[0]![0] as {
-      prompt: string;
-      maxTokens?: number;
-      thinking?: string;
-    };
+    const call = generateObject.mock.calls[0]![0] as { prompt: string; maxTokens?: number };
     expect(call.prompt).toContain("The speaker is female");
     expect(call.prompt).toContain('"product_name": "Tavnit"');
     expect(call.maxTokens).toBe(8192);
-    // No setting, so the wrapper's default: thinking off (vault 0095).
-    expect(call.thinking).toBeUndefined();
 
     expect(result.texts).toHaveLength(2);
     expect(result.texts.map((r) => r.kind)).toEqual(["text_block", "text_block"]);
@@ -177,17 +171,6 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
     expect(generateObject.mock.calls[0]![0].prompt).toBe(generateObject.mock.calls[1]![0].prompt);
     expect(result.texts.map((r) => r.text)).toEqual(CLEAN.map((t) => t.text));
     expect(result.texts.some((r) => r.text.includes("—"))).toBe(false);
-  });
-
-  it("the thinking test's low setting reaches the first call and the retry alike", async () => {
-    generateObject
-      .mockReset()
-      .mockResolvedValueOnce(batch([{ skeleton: "reframe", text: "קשה — עד שמבינים" }]))
-      .mockResolvedValueOnce(batch(CLEAN));
-
-    await generateTextBlocks(db, { businessId, clipId, thinking: "low" });
-
-    expect(generateObject.mock.calls.map((c) => c[0].thinking)).toEqual(["low", "low"]);
   });
 
   it("an en dash twice fails the batch: the dash is refused on generated text, retried once, then raised", async () => {

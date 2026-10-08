@@ -14,19 +14,12 @@ export interface VisionFrame {
 export const CLAUDE_MODEL = "claude-sonnet-5-5";
 
 /**
- * Thinking off on every production call (vault 0095): `between_tools` is claude-sonnet-5-5's
+ * Thinking off on every call (vault 0095): `between_tools` is claude-sonnet-5-5's
  * lowest setting — no extended thinking, which is what 4.6 did with the field
  * omitted. Omitting it on 5.5 runs adaptive thinking, and `disabled` is a 400.
  * Cast because SDK 0.111.0's ThinkingConfigParam predates `between_tools`.
  */
 const NO_THINKING = { type: "between_tools" } as unknown as Anthropic.ThinkingConfigParam;
-
-/**
- * `low` is adaptive thinking at effort `low`, asked for only by the גוש טקסט
- * thinking test of 2026-10-08 (the test vault 0095 queued). No production
- * caller passes it: an omitted setting is `off`, which is NO_THINKING.
- */
-export type ThinkingSetting = "off" | "low";
 
 let client: Anthropic | undefined;
 
@@ -57,17 +50,13 @@ export async function generateObject<T>(opts: {
   prompt: string;
   schema: z.ZodType<T>;
   maxTokens?: number;
-  thinking?: ThinkingSetting;
 }): Promise<GenerateResult<T>> {
-  const low = opts.thinking === "low";
   const response = await getClient().messages.parse({
     model: CLAUDE_MODEL,
     max_tokens: opts.maxTokens ?? 4096,
-    thinking: low ? { type: "adaptive" } : NO_THINKING,
+    thinking: NO_THINKING,
     messages: [{ role: "user", content: opts.prompt }],
-    output_config: low
-      ? { effort: "low", format: zodOutputFormat(opts.schema) }
-      : { format: zodOutputFormat(opts.schema) },
+    output_config: { format: zodOutputFormat(opts.schema) },
   });
 
   if (!response.parsed_output) {

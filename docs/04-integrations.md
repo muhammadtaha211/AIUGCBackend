@@ -12,9 +12,7 @@ keyless (the e2e test relies on this).
   classifier, the TTS tags and גוש טקסט (vault 0093). It ended the `claude-sonnet-4-6` lock.
 - Both wrappers send `thinking: {type: "between_tools"}` (vault 0095). That is 5.5's lowest
   setting: no extended thinking, as on 4.6. On 5.5 an omitted `thinking` runs adaptive thinking,
-  and `disabled` is a 400. `generateObject` also takes `thinking: "low"` (adaptive thinking at
-  effort `low`), passed through `generateTextBlocks`, for the 2026-10-08 גוש טקסט thinking test
-  only; no production caller passes it, and a test pins the default.
+  and `disabled` is a 400.
 - `usage_events` records no model. A row's model follows the deploy of the process that wrote it:
   Vercel from the merge, the box from its restart (0093).
 - Official SDK (`@anthropic-ai/sdk`), **structured outputs** via
