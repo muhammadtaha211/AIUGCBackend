@@ -40,6 +40,38 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**Unattended feature runs in a cloud session: SET UP 2026-10-08 on `tooling/unattended-cloud-runs`,
+not merged. No cloud session has run yet.** One spec goes in, and a pushed branch, a PR and a report
+come out, with two stops of his: the plan, and the merge with everything after it.
+
+- **Decisions:**
+  - [[0096-unattended-runs-happen-in-a-cloud-session]]: the run. It starts in Plan mode, and the spec
+    is saved after approval.
+  - [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]]: what is refused.
+  - [[0098-paid-claude-calls-pre-approved-up-to-the-specs-cap]]: paid checks.
+- **Enforced:** a push to main from any Claude session is refused by a git pre-push hook, installed at
+  session start by `.claude/hooks/session-start.mjs`.
+  - Locally it is in `.git/hooks` and refuses only when `CLAUDECODE` is set. Installed in his checkout
+    2026-10-08.
+  - In the cloud it refuses always, and covers every clone through the global `core.hooksPath`.
+  - Settings are frozen in a cloud session.
+- **Unreachable in the cloud:** `db push`, `migration repair` and ssh, because no credential is
+  there.
+- **Instruction only, each a stop:** merging, `--no-verify`, and printing the key.
+- **The planned PreToolUse guard was not built.** The session's step that wrote it was stopped by
+  Anthropic's safety classifier, and he ruled it out (0097 says why).
+- **What changed in the repo:**
+  - `.claude/settings.json` (SessionStart and ConfigChange only);
+  - `.claude/hooks/`;
+  - `.claude/agents/spec-reviewer.md` (new);
+  - test-runner can use Bash;
+  - `docs/unattended/` (protocol, spec template, runbook);
+  - `packages/core/test/unattended-guard.test.ts`;
+  - a CLAUDE.md pointer (§4).
+  - No product code, prompt, migration, schema or dependency changed.
+- **Still to do:** he merges and edits the environment, then the first trial run (Owed founder
+  actions; the checklist is under Unfinished measurement).
+
 **Every Claude call moves to `claude-sonnet-5-5`, thinking off: BUILT 2026-10-08 on
 `feat/sonnet-5-5` (`495384c`), MERGED as PR #82 (`7f7489f` on `origin/main`, 2026-10-08 06:05
 +0300, MEASURED by `git log`). The five paid checks PASS, ₪3.85 of a ₪10 cap
@@ -1192,7 +1224,32 @@ the 2026-09-26 custom domain (founder-reported):**
 `https://auth.tavnit.ai/auth/v1/callback`, both kept. **The account chooser now reads "tavnit.ai"**
 — founder-tested after activation, no longer the raw project ref. [[0063-auth-custom-domain]].
 
+**Claude Code cloud environment `tavnit-unattended` (FOUNDER-REPORTED 2026-10-08).**
+
+- **As he set it up:** Trusted network access, no setup script, and one environment variable,
+  `PAID_CHECK_ANTHROPIC_KEY`.
+- **The key's limit:** a $20/month spend limit, in his words "on the scoped anthropic api key for
+  cloud sessions".
+- **What he still has to change:** add the setup script, and switch the network to Custom with
+  `remotion.media` added (Owed founder actions).
+- **The rule:** never add a credential to it.
+
+[[0096-unattended-runs-happen-in-a-cloud-session]],
+[[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
+
 ## Owed founder actions
+
+- **Unattended cloud runs (2026-10-08, `tooling/unattended-cloud-runs`).** In order:
+  1. Merge the PR. It changes no product code, so Vercel's redeploy changes nothing customers see.
+  2. In claude.ai/code, edit `tavnit-unattended`:
+     - paste the setup script from `docs/unattended/runbook.md` (ffmpeg and headless Chrome's
+       libraries);
+     - set Network access to Custom with `remotion.media` added and the default list ticked;
+     - keep `PAID_CHECK_ANTHROPIC_KEY` as the only variable.
+  3. Once: run `$env:CLAUDECODE` in the desktop app's Terminal panel. It says whether a push typed
+     there by Claude is covered by the pre-push hook. Record the answer here.
+  4. The first trial run, with a small spec. Bring the first-run checklist results back to a local
+     session.
 
 - **The switch to `claude-sonnet-5-5` (2026-10-08, `feat/sonnet-5-5`).** In order:
   1. ~~Merge the PR~~ MERGED as PR #82 (`7f7489f`, 2026-10-08 06:05 +0300). Vercel redeploys web
@@ -1417,6 +1474,16 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   ([[0004-service-b-config-is-provisional]]).
 
 ## Unfinished measurement
+
+- **The first unattended cloud run (2026-10-08).** Everything Claude Code does in a cloud session was
+  read in the docs and tested nowhere here. `docs/unattended/runbook.md` §First run lists the 12
+  checks. The two that matter most:
+  - **The pre-push hook loads in the cloud.** The SessionStart line says cloud mode and `--check`
+    passes.
+  - **The gate is green there.** It needs the setup script and `remotion.media`.
+
+  Also on the list: whether `spec-reviewer` loads as its own agent type with only Read, Grep and
+  Glob in the cloud (it did locally), and what `gh api user` returns.
 
 - **The detector on the box (2026-10-02).** MEASURED on one file: the box's 61 instants for the
   84 s recording match this machine's within one frame

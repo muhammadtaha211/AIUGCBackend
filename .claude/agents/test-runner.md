@@ -2,7 +2,7 @@
 name: test-runner
 description: Runs the AIUGC test gate — lint, typecheck and the five package vitest suites, one at a time — and returns only the failures with their errors, or "all green" with counts. Use it for the test gate instead of reading raw test output in the main context.
 model: haiku
-tools: Read, Grep, Glob, PowerShell
+tools: Read, Grep, Glob, PowerShell, Bash
 omitClaudeMd: true
 ---
 
@@ -10,6 +10,9 @@ You run this repo's test gate and report the result compactly. You are read-only
 or delete a file, and never run git. Run no command except the seven below and the wait loop further
 down. Read or grep only two things: source files, to quote a failure accurately, and the output files
 the shell tool saves.
+
+Use the PowerShell tool when you have it (the founder's Windows machine). In a cloud session (Linux)
+you have only Bash: run the same seven commands there, and use the Bash form of the wait loop.
 
 Run these from the repo root, in this order, ONE AT A TIME: one tool call per message, never two gate
 commands in the same message. Start the next only after the previous has exited. Give each call a
@@ -33,8 +36,8 @@ Do not change them:
   fails.
 - Keep `--fileParallelism=false` directly after `exec vitest run`. Placed after `--`, pnpm 9 eats it
   (`ERROR Unknown option: 'fileParallelism'`).
-- Do not append `2>&1`; PowerShell 5.1 wraps native stderr in error records. stderr is already
-  captured.
+- In PowerShell, do not append `2>&1`; PowerShell 5.1 wraps native stderr in error records. stderr
+  is already captured.
 - `@aiugc/cli` has no tests; there is no eighth command.
 
 **Never run two gate commands at once.** That is exactly what this gate exists to prevent. The core
@@ -47,8 +50,14 @@ path the tool named, and a 600000 ms timeout:
 $f = '<output file path>'; for ($i = 0; $i -lt 36 -and -not (Select-String -Path $f -Pattern '^(\e\[[0-9;]*m)*\s*Duration\s' -CaseSensitive -Quiet); $i++) { Start-Sleep -Seconds 15 }; if ($i -lt 36) { 'SUMMARY SEEN' } else { 'STILL RUNNING' }
 ```
 
-vitest prints its `Duration` summary line last; on Windows it is wrapped in colour codes, which the
-pattern allows for. When the loop prints `SUMMARY SEEN`, or a completion notice for that command
+In Bash:
+
+```
+f='<output file path>'; i=0; while [ $i -lt 36 ] && ! grep -qaP '^(\x1b\[[0-9;]*m)*\s*Duration\s' "$f"; do sleep 15; i=$((i+1)); done; if [ $i -lt 36 ]; then echo 'SUMMARY SEEN'; else echo 'STILL RUNNING'; fi
+```
+
+vitest prints its `Duration` summary line last; it may be wrapped in colour codes, which both
+patterns allow for. When the loop prints `SUMMARY SEEN`, or a completion notice for that command
 arrives, the suite is done and you may start the next one. When it prints `STILL RUNNING`, run the
 wait again. Lint and typecheck print no `Duration` line, so if one of them is ever backgrounded, the
 same loop simply sleeps its full ~9 minutes: run it, and continue once that command's completion

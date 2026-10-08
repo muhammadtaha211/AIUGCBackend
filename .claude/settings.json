@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.mjs\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "project_settings|local_settings|user_settings",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_CODE_REMOTE\" in true|1) echo 'aiugc guard: settings are frozen in a cloud session, so this change was not applied. Stop and ask the founder.' >&2; exit 2;; esac; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

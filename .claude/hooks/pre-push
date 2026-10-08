@@ -1,0 +1,19 @@
+#!/bin/sh
+# aiugc-pre-push: installed by .claude/hooks/session-start.mjs (vault 0097). This is the template;
+# change it in a local session only, never in a cloud run.
+#
+# Refuses any push that would update or delete main on the remote. git hands this hook the refs it
+# resolved, so every spelling is covered: HEAD:main, -C, --all, --mirror, forced, aliases, scripts.
+# ALWAYS=1 in a cloud VM: refuse every time. ALWAYS=0 on the founder's machine: refuse only when the
+# push comes from a Claude Code session (CLAUDECODE set), so his own terminal pushes are untouched.
+ALWAYS=0
+if [ "$ALWAYS" != 1 ] && [ -z "$CLAUDECODE" ]; then
+  exit 0
+fi
+while read -r local_ref local_oid remote_ref remote_oid; do
+  if [ "$remote_ref" = refs/heads/main ]; then
+    echo "aiugc pre-push: refused. This push would update main on $1 ($local_ref -> $remote_ref), and a Claude session never pushes to main: push your branch and open a PR. If you think this refusal is wrong, stop and ask the founder; never work around it." >&2
+    exit 1
+  fi
+done
+exit 0
