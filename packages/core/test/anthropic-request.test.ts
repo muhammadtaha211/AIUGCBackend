@@ -54,6 +54,25 @@ describe("generateObject", () => {
     const request = parse.mock.calls[0]![0];
     expect(request.model).toBe("claude-sonnet-5-5");
     expect(request.thinking).toEqual({ type: "between_tools" });
+    expect(Object.keys(request.output_config)).toEqual(["format"]);
+  });
+
+  it("asks for adaptive thinking at effort low only when told to (the 2026-10-08 test)", async () => {
+    parse.mockResolvedValue({
+      parsed_output: { ok: true },
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 2 },
+    });
+    await generateObject({ prompt: "p", schema, thinking: "low" });
+    const low = parse.mock.calls.at(-1)![0];
+    expect(low.thinking).toEqual({ type: "adaptive" });
+    expect(low.output_config.effort).toBe("low");
+    expect(low.output_config.format.type).toBe("json_schema");
+
+    await generateObject({ prompt: "p", schema, thinking: "off" });
+    const off = parse.mock.calls.at(-1)![0];
+    expect(off.thinking).toEqual({ type: "between_tools" });
+    expect(Object.keys(off.output_config)).toEqual(["format"]);
   });
 });
 

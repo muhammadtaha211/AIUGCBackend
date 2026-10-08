@@ -11,7 +11,7 @@ import { pickHookTemplates } from "../hook-templates";
 import { PermanentError } from "../jobs/errors";
 import { logger } from "../logger";
 import { llmCostAgorot } from "../pricing";
-import { generateObject } from "../providers/anthropic";
+import { generateObject, type ThinkingSetting } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import {
   findGeneratedTextBlockDash,
@@ -33,9 +33,10 @@ async function callClaude<T>(
   vars: Record<string, string | number>,
   schema: z.ZodType<T>,
   maxTokens?: number,
+  thinking?: ThinkingSetting,
 ): Promise<{ object: T; promptVersion: string }> {
   const { text, promptVersion } = renderPrompt(promptName, vars);
-  const { object, usage } = await generateObject({ prompt: text, schema, maxTokens });
+  const { object, usage } = await generateObject({ prompt: text, schema, maxTokens, thinking });
   await recordUsage(db, {
     provider: "anthropic",
     kind: "llm_tokens",
@@ -266,11 +267,12 @@ export function textBlockBatchProblem(
  * One text per skeleton that fits the business, in the speaker gender of the
  * clip it will burn over (text-block.ts has the rules). Each text is a
  * scripts row of kind text_block; the skipped skeletons come back with the
- * model's reason and are stored nowhere.
+ * model's reason and are stored nowhere. `thinking` is the 2026-10-08 thinking
+ * test's switch (anthropic.ts, ThinkingSetting); production never passes it.
  */
 export async function generateTextBlocks(
   db: Db,
-  opts: { businessId: string; clipId: string },
+  opts: { businessId: string; clipId: string; thinking?: ThinkingSetting },
 ): Promise<TextBlockBatch> {
   const questionnaire = await requireQuestionnaire(db, opts.businessId);
   const clip = (
@@ -306,6 +308,7 @@ export async function generateTextBlocks(
         vars,
         textBlocksOutput,
         TEXT_BLOCK_MAX_TOKENS,
+        opts.thinking,
       );
       return { ...result.object, promptVersion: result.promptVersion };
     };
