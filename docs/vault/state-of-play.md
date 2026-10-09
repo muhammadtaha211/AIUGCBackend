@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-08
+updated: 2026-10-09
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -41,7 +41,9 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
 **Unattended feature runs in a cloud session: SET UP 2026-10-08 on `tooling/unattended-cloud-runs`,
-not merged. No cloud session has run yet.** One spec goes in, and a pushed branch, a PR and a report
+MERGED as PR #84 (`1b709ff` on `origin/main`, MEASURED by `git log` 2026-10-09). The first run went
+2026-10-09: the inventory first-load retry, on `claude/inventory-first-load-retry-kv24q9`, PR #85,
+not merged.** One spec goes in, and a pushed branch, a PR and a report
 come out, with two stops of his: the plan, and the merge with everything after it.
 
 - **Decisions:**
@@ -69,8 +71,17 @@ come out, with two stops of his: the plan, and the merge with everything after i
   - `packages/core/test/unattended-guard.test.ts`;
   - a CLAUDE.md pointer (§4).
   - No product code, prompt, migration, schema or dependency changed.
-- **Still to do:** he merges and edits the environment, then the first trial run (Owed founder
-  actions; the checklist is under Unfinished measurement).
+- **The first run (2026-10-09)** fixed [[the-inventory-first-load-failure-has-no-retry-button]]
+  through both stops. Its spec, log and first-run checklist are in
+  `docs/unattended/runs/2026-10-09-inventory-first-load-retry/`. Two findings from it:
+  - **The protocol's branch naming does not hold in the cloud.** The session started on a branch
+    the harness assigned, `claude/inventory-first-load-retry-kv24q9`, sitting on `origin/main`'s
+    head, and the harness says not to push to another without permission. He ruled at plan
+    approval to use it. `docs/unattended/protocol.md` still says `<type>/<slug>`; the run did not
+    change it.
+  - **The gate is 6 of 7 in that environment** (Unfinished measurement).
+- **Still to do:** that branch's owed steps (Owed founder actions), and first-run items 5, 11 and
+  12, which are his.
 
 **Every Claude call moves to `claude-sonnet-5-5`, thinking off: BUILT 2026-10-08 on
 `feat/sonnet-5-5` (`495384c`), MERGED as PR #82 (`7f7489f` on `origin/main`, 2026-10-08 06:05
@@ -1232,6 +1243,10 @@ the 2026-09-26 custom domain (founder-reported):**
   cloud sessions".
 - **What he still has to change:** add the setup script, and switch the network to Custom with
   `remotion.media` added (Owed founder actions).
+- **What the first run saw (MEASURED 2026-10-09):** ffmpeg 6.1.1 present, and Chrome Headless Shell
+  downloading in full from `remotion.media`. Both fit the two changes having been made; he has not
+  said so. Headless Chrome then failed `fonts.gstatic.com` on a certificate error (Unfinished
+  measurement).
 - **The rule:** never add a credential to it.
 
 [[0096-unattended-runs-happen-in-a-cloud-session]],
@@ -1240,7 +1255,7 @@ the 2026-09-26 custom domain (founder-reported):**
 ## Owed founder actions
 
 - **Unattended cloud runs (2026-10-08, `tooling/unattended-cloud-runs`).** In order:
-  1. Merge the PR. It changes no product code, so Vercel's redeploy changes nothing customers see.
+  1. ~~Merge the PR~~ MERGED as PR #84 (`1b709ff`, by `git log` 2026-10-09). It changes no product code, so Vercel's redeploy changes nothing customers see.
   2. In claude.ai/code, edit `tavnit-unattended`:
      - paste the setup script from `docs/unattended/runbook.md` (ffmpeg and headless Chrome's
        libraries);
@@ -1248,8 +1263,19 @@ the 2026-09-26 custom domain (founder-reported):**
      - keep `PAID_CHECK_ANTHROPIC_KEY` as the only variable.
   3. Once: run `$env:CLAUDECODE` in the desktop app's Terminal panel. It says whether a push typed
      there by Claude is covered by the pre-push hook. Record the answer here.
-  4. The first trial run, with a small spec. Bring the first-run checklist results back to a local
-     session.
+  4. ~~The first trial run~~ RAN 2026-10-09 (below). The checklist is in its `log.md`; items 5, 11
+     and 12 are his to report.
+
+- **The first unattended run's branch, `claude/inventory-first-load-retry-kv24q9`, PR #85
+  (2026-10-09).** In order:
+  1. Run the Remotion suite locally:
+     `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`. **The PR must not be
+     merged before it passes** (his ruling, 2026-10-09). The cloud run could not run it green
+     (Unfinished measurement).
+  2. The List 2 checks in a browser. Block the inventory request in DevTools: the steps screen
+     shows the error line with «נסו שוב». Unblock and click: the list loads. Then the same at
+     375 px. The panel shows only on a ready, unapproved plan.
+  3. Merge. Vercel deploys web; no migration, no box step.
 
 - **The switch to `claude-sonnet-5-5` (2026-10-08, `feat/sonnet-5-5`).** In order:
   1. ~~Merge the PR~~ MERGED as PR #82 (`7f7489f`, 2026-10-08 06:05 +0300). Vercel redeploys web
@@ -1282,9 +1308,12 @@ the 2026-09-26 custom domain (founder-reported):**
 - **~~Merge PR #79 (`feat/steps-fixed-2s-clips`)~~ MERGED (`2a503a4` on `origin/main`, by
   `git log` 2026-10-07).** Still owed after it: **box `git pull` AND restart together**, and do not approve or render a
   Service A plan in between.
-- **Say whether the inventory list should get a retry button on a failed first load**
-  ([[the-inventory-first-load-failure-has-no-retry-button]], 2026-10-02). He was told before the
-  merge; a small follow-up if wanted.
+- **~~Say whether the inventory list should get a retry button on a failed first load~~ ANSWERED
+  2026-10-09:** yes, by the first unattended run's spec. FIXED on
+  `claude/inventory-first-load-retry-kv24q9`, not merged
+  ([[the-inventory-first-load-failure-has-no-retry-button]]). He also said to leave both copy
+  points alone: the error line's «…רעננו את העמוד ונסו שוב.» above the new in-place retry, and
+  step-plan's «נסה שוב» (singular) beside the other retries' «נסו שוב».
 - **Run the footage backfill on the box, report first** (`docs/07-worker-box.md` §15, 2026-10-02).
   Free; `--write` inserts at most one row per ready analysis without one (15 today). Until then
   those analyses have no calm clip.
@@ -1475,15 +1504,28 @@ published note breaks the links pointing at it. Renumber or leave it — a found
 
 ## Unfinished measurement
 
-- **The first unattended cloud run (2026-10-08).** Everything Claude Code does in a cloud session was
-  read in the docs and tested nowhere here. `docs/unattended/runbook.md` §First run lists the 12
-  checks. The two that matter most:
-  - **The pre-push hook loads in the cloud.** The SessionStart line says cloud mode and `--check`
-    passes.
-  - **The gate is green there.** It needs the setup script and `remotion.media`.
-
-  Also on the list: whether `spec-reviewer` loads as its own agent type with only Read, Grep and
-  Glob in the cloud (it did locally), and what `gh api user` returns.
+- **The first unattended cloud run RAN 2026-10-09.** The session's own observations are
+  `docs/unattended/runs/2026-10-09-inventory-first-load-retry/log.md`, §First-run checklist (items
+  1–4 and 6–10). MEASURED there:
+  - **The pre-push hook loads in the cloud.** The SessionStart line said cloud mode, and `--check`
+    passed.
+  - **`gh api user` is his own account** (`muhammadtaha211`, type User), not an app.
+  - **`gh api …/pulls` opens the PR** (REST): PR #85, authored as him.
+  - **`spec-reviewer` loads as its own agent type in the cloud.** It ran the review round (CLEAN on
+    the first round) and edited nothing; its tool list (Read, Grep, Glob) was read from the agent
+    listing.
+  - **The gate is 6 of 7, not green.** Lint, typecheck, core (995), worker, web (574) and admin
+    pass. The remotion suite's `frame-delivery.test.ts` fails twice the same way: Chrome Headless
+    Shell downloads in full from `remotion.media`, then rejects the composition's Heebo fonts from
+    `fonts.gstatic.com` with `net::ERR_CERT_AUTHORITY_INVALID`.
+    - **What was checked:** `packages/` is identical to main. `curl` through the proxy fetches the
+      same font (HTTP 200) with Google's own certificate, issuer Google Trust Services WR2. The
+      proxy's two CAs are in `~/.pki/nssdb`, trusted as CAs.
+    - **What was not found:** which certificate headless Chrome is shown, and why. Running the
+      binary directly timed out without an answer.
+    - **What was not done, by his ruling:** nothing under `packages/` changed, the environment was
+      not touched, and no certificate workaround was tried.
+  - **Still his:** items 5, 11 and 12.
 
 - **The detector on the box (2026-10-02).** MEASURED on one file: the box's 61 instants for the
   84 s recording match this machine's within one frame
@@ -1513,7 +1555,9 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   Matters only if the box is rebuilt from scratch rather than from a snapshot.
 - **What Supabase does with a provider rejection** once Resend's 100/day is spent — reasoned from two
   published limits, not observed.
-- **This container cannot run the full test gate.** `ffmpeg` missing (5 core suites fail `spawn ffmpeg
+- **This container cannot run the full test gate.** (Written of an earlier cloud container. The
+  2026-10-09 `tavnit-unattended` run had ffmpeg and a working `remotion.media` download; its one
+  red test is the fonts certificate above.) `ffmpeg` missing (5 core suites fail `spawn ffmpeg
 ENOENT`) and `remotion.media` 403s for the Chromium Headless Shell (1 remotion test). Environment
   gaps, not repo failures; a session reporting "gate green" from here is reporting 4 of 5 suites.
   It also starts with **no `node_modules`** — `pnpm install --frozen-lockfile` takes ~7s and is worth
