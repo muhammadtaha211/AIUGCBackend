@@ -1,7 +1,8 @@
 /**
  * Read-back check for `app_config.credit_costs`, THROUGH the zod schema.
  *
- * Run it after applying `supabase/migrations/0043_pricing_credit_unit.sql`:
+ * Run it after applying `supabase/migrations/0053_text_block_credits.sql` (it
+ * was written for 0043, and 0053 added the eleventh key):
  *
  *   apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-credit-costs.ts
  *
@@ -12,8 +13,8 @@
  * while the price has not moved. That has already happened once, which is why
  * `0028_split_legibility_gate.sql` exists. `getConfigValue` is the exact call
  * `quoteContext` makes on every quote path, so if this script passes, the
- * product can price; if it throws, steps, full, silent and Service B are all
- * down together.
+ * product can price; if it throws, steps, full, silent, Service B, Service C
+ * and /pricing are all down together.
  *
  * The type checks are not belt-and-braces. `'"3"'` — a JSON string — satisfies
  * `->>` and any text comparison, and then throws at the next customer quote
@@ -31,11 +32,13 @@ import {
   creditCostsSchema,
   quoteServiceASteps,
   quoteServiceB,
+  quoteServiceC,
   type CreditCosts,
 } from "../src/pricing";
 
 /**
- * The row as 0043 left it: all ten keys re-based on the ₪0.15 credit
+ * The row as 0053 left it: 0043's ten keys untouched, plus Service C's flat.
+ * The ten as 0043 left them: all re-based on the ₪0.15 credit
  * (2026-09-17). Seven are a straight x5 of what 0017 seeded and 0026/0039
  * amended; three are not, and those three are the whole point of 0043 --
  * b_minimum_credits went 0 -> 75 (a Service B floor where there was none),
@@ -53,6 +56,7 @@ const EXPECTED: CreditCosts = {
   a_remix_assembly_credits: 10,
   a_steps_credits: 25, // 0026: 5 -> 0039: 3 -> 0043: 25
   a_demo_analysis_credits: 20, // 0039: new at 2 -> 0043: 20
+  c_text_block_credits: 25, // 0053: new, the founder's flat for one גוש טקסט render (0089 §4)
 };
 
 /**
@@ -104,7 +108,7 @@ async function main(): Promise<number> {
   const value = (row?.value ?? {}) as Record<string, unknown>;
   check("row exists", row !== undefined, row !== undefined);
   check(
-    "exactly the 10 known keys, nothing stray",
+    "exactly the 11 known keys, nothing stray",
     Object.keys(value).sort().join(",") === Object.keys(EXPECTED).sort().join(","),
     Object.keys(value).sort(),
   );
@@ -114,7 +118,7 @@ async function main(): Promise<number> {
   );
   const types = (Array.isArray(typed) ? typed : ((typed as { rows?: unknown[] }).rows ?? []))[0] as
     { n: number } | undefined;
-  check("all ten values are jsonb numbers, not strings", types?.n === 0, types);
+  check("all eleven values are jsonb numbers, not strings", types?.n === 0, types);
 
   // 3. What a customer is actually quoted, from the live row.
   const reused = quoteServiceASteps({ costs, firstPaidRenderOfDemo: false });
@@ -138,6 +142,19 @@ async function main(): Promise<number> {
   const b8 = quoteServiceB({ durationMs: 8_000, costs });
   check("20s of approved VO quotes 100", b20.credits === 100 && !b20.minimumApplied, b20.credits);
   check("8s hits the 75 floor", b8.credits === 75 && b8.minimumApplied, b8.credits);
+
+  // 5. The key 0053 ADDS: one Service C render, flat and floor-exempt.
+  const c = quoteServiceC({ costs });
+  check(
+    "a גוש טקסט render quotes 25, with no floor",
+    c.credits === 25 && !c.minimumApplied,
+    c.credits,
+  );
+  check(
+    "the 25 itemises as one text_block flat",
+    JSON.stringify(c.components) === JSON.stringify([{ kind: "text_block", credits: 25 }]),
+    c.components,
+  );
 
   console.log(failures.length === 0 ? "\nPASS" : `\nFAIL: ${failures.join(", ")}`);
   return failures.length === 0 ? 0 : 1;

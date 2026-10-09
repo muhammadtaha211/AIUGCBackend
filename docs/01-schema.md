@@ -69,16 +69,20 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   `text_color` (0049) is `'white' | 'black'` (a CHECK), default `'white'`: the colour the clip's
   Service A hook line burns in, set by the founder in admin `/hooks` and read off the row at render
   time — never from a customer ([vault 0073](vault/decisions/0073-hook-text-colour-is-set-per-clip-by-the-founder.md)).
-- **text_block_clips** (0052) — the גוש טקסט bank (Service C, admin-only in phase 1,
+- **text_block_clips** (0052) — the גוש טקסט bank (Service C,
   [vault 0089](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md),
-  [0090](vault/decisions/0090-text-block-format-clip-once-with-its-own-sound.md)): file,
+  [0090](vault/decisions/0090-text-block-format-clip-once-with-its-own-sound.md),
+  [0099](vault/decisions/0099-service-c-phase-2-opens-to-customers.md)): file,
   `duration_ms`, `speaker_gender` (`'female' | 'male'`, a CHECK — Hebrew first person is
-  gendered, so the prompt is told whose voice the text is in), `text_safe_area jsonb` ({x,y,w,h},
-  seeded by `DEFAULT_TEXT_BLOCK_RECT`), `text_color` (`'white' | 'black'`, the same vocabulary
-  and ink table as hook_clips), `active`. Its own table, not a kind on hook_clips, so Service A's
-  hook listings can never return one. Registered by hand in admin `/text-blocks`; the clip is
-  played once with its own sound under the text block. Server-only RLS in phase 1 (no policy);
-  the customer SELECT policy is phase 2's.
+  gendered, so the prompt is told whose voice the text is in; always the character's gender, set
+  from the persona at register, at a reassign and by `updatePersona`), `persona_id` (0054,
+  nullable FK to personas — the character the clip belongs to; NULL = listed to no customer and
+  flagged in admin, 0012's hook pattern), `text_safe_area jsonb` ({x,y,w,h}, seeded by
+  `DEFAULT_TEXT_BLOCK_RECT` — the area the customer's box starts on), `text_color`
+  (`'white' | 'black'`, the same vocabulary and ink table as hook_clips), `active`. Its own table,
+  not a kind on hook_clips, so Service A's hook listings can never return one. Registered by hand
+  in admin `/text-blocks`; the clip is played once with its own sound under the text block.
+  Server-only RLS (no policy): every reader is the server, so phase 2 added none (0099).
 - **opener_clips** (0032) — **retired 2026-09-06** ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)): the table stays (no migration drops it) but no render reads it — the Service B hook is a Remotion animation over the one HeyGen clip. What it held: one founder-made clip per (selfie image × effect), stored play-ready…
   nothing processes it at render time). `persona_image_id`, `effect` (free key, e.g.
   `hand_cover`/`finger_snap`), `label` (Hebrew, shown to the customer), `file_path`,
@@ -93,7 +97,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   from**
   (`docs/vault/facts/heygen-avatar-iv-idles-on-leading-silence.md`;
   `docs/vault/decisions/0017-service-b-single-setting-selfie-talking-head.md`).
-- **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id`; reference
+- **personas** / **persona_images** — identity jsonb, pinned ElevenLabs `voice_id` (nullable since
+  0055: a character for גוש טקסט alone has none, and Service B's picker lists only voiced personas,
+  vault 0099); reference
   images as separate rows (a persona accumulates looks/angles). `is_default` marks the image a
   render uses when a variant names only the persona — at most one per persona (partial unique
   index, 0006). `kind` (0009) is `'preview'` (avatar-card thumbnail only) | `'background'`
@@ -126,10 +132,13 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 ### Copy & audio
 
 - **scripts** — kind `hook_line|benefit_captions|vo_script|b_script|text_block` (0051 added
-  `text_block`: one Service C text per row, `params {skeleton, textBlockClipId, speakerGender}`), Hebrew text,
-  `params jsonb` (angle / caption lines / selected features / word budget), `prompt_version`
-  (`<name>@v<N>`), `user_edited`. **Immutable once referenced** — user edits insert a new row
-  (`updateScriptText`), so an audio render always points at exact text.
+  `text_block`: one Service C text per row, `params {skeleton, textBlockClipId, speakerGender,
+questionnaireUpdatedAt}` — the last, since phase 2, the questionnaire stamp the batch was written
+  against), Hebrew text, `params jsonb` (angle / caption lines / selected features / word budget),
+  `prompt_version` (`<name>@v<N>`), `user_edited`, `shown_at` (0056 — when the גוש טקסט wizard
+  first served this text_block row; NULL = unseen. The rotation's clock, since a batch's rows share
+  one `created_at`; the one column written after insert). **Immutable once referenced** — user
+  edits insert a new row (`updateScriptText`), so an audio render always points at exact text.
 - **pronunciation_entries** — `business_id NULL` = global; plain-string match/replacement,
   longest-match-first, business entries shadow globals (`applyPronunciationMap`).
 - **audio_renders** — the audio preview + hard gate. Holds `rendered_text` (exact
@@ -148,8 +157,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 - **video_renders** — one row per variant/render. `params jsonb` is the fully resolved cell;
   for Service B the pipeline also pins `leadInMs` (before the HeyGen submit), `lipsyncPath` (the one clip Remotion composes) and the FINAL `hookText` + `hookTextSafeArea` (copied at enqueue, [vault 0017](vault/decisions/0017-service-b-single-setting-selfie-talking-head.md)) on it (`VariantParams`, `pipelines/sets.ts`); HeyGen has no seed and no upscale stage, and `openerClipId` is retired 2026-09-06 ([vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)). Status: `queued→rendering→(qc_pending)→released | rejected | failed`.
   Service A skips `qc_pending`; Service B enters it unless `auto_release_b`; Service C (`service`
-  `c`, 0051 — גוש טקסט, `params {textBlockClipId, scriptId, text, textSafeArea}`, the text copied at
-  enqueue like B's `hookText`) skips it like A. `watermarked`,
+  `c`, 0051 — גוש טקסט, `params {textBlockClipId, scriptId, text, textSafeArea}`, the text and the
+  customer's box — or the clip's area when none was placed — copied at enqueue like B's
+  `hookText`) skips it like A. `watermarked`,
   `starred_at`, `released_at`, `rejected_reason`, `error`. QC rejection + regeneration inserts a **new row** with the same params minus `lipsyncPath` (no re-debit) — HeyGen has no seed, so the regeneration is a fresh non-deterministic take ([04-integrations.md](04-integrations.md) §HeyGen).
 
 ### Jobs & usage
@@ -241,8 +251,8 @@ get read-only access. Policies:
   persona_clips policy is dropped with the table in 0005; composites get an owner-scoped SELECT
   in 0007.)
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
-  pronunciation_entries, `text_block_clips` (0052 — phase 1 of Service C is admin-only; the
-  customer SELECT policy comes with phase 2), and `feedback` — whose ENABLE is in **0035**, not here, because a
+  pronunciation_entries, `text_block_clips` (0052 — no customer SELECT policy, not even in
+  phase 2: every reader is the server over `DATABASE_URL`, vault 0099), and `feedback` — whose ENABLE is in **0035**, not here, because a
   policy-less table needs no Supabase role and so stays portable
   ([vault 0035](vault/decisions/0035-a-policyless-table-keeps-its-rls-in-the-portable-file.md),
   measured in [facts](vault/facts/pglite-accepts-bare-enable-row-level-security.md)).

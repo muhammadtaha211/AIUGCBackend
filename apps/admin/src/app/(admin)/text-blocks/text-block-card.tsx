@@ -4,9 +4,10 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { HOOK_TEXT_COLORS, type HookTextColor } from "@aiugc/core/hook-text-color";
-import { SPEAKER_GENDER_LABEL, SPEAKER_GENDERS, type SpeakerGender } from "@aiugc/core/text-block";
+import { SPEAKER_GENDER_LABEL, type SpeakerGender } from "@aiugc/core/text-block";
 import { HOOK_TEXT_COLOR_LABEL } from "@/lib/hooks";
 import { apiFetch } from "@/lib/use-api";
+import type { PersonaOption } from "../hooks/hooks-manager";
 import { SafeAreaEditor } from "../hooks/safe-area-editor";
 import { SAMPLE_TEXT_BLOCK, TextBlockOverlay, TextBlockPreview } from "./text-block-preview";
 
@@ -14,10 +15,14 @@ export type TextBlockClipCard = {
   id: string;
   url: string;
   durationMs: number;
+  /** Always the character's (decision 0099 §3) — shown, never edited here. */
   speakerGender: SpeakerGender;
   textSafeArea: SafeRect;
   textColor: HookTextColor;
   active: boolean;
+  /** The character this clip belongs to; absent = shown to no customer. */
+  personaId?: string;
+  personaName?: string;
 };
 
 const SELECT_CLASS =
@@ -26,11 +31,17 @@ const SELECT_CLASS =
 /**
  * One גוש טקסט clip: looping muted preview with the text area drawn on it and
  * the sample block fitted inside, inline active toggle (the retire mechanism —
- * there is no delete), the area editor, the block's colour and the speaker
- * gender. Every action is a PATCH followed by router.refresh() — the server
- * page owns the grid.
+ * there is no delete), the area editor, the block's colour and the character
+ * (whose gender the speaker's follows). Every action is a PATCH followed by
+ * router.refresh() — the server page owns the grid.
  */
-export function TextBlockCard({ clip }: { clip: TextBlockClipCard }) {
+export function TextBlockCard({
+  clip,
+  personas,
+}: {
+  clip: TextBlockClipCard;
+  personas: PersonaOption[];
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [rect, setRect] = useState<SafeRect>(clip.textSafeArea);
@@ -101,6 +112,11 @@ export function TextBlockCard({ clip }: { clip: TextBlockClipCard }) {
             </span>
           ) : (
             <span className="rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-red-300">כבוי</span>
+          )}
+          {clip.personaName && (
+            <span className="rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-gray-200">
+              {clip.personaName}
+            </span>
           )}
           <span className="rounded bg-black/70 px-1.5 py-0.5 text-[11px] text-gray-200">
             {SPEAKER_GENDER_LABEL[clip.speakerGender]}
@@ -178,19 +194,24 @@ export function TextBlockCard({ clip }: { clip: TextBlockClipCard }) {
                 </option>
               ))}
             </select>
+            {/* The clip's character; assigning one also sets the speaker gender. */}
             <select
-              value={clip.speakerGender}
+              value={clip.personaId ?? ""}
               disabled={busy}
-              onChange={(event) => void patch({ speakerGender: event.target.value })}
+              onChange={(event) => void patch({ personaId: event.target.value || null })}
               className={SELECT_CLASS}
-              aria-label="מי בקליפ"
+              aria-label="דמות"
             >
-              {SPEAKER_GENDERS.map((gender) => (
-                <option key={gender} value={gender}>
-                  {SPEAKER_GENDER_LABEL[gender]}
+              <option value="">ללא דמות (לא מוצג ללקוחות)</option>
+              {personas.map((persona) => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.name}
                 </option>
               ))}
             </select>
+            {clip.active && !clip.personaId && (
+              <p className="text-[11px] text-amber-300">לא משויך לדמות — לא מוצג ללקוחות</p>
+            )}
           </div>
         )}
 

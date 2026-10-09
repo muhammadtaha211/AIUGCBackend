@@ -58,13 +58,18 @@ keyless (the e2e test relies on this).
   `b_script` and `updateScriptText` merges the result into the one new immutable row),
   `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;
   v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses),
-  `text_block` (v1, Service C — [vault 0091](vault/decisions/0091-text-block-texts-ten-skeletons-truth-rules-free-edit.md):
+  `text_block` (v3, Service C — [vault 0091](vault/decisions/0091-text-block-texts-ten-skeletons-truth-rules-free-edit.md),
+  [0099](vault/decisions/0099-service-c-phase-2-opens-to-customers.md):
   the ten skeletons with the founder's examples verbatim as a frame library, one text per
-  skeleton that fits and the rest returned in `skipped`; the Truth block — never the speaker
-  using the product, never an invented figure; the house rules for burned text plus the no
-  em-dash rule; variables exactly `{{questionnaire}}` and `{{speaker_gender}}` from the clip
-  row; output `{texts: [{skeleton, text}], skipped: [{skeleton, reason}]}` at 8192 max tokens,
-  checked by `textBlockBatchProblem` and re-requested once; DRY_RUN returns the ten examples).
+  requested skeleton that fits and the rest returned in `skipped`; the Truth block — never the
+  speaker using the product, never an invented figure; the house rules for burned text plus the no
+  em-dash rule; variables exactly `{{questionnaire}}`, `{{speaker_gender}}` from the clip row and
+  `{{skeletons}}` — the fitting ones, `fittingTextBlockSkeletons`: never `discovery` without a
+  `wow`. v3 is v2 byte for byte except the bank heading and the Output block, and v1 and v2 are
+  frozen by SHA-256. Output `{texts: [{skeleton, text}], skipped: [{skeleton, reason}]}` at 8192
+  max tokens; an unrequested or also-skipped entry is dropped, then `textBlockBatchProblem`
+  checks the rest and the batch is re-requested once; DRY_RUN returns the requested examples. One
+  batch is about 11k tokens and 13–15 agorot on Sonnet 5.5).
   The caps live in the client-safe `@aiugc/core/hook-text` (`HOOK_TEXT_MAX_WORDS`,
   `HOOK_TEXT_MAX_CHARS`, `hookTextError`). Since 2026-09-08 the **validator** and the
   **prompts** deliberately disagree by one word: `HOOK_TEXT_MAX_WORDS` is **8**, while every
@@ -120,15 +125,19 @@ keyless (the e2e test relies on this).
   callers of those functions today (`POST /api/businesses/[businessId]/hook-lines`, `/scripts`,
   `/vo-script`) and in `POST /api/scripts/[id]/text` (`deriveHookText`, found in the same sweep):
   each calls `assertAccountBudget(db, "llm_tokens", businessId)` then `assertBudget(db,
-"llm_tokens")` before its first Anthropic call. `AccountBudgetError` rejects with a 429, exactly
+"llm_tokens")` before its first Anthropic call. Service C's wizard route
+  (`POST /api/businesses/[businessId]/text-blocks/next`, vault 0099) is the one exception to
+  "one layer up": most of its calls are served from a stored batch and spend nothing, so
+  `serveNextTextBlock` asserts the same two caps itself, only when it is about to buy a batch. `AccountBudgetError` rejects with a 429, exactly
   the split this paragraph used to ask for; a platform-wide trip now answers 503
   ("המערכת עמוסה כרגע. נסו שוב מאוחר יותר.") instead of parking anything or falling through to the
   generic 500 `scripts/[id]/text` used to give it. `enhanceWithAudioTags` (`tts.ts`) is unchanged —
   it still calls `assertBudget` directly because it runs inside the `synth_tts` job, where parking
   is the correct behaviour. Defect note:
   [defects/authz-12-synchronous-copy-routes-uncapped.md](vault/defects/authz-12-synchronous-copy-routes-uncapped.md).
-- **Content policy (both services)**: `contentPolicyCheck()` runs at the two functions that create
-  renders — `createSet` (Service A) and `createBRender` (Service B), which do **not** share a path —
+- **Content policy (every service)**: `contentPolicyCheck()` runs at the three functions that create
+  renders — `createSet` (Service A), `createBRender` (Service B) and `createTextBlockRender`
+  (Service C, customer-reachable since phase 2, vault 0099), which do **not** share a path —
   after every free gate and **before the credit debit**, so a refused render never charges and an
   unaffordable request never pays for a classifier call. It is sent one Hebrew blob, matching the
   prompt's single `{{text}}` variable: the questionnaire, the FINAL on-screen text (Service B's
@@ -379,7 +388,8 @@ generator's output length sets the format.
 
 The גוש טקסט bank (Service C, `text_block_clips`, vault 0090) is the same arrangement: clips the
 founder makes offline (the launch clip on Seedance 2.5 via Atlas, founder-reported) and registers
-by hand in admin `/text-blocks`, with the speaker gender, the text area and the colour. 3–60 s,
+by hand in admin `/text-blocks`, under its character (since phase 2, vault 0099 — the speaker
+gender is the character's), with the text area and the colour. 3–60 s,
 ≤100 MB, near 9:16; the worker's `normalize_text_block_clip` re-encodes only a clip that is not
 30 fps and keeps its audio, because the render plays the clip with its own sound.
 

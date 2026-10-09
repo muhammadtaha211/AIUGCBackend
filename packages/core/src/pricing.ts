@@ -39,6 +39,11 @@ export const creditCostsSchema = z.object({
    * itself. Flat, and floor-exempt for the same reason a_steps_credits is.
    */
   a_demo_analysis_credits: z.number(),
+  /**
+   * One Service C (גוש טקסט) render: flat, floor-exempt (0053, decision 0089
+   * §4 / 0099). The texts are free; only the render is charged.
+   */
+  c_text_block_credits: z.number(),
 });
 
 export type CreditCosts = z.infer<typeof creditCostsSchema>;
@@ -49,7 +54,16 @@ export type CreditCosts = z.infer<typeof creditCostsSchema>;
  * UNROUNDED: they explain the number, they don't reproduce it.
  */
 export interface QuoteComponent {
-  kind: "assembly" | "demo" | "outro" | "lipsync" | "reroll" | "remix" | "steps" | "analysis";
+  kind:
+    | "assembly"
+    | "demo"
+    | "outro"
+    | "lipsync"
+    | "reroll"
+    | "remix"
+    | "steps"
+    | "analysis"
+    | "text_block";
   credits: number;
   /** Seconds billed, for per-second components. Absent on flats. */
   seconds?: number;
@@ -183,6 +197,14 @@ export function quoteServiceASteps(opts: {
  */
 export function quoteAssemblyRemix(opts: { costs: CreditCosts }): Quote {
   return settle([{ kind: "remix", credits: opts.costs.a_remix_assembly_credits }], 0);
+}
+
+/**
+ * Service C, גוש טקסט: one flat per render, floor-exempt like the steps flat —
+ * the flat IS the price (decision 0089 §4, made live by 0099).
+ */
+export function quoteServiceC(opts: { costs: CreditCosts }): Quote {
+  return settle([{ kind: "text_block", credits: opts.costs.c_text_block_credits }], 0);
 }
 
 /**

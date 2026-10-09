@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Clip, Person } from "@/components/ui/icons";
+import { Clip, Person, TextBlock } from "@/components/ui/icons";
 
 type PathwayCardsProps = {
-  /** Without a questionnaire nothing can be generated — both cards disable. */
+  /** Without a questionnaire nothing can be generated — every card disables. */
   hasQuestionnaire: boolean;
 };
 
-/** The two service cards — the dashboard's replacement for Lovable's prompt box. */
+/** The three service cards — the dashboard's replacement for Lovable's prompt box. */
 export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
   return (
     <div>
@@ -25,7 +25,7 @@ export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
       )}
 
       <div
-        className={`grid gap-5 sm:grid-cols-2 ${hasQuestionnaire ? "" : "pointer-events-none opacity-50"}`}
+        className={`grid gap-5 sm:grid-cols-2 lg:grid-cols-3 ${hasQuestionnaire ? "" : "pointer-events-none opacity-50"}`}
       >
         <ServiceCard
           href="/home/a/new"
@@ -43,6 +43,15 @@ export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
           gradient="bg-gradient-to-bl from-emerald-200/60 via-lime-100/50 to-white"
           title="סרטון עם דמות AI"
           body="דמות AI קבועה מציגה את העסק שלכם בעברית: בוחרים דמות, מאשרים תסריט והקלטה, ומקבלים סרטון מוכן לפרסום."
+          cta="יצירת סרטון"
+        />
+        <ServiceCard
+          href="/home/c/new"
+          disabled={!hasQuestionnaire}
+          icon={<TextBlock className="size-6" />}
+          gradient="bg-gradient-to-tr from-accent/25 via-emerald-100/50 to-white"
+          title="גוש טקסט"
+          body="קליפ של דמות עם גוש טקסט בעברית, כמו טקסט שמקלידים בטיקטוק או באינסטגרם: בוחרים דמות וקליפ, עורכים את הטקסט, ומקבלים סרטון מוכן לפרסום."
           cta="יצירת סרטון"
         />
       </div>

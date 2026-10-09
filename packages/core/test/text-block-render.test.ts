@@ -3,24 +3,31 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import * as schema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { runLane } from "../src/jobs/worker";
+import { addPersona } from "../src/pipelines/bank";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
 import { generateTextBlocks } from "../src/pipelines/copy";
+import { creditBalance, grantCredits, InsufficientCreditsError } from "../src/pipelines/credits";
+import { handleReapDeadRenders } from "../src/pipelines/janitor";
+import { RENDER_RETRIES_EXHAUSTED_MESSAGE } from "../src/pipelines/renders";
+import { quoteTextBlockRender } from "../src/pipelines/sets";
 import { createTextBlockRender } from "../src/pipelines/text-blocks";
-import { setStorage, storageKey } from "../src/storage";
+import { getStorage, setStorage, storageKey } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
 import { tempStorage } from "./helpers/storage";
 
 /**
  * Service C end to end in DRY_RUN (real DB + jobs + storage, the render
- * stubbed): createTextBlockRender is the choke point — admin-owned only in
- * phase 1, the burn check, the content-policy gate — and the render releases
- * like a Service A render, never into qc_pending, with the clip's ink read off
- * the row.
+ * stubbed): createTextBlockRender is the choke point — the clip's character,
+ * the burn check, the content-policy gate, and since phase 2 the third debit
+ * site (decision 0099: 25 credits, refunded on failure like A and B) — and the
+ * render releases like a Service A render, never into qc_pending, with the
+ * clip's ink read off the row.
  */
 
 let db: Db;
@@ -29,10 +36,27 @@ let storageRoot: string;
 let cleanupStorage: () => void;
 let adminBusinessId: string;
 let customerBusinessId: string;
+let customerOwnerId: string;
+let customerScriptId: string;
+let femalePersonaId: string;
 let clipId: string;
 let blackClipId: string;
 let inactiveClipId: string;
+let unassignedClipId: string;
+let retiredClipId: string;
 let scriptId: string;
+
+const QUESTIONNAIRE = {
+  category: "app_or_digital" as const,
+  product_name: "Tavnit",
+  what_it_does: "מייצר סרטוני פרסום בעברית",
+  advantages: ["סרטון תוך דקות"],
+  target_audience: "בעלי עסקים",
+  tone: "friendly" as const,
+};
+
+/** The price phase 2 shipped (0053, c_text_block_credits). */
+const C_CREDITS = 25;
 
 const RECT = { x: 80, y: 360, w: 820, h: 1040 };
 
@@ -62,6 +86,7 @@ function tempFile(name: string): string {
 /** The admin register route's write, as the route does it (no core add function). */
 async function registerClip(opts: {
   speakerGender: "female" | "male";
+  personaId?: string;
   textColor?: "white" | "black";
   active?: boolean;
 }): Promise<string> {
@@ -78,6 +103,7 @@ async function registerClip(opts: {
       filePath,
       durationMs: 10_000,
       speakerGender: opts.speakerGender,
+      personaId: opts.personaId,
       textSafeArea: RECT,
       textColor: opts.textColor,
       active: opts.active ?? true,
@@ -103,29 +129,48 @@ beforeAll(async () => {
     ownerRole: "admin",
   });
   adminBusinessId = admin.id;
-  const questionnaire = {
-    category: "app_or_digital" as const,
-    product_name: "Tavnit",
-    what_it_does: "מייצר סרטוני פרסום בעברית",
-    advantages: ["סרטון תוך דקות"],
-    target_audience: "בעלי עסקים",
-    tone: "friendly" as const,
-  };
-  await setQuestionnaire(db, adminBusinessId, questionnaire);
+  await setQuestionnaire(db, adminBusinessId, QUESTIONNAIRE);
   const customer = await createBusiness(db, {
     ownerEmail: "customer@example.com",
     name: "לקוח",
   });
   customerBusinessId = customer.id;
-  await setQuestionnaire(db, customerBusinessId, questionnaire);
+  customerOwnerId = customer.ownerUserId;
+  await setQuestionnaire(db, customerBusinessId, QUESTIONNAIRE);
 
-  clipId = await registerClip({ speakerGender: "female" });
-  blackClipId = await registerClip({ speakerGender: "male", textColor: "black" });
-  inactiveClipId = await registerClip({ speakerGender: "female", active: false });
+  // Every clip a customer may use belongs to an active character (0099 §3).
+  femalePersonaId = (await addPersona(db, { name: "נועה", gender: "female" })).id;
+  const malePersonaId = (await addPersona(db, { name: "דני", gender: "male" })).id;
+  const retiredPersonaId = (await addPersona(db, { name: "רותם", gender: "female" })).id;
+  await db
+    .update(schema.personas)
+    .set({ active: false })
+    .where(eq(schema.personas.id, retiredPersonaId));
+
+  clipId = await registerClip({ speakerGender: "female", personaId: femalePersonaId });
+  blackClipId = await registerClip({
+    speakerGender: "male",
+    personaId: malePersonaId,
+    textColor: "black",
+  });
+  inactiveClipId = await registerClip({
+    speakerGender: "female",
+    personaId: femalePersonaId,
+    active: false,
+  });
+  unassignedClipId = await registerClip({ speakerGender: "female" });
+  retiredClipId = await registerClip({ speakerGender: "female", personaId: retiredPersonaId });
 
   const batch = await generateTextBlocks(db, { businessId: adminBusinessId, clipId });
   scriptId = batch.texts[0]!.id;
+  const customerBatch = await generateTextBlocks(db, { businessId: customerBusinessId, clipId });
+  customerScriptId = customerBatch.texts[0]!.id;
 });
+
+/** The ledger rows that point at one render. */
+async function ledgerFor(videoRenderId: string) {
+  return db.select().from(schema.creditLedger).where(eq(schema.creditLedger.refId, videoRenderId));
+}
 
 afterAll(async () => {
   await pg.close();
@@ -159,19 +204,116 @@ describe("createTextBlockRender", () => {
         .where(eq(schema.jobs.idempotencyKey, `render:${render.id}`))
     )[0];
     expect(job).toMatchObject({ type: "render_video", status: "queued" });
-    // No lipsync job, no debit: phase 1 charges nothing and HeyGen is never involved.
+    // No lipsync job, and no debit: the founder's own business is never
+    // charged (the bypass credits share), and HeyGen is never involved.
     expect(await db.select().from(schema.creditLedger)).toHaveLength(0);
   });
 
-  it("refuses a business that is not admin-owned — phase 1 has no credit key", async () => {
-    const batch = await generateTextBlocks(db, { businessId: customerBusinessId, clipId });
+  it("a funded customer on a character's clip is quoted and debited 25, with the placed box pinned on params", async () => {
+    await grantCredits(db, { userId: customerOwnerId, credits: C_CREDITS, note: "test" });
+    const before = await creditBalance(db, customerOwnerId);
+    const quote = await quoteTextBlockRender(db, customerBusinessId);
+    expect(quote).toMatchObject({ chargeable: true, creditsPerRender: C_CREDITS, balance: before });
+
+    const placed = { x: 120, y: 500, w: 700, h: 800 };
+    const render = await createTextBlockRender(db, {
+      businessId: customerBusinessId,
+      clipId,
+      scriptId: customerScriptId,
+      textSafeArea: placed,
+    });
+
+    expect(render.params).toMatchObject({ textBlockClipId: clipId, textSafeArea: placed });
+    const ledger = await ledgerFor(render.id);
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]).toMatchObject({
+      reason: "debit_render",
+      delta: -C_CREDITS,
+      refId: render.id,
+      businessId: customerBusinessId,
+      userId: customerOwnerId,
+    });
+    expect(await creditBalance(db, customerOwnerId)).toBe(before - C_CREDITS);
+  });
+
+  it("a customer who places no box burns the clip's own area", async () => {
+    await grantCredits(db, { userId: customerOwnerId, credits: C_CREDITS, note: "test" });
+    const render = await createTextBlockRender(db, {
+      businessId: customerBusinessId,
+      clipId,
+      scriptId: customerScriptId,
+    });
+    expect(render.params).toMatchObject({ textSafeArea: RECT });
+    expect(await ledgerFor(render.id)).toHaveLength(1);
+  });
+
+  it("refuses a box outside the frame before any row or debit", async () => {
+    await grantCredits(db, { userId: customerOwnerId, credits: C_CREDITS, note: "test" });
+    const renders = (await db.select().from(schema.videoRenders)).length;
+    const balance = await creditBalance(db, customerOwnerId);
+
     await expect(
       createTextBlockRender(db, {
         businessId: customerBusinessId,
         clipId,
-        scriptId: batch.texts[0]!.id,
+        scriptId: customerScriptId,
+        textSafeArea: { x: 600, y: 360, w: 820, h: 1040 },
       }),
-    ).rejects.toThrow(/admin-only in phase 1/);
+    ).rejects.toBeInstanceOf(ZodError);
+
+    expect(await db.select().from(schema.videoRenders)).toHaveLength(renders);
+    expect(await creditBalance(db, customerOwnerId)).toBe(balance);
+  });
+
+  it("a customer at 0 credits is refused with InsufficientCreditsError: no render row, no ledger row", async () => {
+    const broke = await createBusiness(db, {
+      ownerEmail: "broke@example.com",
+      name: "בלי קרדיטים",
+    });
+    await setQuestionnaire(db, broke.id, QUESTIONNAIRE);
+    const batch = await generateTextBlocks(db, { businessId: broke.id, clipId });
+
+    const err = await createTextBlockRender(db, {
+      businessId: broke.id,
+      clipId,
+      scriptId: batch.texts[0]!.id,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(InsufficientCreditsError);
+    expect(err).toMatchObject({ needed: C_CREDITS, balance: 0 });
+    expect(
+      await db
+        .select()
+        .from(schema.videoRenders)
+        .where(eq(schema.videoRenders.businessId, broke.id)),
+    ).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(schema.creditLedger)
+        .where(eq(schema.creditLedger.userId, broke.ownerUserId)),
+    ).toHaveLength(0);
+  });
+
+  it("refuses, for a customer, a clip with no character and one whose character is inactive; the founder's business may use an unassigned clip, uncharged", async () => {
+    await grantCredits(db, { userId: customerOwnerId, credits: C_CREDITS, note: "test" });
+    for (const id of [unassignedClipId, retiredClipId]) {
+      await expect(
+        createTextBlockRender(db, {
+          businessId: customerBusinessId,
+          clipId: id,
+          scriptId: customerScriptId,
+        }),
+      ).rejects.toThrow(/belongs to no active character/);
+    }
+
+    const render = await createTextBlockRender(db, {
+      businessId: adminBusinessId,
+      clipId: unassignedClipId,
+      scriptId,
+    });
+    expect(render.service).toBe("c");
+    expect(await ledgerFor(render.id)).toHaveLength(0);
   });
 
   it("refuses an inactive clip, a foreign script, a non-text-block script, and an unburnable edit", async () => {
@@ -290,6 +432,73 @@ describe("the render job", () => {
       expect(renderedProps).toContain('"watermark":false');
     },
   );
+
+  it(
+    "a funded render whose clip vanished after enqueue fails through the handler and refunds the 25 once",
+    { timeout: 60_000 },
+    async () => {
+      await grantCredits(db, { userId: customerOwnerId, credits: C_CREDITS, note: "test" });
+      const vanishing = await registerClip({ speakerGender: "female", personaId: femalePersonaId });
+      const before = await creditBalance(db, customerOwnerId);
+      const render = await createTextBlockRender(db, {
+        businessId: customerBusinessId,
+        clipId: vanishing,
+        scriptId: customerScriptId,
+      });
+      expect(await creditBalance(db, customerOwnerId)).toBe(before - C_CREDITS);
+
+      // The object disappears between confirm and render (deleted, janitored):
+      // a missing object is a PermanentError, so the handler fails it at once.
+      const clip = (
+        await db.select().from(schema.textBlockClips).where(eq(schema.textBlockClips.id, vanishing))
+      )[0]!;
+      await getStorage().remove(clip.filePath);
+      await drainAll();
+
+      const row = (
+        await db.select().from(schema.videoRenders).where(eq(schema.videoRenders.id, render.id))
+      )[0]!;
+      expect(row.status).toBe("failed");
+      expect(row.error).toMatch(/קובץ המקור לא נמצא/);
+      expect(row.refundedAt).not.toBeNull();
+      const refunds = (await ledgerFor(render.id)).filter((r) => r.reason === "refund_failed");
+      expect(refunds).toHaveLength(1);
+      expect(refunds[0]!.delta).toBe(C_CREDITS);
+      expect(await creditBalance(db, customerOwnerId)).toBe(before);
+    },
+  );
+
+  it("a funded render whose job died with no code running is refunded by the reaper", async () => {
+    await grantCredits(db, { userId: customerOwnerId, credits: C_CREDITS, note: "test" });
+    const before = await creditBalance(db, customerOwnerId);
+    const render = await createTextBlockRender(db, {
+      businessId: customerBusinessId,
+      clipId,
+      scriptId: customerScriptId,
+    });
+
+    // A worker OOM/kill leaves exactly this shape: the job dead, the render
+    // never told. The reaper sweep is the net (credits-wiring's refunds case).
+    await db
+      .update(schema.jobs)
+      .set({ status: "dead", lastError: "boom" })
+      .where(eq(schema.jobs.idempotencyKey, `render:${render.id}`));
+    await handleReapDeadRenders(
+      {} as never,
+      { db, log: { info() {}, warn() {}, error() {} } } as never,
+    );
+
+    const row = (
+      await db.select().from(schema.videoRenders).where(eq(schema.videoRenders.id, render.id))
+    )[0]!;
+    expect(row.status).toBe("failed");
+    expect(row.error).toBe(RENDER_RETRIES_EXHAUSTED_MESSAGE);
+    expect(row.refundedAt).not.toBeNull();
+    const refunds = (await ledgerFor(render.id)).filter((r) => r.reason === "refund_failed");
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]!.delta).toBe(C_CREDITS);
+    expect(await creditBalance(db, customerOwnerId)).toBe(before);
+  });
 
   it("the normalize job for a text block clip is registered and is a no-op under DRY_RUN", async () => {
     const { requestTextBlockClipNormalize } = await import("../src/pipelines/bank");

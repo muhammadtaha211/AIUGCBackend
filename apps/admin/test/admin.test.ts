@@ -60,16 +60,28 @@ describe("admin route wiring", () => {
 });
 
 describe("request body schemas", () => {
-  it("createPersona requires name, voice id, and a known gender", () => {
-    expect(
-      createPersonaSchema.safeParse({ name: "דנה", voiceId: "voice_1", gender: "female" }).success,
-    ).toBe(true);
+  it("createPersona requires a name and a known gender; the voice id is optional (0055)", () => {
+    const withVoice = createPersonaSchema.safeParse({
+      name: "דנה",
+      voiceId: " voice_1 ",
+      gender: "female",
+    });
+    expect(withVoice.success && withVoice.data.voiceId).toBe("voice_1");
+    // A גוש טקסט-only character: absent or blank is stored as no voice.
+    for (const voiceId of [undefined, "", "   "]) {
+      const voiceless = createPersonaSchema.safeParse({ name: "דנה", voiceId, gender: "male" });
+      expect(voiceless.success && voiceless.data.voiceId).toBeNull();
+    }
     expect(
       createPersonaSchema.safeParse({ name: "", voiceId: "voice_1", gender: "female" }).success,
     ).toBe(false);
+    expect(createPersonaSchema.safeParse({ voiceId: "voice_1", gender: "female" }).success).toBe(
+      false,
+    );
     expect(
       createPersonaSchema.safeParse({ name: "דנה", voiceId: "voice_1", gender: "other" }).success,
     ).toBe(false);
+    expect(createPersonaSchema.safeParse({ name: "דנה" }).success).toBe(false);
   });
 
   it("imagePatch accepts each action alone and rejects an empty patch", () => {

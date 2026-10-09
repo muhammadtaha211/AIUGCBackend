@@ -65,6 +65,10 @@ export const PORTABLE_MIGRATIONS = [
   "0050_demo_analysis_footage.sql",
   "0051_service_c_enums.sql",
   "0052_text_block_clips.sql",
+  "0053_text_block_credits.sql",
+  "0054_text_block_clip_persona.sql",
+  "0055_persona_voice_optional.sql",
+  "0056_scripts_shown_at.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

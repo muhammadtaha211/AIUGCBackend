@@ -144,6 +144,14 @@ The general rule, worth more than the three numbers: **a commit that records a l
 it is also editing must take the cite from its own result, not from its parent.** The same mistake
 is recorded from the other side in [[content-policy-classifier-never-runs]].
 
+## Amended 2026-10-09 — a third choke point, now customer-reachable
+
+`createTextBlockRender` (Service C) became the third caller in phase 1, where it never ran: it
+returned early for the admin-owned businesses that alone could reach it. Since phase 2
+([[0099-service-c-phase-2-opens-to-customers]]) any customer with credits reaches it, and it runs
+in `createBRender`'s position — after the free gates and `assertAffordable`, before the debit's
+transaction — on the questionnaire and the final text. Admin-owned businesses still skip it.
+
 ## Related
 
 - [[0041-content-policy-is-accepted-not-fixed]] — superseded by this note; its reasoning is correct

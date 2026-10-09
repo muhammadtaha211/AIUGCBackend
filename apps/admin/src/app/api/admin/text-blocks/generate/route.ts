@@ -28,11 +28,11 @@ export async function POST(request: Request) {
     if (!body.success) return jsonError(400, INVALID_BODY);
     const { businessId, clipId } = body.data;
 
-    // Phase 1 is admin-only end to end: the same guard createTextBlockRender
-    // applies, here before a customer's cap is metered or a script is planted
-    // on a business that could never render it. The guard is the route's, not
-    // generateTextBlocks', so phase 2's wizard can call the generator for the
-    // customer's own business.
+    // The admin console never meters or debits a customer: the whole batch at
+    // once is for the founder's own businesses, the same guard the renders
+    // route carries. The guard is the route's, not generateTextBlocks', because
+    // customers get their texts through the wizard's serveNextTextBlock
+    // (decision 0099).
     if (!(await isAdminOwned(db, businessId))) {
       return jsonError(400, "בשלב הזה אפשר ליצור גוש טקסט רק לעסק של מנהל.");
     }

@@ -21,7 +21,11 @@ import {
  * v2): the closing line, the order inside `instead`, the familiar tool in
  * `reframe`, the payoff in `envy_portrait`, signature phrases, two second
  * examples. The rules are pinned as text — the prompt is the versioned
- * artifact and a rule going missing is the real signal.
+ * artifact and a rule going missing is the real signal. v2 is frozen too now
+ * that v3 is v2 with two hunks (decision 0099, R3): the batch asks only for
+ * the skeletons that fit, named through `{{skeletons}}`. Every v2 pin below
+ * that reads outside those hunks holds for v3 by the hunk test, which proves
+ * nothing else moved.
  */
 
 /**
@@ -101,7 +105,38 @@ const CLOSING_LINE_SKELETONS = [
   "cautionary_confession",
 ] as const;
 
-const vars = { questionnaire: "{}", speaker_gender: "female" };
+/**
+ * v3's two hunks, each as [v2's lines, v3's lines] (decision 0099, R3): the
+ * bank heading and the Output block's request. Whole lines, so the hunk test
+ * below cannot pass on a partial match.
+ */
+const V2_TO_V3_HUNKS: [string, string][] = [
+  [
+    "## The skeleton bank: write one text per skeleton that fits, and skip the rest\n",
+    "## The skeleton bank: write one text per requested skeleton that fits, and skip the rest\n",
+  ],
+  [
+    "Return every skeleton exactly once: in `texts` with its text, or in `skipped` with a one-line\n" +
+      "reason. `skeleton` is the key as written above: `reframe`, `instead`, `shoutout_hack`,\n" +
+      "`wish_more_knew`, `founder_ask`, `relatable_observation`, `quiz`, `discovery`, `envy_portrait`,\n" +
+      "`cautionary_confession`. Keep the order above. Every text is plain text: no markdown, no quotes\n",
+    "This batch requests these skeletons, and only these: {{skeletons}}. Write nothing for any\n" +
+      "other skeleton, not even in `skipped`.\n" +
+      "\n" +
+      "Return every requested skeleton exactly once: in `texts` with its text, or in `skipped` with a\n" +
+      "one-line reason. `skeleton` is the key as written above. Keep the order above. Every text is plain text: no markdown, no quotes\n",
+  ],
+];
+
+/**
+ * `skeletons` is v3's alone (v1 and v2 ignore it), in the shape
+ * generateTextBlocks sends: all ten, as for a questionnaire with a `wow`.
+ */
+const vars = {
+  questionnaire: "{}",
+  speaker_gender: "female",
+  skeletons: TEXT_BLOCK_SKELETON_IDS.map((id) => `\`${id}\``).join(", "),
+};
 const flat = (text: string) => text.replace(/\s+/g, " ");
 const fences = (text: string) => [...text.matchAll(/^```\n([\s\S]*?)\n```$/gm)].map((m) => m[1]);
 /** The Truth block's bullets, each flattened. */
@@ -129,13 +164,20 @@ describe("text_block prompt v1, frozen", () => {
   });
 });
 
-describe("text_block prompt v2", () => {
-  it("is the latest version and receives the questionnaire and the speaker gender", () => {
-    expect(latestPromptVersion("text_block")).toBe(2);
-    const { text, promptVersion } = renderPrompt("text_block", {
-      questionnaire: '{"product_name":"Tavnit"}',
-      speaker_gender: "male",
-    });
+describe("text_block prompt v2, frozen", () => {
+  it("is byte for byte the file every text_block@v2 row was written by", () => {
+    const bytes = readFileSync(path.join(PROMPTS_DIR, "text_block", "v2.md"));
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(
+      "fca1364dcc9a34bae1abdb20c2b10b434e2297f78594d13dfc3e7318d6daa468",
+    );
+  });
+
+  it("receives the questionnaire and the speaker gender", () => {
+    const { text, promptVersion } = renderPrompt(
+      "text_block",
+      { questionnaire: '{"product_name":"Tavnit"}', speaker_gender: "male" },
+      2,
+    );
     expect(promptVersion).toBe("text_block@v2");
     expect(text).toContain('"product_name":"Tavnit"');
     expect(text).toContain("The speaker is male");
@@ -143,12 +185,12 @@ describe("text_block prompt v2", () => {
   });
 
   it("throws when speaker_gender is missing (every clip carries one)", () => {
-    expect(() => renderPrompt("text_block", { questionnaire: "{}" })).toThrow(/speaker_gender/);
+    expect(() => renderPrompt("text_block", { questionnaire: "{}" }, 2)).toThrow(/speaker_gender/);
   });
 
   it("carries the founder's twelve examples literally, in order, and the code's DRY_RUN stand-in carries the first ten", () => {
     expect(TEXT_BLOCK_EXAMPLES).toEqual(V2_EXAMPLES);
-    const { text } = renderPrompt("text_block", vars);
+    const { text } = renderPrompt("text_block", vars, 2);
     expect(fences(text)).toEqual(V2_FENCES);
     for (const id of TEXT_BLOCK_SKELETON_IDS) expect(text).toContain(`\`${id}\``);
   });
@@ -161,7 +203,7 @@ describe("text_block prompt v2", () => {
       "envy_portrait",
       "cautionary_confession",
     ]);
-    const { text } = renderPrompt("text_block", vars);
+    const { text } = renderPrompt("text_block", vars, 2);
     expect(text).not.toContain("ואיכשהו גם מספיקה חדר כושר");
     expect(text).not.toContain("אלא אם משתמשים באפליקציה");
     expect(text).not.toContain("קחו את זה ממני, אל תחפשו");
@@ -198,7 +240,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("argues with none of its examples: no note tells the model which part of an example to ignore", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     for (const note of [
       "the rules win",
       "Do not copy that part",
@@ -213,7 +255,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("models no long dash in its own prose: only the dash rule and the truth line carry one", () => {
-    const { text } = renderPrompt("text_block", vars);
+    const { text } = renderPrompt("text_block", vars, 2);
     const dashed = text.split("\n").filter((line) => /[–—]/.test(line));
     expect(dashed).toHaveLength(2);
     expect(dashed[0]).toContain("Never an em dash or an en dash");
@@ -221,7 +263,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("pins the governing principle: never an ad, in the founder's words, and the test every text passes", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain(
       '"it shouldnt ever feel like im trying to sell something to the viewer, it should never come off as an ad"',
     );
@@ -232,7 +274,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("pins the product rules: mentioned not offered, once, never first, the address preference, no call to action", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain("The product is mentioned, not offered.");
     expect(text).toContain("Name it once, in passing");
     expect(text).toContain("often as one of several: `כמו X או דברים בסגנון`");
@@ -245,7 +287,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("asks for 400 characters at most and never names the 450 hard cap (§2.3)", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain("Most texts stay short: around 25 to 40 words");
     expect(text).toContain(
       "Never more than 400 characters: 400 is the ceiling, for a text whose joke needs the room, never the target.",
@@ -256,7 +298,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("pins the shape: line breaks only where a skeleton asks for one, always as a blank line", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain(
       "Line breaks only where a skeleton below asks for one: between the parts of `quiz`; between the three parts of `founder_ask`, as its example shows; after `instead`'s opener; before the closing line of `reframe`, `shoutout_hack`, `envy_portrait` and `cautionary_confession`; before a short bracketed last line where a skeleton has one (`instead`, `quiz`, `discovery`). Every other text is one paragraph.",
     );
@@ -265,7 +307,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("pins the closing line: four skeletons, a reaction, never a lesson, new every time (§2.1)", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain(
       "`reframe`, `shoutout_hack`, `envy_portrait` and `cautionary_confession` end on a short line of their own, after a blank line.",
     );
@@ -275,14 +317,14 @@ describe("text_block prompt v2", () => {
       "Its wording is new every time, never one of the examples' closing lines.",
     );
     for (const id of CLOSING_LINE_SKELETONS) {
-      expect(flat(description(renderPrompt("text_block", vars).text, id)), id).toContain(
+      expect(flat(description(renderPrompt("text_block", vars, 2).text, id)), id).toContain(
         "ends on a closing line",
       );
     }
   });
 
   it("pins instead's order: the opener alone, good then bad, the reaction, the aside only after it, a short product clause (§2.2)", () => {
-    const desc = flat(description(renderPrompt("text_block", vars).text, "instead"));
+    const desc = flat(description(renderPrompt("text_block", vars, 2).text, "instead"));
     expect(desc).toContain('"take it from me" stands alone on the first line, then a blank line.');
     expect(desc).toContain("in a short clause");
     expect(desc).toContain(
@@ -294,14 +336,14 @@ describe("text_block prompt v2", () => {
   });
 
   it("pins reframe's familiar tool: one widely known tool beside the product, never in the category (§2.4)", () => {
-    const desc = flat(description(renderPrompt("text_block", vars).text, "reframe"));
+    const desc = flat(description(renderPrompt("text_block", vars, 2).text, "reframe"));
     expect(desc).toContain(
       'the "unless" may name one widely known tool the audience already uses, as the familiar, harder route: never a tool in this business\'s own category, nothing said about it beyond its name, and only when one fits.',
     );
   });
 
   it("pins envy_portrait's payoff, and a third person's gender from the audience's world (§2.5)", () => {
-    const { text } = renderPrompt("text_block", vars);
+    const { text } = renderPrompt("text_block", vars, 2);
     const desc = flat(description(text, "envy_portrait"));
     expect(desc).toContain(
       "a run of traits that show the person getting the job done with less effort or money than everyone else.",
@@ -318,7 +360,7 @@ describe("text_block prompt v2", () => {
 
   it("keeps v1's Truth block and changes it on one point: a type's exaggerated win (§2.6)", () => {
     const v1 = truthBullets(renderPrompt("text_block", vars, 1).text);
-    const v2 = truthBullets(renderPrompt("text_block", vars).text);
+    const v2 = truthBullets(renderPrompt("text_block", vars, 2).text);
     expect(v2).toEqual([
       ...v1.slice(0, 3),
       "A recognisable type the viewer knows from their own world, like `envy_portrait`'s person in every office, may end on an exaggerated win, with no number, no earnings and no health or body result. The type is never the speaker and never a specific person the speaker knows.",
@@ -330,7 +372,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("names each skeleton's signature phrase, and everything else is written fresh (§2.7)", () => {
-    const { text } = renderPrompt("text_block", vars);
+    const { text } = renderPrompt("text_block", vars, 2);
     expect([...text.matchAll(/Signature phrase: (.*)$/gm)].map((m) => m[1])).toEqual([
       "`… נשמע …, עד שמבינים ש…`.",
       "`קחו את זה ממני`.",
@@ -368,7 +410,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("gives relatable_observation and discovery a second shape, still one skeleton each (§2.8, §2.12)", () => {
-    const { text } = renderPrompt("text_block", vars);
+    const { text } = renderPrompt("text_block", vars, 2);
     expect(flat(text)).toContain(
       "`relatable_observation` and `discovery` have a second example: a second shape of the same move, not another skeleton.",
     );
@@ -384,7 +426,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("restates the plural address and the no-invented-figure rule, and caps stretched letters (§2.10, §2.11)", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain(
       "**The viewer is plural, every time.** `שבנית`, `אותך`, `שלך`, `נותן לך` speak to one person; write `שבניתם`, `אתכם`, `שלכם`, `נותן לכם`. The audience is never a feminine plural (`מנסות`), whatever the speaker's gender; write the general plural (`מנסים`).",
     );
@@ -407,7 +449,7 @@ describe("text_block prompt v2", () => {
 
   it("leaves wish_more_knew, founder_ask and quiz as v1 described them, apart from the signature phrase (§2.13)", () => {
     const v1 = renderPrompt("text_block", vars, 1).text;
-    const v2 = renderPrompt("text_block", vars).text;
+    const v2 = renderPrompt("text_block", vars, 2).text;
     for (const id of ["wish_more_knew", "founder_ask", "quiz"]) {
       expect(description(v2, id).replace(/ +Signature phrase: .*\n/, ""), id).toBe(
         description(v1, id),
@@ -416,7 +458,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("carries the standing house rules: the character set, straight quotes, the רגע tick, the naming policy, no calendar year", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain("Hebrew, Latin, digits and standard punctuation only");
     expect(text).toContain("Straight quotes only (`\"` and `'`), never the curly typographic ones");
     expect(text).toContain("Never `רגע` as a hesitation tick");
@@ -430,7 +472,7 @@ describe("text_block prompt v2", () => {
   });
 
   it("describes each skeleton by its example and asks for every one back, written or skipped", () => {
-    const text = flat(renderPrompt("text_block", vars).text);
+    const text = flat(renderPrompt("text_block", vars, 2).text);
     expect(text).toContain("A skeleton that does not fit this business is skipped, never forced");
     expect(text).toContain("Skip `discovery` when the questionnaire has no `wow`");
     expect(text).toContain("a salute to the people who still manage by hand without the product");
@@ -439,5 +481,52 @@ describe("text_block prompt v2", () => {
     expect(text).toContain("It asks for an opinion and sells nothing");
     expect(text).toContain("The confession is about the problem, never about the product");
     expect(text).toContain("Return every skeleton exactly once");
+  });
+});
+
+describe("text_block prompt v3", () => {
+  it("is the latest version and receives the questionnaire, the speaker gender and the skeletons", () => {
+    expect(latestPromptVersion("text_block")).toBe(3);
+    const { text, promptVersion } = renderPrompt("text_block", {
+      questionnaire: '{"product_name":"Tavnit"}',
+      speaker_gender: "male",
+      skeletons: "`reframe`, `quiz`",
+    });
+    expect(promptVersion).toBe("text_block@v3");
+    expect(text).toContain('"product_name":"Tavnit"');
+    expect(text).toContain("The speaker is male");
+    expect(text).toContain(
+      "This batch requests these skeletons, and only these: `reframe`, `quiz`.",
+    );
+    expect(text).not.toContain("{{");
+  });
+
+  it("throws when skeletons or speaker_gender is missing", () => {
+    expect(() =>
+      renderPrompt("text_block", { questionnaire: "{}", speaker_gender: "female" }),
+    ).toThrow(/skeletons/);
+    expect(() => renderPrompt("text_block", { questionnaire: "{}", skeletons: "`quiz`" })).toThrow(
+      /speaker_gender/,
+    );
+  });
+
+  it("is v2 byte for byte once its two hunks are put back", () => {
+    const v2 = readFileSync(path.join(PROMPTS_DIR, "text_block", "v2.md"), "utf8");
+    let v3 = readFileSync(path.join(PROMPTS_DIR, "text_block", "v3.md"), "utf8");
+    for (const [before, after] of V2_TO_V3_HUNKS) {
+      expect(v3.split(after), after.slice(0, 40)).toHaveLength(2);
+      v3 = v3.split(after).join(before);
+    }
+    expect(v3).toBe(v2);
+  });
+
+  it("asks for the requested skeletons only, and keeps v2's examples and its discovery rule", () => {
+    const { text } = renderPrompt("text_block", vars);
+    expect(fences(text)).toEqual(V2_FENCES);
+    const prose = flat(text);
+    expect(prose).toContain("Skip `discovery` when the questionnaire has no `wow`");
+    expect(prose).toContain("Write nothing for any other skeleton, not even in `skipped`.");
+    expect(prose).toContain("Return every requested skeleton exactly once");
+    expect(prose).not.toContain("Return every skeleton exactly once");
   });
 });

@@ -25,18 +25,21 @@ import {
   CONTENT_POLICY_CHECK_FAILED,
   ContentPolicyError,
   generateHookLines,
+  generateTextBlocks,
   generateVoScript,
 } from "../src/pipelines/copy";
-import { grantCredits } from "../src/pipelines/credits";
+import { grantCredits, InsufficientCreditsError } from "../src/pipelines/credits";
 import { approvePlan, requestDemoPlan } from "../src/pipelines/demo-step-plans";
 import { createDemo } from "../src/pipelines/demos";
 import { createBRender, createSet } from "../src/pipelines/sets";
+import { createTextBlockRender } from "../src/pipelines/text-blocks";
 import { getStorage, setStorage } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
 import { tempStorage } from "./helpers/storage";
 
 /**
- * The content-policy gate at the two render choke points.
+ * The content-policy gate at the three render choke points (Service C's since
+ * phase 2, decision 0099).
  *
  * It had never run: `contentPolicyCheck` was written, prompted, exported and
  * called by nothing (vault defect content-policy-classifier-never-runs, and
@@ -126,10 +129,10 @@ async function approvedAudio() {
 }
 
 /**
- * The gate is the one thing in these two functions that talks to a provider,
+ * The gate is the one thing in these three functions that talks to a provider,
  * and `contentPolicyCheck` short-circuits to "not flagged" under DRY_RUN
  * (copy.ts:666) — so the classifier only exists with DRY_RUN off. Everything
- * else on both paths is database work.
+ * else on the three paths is database work.
  */
 async function withClassifier<T>(fn: () => Promise<T>): Promise<T> {
   process.env.DRY_RUN = "";
@@ -435,5 +438,184 @@ describe("Service B — createBRender", { timeout: 180_000 }, () => {
 
     expect(render.service).toBe("b");
     expect(await policyEvents(CONTENT_POLICY_CHECK_FAILED)).toHaveLength(1);
+  });
+});
+
+describe("Service C — createTextBlockRender", { timeout: 180_000 }, () => {
+  let cBusinessId: string;
+  let cScriptId: string;
+  let cClipId: string;
+  let brokeBusinessId: string;
+  let brokeScriptId: string;
+  let adminScriptId: string;
+
+  /** A customer business with a questionnaire and one served text over cClipId. */
+  async function customerWithText(email: string, name: string) {
+    const business = await createBusiness(db, { ownerEmail: email, name });
+    await setQuestionnaire(db, business.id, {
+      category: "local_service",
+      product_name: name,
+      what_it_does: "אוכל ביתי במשלוח עד הבית",
+      advantages: ["משלוח תוך 30 דקות"],
+      target_audience: "משפחות עסוקות",
+      tone: "friendly",
+    });
+    const batch = await generateTextBlocks(db, { businessId: business.id, clipId: cClipId });
+    return { business, scriptId: batch.texts[0]!.id };
+  }
+
+  async function serviceCRenders() {
+    return db.select().from(dbSchema.videoRenders).where(eq(dbSchema.videoRenders.service, "c"));
+  }
+
+  async function renderJobCount(): Promise<number> {
+    const rows = await db
+      .select()
+      .from(dbSchema.jobs)
+      .where(sql`${dbSchema.jobs.idempotencyKey} like 'render:%'`);
+    return rows.length;
+  }
+
+  beforeAll(async () => {
+    // A clip a customer may use: active, uploaded, on an active character.
+    const character = await addPersona(db, { name: "מאיה", gender: "female" });
+    const [clip] = await db
+      .insert(dbSchema.textBlockClips)
+      .values({
+        filePath: "assets/text_block_clip/policy/clip.mp4",
+        durationMs: 10_000,
+        speakerGender: "female",
+        personaId: character.id,
+        textSafeArea: { x: 80, y: 360, w: 820, h: 1040 },
+      })
+      .returning();
+    cClipId = clip!.id;
+
+    // Its own owner and its own grant, so the debit counts below are C's alone.
+    const funded = await customerWithText("c-customer@example.com", "מטבח של סבתא");
+    cBusinessId = funded.business.id;
+    cScriptId = funded.scriptId;
+    await grantCredits(db, { userId: funded.business.ownerUserId, credits: 100, note: "test" });
+
+    const broke = await customerWithText("c-broke@example.com", "בלי קרדיטים");
+    brokeBusinessId = broke.business.id;
+    brokeScriptId = broke.scriptId;
+
+    const adminBatch = await generateTextBlocks(db, {
+      businessId: adminBusinessId,
+      clipId: cClipId,
+    });
+    adminScriptId = adminBatch.texts[0]!.id;
+  });
+
+  it("a flag refuses the render: no render row, no job, no debit, one flag event — and the classifier saw the questionnaire and the final text", async () => {
+    generateObject.mockResolvedValue(FLAGGED);
+    const debitsBefore = await debitCount();
+    const rendersBefore = (await serviceCRenders()).length;
+    const jobsBefore = await renderJobCount();
+
+    await expect(
+      withClassifier(() =>
+        createTextBlockRender(db, {
+          businessId: cBusinessId,
+          clipId: cClipId,
+          scriptId: cScriptId,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ContentPolicyError);
+
+    expect(await serviceCRenders()).toHaveLength(rendersBefore);
+    expect(await renderJobCount()).toBe(jobsBefore);
+    expect(await debitCount()).toBe(debitsBefore);
+    const flags = await policyEvents("content_policy_flag");
+    expect(flags).toHaveLength(1);
+    expect(flags[0]!.businessId).toBe(cBusinessId);
+
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    const prompt = generateObject.mock.calls[0]![0].prompt as string;
+    expect(prompt).toContain("מטבח של סבתא"); // questionnaire
+    const script = (
+      await db.select().from(dbSchema.scripts).where(eq(dbSchema.scripts.id, cScriptId))
+    )[0]!;
+    expect(prompt).toContain(script.text); // the block that gets burned
+  });
+
+  it("a clean verdict lets the render through and debits once", async () => {
+    generateObject.mockResolvedValue(CLEAN);
+    const before = await debitCount();
+
+    const render = await withClassifier(() =>
+      createTextBlockRender(db, { businessId: cBusinessId, clipId: cClipId, scriptId: cScriptId }),
+    );
+
+    expect(render.service).toBe("c");
+    expect(await debitCount()).toBe(before + 1);
+  });
+
+  it("an admin-owned business skips the check entirely and is never charged", async () => {
+    generateObject.mockResolvedValue(FLAGGED);
+
+    const render = await withClassifier(() =>
+      createTextBlockRender(db, {
+        businessId: adminBusinessId,
+        clipId: cClipId,
+        scriptId: adminScriptId,
+      }),
+    );
+
+    expect(render.service).toBe("c");
+    // The classifier was never asked — a FLAGGED mock would have refused.
+    expect(generateObject).not.toHaveBeenCalled();
+    const adminOwner = (
+      await db.select().from(dbSchema.businesses).where(eq(dbSchema.businesses.id, adminBusinessId))
+    )[0]!.ownerUserId;
+    expect(
+      await db
+        .select()
+        .from(dbSchema.creditLedger)
+        .where(eq(dbSchema.creditLedger.userId, adminOwner)),
+    ).toHaveLength(0);
+  });
+
+  it("the free gates run first: a zero balance never pays for the classifier", async () => {
+    generateObject.mockResolvedValue(FLAGGED);
+
+    await expect(
+      withClassifier(() =>
+        createTextBlockRender(db, {
+          businessId: brokeBusinessId,
+          clipId: cClipId,
+          scriptId: brokeScriptId,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(InsufficientCreditsError);
+
+    expect(generateObject).not.toHaveBeenCalled();
+    expect(await policyEvents("content_policy_flag")).toHaveLength(0);
+  });
+
+  it("an unburnable text is refused before the classifier", async () => {
+    generateObject.mockResolvedValue(CLEAN);
+    const [emoji] = await db
+      .insert(dbSchema.scripts)
+      .values({
+        businessId: cBusinessId,
+        kind: "text_block",
+        text: "זה 🔥 זה",
+        params: { speakerGender: "female" },
+        userEdited: true,
+      })
+      .returning();
+
+    await expect(
+      withClassifier(() =>
+        createTextBlockRender(db, {
+          businessId: cBusinessId,
+          clipId: cClipId,
+          scriptId: emoji!.id,
+        }),
+      ),
+    ).rejects.toThrow(/U\+1F525/);
+    expect(generateObject).not.toHaveBeenCalled();
   });
 });

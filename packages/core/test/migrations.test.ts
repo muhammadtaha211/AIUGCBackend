@@ -807,7 +807,12 @@ describe("migrations", () => {
   });
 
   it("0052: text_block_clips — server-only RLS, the two CHECKs, white by default, idempotent", async () => {
-    const { db, pg } = await createTestDb();
+    // The structure as 0052 left it, so 0054's persona_id is not counted. Raw
+    // SQL only: drizzle's .returning() would select the column 0054 adds.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f <= "0052_text_block_clips.sql")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
     await pg.exec(readFileSync(join(MIGRATIONS_DIR, "0052_text_block_clips.sql"), "utf8"));
 
     const rls = await pg.query<{ relrowsecurity: boolean }>(
@@ -832,7 +837,9 @@ describe("migrations", () => {
       "text_block_clips_speaker_gender_check",
       "text_block_clips_text_color_check",
     ]);
+    await pg.close();
 
+    const { db, pg: fresh } = await createTestDb();
     const base = {
       filePath: "assets/bank/text_block_clip/x/clip.mp4",
       durationMs: 10_000,
@@ -851,6 +858,147 @@ describe("migrations", () => {
         .insert(schema.textBlockClips)
         .values({ ...base, speakerGender: "male", textColor: "gray" }),
     ).rejects.toThrow(/text_block_clips_text_color_check/);
+    await fresh.close();
+  });
+
+  it("0053: credit_costs gains c_text_block_credits = 25 as a jsonb number, the other ten keys byte-equal, re-apply restates 25", async () => {
+    // The pre-0053 row: on createTestDb() the key is already there, and the
+    // point is what the UPDATE leaves alone.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0053")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const read = async () =>
+      (
+        await pg.query<{ others: string; added: unknown; kind: string | null; keys: number }>(
+          `SELECT (value - 'c_text_block_credits')::text AS others,
+                  value -> 'c_text_block_credits' AS added,
+                  jsonb_typeof(value -> 'c_text_block_credits') AS kind,
+                  (SELECT count(*)::int FROM jsonb_object_keys(value)) AS keys
+           FROM app_config WHERE key = 'credit_costs'`,
+        )
+      ).rows[0]!;
+    const before = await read();
+    expect(before).toMatchObject({ added: null, kind: null, keys: 10 });
+
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0053_text_block_credits.sql"), "utf8");
+    await pg.exec(migration);
+    // A bare number, never '"25"' — z.number() would refuse a string at the next quote.
+    expect(await read()).toEqual({ others: before.others, added: 25, kind: "number", keys: 11 });
+
+    // Unconditional, like 0039: a re-run restates the founder's value over a hand edit.
+    await pg.query(
+      `UPDATE app_config SET value = value || '{"c_text_block_credits": 30}'::jsonb WHERE key = 'credit_costs'`,
+    );
+    await pg.exec(migration);
+    expect(await read()).toEqual({ others: before.others, added: 25, kind: "number", keys: 11 });
+
+    await pg.close();
+  });
+
+  it("0054: text_block_clips.persona_id — an existing clip stays unassigned, the FK by name, idempotent", async () => {
+    // The pre-0054 shape with a clip already in it — the production case:
+    // every phase-1 clip predates the column (0049's reasoning).
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0054")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    await pg.exec(`
+      INSERT INTO text_block_clips (file_path, duration_ms, speaker_gender, text_safe_area)
+      VALUES ('assets/bank/text_block_clip/old/clip.mp4', 10000, 'female', '{"x":80,"y":360,"w":820,"h":1040}');
+    `);
+    const migration = readFileSync(
+      join(MIGRATIONS_DIR, "0054_text_block_clip_persona.sql"),
+      "utf8",
+    );
+    await pg.exec(migration);
+    // Idempotent: a second apply is a no-op, not a duplicate-column or duplicate-constraint error.
+    await pg.exec(migration);
+
+    const existing = await pg.query<{ persona_id: string | null }>(
+      "SELECT persona_id FROM text_block_clips",
+    );
+    expect(existing.rows).toEqual([{ persona_id: null }]);
+    expect(
+      (
+        await pg.query(
+          "SELECT 1 FROM information_schema.columns WHERE table_name = 'text_block_clips'",
+        )
+      ).rows,
+    ).toHaveLength(9);
+    const fks = await pg.query<{ conname: string; contype: string }>(
+      "SELECT conname, contype FROM pg_constraint WHERE conname = 'text_block_clips_persona_id_personas_id_fk'",
+    );
+    expect(fks.rows).toEqual([
+      { conname: "text_block_clips_persona_id_personas_id_fk", contype: "f" },
+    ]);
+
+    // The FK is real: a bogus persona is refused, a real one is accepted.
+    await expect(
+      pg.query("UPDATE text_block_clips SET persona_id = '00000000-0000-0000-0000-000000000001'"),
+    ).rejects.toThrow(/foreign key/i);
+    const persona = await pg.query<{ id: string }>(
+      "INSERT INTO personas (name, voice_id) VALUES ('נועה', 'voice_noa') RETURNING id",
+    );
+    await pg.query("UPDATE text_block_clips SET persona_id = $1", [persona.rows[0]!.id]);
+
+    await pg.close();
+  });
+
+  it("0055: personas.voice_id drops NOT NULL — a voiceless persona inserts, idempotent", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0055")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    await expect(pg.query("INSERT INTO personas (name) VALUES ('בלי קול')")).rejects.toThrow(
+      /voice_id/,
+    );
+
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0055_persona_voice_optional.sql"), "utf8");
+    await pg.exec(migration);
+    // DROP NOT NULL on a nullable column is a no-op, so a second apply is too.
+    await pg.exec(migration);
+
+    const column = await pg.query<{ is_nullable: string }>(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'personas' AND column_name = 'voice_id'`,
+    );
+    expect(column.rows).toEqual([{ is_nullable: "YES" }]);
+    const inserted = await pg.query<{ voice_id: string | null }>(
+      "INSERT INTO personas (name) VALUES ('בלי קול') RETURNING voice_id",
+    );
+    expect(inserted.rows).toEqual([{ voice_id: null }]);
+
+    await pg.close();
+  });
+
+  it("0056: scripts.shown_at — timestamptz, nullable, existing rows NULL, idempotent", async () => {
+    // The pre-0056 shape with a script already in it, so "nothing is
+    // backfilled" is tested on a row that predates the column.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0056")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const user = "11111111-1111-4111-8111-111111111111";
+    const biz = "33333333-3333-4333-8333-333333333333";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES ('${biz}', '${user}', 'A');
+      INSERT INTO scripts (business_id, kind, text) VALUES ('${biz}', 'text_block', 'טקסט ישן');
+    `);
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0056_scripts_shown_at.sql"), "utf8");
+    await pg.exec(migration);
+    // Idempotent: a second apply is a no-op, not a duplicate-column error.
+    await pg.exec(migration);
+
+    const column = await pg.query<{ data_type: string; is_nullable: string }>(
+      `SELECT data_type, is_nullable FROM information_schema.columns
+       WHERE table_name = 'scripts' AND column_name = 'shown_at'`,
+    );
+    expect(column.rows).toEqual([{ data_type: "timestamp with time zone", is_nullable: "YES" }]);
+    const existing = await pg.query<{ shown_at: Date | null }>("SELECT shown_at FROM scripts");
+    expect(existing.rows).toEqual([{ shown_at: null }]);
+
     await pg.close();
   });
 });

@@ -46,9 +46,36 @@ export function isTextBlockSkeletonId(value: string): value is TextBlockSkeleton
   return (TEXT_BLOCK_SKELETON_IDS as readonly string[]).includes(value);
 }
 
-/** The admin UI's heading for a skeleton; an unknown id shows as itself. */
+/**
+ * A skeleton's Hebrew heading — the admin studio's, and since phase 2 the label
+ * the customer sees on each text (decision 0099). An unknown id shows as itself.
+ */
 export function textBlockSkeletonLabel(id: string): string {
   return TEXT_BLOCK_SKELETONS.find((s) => s.id === id)?.label ?? id;
+}
+
+/**
+ * The skeletons a batch asks for, in bank order: all ten, less `discovery`
+ * when the questionnaire has no `wow` — the move is built on it (founder
+ * ruling of 2026-10-08, decision 0099 §5: never requested without one, admin
+ * batch and wizard alike). The prompt still says to skip any other skeleton
+ * that does not fit; this is the one fit a code check can decide.
+ */
+export function fittingTextBlockSkeletons(questionnaire: {
+  wow?: string | null;
+}): TextBlockSkeletonId[] {
+  const hasWow = (questionnaire.wow ?? "").trim().length > 0;
+  return TEXT_BLOCK_SKELETON_IDS.filter((id) => hasWow || id !== "discovery");
+}
+
+/**
+ * A text the model returned in place of a skip — `skip`, `skipped`, a skeleton
+ * id (measured on Sonnet 5.5 for `discovery` without a `wow`,
+ * facts/text-block-thinking-low-test-2026-10-08.md). Every real text is Hebrew,
+ * so one with no Hebrew letter is never served to a customer (decision 0099 §5).
+ */
+export function isTextBlockPlaceholder(text: string): boolean {
+  return !/[א-ת]/u.test(text);
 }
 
 /**

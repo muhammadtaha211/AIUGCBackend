@@ -21,6 +21,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * (generateHookLines/generateBScript/generateVoScript/deriveHookText, the
  * functions that make the actual Anthropic call) are stubbed, so "the
  * provider stub was not called" is a direct assertion on those mocks.
+ *
+ * The גוש טקסט next-text route (decision 0099) is the one whose caps live in
+ * core, not the route: serveNextTextBlock asserts them only when the stock is
+ * empty, then calls generateTextBlocks through its own module import — so that
+ * stub replaces the export of pipelines/copy itself, not only the re-export.
  */
 
 const fixture = vi.hoisted(() => ({
@@ -30,6 +35,7 @@ const fixture = vi.hoisted(() => ({
   generateBScript: vi.fn(),
   generateVoScript: vi.fn(),
   deriveHookText: vi.fn(),
+  generateTextBlocks: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -53,6 +59,11 @@ vi.mock("@aiugc/core", async (importOriginal) => {
   };
 });
 
+vi.mock("../../../packages/core/src/pipelines/copy", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../packages/core/src/pipelines/copy")>()),
+  generateTextBlocks: fixture.generateTextBlocks,
+}));
+
 const core = await import("@aiugc/core");
 const { createTestDb } = await import("../../../packages/core/test/helpers/pglite");
 const schema = core.schema;
@@ -61,6 +72,8 @@ const { POST: hookLines } = await import("../src/app/api/businesses/[businessId]
 const { POST: scripts } = await import("../src/app/api/businesses/[businessId]/scripts/route");
 const { POST: voScript } = await import("../src/app/api/businesses/[businessId]/vo-script/route");
 const { POST: editText } = await import("../src/app/api/scripts/[id]/text/route");
+const { POST: nextTextBlock } =
+  await import("../src/app/api/businesses/[businessId]/text-blocks/next/route");
 
 function post(path: string, body: unknown) {
   return new Request(`http://localhost${path}`, {
@@ -82,6 +95,7 @@ describe("AUTHZ-12: per-account and platform LLM caps on the synchronous copy ro
   let db: Awaited<ReturnType<typeof createTestDb>>["db"];
   let pg: Awaited<ReturnType<typeof createTestDb>>["pg"];
   let personaId: string;
+  let clipId: string;
 
   // A distinct business + owner per scenario, so one scenario's seeded usage
   // never leaks into another's per-account check (they sum by owner).
@@ -139,6 +153,19 @@ describe("AUTHZ-12: per-account and platform LLM caps on the synchronous copy ro
     // Founder-global, active — pickStructureForBusiness (real) picks it up for
     // every business below. Its id is never needed directly.
     await core.addStructure(db, { title: "show-and-react", skeleton: { beats: ["hook", "cta"] } });
+    // A גוש טקסט clip of that persona — the next-text route's clip pre-check
+    // passes, and no business below has a stored text, so every stock is empty.
+    const [clip] = await db
+      .insert(schema.textBlockClips)
+      .values({
+        filePath: "assets/bank/text_block_clip/t/clip.mp4",
+        durationMs: 10_000,
+        speakerGender: "female",
+        textSafeArea: { x: 80, y: 360, w: 820, h: 1040 },
+        personaId,
+      })
+      .returning();
+    clipId = clip!.id;
 
     quietBiz = await makeBusiness("quiet@authz12.test");
     loudBiz = await makeBusiness("loud@authz12.test");
@@ -178,6 +205,9 @@ describe("AUTHZ-12: per-account and platform LLM caps on the synchronous copy ro
       params: { wordBudget: 40 },
     });
     fixture.deriveHookText.mockResolvedValue("חייבת לספר לכם");
+    // An empty batch: the route then answers its "no text" 502, which is
+    // enough to prove the batch was asked for.
+    fixture.generateTextBlocks.mockResolvedValue({ texts: [], skipped: [] });
   });
 
   describe("POST hook-lines — full scenario", () => {
@@ -331,9 +361,45 @@ describe("AUTHZ-12: per-account and platform LLM caps on the synchronous copy ro
     });
   });
 
+  describe("POST text-blocks/next (generateTextBlocks) — the caps run in core, on an empty stock", () => {
+    it("per-account cap: 429 in Hebrew, generateTextBlocks NOT called", async () => {
+      fixture.user = { id: loudBiz.ownerUserId, email: "loud@authz12.test" };
+      fixture.generateTextBlocks.mockClear();
+
+      const response = await nextTextBlock(
+        post(`/api/businesses/${loudBiz.id}/text-blocks/next`, { clipId }),
+        params(loudBiz.id),
+      );
+
+      expect(response.status).toBe(429);
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: "הגעתם למכסת יצירת התוכן היומית של החשבון — נסו שוב מחר.",
+      });
+      expect(fixture.generateTextBlocks).not.toHaveBeenCalled();
+    });
+
+    it("under both caps: the empty stock buys a batch — generateTextBlocks IS called", async () => {
+      fixture.user = { id: quietBiz.ownerUserId, email: "quiet@authz12.test" };
+      fixture.generateTextBlocks.mockClear();
+
+      const response = await nextTextBlock(
+        post(`/api/businesses/${quietBiz.id}/text-blocks/next`, { clipId }),
+        params(quietBiz.id),
+      );
+
+      expect(response.status).toBe(502);
+      expect(fixture.generateTextBlocks).toHaveBeenCalledTimes(1);
+      expect(fixture.generateTextBlocks.mock.calls[0]![1]).toEqual({
+        businessId: quietBiz.id,
+        clipId,
+      });
+    });
+  });
+
   // Declared LAST on purpose: this trips the shared 24h platform window for
   // every business (usage_events rows persist for the rest of the file), so
-  // nothing after it can expect a 200 from any of the four routes above.
+  // nothing after it can expect a 200 from any of the five routes above.
   describe("platform cap (decision 2) — run last, trips the shared window for everyone", () => {
     it("503 in Hebrew, generateHookLines NOT called, no job row changes", async () => {
       const jobsBefore = (await db.select().from(schema.jobs)).length;
@@ -357,6 +423,24 @@ describe("AUTHZ-12: per-account and platform LLM caps on the synchronous copy ro
       });
       expect(fixture.generateHookLines).not.toHaveBeenCalled();
       expect((await db.select().from(schema.jobs)).length).toBe(jobsBefore);
+    });
+
+    it("the next-text route answers 503 on an empty stock, generateTextBlocks NOT called", async () => {
+      // The window is still tripped by the case above.
+      fixture.user = { id: victimBiz.ownerUserId, email: "victim@authz12.test" };
+      fixture.generateTextBlocks.mockClear();
+
+      const response = await nextTextBlock(
+        post(`/api/businesses/${victimBiz.id}/text-blocks/next`, { clipId }),
+        params(victimBiz.id),
+      );
+
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: "המערכת עמוסה כרגע. נסו שוב מאוחר יותר.",
+      });
+      expect(fixture.generateTextBlocks).not.toHaveBeenCalled();
     });
   });
 });

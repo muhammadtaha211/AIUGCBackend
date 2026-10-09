@@ -84,7 +84,11 @@ refuses before a single row is written. **The
 credit balance is the binding bound on stranger spend; the per-account daily caps are the
 backstop, not the bound.** This holds for every present route and every future one that debits
 through `createSet`/`createBRender` — which are deliberately the only two debit sites
-(the comment above `quoteRerollForRender` in `sets.ts`).
+(the comment above `quoteRerollForRender` in `sets.ts`). _(Amended 2026-10-09, code read at
+`feat/service-c-phase-2`: `createTextBlockRender` in `pipelines/text-blocks.ts` is the third,
+for Service C's customer wizard ([[0099-service-c-phase-2-opens-to-customers]]). It debits through
+the same `debitRender` behind the same `assertAffordable`, so no `creditLedger` insert was added
+outside `credits.ts` and the bound above holds for it too.)_
 
 Balance mechanics: [[credit-ledger-is-keyed-to-the-account]]. The one crack in the wall —
 non-positive costs flowing through `debitRender` if `credit_costs` is ever mistyped —

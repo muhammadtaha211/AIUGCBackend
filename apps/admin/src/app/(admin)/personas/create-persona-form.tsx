@@ -38,11 +38,13 @@ export function CreatePersonaForm() {
         onChange={(event) => setName(event.target.value)}
         required
       />
+      {/* Optional (0055): blank is a character for גוש טקסט alone, which
+          Service B's picker never lists. */}
       <TextField
         label="ElevenLabs voice id"
+        hint="ריק = דמות לגוש טקסט בלבד"
         value={voiceId}
         onChange={(event) => setVoiceId(event.target.value)}
-        required
         dir="ltr"
         className="font-mono"
       />

@@ -304,14 +304,21 @@ export const hookClips = pgTable("hook_clips", {
  * with its own recorded sound. Its own table, not a kind on hook_clips, so
  * Service A's hook listings can never return one and the speaker gender is a
  * typed column (Hebrew first person is gendered, 0090 §12). Server-only RLS
- * in phase 1 (0052); the customer select policy is phase 2's.
+ * (0052): RLS on, no policy — every reader is the server over DATABASE_URL, so
+ * phase 2 added no customer select policy (decision 0099).
  */
 export const textBlockClips = pgTable("text_block_clips", {
   id: uuid("id").primaryKey().defaultRandom(),
   filePath: text("file_path").notNull(),
   durationMs: integer("duration_ms").notNull(),
   // 'female' | 'male' — a CHECK in the migration; the prompt's {{speaker_gender}}.
+  // Always the character's gender: every write path sets it from the persona
+  // (admin register and reassign, updatePersona) — decision 0099 §3.
   speakerGender: text("speaker_gender").notNull(),
+  // 0054: the character this clip belongs to. The customer wizard lists one
+  // character's clips at a time; NULL = listed to no customer, flagged in
+  // admin (decision 0099 §3, 0012's hook pattern).
+  personaId: uuid("persona_id").references(() => personas.id),
   // {x, y, w, h} in 1080x1920 space where the text block is fitted and burned.
   textSafeArea: jsonb("text_safe_area").notNull(),
   // 'white' | 'black' — a CHECK in the migration; same vocabulary and ink
@@ -327,7 +334,9 @@ export const personas = pgTable("personas", {
   identity: jsonb("identity").notNull().default({}),
   // 'female' | 'male'. Null → b_script defaults to 'female' and warns.
   gender: text("gender"),
-  voiceId: text("voice_id").notNull(),
+  // 0055: optional — a character for גוש טקסט alone has no voice (decision
+  // 0099, R1). Service B's picker lists only personas that have one.
+  voiceId: text("voice_id"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -469,6 +478,10 @@ export const scripts = pgTable(
     promptVersion: text("prompt_version"),
     userEdited: boolean("user_edited").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // 0056: when the גוש טקסט wizard first served this text_block row; NULL =
+    // unseen. The one column written after insert (serveNextTextBlock) — the
+    // rotation's "seen" clock, since a batch's rows share one created_at.
+    shownAt: timestamp("shown_at", { withTimezone: true }),
   },
   (t) => [index("scripts_business_idx").on(t.businessId)],
 );

@@ -3,7 +3,10 @@ import { addPersona, getDb } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireAdmin } from "@/lib/api";
 import { createPersonaSchema } from "@/lib/admin";
 
-/** Founder-only: add a persona to the bank (name + pinned voice + gender). */
+/**
+ * Founder-only: add a persona to the bank (name + gender + pinned voice). No
+ * voice = a character for גוש טקסט alone; Service B never lists it (0055).
+ */
 export async function POST(request: Request) {
   const db = getDb();
   const auth = await requireAdmin(db);

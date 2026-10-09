@@ -9,7 +9,7 @@ import { creditKeyLine, estimateLine } from "@/lib/plans-ui";
  * is pinned here, so a card can never print a count the credits would not buy.
  */
 
-/** The credit_costs row as 0043 set it. */
+/** The credit_costs row as 0043 set it, with 0053's Service C flat. */
 const COSTS: CreditCosts = {
   a_assembly_flat: 75,
   a_demo_per_second: 3.75,
@@ -21,6 +21,7 @@ const COSTS: CreditCosts = {
   a_remix_assembly_credits: 10,
   a_steps_credits: 25,
   a_demo_analysis_credits: 20,
+  c_text_block_credits: 25,
 };
 
 /** The three plans, deliberately NOT in price order — the view sorts. */

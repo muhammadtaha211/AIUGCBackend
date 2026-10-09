@@ -6,6 +6,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  * (decision 0089 §4: "hook pickers never list these clips"). Structural — the
  * banks are two tables — and proven here against the two listings a customer
  * can reach: GET /api/hooks (both forms) and the Service A persona catalog.
+ * The text block clip belongs to the same persona as the hook clip (0054), so
+ * "not listed" is about the table, not about a missing owner.
+ *
+ * Then the other direction (decision 0099 §4): which characters the Service C
+ * catalog lists, and that a voiceless character never reaches Service B.
  */
 
 const fixture = vi.hoisted(() => ({
@@ -87,6 +92,7 @@ beforeAll(async () => {
       durationMs: 10_000,
       speakerGender: "female",
       textSafeArea: { x: 80, y: 360, w: 820, h: 1040 },
+      personaId,
     })
     .returning();
   textBlockClipId = textBlock!.id;
@@ -123,5 +129,77 @@ describe("Service A hook listings never return a text block clip", () => {
       .set({ active: false })
       .where(eq(core.schema.hookClips.id, hookClipId));
     expect(await loadPersonaCatalog("a")).toEqual([]);
+  });
+});
+
+describe("the Service C catalog lists characters with a usable text block clip", () => {
+  const db = () => fixture.db as ReturnType<typeof core.getDb>;
+  const ids = async (service: "a" | "b" | "c") =>
+    (await loadPersonaCatalog(service)).map((p) => p.id).sort();
+
+  /** A character with one image, and optionally one text block clip of its own. */
+  async function character(opts: {
+    voiceId?: string;
+    imageKind: "preview" | "selfie";
+    clip?: { active?: boolean; filePath?: string };
+    active?: boolean;
+  }) {
+    const persona = await core.addPersona(db(), {
+      name: "דמות",
+      voiceId: opts.voiceId,
+      gender: "female",
+    });
+    if (opts.active === false) {
+      await db()
+        .update(core.schema.personas)
+        .set({ active: false })
+        .where(eq(core.schema.personas.id, persona.id));
+    }
+    await db()
+      .insert(core.schema.personaImages)
+      .values({
+        personaId: persona.id,
+        filePath: `assets/bank/persona_image/${persona.id}/image.jpg`,
+        kind: opts.imageKind,
+        isDefault: true,
+      });
+    if (opts.clip) {
+      await db()
+        .insert(core.schema.textBlockClips)
+        .values({
+          filePath: opts.clip.filePath ?? `assets/bank/text_block_clip/${persona.id}/clip.mp4`,
+          durationMs: 10_000,
+          speakerGender: "female",
+          textSafeArea: { x: 80, y: 360, w: 820, h: 1040 },
+          personaId: persona.id,
+          active: opts.clip.active ?? true,
+        });
+    }
+    return persona.id;
+  }
+
+  it("a C-only character (preview image, no voice) is in C and in neither A nor B", async () => {
+    const cOnly = await character({ imageKind: "preview", clip: {} });
+    expect(await ids("c")).toEqual([personaId, cOnly].sort());
+    expect(await ids("a")).not.toContain(cOnly);
+    expect(await ids("b")).not.toContain(cOnly);
+  });
+
+  it("a voiceless character with a selfie is not in B", async () => {
+    const voiceless = await character({ imageKind: "selfie" });
+    const b = await ids("b");
+    expect(b).toContain(personaId);
+    expect(b).not.toContain(voiceless);
+  });
+
+  it("an inactive or pending clip, or an inactive character, keeps a character out of C", async () => {
+    const inactiveClip = await character({ imageKind: "preview", clip: { active: false } });
+    const pendingClip = await character({ imageKind: "preview", clip: { filePath: "pending" } });
+    const inactivePersona = await character({ imageKind: "preview", clip: {}, active: false });
+    const c = await ids("c");
+    expect(c).not.toContain(inactiveClip);
+    expect(c).not.toContain(pendingClip);
+    expect(c).not.toContain(inactivePersona);
+    expect(c).toContain(personaId);
   });
 });

@@ -34,6 +34,7 @@ import {
   quoteServiceA,
   quoteServiceASteps,
   quoteServiceB,
+  quoteServiceC,
   type QuoteComponent,
 } from "../pricing";
 import { lipsyncExpressivenessSchema, type LipsyncExpressiveness } from "../providers/lipsync";
@@ -911,8 +912,10 @@ export async function quoteASet(
  *
  * Pricing primitive only — there is deliberately NO debit helper here. A
  * re-roll produces a new video_renders row, so when the remix UI lands it goes
- * through createSet like everything else. createSet and createBRender are the
- * only two debit sites and adding a third is how ledgers start lying.
+ * through createSet like everything else. createSet, createBRender and
+ * createTextBlockRender (pipelines/text-blocks.ts, Service C) are the only
+ * three debit sites — one per format, each a whole new render — and adding
+ * another is how ledgers start lying.
  */
 export async function quoteRerollForRender(
   db: Db,
@@ -967,12 +970,28 @@ export async function quoteBRender(
 }
 
 /**
+ * Price a Service C (גוש טקסט) render: one flat (quoteServiceC). The texts
+ * that went into it were free (decision 0099 planning default).
+ */
+export async function quoteTextBlockRender(db: Db, businessId: string): Promise<RenderQuote> {
+  const { chargeable, costs, balance } = await quoteContext(db, businessId);
+  const quote = quoteServiceC({ costs });
+  return {
+    creditsPerRender: quote.credits,
+    analysisCreditsOncePerSet: 0,
+    components: quote.components,
+    chargeable,
+    balance,
+  };
+}
+
+/**
  * The pre-flight refusal: fail before a single row is written, so an
  * unaffordable confirm leaves no orphan set, render, or job behind. The
  * authoritative check is still the one inside debitRender's transaction —
  * this one only makes the common case clean.
  */
-function assertAffordable(quote: RenderQuote, cellCount: number): void {
+export function assertAffordable(quote: RenderQuote, cellCount: number): void {
   if (shortfallOf(quote, cellCount) > 0) {
     throw new InsufficientCreditsError(quoteTotal(quote, cellCount), quote.balance);
   }

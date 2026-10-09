@@ -15,14 +15,15 @@ import { generateObject } from "../providers/anthropic";
 import { renderPrompt } from "../prompts";
 import {
   findGeneratedTextBlockDash,
+  fittingTextBlockSkeletons,
   isTextBlockSkeletonId,
   normalizeTextBlockText,
   speakerGenderSchema,
   TEXT_BLOCK_EXAMPLES,
-  TEXT_BLOCK_SKELETON_IDS,
   textBlockTextError,
+  type TextBlockSkeletonId,
 } from "../text-block";
-import { requireQuestionnaire } from "./businesses";
+import { getBusiness, questionnaireSchema, requireQuestionnaire } from "./businesses";
 
 type Script = typeof scripts.$inferSelect;
 
@@ -232,9 +233,53 @@ const TEXT_BLOCK_MAX_TOKENS = 8192;
 
 export type TextBlockBatch = {
   texts: Script[];
-  /** Skeletons the model judged a poor fit for this business, with its reason — returned, never stored. */
+  /**
+   * Skeletons the model judged a poor fit for this business, with its reason —
+   * returned, never stored. `discovery` is listed here with a code-side reason
+   * when the questionnaire has no `wow`, because it was never requested.
+   */
   skipped: { skeleton: string; reason: string }[];
 };
+
+/** Shown in the admin studio's skipped list for a batch that never asked for `discovery`. */
+export const TEXT_BLOCK_NO_WOW_REASON = "אין wow בשאלון";
+
+/**
+ * What a batch keeps of the model's answer before the checks: only the
+ * requested skeletons (a known id the batch did not ask for is dropped and
+ * logged, never stored — `discovery` without a `wow` must never reach a
+ * customer, decision 0099 §5), and never one the model also listed in
+ * `skipped` (a hedged answer is a skip). An UNKNOWN id is kept, so
+ * textBlockBatchProblem still refuses it and the retry can catch it.
+ */
+function keepRequestedTextBlocks(
+  batch: {
+    texts: { skeleton: string; text: string }[];
+    skipped: { skeleton: string; reason: string }[];
+  },
+  requested: readonly TextBlockSkeletonId[],
+  businessId: string,
+): {
+  texts: { skeleton: string; text: string }[];
+  skipped: { skeleton: string; reason: string }[];
+} {
+  const asked = new Set<string>(requested);
+  const skippedIds = new Set(batch.skipped.map((entry) => entry.skeleton));
+  const dropped: string[] = [];
+  const texts = batch.texts.filter((entry) => {
+    if (!isTextBlockSkeletonId(entry.skeleton)) return true;
+    const keep = asked.has(entry.skeleton) && !skippedIds.has(entry.skeleton);
+    if (!keep) dropped.push(entry.skeleton);
+    return keep;
+  });
+  if (dropped.length > 0) {
+    logger.warn(
+      { businessId, dropped },
+      "text blocks: dropped unrequested or also-skipped entries",
+    );
+  }
+  return { texts, skipped: batch.skipped.filter((entry) => asked.has(entry.skeleton)) };
+}
 
 /**
  * Why a generated batch cannot be stored, or undefined when it can: every
@@ -266,13 +311,26 @@ export function textBlockBatchProblem(
  * One text per skeleton that fits the business, in the speaker gender of the
  * clip it will burn over (text-block.ts has the rules). Each text is a
  * scripts row of kind text_block; the skipped skeletons come back with the
- * model's reason and are stored nowhere.
+ * model's reason and are stored nowhere. The admin studio shows the whole
+ * batch; the customer wizard serves it one text at a time
+ * (serveNextTextBlock, decision 0099 R2).
+ *
+ * Only the fitting skeletons are requested (`{{skeletons}}`, text_block v3):
+ * `discovery` never without a `wow`. Each row pins the questionnaire stamp it
+ * was written against, so the wizard can tell a batch the questionnaire has
+ * since outdated.
  */
 export async function generateTextBlocks(
   db: Db,
   opts: { businessId: string; clipId: string },
 ): Promise<TextBlockBatch> {
-  const questionnaire = await requireQuestionnaire(db, opts.businessId);
+  const business = await getBusiness(db, opts.businessId);
+  if (!business.questionnaire) {
+    throw new Error(`business ${opts.businessId} has no questionnaire yet — fill it first`);
+  }
+  const questionnaire = questionnaireSchema.parse(business.questionnaire);
+  const questionnaireUpdatedAt = business.questionnaireUpdatedAt?.toISOString() ?? null;
+  const requested = fittingTextBlockSkeletons(questionnaire);
   const clip = (
     await db.select().from(textBlockClips).where(eq(textBlockClips.id, opts.clipId)).limit(1)
   )[0];
@@ -283,6 +341,7 @@ export async function generateTextBlocks(
   const vars = {
     questionnaire: JSON.stringify(questionnaire, null, 2),
     speaker_gender: speakerGender,
+    skeletons: requested.map((id) => `\`${id}\``).join(", "),
   };
 
   let texts: { skeleton: string; text: string }[];
@@ -292,10 +351,7 @@ export async function generateTextBlocks(
     // Dry-run still renders the template so prompt_version stays traceable and
     // a template/vars mismatch surfaces in tests, not in production.
     ({ promptVersion } = renderPrompt("text_block", vars));
-    texts = TEXT_BLOCK_SKELETON_IDS.map((skeleton) => ({
-      skeleton,
-      text: TEXT_BLOCK_EXAMPLES[skeleton],
-    }));
+    texts = requested.map((skeleton) => ({ skeleton, text: TEXT_BLOCK_EXAMPLES[skeleton] }));
     skipped = [];
   } else {
     const generate = async () => {
@@ -307,7 +363,10 @@ export async function generateTextBlocks(
         textBlocksOutput,
         TEXT_BLOCK_MAX_TOKENS,
       );
-      return { ...result.object, promptVersion: result.promptVersion };
+      return {
+        ...keepRequestedTextBlocks(result.object, requested, opts.businessId),
+        promptVersion: result.promptVersion,
+      };
     };
 
     // Reject-and-retry, never sanitise — the same stance as the hook lines: the
@@ -330,6 +389,9 @@ export async function generateTextBlocks(
     }
     ({ texts, skipped, promptVersion } = batch);
   }
+  if (!requested.includes("discovery")) {
+    skipped = [...skipped, { skeleton: "discovery", reason: TEXT_BLOCK_NO_WOW_REASON }];
+  }
 
   const rows = await db
     .insert(scripts)
@@ -338,7 +400,12 @@ export async function generateTextBlocks(
         businessId: opts.businessId,
         kind: "text_block" as const,
         text: normalizeTextBlockText(entry.text),
-        params: { skeleton: entry.skeleton, textBlockClipId: clip.id, speakerGender },
+        params: {
+          skeleton: entry.skeleton,
+          textBlockClipId: clip.id,
+          speakerGender,
+          questionnaireUpdatedAt,
+        },
         promptVersion,
       })),
     )
@@ -437,7 +504,7 @@ export async function generateVoScript(
       .limit(1);
     const persona = personaRows[0];
     if (!persona) throw new Error(`persona ${opts.personaId} not found`);
-    voiceId = voiceId ?? persona.voiceId;
+    voiceId = voiceId ?? persona.voiceId ?? undefined;
     if (persona.gender) {
       personaGender = persona.gender;
     } else {
@@ -665,7 +732,7 @@ export async function generateBScript(
   const structure = structureRows[0];
   if (!structure) throw new Error(`structure ${opts.structureId} not found`);
 
-  const wps = await wordsPerSecond(db, persona.voiceId);
+  const wps = await wordsPerSecond(db, persona.voiceId ?? undefined);
   const wordBudget = Math.floor(durationPreset * wps);
 
   let personaGender = persona.gender;

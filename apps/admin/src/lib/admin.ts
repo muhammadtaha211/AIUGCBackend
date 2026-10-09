@@ -56,7 +56,12 @@ export function isUuid(value: string): boolean {
 
 export const createPersonaSchema = z.object({
   name: z.string().trim().min(1),
-  voiceId: z.string().trim().min(1),
+  /** Blank or absent = no voice: a character for גוש טקסט alone (0055, decision 0099 R1). */
+  voiceId: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((value) => value || null),
   gender: z.enum(["female", "male"]),
 });
 

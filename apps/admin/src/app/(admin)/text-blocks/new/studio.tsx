@@ -25,6 +25,8 @@ export type StudioClip = {
   speakerGender: SpeakerGender;
   textSafeArea: SafeRect;
   textColor: HookTextColor;
+  /** The clip's character; absent = unassigned (still usable for an admin-owned business). */
+  personaName?: string;
 };
 
 export type StudioRender = {
@@ -225,8 +227,8 @@ export function TextBlockStudio({
             {clips.length === 0 && <option value="">אין קליפים פעילים</option>}
             {clips.map((c) => (
               <option key={c.id} value={c.id}>
-                {SPEAKER_GENDER_LABEL[c.speakerGender]} · {(c.durationMs / 1000).toFixed(1)}s ·{" "}
-                {c.id.slice(0, 8)}
+                {c.personaName ?? "ללא דמות"} · {SPEAKER_GENDER_LABEL[c.speakerGender]} ·{" "}
+                {(c.durationMs / 1000).toFixed(1)}s · {c.id.slice(0, 8)}
               </option>
             ))}
           </select>
