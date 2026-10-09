@@ -112,6 +112,10 @@ If the changes made in the session require a box restart or anything done on the
 
 Never apply a Supabase migration at the end of a task. If one is waiting, say so in the "Next step" section and put its `db push --dry-run` output in a fenced block under that sentence (`.claude/rules/migrations.md`).
 
+### 4. Unattended runs
+
+In a cloud session (`CLAUDE_CODE_REMOTE=true`) whose first message is a spec, follow `docs/unattended/protocol.md`; it says how each rule here holds there (vault 0096). A push to main from any Claude session is refused by the git pre-push hook that `.claude/hooks/session-start.mjs` installs; merging, `--no-verify` and printing the paid-check key are instruction only, and each is a stop-and-ask (vault 0097). Hooks and settings change in local sessions only.
+
 ## Commands
 
 Populate this section as scripts land, and keep it current.

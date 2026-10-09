@@ -78,6 +78,8 @@ One pnpm monorepo, boring-tech throughout:
 
 ```
 docs/                   this design set
+docs/unattended/        cloud-session runs from a spec: protocol, spec template, runbook (vault 0096)
+.claude/hooks/          the pre-push hook refusing a push to main, and its installer (vault 0097)
 prompts/<name>/v<N>.md  versioned Claude prompts (see 04-integrations.md)
 supabase/migrations/    0000 (drizzle-generated DDL) · 0001 (extras+seed) · 0002 (Supabase-only RLS)
 packages/core/src/
