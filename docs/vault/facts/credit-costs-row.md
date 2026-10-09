@@ -1,8 +1,8 @@
 ---
 type: fact
 status: verified
-verified: 2026-09-17
-method: "Re-measured 2026-09-17 right after migration 0043 was pushed to production: packages/core/scripts/verify-credit-costs.ts (read-only, 18 checks, PASS) read the row through getConfigValue(db,'credit_costs',creditCostsSchema) — the exact call every quote path makes — and asserted all ten rates, that the row holds exactly the ten known keys with nothing stray, that every value is jsonb_typeof number, the two steps quotes (25 and 45) and both sides of the new Service B floor. A before-read the same day, through the same call (packages/core/.work/preflight-0043.ts), returned the 0039 row with all four of 0043's guards matching — so the move is measured at both ends, not inferred from an exit code. Key reachability is the older measurement: grep -rn <each key> packages/core/src apps/*/src packages/remotion/src, 2026-08-23, plus the tenth key added 2026-09-13."
+verified: 2026-10-09
+method: "Re-measured 2026-10-09 right after migration 0053 was pushed to production: packages/core/scripts/verify-credit-costs.ts on feat/service-c-phase-2 (read-only, 21 checks, PASS) — the eleven rates through getConfigValue(db,'credit_costs',creditCostsSchema), exactly the eleven known keys, all jsonb numbers, the A and B quotes unchanged and the new C quote 25; the before-read the same day (packages/core/.work/readback-0053-0056.ts) parsed the row through the pre-0053 shape (10 keys) and saw the branch schema refuse it at c_text_block_credits alone. Before that: re-measured 2026-09-17 right after migration 0043 was pushed to production: packages/core/scripts/verify-credit-costs.ts (read-only, 18 checks, PASS) read the row through getConfigValue(db,'credit_costs',creditCostsSchema) — the exact call every quote path makes — and asserted all ten rates, that the row holds exactly the ten known keys with nothing stray, that every value is jsonb_typeof number, the two steps quotes (25 and 45) and both sides of the new Service B floor. A before-read the same day, through the same call (packages/core/.work/preflight-0043.ts), returned the 0039 row with all four of 0043's guards matching — so the move is measured at both ends, not inferred from an exit code. Key reachability is the older measurement: grep -rn <each key> packages/core/src apps/*/src packages/remotion/src, 2026-08-23, plus the tenth key added 2026-09-13."
 source: db
 ---
 
@@ -19,9 +19,17 @@ source: db
   "a_ending_reroll_per_second": 5,
   "a_remix_assembly_credits": 10,
   "a_steps_credits": 25,
-  "a_demo_analysis_credits": 20
+  "a_demo_analysis_credits": 20,
+  "c_text_block_credits": 25
 }
 ```
+
+> **Changed 2026-10-09, applied and read back the same day.** 0053 added the eleventh key,
+> `c_text_block_credits` = **25**: one Service C (גוש טקסט) render, flat and floor-exempt
+> (`quoteServiceC`), the founder's price from [[0089-service-c-text-block-exists-admin-only-phase-1]]
+> §4, live with the customer wizard ([[0099-service-c-phase-2-opens-to-customers]]). It was pushed
+> BEFORE the merge of the code whose `creditCostsSchema` requires it. The other ten values did not
+> move. Ledger **57 rows, 0000–0056**.
 
 > **Changed 2026-09-17, applied and read back the same day.** Every rate above was written by
 > `supabase/migrations/0043_pricing_credit_unit.sql`
@@ -48,8 +56,8 @@ source: db
 > ([[0048-the-demo-analysis-is-charged-once-per-demo]]); 0017 seeded the eight rates before that.
 > 0048's mechanism is untouched by 0043 — only its numbers moved.
 
-**No unread keys** — all ten are read by `packages/core/src/pricing.ts` and nothing else touches
-them (grepped one key at a time across `packages/core/src`, `apps/*/src`, `packages/remotion/src`;
+**No unread keys** — all eleven are read by `packages/core/src/pricing.ts` (the eleventh by
+`quoteServiceC`, since 2026-10-09) and nothing else touches them (grepped one key at a time across `packages/core/src`, `apps/*/src`, `packages/remotion/src`;
 the tenth was added 2026-09-13 and is read at `quoteServiceASteps`).
 
 **But two are unreachable in production.** `a_ending_reroll_per_second` is priced only by

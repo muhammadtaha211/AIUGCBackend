@@ -843,6 +843,39 @@ ORDER BY migration, layer DESC;
 -- ---------------------------------------------------------------------------
 -- RESULTS
 --
+-- 2026-10-09, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0053 + 0054 + 0055 + 0056** (Service C phase 2: the c_text_block_credits
+-- key, text_block_clips.persona_id, personas.voice_id optional,
+-- scripts.shown_at; decision 0099) together, on the founder's explicit
+-- approval for this one push ("push 0053–0056, I approve this one push"),
+-- BEFORE the merge of the code that requires the key (rule 9). Pre-flight
+-- twice (the second minutes before the push): `migration list` showed
+-- 0000-0052 local == remote with 0053-0056 the only rows with an empty
+-- remote, and `db push --dry-run` named exactly those four files. The full
+-- test gate was green on the pushed tree (8dcc688). The apply printed
+-- "Applying migration 0053_text_block_credits.sql..." through
+-- "...0056_scripts_shown_at.sql..." and exited 0; the same Docker
+-- catalog-cache warning as 0035-0052, not a failure. `db push` recorded all
+-- four itself, the FIFTEENTH push in a row with no repair.
+--
+-- Read at BOTH ends through the code's own connection inside a read-only
+-- transaction (packages/core/.work/readback-0053-0056.ts -- the four VERIFY
+-- blocks, credit_costs through getConfigValue, and this file). BEFORE:
+-- credit_costs parsed through the pre-0053 shape (10 keys) and the branch's
+-- creditCostsSchema refused it at c_text_block_credits ALONE (the deploy-order
+-- proof); text_block_clips 8 columns, no FK, 2 rows (active, female), 0
+-- policies; personas.voice_id NOT NULL, 7 personas; no scripts.shown_at (the
+-- last probe errors); ledger 53 rows 0000-0052; this file 50 rows, 43 true,
+-- 0053-0056 false and 0052 true. AFTER: creditCostsSchema parses,
+-- c_text_block_credits = 25 (jsonb number) and the other ten unchanged;
+-- text_block_clips 9 columns with text_block_clips_persona_id_personas_id_fk,
+-- the 2 rows unassigned, 0 policies; voice_id nullable with 0 NULL rows;
+-- scripts.shown_at timestamptz nullable, 0 set; ledger 57 rows 0000-0056, NO
+-- GAPS; this file 50 rows, 47 true -- every structural row true but 0020
+-- (NULL by design) and 0022 (the expected false), and the data row 0028
+-- false as its note predicts. packages/core/scripts/verify-credit-costs.ts on
+-- the branch: every check ok, PASS (11 keys, the C quote 25).
+--
 -- 2026-10-07, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0051 + 0052** (Service C: the 'c' and 'text_block' enum values, the
 -- text_block_clips table; decisions 0089/0090) together, on the founder's
