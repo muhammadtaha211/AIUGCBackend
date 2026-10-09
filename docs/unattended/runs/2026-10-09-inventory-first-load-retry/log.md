@@ -60,8 +60,8 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
       frontmatter's `verified`/`method` prefixed with the fix's evidence, the original finding kept
       below, its `**NOT FIXED.**` now "NOT FIXED then (fixed 2026-10-09, above)".
 
-- [ ] **The gate, 2026-10-09 (test-runner on Bash, started 11:22:16Z, about 7 min 52 s): 6 of 7
-      green, 1 red. STOPPED here to ask the founder.**
+- [x] **The gate, 2026-10-09 (test-runner on Bash, started 11:22:16Z, about 7 min 52 s): 6 of 7
+      green, 1 red. Stopped to ask; the founder ruled to continue (below).**
 
   ```
   lint: clean; exit 0
@@ -92,6 +92,12 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
     value, and not the paid-check key, appeared. The protocol bars invoking `env` at all; it was
     not used again.
 
+  **The founder's ruling (2026-10-09), in his words:** "Continue, option 1. Put the Remotion suite
+  at the top of the report as owed, with the command, and say the PR must not be merged before it
+  passes locally. Record the failure in log.md and state-of-play as a first-run finding measured in
+  this cloud run: what you checked, and what you did not find. Change nothing under packages/,
+  don't try to fix the environment from inside the run, and no certificate workarounds."
+
 ## Spend
 
 | check | calls | input tokens | output tokens | reserved (agorot) | actual (agorot) |
@@ -107,7 +113,9 @@ Total: 0 of 0 agorot. No paid call in this run.
 
 ## Owed
 
-- Nothing under decision 9: no migration, no production read-back, no vault fact that needs
+- **The Remotion suite, before the merge** (the founder's ruling): `pnpm --filter @aiugc/remotion
+  exec vitest run --fileParallelism=false`, run locally. The PR must not be merged before it passes.
+- Nothing else under decision 9: no migration, no production read-back, no vault fact that needs
   production, no box step. The founder's List 2 browser checks and first-run items 5, 11 and 12
   are his.
 
