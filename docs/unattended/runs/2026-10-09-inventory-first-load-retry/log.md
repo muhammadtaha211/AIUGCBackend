@@ -16,7 +16,23 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
 
 - [x] Bootstrap: `--check` passed (cloud mode); `git fetch --unshallow origin` (2 s, 510 commits
       after); `pnpm install --frozen-lockfile` (18 s); `ffmpeg -version` 6.1.1-3ubuntu5.
-- [x] Spec and log saved, pushed (this commit).
+- [x] Spec and log saved, pushed (`5d7a395`).
+- [x] Commit A, the failing test (this commit): `apps/web/test/inventory-retry.test.ts` alone, on
+      main's `state-picker.tsx` and `service-a-ui.ts`. C1 and C2 both fail on the defect, before
+      either reaches the missing `inventoryRetry` export. Pushed together with commit B, so a red
+      commit is never the branch tip. `pnpm --filter @aiugc/web typecheck` is also red at this
+      commit only (TS2305, no exported `inventoryRetry`), since apps/web's tsconfig includes `test`.
+
+  ```
+  $ pnpm --filter @aiugc/web exec vitest run --fileParallelism=false test/inventory-retry.test.ts
+     × the inventory list's failed first load > C1: with nothing loaded, the error line offers «נסו שוב» 8ms
+       → the retry button is behind a condition, so a failed first load shows no retry: expected '{error && (\n        <div className="…' not to match /&&\s*\(\s*<Button/
+     × the inventory list's failed first load > C2: the retry re-runs the inventory request, and a success leaves no error line 1ms
+       → the inventory effect runs once per demo, so nothing can re-run its request: expected '// The inventory: metadata (+ any sto…' to match /\}, \[demoId, inventoryNonce\]\);/
+   Test Files  1 failed (1)
+        Tests  2 failed (2)
+  exit 1
+  ```
 
 ## Spend
 
