@@ -17,7 +17,7 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
 - [x] Bootstrap: `--check` passed (cloud mode); `git fetch --unshallow origin` (2 s, 510 commits
       after); `pnpm install --frozen-lockfile` (18 s); `ffmpeg -version` 6.1.1-3ubuntu5.
 - [x] Spec and log saved, pushed (`5d7a395`).
-- [x] Commit A, the failing test (this commit): `apps/web/test/inventory-retry.test.ts` alone, on
+- [x] Commit A, the failing test (`b72a9be`): `apps/web/test/inventory-retry.test.ts` alone, on
       main's `state-picker.tsx` and `service-a-ui.ts`. C1 and C2 both fail on the defect, before
       either reaches the missing `inventoryRetry` export. Pushed together with commit B, so a red
       commit is never the branch tip. `pnpm --filter @aiugc/web typecheck` is also red at this
@@ -34,7 +34,7 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
   exit 1
   ```
 
-- [x] Commit B, the fix (this commit). `inventoryRetry(inventory)` in
+- [x] Commit B, the fix (`2ee3961`). `inventoryRetry(inventory)` in
       `apps/web/src/lib/service-a-ui.ts`, after `timeRangePages`. In `state-picker.tsx`: an
       `inventoryNonce` counter, the inventory effect keyed on `[demoId, inventoryNonce]` and
       clearing the error when it runs (as step-plan's cards and attach effects do), and the
@@ -55,6 +55,10 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
   `+            נסו שוב` (12-space indent). It is the removed `-              נסו שוב`
   (14-space indent), main's `state-picker.tsx:242`, the existing button text. It moved two
   columns left because its `{inventory !== null && (` wrapper went; the string is unchanged.
+
+- [x] The defect note (this commit): a dated `## FIXED 2026-10-09` section under the title, the
+      frontmatter's `verified`/`method` prefixed with the fix's evidence, the original finding kept
+      below, its `**NOT FIXED.**` now "NOT FIXED then (fixed 2026-10-09, above)".
 
 ## Spend
 
