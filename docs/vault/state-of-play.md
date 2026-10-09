@@ -120,9 +120,12 @@ come out, with two stops of his: the plan, and the merge with everything after i
   pull and restart. Until the restart the box keeps calling 4.6, which still works.
   `usage_events` has no model column, so record both moments here when they happen.
 
-**Service C phase 2, the customer wizard: BUILT 2026-10-09 on `feat/service-c-phase-2`, not merged.
-Migrations 0053–0056 are WRITTEN, NOT PUSHED; the dry run lists exactly those four. Gate all
-green (lint, typecheck, remotion 97, core 1038, worker 7, web 604, admin 71).**
+**Service C phase 2, the customer wizard: BUILT 2026-10-09 on `feat/service-c-phase-2`.
+Migrations 0053–0056 PUSHED TO PRODUCTION 2026-10-09 on his one-push approval, before the merge,
+and read back (ledger 57 rows, 0000–0056; `verify-credit-costs.ts` PASS with the eleventh key;
+verify §RESULTS, the 2026-10-09 entry). Gate all green (lint, typecheck, remotion 97, core 1038,
+worker 7, web 604, admin 71). The merge was his instruction the same day (see Owed founder
+actions for what is left).**
 
 - **Decision:** [[0099-service-c-phase-2-opens-to-customers]] — his rulings 1–11 of 2026-10-07/08
   and four more from this task's planning chat (2026-10-09):
@@ -1283,14 +1286,14 @@ the 2026-09-26 custom domain (founder-reported):**
 ## Owed founder actions
 
 - **Service C phase 2 (2026-10-09, `feat/service-c-phase-2`).** In order:
-  1. Say yes to the ONE push of 0053–0056 (the dry run lists exactly those). The BEFORE read-back
-     is in the task report.
-  2. After the push: `apps/cli/node_modules/.bin/tsx packages/core/.work/readback-0053-0056.ts`
-     and `apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-credit-costs.ts` on the
-     branch (main's copy of the verify script FAILS its key count between push and merge — expected).
+  1. ~~The ONE push of 0053–0056~~ DONE 2026-10-09 on his approval ("push 0053–0056, I approve
+     this one push"), before the merge.
+  2. ~~The read-back~~ DONE 2026-10-09: `readback-0053-0056.ts` and `verify-credit-costs.ts` both
+     clean (verify §RESULTS, the 2026-10-09 entry).
   3. The box on `origin/main` (≥ #80, which carries the `c` render handler; this also lands the
      owed #82 restart): pull + install + restart once no job is running. Phase 2 adds no worker code.
-  4. Approve the new Hebrew strings (the report's table), then merge. Vercel deploys web and admin.
+  4. The merge: his instruction of 2026-10-09 ("then merge"), with the Hebrew strings of the
+     report taken as approved. Vercel deploys web and admin.
   5. Admin `/text-blocks`: assign each existing clip to a character. For a character used only
      here, create it with no voice and upload a **preview** image. Until then no customer sees C.
   6. Smoke test as a customer with credits: `/home/c/new` end to end, 25 credits debited.
