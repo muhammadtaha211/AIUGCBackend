@@ -34,6 +34,28 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
   exit 1
   ```
 
+- [x] Commit B, the fix (this commit). `inventoryRetry(inventory)` in
+      `apps/web/src/lib/service-a-ui.ts`, after `timeRangePages`. In `state-picker.tsx`: an
+      `inventoryNonce` counter, the inventory effect keyed on `[demoId, inventoryNonce]` and
+      clearing the error when it runs (as step-plan's cards and attach effects do), and the
+      «נסו שוב» button rendered with every error, its click routed by `inventoryRetry`
+      (`retryThumbs` once the list is in, else the nonce bump). `retryThumbs`, `wantThumbs`,
+      `INVENTORY_ERROR`, `step-plan.tsx` and the analysis route are untouched.
+      `pnpm --filter @aiugc/web typecheck`: 0 errors.
+
+  ```
+  $ pnpm --filter @aiugc/web exec vitest run --fileParallelism=false test/inventory-retry.test.ts
+   ✓ test/inventory-retry.test.ts (2 tests) 4ms
+   Test Files  1 passed (1)
+        Tests  2 passed (2)
+  exit 0
+  ```
+
+  **C4, the one moved Hebrew line.** The C4 grep prints exactly one line:
+  `+            נסו שוב` (12-space indent). It is the removed `-              נסו שוב`
+  (14-space indent), main's `state-picker.tsx:242`, the existing button text. It moved two
+  columns left because its `{inventory !== null && (` wrapper went; the string is unchanged.
+
 ## Spend
 
 | check | calls | input tokens | output tokens | reserved (agorot) | actual (agorot) |

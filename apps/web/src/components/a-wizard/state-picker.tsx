@@ -9,6 +9,7 @@ import {
   clipWindow,
   fmtTimestamp,
   inventoryPages,
+  inventoryRetry,
   labelWordWarning,
   tileOverlapLine,
   tileState,
@@ -80,6 +81,9 @@ export function InventoryPanel({
   const [inventory, setInventory] = useState<AnalysisStateWire[] | null>(null);
   const [sectionsWire, setSectionsWire] = useState<InventorySectionWire[] | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  /** Bumped by the error line's retry while nothing has loaded: re-runs the
+   *  inventory effect below, as step-plan's cardsNonce re-runs the cards fetch. */
+  const [inventoryNonce, setInventoryNonce] = useState(0);
   /** index -> signed thumbUrl, accumulated page by page. */
   const [thumbs, setThumbs] = useState<Map<number, string>>(new Map());
   const thumbsRef = useRef(thumbs);
@@ -153,6 +157,9 @@ export function InventoryPanel({
   // thumbs for the first page only.
   useEffect(() => {
     let cancelled = false;
+    // Also on a retry: while cleared, the loading spinner (gated on !error)
+    // shows in the failed load's place.
+    setError(null);
     void (async () => {
       const result = await apiFetch<{
         status: string;
@@ -175,8 +182,9 @@ export function InventoryPanel({
     return () => {
       cancelled = true;
     };
-    // Mount-only per demoId: the editor remounts the picker on demo switch.
-  }, [demoId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Once per demoId (the editor remounts the picker on demo switch), and
+    // again on each retry of a failed first load (inventoryNonce).
+  }, [demoId, inventoryNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function flip(to: number) {
     if (!pages || to < 0 || to >= pages.length) return;
@@ -229,19 +237,22 @@ export function InventoryPanel({
           <p role="alert" className="rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
             {error}
           </p>
-          {/* Thumb-batch failures are retryable in place; only an inventory
-              failure (nothing loaded at all) keeps close-and-reopen. */}
-          {inventory !== null && (
-            <Button
-              type="button"
-              variant="secondary"
-              className="mt-2"
-              loading={thumbsBusy}
-              onClick={retryThumbs}
-            >
-              נסו שוב
-            </Button>
-          )}
+          {/* Every failure is retryable in place (inventoryRetry): a failed
+              thumb batch re-requests the missing thumbs, and a failed first
+              load (nothing loaded at all) re-runs the inventory request. */}
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-2"
+            loading={thumbsBusy}
+            onClick={
+              inventoryRetry(inventory) === "thumbs"
+                ? retryThumbs
+                : () => setInventoryNonce((n) => n + 1)
+            }
+          >
+            נסו שוב
+          </Button>
         </div>
       )}
 
