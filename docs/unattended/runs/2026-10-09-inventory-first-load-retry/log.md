@@ -61,6 +61,7 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
       below, its `**NOT FIXED.**` now "NOT FIXED then (fixed 2026-10-09, above)".
 
 - [x] The review loop: round 1 CLEAN (see Review rounds).
+- [x] End of task: state-of-play, `pnpm repo-map`, push, PR #85 opened with `gh api` (REST).
 - [x] **The gate, 2026-10-09 (test-runner on Bash, started 11:22:16Z, about 7 min 52 s): 6 of 7
       green, 1 red. Stopped to ask; the founder ruled to continue (below).**
 
@@ -136,5 +137,5 @@ both are filled below.
 - Item 6: There is no PowerShell tool in this session; Bash is the shell tool. test-runner ran the seven commands on Bash, one at a time, and returned its compact report.
 - Item 7: `spec-reviewer` loads as its own agent type in the cloud. The session's agent list shows it with tools "Read, Grep, Glob". It ran round 1, read the spec, diff, proofs and changed files, and returned its exact format (verdict CLEAN). The tree was clean after it (`git status --short` empty), so it edited nothing. Its tool list was read from the listing, not tested by asking it to edit.
 - Item 8: The GitHub tools are the deferred `mcp__github__*` set (for example `mcp__github__create_pull_request`, `mcp__github__pull_request_read`, `mcp__github__push_files`). Two of them can merge: `mcp__github__merge_pull_request`, and `mcp__github__enable_pr_auto_merge` indirectly. Neither was called. `gh` is also installed (`/usr/local/bin/gh`), although the harness's instructions say the session has no gh CLI.
-- Item 9: Pending: the PR opens after the review loop.
+- Item 9: Yes. `gh api repos/muhammadtaha211/AIUGCBackend/pulls -f title=… -f head='claude/inventory-first-load-retry-kv24q9' -f base=main -F body=@.work/pr-body.md` opened PR #85 (https://github.com/muhammadtaha211/AIUGCBackend/pull/85), open, not draft, author `muhammadtaha211`. Not merged, auto-merge not enabled.
 - Item 10: `gh api user --jq '.login + " (type: " + .type + ")"'` printed `muhammadtaha211 (type: User)`: the founder's own account, not an app. A GitHub ruleset keyed on identity cannot tell this session apart from him.

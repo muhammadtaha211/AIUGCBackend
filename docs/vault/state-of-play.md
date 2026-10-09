@@ -42,8 +42,8 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 
 **Unattended feature runs in a cloud session: SET UP 2026-10-08 on `tooling/unattended-cloud-runs`,
 MERGED as PR #84 (`1b709ff` on `origin/main`, MEASURED by `git log` 2026-10-09). The first run went
-2026-10-09: the inventory first-load retry, on `claude/inventory-first-load-retry-kv24q9`, not
-merged.** One spec goes in, and a pushed branch, a PR and a report
+2026-10-09: the inventory first-load retry, on `claude/inventory-first-load-retry-kv24q9`, PR #85,
+not merged.** One spec goes in, and a pushed branch, a PR and a report
 come out, with two stops of his: the plan, and the merge with everything after it.
 
 - **Decisions:**
@@ -1266,8 +1266,8 @@ the 2026-09-26 custom domain (founder-reported):**
   4. ~~The first trial run~~ RAN 2026-10-09 (below). The checklist is in its `log.md`; items 5, 11
      and 12 are his to report.
 
-- **The first unattended run's branch, `claude/inventory-first-load-retry-kv24q9` (2026-10-09).**
-  In order:
+- **The first unattended run's branch, `claude/inventory-first-load-retry-kv24q9`, PR #85
+  (2026-10-09).** In order:
   1. Run the Remotion suite locally:
      `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`. **The PR must not be
      merged before it passes** (his ruling, 2026-10-09). The cloud run could not run it green
@@ -1510,6 +1510,7 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   - **The pre-push hook loads in the cloud.** The SessionStart line said cloud mode, and `--check`
     passed.
   - **`gh api user` is his own account** (`muhammadtaha211`, type User), not an app.
+  - **`gh api …/pulls` opens the PR** (REST): PR #85, authored as him.
   - **`spec-reviewer` loads as its own agent type in the cloud.** It ran the review round (CLEAN on
     the first round) and edited nothing; its tool list (Read, Grep, Glob) was read from the agent
     listing.
