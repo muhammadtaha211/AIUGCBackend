@@ -60,6 +60,38 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
       frontmatter's `verified`/`method` prefixed with the fix's evidence, the original finding kept
       below, its `**NOT FIXED.**` now "NOT FIXED then (fixed 2026-10-09, above)".
 
+- [ ] **The gate, 2026-10-09 (test-runner on Bash, started 11:22:16Z, about 7 min 52 s): 6 of 7
+      green, 1 red. STOPPED here to ask the founder.**
+
+  ```
+  lint: clean; exit 0
+  typecheck: clean; exit 0
+  remotion: 96 passed, 1 failed, 0 skipped; files 1 failed / 9 total; exit 1
+  core: 995 passed, 0 failed, 0 skipped; files 0 failed / 72 total; exit 0
+  worker: 7 passed, 0 failed, 0 skipped; files 0 failed / 1 total; exit 0
+  web: 574 passed, 0 failed, 0 skipped; files 0 failed / 26 total; exit 0
+  admin: 65 passed, 0 failed, 0 skipped; files 0 failed / 4 total; exit 0
+  ```
+
+  The red test is `packages/remotion/test/frame-delivery.test.ts` ("ServiceASteps frame delivery >
+  shows a new source frame on (nearly) every output frame"): `NetworkError: A network error
+  occurred.` Chrome Headless Shell 149.0.7790.0 downloaded in full from `remotion.media`, then
+  failed to load the composition's Heebo fonts: `Browser failed to load
+  https://fonts.gstatic.com/s/heebo/v28/NGS6v5_NC0k9P9H2TbE.woff2 (Font):
+  net::ERR_CERT_AUTHORITY_INVALID`. It reproduced on a second, single-file run (3.6 s).
+  - It is not this change: `git diff origin/main...HEAD --stat -- packages/` is empty, so the code
+    under test is main's.
+  - What was measured about the cause: `curl` through the proxy fetches the same font, HTTP 200,
+    with Google's own certificate (issuer `C=US; O=Google Trust Services; CN=WR2`). The proxy's
+    two CAs ("CCR agent-proxy interception CA (production)", "CCR Upstream Proxy CA (staging)")
+    are in `~/.pki/nssdb`, trusted as CAs (`C,,`). So headless Chrome is shown a certificate
+    that neither Google's nor those CAs sign. Why was not established; it is the environment's
+    network or TLS path, not the repo.
+  - A protocol slip, disclosed: while diagnosing, one command ran `env | grep -ciE
+    '^(https?|all|no)_proxy='` to count the proxy variables. It printed only `4`; no variable's
+    value, and not the paid-check key, appeared. The protocol bars invoking `env` at all; it was
+    not used again.
+
 ## Spend
 
 | check | calls | input tokens | output tokens | reserved (agorot) | actual (agorot) |
@@ -83,9 +115,9 @@ Total: 0 of 0 agorot. No paid call in this run.
 
 - Item 1: Seen. The SessionStart line read "aiugc guard: cloud mode. The pre-push hook that refuses a push to main is installed in /root/.config/aiugc/hooks (git config --global core.hooksPath) and /home/user/AIUGCBackend/.git/hooks." `node .claude/hooks/session-start.mjs --check` printed `aiugc pre-push check passed (cloud mode)`, exit 0.
 - Item 2: The session started on `claude/inventory-first-load-retry-kv24q9`, not on main, at `1b709ff` = `origin/main`'s head. It did not exist on GitHub (`git ls-remote origin 'refs/heads/claude/*'` lists three other `claude/` branches, not this one); only a local remote-tracking ref at `1b709ff` existed, with no upstream. The harness's own instructions assign that branch and say not to push to another without permission, so **the protocol's branch naming (`<type>/<slug>` created from `origin/main`) does not hold in the cloud**: the founder ruled at plan approval to use the assigned branch. It sat on `origin/main`'s head, so it is effectively created from `origin/main`. The clone was also shallow (`git rev-parse --is-shallow-repository` printed `true`) and had no `node_modules`.
-- Item 3: ffmpeg is present (`ffmpeg version 6.1.1-3ubuntu5`). The Remotion Chrome download: pending the gate.
-- Item 4: Pending the gate.
-- Item 6: There is no PowerShell tool in this session; Bash is the shell tool. test-runner on Bash: pending the gate.
+- Item 3: ffmpeg is present (`ffmpeg version 6.1.1-3ubuntu5`), and the core suite's ffmpeg tests pass. The Remotion test downloads Chrome Headless Shell from `remotion.media` in full (91.9 Mb, via `https://www.remotion.dev/chrome-headless-shell`), but the render then fails: headless Chrome rejects `fonts.gstatic.com` with `net::ERR_CERT_AUTHORITY_INVALID` (see the gate step).
+- Item 4: Not all green: 6 of 7 (lint, typecheck, core, worker, web, admin green; remotion 1 failed of 97, the fonts certificate above). Durations: remotion 20.24 s, core 303.14 s, worker 7.63 s, web 20.84 s, admin 4.29 s (vitest's own Duration lines; lint and typecheck print none); the whole gate took about 7 min 52 s. Nothing was moved to the background, so the 30-minute limit was not reached.
+- Item 6: There is no PowerShell tool in this session; Bash is the shell tool. test-runner ran the seven commands on Bash, one at a time, and returned its compact report.
 - Item 7: `spec-reviewer` is listed among the session's agent types with tools "Read, Grep, Glob". Whether it runs: pending the review loop.
 - Item 8: The GitHub tools are the deferred `mcp__github__*` set (for example `mcp__github__create_pull_request`, `mcp__github__pull_request_read`, `mcp__github__push_files`). Two of them can merge: `mcp__github__merge_pull_request`, and `mcp__github__enable_pr_auto_merge` indirectly. Neither was called. `gh` is also installed (`/usr/local/bin/gh`), although the harness's instructions say the session has no gh CLI.
 - Item 9: Pending: the PR opens after the review loop.
