@@ -1510,6 +1510,9 @@ published note breaks the links pointing at it. Renumber or leave it — a found
   - **The pre-push hook loads in the cloud.** The SessionStart line said cloud mode, and `--check`
     passed.
   - **`gh api user` is his own account** (`muhammadtaha211`, type User), not an app.
+  - **`spec-reviewer` loads as its own agent type in the cloud.** It ran the review round (CLEAN on
+    the first round) and edited nothing; its tool list (Read, Grep, Glob) was read from the agent
+    listing.
   - **The gate is 6 of 7, not green.** Lint, typecheck, core (995), worker, web (574) and admin
     pass. The remotion suite's `frame-delivery.test.ts` fails twice the same way: Chrome Headless
     Shell downloads in full from `remotion.media`, then rejects the composition's Heebo fonts from

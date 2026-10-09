@@ -60,6 +60,7 @@ Branch check before the first commit: `git rev-parse HEAD origin/main` both prin
       frontmatter's `verified`/`method` prefixed with the fix's evidence, the original finding kept
       below, its `**NOT FIXED.**` now "NOT FIXED then (fixed 2026-10-09, above)".
 
+- [x] The review loop: round 1 CLEAN (see Review rounds).
 - [x] **The gate, 2026-10-09 (test-runner on Bash, started 11:22:16Z, about 7 min 52 s): 6 of 7
       green, 1 red. Stopped to ask; the founder ruled to continue (below).**
 
@@ -110,6 +111,13 @@ Total: 0 of 0 agorot. No paid call in this run.
 
 | round | verdict | gaps (id: status) |
 | ----- | ------- | ----------------- |
+| 1     | CLEAN   | none              |
+
+Round 1 reviewed `8aadc18` (`.work/review/round-1.diff`, `round-1.proofs.md`, both gitignored). C1–C7
+PROVEN; Decided/Limits: none; Untraced: none. It noted that HEAD had since moved to `01c99fa`, the
+state-of-play commit: an end-of-task chore, which its method excludes. The diff under `apps/web/`
+did not change after the reviewed commit. It also noted Items 7 and 9 were still placeholders;
+both are filled below.
 
 ## Owed
 
@@ -126,7 +134,7 @@ Total: 0 of 0 agorot. No paid call in this run.
 - Item 3: ffmpeg is present (`ffmpeg version 6.1.1-3ubuntu5`), and the core suite's ffmpeg tests pass. The Remotion test downloads Chrome Headless Shell from `remotion.media` in full (91.9 Mb, via `https://www.remotion.dev/chrome-headless-shell`), but the render then fails: headless Chrome rejects `fonts.gstatic.com` with `net::ERR_CERT_AUTHORITY_INVALID` (see the gate step).
 - Item 4: Not all green: 6 of 7 (lint, typecheck, core, worker, web, admin green; remotion 1 failed of 97, the fonts certificate above). Durations: remotion 20.24 s, core 303.14 s, worker 7.63 s, web 20.84 s, admin 4.29 s (vitest's own Duration lines; lint and typecheck print none); the whole gate took about 7 min 52 s. Nothing was moved to the background, so the 30-minute limit was not reached.
 - Item 6: There is no PowerShell tool in this session; Bash is the shell tool. test-runner ran the seven commands on Bash, one at a time, and returned its compact report.
-- Item 7: `spec-reviewer` is listed among the session's agent types with tools "Read, Grep, Glob". Whether it runs: pending the review loop.
+- Item 7: `spec-reviewer` loads as its own agent type in the cloud. The session's agent list shows it with tools "Read, Grep, Glob". It ran round 1, read the spec, diff, proofs and changed files, and returned its exact format (verdict CLEAN). The tree was clean after it (`git status --short` empty), so it edited nothing. Its tool list was read from the listing, not tested by asking it to edit.
 - Item 8: The GitHub tools are the deferred `mcp__github__*` set (for example `mcp__github__create_pull_request`, `mcp__github__pull_request_read`, `mcp__github__push_files`). Two of them can merge: `mcp__github__merge_pull_request`, and `mcp__github__enable_pr_auto_merge` indirectly. Neither was called. `gh` is also installed (`/usr/local/bin/gh`), although the harness's instructions say the session has no gh CLI.
 - Item 9: Pending: the PR opens after the review loop.
 - Item 10: `gh api user --jq '.login + " (type: " + .type + ")"'` printed `muhammadtaha211 (type: User)`: the founder's own account, not an app. A GitHub ruleset keyed on identity cannot tell this session apart from him.
