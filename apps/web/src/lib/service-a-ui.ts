@@ -896,6 +896,18 @@ function timeRangePages(pool: AnalysisStateWire[]): InventoryPage[] {
   return pages;
 }
 
+/**
+ * What the inventory panel's one retry button re-runs. With nothing loaded
+ * (null) the inventory request itself failed, and the retry runs it again —
+ * that case once had no button, and only a page reload got out
+ * (defects/the-inventory-first-load-failure-has-no-retry-button). Once the
+ * list is in (even empty) only a thumb batch can have failed, and the retry
+ * re-requests the missing thumbs.
+ */
+export function inventoryRetry(inventory: AnalysisStateWire[] | null): "inventory" | "thumbs" {
+  return inventory === null ? "inventory" : "thumbs";
+}
+
 /** A step in the editor's draft. Since every step is its moment's 2 s clip an
  *  added step is complete the moment it is picked — nothing is "computed on
  *  save" any more — so a draft step is just a plan step. */
