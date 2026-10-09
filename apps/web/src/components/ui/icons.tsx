@@ -159,6 +159,21 @@ export function Clip({ className = "size-4" }: IconProps) {
   );
 }
 
+/** A 9:16 frame with a block of text on it — the גוש טקסט service. */
+export function TextBlock({ className = "size-4" }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>
+      <rect x="4" y="2.5" width="8" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M6.25 6h3.5M6.25 8h3.5M7 10h2"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function Person({ className = "size-4" }: IconProps) {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden className={className}>

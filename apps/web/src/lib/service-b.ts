@@ -71,8 +71,8 @@ export function isUuid(value: string): boolean {
 type StoredImage = { kind: string; filePath: string; retired: boolean };
 type PersonaImageRow = StoredImage & { isDefault: boolean; createdAt: Date };
 
-/** Which wizard is asking: the two pick different images off the same rows. */
-export type CatalogService = "a" | "b";
+/** Which wizard is asking: B picks a different image off the same rows than A and C. */
+export type CatalogService = "a" | "b" | "c";
 
 /**
  * A stranded "pending" placeholder (no "/" in file_path — a crashed
@@ -102,9 +102,10 @@ export function personaSelfie<T extends PersonaImageRow>(images: T[]): T | undef
 }
 
 /**
- * Avatar-card thumbnail. Service A (the hook-gallery speaker): kind='preview'
- * -> is_default -> newest — the card is a portrait, nothing renders from it.
- * Service B: personaSelfie, because the card IS the render source.
+ * Avatar-card thumbnail. Service A (the hook-gallery speaker) and Service C
+ * (the גוש טקסט character, decision 0099): kind='preview' -> is_default ->
+ * newest — the card is a portrait, nothing renders from it. Service B:
+ * personaSelfie, because the card IS the render source.
  */
 export function personaThumbnail<T extends PersonaImageRow>(
   images: T[],

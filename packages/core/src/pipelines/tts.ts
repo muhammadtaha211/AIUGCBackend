@@ -54,7 +54,7 @@ export async function requestAudio(
       .from(personas)
       .where(eq(personas.id, script.personaId))
       .limit(1);
-    voiceId = personaRows[0]?.voiceId;
+    voiceId = personaRows[0]?.voiceId ?? undefined;
   }
   if (!voiceId) throw new Error("voiceId is required (no persona voice to derive it from)");
 

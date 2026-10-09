@@ -29,12 +29,15 @@
 -- RLS: 0050's pattern. Server-only in phase 1 — RLS on, zero policies, so the
 -- browser clients (anon and authenticated) see nothing; every reader and writer
 -- is the admin app and the worker over DATABASE_URL as postgres, which bypasses
--- RLS. Phase 2 (the customer wizard) adds the SELECT-active policy hook_clips
--- has. A bare ENABLE ROW LEVEL SECURITY is plain Postgres, so the whole
--- migration is one portable file.
+-- RLS. Phase 2 (the customer wizard) was to add the SELECT-active policy
+-- hook_clips has; it added none (decision 0099): the wizard reads the bank
+-- through the server too, so the table stays server-only. A bare
+-- ENABLE ROW LEVEL SECURITY is plain Postgres, so the whole migration is one
+-- portable file.
 --
 -- No FK, no index beyond the primary key: a clip belongs to no persona and no
--- business, and the only reads are by id and the admin's full listing.
+-- business, and the only reads are by id and the admin's full listing. (Phase
+-- 2's 0054 gave each clip a character: persona_id, with its FK to personas.)
 CREATE TABLE IF NOT EXISTS "text_block_clips" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"file_path" text NOT NULL,

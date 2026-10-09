@@ -7,6 +7,7 @@ import {
   quoteServiceA,
   quoteServiceASteps,
   quoteServiceB,
+  quoteServiceC,
   type CreditCosts,
 } from "../src/pricing";
 
@@ -27,6 +28,7 @@ const HYBRID: CreditCosts = {
   a_remix_assembly_credits: 2,
   a_steps_credits: 3,
   a_demo_analysis_credits: 2,
+  c_text_block_credits: 25,
 };
 
 /** Model (i): marginal cost only — a flat plus the outro seconds. */
@@ -63,6 +65,12 @@ describe("creditCostsSchema", () => {
     // pricing the analysis at nothing forever.
     const { a_demo_analysis_credits: _dropped, ...pre0039 } = HYBRID;
     expect(creditCostsSchema.safeParse(pre0039).success).toBe(false);
+  });
+
+  it("rejects a row missing c_text_block_credits — a silently-zero price is the failure", () => {
+    // 0053 adds the key REQUIRED, the same way 0039 added the analysis key.
+    const { c_text_block_credits: _dropped, ...pre0053 } = HYBRID;
+    expect(creditCostsSchema.safeParse(pre0053).success).toBe(false);
   });
 });
 
@@ -258,6 +266,23 @@ describe("quoteServiceASteps", () => {
     const quote = quoteServiceASteps({ costs, firstPaidRenderOfDemo: true });
     expect(quote.subtotal).toBeCloseTo(2.8, 10);
     expect(quote.credits).toBe(3);
+  });
+});
+
+describe("quoteServiceC", () => {
+  it("is the flat key, at the shipped value — 25 credits", () => {
+    const quote = quoteServiceC({ costs: HYBRID });
+    expect(quote.credits).toBe(25);
+    expect(quote.components).toEqual([{ kind: "text_block", credits: 25 }]);
+    expect(quote.minimumApplied).toBe(false);
+  });
+
+  it("is floor-exempt — the flat IS the price", () => {
+    const quote = quoteServiceC({
+      costs: { ...HYBRID, c_text_block_credits: 3, a_minimum_credits: 50, b_minimum_credits: 50 },
+    });
+    expect(quote.credits).toBe(3);
+    expect(quote.minimumApplied).toBe(false);
   });
 });
 

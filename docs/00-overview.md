@@ -64,15 +64,17 @@ One pnpm monorepo, boring-tech throughout:
   picked and nowhere to continue to, so choosing steps and writing their labels is reachable without
   starting an ad. It needs no changes to `step-plan.tsx`: the component takes `onContinue` as
   optional and every route it calls is ownership-gated on the demo id alone.
-- **Service C, גוש טקסט, is admin-only in phase 1** (2026-10-07,
-  [vault 0089](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md)): a
-  founder-made bank clip played once with its own sound under one Hebrew text block. It has no
-  web wizard; the founder works in `apps/admin` — `/text-blocks` registers clips,
-  `/text-blocks/new` picks a business and a clip, generates the batch (`generateTextBlocks`, one
-  text per skeleton that fits, `prompts/text_block`), edits, renders (`createTextBlockRender`,
-  admin-owned businesses only, no credit key) and downloads. The library on `/home/renders`
-  labels a `c` render "גוש טקסט" because the founder's own business can hold one. Phase 2 (the
-  customer wizard, credits, the dashboard card) is a separate prompt.
+- **Service C, גוש טקסט, is open to every customer with credits since phase 2** (2026-10-09,
+  [vault 0099](vault/decisions/0099-service-c-phase-2-opens-to-customers.md); phase 1 was
+  admin-only, [0089](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md)): a
+  founder-made bank clip played once with its own sound under one Hebrew text block. The wizard is
+  `/home/c/new` (the dashboard's third card): character → one of that character's clips → a studio
+  that serves one text at a time (`serveNextTextBlock`: a stored batch from `generateTextBlocks`,
+  rotated by the structure the business has gone longest without seeing; the model is called only
+  when no unseen text is left) with a free edit and A's placement editor over the clip → a 25-credit
+  render (`createTextBlockRender`, the third debit site) → the library. The founder's console keeps
+  `/text-blocks` (register a clip under its character) and `/text-blocks/new` (the whole batch at
+  once, admin-owned businesses only).
 
 ## Repo layout
 

@@ -20,7 +20,7 @@ import { RendersStrip } from "./renders-strip";
 const PRELOAD_COUNT = 3;
 
 /**
- * The dashboard home pane: greeting, the two service cards, recent renders.
+ * The dashboard home pane: greeting, the three service cards, recent renders.
  * Sized to fit a laptop viewport with no scrolling — the sidebar layout owns
  * the chrome (switcher, credits, profile).
  *
@@ -28,10 +28,11 @@ const PRELOAD_COUNT = 3;
  * service cards warms the wizard's RSC payload, but never its images — these
  * hints put the bytes in the HTTP cache before the user picks a service. The
  * srcset comes from getImageProps with the picker's exact geometry, so the
- * browser preloads the same optimizer URL the picker will request. Both
- * wizards are one click away, and their catalogs differ (A: portrait
- * thumbnails of hook-matrix personas; B: the selfie of selfie personas), so
- * this warms B's card set only — one set of hints, not two.
+ * browser preloads the same optimizer URL the picker will request. Every
+ * wizard is one click away, and their catalogs differ (A: portrait
+ * thumbnails of hook-matrix personas; B: the selfie of selfie personas; C: the
+ * portraits of characters with a גוש טקסט clip), so this warms B's card set
+ * only — one set of hints, not three.
  *
  * Split so the most-clicked route gets a SHAPED skeleton: the segment-level
  * /home/loading.tsx must stay shape-agnostic (it fronts every child nav),
@@ -52,7 +53,8 @@ function HomeSkeleton() {
       <div className="mx-auto w-full max-w-4xl">
         <div className="mx-auto h-9 w-72 max-w-full animate-pulse rounded-lg bg-ink/[0.06]" />
         <div className="mx-auto mt-3 h-4 w-56 animate-pulse rounded-lg bg-ink/[0.06]" />
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
           <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
           <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
         </div>

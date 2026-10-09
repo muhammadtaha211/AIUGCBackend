@@ -1,0 +1,31 @@
+-- Hand-written. Portable SQL: applies to any Postgres (Supabase, PGlite, plain PG).
+
+-- scripts.shown_at: when the גוש טקסט wizard first served this text to the
+-- customer. NULL = never shown.
+--
+-- The founder's ruling for phase 2 (decision 0099, R2): one model call writes
+-- every fitting structure, the wizard shows the texts one at a time, and the
+-- model is called again only when the business has none left unseen. The
+-- rotation runs across visits: the next text is the structure the business has
+-- gone longest without seeing. A batch is one INSERT, so every row of it
+-- shares one created_at — "least recently used" by created_at (0031's rule for
+-- b_script) cannot order the structures of one batch. A per-row "first shown"
+-- stamp can, and it is what "unseen" means.
+--
+-- The one column on scripts that is written after insert: a text row is still
+-- never edited in place (an edit is a new row, updateScriptText), and only the
+-- wizard's serve sets this, once, on a text_block row. Every other kind leaves
+-- it NULL. No index: the serve reads one business's rows, which
+-- scripts_business_idx already narrows.
+ALTER TABLE "scripts" ADD COLUMN IF NOT EXISTS "shown_at" timestamp with time zone;
+
+-- ---------------------------------------------------------------------------
+-- VERIFY BY READ-BACK, BEFORE AND AFTER:
+--
+--   select data_type, is_nullable from information_schema.columns
+--     where table_name = 'scripts' and column_name = 'shown_at';
+--   select count(shown_at) from scripts;
+--
+-- BEFORE: no row. AFTER: 'timestamp with time zone', 'YES', and 0 — nothing is
+-- backfilled.
+-- ---------------------------------------------------------------------------

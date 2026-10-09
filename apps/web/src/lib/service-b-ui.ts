@@ -51,8 +51,8 @@ export function isActiveRenderStatus(status: string): boolean {
 }
 
 /** Which pipeline made it — the library labels each tile, the strip doesn't.
- *  "c" is גוש טקסט (Service C, admin-only in phase 1): a founder's own
- *  business can hold one, so its tile needs a label like any other. */
+ *  "c" is גוש טקסט (Service C, open to every customer with credits since
+ *  phase 2, decision 0099), so its tile needs a label like any other. */
 export const SERVICE_LABELS: Record<"a" | "b" | "c", string> = {
   a: "הוק + דמו",
   b: "דמות AI",

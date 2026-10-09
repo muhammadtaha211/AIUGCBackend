@@ -16,6 +16,7 @@ import {
   Person,
   Plus,
   Spinner,
+  TextBlock,
 } from "@/components/ui/icons";
 import { signOut } from "@/lib/auth";
 import { CREDITS_BOX_LABEL, formatCredits } from "@/lib/plans-ui";
@@ -63,7 +64,7 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
 
 /**
  * Dashboard sidebar (Lovable-style, RTL so it sits on the right): business
- * switcher on top, nav (home, the two libraries, the two service flows and
+ * switcher on top, nav (home, the two libraries, the three service flows and
  * צור קשר), profile menu at the bottom — the menu's פרופיל and הגדרות rows
  * both open /home/settings. The credits moved out of the sidebar into the
  * content pane's top-start pill (credits-box.tsx, founder's screenshot
@@ -285,6 +286,12 @@ export function Sidebar({
             label="דמות AI"
             href="/home/b/new"
             active={pathname.startsWith("/home/b")}
+          />
+          <SidebarItem
+            icon={<TextBlock className="size-4" />}
+            label="גוש טקסט"
+            href="/home/c/new"
+            active={pathname.startsWith("/home/c")}
           />
           <SidebarItem
             icon={<Mail className="size-4" />}

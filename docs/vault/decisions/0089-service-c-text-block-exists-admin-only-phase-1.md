@@ -107,8 +107,27 @@ confirmed". The task prompt named the conditions: 0052 turns row-level security 
   pull and restart are the founder's; nothing on `main` reads the new values or table, so the
   order is safe.
 
+## Amended 2026-10-09 — phase 2 is built
+
+The stop in §3 is over: [[0099-service-c-phase-2-opens-to-customers]] opens גוש טקסט to every
+customer with credits, on the founder's rulings of 2026-10-07/08 (his first post, §1 there) and
+four more of 2026-10-09. What §3 listed as phase 2's needs, as built:
+
+- **The credit key:** `c_text_block_credits` = 25 (0053, §4's price), pushed before the code.
+- **The quote and the debit** in place of the admin-only guard: `createTextBlockRender` is the
+  third debit site. The admin console's render route keeps the guard itself.
+- **The wizard** over the same core functions, at `/home/c/new`, with `serveNextTextBlock` in
+  front of `generateTextBlocks`.
+- **The customer edit route:** `POST /api/scripts/[id]/text` gained a `text_block` branch.
+- **The dashboard card.**
+- **Not built, REASONED there:** the SELECT policy on `text_block_clips` — no browser client reads
+  the table.
+- **Not touched, ruling 10:** the landing, `/pricing` and the legal pages (§5 above stands; this
+  supersedes §3's listing of them as a phase-2 need).
+
 ## Related
 
+- [[0099-service-c-phase-2-opens-to-customers]] — phase 2.
 - [[0090-text-block-format-clip-once-with-its-own-sound]] — the format.
 - [[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]] — the texts.
 - [[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]] — why Service B's revamp is closed.

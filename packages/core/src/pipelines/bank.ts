@@ -189,15 +189,19 @@ export async function handleNormalizeHookClip(job: Job, ctx: JobContext): Promis
   return { kind: "done" };
 }
 
+/**
+ * A persona with no voice is a character for גוש טקסט alone (0055, decision
+ * 0099 R1): Service B's picker never lists it.
+ */
 export async function addPersona(
   db: Db,
-  opts: { name: string; voiceId: string; gender?: "female" | "male"; identity?: object },
+  opts: { name: string; voiceId?: string | null; gender?: "female" | "male"; identity?: object },
 ) {
   const inserted = await db
     .insert(personas)
     .values({
       name: opts.name,
-      voiceId: opts.voiceId,
+      voiceId: opts.voiceId ?? null,
       gender: opts.gender,
       identity: opts.identity ?? {},
     })
@@ -209,6 +213,10 @@ export async function addPersona(
  * Edit a persona's name, pinned voice or gender — only the fields given are
  * written: the admin edit form PATCHes a partial body, so an untouched voice
  * id is never rewritten.
+ *
+ * A gender change carries to the character's גוש טקסט clips in the same
+ * transaction: a clip's speaker is its character's (decision 0099 §3), and
+ * text_block_clips.speaker_gender is what generation and the render read.
  */
 export async function updatePersona(
   db: Db,
@@ -223,8 +231,20 @@ export async function updatePersona(
   if (patch.voiceId !== undefined) set.voiceId = patch.voiceId;
   if (patch.gender !== undefined) set.gender = patch.gender;
   if (Object.keys(set).length === 0) return persona;
-  const updated = await db.update(personas).set(set).where(eq(personas.id, personaId)).returning();
-  return updated[0]!;
+  return db.transaction(async (tx) => {
+    const updated = await tx
+      .update(personas)
+      .set(set)
+      .where(eq(personas.id, personaId))
+      .returning();
+    if (set.gender !== undefined) {
+      await tx
+        .update(textBlockClips)
+        .set({ speakerGender: set.gender })
+        .where(eq(textBlockClips.personaId, personaId));
+    }
+    return updated[0]!;
+  });
 }
 
 /** Catalog copies serve for a year — keys are content-addressed, so changed

@@ -4,6 +4,8 @@ import {
   assertBScriptWordCeiling,
   deriveHookText,
   getDb,
+  normalizeTextBlockText,
+  textBlockTextError,
   updateScriptText,
 } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireScript, requireUser } from "@/lib/api";
@@ -18,6 +20,11 @@ import { scriptTextSchema } from "@/lib/service-b";
  * edited text (one more LLM call, under the llm_tokens cap) so the one new
  * row holds both — the same merge `aiugc script edit` does. Hook-line and
  * VO-script rows (Service A) carry no hook text and skip it.
+ *
+ * A text_block (the גוש טקסט wizard's studio, decision 0099) is held to the
+ * render rules only — the character set and the cap, textBlockTextError, the
+ * check admin's edit route runs — and stored normalized, so what is saved is
+ * what burns. No content rule and no dash rule: the edit is free (0091 §11).
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -48,6 +55,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await assertAccountBudget(db, "llm_tokens", found.script.businessId);
     }
 
+    let text = body.data.text;
+    if (found.script.kind === "text_block") {
+      text = normalizeTextBlockText(text);
+      const problem = textBlockTextError(text);
+      if (problem) return jsonError(400, problem);
+    }
+
     const merge = isBScript
       ? {
           hookText: await deriveHookText(db, {
@@ -56,7 +70,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           }),
         }
       : undefined;
-    const edited = await updateScriptText(db, id, body.data.text, merge);
+    const edited = await updateScriptText(db, id, text, merge);
     return NextResponse.json({ scriptId: edited.id, text: edited.text, hookText: merge?.hookText });
   } catch (err) {
     return coreErrorResponse(err);

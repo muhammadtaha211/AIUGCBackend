@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0052 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0056 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,12 +33,13 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 43 rows: **41 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 47 rows: **45 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
 -- which this sentence had missed; 0044-0047 then added one each, to 38,
 -- 0048 one more on 2026-09-21, to 39, 0049 one on 2026-10-01, to 40, 0050
--- one on 2026-10-02, to 41, and 0051/0052 one each on 2026-10-07, to 43 —
--- written with the feature branch, before any push, like 0049 and 0050.) Two of those
+-- one on 2026-10-02, to 41, 0051/0052 one each on 2026-10-07, to 43, and
+-- 0053-0056 one each on 2026-10-09, to 47 — written with the feature branch,
+-- before any push, like 0049 and 0050.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -63,7 +64,7 @@
 -- NO row: it reverted 0038, so it folded into that row instead, which is now
 -- labelled '0038+0040' and asserts 20. The row COUNT is therefore unchanged at
 -- 30 by 0040, 0043 took it to 34 with two ('0043', '0043-plans'), 0044-0047 to
--- 38 with one each, 0048 to 39, 0049 to 40, 0050 to 41, 0051/0052 to **43**, and 0041/0042 before them took it to 32 with one row each — they are
+-- 38 with one each, 0048 to 39, 0049 to 40, 0050 to 41, 0051/0052 to 43, 0053-0056 to **47**, and 0041/0042 before them took it to 32 with one row each — they are
 -- kept separate, not paired like '0038+0040', because they assert different
 -- objects and either can fail without the other: 0041 owns the column, indexes
 -- and FK, 0042 owns the RLS policy. Both were applied to production 2026-09-16
@@ -703,11 +704,17 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- 0052: text_block_clips (decisions 0089, 0090) -- the table, its eight
 -- columns, the primary key and the two named CHECKs (speaker gender, text
 -- colour), RLS enabled with no policy (0050's pattern). to_regclass so a
--- missing table reads false instead of erroring the file.
+-- missing table reads false instead of erroring the file. The eight columns
+-- are counted BY NAME since 2026-10-09: 0054 adds a ninth, persona_id, and owns
+-- it in its own row, so a bare count would read false on a correct database.
+-- The no-policy clause stays: phase 2 added no policy, the table is still
+-- server-only (decision 0099).
 ('0052', 'structural', (SELECT
   to_regclass('public.text_block_clips') IS NOT NULL
   AND (SELECT count(*) FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = 'text_block_clips') = 8
+       WHERE table_schema = 'public' AND table_name = 'text_block_clips'
+         AND column_name IN ('id', 'file_path', 'duration_ms', 'speaker_gender',
+                             'text_safe_area', 'text_color', 'active', 'created_at')) = 8
   AND (SELECT count(*) FROM pg_constraint
     WHERE conrelid = to_regclass('public.text_block_clips')
       AND conname IN ('text_block_clips_pkey',
@@ -718,6 +725,50 @@ WITH checks(migration, layer, applied, note) AS (VALUES
   AND NOT EXISTS (SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'text_block_clips')),
   'text_block_clips: 8 columns, PK + speaker_gender and text_color CHECKs, RLS on with no policy'),
+
+-- 0053-0056: Service C phase 2, the customer wizard (decision 0099). Written
+-- 2026-10-09 with the feature branch, before any push, like 0049-0052.
+--
+-- 0053: c_text_block_credits, one Service C render (0089 §4). Compared through
+-- `->` as jsonb, like the '0039+0043' row, so a hand-pasted '"25"' (a JSON
+-- string) reads false here instead of passing and then throwing at the next
+-- quote -- z.number() does not accept it; jsonb_typeof says the same in words.
+-- 0053 is UNCONDITIONAL, so a false means it did not land, or prod was
+-- hand-edited after it did.
+('0053', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM app_config
+  WHERE key = 'credit_costs'
+    AND value -> 'c_text_block_credits' = '25'::jsonb
+    AND jsonb_typeof(value -> 'c_text_block_credits') = 'number')),
+  'seeded config: c_text_block_credits 25, a jsonb number'),
+
+-- 0054: text_block_clips.persona_id -- the column (uuid, nullable: the phase-1
+-- clips have none) AND its FK to personas by name; a column that landed
+-- without the constraint would take any uuid.
+('0054', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'text_block_clips'
+      AND column_name = 'persona_id' AND data_type = 'uuid' AND is_nullable = 'YES')
+  AND EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid = to_regclass('public.text_block_clips') AND contype = 'f'
+      AND conname = 'text_block_clips_persona_id_personas_id_fk')),
+  'text_block_clips.persona_id: uuid, nullable + the FK to personas'),
+
+-- 0055: personas.voice_id drops NOT NULL -- a character for the text block
+-- alone has no voice (R1).
+('0055', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'personas'
+    AND column_name = 'voice_id' AND is_nullable = 'YES')),
+  'personas.voice_id is nullable'),
+
+-- 0056: scripts.shown_at -- when the wizard first served a text (R2).
+('0056', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'scripts'
+    AND column_name = 'shown_at' AND data_type = 'timestamp with time zone'
+    AND is_nullable = 'YES')),
+  'scripts.shown_at: timestamptz, nullable (NULL = never served)'),
 
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or

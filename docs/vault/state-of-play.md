@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-08
+updated: 2026-10-09
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -108,6 +108,37 @@ come out, with two stops of his: the plan, and the merge with everything after i
 - **Going live (owed, under "Owed founder actions"):** merge, with no env change; then the box
   pull and restart. Until the restart the box keeps calling 4.6, which still works.
   `usage_events` has no model column, so record both moments here when they happen.
+
+**Service C phase 2, the customer wizard: BUILT 2026-10-09 on `feat/service-c-phase-2`, not merged.
+Migrations 0053–0056 are WRITTEN, NOT PUSHED; the dry run lists exactly those four. Gate all
+green (lint, typecheck, remotion 97, core 1038, worker 7, web 604, admin 71).**
+
+- **Decision:** [[0099-service-c-phase-2-opens-to-customers]] — his rulings 1–11 of 2026-10-07/08
+  and four more from this task's planning chat (2026-10-09):
+  - **R1** `personas.voice_id` is optional (0055), and B's picker also needs a voice;
+  - **R2** batch served one at a time, replacing one call per text;
+  - **R3** both batches on `text_block` v3 (v2 plus two hunks, `{{skeletons}}`);
+  - **R4** one paid check, ₪0.5 cap.
+- **What exists:**
+  - `/home/c/new` (character → clip → studio → render), the third dashboard card and a sidebar
+    entry;
+  - `serveNextTextBlock` (stock = unseen, unedited, same gender, current questionnaire stamp,
+    fitting, not a placeholder; LRU by `max(scripts.shown_at)` per skeleton across visits);
+  - `createTextBlockRender` with the quote, `assertAffordable`, the content-policy gate and
+    `debitRender` (the third debit site; the refund path needed no change);
+  - `c_text_block_credits` 25 (0053), `text_block_clips.persona_id` (0054), `scripts.shown_at`
+    (0056);
+  - the routes `GET /api/text-block-clips`, `POST …/text-blocks/next`, `GET …/text-blocks/renders/quote`,
+    `POST …/text-blocks/renders`, and a `text_block` branch in `POST /api/scripts/[id]/text`;
+  - admin: a clip's character is required at register, reassignable on the card, flagged when
+    missing; the gender follows the character (register, reassign, `updatePersona`); the render
+    route refuses a customer business; persona create takes no voice.
+- **The R4 paid check (MEASURED):** one call, 13 agorot, 20 s; nine skeletons requested without
+  `discovery`; nine texts served in bank order from stock with no second call; texts in
+  `packages/core/.work/text-block/v3-check.md` (gitignored).
+- **Not built, REASONED in 0099:** the SELECT policy on `text_block_clips` (no browser reader).
+- **Owed, in order:** see "Owed founder actions" — push 0053–0056 and read back, the box on ≥ #80,
+  merge, then assign the existing clips to characters (the moment customers can first pay).
 
 **Service C, גוש טקסט, phase 1 + 1b (admin-only): BUILT 2026-10-07, MERGED as PR #80 (`59a2ff1`
 on `origin/main`, MEASURED by `git log`, 2026-10-07); migrations 0051 + 0052 PUSHED TO PRODUCTION
@@ -849,12 +880,9 @@ the older launch items. Item 0 no longer outranks everything the way it did — 
 taken a real payment — but what is left of it is still the part that decides whether the next
 payment is kept.
 
-**Service C phase 2 — NOT QUEUED until the founder's own posts decide it** (2026-10-07,
-[[0089-service-c-text-block-exists-admin-only-phase-1]] §3): the customer wizard over the same
-three core functions, the 25-credit key seeded before its schema key, the quote/debit in
-`createTextBlockRender`, the customer clip listing + the SELECT policy on `text_block_clips`, the
-dashboard card, the customer edit route, then the landing / `/pricing` / legal copy. Phase 1's
-own remaining gates (merge + box) are under "Owed founder actions".
+**Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
+([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
+founder actions". The landing, `/pricing` and the legal pages stay as they are (his ruling 10).
 
 **Low-effort thinking on גוש טקסט: TESTED and RULED OUT 2026-10-08 on
 `feat/text-block-thinking-low`, ₪1.65 of a ₪5 cap
@@ -1238,6 +1266,19 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **Service C phase 2 (2026-10-09, `feat/service-c-phase-2`).** In order:
+  1. Say yes to the ONE push of 0053–0056 (the dry run lists exactly those). The BEFORE read-back
+     is in the task report.
+  2. After the push: `apps/cli/node_modules/.bin/tsx packages/core/.work/readback-0053-0056.ts`
+     and `apps/cli/node_modules/.bin/tsx packages/core/scripts/verify-credit-costs.ts` on the
+     branch (main's copy of the verify script FAILS its key count between push and merge — expected).
+  3. The box on `origin/main` (≥ #80, which carries the `c` render handler; this also lands the
+     owed #82 restart): pull + install + restart once no job is running. Phase 2 adds no worker code.
+  4. Approve the new Hebrew strings (the report's table), then merge. Vercel deploys web and admin.
+  5. Admin `/text-blocks`: assign each existing clip to a character. For a character used only
+     here, create it with no voice and upload a **preview** image. Until then no customer sees C.
+  6. Smoke test as a customer with credits: `/home/c/new` end to end, 25 credits debited.
 
 - **Unattended cloud runs (2026-10-08, `tooling/unattended-cloud-runs`).** In order:
   1. Merge the PR. It changes no product code, so Vercel's redeploy changes nothing customers see.

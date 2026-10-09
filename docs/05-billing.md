@@ -386,6 +386,7 @@ function. A second place that computes a price is a bug, not an optimisation.
 quoteServiceA({ demoSeconds, outroMode, outroSeconds, costs })
 quoteServiceASteps({ costs, firstPaidRenderOfDemo })
 quoteServiceB({ durationMs, costs })
+quoteServiceC({ costs })
 quoteEndingReroll({ sliceSeconds, costs })
 quoteAssemblyRemix({ costs })
 ```
@@ -395,7 +396,7 @@ Never ceil per component — a 34s demo with a 6.5s ending quotes 73 that way an
 and any drift between the displayed quote and the debit is the failure this module exists to
 prevent.
 
-### `credit_costs` (app_config, migrations 0017 + 0026 + 0039 + 0043)
+### `credit_costs` (app_config, migrations 0017 + 0026 + 0039 + 0043 + 0053)
 
 ```json
 {
@@ -408,9 +409,17 @@ prevent.
   "a_ending_reroll_per_second": 5,
   "a_remix_assembly_credits": 10,
   "a_steps_credits": 25,
-  "a_demo_analysis_credits": 20
+  "a_demo_analysis_credits": 20,
+  "c_text_block_credits": 25
 }
 ```
+
+**0053 adds `c_text_block_credits` = 25**, one Service C (גוש טקסט) render, flat and floor-exempt
+(`quoteServiceC`) — the founder's price recorded in
+[0089 §4](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md) and made live with
+the customer wizard ([0099](vault/decisions/0099-service-c-phase-2-opens-to-customers.md)). The
+texts that go into a render are free: generation is bounded by the per-account and platform
+`llm_tokens` caps, never by credits.
 
 **0043 (2026-09-16) multiplied seven of the ten rates by 5** — a re-denomination into the ₪0.15
 credit. **Three moved further, so it also re-prices**, and it does so on the two Service A charges a
@@ -431,7 +440,7 @@ re-enabled path never quotes at a fifth of cost.
 **Every key is required by `creditCostsSchema`** — restoring this row from an older copy of this
 block (without `a_steps_credits`, or without `a_demo_analysis_credits`) makes every quote path
 throw. The migration that adds a key must be applied before any build carrying the schema key
-deploys: that was true of 0026 and it is true of 0039. **0043 adds no key**, so it carries no deploy
+deploys: that was true of 0026, of 0039 and of 0053. **0043 adds no key**, so it carries no deploy
 order — it moves ten numbers the deployed code already reads live on every quote.
 
 Rates are `z.number()`, **not** `.int()` — whole-credit-per-second steps make tuning impossible.
@@ -474,8 +483,8 @@ this row, never a deploy; the code does not know which pricing model won.
     today pays exactly what a fresh upload pays, and a first render that failed and was refunded
     leaves the demo unpaid, as it should.
   - **Charged at render, never at analysis.** Nothing is debited when a demo is analysed, so a
-    failed analysis costs the customer nothing and needs no refund path — and `createSet` /
-    `createBRender` stay the only two debit sites. The platform eats the analysis of every demo
+    failed analysis costs the customer nothing and needs no refund path — and `createSet`,
+    `createBRender` and `createTextBlockRender` stay the only three debit sites. The platform eats the analysis of every demo
     nobody renders from; that is the price of not billing for work the customer never saw a price
     for.
   - **It rides on the FIRST cell's debit**, so a set of N cells still writes N ledger rows and the
@@ -487,11 +496,15 @@ this row, never a deploy; the code does not know which pricing model won.
     ₪3 at the base tier.
     Full reasoning: [`0048`](vault/decisions/0048-the-demo-analysis-is-charged-once-per-demo.md).
 
-### Semantics (`credits.ts` + `sets.ts`)
+### Semantics (`credits.ts` + `sets.ts` + `text-blocks.ts`)
 
-- **Two debit sites, ever** — `createSet` and `createBRender`. Never at TTS, never at audio
-  approval, never at enqueue of a downstream job. A tab closed after audio approval loses exactly
-  zero credits, and that property is structural.
+- **Three debit sites, ever** — `createSet`, `createBRender` and, since Service C's customer
+  wizard (2026-10-09, [0099](vault/decisions/0099-service-c-phase-2-opens-to-customers.md)),
+  `createTextBlockRender` — one per format, each a whole new render. Never at TTS, never at audio
+  approval, never at text generation, never at enqueue of a downstream job. A tab closed after
+  audio approval loses exactly zero credits, and that property is structural. The third site keeps
+  every property below: one ledger row per render inside the render's transaction, the row lock on
+  the owner, the typed refusal, and the refund from the handler and the janitor.
 - **One charge, at confirm** — the moment of full information. Soft estimate at script approval →
   exact quote at the advisory (audio is approved first, so `planAOutro` runs pre-confirm and the
   ending is known) → single debit at confirm.
@@ -508,7 +521,8 @@ this row, never a deploy; the code does not know which pricing model won.
   wizard renders the shortfall in Hebrew instead of a generic string.
 - **Refund on terminal failure** (`refund_failed`) — from the render handler on permanent failure
   and from the janitor for dead jobs, including Service A's freeze/none shapes, which never
-  enqueue a lipsync job. A conflict on the unique index means the other caller won: success, not
+  enqueue a lipsync job, and every Service C render (one `render_video` job, released like A and
+  never QC'd). A conflict on the unique index means the other caller won: success, not
   an error.
 - **QC rejection never double-charges** — regeneration reuses the original debit.
 - **Period rows are account-level** — `grant_period` and `expire_period` carry `user_id` and a
@@ -535,7 +549,7 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
 
 ## Quotas and caps
 
-- **Wizard entry gate** — `/home/a/new` and `/home/b/new` refuse a zero balance server-side, so
+- **Wizard entry gate** — `/home/a/new`, `/home/b/new` and `/home/c/new` refuse a zero balance server-side, so
   nobody walks the whole flow (upload, scripts, previews — all of which cost us money) only to be
   refused at the last screen. Spam control, not enforcement: the 402 at confirm is the real
   boundary.
@@ -549,7 +563,11 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   one per-account value that changed: at 1.5M a single account could legitimately consume 75% of
   the whole platform's daily LLM budget and two ordinary heavy users tripped it. 500k is roughly
   three demo uploads plus several plan generations in a day, calibrated on figures that are
-  REASONED, not measured, and stale past the 14-day rule — see 0036's header. GPU is checked
+  REASONED, not measured, and stale past the 14-day rule — see 0036's header. Service C's texts
+  draw on the same `llm_tokens` allowance: one batch (~11k tokens, 13–15 agorot measured on
+  Sonnet 5.5) is metered only when the wizard has no unseen text left, and the confirm-time
+  content-policy classifier meters the same cap — so an account that has used it up gets a 429 at
+  confirm, before any debit, until the window clears (0099). GPU is checked
   **pre-debit at confirm** (`createBRender`, and `createSet`
   when the outro decision is avatar) with an in-handler backstop in `handleLipsync` for the
   confirm-to-execution window — the backstop fails-and-refunds, never parks. Keyed on the
@@ -603,7 +621,7 @@ Kept dormant, not deleted, because payments will want them: the Remotion waterma
   and rejected in 0047, and that ruling stands.
 - **Paid overage is the escalation path, not built** — letting an account keep generating past the
   free allowance by debiting credits is the better long-term answer, but it breaks the
-  two-debit-sites invariant and no real user has hit the ceiling. Revisit only when telemetry says
+  three-debit-sites invariant and no real user has hit the ceiling. Revisit only when telemetry says
   legitimate accounts are hitting it.
 
 ### Knowing what it really costs

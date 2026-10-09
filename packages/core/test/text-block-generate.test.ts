@@ -14,7 +14,11 @@ import { resetEnvCache } from "../src/config";
 import type { Db } from "../src/db";
 import * as schema from "../src/db/schema";
 import { createBusiness, setQuestionnaire } from "../src/pipelines/businesses";
-import { generateTextBlocks, textBlockBatchProblem } from "../src/pipelines/copy";
+import {
+  generateTextBlocks,
+  TEXT_BLOCK_NO_WOW_REASON,
+  textBlockBatchProblem,
+} from "../src/pipelines/copy";
 import { TEXT_BLOCK_EXAMPLES, TEXT_BLOCK_SKELETON_IDS } from "../src/text-block";
 import { createTestDb } from "./helpers/pglite";
 
@@ -22,10 +26,24 @@ import { createTestDb } from "./helpers/pglite";
  * generateTextBlocks (decisions 0090–0091): one scripts row per text the model
  * returns, in the clip's speaker gender, with the text check run on the batch
  * and one re-request on a violation. The prompt is rendered on both paths so
- * prompt_version is always `text_block@v<N>`.
+ * prompt_version is always `text_block@v<N>`. Only the fitting skeletons are
+ * requested (v3's `{{skeletons}}`: never `discovery` without a `wow`), and an
+ * entry the batch did not ask for is dropped before the checks (decision 0099).
  */
 
 const RECT = { x: 80, y: 360, w: 820, h: 1040 };
+
+/** What a questionnaire with no `wow` requests: the bank less `discovery`, in bank order. */
+const NO_WOW = TEXT_BLOCK_SKELETON_IDS.filter((id) => id !== "discovery");
+
+/** The `{{skeletons}}` list as the rendered prompt carries it. */
+function requestedIn(prompt: string): string | undefined {
+  return /This batch requests these skeletons, and only these: (.*)\. Write nothing/.exec(
+    prompt,
+  )?.[1];
+}
+
+const asList = (ids: readonly string[]) => ids.map((id) => `\`${id}\``).join(", ");
 
 function batch(
   texts: { skeleton: string; text: string }[],
@@ -78,8 +96,15 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
   let db: Db;
   let pg: { close(): Promise<void> };
   let businessId: string;
+  let wowBusinessId: string;
   let clipId: string;
   let maleClipId: string;
+
+  /** The business row's questionnaire stamp, as a batch pins it on params. */
+  async function stampOf(id: string): Promise<string> {
+    const row = (await db.select().from(schema.businesses).where(eq(schema.businesses.id, id)))[0]!;
+    return row.questionnaireUpdatedAt!.toISOString();
+  }
 
   beforeAll(async () => {
     delete process.env.DRY_RUN;
@@ -100,6 +125,21 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
       advantages: ["סרטון תוך דקות", "בלי צלם"],
       target_audience: "בעלי עסקים קטנים",
       tone: "friendly",
+    });
+    const wowBusiness = await createBusiness(db, {
+      ownerEmail: "founder@example.com",
+      name: "שבילו",
+      ownerRole: "admin",
+    });
+    wowBusinessId = wowBusiness.id;
+    await setQuestionnaire(db, wowBusinessId, {
+      category: "app_or_digital",
+      product_name: "Shvilo",
+      what_it_does: "מראה כל מסלול טיול בצפון בצילום אמיתי",
+      advantages: ["רואים את המסלול לפני שיוצאים"],
+      target_audience: "מטיילים",
+      tone: "friendly",
+      wow: "רואים כל מטר של המסלול עוד מהבית",
     });
     const [clip] = await db
       .insert(schema.textBlockClips)
@@ -146,11 +186,21 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
     expect(result.texts[0]).toMatchObject({
       businessId,
       text: CLEAN[0]!.text,
-      promptVersion: "text_block@v2",
+      promptVersion: "text_block@v3",
       userEdited: false,
-      params: { skeleton: "reframe", textBlockClipId: clipId, speakerGender: "female" },
+      params: {
+        skeleton: "reframe",
+        textBlockClipId: clipId,
+        speakerGender: "female",
+        questionnaireUpdatedAt: await stampOf(businessId),
+      },
     });
-    expect(result.skipped).toEqual([{ skeleton: "quiz", reason: "אין על מה לשאול" }]);
+    // The fixture has no `wow`: discovery was never requested, and the admin
+    // studio still sees why, with the model's own skips first.
+    expect(result.skipped).toEqual([
+      { skeleton: "quiz", reason: "אין על מה לשאול" },
+      { skeleton: "discovery", reason: TEXT_BLOCK_NO_WOW_REASON },
+    ]);
     const stored = await db
       .select()
       .from(schema.scripts)
@@ -221,20 +271,104 @@ describe("generateTextBlocks (real DB, mocked Claude)", () => {
     expect(result.texts[0]!.params).toMatchObject({ speakerGender: "male" });
   });
 
-  it("DRY_RUN stores the ten founder examples, keyed by skeleton, with the real prompt version", async () => {
+  it("requests only the fitting skeletons: without a wow the list omits discovery and keeps the other nine in bank order", async () => {
+    generateObject.mockReset().mockResolvedValueOnce(batch(CLEAN));
+
+    await generateTextBlocks(db, { businessId, clipId });
+
+    expect(NO_WOW).toHaveLength(9);
+    expect(requestedIn(generateObject.mock.calls[0]![0].prompt)).toBe(asList(NO_WOW));
+  });
+
+  it("with a wow all ten are requested, and nothing is added to skipped", async () => {
+    generateObject.mockReset().mockResolvedValueOnce(batch(CLEAN));
+
+    const result = await generateTextBlocks(db, { businessId: wowBusinessId, clipId });
+
+    expect(requestedIn(generateObject.mock.calls[0]![0].prompt)).toBe(
+      asList(TEXT_BLOCK_SKELETON_IDS),
+    );
+    expect(result.skipped).toEqual([]);
+    expect(result.texts[0]!.params).toMatchObject({
+      questionnaireUpdatedAt: await stampOf(wowBusinessId),
+    });
+  });
+
+  it("drops an entry for a known skeleton the batch never asked for (discovery without a wow): not stored, no retry", async () => {
+    const before = (
+      await db.select().from(schema.scripts).where(eq(schema.scripts.businessId, businessId))
+    ).length;
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(
+        batch([...CLEAN, { skeleton: "discovery", text: TEXT_BLOCK_EXAMPLES.discovery }]),
+      );
+
+    const result = await generateTextBlocks(db, { businessId, clipId });
+
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(result.texts.map((r) => (r.params as { skeleton: string }).skeleton)).toEqual([
+      "reframe",
+      "instead",
+    ]);
+    const stored = await db
+      .select()
+      .from(schema.scripts)
+      .where(eq(schema.scripts.businessId, businessId));
+    expect(stored).toHaveLength(before + 2);
+    expect(stored.some((r) => (r.params as { skeleton?: string }).skeleton === "discovery")).toBe(
+      false,
+    );
+  });
+
+  it("drops an entry the model also listed in skipped: a hedged answer is a skip", async () => {
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(batch(CLEAN, [{ skeleton: "instead", reason: "לא בטוח שמתאים" }]));
+
+    const result = await generateTextBlocks(db, { businessId, clipId });
+
+    expect(generateObject).toHaveBeenCalledTimes(1);
+    expect(result.texts.map((r) => r.text)).toEqual([CLEAN[0]!.text]);
+    expect(result.skipped).toEqual([
+      { skeleton: "instead", reason: "לא בטוח שמתאים" },
+      { skeleton: "discovery", reason: TEXT_BLOCK_NO_WOW_REASON },
+    ]);
+  });
+
+  it("an UNKNOWN skeleton is still a violation: one retry, and the clean retry is what lands", async () => {
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(batch([...CLEAN, { skeleton: "pov_scene", text: "שלום" }]))
+      .mockResolvedValueOnce(batch(CLEAN));
+
+    const result = await generateTextBlocks(db, { businessId, clipId });
+
+    expect(generateObject).toHaveBeenCalledTimes(2);
+    expect(result.texts.map((r) => r.text)).toEqual(CLEAN.map((t) => t.text));
+  });
+
+  it("DRY_RUN stores the founder example of every requested skeleton, keyed by skeleton, with the real prompt version", async () => {
     process.env.DRY_RUN = "1";
     resetEnvCache();
     try {
       generateObject.mockReset();
       const result = await generateTextBlocks(db, { businessId, clipId });
       expect(generateObject).not.toHaveBeenCalled();
-      expect(result.texts).toHaveLength(10);
-      expect(result.skipped).toEqual([]);
-      for (const [i, id] of TEXT_BLOCK_SKELETON_IDS.entries()) {
+      // No wow: nine, discovery absent and listed as skipped.
+      expect(result.texts).toHaveLength(9);
+      expect(result.skipped).toEqual([{ skeleton: "discovery", reason: TEXT_BLOCK_NO_WOW_REASON }]);
+      for (const [i, id] of NO_WOW.entries()) {
         expect(result.texts[i]!.text).toBe(TEXT_BLOCK_EXAMPLES[id]);
         expect((result.texts[i]!.params as { skeleton: string }).skeleton).toBe(id);
-        expect(result.texts[i]!.promptVersion).toBe("text_block@v2");
+        expect(result.texts[i]!.promptVersion).toBe("text_block@v3");
       }
+
+      const withWow = await generateTextBlocks(db, { businessId: wowBusinessId, clipId });
+      expect(withWow.skipped).toEqual([]);
+      expect(withWow.texts.map((r) => (r.params as { skeleton: string }).skeleton)).toEqual([
+        ...TEXT_BLOCK_SKELETON_IDS,
+      ]);
     } finally {
       delete process.env.DRY_RUN;
       resetEnvCache();

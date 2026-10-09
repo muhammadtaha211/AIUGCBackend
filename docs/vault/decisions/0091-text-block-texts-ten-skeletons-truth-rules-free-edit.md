@@ -454,8 +454,20 @@ to rule on, the prompt unchanged):
   - three texts list features in a way that reads as an ad: the plumber's `discovery` and `quiz`
     pointer, and the course's female `discovery`.
 
+## Amended 2026-10-09 — `text_block` v3 and the customer's free edit
+
+- **v3** ([[0099-service-c-phase-2-opens-to-customers]] §5, R3): v2 byte for byte except two hunks,
+  the bank heading and the Output block, which name the requested skeletons through
+  `{{skeletons}}`. Every rule and example in this note stands as v2 wrote it. Both the admin batch
+  and the customer wizard request only the fitting skeletons: `discovery` never without a `wow`.
+  v2 is frozen by its SHA-256 like v1.
+- **The free edit (§3 above)** now has a customer route too: `POST /api/scripts/[id]/text` runs
+  `textBlockTextError` for a `text_block` row — the character set and the cap, no content rule and
+  no dash rule.
+
 ## Related
 
+- [[0099-service-c-phase-2-opens-to-customers]] — phase 2, v3 and the stored batch.
 - [[0089-service-c-text-block-exists-admin-only-phase-1]], [[0090-text-block-format-clip-once-with-its-own-sound]].
 - [[0046-the-rega-ban-targets-the-hesitation-tick-not-the-word]] — the tick rule, in its wording.
 - [[0033-b-script-may-write-an-allowed-brand-name-in-latin]] — Latin brand names, the same stance.

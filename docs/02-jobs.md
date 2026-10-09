@@ -87,7 +87,7 @@ Service A silent : ingest_demo ─▶ ready ─┐ (user picks copy + set)      
                                           └ createSet ─▶ render_video ──┘
 Service A voiced : synth_tts ─▶ audio ready ─▶ ⏸ HUMAN: approveAudio ⏸ ─▶ createSet ─▶ render_video
 Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ lipsync (pad lead-in ▶ submit ▶ poll…) ─▶ render_video (one clip + timeline + hook animation) ─▶ qc_pending ─▶ ⏸ HUMAN: QC ⏸ ─▶ released
-Service C        : admin registers a clip ─▶ normalize_text_block_clip (30fps check, audio kept) · generateTextBlocks (sync, admin route) ─▶ createTextBlockRender ─▶ render_video (the clip once, with its sound, under the text block) ─▶ released — never qc_pending (vault 0089; admin-only in phase 1)
+Service C        : admin registers a clip under its character ─▶ normalize_text_block_clip (30fps check, audio kept) · wizard: serveNextTextBlock (sync; generateTextBlocks only on an empty stock) — or the admin batch route ─▶ createTextBlockRender (quote, content-policy gate, debit 25) ─▶ render_video (the clip once, with its sound, under the text block) ─▶ released — never qc_pending; a failure refunds (vault 0089, 0099)
 Daily            : janitor (retention only) · billing_renewals — idempotency key = date, so each runs ONCE a day (the server worker re-attempts the enqueue hourly; `aiugc work` doesn't)
 Continuous       : reap_dead_renders — singleton (constant key), reschedules itself every ~60s; ensured at both server-worker and `aiugc work` startup
 ```

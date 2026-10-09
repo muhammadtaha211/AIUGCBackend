@@ -9,7 +9,7 @@ import { apiFetch } from "@/lib/use-api";
 type Gender = "female" | "male";
 
 type EditPersonaFormProps = {
-  persona: { id: string; name: string; voiceId: string; gender: Gender | null };
+  persona: { id: string; name: string; voiceId: string | null; gender: Gender | null };
 };
 
 /**
@@ -17,12 +17,14 @@ type EditPersonaFormProps = {
  * that changed to /api/admin/personas/[personaId], then router.refresh() —
  * the server page stays the source of truth. A persona from before the gender
  * column shows "נקבה" preselected (b_script's own null default), so the founder
- * only has to press save to make it real.
+ * only has to press save to make it real. A persona with no voice (a גוש טקסט
+ * character, 0055) shows the field empty; a voice can be set here, never
+ * cleared — personaPatchSchema takes no empty voice.
  */
 export function EditPersonaForm({ persona }: EditPersonaFormProps) {
   const router = useRouter();
   const [name, setName] = useState(persona.name);
-  const [voiceId, setVoiceId] = useState(persona.voiceId);
+  const [voiceId, setVoiceId] = useState(persona.voiceId ?? "");
   const [gender, setGender] = useState<Gender>(persona.gender ?? "female");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +73,6 @@ export function EditPersonaForm({ persona }: EditPersonaFormProps) {
           label="ElevenLabs voice id"
           value={voiceId}
           onChange={(event) => setVoiceId(event.target.value)}
-          required
           dir="ltr"
           className="font-mono"
         />

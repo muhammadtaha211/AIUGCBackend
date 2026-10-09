@@ -8,14 +8,17 @@ import { loadPersonaCatalog } from "@/lib/persona-catalog";
  * client-side retry path and anything without a server shell.
  *
  * ?withSelfie=1 is the Service B catalog (selfie personas, selfie thumbnail,
- * personaImageId). Anything else — ?withHookClips=1, the A picker's explicit
- * spelling, or no flag — is the Service A catalog (hook-matrix personas).
+ * personaImageId). ?withTextBlocks=1 is the Service C catalog (characters
+ * with a usable גוש טקסט clip, decision 0099). Anything else — ?withHookClips=1,
+ * the A picker's explicit spelling, or no flag — is the Service A catalog
+ * (hook-matrix personas).
  */
 export async function GET(request: Request) {
   const auth = await requireUser();
   if ("response" in auth) return auth.response;
 
-  const service = new URL(request.url).searchParams.has("withSelfie") ? "b" : "a";
+  const flags = new URL(request.url).searchParams;
+  const service = flags.has("withSelfie") ? "b" : flags.has("withTextBlocks") ? "c" : "a";
 
   try {
     return NextResponse.json({ personas: await loadPersonaCatalog(service) });

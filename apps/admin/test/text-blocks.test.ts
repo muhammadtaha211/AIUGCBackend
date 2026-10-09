@@ -65,11 +65,11 @@ describe("request bodies", () => {
     durationMs: 10_000,
     width: 1080,
     height: 1920,
-    speakerGender: "female",
+    personaId: UUID,
     textSafeArea: RECT,
   };
 
-  it("register needs the speaker gender and the rect; the colour is optional and white|black only", () => {
+  it("register needs the character and the rect; the colour is optional and white|black only", () => {
     expect(registerTextBlockSchema.safeParse(register).success).toBe(true);
     expect(registerTextBlockSchema.safeParse({ ...register, textColor: "black" }).success).toBe(
       true,
@@ -77,11 +77,15 @@ describe("request bodies", () => {
     expect(registerTextBlockSchema.safeParse({ ...register, textColor: "gray" }).success).toBe(
       false,
     );
-    expect(registerTextBlockSchema.safeParse({ ...register, speakerGender: "other" }).success).toBe(
+    expect(registerTextBlockSchema.safeParse({ ...register, personaId: "dana" }).success).toBe(
       false,
     );
-    const { speakerGender: _gender, ...noGender } = register;
-    expect(registerTextBlockSchema.safeParse(noGender).success).toBe(false);
+    const { personaId: _persona, ...noPersona } = register;
+    expect(registerTextBlockSchema.safeParse(noPersona).success).toBe(false);
+    // The gender is the character's now: a body that names one still needs the persona.
+    expect(
+      registerTextBlockSchema.safeParse({ ...noPersona, speakerGender: "female" }).success,
+    ).toBe(false);
     expect(
       registerTextBlockSchema.safeParse({
         ...register,
@@ -94,9 +98,17 @@ describe("request bodies", () => {
     expect(textBlockPatchSchema.safeParse({ active: false }).success).toBe(true);
     expect(textBlockPatchSchema.safeParse({ textSafeArea: RECT }).success).toBe(true);
     expect(textBlockPatchSchema.safeParse({ textColor: "black" }).success).toBe(true);
-    expect(textBlockPatchSchema.safeParse({ speakerGender: "male" }).success).toBe(true);
+    expect(textBlockPatchSchema.safeParse({ personaId: UUID }).success).toBe(true);
+    expect(textBlockPatchSchema.safeParse({ personaId: null }).success).toBe(true);
+    expect(textBlockPatchSchema.safeParse({ personaId: "dana" }).success).toBe(false);
     expect(textBlockPatchSchema.safeParse({}).success).toBe(false);
-    expect(textBlockPatchSchema.safeParse({ speakerGender: "x" }).success).toBe(false);
+  });
+
+  it("patch refuses the speaker gender: it follows the character, never set on its own", () => {
+    expect(textBlockPatchSchema.safeParse({ speakerGender: "male" }).success).toBe(false);
+    expect(textBlockPatchSchema.safeParse({ personaId: UUID, speakerGender: "male" }).success).toBe(
+      false,
+    );
   });
 
   it("generate, edit and render bodies", () => {

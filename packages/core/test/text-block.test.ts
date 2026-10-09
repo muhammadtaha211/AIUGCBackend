@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   findGeneratedTextBlockDash,
   findIllegalTextBlockChar,
+  fittingTextBlockSkeletons,
+  isTextBlockPlaceholder,
   isTextBlockSkeletonId,
   normalizeTextBlockText,
   TEXT_BLOCK_EXAMPLES,
@@ -115,5 +117,35 @@ describe("textBlockTextError (the burn check for generation, edit and render)", 
     expect(textBlockTextError("זה — זה")).toBeNull();
     expect(textBlockTextError("זה – זה")).toBeNull();
     expect(textBlockTextError("זה 🔥 זה")).toMatch(/U\+1F525/);
+  });
+});
+
+describe("fittingTextBlockSkeletons (what a batch asks for)", () => {
+  it("drops discovery, alone, when the questionnaire has no wow: missing, null, empty or blank", () => {
+    const nine = TEXT_BLOCK_SKELETON_IDS.filter((id) => id !== "discovery");
+    for (const questionnaire of [{}, { wow: null }, { wow: "" }, { wow: " \n\t " }]) {
+      expect(fittingTextBlockSkeletons(questionnaire), JSON.stringify(questionnaire)).toEqual(nine);
+    }
+  });
+
+  it("asks for all ten, in bank order, when there is a wow", () => {
+    expect(fittingTextBlockSkeletons({ wow: "מחברים את קבוצת הגן" })).toEqual([
+      ...TEXT_BLOCK_SKELETON_IDS,
+    ]);
+  });
+});
+
+describe("isTextBlockPlaceholder (never served to a customer)", () => {
+  it("catches what the model returned in place of a skip, and the empty text", () => {
+    for (const text of ["skip", "skipped", "discovery", "N/A", ""]) {
+      expect(isTextBlockPlaceholder(text), JSON.stringify(text)).toBe(true);
+    }
+  });
+
+  it("passes every founder example and a Hebrew text carrying a Latin brand", () => {
+    for (const id of TEXT_BLOCK_SKELETON_IDS) {
+      expect(isTextBlockPlaceholder(TEXT_BLOCK_EXAMPLES[id]), id).toBe(false);
+    }
+    expect(isTextBlockPlaceholder("יש כלים כמו Sederly")).toBe(false);
   });
 });

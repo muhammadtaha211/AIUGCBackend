@@ -1,6 +1,6 @@
 import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 import { hookTextColorSchema } from "@aiugc/core/hook-text-color";
-import { speakerGenderSchema, TEXT_BLOCK_MAX_CHARS } from "@aiugc/core/text-block";
+import { TEXT_BLOCK_MAX_CHARS } from "@aiugc/core/text-block";
 import { z } from "zod";
 
 /**
@@ -72,26 +72,39 @@ export function isTextBlockUploadPath(uploadPath: string): boolean {
 // Request bodies
 // ---------------------------------------------------------------------------
 
+/**
+ * A clip's speaker is its character (decision 0099 §3): the routes set
+ * speaker_gender from the persona, so a persona with no gender cannot take a
+ * clip. Register, reassign and the upload form's own pre-check share the line.
+ */
+export const PERSONA_WITHOUT_GENDER = "לדמות הזאת אין מגדר — קובעים מגדר בעמוד הדמות קודם.";
+
 export const registerTextBlockSchema = z.object({
   uploadPath: z.string().min(1).max(300),
   durationMs: z.number().int().positive(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  /** Hebrew first person is gendered: the generator writes in this voice. */
-  speakerGender: speakerGenderSchema,
+  /** The character this clip belongs to; the route copies its gender into speaker_gender. */
+  personaId: z.string().uuid(),
   textSafeArea: textSafeAreaSchema,
   /** The block's colour (same vocabulary as the hook line, 0073); absent = white. */
   textColor: hookTextColorSchema.optional(),
 });
 
-/** One PATCH per clip action: active toggle, safe-area update, colour, or gender. */
+/**
+ * One PATCH per clip action: active toggle, safe-area update, colour, or the
+ * character. Strict: the gender is never written on its own any more, so a
+ * speakerGender key is refused rather than silently dropped.
+ */
 export const textBlockPatchSchema = z
   .object({
     active: z.boolean().optional(),
     textSafeArea: textSafeAreaSchema.optional(),
     textColor: hookTextColorSchema.optional(),
-    speakerGender: speakerGenderSchema.optional(),
+    /** null unassigns the clip (listed to no customer until reassigned); the gender stays. */
+    personaId: z.string().uuid().nullable().optional(),
   })
+  .strict()
   .refine((patch) => Object.values(patch).some((value) => value !== undefined), {
     message: "empty patch",
   });

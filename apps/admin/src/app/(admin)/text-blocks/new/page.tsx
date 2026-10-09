@@ -9,21 +9,22 @@ import { adminSession, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 import { TextBlockStudio } from "./studio";
 
 /**
- * The founder's גוש טקסט studio (Service C, phase 1): pick one of his own
- * businesses and an active clip, generate the batch, edit a text, render it,
- * download the MP4. A server page like every admin page — it reads Drizzle
- * directly and signs the URLs; the client half calls the API routes and
- * refreshes this page while a render is in flight.
+ * The founder's גוש טקסט studio (Service C): pick one of his own businesses
+ * and an active clip, generate the batch, edit a text, render it, download the
+ * MP4. A server page like every admin page — it reads Drizzle directly and
+ * signs the URLs; the client half calls the API routes and refreshes this page
+ * while a render is in flight.
  *
- * Only admin-owned businesses are offered: createTextBlockRender refuses any
- * other in phase 1 (no credit key yet), so the picker does not pretend.
+ * Only admin-owned businesses are offered: the studio's generate and render
+ * routes refuse any other — the admin console never meters or debits a
+ * customer (customers have their own wizard since phase 2, decision 0099).
  */
 export default async function AdminTextBlockStudioPage() {
   const db = getDb();
   const session = await adminSession(db);
   if (!session) redirect("/login");
 
-  const { businesses, users, textBlockClips, videoRenders } = schema;
+  const { businesses, users, textBlockClips, personas, videoRenders } = schema;
   const businessRows = await db
     .select({ id: businesses.id, name: businesses.name, ownerEmail: users.email })
     .from(businesses)
@@ -36,6 +37,11 @@ export default async function AdminTextBlockStudioPage() {
     .from(textBlockClips)
     .where(eq(textBlockClips.active, true))
     .orderBy(textBlockClips.createdAt);
+  const personaRows = await db
+    .select({ id: personas.id, name: personas.name })
+    .from(personas)
+    .orderBy(personas.createdAt);
+  const personaName = new Map(personaRows.map((p) => [p.id, p.name]));
 
   const renderRows = await db
     .select({
@@ -65,6 +71,7 @@ export default async function AdminTextBlockStudioPage() {
       speakerGender: clip.speakerGender as SpeakerGender,
       textSafeArea: clip.textSafeArea as SafeRect,
       textColor: clip.textColor as HookTextColor,
+      personaName: clip.personaId ? personaName.get(clip.personaId) : undefined,
     });
   }
 

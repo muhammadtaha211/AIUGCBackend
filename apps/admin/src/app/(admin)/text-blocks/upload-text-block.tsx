@@ -8,10 +8,14 @@ import {
   HOOK_TEXT_COLORS,
   type HookTextColor,
 } from "@aiugc/core/hook-text-color";
-import { SPEAKER_GENDER_LABEL, SPEAKER_GENDERS, type SpeakerGender } from "@aiugc/core/text-block";
+import { SPEAKER_GENDER_LABEL, type SpeakerGender } from "@aiugc/core/text-block";
 import { Button } from "@/components/ui/button";
 import { HOOK_TEXT_COLOR_LABEL } from "@/lib/hooks";
-import { textBlockFileError, textBlockMetadataError } from "@/lib/text-blocks";
+import {
+  PERSONA_WITHOUT_GENDER,
+  textBlockFileError,
+  textBlockMetadataError,
+} from "@/lib/text-blocks";
 import { postJson } from "@/lib/use-api";
 import { SafeAreaEditor } from "../hooks/safe-area-editor";
 import { readVideoMetadata } from "../hooks/upload-hook";
@@ -19,19 +23,22 @@ import { SAMPLE_TEXT_BLOCK, TextBlockPreview } from "./text-block-preview";
 
 /**
  * Register a גוש טקסט clip: pick the file, pre-check it from HTMLVideoElement
- * metadata (no ffmpeg on Vercel), set the speaker gender and the colour, draw
- * the text area on the local preview with the sample block fitted inside it,
- * then signed-upload straight to storage and register the row. The hook
- * bank's flow, with this bank's fields.
+ * metadata (no ffmpeg on Vercel), pick the character (its gender is the
+ * speaker's, decision 0099 §3) and the colour, draw the text area on the local
+ * preview with the sample block fitted inside it, then signed-upload straight
+ * to storage and register the row. The hook bank's flow, with this bank's
+ * fields.
  */
 
 const UPLOAD_FAILED = "ההעלאה נכשלה — בדקו את החיבור ונסו שוב.";
 const UNREADABLE = "לא הצלחנו לקרוא את קובץ הווידאו — נסו קובץ אחר.";
 
+export type TextBlockPersonaOption = { id: string; name: string; gender: SpeakerGender | null };
+
 const SELECT_CLASS =
   "h-11 w-full rounded-lg border border-white/15 bg-white/5 px-3 text-base text-white focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20";
 
-export function UploadTextBlock() {
+export function UploadTextBlock({ personas }: { personas: TextBlockPersonaOption[] }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [prepared, setPrepared] = useState<{
@@ -43,16 +50,18 @@ export function UploadTextBlock() {
   } | null>(null);
   const [rect, setRect] = useState<SafeRect>(DEFAULT_TEXT_BLOCK_RECT);
   const [textColor, setTextColor] = useState<HookTextColor>(DEFAULT_HOOK_TEXT_COLOR);
-  const [speakerGender, setSpeakerGender] = useState<SpeakerGender>("female");
+  const [personaId, setPersonaId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const persona = personas.find((p) => p.id === personaId);
 
   function reset() {
     if (prepared) URL.revokeObjectURL(prepared.previewUrl);
     setPrepared(null);
     setRect(DEFAULT_TEXT_BLOCK_RECT);
     setTextColor(DEFAULT_HOOK_TEXT_COLOR);
-    setSpeakerGender("female");
+    setPersonaId("");
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -76,6 +85,10 @@ export function UploadTextBlock() {
 
   async function upload() {
     if (!prepared) return;
+    // A clip with no character is listed to no customer, and its speaker
+    // gender is the character's: refuse before spending an upload on it.
+    if (!persona) return setError("בחרו דמות — קליפ בלי דמות לא מוצג לאף לקוח.");
+    if (!persona.gender) return setError(PERSONA_WITHOUT_GENDER);
     setBusy(true);
     setError(null);
 
@@ -109,7 +122,7 @@ export function UploadTextBlock() {
       durationMs: prepared.durationMs,
       width: prepared.width,
       height: prepared.height,
-      speakerGender,
+      personaId: persona.id,
       textSafeArea: rect,
       textColor,
     });
@@ -163,22 +176,32 @@ export function UploadTextBlock() {
               <span dir="ltr" className="text-end text-xs text-gray-400">
                 {(prepared.durationMs / 1000).toFixed(1)}s
               </span>
-              {/* Hebrew first person is gendered: the generator writes in the
-                  speaker's voice, so every clip says whose it is. */}
+              {/* The character is required: the wizard lists one character's
+                  clips, and Hebrew first person is gendered — the generator
+                  writes in the character's voice, so the gender is shown, not
+                  picked. The card can reassign the clip later. */}
               <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
-                מי בקליפ
+                דמות
                 <select
-                  value={speakerGender}
-                  onChange={(event) => setSpeakerGender(event.target.value as SpeakerGender)}
+                  value={personaId}
+                  onChange={(event) => setPersonaId(event.target.value)}
                   className={SELECT_CLASS}
                 >
-                  {SPEAKER_GENDERS.map((gender) => (
-                    <option key={gender} value={gender}>
-                      {SPEAKER_GENDER_LABEL[gender]}
+                  <option value="">בחרו דמות…</option>
+                  {personas.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
                     </option>
                   ))}
                 </select>
               </label>
+              {persona && (
+                <p className={`text-[12px] ${persona.gender ? "text-gray-400" : "text-amber-300"}`}>
+                  {persona.gender
+                    ? `מי בקליפ: ${SPEAKER_GENDER_LABEL[persona.gender]}`
+                    : PERSONA_WITHOUT_GENDER}
+                </p>
+              )}
               <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-200">
                 צבע הטקסט
                 <select

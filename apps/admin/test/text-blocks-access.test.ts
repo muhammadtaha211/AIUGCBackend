@@ -78,7 +78,7 @@ const ROUTES: { name: string; call: () => Promise<Response> }[] = [
           durationMs: 10_000,
           width: 1080,
           height: 1920,
-          speakerGender: "female",
+          personaId: UUID,
           textSafeArea: { x: 80, y: 360, w: 820, h: 1040 },
         }),
       ),
@@ -118,6 +118,8 @@ const ROUTES: { name: string; call: () => Promise<Response> }[] = [
 
 let pg: { close(): Promise<void> };
 let customer: { id: string; email: string };
+let admin: { id: string; email: string };
+let customerBusinessId: string;
 
 beforeAll(async () => {
   const testDb = await createTestDb();
@@ -128,6 +130,16 @@ beforeAll(async () => {
     .values({ email: "customer@example.com" }) // role defaults to customer
     .returning();
   customer = { id: row!.id, email: row!.email };
+  const [adminRow] = await testDb.db
+    .insert(core.schema.users)
+    .values({ email: "admin@example.com", role: "admin" })
+    .returning();
+  admin = { id: adminRow!.id, email: adminRow!.email };
+  const [business] = await testDb.db
+    .insert(core.schema.businesses)
+    .values({ ownerUserId: customer.id, name: "עסק של לקוח" })
+    .returning();
+  customerBusinessId = business!.id;
 });
 
 afterAll(async () => {
@@ -152,22 +164,30 @@ describe("Service C routes refuse non-admins", () => {
   }
 
   it("generate refuses a customer-owned business for an admin session, before any metering or model call", async () => {
-    const db = fixture.db as ReturnType<typeof core.getDb>;
-    const [admin] = await db
-      .insert(core.schema.users)
-      .values({ email: "admin@example.com", role: "admin" })
-      .returning();
-    const [business] = await db
-      .insert(core.schema.businesses)
-      .values({ ownerUserId: customer.id, name: "עסק של לקוח" })
-      .returning();
-    fixture.user = { id: admin!.id, email: admin!.email };
+    fixture.user = admin;
     const response = await generate.POST(
-      json("POST", "/api/admin/text-blocks/generate", { businessId: business!.id, clipId: UUID }),
+      json("POST", "/api/admin/text-blocks/generate", {
+        businessId: customerBusinessId,
+        clipId: UUID,
+      }),
     );
     expect(response.status).toBe(400);
     expect(((await response.json()) as { error: string }).error).toMatch(/עסק של מנהל/);
     expect(fixture.generateTextBlocks).not.toHaveBeenCalled();
+  });
+
+  it("render refuses a customer-owned business for an admin session: the console never debits a customer", async () => {
+    fixture.user = admin;
+    const response = await createRender.POST(
+      json("POST", "/api/admin/text-blocks/renders", {
+        businessId: customerBusinessId,
+        clipId: UUID,
+        scriptId: UUID,
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toMatch(/עסק של מנהל/);
+    expect(fixture.createTextBlockRender).not.toHaveBeenCalled();
   });
 
   it("nothing behind the guard ran: no storage, no model, no render, no edit", () => {
