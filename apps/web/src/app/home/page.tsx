@@ -21,12 +21,12 @@ const PRELOAD_COUNT = 3;
 
 /**
  * The dashboard home pane: greeting, the three service cards, recent renders.
- * The sidebar layout owns the chrome (switcher, credits, profile). It used to
- * fit a laptop viewport with no scrolling; since the cards show their example
- * clips at a size their burned text reads at, a desktop-width window fits from
- * about 830px tall (846 once the recent strip scrolls sideways) and a shorter
- * one scrolls — the founder's choice over a smaller clip (vault 0100). The
- * column is 41rem, three cards wide, so the recent strip lines up with them.
+ * The sidebar layout owns the chrome (switcher, credits, profile). The cards
+ * show their example clips at a width their burned text reads at, cropped to
+ * about 1:1 (vault 0100): a desktop-width window fits from about 714px tall
+ * (730 once the recent strip scrolls sideways) and a shorter one scrolls — the
+ * founder's choice over a smaller clip. The column is 41rem, three cards wide,
+ * so the recent strip lines up with them.
  *
  * It also preloads the persona picker's first row: next/link prefetch on the
  * service cards warms the wizard's RSC payload, but never its images — these
@@ -63,8 +63,8 @@ function HomeSkeleton() {
               key={i}
               className="w-52 shrink-0 animate-pulse overflow-hidden rounded-2xl bg-white ring-1 ring-ink/[0.07] sm:w-full sm:max-w-52"
             >
-              <div className="h-[3.75rem]" />
-              <div className="aspect-[9/16] bg-ink/[0.06]" />
+              <div className="aspect-[540/624] bg-ink/[0.06]" />
+              <div className="h-[4.25rem]" />
             </div>
           ))}
         </div>

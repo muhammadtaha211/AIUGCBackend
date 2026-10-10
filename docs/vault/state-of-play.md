@@ -130,25 +130,30 @@ admin 71). Not merged. No migration, no box step.**
   from this session:
   - **S1** readable clips over the page fitting his window (options 1–4 shown as screenshots);
   - **S2** `a` ships unedited after the session flagged personal-looking tab titles in it;
-  - **S3** the measuring session ran on tavnit.support.
+  - **S3** the measuring session ran on tavnit.support;
+  - **S4–S6**, his reply to the report: the copy approved, the footer and root description to name
+    the third service, and the tiles reshaped after a competitor's screenshot (clip cropped to about
+    1:1, name and link line under it).
 - **What exists:**
-  - each `/home` card is the icon, name and link line over its example clip (`public/previews/`,
-    540p, no audio). The card shows a still at rest and plays the clip only while hovered, silent
-    and looping with no controls. On touch the clip plays while the card is on screen. The
-    description stays for screen readers.
+  - each `/home` card is its example clip with the name and link line under it, laid out on a
+    competitor's tiles he pointed at (S6): the clip cropped to 540×624, about 1:1 (`public/previews/`,
+    no audio). The card shows a still at rest and plays the clip only while hovered, silent and
+    looping with no controls. On touch the clip plays while the card is on screen. The description
+    stays for screen readers.
   - the heading sits 15 px under the top bar at his window (it was 38).
   - the landing strip has three cards, and a `#text-block` section after `#presenter` plays
     `public/landing/text-block.mp4` (720p) lazily, like the other clips.
-  - not changed, listed for him: the shared footer's tagline and the root description still name
-    two services (the footer also shows on the held pages).
+  - the shared footer's tagline and the root description name the third service (S5, his ask; the
+    footer also shows on the held pages, whose own content is unchanged).
 - **MEASURED, the cost:**
   - his window is 717×621, which is the phone layout (under 768 px wide). `/home` overflows there by
-    243 px after the change (412 before), 259 with a long strip;
-  - a desktop-width window fits from 830 px tall, 846 with a long strip (it was 719).
+    121 px after the change (412 before, 243 with the first build's full 9:16 clips), 137 with a long
+    strip;
+  - a desktop-width window fits from 714 px tall, 730 with a long strip (it was 719).
 - **FOUNDER-REPORTED, not repo-verified (2026-10-10):** on his screen `/home` needs a scroll to show
   the recent strip in full.
-- **Pending his approval before the merge:** the new Hebrew strings (the landing's third card and
-  the `#text-block` section), listed in the task report.
+- **Approved by him 2026-10-10 (S4):** the new Hebrew strings (the landing's third card and the
+  `#text-block` section).
 
 **Service C phase 2, the customer wizard: BUILT 2026-10-09 on `feat/service-c-phase-2`.
 Migrations 0053–0056 PUSHED TO PRODUCTION 2026-10-09 on his one-push approval, before the merge,
@@ -1336,12 +1341,11 @@ the 2026-09-26 custom domain (founder-reported):**
 
 - **Home example clips + גוש טקסט on the landing (2026-10-10, `feat/home-previews-landing-c`).**
   In order:
-  1. Approve or rewrite the new Hebrew strings listed in the task report: the landing's third card
-     and the `#text-block` section. Say whether the footer tagline and the root description, which
-     still name two services, should change too.
-  2. The signed-in walk on your own account and window. Hover each card, then click one; check
-     `main.scrollHeight - main.clientHeight` on `/home` (243 expected at 717×621 with one render, a
-     little more with your long strip).
+  1. ~~Approve the Hebrew strings~~ DONE 2026-10-10 (S4), with the footer and root description
+     added (S5).
+  2. The signed-in walk on your own account and window: look at the reshaped tiles (S6), hover each
+     card, then click one; check `main.scrollHeight - main.clientHeight` on `/home` (121 expected at
+     717×621 with one render, about 137 with your long strip).
   3. Open the PR and merge. Vercel deploys web; no migration, no box step.
 
 - **Unattended cloud runs (2026-10-08, `tooling/unattended-cloud-runs`).** In order:

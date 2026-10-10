@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Clip, Person, TextBlock } from "@/components/ui/icons";
 
 type PathwayCardsProps = {
   /** Without a questionnaire nothing can be generated — every card disables. */
@@ -12,19 +11,18 @@ type PathwayCardsProps = {
 
 type Service = {
   href: string;
-  icon: React.ReactNode;
   title: string;
   /** Off screen since the preview took its place (vault 0100), still the card's description for screen readers. */
   body: string;
   cta: string;
-  /** The example clip and its still, in `public/previews/` (see the README there). */
+  /** The example clip and its still, in `public/previews/` (see the README there):
+   *  540×624, the 9:16 frame less its top 14% and bottom 21%. */
   preview: { src: string; poster: string };
 };
 
 const SERVICES: Service[] = [
   {
     href: "/home/a/new",
-    icon: <Clip className="size-5" />,
     title: "הוק + דמו",
     body: "פתיח AI קצר עם משפט הוק בעברית, חיתוך לסרטון המוצר שלכם וכיתוב על כל צעד. מעלים סרטון ומקבלים מודעה מוכנה לפרסום.",
     cta: "יצירת מודעה",
@@ -32,7 +30,6 @@ const SERVICES: Service[] = [
   },
   {
     href: "/home/b/new",
-    icon: <Person className="size-5" />,
     title: "סרטון עם דמות AI",
     body: "דמות AI קבועה מציגה את העסק שלכם בעברית: בוחרים דמות, מאשרים תסריט והקלטה, ומקבלים סרטון מוכן לפרסום.",
     cta: "יצירת סרטון",
@@ -40,7 +37,6 @@ const SERVICES: Service[] = [
   },
   {
     href: "/home/c/new",
-    icon: <TextBlock className="size-5" />,
     title: "גוש טקסט",
     body: "קליפ של דמות עם גוש טקסט בעברית, כמו טקסט שמקלידים בטיקטוק או באינסטגרם: בוחרים דמות וקליפ, עורכים את הטקסט, ומקבלים סרטון מוכן לפרסום.",
     cta: "יצירת סרטון",
@@ -50,9 +46,11 @@ const SERVICES: Service[] = [
 
 /**
  * The three service cards — the dashboard's replacement for Lovable's prompt
- * box. Each shows its service's example clip where its description used to be
- * (vault 0100), at the width where the clip's burned text still reads: the
- * founder chose that over the page fitting a short window.
+ * box. Each is its service's example clip with the name and link line under
+ * it, laid out on a competitor's tiles the founder pointed at (vault 0100 §9):
+ * the clip cropped to about 1:1 rather than the full 9:16, at the width where
+ * its burned text still reads — he chose that over the page fitting a short
+ * window.
  */
 export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
   return (
@@ -122,33 +120,28 @@ function ServiceCard({ service, disabled }: { service: Service; disabled: boolea
       }}
       // Disabled cards stop taking the pointer themselves rather than the row
       // doing it: on a phone the row is the scroller, and it must still swipe.
-      className={`group flex w-52 shrink-0 flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-ink/[0.07] transition-shadow duration-150 hover:ring-ink/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:w-full sm:max-w-52 ${disabled ? "pointer-events-none" : ""}`}
+      className={`group flex w-52 shrink-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm shadow-ink/[0.06] ring-1 ring-ink/[0.07] transition-shadow duration-150 hover:ring-ink/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:w-full sm:max-w-52 ${disabled ? "pointer-events-none" : ""}`}
     >
-      <div className="flex items-center gap-2.5 p-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-ink text-accent">
-          {service.icon}
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-bold leading-tight text-ink">{service.title}</h2>
-          <p className="sr-only">{service.body}</p>
-          <span className="mt-0.5 flex items-center gap-1 text-[13px] font-semibold text-ink/70">
-            {service.cta}
-            <span
-              aria-hidden
-              className="transition-transform duration-150 group-hover:-translate-x-0.5"
-            >
-              ←
-            </span>
-          </span>
-        </div>
-      </div>
       <Preview preview={service.preview} playing={playing} />
+      <div className="px-4 pb-4 pt-3">
+        <h2 className="text-base font-bold leading-tight text-ink">{service.title}</h2>
+        <p className="sr-only">{service.body}</p>
+        <span className="mt-1 flex items-center gap-1 text-sm text-ink/60">
+          {service.cta}
+          <span
+            aria-hidden
+            className="transition-transform duration-150 group-hover:-translate-x-0.5"
+          >
+            ←
+          </span>
+        </span>
+      </div>
     </Link>
   );
 }
 
 /**
- * The example clip, whole and uncropped: its still at rest, the clip itself
+ * The example clip, cropped in the file itself: its still at rest, the clip itself
  * only while `playing` — silent, looping, no controls. The <video> mounts on
  * play and unmounts on stop, so nothing but the still is fetched before the
  * first hover, every hover starts from the beginning, and leaving brings the
@@ -163,7 +156,7 @@ function Preview({ preview, playing }: { preview: Service["preview"]; playing: b
   }, [playing]);
 
   return (
-    <div aria-hidden className="relative aspect-[9/16] w-full bg-ink/[0.06]">
+    <div aria-hidden className="relative aspect-[540/624] w-full bg-ink/[0.06]">
       <img
         src={preview.poster}
         alt=""
