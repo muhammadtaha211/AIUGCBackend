@@ -72,13 +72,14 @@ export function PathwayCards({ hasQuestionnaire }: PathwayCardsProps) {
 
       {/* A phone gets a swipe row that bleeds to the pane's edges (its
           padding keeps the focus outline inside the scroller's clip). From sm
-          the cards are a centred grid capped at three 13rem columns. The 1fr
+          the cards are a grid of at most three columns across the page's
+          41rem column (home/page.tsx), each card capped at 13rem. The 1fr
           max is deliberate: auto-fit counts tracks by their max size when that
           is fixed, which would need the full 656px for a third column, so the
           founder's 717px window sat 2px from wrapping. Counted by the 12rem
           min, one row of three holds from a ~608px pane. */}
       <div
-        className={`-mx-6 flex gap-4 overflow-x-auto px-6 py-1 sm:mx-auto sm:grid sm:max-w-[41rem] sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] sm:justify-items-center sm:overflow-visible sm:p-0 ${hasQuestionnaire ? "" : "pointer-events-none opacity-50"}`}
+        className={`-mx-6 flex gap-4 overflow-x-auto px-6 py-1 sm:mx-0 sm:grid sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] sm:justify-items-center sm:overflow-visible sm:p-0 ${hasQuestionnaire ? "" : "opacity-50"}`}
       >
         {SERVICES.map((service) => (
           <ServiceCard key={service.href} service={service} disabled={!hasQuestionnaire} />
@@ -119,7 +120,9 @@ function ServiceCard({ service, disabled }: { service: Service; disabled: boolea
       onPointerLeave={(event) => {
         if (event.pointerType === "mouse") setPlaying(false);
       }}
-      className="group flex w-52 shrink-0 flex-col overflow-hidden sm:w-full sm:max-w-52 rounded-2xl bg-white ring-1 ring-ink/[0.07] transition-shadow duration-150 hover:ring-ink/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+      // Disabled cards stop taking the pointer themselves rather than the row
+      // doing it: on a phone the row is the scroller, and it must still swipe.
+      className={`group flex w-52 shrink-0 flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-ink/[0.07] transition-shadow duration-150 hover:ring-ink/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:w-full sm:max-w-52 ${disabled ? "pointer-events-none" : ""}`}
     >
       <div className="flex items-center gap-2.5 p-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-ink text-accent">
@@ -127,6 +130,7 @@ function ServiceCard({ service, disabled }: { service: Service; disabled: boolea
         </span>
         <div className="min-w-0">
           <h2 className="text-[15px] font-bold leading-tight text-ink">{service.title}</h2>
+          <p className="sr-only">{service.body}</p>
           <span className="mt-0.5 flex items-center gap-1 text-[13px] font-semibold text-ink/70">
             {service.cta}
             <span
@@ -138,7 +142,6 @@ function ServiceCard({ service, disabled }: { service: Service; disabled: boolea
           </span>
         </div>
       </div>
-      <p className="sr-only">{service.body}</p>
       <Preview preview={service.preview} playing={playing} />
     </Link>
   );

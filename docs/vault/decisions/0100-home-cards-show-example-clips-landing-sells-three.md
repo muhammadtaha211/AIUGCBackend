@@ -101,10 +101,11 @@ other clips (PLANNING DEFAULT). It fetches nothing until scrolled near, then aut
 loops with no controls. From `/pricing`, `/terms` and `/about` the shared header's and footer's
 `/#features` and `/#how` land on their sections (top at 96 px, the `scroll-mt-24`).
 
-**REASONED, one line outside the sections:** the shared footer's tagline (`site-footer.tsx`) listed
-two services as the whole set ("הוק + דמו …, או פרזנטור AI …") right under a strip that now says
-three, so it gained גוש טקסט. The same footer renders on `/pricing` and the legal pages; nothing
-else on them changed.
+**Not changed, and now contradicting the strip:** the shared footer's tagline (`site-footer.tsx`)
+and the root `metadata.description` (`app/layout.tsx`, which `/` inherits) both still present two
+services as the whole set. The footer also renders on `/pricing`, `/about` and the legal pages, which
+are held and out of this task's scope, so the session left both as they are and listed them for him
+(a first build changed the footer; the diff review caught the hold and it was reverted).
 
 **The copy is the session's draft (PLANNING DEFAULT), pending his approval before the merge.** Every
 claim it makes, read back:
@@ -114,12 +115,16 @@ claim it makes, read back:
 - The clip plays once, start to finish, with its own sound; the text is burned for its whole
   length: [[0090-text-block-format-clip-once-with-its-own-sound]]. `C_CLIP_COPY.sub` already says
   the first part.
-- The text is written from the questionnaire, in the character's first person:
-  `prompts/text_block/v3.md` lines 24 and 68.
-- The business is mentioned in passing and never offered, with no call to action:
-  `prompts/text_block/v3.md`, "Never an ad", lines 28–52; it is the founder's ruling of
-  2026-10-07. **REASONED:** this is what the generator is told. The customer's free edit can
-  change anything, so the copy claims it of what תבנית writes, not of every finished video.
+- The text is written from the questionnaire; it reads like a post, not an ad, never trying to
+  sell and with no call to action: `prompts/text_block/v3.md`, "Never an ad", lines 28–52, the
+  founder's ruling of 2026-10-07 ("it shouldnt ever feel like im trying to sell something").
+  **REASONED:** this is what the generator is told, for all ten structures. The customer's free
+  edit can change anything, so the copy claims it of what תבנית writes, not of every finished
+  video.
+- **Deliberately not claimed**, after the diff review: that every text is in the character's voice
+  or names the business in passing. `founder_ask` speaks as the business, first person plural, and
+  is about its own product (v3.md lines 159–160 and 233–236). It is requested for every business,
+  and a new customer meets it about fifth. The first draft claimed both, and was cut back.
 - "טקסט אחר" asks for another text: `C_ANOTHER_TEXT`, served by `serveNextTextBlock` (0099 §4).
 - The text can be edited freely and placed on the clip: 0099 §8 and §6.
 - "Like text typed on TikTok or Instagram" is the home card's line, approved 2026-10-09.
@@ -188,7 +193,11 @@ rows at 640–668, one row of three from 669, two rows again at 768–924 (the s
   between 608 and 656 px shrinks them to 192 rather than wrapping the third. The first build used
   `minmax(12rem, 13rem)`, and the sweep showed it wrapping below a 715 px window, 2 px under his
   717: `auto-fit` counts tracks by their maximum when the maximum is a fixed length. On a phone
-  the cards are a swipe row that bleeds to the edges.
+  the cards are a swipe row that bleeds to the edges. The page's column narrowed from `max-w-4xl`
+  to 41rem, three cards wide, so the recent strip starts where the cards do rather than about
+  110 px to their side on a desktop; it shows fewer tiles before scrolling.
+- **A disabled card (no questionnaire) drops the pointer itself**, not the row: on a phone the row
+  is the scroller and must still swipe to the third card. Caught by the diff review.
 - **The hover is a darker ring, not the lift and shadow:** the phone row's scroller would clip a
   shadow. The gradient header band is gone; the icon and the link line moved into a compact
   header.

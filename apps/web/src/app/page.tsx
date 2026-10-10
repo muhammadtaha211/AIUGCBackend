@@ -549,10 +549,13 @@ function Presenter() {
 /**
  * Every line here is read back against the format, not hoped (vault 0100):
  * the clip plays once with its own sound and the text is burned for its whole
- * length (0090), the text is written in the speaker's first person from the
- * questionnaire and names the business once, in passing, with no call to
- * action (`prompts/text_block/v3.md`, "Never an ad"), "טקסט אחר", the free
- * edit and the placement box are the wizard's own (0099 §4, §6, §8). No
+ * length (0090); the text comes from the questionnaire and never tries to
+ * sell or calls to action (`prompts/text_block/v3.md`, "Never an ad", whose
+ * "it shouldnt ever feel like im trying to sell something" is the founder's).
+ * Deliberately NOT claimed: that every text is in the character's voice or
+ * names the business in passing — `founder_ask` speaks as the business,
+ * about its own product (v3.md 159-160, 233-236). "טקסט אחר", the free edit
+ * and the placement box are the wizard's own (0099 §4, §6, §8). No
  * number, no length, no price (0061 §2), and never `כתוביות` — this is typed
  * text, not captions.
  */
@@ -563,7 +566,7 @@ const TEXT_BLOCK_STEPS = [
   },
   {
     title: "תבנית כותבת את הטקסט",
-    body: "מהשאלון של העסק, מפי הדמות. העסק מוזכר בדרך אגב, כמו שמספרים על משהו שמכירים — בלי להציע אותו ובלי קריאה לפעולה. לא מתאים? מבקשים טקסט אחר.",
+    body: "מהשאלון של העסק. הטקסט כתוב כמו פוסט ולא כמו מודעה, בלי לנסות למכור ובלי קריאה לפעולה. לא מתאים? מבקשים טקסט אחר.",
   },
   {
     title: "עורכים וממקמים",
@@ -583,8 +586,8 @@ function TextBlockSection() {
         גוש טקסט שנראה כמו פוסט, לא כמו מודעה
       </h2>
       <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink/65">
-        בוחרים דמות וקליפ מהמאגר. תבנית כותבת טקסט מפי הדמות לפי השאלון שלכם, אתם עורכים אותו, והוא
-        נצרב על הקליפ.
+        בוחרים דמות וקליפ מהמאגר. תבנית כותבת טקסט לפי השאלון שלכם, אתם עורכים אותו, והוא נצרב על
+        הקליפ.
       </p>
 
       {/* The clip sits on the left here, the talking head's on the right, so

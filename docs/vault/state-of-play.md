@@ -138,7 +138,8 @@ come out, with two stops of his: the plan, and the merge with everything after i
   - the heading sits 15 px under the top bar at his window (it was 38).
   - the landing strip has three cards, and a `#text-block` section after `#presenter` plays
     `public/landing/text-block.mp4` (720p) lazily, like the other clips.
-  - the shared footer's tagline names the third service.
+  - not changed, listed for him: the shared footer's tagline and the root description still name
+    two services (the footer also shows on the held pages).
 - **MEASURED, the cost:**
   - his window is 717×621, which is the phone layout (under 768 px wide). `/home` overflows there by
     243 px after the change (412 before), 259 with a long strip;
@@ -146,7 +147,7 @@ come out, with two stops of his: the plan, and the merge with everything after i
 - **FOUNDER-REPORTED, not repo-verified (2026-10-10):** on his screen `/home` needs a scroll to show
   the recent strip in full.
 - **Pending his approval before the merge:** the new Hebrew strings (the landing's third card and
-  section, the footer line), listed in the task report.
+  the `#text-block` section), listed in the task report.
 
 **Service C phase 2, the customer wizard: BUILT 2026-10-09 on `feat/service-c-phase-2`.
 Migrations 0053–0056 PUSHED TO PRODUCTION 2026-10-09 on his one-push approval, before the merge,
@@ -1334,8 +1335,9 @@ the 2026-09-26 custom domain (founder-reported):**
 
 - **Home example clips + גוש טקסט on the landing (2026-10-10, `feat/home-previews-landing-c`).**
   In order:
-  1. Approve or rewrite the new Hebrew strings listed in the task report: the landing's third card,
-     the `#text-block` section and the footer line.
+  1. Approve or rewrite the new Hebrew strings listed in the task report: the landing's third card
+     and the `#text-block` section. Say whether the footer tagline and the root description, which
+     still name two services, should change too.
   2. The signed-in walk on your own account and window. Hover each card, then click one; check
      `main.scrollHeight - main.clientHeight` on `/home` (243 expected at 717×621 with one render, a
      little more with your long strip).

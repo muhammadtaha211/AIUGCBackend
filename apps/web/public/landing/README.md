@@ -58,7 +58,8 @@ was four tiles of the same clip under four HTML lines; founder's call to show th
   burned text block readable at the 208–256px the page draws it. `demoBefore` is 87 s of a filmed monitor and moiré does not compress,
   so it is 540×960 with `hqdn3d=4:4:8:8` at `-crf 32` — the same picture at the ~200px the page
   draws it. `-map_metadata -1` is not optional: a phone recording carries its creation time
-  (and can carry its location). Posters are each clip's first frame (`-frames:v 1 -q:v 4`).
+  (and can carry its location). Posters are each clip's first frame (`-frames:v 1 -q:v 4`), except
+  `textBlockSample`'s, taken at 5 s (`-ss 5`) where the cut watermelon shows.
 - **Stills**: `hookStudioShot` and `instagramShot` are screenshots. Crop `instagramShot` to a
   phone aspect — its frame is shaped for it.
 - **Hook lines** are copy, not assets: they live beside the clips in `landing-media.ts`, but no
