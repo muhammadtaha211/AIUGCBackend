@@ -207,3 +207,8 @@ block moves to these ten values in the same change that pushes the file.
 - [[0046-billing-ships-as-osek-patur]] — why the prices are net
 - [[0050-subscriptions-are-keyed-on-the-account]] — one account, one subscription, one credit pool
 - [[no-self-serve-credit-grant-path]] — why the balance is the binding bound on stranger spend
+
+_(Pointer 2026-10-11: scheduling and posting a finished video cost **no credits** and are open on
+every tier — the founder's decision 11 of 2026-10-10, "probably not" to a later tier lock. §4's
+"tiers differ by credit volume only" stands; no rate and no plan row changes.
+[[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]].)_

@@ -806,6 +806,56 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
+## What landed (2026-10-11) — social posting, PR 1 of 3: the core, `feat/social-posting-core`, NOT merged
+
+[[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]]; the mechanics are
+`docs/09-social-posting.md`. The founder approved the plan on 2026-10-11 with none of its open
+questions answered, so every recommendation stands as a PLANNING DEFAULT (listed in 0101).
+
+**What exists (MEASURED, the branch):** migrations 0057–0059 (three enum types; `social_accounts` and
+`scheduled_posts`, server-only; the alert index rebuilt with `post_failed`) — **NOT applied to
+production**; `secret-box.ts` (AES-256-GCM under `SOCIAL_TOKEN_KEY`); `providers/meta-graph.ts`
+with its DRY_RUN stub; `pipelines/social.ts` (the switch `app_config.social_posting`, connections,
+scheduling with its guards, the `publish_post` job, the daily `check_social_tokens`, Meta's deletion
+path); six test files. **No web surface and no TikTok.** Nothing a customer can reach changed.
+
+**What the founder reported on 2026-10-10 (FOUNDER-REPORTED, not repo-verified):**
+
+- A Meta developer app named Tavnit exists: use case "Manage messaging & content on Instagram", API
+  setup with Facebook login, the required content permissions added, no business portfolio
+  connected.
+- In the Graph API Explorer (v26.0) with `instagram_basic`, `instagram_content_publish`,
+  `pages_show_list`, `pages_read_engagement`, `me/accounts` came back empty until he added
+  `business_management` (MEASURED afterwards in the Graph API changelog v17.0: that permission is
+  required for Pages linked to a Meta business).
+- `ig_audio` with `audio_type=original_sound` and no query returned about 25 trending sounds and a
+  paging cursor; fields seen: `audio_id`, `title`, `duration_in_ms`, `ig_username`, and either
+  `download_url` or `on_platform_audio_preview_link`.
+- `audio_type=music` returned only little-known library artists; a known artist's song he uses and a
+  current Israeli hit returned nothing.
+- He published one Reel to his own account: `media` with `media_type=REELS`, a caption,
+  `audio_configuration` (sound 100, video 0) and a Tavnit render's own signed download link as
+  `video_url`, then `media_publish`. It went live with the caption, the sound from its first second.
+  **Which service's render is not recorded, so a stream-less הוק + דמו file is untested.**
+- His other Instagram accounts would not link to the same Facebook Page.
+- A competitor, Fastlane, tells users that direct scheduled TikTok posts get throttled — unverified,
+  never to appear in Tavnit's copy.
+- No TikTok developer app exists.
+
+**Planning defaults kept at approval (PLANNING DEFAULT):** the eleven from his prompt and the
+plan's own — the AI label on הוק + דמו and דמות AI only, the `35/100` bed under a video's own
+sound, hourly deferral on a spent Instagram quota, no silent AAC track for A renders, a 30-day
+horizon bounded by retention, `share_to_feed=true`, a per-account calendar, in-app failure notice
+only, the browser's zone, cancelled posts hidden, no permission revoke on disconnect, the User token
+kept for the sound picker. All in 0101.
+
+**The queue for this feature:** PR 2 `feat/social-posting-connect` (the switch in the layout and
+routes, Integrations, the Instagram pre-screen, OAuth start/callback, disconnect, the deletion
+callback and status page, strings); PR 3 `feat/social-posting-schedule` (the player button and
+`scheduleHref`, the tag, the schedule flow, the sound picker, the calendar, the `/home` notice,
+strings, screenshots — the live checks run on it); PR 4 TikTok, once a sandbox app exists. The
+Hebrew strings are drafted in the plan's Appendix A and await his approval before merge.
+
 ## What landed (2026-09-19) — the landing repositioning, `landing/two-services`, MERGED as PR #49 (`495ac43`)
 
 The public landing and `/about` sold the **retired** Service A — "מסרטון אחד", קריינות, "עם קול
@@ -931,6 +981,13 @@ Two axes. **Money** (item 0) and **pipeline** (items 1–7, all from the 2026-09
 the older launch items. Item 0 no longer outranks everything the way it did — billing exists and has
 taken a real payment — but what is left of it is still the part that decides whether the next
 payment is kept.
+
+**Social posting — PR 1 (core) BUILT 2026-10-11** on `feat/social-posting-core`
+([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]]; "What landed (2026-10-11)" above).
+Next in order: PR 2 (connect: the switch, Integrations, OAuth, disconnect, the deletion callback),
+PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
+checks), PR 4 (TikTok, once his sandbox app exists). The push of 0057–0059, the env names and the
+live-test steps are under "Owed founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
@@ -1324,6 +1381,20 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **Social posting (2026-10-11, `feat/social-posting-core` and the PRs after it).** In order, each
+  its own OK (his §4): 1. the Hebrew strings of the plan's Appendix A — approve or change before PR 3
+  merges; 2. the ONE `db push` of 0057–0059 to production, after `migration list` and
+  `db push --dry-run` (needed before any live check); 3. the env names — `META_APP_ID`,
+  `META_APP_SECRET`, `SOCIAL_TOKEN_KEY` (and `META_LOGIN_CONFIG_ID` only if the dashboard gives
+  Facebook Login a configuration) into `apps/web/.env.local` and Vercel Production;
+  `META_APP_SECRET`, `SOCIAL_TOKEN_KEY` into the box's `apps/worker/.env`; 4. in the Meta app
+  (yours alone): the localhost and production redirect URIs, the Privacy URL, the User Data
+  Deletion URL, the icon, the roles; 5. Facebook Pages for your other two Instagram accounts; 6. the live-test checklist of `docs/09-social-posting.md` once PR 3 exists (box on the branch,
+  `DRY_RUN=0` locally for the window, the logged-out look at your Explorer Reel, the A render first,
+  the forced failure last); 7. Meta's App Review and Business Verification after the web PRs are
+  live, then the app to Live and `social_posting` to `everyone`; 8. the TikTok developer app and
+  sandbox, when you want PR 4.
 
 - **Service C phase 2 (2026-10-09, `feat/service-c-phase-2`).** In order:
   1. ~~The ONE push of 0053–0056~~ DONE 2026-10-09 on his approval ("push 0053–0056, I approve

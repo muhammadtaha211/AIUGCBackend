@@ -184,6 +184,10 @@ SENTRY_DSN=PASTE-DSN-FROM-SENTRY-PROJECT-SETTINGS
 SUMIT_COMPANY_ID=PASTE-REAL-ORG-VALUE
 SUMIT_API_KEY=PASTE-REAL-ORG-VALUE
 SUMIT_CHECKOUT_PAGES=PASTE-REAL-ORG-JSON-ON-ONE-LINE
+# Social posting (docs/09-social-posting.md): the publish job opens sealed tokens and signs
+# appsecret_proof. Both names, or every scheduled post fails on its first attempt.
+META_APP_SECRET=PASTE-FROM-DESKTOP-ENV
+SOCIAL_TOKEN_KEY=PASTE-FROM-DESKTOP-ENV
 WORKER_ID=hetzner
 ```
 

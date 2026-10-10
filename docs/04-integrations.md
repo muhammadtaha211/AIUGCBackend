@@ -365,6 +365,31 @@ keyless (the e2e test relies on this).
 - DRY_RUN: instant `dryrun://` result and a placeholder clip file, so the whole chain runs
   keyless.
 
+## Meta Graph API (Instagram with Facebook Login) — `providers/meta-graph.ts`
+
+- Social posting (decision 0101; the subsystem is [09-social-posting.md](09-social-posting.md)).
+  One wrapper for the code exchange, the Page → Instagram lookup, the Audio API search, the Reel
+  container → status → publish chain and the data-deletion signature. Graph version is a code
+  constant (`v26.0`).
+- **No cost, no `usage_events` row**: the caps are for paid providers.
+- Every call made with a token carries it in the `Authorization: Bearer` header plus
+  `appsecret_proof`, never in a URL; the one exception is Meta's documented
+  `GET /oauth/access_token`, whose client secret, code and short-lived token ride the query string,
+  so the wrapper logs the path and status only. Logs carry paths, ids and status codes; a signed
+  video URL is logged without its query, and Meta's own error text is scrubbed of signed URLs
+  before it is kept.
+- Error taxonomy: 5xx / 429 / Meta's retry codes → `TransientError` (the queue's backoff); any
+  other non-2xx → `MetaGraphError` (permanent) carrying Meta's `code` and `error_subcode`;
+  `isTokenLapse` (190, 102, 10, 200–299) is what turns a refusal into `connection_expired`.
+- One 20 s timeout per round trip; retries belong to the job queue.
+- DRY_RUN: a sample Page with one Instagram account, three canned sounds, a container that is
+  FINISHED on its first poll — the whole flow walks keyless.
+- Doc facts encoded (read 2026-10-10): the audio search is a root edge (`GET /ig_audio?audio_type&user_id&search_query`);
+  `audio_configuration={audio_id, audio_volume, video_volume}`; `is_ai_generated`; container
+  `status_code` ∈ IN_PROGRESS | FINISHED | PUBLISHED | ERROR | EXPIRED with the error subcode in
+  `status`; containers expire after 24 h; `content_publishing_limit` reads the daily quota (docs
+  say 50 and 100 — the wrapper falls back to 50).
+
 ## nano-banana composites — `providers/imagegen.ts`
 
 - Product-in-hand composite images for Service B (**physical products only**): 2–3 persona

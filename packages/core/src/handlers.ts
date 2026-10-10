@@ -14,6 +14,7 @@ import { handlePlanDemoSteps } from "./pipelines/demo-step-plans";
 import { handleIngestDemo } from "./pipelines/demos";
 import { handleJanitor, handleReapDeadRenders } from "./pipelines/janitor";
 import { handleLipsync, handleRenderVideo } from "./pipelines/renders";
+import { handleCheckSocialTokens, handlePublishPost } from "./pipelines/social";
 import { handleSynthTts } from "./pipelines/tts";
 
 /** Async copy generation for the self-serve layer (the CLI calls the functions directly). */
@@ -80,5 +81,9 @@ export function buildHandlers(): HandlerRegistry {
     janitor: handleJanitor,
     reap_dead_renders: handleReapDeadRenders,
     billing_renewals: handleBillingRenewals,
+    // Social posting (0101): light lane — network calls that poll through
+    // reschedule, never a lock held longer than one round trip.
+    publish_post: handlePublishPost,
+    check_social_tokens: handleCheckSocialTokens,
   };
 }

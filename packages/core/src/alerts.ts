@@ -94,17 +94,31 @@ export async function recordAuthEmailFailure(
 }
 
 /**
+ * events.kind: a scheduled social post failed for good (pipelines/social.ts,
+ * decision 0101). The customer reads the failure in the app; this row is the
+ * founder's side of "nothing fails silently". Payload: the post id, the
+ * platform, the closed failure kind and the first 200 characters of the
+ * diagnostic — never the caption or any customer text. 0059 rebuilt the
+ * partial index with this kind.
+ */
+export const POST_FAILED = "post_failed";
+
+/**
  * The allowlist. An events kind is reported only if it is in here, so the many
  * kinds that are ordinary bookkeeping — `qc_release`, `refund_resolved_to_ancestor`,
  * `content_policy_flag` and the rest — cost nothing and can never turn into mail.
  *
  * **Adding a kind here is not enough to keep the sweep fast.** The partial index
- * `events_unnotified_alerts_idx` (migration 0037) repeats this list as an
- * immutable literal, because a partial-index predicate cannot read an array from
- * the application. A third kind added here without a migration that rebuilds the
- * index still works — it is just an unindexed scan.
+ * `events_unnotified_alerts_idx` (migration 0037, rebuilt by 0059) repeats this
+ * list as an immutable literal, because a partial-index predicate cannot read an
+ * array from the application. A kind added here without a migration that
+ * rebuilds the index still works — it is just an unindexed scan.
  */
-export const ALERT_EVENT_KINDS = [PLATFORM_BUDGET_TRIPPED, AUTH_EMAIL_SEND_FAILED] as const;
+export const ALERT_EVENT_KINDS = [
+  PLATFORM_BUDGET_TRIPPED,
+  AUTH_EMAIL_SEND_FAILED,
+  POST_FAILED,
+] as const;
 
 export interface AlertEvent {
   id: string;

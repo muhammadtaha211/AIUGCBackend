@@ -138,3 +138,7 @@ strings under `apps/`, `packages/` and `supabase/` are two tests of the Sumit re
 - [[0042-content-policy-is-wired-at-both-choke-points]] — where the classifier runs, and where it
   does not.
 - [[live-account-census-2026-09-10]] — the census this event ends.
+
+_(Pointer 2026-10-11: the posting feature changes no price — the founder's decision 12 of
+2026-10-10 names "any price change" as not now, so §1 stands with its sixty-day trigger.
+[[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]].)_

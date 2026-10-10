@@ -142,17 +142,18 @@ changing policy is an UPDATE, not a deploy.
 
 ## Handover §8 checklist — where each question is answered
 
-| Open question                                           | Answer                                                                                              |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Job orchestration choice + retry/idempotency semantics  | [02-jobs.md](02-jobs.md) — plain jobs table + SKIP LOCKED, taxonomy, per-call idempotency           |
-| Remotion render budget / concurrency                    | [02-jobs.md](02-jobs.md) §Render budget                                                             |
-| Storage layout, retention, lifecycle                    | [03-storage.md](03-storage.md)                                                                      |
-| Webhooks vs polling for GPU                             | [04-integrations.md](04-integrations.md) §Lipsync — polling (CLI phase has no public URL)           |
-| Sets & "more like this" = one insert                    | [01-schema.md](01-schema.md) §sets; `moreLikeThis()` in `pipelines/sets.ts`                         |
-| Prompt/template versioning                              | [04-integrations.md](04-integrations.md) §Anthropic — `prompts/<name>/v<N>.md`, recorded per script |
-| Credits: grant/debit semantics, quotas, caps, watermark | [05-billing.md](05-billing.md)                                                                      |
-| Gateway callbacks, dunning, cancellations, plan changes | [05-billing.md](05-billing.md)                                                                      |
-| Admin/ops surface                                       | this file, above                                                                                    |
-| Content policy for Service A                            | [04-integrations.md](04-integrations.md) §Content policy — Claude classifier pre-render             |
-| Terms & privacy: the position each page takes, and why  | [legal-review.md](legal-review.md) — per-marker positions, statutes, what counsel must confirm      |
-| Observability                                           | this file, above                                                                                    |
+| Open question                                           | Answer                                                                                                                             |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Job orchestration choice + retry/idempotency semantics  | [02-jobs.md](02-jobs.md) — plain jobs table + SKIP LOCKED, taxonomy, per-call idempotency                                          |
+| Remotion render budget / concurrency                    | [02-jobs.md](02-jobs.md) §Render budget                                                                                            |
+| Storage layout, retention, lifecycle                    | [03-storage.md](03-storage.md)                                                                                                     |
+| Webhooks vs polling for GPU                             | [04-integrations.md](04-integrations.md) §Lipsync — polling (CLI phase has no public URL)                                          |
+| Sets & "more like this" = one insert                    | [01-schema.md](01-schema.md) §sets; `moreLikeThis()` in `pipelines/sets.ts`                                                        |
+| Prompt/template versioning                              | [04-integrations.md](04-integrations.md) §Anthropic — `prompts/<name>/v<N>.md`, recorded per script                                |
+| Credits: grant/debit semantics, quotas, caps, watermark | [05-billing.md](05-billing.md)                                                                                                     |
+| Gateway callbacks, dunning, cancellations, plan changes | [05-billing.md](05-billing.md)                                                                                                     |
+| Admin/ops surface                                       | this file, above                                                                                                                   |
+| Content policy for Service A                            | [04-integrations.md](04-integrations.md) §Content policy — Claude classifier pre-render                                            |
+| Terms & privacy: the position each page takes, and why  | [legal-review.md](legal-review.md) — per-marker positions, statutes, what counsel must confirm                                     |
+| Observability                                           | this file, above                                                                                                                   |
+| Social posting: connections, scheduling, publish once   | [09-social-posting.md](09-social-posting.md) — data model, the publish job's checkpoints, the switch, the Meta and TikTok runbooks |

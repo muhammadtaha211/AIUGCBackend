@@ -69,6 +69,11 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   `text_color` (0049) is `'white' | 'black'` (a CHECK), default `'white'`: the colour the clip's
   Service A hook line burns in, set by the founder in admin `/hooks` and read off the row at render
   time — never from a customer ([vault 0073](vault/decisions/0073-hook-text-colour-is-set-per-clip-by-the-founder.md)).
+- **social_accounts** (0058) — a connected Instagram (later TikTok) account, owned by the Tavnit
+  account (`user_id`), with its sealed tokens; and **scheduled_posts** (0058) — one row per
+  video × account with the instant, caption, sound snapshot and the publish outcome. Both
+  server-only; the enum types `social_platform`, `social_account_status` and
+  `scheduled_post_status` are 0057. Columns and the state machine: [09-social-posting.md](09-social-posting.md).
 - **text_block_clips** (0052) — the גוש טקסט bank (Service C,
   [vault 0089](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md),
   [0090](vault/decisions/0090-text-block-format-clip-once-with-its-own-sound.md),
@@ -252,7 +257,8 @@ get read-only access. Policies:
   in 0007.)
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
   pronunciation_entries, `text_block_clips` (0052 — no customer SELECT policy, not even in
-  phase 2: every reader is the server over `DATABASE_URL`, vault 0099), and `feedback` — whose ENABLE is in **0035**, not here, because a
+  phase 2: every reader is the server over `DATABASE_URL`, vault 0099), `social_accounts` and
+  `scheduled_posts` (0058, the same shape — tokens never reach a browser client), and `feedback` — whose ENABLE is in **0035**, not here, because a
   policy-less table needs no Supabase role and so stays portable
   ([vault 0035](vault/decisions/0035-a-policyless-table-keeps-its-rls-in-the-portable-file.md),
   measured in [facts](vault/facts/pglite-accepts-bare-enable-row-level-security.md)).
