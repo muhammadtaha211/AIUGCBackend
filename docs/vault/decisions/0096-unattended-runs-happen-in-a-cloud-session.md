@@ -186,8 +186,9 @@ once, §Bringing main in), `runbook.md` and `spec-template.md`.
 - A new session on a run's branch checks that the cloud assigned it the branch `log.md` names, and
   stops if not. Whether the cloud keeps the branch a session is started on is unmeasured. Such a
   session starts in Auto, not Plan. `log.md` holds the plan he approved, with his changes at approval
-  and his answers to stops, and the session resumes at its first unticked step. With no plan in
-  `log.md`, it presents one and stops.
+  and his answers to stops (any given before `log.md` exists are written when it is created), and
+  the session resumes at its first unticked step. With no plan in `log.md`, it presents one and
+  stops.
 - After any merge of `origin/main` (bring main in, or the fast-forward), the session runs
   `pnpm install --frozen-lockfile` again before the gate.
 - The known failure counts only when a grep of the single test's output shows both the

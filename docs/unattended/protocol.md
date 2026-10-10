@@ -74,8 +74,8 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
 
 3. **Save the spec.** Write the first message to `docs/unattended/runs/<YYYY-MM-DD>-<slug>/spec.md`,
    byte for byte (the folder is prettier-ignored). Create `log.md` beside it (template below), with
-   the approved plan in it: each step and its proof command, and any change he made at approval, in
-   his words. Commit both, then `git push -u origin <branch>`.
+   the approved plan in it: each step and its proof command, any change he made at approval, and his
+   answers to any earlier stop, each in his words. Commit both, then `git push -u origin <branch>`.
 4. **Implement** step by step, following CLAUDE.md's coding principles. Subagents may do steps; the
    main session commits their work.
    - **After every finished step:** commit, tick the step in `log.md` in the same commit, then
@@ -148,7 +148,8 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
 
 Commit and push first, except for a stop in plan mode, in §After approval steps 1–2, or in a new
 session's branch check: there, commit and push nothing. Then ask in the session, and do nothing else
-until the founder answers. Write his answer in `log.md`, in his words. Stop for any of these:
+until the founder answers. Write his answer in `log.md`, in his words. Before §After approval step 3
+creates `log.md`, write nothing: keep the answer, and step 3 records it. Stop for any of these:
 
 - **Anything in CLAUDE.md's "When unsure":** money (billing, credits), Hebrew copy tone, the locked
   decisions.
