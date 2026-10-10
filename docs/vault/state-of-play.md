@@ -123,7 +123,10 @@ come out, with two stops of his: the plan, and the merge with everything after i
 **Example clips on the home cards, a higher home heading, גוש טקסט on the landing: BUILT
 2026-10-10 on `feat/home-previews-landing-c`, from `origin/main` `ecbb9eb` (phase 2 merged as PR
 #86). Gate all green at `e7f33e9` and again at `9ad5944` after his S4–S6 (lint, typecheck,
-remotion 97, core 1038, worker 7, web 606, admin 71). Not merged. No migration, no box step.**
+remotion 97, core 1038, worker 7, web 606, admin 71). MERGED in two PRs: #87 (`24b89aa`, merged
+by him 2026-10-10 12:04 at `416e2fe`, the first build with full 9:16 clips), then #88 (his S4–S6:
+the reshaped tiles, the footer and root description, review nits), merged on his instruction the
+same day. No migration, no box step.**
 
 - **Decision:** [[0100-home-cards-show-example-clips-landing-sells-three]]. It records his five
   decisions from the 2026-10-10 planning chat, the planning defaults (none struck), and three rulings
@@ -932,8 +935,7 @@ payment is kept.
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
 founder actions". `/pricing` and the legal pages stay as they are (his ruling 10); the landing's part
-of that hold was lifted 2026-10-10 and the landing now sells גוש טקסט on
-`feat/home-previews-landing-c`, not merged
+of that hold was lifted 2026-10-10 and the landing sells גוש טקסט since PR #87 (merged 2026-10-10)
 ([[0100-home-cards-show-example-clips-landing-sells-three]]).
 
 **Low-effort thinking on גוש טקסט: TESTED and RULED OUT 2026-10-08 on
@@ -1346,7 +1348,8 @@ the 2026-09-26 custom domain (founder-reported):**
   2. The signed-in walk on your own account and window: look at the reshaped tiles (S6), hover each
      card, then click one; check `main.scrollHeight - main.clientHeight` on `/home` (121 expected at
      717×621 with one render, about 137 with your long strip).
-  3. Open the PR and merge. Vercel deploys web; no migration, no box step.
+  3. ~~Open the PR and merge~~ DONE 2026-10-10: #87 by him, #88 on his instruction. Vercel deploys
+     web; no migration, no box step.
 
 - **Unattended cloud runs (2026-10-08, `tooling/unattended-cloud-runs`).** In order:
   1. ~~Merge the PR~~ MERGED as PR #84 (`1b709ff`, by `git log` 2026-10-09). It changes no product code, so Vercel's redeploy changes nothing customers see.
