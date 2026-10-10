@@ -72,6 +72,6 @@ small silent offset, not a crash.
 and `0` means it fits. If it still overflows, this is a one-number change in one file.
 
 _(Measured 2026-10-10 at his window, 717×621, which is under 768px wide and so in the phone layout:
-412 before the example clips, 243 after. No zoom value could close that, and he chose readable clips
-over the fit — [[0100-home-cards-show-example-clips-landing-sells-three]] §6–7. 0.95 was left as
+412 before the example clips, 121 after (243 with full 9:16 clips, before he had them cropped).
+No zoom value could close that, and he chose readable clips over the fit — [[0100-home-cards-show-example-clips-landing-sells-three]] §6–7. 0.95 was left as
 it is.)_

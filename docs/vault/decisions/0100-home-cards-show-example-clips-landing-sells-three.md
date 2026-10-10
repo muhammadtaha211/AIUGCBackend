@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-10
-method: "Founder decisions 1–5 from the planning chat of 2026-10-10, recorded from that day's task prompt ('example videos on the home boxes, a higher home heading, גוש טקסט on the landing'), which states them as decided; the reasons are his where given. Three more rulings in this task's session (S1–S3), answers to the session's questions. The planning defaults are the planning assistant's; he struck none. MEASURED on branch feat/home-previews-landing-c (from origin/main ecbb9eb) with the dev server at localhost:3000: headless Chrome over CDP, signed in as the founder-owned customer account tavnit.support through a minted magic-link session (S3); ffprobe on the source files and the committed copies; a read-only SELECT on production (text_block_clips) and a GET of /api/personas?withTextBlocks=1. The scripts lived in the session scratchpad and are not committed. Gate at e7f33e9: lint and typecheck exit 0, all five serial suites green (remotion 97, core 1038, worker 7, web 606, admin 71 — 1819 tests, 0 failures); the same counts at 652e099 before the diff review's fixes."
+method: "Founder decisions 1–5 from the planning chat of 2026-10-10, recorded from that day's task prompt ('example videos on the home boxes, a higher home heading, גוש טקסט on the landing'), which states them as decided; the reasons are his where given. Three more rulings in this task's session (S1–S3), answers to the session's questions, and three in his reply to the report the same day (S4–S6: the copy approved, the footer and root description to name the third service, the tiles reshaped after a competitor's screenshot he attached). The planning defaults are the planning assistant's; he struck none. MEASURED on branch feat/home-previews-landing-c (from origin/main ecbb9eb) with the dev server at localhost:3000: headless Chrome over CDP, signed in as the founder-owned customer account tavnit.support through a minted magic-link session (S3); ffprobe on the source files and the committed copies; a read-only SELECT on production (text_block_clips) and a GET of /api/personas?withTextBlocks=1. The scripts lived in the session scratchpad and are not committed. Gate at e7f33e9: lint and typecheck exit 0, all five serial suites green (remotion 97, core 1038, worker 7, web 606, admin 71 — 1819 tests, 0 failures); the same counts at 652e099 before the diff review's fixes, and at 9ad5944 after S4–S6."
 source: founder
 ---
 
@@ -17,10 +17,11 @@ decisions 1–5; where no reason is given he gave none.
 
 **FOUNDER-REPORTED.** The service name stays and the card opens the same wizard.
 
-**MEASURED:** `apps/web/src/app/home/pathway-cards.tsx`: each card is the icon, the name and its
-link line (`יצירת מודעה` / `יצירת סרטון`) over the clip. The description is no longer on screen;
-it stays in the card as `sr-only` text (PLANNING DEFAULT), so the link's accessible name is
-unchanged. The hrefs are unchanged.
+**MEASURED:** `apps/web/src/app/home/pathway-cards.tsx`: each card is the clip with the name and
+its link line (`יצירת מודעה` / `יצירת סרטון`) under it, the shape S6 gave it; the first build had
+the icon, name and link line over a full 9:16 clip. The description is no longer on screen; it
+stays in the card as `sr-only` text between the name and the link line (PLANNING DEFAULT), so the
+link's accessible name is unchanged. The hrefs are unchanged.
 
 ## 2. The clip plays only while the cursor is on the card, silent, with no controls
 
@@ -57,16 +58,18 @@ invisible until its first frame plays, so a blocked start shows the still.
 | b    | 19.03 s | 19,557,380 | AAC stereo 48kHz |
 | c    | 10.11 s | 6,211,418  | AAC stereo 48kHz |
 
-The committed copies, all video-only (`-an`, metadata stripped):
+The committed copies, all video-only (`-an`, metadata stripped). The three previews are 540×624:
+the frame less its top 14% and bottom 21% (S6). The first build's uncropped 540×960 copies were
+2,713,588, 1,074,438 and 543,381 bytes.
 
 | file                             | size      |
 | -------------------------------- | --------- |
-| `public/previews/hook-demo.mp4`  | 2,713,588 |
-| `public/previews/hook-demo.jpg`  | 60,008    |
-| `public/previews/presenter.mp4`  | 1,074,438 |
-| `public/previews/presenter.jpg`  | 53,756    |
-| `public/previews/text-block.mp4` | 543,381   |
-| `public/previews/text-block.jpg` | 48,504    |
+| `public/previews/hook-demo.mp4`  | 2,226,382 |
+| `public/previews/hook-demo.jpg`  | 47,656    |
+| `public/previews/presenter.mp4`  | 744,838   |
+| `public/previews/presenter.jpg`  | 38,067    |
+| `public/previews/text-block.mp4` | 410,075   |
+| `public/previews/text-block.jpg` | 39,015    |
 | `public/landing/text-block.mp4`  | 1,057,139 |
 | `public/landing/text-block.jpg`  | 73,476    |
 
@@ -101,14 +104,14 @@ other clips (PLANNING DEFAULT). It fetches nothing until scrolled near, then aut
 loops with no controls. From `/pricing`, `/terms` and `/about` the shared header's and footer's
 `/#features` and `/#how` land on their sections (top at 96 px, the `scroll-mt-24`).
 
-**Not changed, and now contradicting the strip:** the shared footer's tagline (`site-footer.tsx`)
-and the root `metadata.description` (`app/layout.tsx`, which `/` inherits) both still present two
-services as the whole set. The footer also renders on `/pricing`, `/about` and the legal pages, which
-are held and out of this task's scope, so the session left both as they are and listed them for him
-(a first build changed the footer; the diff review caught the hold and it was reverted).
+**The footer tagline and the root description name the third service too (S5).** Both listed two
+services as the whole set. The first build changed the footer; the diff review caught that it also
+renders on `/pricing`, `/about` and the legal pages, which are held, so it was reverted and listed
+for him, and he then asked for both. Each now ends `…, או גוש טקסט על קליפ של דמות.`. Nothing
+else on the held pages changed.
 
-**The copy is the session's draft (PLANNING DEFAULT), pending his approval before the merge.** Every
-claim it makes, read back:
+**The copy was the session's draft (PLANNING DEFAULT), approved by him (S4).** Every claim it makes,
+read back:
 
 - One questionnaire feeds all three services: the strip heading.
 - Each character has clips of its own: `text_block_clips.persona_id` (0099 §3).
@@ -156,29 +159,48 @@ claim it makes, read back:
 - **S3, FOUNDER-REPORTED: the measuring account.** A magic-link session for tavnit.support (one
   business, one render), over his admin account (66 renders) or no session. A long strip was then
   measured by answering the renders request with that one row copied 30 times, in the browser
-  only; that strip gets a 15 px sideways scrollbar.
+  only; that strip gets a 15 px sideways scrollbar. The session was minted again for S6's
+  measurements, same account.
+- **S4, FOUNDER-REPORTED: the landing strings are approved.**
+- **S5, FOUNDER-REPORTED: update the footer and the root description too** (§5).
+- **S6, FOUNDER-REPORTED: the tiles are reshaped.** His words: the video is too tall, it should be
+  "closer to 1:1 if possible, you can trim the bottom 25% off and the top 10%", and the service's
+  label goes at the bottom of the tile. He attached a screenshot of a competitor's "Create new
+  content" grid and asked for its tile layout, only the tiles and the video's size and shape:
+  media on top, edge to edge, then the name and one grey line under it. This strikes the planning
+  default "the whole 9:16 frame, never cropped".
+  - **MEASURED, why the window moved:** cut at exactly 10% and 25%, `b`'s word-by-word captions sit
+    on the 75% line and are sliced through for most of the clip, and the second line of several of
+    `a`'s step labels falls below it (contact sheets at 1 and 2 fps). The same 65% window placed at
+    14–79% keeps every caption whole, so the tile has the shape he asked for (540×624, about
+    1:1.16) shifted 4% down. `c`'s text block is inside either way.
+  - **REASONED:** the crop is baked into the encode rather than done in CSS, so the files are 18–31%
+    smaller (22% across the three, §3). The grey line is the link line he already had (`יצירת מודעה ←`), so no new
+    Hebrew; the icons went, as the reference has none.
 
 ## 7. What it costs in height
 
 **MEASURED**, `main.scrollHeight - main.clientHeight` on the signed-in `/home` (0 = fits), as
 [[0011-dashboard-content-renders-at-95-percent]] defines it:
 
-| window                 | before | after |
-| ---------------------- | ------ | ----- |
-| 717×621, one render    | 412    | 243   |
-| 717×621, a long strip  | 428    | 259   |
-| 1366×768, one render   | 0      | 66    |
-| 1366×768, a long strip | 0      | 82    |
-| 375×812 (touch)        | 457    | 14    |
+"Option 2" is the first build (S1, full 9:16 clips); "tiles" is after S6.
+
+| window                 | before | option 2 | tiles |
+| ---------------------- | ------ | -------- | ----- |
+| 717×621, one render    | 412    | 243      | 121   |
+| 717×621, a long strip  | 428    | 259      | 137   |
+| 1366×768, one render   | 0      | 66       | 0     |
+| 1366×768, a long strip | 0      | 82       | 0     |
+| 375×812 (touch)        | 457    | 14       | 0     |
 
 The smallest window height that fits:
 
-| width                   | before | after |
-| ----------------------- | ------ | ----- |
-| 1024–1920, one render   | 719    | 830   |
-| 1024–1920, a long strip | 734    | 846   |
-| 717, one render         | 1013   | 852   |
-| 717, a long strip       | 1028   | 867   |
+| width                   | before | option 2 | tiles |
+| ----------------------- | ------ | -------- | ----- |
+| 1024–1920, one render   | 719    | 830      | 714   |
+| 1024–1920, a long strip | 734    | 846      | 730   |
+| 717, one render         | 1013   | 852      | 736   |
+| 717, a long strip       | 1028   | 867      | 751   |
 
 **Before, the third card added a row at his width:** two cards per row at 640–1023 px (cards at 140
 and 408). **After**, by a 1 px sweep of the window width at 900 px tall: a swipe row below 640, two
@@ -188,8 +210,8 @@ rows at 640–668, one row of three from 669, two rows again at 768–924 (the s
 ## 8. Reasoned, not founder-decided
 
 - **The card is at most 208 px wide** (13rem, about 198 px on screen under the 0.95 zoom), the
-  width option 2 had at his window. The cap stops a wide pane from blowing the clip up to 512 px
-  tall. From `sm` the cards are a grid of at most three `minmax(12rem, 1fr)` columns, so a pane
+  width option 2 had at his window. The cap stops a wide pane from blowing the clip up (a 288 px
+  column would make an uncropped clip 512 px tall). From `sm` the cards are a grid of at most three `minmax(12rem, 1fr)` columns, so a pane
   between 608 and 656 px shrinks them to 192 rather than wrapping the third. The first build used
   `minmax(12rem, 13rem)`, and the sweep showed it wrapping below a 715 px window, 2 px under his
   717: `auto-fit` counts tracks by their maximum when the maximum is a fixed length. On a phone
@@ -199,10 +221,10 @@ rows at 640–668, one row of three from 669, two rows again at 768–924 (the s
 - **A disabled card (no questionnaire) drops the pointer itself**, not the row: on a phone the row
   is the scroller and must still swipe to the third card. Caught by the diff review.
 - **The hover is a darker ring, not the lift and shadow:** the phone row's scroller would clip a
-  shadow. The gradient header band is gone; the icon and the link line moved into a compact
-  header.
-- **Two encodes of `c`:** 540p for the card (shown about 198 px wide), 720p for the landing (208–256
-  px), each checked readable at its size in a 1× and a 2× screenshot. 540p without denoise reads;
+  shadow. The gradient header band is gone (and, after S6, the icon too).
+- **Two encodes of `c`:** 540 px wide for the card (shown about 198 px wide; cropped to 540×624
+  since S6), 720p for the landing (208–256 px), each checked readable at its size in a 1× and a 2×
+  screenshot. 540p without denoise reads;
   the smear state-of-play recorded was the 540p `demoBefore`, which carries `hqdn3d`.
 - **Phase 2's customer path is not empty:** `GET /api/personas?withTextBlocks=1` as a customer lists
   2 characters, and production has 2 active `text_block_clips`, both with a character (read-only,
