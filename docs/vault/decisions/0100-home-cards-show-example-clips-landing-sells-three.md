@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-10
-method: "Founder decisions 1–5 from the planning chat of 2026-10-10, recorded from that day's task prompt ('example videos on the home boxes, a higher home heading, גוש טקסט on the landing'), which states them as decided; the reasons are his where given. Three more rulings in this task's session (S1–S3), answers to the session's questions, and three in his reply to the report the same day (S4–S6: the copy approved, the footer and root description to name the third service, the tiles reshaped after a competitor's screenshot he attached). The planning defaults are the planning assistant's; he struck none. MEASURED on branch feat/home-previews-landing-c (from origin/main ecbb9eb) with the dev server at localhost:3000: headless Chrome over CDP, signed in as the founder-owned customer account tavnit.support through a minted magic-link session (S3); ffprobe on the source files and the committed copies; a read-only SELECT on production (text_block_clips) and a GET of /api/personas?withTextBlocks=1. The scripts lived in the session scratchpad and are not committed. Gate at e7f33e9: lint and typecheck exit 0, all five serial suites green (remotion 97, core 1038, worker 7, web 606, admin 71 — 1819 tests, 0 failures); the same counts at 652e099 before the diff review's fixes."
+method: "Founder decisions 1–5 from the planning chat of 2026-10-10, recorded from that day's task prompt ('example videos on the home boxes, a higher home heading, גוש טקסט on the landing'), which states them as decided; the reasons are his where given. Three more rulings in this task's session (S1–S3), answers to the session's questions, and three in his reply to the report the same day (S4–S6: the copy approved, the footer and root description to name the third service, the tiles reshaped after a competitor's screenshot he attached). The planning defaults are the planning assistant's; he struck none. MEASURED on branch feat/home-previews-landing-c (from origin/main ecbb9eb) with the dev server at localhost:3000: headless Chrome over CDP, signed in as the founder-owned customer account tavnit.support through a minted magic-link session (S3); ffprobe on the source files and the committed copies; a read-only SELECT on production (text_block_clips) and a GET of /api/personas?withTextBlocks=1. The scripts lived in the session scratchpad and are not committed. Gate at e7f33e9: lint and typecheck exit 0, all five serial suites green (remotion 97, core 1038, worker 7, web 606, admin 71 — 1819 tests, 0 failures); the same counts at 652e099 before the diff review's fixes, and at 9ad5944 after S4–S6."
 source: founder
 ---
 
@@ -174,8 +174,8 @@ read back:
     `a`'s step labels falls below it (contact sheets at 1 and 2 fps). The same 65% window placed at
     14–79% keeps every caption whole, so the tile has the shape he asked for (540×624, about
     1:1.16) shifted 4% down. `c`'s text block is inside either way.
-  - **REASONED:** the crop is baked into the encode rather than done in CSS, so the files are a
-    third smaller. The grey line is the link line he already had (`יצירת מודעה ←`), so no new
+  - **REASONED:** the crop is baked into the encode rather than done in CSS, so the files are 18–31%
+    smaller (22% across the three, §3). The grey line is the link line he already had (`יצירת מודעה ←`), so no new
     Hebrew; the icons went, as the reference has none.
 
 ## 7. What it costs in height

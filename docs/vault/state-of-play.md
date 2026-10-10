@@ -122,8 +122,8 @@ come out, with two stops of his: the plan, and the merge with everything after i
 
 **Example clips on the home cards, a higher home heading, גוש טקסט on the landing: BUILT
 2026-10-10 on `feat/home-previews-landing-c`, from `origin/main` `ecbb9eb` (phase 2 merged as PR
-#86). Gate all green at `e7f33e9` (lint, typecheck, remotion 97, core 1038, worker 7, web 606,
-admin 71). Not merged. No migration, no box step.**
+#86). Gate all green at `e7f33e9` and again at `9ad5944` after his S4–S6 (lint, typecheck,
+remotion 97, core 1038, worker 7, web 606, admin 71). Not merged. No migration, no box step.**
 
 - **Decision:** [[0100-home-cards-show-example-clips-landing-sells-three]]. It records his five
   decisions from the 2026-10-10 planning chat, the planning defaults (none struck), and three rulings

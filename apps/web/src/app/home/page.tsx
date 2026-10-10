@@ -64,7 +64,7 @@ function HomeSkeleton() {
               className="w-52 shrink-0 animate-pulse overflow-hidden rounded-2xl bg-white ring-1 ring-ink/[0.07] sm:w-full sm:max-w-52"
             >
               <div className="aspect-[540/624] bg-ink/[0.06]" />
-              <div className="h-[4.25rem]" />
+              <div className="h-[4.5rem]" />
             </div>
           ))}
         </div>

@@ -47,7 +47,7 @@ const SERVICES: Service[] = [
 /**
  * The three service cards — the dashboard's replacement for Lovable's prompt
  * box. Each is its service's example clip with the name and link line under
- * it, laid out on a competitor's tiles the founder pointed at (vault 0100 §9):
+ * it, laid out on a competitor's tiles the founder pointed at (vault 0100 S6):
  * the clip cropped to about 1:1 rather than the full 9:16, at the width where
  * its burned text still reads — he chose that over the page fitting a short
  * window.
