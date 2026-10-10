@@ -21,22 +21,22 @@ comes after the merge). The run itself follows `protocol.md`.
    - **Environment variables:** keep exactly one, `PAID_CHECK_ANTHROPIC_KEY`. Never add a database
      URL, a Supabase key, an ssh key or any other credential. `db push`, `migration repair` and ssh
      are unreachable from a cloud run only because the environment holds none (vault 0097).
-3. **Check the desktop app's terminal once.** In the Terminal panel beside a session, run
-   `$env:CLAUDECODE`.
-   - If it prints `1`, a push to main that Claude types into that panel is refused like any other.
-   - If it prints nothing, that panel is the one local route the pre-push hook doesn't cover. Your
-     own pushes from it are untouched either way.
 
 ## Each run
 
-1. **Write the spec** from `spec-template.md`. Set the paid-check cap: 0 means no paid call at all.
+1. **Write the spec** from `spec-template.md`.
+   - Set the paid-check cap: 0 means no paid call at all.
+   - Fill in the Model and Touches lines.
+   - Compare its Touches with every run in flight (§Several runs at once).
+   - Until the Remotion fonts failure in the cloud is fixed (vault 0096, amended 2026-10-10), a spec
+     that changes `packages/remotion` or how a render looks runs in a local session, not here.
 2. **Start a cloud session** (claude.ai/code, or the desktop app's new-session menu, choosing Cloud):
    - environment **tavnit-unattended**;
    - repository **muhammadtaha211/AIUGCBackend**, and only that one. A session with two repositories
-     loads no repo hooks, so the pre-push hook would not be installed;
+     loads no repo hooks, so neither the pre-push hook nor the merge-tool refusal would load;
    - branch **main**;
    - permission mode **Plan**;
-   - model **Opus 5.5**.
+   - model: the one the spec's Model line names.
 3. **Paste the spec** as the first message and send it.
 4. **Stop 1, the plan.** The session reads, confirms the spec's Unverified claims, and presents a
    plan. Check that:
@@ -56,14 +56,30 @@ comes after the merge). The run itself follows `protocol.md`.
    - whether a migration or the box is needed, and in what order relative to the merge;
    - spend against the cap;
    - each reviewer gap and how it closed;
-   - what is owed, with commands;
+   - what is owed, with commands. While the fonts failure stands, that includes the Remotion suite;
    - the PR link. If the run couldn't open the PR, click **Create PR** in the session's diff view.
 7. **Stop 2, the merge and after.** In order:
-   1. Test the List-2 items.
-   2. Run the owed commands locally. If a migration is waiting, run its `db push --dry-run` from a
+   1. If main has moved since the run finished (GitHub's PR page says the branch is behind main),
+      say **"bring main in"** in the session. Wait for its report: each conflict and how it was
+      resolved, and the gate and one review round on the combined branch.
+   2. Test the List-2 items.
+   3. Run the owed commands locally. If a migration is waiting, run its `db push --dry-run` from a
       local session and authorise the push per `.claude/rules/migrations.md`.
-   3. Merge on GitHub. Only you merge.
-   4. Do the box steps, in the order the report gives.
+   4. Merge on GitHub. Only you merge, one PR at a time.
+   5. Do the box steps, in the order the report gives.
+
+## Several runs at once
+
+You can have several runs in flight, each in its own session on its own branch.
+
+- **Never in flight together:** two runs that each add a migration, or two that each touch credits
+  or billing. The specs' Touches lines show it. Migration numbers and the push order to production
+  are one sequence.
+- **Merge one at a time.** After each merge, every other open run PR is behind main. Before merging
+  the next, say "bring main in" in its session (Stop 2, step 1).
+- **Expect conflicts** in `docs/vault/state-of-play.md` and `docs/repo-map.md`. The session resolves
+  them when it brings main in. A conflict where the two changes want different behaviour comes back
+  to you as a question.
 
 ## If something goes wrong
 
@@ -75,28 +91,30 @@ comes after the merge). The run itself follows `protocol.md`.
 - **The session expired mid-run.** Everything up to the last finished step is pushed, and the
   branch's `log.md` says where it stopped. To continue, start a new session on that branch and say:
   "Continue the run in `docs/unattended/runs/<date>-<slug>/log.md`."
+- **The session expired before you could say "bring main in".** Start a new session on that branch
+  and say: "Bring main in for the run in `docs/unattended/runs/<date>-<slug>/log.md`."
+- **A new session on a run's branch stops because it was assigned a different branch.** It names
+  both. Tell it which one to use.
 - **`PAID_CHECK_ANTHROPIC_KEY` appeared in any output.** Replace the key in the Console, then update
   the environment variable. You reported a $20/month spend limit on that scoped key on 2026-10-08.
 - **A refusal looks wrong to you too.** Hooks and settings change in a local session only, through a
   normal reviewed branch.
 
-## First run: what is still unproven
+## First run: what was proven, and what is left
 
-Check these on the first run, and tell a local session what you saw, so it can update
-`docs/vault/state-of-play.md`:
+The first run (2026-10-09) checked items 1–4 and 6–10 itself: its `log.md`, §First-run checklist,
+in `docs/unattended/runs/2026-10-09-inventory-first-load-retry/`. You reported item 11 on
+2026-10-10: you chose Auto when you approved its plan. What it changed:
 
-1. The SessionStart line says cloud mode, and `--check` passes.
-2. Which branch the session starts on, and that the task branch is created from `origin/main`.
-3. ffmpeg is present, and the Remotion test downloads Chrome from `remotion.media`.
-4. The seven gate commands are green: note each one's duration, and whether the 30-minute limit on
-   backgrounded commands is hit.
-5. A settings edit is refused by the freeze, and switching the model in the UI still works.
-6. There is no PowerShell tool, and test-runner runs on Bash.
-7. `spec-reviewer` loads as an agent type in the cloud, with only Read, Grep and Glob. It did
-   locally on 2026-10-08.
-8. The built-in GitHub tools' names, and whether one of them can merge.
-9. `gh api repos/{owner}/{repo}/pulls` opens the PR.
-10. Which identity `gh api user` shows: you, or an app. This decides whether a GitHub ruleset could
-    ever tell a cloud session apart from you.
-11. Auto mode can be chosen when you approve the plan.
-12. A paused VM keeps uncommitted files.
+- Item 2: the session starts on a branch the cloud assigns, so a run now works on that branch
+  (`protocol.md`, §After approval, step 2).
+- Items 3 and 4: the gate is 6 of 7 there. The Remotion test downloads Chrome, then fails on the
+  fonts certificate, and that one failure is owed rather than a stop.
+- Items 8 and 10: two GitHub tools can merge, and the session acts as your own account. The two tools
+  are now refused in the cloud by a hook (vault 0097, amended 2026-10-10).
+
+Still open, for you to check on a run and tell a local session:
+
+- **Item 5:** a settings edit is refused by the freeze, and switching the model in the UI still
+  works.
+- **Item 12:** a paused VM keeps uncommitted files.

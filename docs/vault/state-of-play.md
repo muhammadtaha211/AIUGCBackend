@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-09
+updated: 2026-10-10
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -43,8 +43,10 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 **Unattended feature runs in a cloud session: SET UP 2026-10-08 on `tooling/unattended-cloud-runs`,
 MERGED as PR #84 (`1b709ff` on `origin/main`, MEASURED by `git log` 2026-10-09). The first run went
 2026-10-09: the inventory first-load retry, on `claude/inventory-first-load-retry-kv24q9`, PR #85,
-not merged.** One spec goes in, and a pushed branch, a PR and a report
-come out, with two stops of his: the plan, and the merge with everything after it.
+MERGED (`7f381e8` on `origin/main`, MEASURED by `git log` 2026-10-10). First-run fixes and parallel
+runs: DOCS WRITTEN 2026-10-10 on `claude/unattended-cloud-runs-s1en9c`; its settings rule is owed to
+a local session on that branch, and no PR is open yet.** One spec goes in, and a pushed branch, a PR
+and a report come out, with two stops of his: the plan, and the merge with everything after it.
 
 - **Decisions:**
   - [[0096-unattended-runs-happen-in-a-cloud-session]]: the run. It starts in Plan mode, and the spec
@@ -60,6 +62,8 @@ come out, with two stops of his: the plan, and the merge with everything after i
 - **Unreachable in the cloud:** `db push`, `migration repair` and ssh, because no credential is
   there.
 - **Instruction only, each a stop:** merging, `--no-verify`, and printing the key.
+  - Decided 2026-10-10: the two GitHub tools that merge become **enforced** in the cloud, by a
+    PreToolUse hook on their two names (0097, amended). Not built yet (below).
 - **The planned PreToolUse guard was not built.** The session's step that wrote it was stopped by
   Anthropic's safety classifier, and he ruled it out (0097 says why).
 - **What changed in the repo:**
@@ -77,11 +81,39 @@ come out, with two stops of his: the plan, and the merge with everything after i
   - **The protocol's branch naming does not hold in the cloud.** The session started on a branch
     the harness assigned, `claude/inventory-first-load-retry-kv24q9`, sitting on `origin/main`'s
     head, and the harness says not to push to another without permission. He ruled at plan
-    approval to use it. `docs/unattended/protocol.md` still says `<type>/<slug>`; the run did not
-    change it.
+    approval to use it. Now in the protocol (2026-10-10, below).
   - **The gate is 6 of 7 in that environment** (Unfinished measurement).
-- **Still to do:** that branch's owed steps (Owed founder actions), and first-run items 5, 11 and
-  12, which are his.
+- **FOUNDER-REPORTED 2026-10-10:**
+  - PR #85 and the phase 2 PR are merged (MEASURED by `git log`: `7f381e8` and `ecbb9eb`, #86).
+  - The steps screen loads normally.
+  - He did not select Plan mode for the first run, so its plan stop held by instruction.
+  - He chose Auto at approval (first-run item 11).
+  - The environment has the setup script and the Custom network.
+  - He found no Terminal panel in the desktop app, so that one-time check is dropped.
+  - **Not reported:** the blocked-request browser check of PR #85's List 2, and first-run items 5
+    and 12.
+- **First-run fixes and parallel runs (2026-10-10, `claude/unattended-cloud-runs-s1en9c`).** His
+  prompt of 2026-10-10, written into [[0096-unattended-runs-happen-in-a-cloud-session]] (items 1,
+  2, 5–10) and [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]] (items 3, 4),
+  both amended.
+  - **In `docs/unattended/`:**
+    - a run works on its assigned branch, confirmed on `origin/main`'s head before the first commit;
+    - the Remotion fonts failure is owed, not a stop, and a spec that changes `packages/remotion` or
+      how a render looks does not run in the cloud while it stands;
+    - several runs may be in flight, never two that each add a migration or each touch credits or
+      billing, and PRs merge one at a time;
+    - "bring main in": merge `origin/main`, resolve, regenerate the repo map, renumber, gate, one
+      review round, push, report;
+    - a conflict between two behaviours is a stop;
+    - the spec template's Model and Touches lines.
+  - **Also changed:** the CLAUDE.md §4 sentence on what is enforced.
+  - **Written in a cloud session,** although his prompt said to run it locally. Hooks and settings
+    change only locally, so he chose on 2026-10-10: the docs here, and the settings rule in a local
+    session on the same branch (Owed founder actions). Until that lands, the docs describe a hook
+    the branch does not have yet. No PR is open, and none may be opened before it lands.
+  - No product code, prompt, migration, schema, dependency, setting or hook changed.
+- **Still to do:** the local step and this branch's PR (Owed founder actions), PR #85's owed checks,
+  and first-run items 5 and 12, which are his.
 
 **Every Claude call moves to `claude-sonnet-5-5`, thinking off: BUILT 2026-10-08 on
 `feat/sonnet-5-5` (`495384c`), MERGED as PR #82 (`7f7489f` on `origin/main`, 2026-10-08 06:05
@@ -124,8 +156,8 @@ come out, with two stops of his: the plan, and the merge with everything after i
 Migrations 0053–0056 PUSHED TO PRODUCTION 2026-10-09 on his one-push approval, before the merge,
 and read back (ledger 57 rows, 0000–0056; `verify-credit-costs.ts` PASS with the eleventh key;
 verify §RESULTS, the 2026-10-09 entry). Gate all green (lint, typecheck, remotion 97, core 1038,
-worker 7, web 604, admin 71). The merge was his instruction the same day (see Owed founder
-actions for what is left).**
+worker 7, web 604, admin 71). MERGED as PR #86 (`ecbb9eb` on `origin/main`, MEASURED by `git log`
+2026-10-10; FOUNDER-REPORTED the same day). See Owed founder actions for what is left.**
 
 - **Decision:** [[0099-service-c-phase-2-opens-to-customers]] — his rulings 1–11 of 2026-10-07/08
   and four more from this task's planning chat (2026-10-09):
@@ -1272,11 +1304,10 @@ the 2026-09-26 custom domain (founder-reported):**
   `PAID_CHECK_ANTHROPIC_KEY`.
 - **The key's limit:** a $20/month spend limit, in his words "on the scoped anthropic api key for
   cloud sessions".
-- **What he still has to change:** add the setup script, and switch the network to Custom with
-  `remotion.media` added (Owed founder actions).
+- **Changed since (FOUNDER-REPORTED 2026-10-10):** the setup script and the Custom network with
+  `remotion.media` are in place.
 - **What the first run saw (MEASURED 2026-10-09):** ffmpeg 6.1.1 present, and Chrome Headless Shell
-  downloading in full from `remotion.media`. Both fit the two changes having been made; he has not
-  said so. Headless Chrome then failed `fonts.gstatic.com` on a certificate error (Unfinished
+  downloading in full from `remotion.media`. Headless Chrome then failed `fonts.gstatic.com` on a certificate error (Unfinished
   measurement).
 - **The rule:** never add a credential to it.
 
@@ -1292,34 +1323,73 @@ the 2026-09-26 custom domain (founder-reported):**
      clean (verify §RESULTS, the 2026-10-09 entry).
   3. The box on `origin/main` (≥ #80, which carries the `c` render handler; this also lands the
      owed #82 restart): pull + install + restart once no job is running. Phase 2 adds no worker code.
-  4. The merge: his instruction of 2026-10-09 ("then merge"), with the Hebrew strings of the
-     report taken as approved. Vercel deploys web and admin.
+  4. ~~The merge~~ MERGED as PR #86 (`ecbb9eb`, by `git log` 2026-10-10), on his instruction of
+     2026-10-09 ("then merge"), with the Hebrew strings of the report taken as approved.
   5. Admin `/text-blocks`: assign each existing clip to a character. For a character used only
      here, create it with no voice and upload a **preview** image. Until then no customer sees C.
   6. Smoke test as a customer with credits: `/home/c/new` end to end, 25 credits debited.
 
 - **Unattended cloud runs (2026-10-08, `tooling/unattended-cloud-runs`).** In order:
   1. ~~Merge the PR~~ MERGED as PR #84 (`1b709ff`, by `git log` 2026-10-09). It changes no product code, so Vercel's redeploy changes nothing customers see.
-  2. In claude.ai/code, edit `tavnit-unattended`:
-     - paste the setup script from `docs/unattended/runbook.md` (ffmpeg and headless Chrome's
-       libraries);
-     - set Network access to Custom with `remotion.media` added and the default list ticked;
-     - keep `PAID_CHECK_ANTHROPIC_KEY` as the only variable.
-  3. Once: run `$env:CLAUDECODE` in the desktop app's Terminal panel. It says whether a push typed
-     there by Claude is covered by the pre-push hook. Record the answer here.
-  4. ~~The first trial run~~ RAN 2026-10-09 (below). The checklist is in its `log.md`; items 5, 11
-     and 12 are his to report.
+  2. ~~Edit `tavnit-unattended`~~ DONE, FOUNDER-REPORTED 2026-10-10: the setup script and the
+     Custom network are in place. `PAID_CHECK_ANTHROPIC_KEY` stays the only variable.
+  3. ~~The desktop app's Terminal panel check~~ DROPPED 2026-10-10: he found no Terminal panel
+     (0097, amended).
+  4. ~~The first trial run~~ RAN 2026-10-09 (below). The checklist is in its `log.md`. Item 11 he
+     reported 2026-10-10 (Auto chosen); items 5 and 12 are still his to report.
+
+- **First-run fixes and parallel runs (2026-10-10, `claude/unattended-cloud-runs-s1en9c`).** In
+  order:
+  1. **A local session on this branch adds the settings rule and its test** (his choice, 2026-10-10;
+     0097, amended). Say: "Continue `claude/unattended-cloud-runs-s1en9c`: add the PreToolUse hook
+     and its test from state-of-play". It should:
+     - check out the branch: `git fetch origin`, then
+       `git switch claude/unattended-cloud-runs-s1en9c`;
+     - add to `.claude/settings.json`, under `hooks`, a `PreToolUse` group:
+       matcher `mcp__github__merge_pull_request|mcp__github__enable_pr_auto_merge` (letters, `_`
+       and `|` only, so Claude Code reads it as two exact names), and one `command` hook in the
+       ConfigChange hook's form, with no `permissions` key:
+
+       ```sh
+       case "$CLAUDE_CODE_REMOTE" in true|1) echo 'aiugc guard: a cloud session never merges, so this GitHub tool was refused. Stop and ask the founder.' >&2; exit 2;; esac; exit 0
+       ```
+
+     - in `packages/core/test/unattended-guard.test.ts`:
+       - the settings test expects the hooks `ConfigChange`, `PreToolUse` and `SessionStart`, and
+         still no key but `hooks`, so there is no deny rule;
+       - a new test checks the matcher is exactly those two names, with only letters, digits, `_`
+         and `|`;
+       - for each name, it runs the command the way the freeze test does, with input
+         `{"tool_name": "<name>"}`;
+       - unset, empty or `false` must give exit 0 with empty stdout and stderr;
+       - `true` and `1` must give exit 2, with "refused" on stderr;
+       - names like `Bash`, `PowerShell`, `mcp__github__create_pull_request` and
+         `mcp__github__disable_pr_auto_merge` must not be in the list;
+     - run `claude mcp list` and record whether any local server is named `github`. If one is, its
+       two tools would start the hook once per call locally (about 100 ms) and still go through;
+     - run the full gate locally, Remotion included;
+     - update 0097's "Built: not yet" line and this entry with the test output;
+     - commit, run `pnpm repo-map`, push, and open the PR.
+  2. Merge. No migration, no box step. Vercel's redeploy changes nothing customers see.
 
 - **The first unattended run's branch, `claude/inventory-first-load-retry-kv24q9`, PR #85
-  (2026-10-09).** In order:
-  1. Run the Remotion suite locally:
-     `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`. **The PR must not be
-     merged before it passes** (his ruling, 2026-10-09). The cloud run could not run it green
+  (2026-10-09).** MERGED (`7f381e8`, by `git log` 2026-10-10; FOUNDER-REPORTED the same day). Still
+  owed:
+  1. Run the Remotion suite locally, now on main:
+     `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`. His ruling of
+     2026-10-09 was that the PR not be merged before it passes; the cloud run could not run it green
      (Unfinished measurement).
-  2. The List 2 checks in a browser. Block the inventory request in DevTools: the steps screen
-     shows the error line with «נסו שוב». Unblock and click: the list loads. Then the same at
-     375 px. The panel shows only on a ready, unapproved plan.
-  3. Merge. Vercel deploys web; no migration, no box step.
+     - **What the record shows (checked 2026-10-10):** phase 2's gate ran remotion 97 green locally
+       on `2d8729a`. That commit does **not** contain #85: its parent is `1b709ff`. No gate is
+       recorded after main, with #85, was merged into phase 2 at `17f6ea5`.
+     - `git diff --stat 2d8729a ecbb9eb -- packages pnpm-lock.yaml package.json` prints nothing, so
+       the code that suite tested is main's. But the record does not show a run after #85 was on
+       main, so the item stays owed.
+  2. The List 2 checks in a browser. He reports the steps screen loads normally; the blocked-request
+     check is not reported. Block the inventory request in DevTools: the steps screen shows the error
+     line with «נסו שוב». Unblock and click: the list loads. Then the same at 375 px. The panel shows
+     only on a ready, unapproved plan.
+  3. ~~Merge~~ MERGED. Vercel deploys web; no migration, no box step.
 
 - **The switch to `claude-sonnet-5-5` (2026-10-08, `feat/sonnet-5-5`).** In order:
   1. ~~Merge the PR~~ MERGED as PR #82 (`7f7489f`, 2026-10-08 06:05 +0300). Vercel redeploys web
@@ -1569,7 +1639,11 @@ published note breaks the links pointing at it. Renumber or leave it — a found
       binary directly timed out without an answer.
     - **What was not done, by his ruling:** nothing under `packages/` changed, the environment was
       not touched, and no certificate workaround was tried.
-  - **Still his:** items 5, 11 and 12.
+    - **What follows from it (0096, amended 2026-10-10):** a run lists this one failure as owed
+      instead of stopping, and a spec that changes `packages/remotion` or how a render looks does
+      not run in the cloud until it is fixed. Fixing it needs a cloud session.
+  - **Item 11 FOUNDER-REPORTED 2026-10-10:** Auto could be chosen at approval. **Still his:** items
+    5 and 12.
 
 - **The detector on the box (2026-10-02).** MEASURED on one file: the box's 61 instants for the
   84 s recording match this machine's within one frame

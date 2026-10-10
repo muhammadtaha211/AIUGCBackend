@@ -9,7 +9,15 @@ replaces the planning chat (vault 0096). Delete the guidance in italics as you f
 
 # <Title: what this run builds, in one line>
 
-Branch type: <feat | fix | docs | tooling | …> Slug: <short-slug>
+- **Slug:** <short-slug>
+- **Model:** <the model to start the session on>
+- **Touches:** <the packages and areas this run changes>. Adds a migration: <yes | no>. Touches
+  credits or billing: <yes | no>.
+
+_The slug names the run's folder; the cloud assigns the branch. Touches lets you see overlap with
+the runs in flight: never two that each add a migration, never two that each touch credits or
+billing. While the Remotion fonts failure in the cloud stands, a spec that changes
+`packages/remotion` or how a render looks runs locally, not in the cloud (`runbook.md`)._
 
 ## 1. Goal
 

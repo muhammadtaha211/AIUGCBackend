@@ -1,8 +1,8 @@
 ---
 type: decision
 status: verified
-verified: 2026-10-08
-method: "The founder's task prompt of 2026-10-08 (§2 item 7), his four changes to plan revision 1 and his ruling after the build stop, all in that task's chat. The enforced group is proven by packages/core/test/unattended-guard.test.ts (a temp bare remote, with the hook installed the cloud way and the local way) and by a live dry run in his checkout on 2026-10-08: a throwaway commit pushed with --dry-run to refs/heads/main was refused by the hook, the same commit to the task branch was not, and git ls-remote showed main still at e3d445b. Cloud facts are from the docs at code.claude.com, read 2026-10-08."
+verified: 2026-10-10
+method: "The founder's task prompt of 2026-10-08 (§2 item 7), his four changes to plan revision 1 and his ruling after the build stop, all in that task's chat. The enforced group is proven by packages/core/test/unattended-guard.test.ts (a temp bare remote, with the hook installed the cloud way and the local way) and by a live dry run in his checkout on 2026-10-08: a throwaway commit pushed with --dry-run to refs/heads/main was refused by the hook, the same commit to the task branch was not, and git ls-remote showed main still at e3d445b. Cloud facts are from the docs at code.claude.com, read 2026-10-08. Amended 2026-10-10 from his task prompt of that day (§2 items 3 and 4) and his choice in that session (the docs written in a cloud session, the settings change left to a local one). The tool names and `gh api user` are from the first run's docs/unattended/runs/2026-10-09-inventory-first-load-retry/log.md (Items 8 and 10). The mechanism rests on the hooks, permissions and tools-reference pages at code.claude.com/docs and on the embedded code of Claude Code 2.1.296, both read 2026-10-10."
 source: founder
 ---
 
@@ -119,3 +119,77 @@ GitHub Pro ($4/month). It is not proposed: locked decision 10.
 
 The first cloud run's `gh api user` shows whether the proxy acts as him. That decides whether a
 ruleset could tell a cloud session apart from him.
+
+## Amended 2026-10-10: the two merge tools are refused in the cloud; a GitHub rule could not stop a merge
+
+From his task prompt of 2026-10-10, items 3 and 4.
+
+### Item 3: the two GitHub tools that merge are refused in a cloud session
+
+**Decided:** `mcp__github__merge_pull_request` and `mcp__github__enable_pr_auto_merge` are refused in
+a cloud session by configuration. Locally nothing changes.
+
+- **The names** are the ones the first run recorded (its `log.md`, Item 8). The same two were in this
+  task's cloud session's tool list on 2026-10-10.
+- **Merging through the REST API stays instruction only,** as do gh and the web.
+- **It is a rule on two tool names.** It is not the command guard ruled out above, and nothing
+  parses commands.
+- **Reason (planning's):** a tool named "merge" is the most natural route to an accidental merge.
+
+**The mechanism: one PreToolUse hook in `.claude/settings.json`.**
+
+- Its matcher is the two names joined by `|`.
+- Its command is the settings freeze's own. When `CLAUDE_CODE_REMOTE` is `true` or `1`, it exits 2
+  with a message on stderr. Otherwise it exits 0 with no output.
+
+**Why not a `permissions.deny` rule:** Claude Code loads permission rules from every settings file
+with no check on `CLAUDE_CODE_REMOTE`. A deny rule would also refuse the two tools in any local
+session that has an MCP server named `github`.
+
+**What it rests on** (read 2026-10-10 in the docs and in Claude Code 2.1.296's embedded code):
+
+- A matcher made only of letters, digits, `_` and `|` is a list of exact tool names. Any other
+  character, such as `.`, `*` or `^`, makes it an unanchored regex that can match other tools.
+- A PreToolUse exit 2 becomes a deny before the permission mode is consulted, so it holds in Auto
+  mode too. The session reads the hook's stderr.
+- The hook process starts only for a call whose tool name matches. Every other tool call costs
+  in-process string matching only.
+- The Windows side effect that turned PowerShell off is keyed on a deny rule naming Bash. This hook
+  adds no permission rule at all.
+
+**Local cost:**
+
+- **Every other tool:** none.
+- **A local tool named exactly one of the two:** one hook start per call (one Git Bash start, about
+  100–115 ms, measured on 2026-10-08 above), and the hook lets the call through.
+- **Whether his local sessions have such a tool** can't be seen from the cloud. It is owed:
+  `claude mcp list` in a local session.
+
+**What it does not cover:**
+
+- A cloud session with several repositories loads no repo hooks; the runbook says one repository.
+- A hook that fails to start, or times out, lets the call through.
+- Every other route to a merge.
+
+**Built: not yet.** Hooks and settings change in local sessions only. On 2026-10-10 he chose this:
+
+- the cloud session that took the prompt writes the docs;
+- a local session on the same branch, `claude/unattended-cloud-runs-s1en9c`, adds the hook and its
+  test in `packages/core/test/unattended-guard.test.ts` before the PR is opened (state-of-play,
+  Owed founder actions).
+
+**What this supersedes:** two lines in §Why the guard was not built, "with no guard there is no
+PreToolUse hook at all" and "With no PreToolUse hook, local tool calls now pay nothing". There is
+now one PreToolUse hook, on two tool names, and every other local tool call still pays nothing.
+
+### Item 4: a GitHub rule on main could not stop a cloud session from merging
+
+The first run measured `gh api user` as `muhammadtaha211 (type: User)` (its `log.md`, Item 10). The
+session acts as his own GitHub account, so no rule can tell the two apart.
+
+§What would close the instruction-only gaps holds for pushes only.
+
+### The desktop app's terminal check is dropped
+
+FOUNDER-REPORTED 2026-10-10: he found no Terminal panel in the desktop app. "Not covered: the
+desktop app's terminal tool" above stays unmeasured, and the runbook no longer asks him to check it.

@@ -1,8 +1,8 @@
 ---
 type: decision
 status: verified
-verified: 2026-10-08
-method: "The founder's task prompt of 2026-10-08 (§2 'Decided', items 1–6, 9 and 10), amended by him in that task's plan-mode chat (a run starts in Plan mode; the spec is saved after approval) and his answer there on the cloud gate. The environment's settings are founder-reported. Claude Code's cloud behaviour is from the docs at code.claude.com, read 2026-10-08 and untested in a cloud session: the first-run checklist in docs/unattended/runbook.md proves or kills each claim."
+verified: 2026-10-10
+method: "The founder's task prompt of 2026-10-08 (§2 'Decided', items 1–6, 9 and 10), amended by him in that task's plan-mode chat (a run starts in Plan mode; the spec is saved after approval) and his answer there on the cloud gate. The environment's settings are founder-reported. Claude Code's cloud behaviour is from the docs at code.claude.com, read 2026-10-08 and untested in a cloud session: the first-run checklist in docs/unattended/runbook.md proves or kills each claim. Amended 2026-10-10 from his task prompt of that day ('unattended runs, first-run fixes and parallel runs', §2 items 1, 2 and 5–10), checked against the first run's docs/unattended/runs/2026-10-09-inventory-first-load-retry/log.md and `git log origin/main`."
 source: founder
 ---
 
@@ -111,3 +111,66 @@ written from `docs/unattended/spec-template.md`. Items 7 and 8 of the same promp
   work is not.
 - **Setup scripts.** A setup script runs as root before Claude Code launches. Its result is cached for
   about seven days. A non-zero exit stops the session from starting.
+
+## Amended 2026-10-10: the branch, the gate's known failure, and several runs at once
+
+From his task prompt of 2026-10-10, numbered as there. The first run (2026-10-09, PR #85)
+measured what items 1 and 2 rest on. Its `log.md` is
+`docs/unattended/runs/2026-10-09-inventory-first-load-retry/log.md`.
+
+- **Item 1. A run works on the branch its session was assigned.** Before its first commit it
+  confirms that branch sits on `origin/main`'s head; if not, it stops and asks. This replaces
+  "branch from `origin/main`" in decision 3's amendment above.
+  - **Reason (his, 2026-10-09):** he ruled it at the first run's plan approval. The cloud assigns
+    the branch, and the session's own tools are built around it.
+- **Item 2. One known failure in the cloud gate is owed, not a stop.** It is
+  `packages/remotion/test/frame-delivery.test.ts` failing on `fonts.gstatic.com` with
+  `net::ERR_CERT_AUTHORITY_INVALID`. The run lists it as owed, with the local command
+  `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`. Any other gate failure is
+  still a stop.
+  - Until that failure is fixed, a spec that changes `packages/remotion` or how a render looks does
+    not run in the cloud.
+  - **Reason (planning's):** measured in the first run, 2026-10-09. Every run would otherwise stop at
+    the same place.
+- **Item 5. Several cloud runs may be in flight at once,** each in its own session on its own
+  assigned branch. PRs merge one at a time.
+  - **Reason (his, 2026-10-10):** he wants to work on unrelated tasks in parallel.
+- **Item 6. No PR is merged unless its branch contains the current `origin/main`,** and its gate
+  and one review round ran on that combined state. When main has moved since the run finished, he tells the
+  session "bring main in". The session then:
+  - merges `origin/main` into its branch (no rebase, no force-push);
+  - resolves the conflicts, regenerates the repo map, and renumbers its own vault notes if a number
+    was taken;
+  - re-runs the gate and one review round;
+  - pushes, and reports each conflict and how it was resolved.
+
+  If the session has expired, a new session on that branch does the same from `log.md`.
+  - **Reason (planning's):** two changes can each pass alone and break together, and git only
+    reports the kind where the same lines changed.
+
+- **Item 7. A conflict where the two changes want different behaviour is a stop-and-ask.** The
+  session resolves only conflicts where both changes can be kept as written.
+  - **Reason (planning's):** choosing between two behaviours is a product decision.
+- **Item 8. Never in flight at once:** two runs that each add a migration, or two that each touch
+  credits or billing.
+  - **Reason (planning's):** migration numbers and the push order to production are a single
+    sequence.
+- **Item 9. The spec template gains two lines:** the model for the run, and "Touches" (the packages
+  and areas the run changes, and whether it adds a migration). The runbook says to use the model the
+  spec names.
+  - **Reason (planning's):** overlap between two runs has to be visible when the specs are written.
+- **Item 10. Conflicts in state-of-play and the repo map are expected between parallel runs.**
+  They are resolved in the bring-main-in step. The rule that every task updates state-of-play stays.
+
+His items 3 and 4 (the two merge tools, and what a GitHub rule could not do) are
+[[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]]'s amendment of the same day.
+
+**Where they live:** `docs/unattended/protocol.md` (§After approval steps 2 and 5, §Several runs at
+once, §Bringing main in), `runbook.md` and `spec-template.md`.
+
+**Choices made in writing them, not ruled by him:**
+
+- Touches also says whether the run touches credits or billing, so item 8 is visible too.
+- A bring-main-in review round that is not CLEAN is a stop.
+- A new session on a run's branch checks that the cloud assigned it the branch `log.md` names, and
+  stops if not. Whether the cloud keeps the branch a session is started on is unmeasured.
