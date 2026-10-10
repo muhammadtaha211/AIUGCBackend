@@ -49,7 +49,8 @@ _What the run must not touch: files, packages, prompts, migrations, dependencies
 ### List 1: a command or test proves it
 
 _Every criterion names its proof: the exact command, or the test file and what it asserts. The run is
-done only when the gate is green and the reviewer finds every item here PROVEN._
+done only when the gate is green, or in the cloud red only on the known Remotion fonts failure, which
+is then owed (`protocol.md` §After approval, step 5), and the reviewer finds every item here PROVEN._
 
 - **C1.** <criterion>. Proof: `<command>` <shows / exits / passes …>
 - **C2.** …

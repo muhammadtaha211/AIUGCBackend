@@ -120,7 +120,8 @@ measured what items 1 and 2 rest on. Its `log.md` is
 
 - **Item 1. A run works on the branch its session was assigned.** Before its first commit it
   confirms that branch sits on `origin/main`'s head; if not, it stops and asks. This replaces
-  "branch from `origin/main`" in decision 3's amendment above.
+  the "branch" step in decision 3's amendment above ("bootstrap, branch, save the spec"), which the
+  protocol carried out as "Branch from `origin/main`".
   - **Reason (his, 2026-10-09):** he ruled it at the first run's plan approval. The cloud assigns
     the branch, and the session's own tools are built around it.
 - **Item 2. One known failure in the cloud gate is owed, not a stop.** It is
@@ -170,7 +171,20 @@ once, §Bringing main in), `runbook.md` and `spec-template.md`.
 
 **Choices made in writing them, not ruled by him:**
 
-- Touches also says whether the run touches credits or billing, so item 8 is visible too.
-- A bring-main-in review round that is not CLEAN is a stop.
+- Touches also says whether the run touches credits or billing, so item 8 is visible too. A
+  migration, credits or billing change that Touches does not declare is a stop, so item 8 still
+  holds after the plan is approved.
+- If main moved while the plan waited, the item 1 check fails before any commit. The session says
+  so, and on his "fast-forward" it runs `git merge --ff-only origin/main` and re-checks the spec's
+  Unverified claims.
+- Bringing main in is triggered when anything has merged to main since the run's session started.
+  The closing report says whether the branch contains `origin/main`
+  (`git merge-base --is-ancestor`).
+- Bringing main in bootstraps first, and checks decision numbers whether or not git reported a
+  conflict: two notes with one number have different file names. A review round that is not CLEAN
+  is a stop.
 - A new session on a run's branch checks that the cloud assigned it the branch `log.md` names, and
   stops if not. Whether the cloud keeps the branch a session is started on is unmeasured.
+- The protocol, and CLAUDE.md §4's pointer to it, now also cover a cloud session whose first message
+  names a run's `log.md` ("Continue the run in …", "Bring main in for the run in …"), not only one
+  that opens with a spec.

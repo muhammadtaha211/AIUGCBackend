@@ -59,9 +59,10 @@ comes after the merge). The run itself follows `protocol.md`.
    - what is owed, with commands. While the fonts failure stands, that includes the Remotion suite;
    - the PR link. If the run couldn't open the PR, click **Create PR** in the session's diff view.
 7. **Stop 2, the merge and after.** In order:
-   1. If main has moved since the run finished (GitHub's PR page says the branch is behind main),
-      say **"bring main in"** in the session. Wait for its report: each conflict and how it was
-      resolved, and the gate and one review round on the combined branch.
+   1. If anything has merged to main since the run's session started, or the report says the branch
+      does not contain `origin/main`, say **"bring main in"** in the session. Wait for its report:
+      each conflict and how it was resolved, and the gate and one review round on the combined
+      branch.
    2. Test the List-2 items.
    3. Run the owed commands locally. If a migration is waiting, run its `db push --dry-run` from a
       local session and authorise the push per `.claude/rules/migrations.md`.
@@ -84,17 +85,21 @@ You can have several runs in flight, each in its own session on its own branch.
 ## If something goes wrong
 
 - **The SessionStart line doesn't say "cloud mode", or the run stops on `--check`.** The pre-push
-  hook isn't in place. Check that the session has one repository and started from main, then start a
-  new session.
+  hook isn't in place. Check that the session has one repository and started from main (or from
+  the run's branch, for a session that continues a run), then start a new session.
 - **The session never starts.** The setup script exited non-zero. Fix it in the environment and
   start again.
+- **The session stops before its first commit because main moved while it waited for your
+  approval.** Say "fast-forward": it moves its branch to main's head and re-checks the spec's
+  Unverified claims. Or start a new session.
 - **The session expired mid-run.** Everything up to the last finished step is pushed, and the
-  branch's `log.md` says where it stopped. To continue, start a new session on that branch and say:
-  "Continue the run in `docs/unattended/runs/<date>-<slug>/log.md`."
-- **The session expired before you could say "bring main in".** Start a new session on that branch
+  branch's `log.md` says where it stopped. To continue, start a new session as in Each run, step 2,
+  but on the run's branch instead of main, and say: "Continue the run in
+  `docs/unattended/runs/<date>-<slug>/log.md`."
+- **The session expired before you could say "bring main in".** Start a new session the same way
   and say: "Bring main in for the run in `docs/unattended/runs/<date>-<slug>/log.md`."
 - **A new session on a run's branch stops because it was assigned a different branch.** It names
-  both. Tell it which one to use.
+  both. Tell it to use the one `log.md` names: the run's commits and its PR are on that branch.
 - **`PAID_CHECK_ANTHROPIC_KEY` appeared in any output.** Replace the key in the Console, then update
   the environment variable. You reported a $20/month spend limit on that scoped key on 2026-10-08.
 - **A refusal looks wrong to you too.** Hooks and settings change in a local session only, through a

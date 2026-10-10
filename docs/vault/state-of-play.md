@@ -105,13 +105,18 @@ and a report come out, with two stops of his: the plan, and the merge with every
     - "bring main in": merge `origin/main`, resolve, regenerate the repo map, renumber, gate, one
       review round, push, report;
     - a conflict between two behaviours is a stop;
-    - the spec template's Model and Touches lines.
+    - the spec template's Model and Touches lines;
+    - the choices made in writing them, beyond his ten decisions, are listed at the end of 0096's
+      amendment (for example "fast-forward" when main moved during the plan stop).
   - **Also changed:** the CLAUDE.md §4 sentence on what is enforced.
   - **Written in a cloud session,** although his prompt said to run it locally. Hooks and settings
     change only locally, so he chose on 2026-10-10: the docs here, and the settings rule in a local
     session on the same branch (Owed founder actions). Until that lands, the docs describe a hook
     the branch does not have yet. No PR is open, and none may be opened before it lands.
   - No product code, prompt, migration, schema, dependency, setting or hook changed.
+  - **Gate in that cloud session (MEASURED 2026-10-10, test-runner on `64b2cf0`'s tree, docs only
+    since):** 6 of 7. Lint, typecheck, core 1038, worker 7, web 606 and admin 71 are green. Remotion
+    is 96 of 97: the known fonts failure, the same as the first run's, owed to the local step.
 - **Still to do:** the local step and this branch's PR (Owed founder actions), PR #85's owed checks,
   and first-run items 5 and 12, which are his.
 
@@ -1368,7 +1373,13 @@ the 2026-09-26 custom domain (founder-reported):**
      - run `claude mcp list` and record whether any local server is named `github`. If one is, its
        two tools would start the hook once per call locally (about 100 ms) and still go through;
      - run the full gate locally, Remotion included;
-     - update 0097's "Built: not yet" line and this entry with the test output;
+     - with the test output and the `claude mcp list` result, update every line that says the hook
+       is not built, that no PR is open, or that `claude mcp list` is owed:
+       - in 0097: "Built: not yet", "It is owed: `claude mcp list`", and "once built";
+       - in this file: the unattended header ("its settings rule is owed to a local session"), "Not
+         built yet (below)", "`.claude/settings.json` (SessionStart and ConfigChange only)", the
+         2026-10-10 entry's "Until that lands …", and this entry;
+       - the header comment of `unattended-guard.test.ts`;
      - commit, run `pnpm repo-map`, push, and open the PR.
   2. Merge. No migration, no box step. Vercel's redeploy changes nothing customers see.
 
@@ -1424,7 +1435,7 @@ the 2026-09-26 custom domain (founder-reported):**
   Service A plan in between.
 - **~~Say whether the inventory list should get a retry button on a failed first load~~ ANSWERED
   2026-10-09:** yes, by the first unattended run's spec. FIXED on
-  `claude/inventory-first-load-retry-kv24q9`, not merged
+  `claude/inventory-first-load-retry-kv24q9`, MERGED as PR #85 (`7f381e8`, by `git log` 2026-10-10)
   ([[the-inventory-first-load-failure-has-no-retry-button]]). He also said to leave both copy
   points alone: the error line's «…רעננו את העמוד ונסו שוב.» above the new in-place retry, and
   step-plan's «נסה שוב» (singular) beside the other retries' «נסו שוב».

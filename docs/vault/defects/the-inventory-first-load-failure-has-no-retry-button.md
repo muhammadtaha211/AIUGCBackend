@@ -1,14 +1,14 @@
 ---
 type: defect
 status: verified
-verified: 2026-10-09
-method: "FIX (2026-10-09, on claude/inventory-first-load-retry-kv24q9 at 2ee3961): `pnpm --filter @aiugc/web exec vitest run --fileParallelism=false test/inventory-retry.test.ts` 2 failed on b72a9be (main's source) and 2 passed on 2ee3961; read after prettier: inventoryRetry at apps/web/src/lib/service-a-ui.ts:907, and in state-picker.tsx inventoryNonce :86, the effect's setError(null) :162, its deps [demoId, inventoryNonce] :187, the ungated button's routed click :249. ORIGINAL FINDING (2026-10-02, unchanged below): Read in apps/web/src/components/a-wizard/state-picker.tsx on feat/steps-fixed-2s-clips at 2fc4fe7: the error block renders the «נסו שוב» button only when `inventory !== null` (its comment: 'only an inventory failure (nothing loaded at all) keeps close-and-reopen'), and the mount effect that loads the inventory runs once per demo. apps/web/src/components/a-wizard/step-plan.tsx renders a «נסו שוב» button for a failed step-card fetch. apps/web/src/lib/api-errors.ts answers an unmapped error with 500 and GENERIC_ERROR. Not reproduced in a browser."
+verified: 2026-10-10
+method: "MERGE (2026-10-10): `git log origin/main` shows 7f381e8, 'Merge pull request #85 from muhammadtaha211/claude/inventory-first-load-retry-kv24q9'; FOUNDER-REPORTED merged the same day. FIX (2026-10-09, on claude/inventory-first-load-retry-kv24q9 at 2ee3961): `pnpm --filter @aiugc/web exec vitest run --fileParallelism=false test/inventory-retry.test.ts` 2 failed on b72a9be (main's source) and 2 passed on 2ee3961; read after prettier: inventoryRetry at apps/web/src/lib/service-a-ui.ts:907, and in state-picker.tsx inventoryNonce :86, the effect's setError(null) :162, its deps [demoId, inventoryNonce] :187, the ungated button's routed click :249. ORIGINAL FINDING (2026-10-02, unchanged below): Read in apps/web/src/components/a-wizard/state-picker.tsx on feat/steps-fixed-2s-clips at 2fc4fe7: the error block renders the «נסו שוב» button only when `inventory !== null` (its comment: 'only an inventory failure (nothing loaded at all) keeps close-and-reopen'), and the mount effect that loads the inventory runs once per demo. apps/web/src/components/a-wizard/step-plan.tsx renders a «נסו שוב» button for a failed step-card fetch. apps/web/src/lib/api-errors.ts answers an unmapped error with 500 and GENERIC_ERROR. Not reproduced in a browser."
 source: code
 ---
 
 # A failed first load of the inventory list shows an error and no retry button
 
-## FIXED 2026-10-09 on branch `claude/inventory-first-load-retry-kv24q9` (`2ee3961`); NOT merged
+## FIXED 2026-10-09 on branch `claude/inventory-first-load-retry-kv24q9` (`2ee3961`); MERGED as PR #85 (`7f381e8`, 2026-10-10)
 
 The fix is the one this note named (below). It is the first unattended cloud run's
 (`docs/unattended/runs/2026-10-09-inventory-first-load-retry/`).

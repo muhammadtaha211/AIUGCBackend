@@ -1,7 +1,8 @@
 # Unattended run protocol
 
 This applies to a **cloud session** (`CLAUDE_CODE_REMOTE=true`) whose first message is a spec written
-from `spec-template.md`. Read all of it before doing anything else. CLAUDE.md still governs. Where a
+from `spec-template.md`, or names a run's `log.md` ("Continue the run in …", "Bring main in for the
+run in …"). Read all of it before doing anything else. CLAUDE.md still governs. Where a
 CLAUDE.md rule can't hold as written in a cloud run, the table at the end says what holds instead.
 Decisions: vault 0096 (the run), 0097 (what is refused and how), 0098 (paid checks).
 
@@ -65,7 +66,11 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
    - `git rev-parse HEAD origin/main` must print the same sha twice;
    - `git status --porcelain` must print nothing.
 
-   If either check fails, stop and ask. Write the branch and that sha at the top of `log.md`.
+   If either check fails, stop and ask, and do not commit or push anything. If nothing is committed
+   yet and HEAD is only behind `origin/main` (main moved while the plan waited), say so. If he answers
+   "fast-forward", run `git merge --ff-only origin/main`, re-confirm the spec's Unverified claims on
+   the new tree, and repeat this step. Once both checks pass, write the branch and that sha at the
+   top of `log.md`.
 
 3. **Save the spec.** Write the first message to `docs/unattended/runs/<YYYY-MM-DD>-<slug>/spec.md`,
    byte for byte (the folder is prettier-ignored). Create `log.md` beside it (template below). Commit
@@ -79,8 +84,9 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
 5. **Run the gate** through the `test-runner` subagent: the seven commands, one at a time.
    - **One known failure is owed, not a stop.** It qualifies only when all of these hold:
      - the only red test is `packages/remotion/test/frame-delivery.test.ts`;
-     - its error is headless Chrome rejecting `fonts.gstatic.com` with
-       `net::ERR_CERT_AUTHORITY_INVALID`;
+     - it fails with `NetworkError: A network error occurred.`;
+     - the render logged, just before it, that the browser failed to load a font from
+       `fonts.gstatic.com` with `net::ERR_CERT_AUTHORITY_INVALID`;
      - the other six commands are green.
 
      The first run measured it on 2026-10-09 (vault 0096, amended 2026-10-10). Record it in
@@ -141,6 +147,8 @@ for any of these:
 - **A spec that is wrong for the repo:** it contradicts the repo, or an Unverified claim is false.
 - **A spec that would change `packages/remotion` or how a render looks,** while the known failure
   stands.
+- **A migration, or a credits or billing change, that the spec's Touches line does not declare,**
+  before writing it. Another run in flight may already have one (§Several runs at once).
 - **The assigned branch not on `origin/main`'s head,** or a dirty tree, before the first commit.
 - **A gate failure other than the known one.**
 - **Anything irreversible.**
@@ -195,22 +203,36 @@ No PR is merged unless its branch contains the current `origin/main`, and the ga
 round ran on that combined state. Two changes can each pass alone and break together, and git
 reports a conflict only where the same lines changed.
 
-When main has moved since the run finished, the founder says **"bring main in"**. Then:
+When main has moved since the run's branch was cut (anything merged to main since its session
+started, or the closing report says the branch does not contain `origin/main`), the founder says
+**"bring main in"**. Then:
 
-1. **Merge, never rebase.** `git fetch origin`, then `git merge origin/main`. No rebase and no
-   force-push. This is the only merge a run makes, and only on those words.
-2. **Resolve each conflict only where both changes can be kept as written.**
+1. **Bootstrap,** unless this VM already did (§After approval, step 1, with its stops). A paused or
+   new VM may be a shallow clone with no `node_modules`.
+2. **Merge, never rebase.** `git fetch origin`, then `git merge origin/main`. No rebase and no
+   force-push. Apart from the fast-forward of §After approval step 2, this is the only merge a run
+   makes, and only on those words.
+3. **Resolve each conflict only where both changes can be kept as written.**
    - Where the two sides want different behaviour, it is the founder's product decision: run
      `git merge --abort`, then stop and ask, naming the files and the two behaviours.
    - `docs/vault/state-of-play.md`: keep both sides' entries.
-   - `docs/repo-map.md`: take either side. `pnpm repo-map` regenerates it after the merge commit,
-     committed alone as `chore: repo-map`.
-   - The run's own vault notes: if main has taken a number the run used, renumber the run's note to
-     the next free number, and update every link and mention of it.
-3. **Commit the merge,** then re-run the gate (§After approval, step 5, with the same known
-   failure) and one review round (step 6). If that round's verdict is not CLEAN, stop and ask.
-4. **Record and push.** Add a "Main brought in" entry to `log.md`, then `git push origin <branch>`.
-5. **Report** each conflict and how it was resolved, the gate, and the review verdict.
+   - `docs/repo-map.md`: take either side. Step 6 regenerates it.
+
+   Then commit the merge. Git commits it by itself when nothing conflicts.
+
+4. **Check the decision numbers, whether or not anything conflicted.** A clash is not a git
+   conflict, because the two notes have different file names.
+   - The run's own new decisions:
+     `git diff --name-only --diff-filter=A origin/main HEAD -- docs/vault/decisions/`.
+   - Main's: `git ls-tree --name-only origin/main docs/vault/decisions/`.
+   - If main has a different note with the number of one of the run's, renumber the run's note to
+     the next free number, update every link and mention of it, and commit.
+5. **Re-run the gate** (§After approval, step 5, with the same known failure) **and one review
+   round** (§After approval, step 6). If that round's verdict is not CLEAN, stop and ask.
+6. **Record and push.** Add a "Main brought in" entry to `log.md` and commit it. Run
+   `pnpm repo-map`, commit it alone as `chore: repo-map` if it changed, then
+   `git push origin <branch>`.
+7. **Report** each conflict and how it was resolved, the gate, and the review verdict.
 
 If main moves again before he merges, he says it again.
 
@@ -219,8 +241,9 @@ the run in `docs/unattended/runs/<date>-<slug>/log.md`".
 
 **A new session on a run's branch,** whether it continues a run or brings main in, reads `log.md`
 first. Then it checks that its assigned branch is the branch `log.md` names. If the harness assigned
-another branch, stop and ask, naming both. The `origin/main` check (§After approval, step 2) is for
-a run's first commit only: a run's branch is ahead of main by design.
+another branch, stop and ask, naming both. Then it bootstraps (§After approval, step 1, with its
+stops). The `origin/main` check (§After approval, step 2) is for a run's first commit only: a run's
+branch is ahead of main by design.
 
 ## The closing report
 
@@ -232,7 +255,9 @@ Before CLAUDE.md's end-of-task block (Next step, Test it manually, Branch), give
 3. **Spend against the cap:** each check's tokens and agorot, then the total.
 4. **Each reviewer gap,** and how it closed.
 5. **What is owed,** with the commands.
-6. **The PR link,** or "click Create PR".
+6. **Whether the branch contains `origin/main`:** yes or no, from
+   `git fetch origin && git merge-base --is-ancestor origin/main HEAD && echo yes || echo no`.
+7. **The PR link,** or "click Create PR".
 
 ## log.md template
 

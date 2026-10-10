@@ -139,8 +139,9 @@ a cloud session by configuration. Locally nothing changes.
 **The mechanism: one PreToolUse hook in `.claude/settings.json`.**
 
 - Its matcher is the two names joined by `|`.
-- Its command is the settings freeze's own. When `CLAUDE_CODE_REMOTE` is `true` or `1`, it exits 2
-  with a message on stderr. Otherwise it exits 0 with no output.
+- Its command has the settings freeze's form, a `case` on `CLAUDE_CODE_REMOTE`, with its own
+  message (state-of-play gives the exact command). When the variable is `true` or `1`, it exits 2
+  with that message on stderr. Otherwise it exits 0 with no output.
 
 **Why not a `permissions.deny` rule:** Claude Code loads permission rules from every settings file
 with no check on `CLAUDE_CODE_REMOTE`. A deny rule would also refuse the two tools in any local
@@ -178,9 +179,15 @@ session that has an MCP server named `github`.
   test in `packages/core/test/unattended-guard.test.ts` before the PR is opened (state-of-play,
   Owed founder actions).
 
-**What this supersedes:** two lines in §Why the guard was not built, "with no guard there is no
-PreToolUse hook at all" and "With no PreToolUse hook, local tool calls now pay nothing". There is
-now one PreToolUse hook, on two tool names, and every other local tool call still pays nothing.
+**What this supersedes, once built:**
+
+- In §3 Instruction only, "merging a PR by any route" and "the built-in GitHub tools face no
+  obstacle". In a cloud session the two tools that merge are refused; every other route to a merge
+  stays instruction only.
+- In §Why the guard was not built, "with no guard there is no PreToolUse hook at all" and "With no
+  PreToolUse hook, local tool calls now pay nothing". There is one PreToolUse hook, on two tool
+  names, and every other local tool call still pays nothing.
+- The title stays as it is, for its links.
 
 ### Item 4: a GitHub rule on main could not stop a cloud session from merging
 
