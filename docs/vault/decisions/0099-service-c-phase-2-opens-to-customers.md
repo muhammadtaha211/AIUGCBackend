@@ -157,6 +157,10 @@ and the final text, after every free gate and before the debit; admin-owned busi
 **FOUNDER-REPORTED, ruling 10** (0089 §5). This supersedes 0089 §3's REASONED list item "the
 landing, `/pricing` and the legal pages" as a phase-2 need. **MEASURED:** none of them changed.
 
+_(Lifted for the landing only, 2026-10-10, by the founder:
+[[0100-home-cards-show-example-clips-landing-sells-three]] §5. `/pricing` and the legal pages stay
+untouched.)_
+
 ## 10. What else was decided while building it
 
 - **PLANNING DEFAULTS kept:** a change to a character of the other gender clears the texts already

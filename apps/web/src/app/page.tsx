@@ -7,15 +7,16 @@ import { HOOKS, LANDING_MEDIA } from "@/lib/landing-media";
 /**
  * The public landing page (Lovable-inspired composition, Tavnit brand):
  * light paper base, green aurora hero with the first onboarding question as
- * the CTA, the two services side by side, a dark charcoal block for the
- * hook+demo story, the talking head, the self-marketing band, closing CTA,
- * footer. Authenticated owners never see it — the middleware sends them
- * to /home.
+ * the CTA, the three services side by side, a dark charcoal block for the
+ * hook+demo story, the talking head, גוש טקסט, the self-marketing band,
+ * closing CTA, footer. Authenticated owners never see it — the middleware
+ * sends them to /home.
  *
- * It sells the two services the app actually runs, under the app's own names —
- * "הוק + דמו" spaced as `SERVICE_LABELS.a` writes it and "סרטון עם דמות AI" as
- * the wizard and the dashboard card write it, the pair `lib/plans-ui.ts` pins
- * at :116-117 — and makes no results claim: there are no customers yet,
+ * It sells the three services the app actually runs, under the app's own
+ * names — "הוק + דמו" spaced as `SERVICE_LABELS.a` writes it, "סרטון עם דמות AI"
+ * as the wizard and the dashboard card write it (the pair `lib/plans-ui.ts`
+ * pins at :116-117), and "גוש טקסט" as `SERVICE_LABELS.c` and the C wizard
+ * write it (vault 0100) — and makes no results claim: there are no customers yet,
  * nothing is measured, and the only proof on the page is the account we
  * market תבנית with. Section anchors `#features` and `#how` are load-bearing —
  * the shared header and footer link to them from every other route.
@@ -208,7 +209,7 @@ function Hero() {
   );
 }
 
-/* ---------- the two services ---------- */
+/* ---------- the three services ---------- */
 
 const SERVICES = [
   {
@@ -223,16 +224,22 @@ const SERVICES = [
     href: "#presenter",
     label: "איך זה עובד",
   },
+  {
+    title: "גוש טקסט",
+    body: "קליפ של דמות עם גוש טקסט בעברית, כמו טקסט שמקלידים בטיקטוק או באינסטגרם. תבנית כותבת את הטקסט מהשאלון, ואתם עורכים אותו ומקבלים סרטון מוכן.",
+    href: "#text-block",
+    label: "איך זה עובד",
+  },
 ];
 
-function TwoServices() {
+function ThreeServices() {
   return (
     <section id="features" className="mx-auto max-w-6xl scroll-mt-24 px-5 py-20 sm:px-8 sm:py-28">
       <h2 className="max-w-2xl font-display text-3xl leading-tight text-ink sm:text-5xl">
-        שני סוגי סרטונים. שאלון אחד.
+        שלושה סוגי סרטונים. שאלון אחד.
       </h2>
 
-      <div className="mt-12 grid gap-5 md:grid-cols-2">
+      <div className="mt-12 grid gap-5 md:grid-cols-3">
         {SERVICES.map((service) => (
           <article
             key={service.title}
@@ -537,6 +544,75 @@ function Presenter() {
   );
 }
 
+/* ---------- section C: גוש טקסט ---------- */
+
+/**
+ * Every line here is read back against the format, not hoped (vault 0100):
+ * the clip plays once with its own sound and the text is burned for its whole
+ * length (0090), the text is written in the speaker's first person from the
+ * questionnaire and names the business once, in passing, with no call to
+ * action (`prompts/text_block/v3.md`, "Never an ad"), "טקסט אחר", the free
+ * edit and the placement box are the wizard's own (0099 §4, §6, §8). No
+ * number, no length, no price (0061 §2), and never `כתוביות` — this is typed
+ * text, not captions.
+ */
+const TEXT_BLOCK_STEPS = [
+  {
+    title: "בוחרים דמות וקליפ",
+    body: "לכל דמות במאגר יש קליפים משלה. הקליפ מתנגן פעם אחת מההתחלה עד הסוף, עם הסאונד שלו.",
+  },
+  {
+    title: "תבנית כותבת את הטקסט",
+    body: "מהשאלון של העסק, מפי הדמות. העסק מוזכר בדרך אגב, כמו שמספרים על משהו שמכירים — בלי להציע אותו ובלי קריאה לפעולה. לא מתאים? מבקשים טקסט אחר.",
+  },
+  {
+    title: "עורכים וממקמים",
+    body: "משנים את הטקסט חופשי, וקובעים איפה הוא יושב על הקליפ.",
+  },
+  {
+    title: "מקבלים סרטון מוכן להעלאה",
+    body: "הטקסט צרוב על הקליפ לכל האורך, כמו טקסט שמקלידים בטיקטוק או באינסטגרם.",
+  },
+];
+
+function TextBlockSection() {
+  return (
+    <section id="text-block" className="mx-auto max-w-6xl scroll-mt-24 px-5 py-20 sm:px-8 sm:py-28">
+      <Eyebrow>גוש טקסט</Eyebrow>
+      <h2 className="mt-2 max-w-2xl font-display text-3xl leading-tight text-ink sm:text-5xl">
+        גוש טקסט שנראה כמו פוסט, לא כמו מודעה
+      </h2>
+      <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink/65">
+        בוחרים דמות וקליפ מהמאגר. תבנית כותבת טקסט מפי הדמות לפי השאלון שלכם, אתם עורכים אותו, והוא
+        נצרב על הקליפ.
+      </p>
+
+      {/* The clip sits on the left here, the talking head's on the right, so
+          the two sections in a row don't read as one. */}
+      <div className="mt-12 grid items-start gap-12 sm:grid-cols-2">
+        <div className="flex justify-center sm:order-last">
+          <MediaSlot
+            {...LANDING_MEDIA.textBlockSample}
+            seed="tavnit-text-block"
+            caption={LANDING_MEDIA.textBlockSample.alt}
+            className="w-52 sm:w-64"
+          />
+        </div>
+        <ol className="space-y-8">
+          {TEXT_BLOCK_STEPS.map((step, i) => (
+            <li key={step.title}>
+              <StepTitle number={String(i + 1)} tone="ink">
+                {step.title}
+              </StepTitle>
+              <p className="mt-2 text-[15px] leading-relaxed text-ink/65">{step.body}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
 /* ---------- proof: the account we market תבנית with ---------- */
 
 function Proof() {
@@ -617,10 +693,11 @@ export default function LandingPage() {
       <SiteHeader />
       <main>
         <Hero />
-        <TwoServices />
+        <ThreeServices />
         <HookAndDemo />
         <HowItWorks />
         <Presenter />
+        <TextBlockSection />
         <Proof />
         <ClosingCta />
       </main>
