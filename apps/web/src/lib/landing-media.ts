@@ -33,6 +33,7 @@ type LandingMedia = {
   /** The finished ad, its hook line burned in — the page draws no line over it. */
   demoAfter: VideoSlot;
   presenterSample: VideoSlot;
+  textBlockSample: VideoSlot;
   /** Exactly four — step 2's strip is four across. */
   hookClips: readonly [HookClipSlot, HookClipSlot, HookClipSlot, HookClipSlot];
   hookStudioShot: ImageSlot;
@@ -57,6 +58,11 @@ export const LANDING_MEDIA: LandingMedia = {
     src: "/landing/presenter.mp4",
     poster: "/landing/presenter.jpg",
     alt: "דוגמה לסרטון עם דמות AI",
+  },
+  textBlockSample: {
+    src: "/landing/text-block.mp4",
+    poster: "/landing/text-block.jpg",
+    alt: "דוגמה לסרטון גוש טקסט",
   },
 
   // Bank clips, shown bare — step 2 draws no line over them (founder's call,

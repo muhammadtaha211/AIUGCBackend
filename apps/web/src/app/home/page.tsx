@@ -21,8 +21,12 @@ const PRELOAD_COUNT = 3;
 
 /**
  * The dashboard home pane: greeting, the three service cards, recent renders.
- * Sized to fit a laptop viewport with no scrolling — the sidebar layout owns
- * the chrome (switcher, credits, profile).
+ * The sidebar layout owns the chrome (switcher, credits, profile). It used to
+ * fit a laptop viewport with no scrolling; since the cards show their example
+ * clips at a size their burned text reads at, a desktop-width window fits from
+ * about 830px tall (846 once the recent strip scrolls sideways) and a shorter
+ * one scrolls — the founder's choice over a smaller clip (vault 0100). The
+ * column is 41rem, three cards wide, so the recent strip lines up with them.
  *
  * It also preloads the persona picker's first row: next/link prefetch on the
  * service cards warms the wizard's RSC payload, but never its images — these
@@ -49,14 +53,20 @@ export default function HomePage() {
 
 function HomeSkeleton() {
   return (
-    <div className="relative isolate overflow-hidden px-6 pb-6 pt-10 sm:px-10">
-      <div className="mx-auto w-full max-w-4xl">
+    <div className="relative isolate overflow-hidden px-6 pb-6 pt-4 sm:px-10 md:pt-5">
+      <div className="mx-auto w-full max-w-[41rem]">
         <div className="mx-auto h-9 w-72 max-w-full animate-pulse rounded-lg bg-ink/[0.06]" />
         <div className="mx-auto mt-3 h-4 w-56 animate-pulse rounded-lg bg-ink/[0.06]" />
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
-          <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
-          <div className="h-40 animate-pulse rounded-2xl bg-white ring-1 ring-ink/[0.07]" />
+        <div className="-mx-6 mt-5 flex gap-4 overflow-hidden px-6 py-1 sm:mx-0 sm:grid sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))] sm:justify-items-center sm:p-0">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="w-52 shrink-0 animate-pulse overflow-hidden rounded-2xl bg-white ring-1 ring-ink/[0.07] sm:w-full sm:max-w-52"
+            >
+              <div className="h-[3.75rem]" />
+              <div className="aspect-[9/16] bg-ink/[0.06]" />
+            </div>
+          ))}
         </div>
         <div className="mt-8 flex gap-3">
           <div className="aspect-[9/16] w-24 animate-pulse rounded-xl bg-ink/[0.06]" />
@@ -111,7 +121,7 @@ async function HomeContent() {
     });
 
   return (
-    <div className="relative isolate overflow-hidden px-6 pb-6 pt-10 sm:px-10">
+    <div className="relative isolate overflow-hidden px-6 pb-6 pt-4 sm:px-10 md:pt-5">
       {/* React 19 hoists these to <head>; imageSrcSet mirrors the picker's
           <Image>, so the browser picks the exact candidate it will render. */}
       {preloads.map((preload) => (
@@ -131,7 +141,7 @@ async function HomeContent() {
         <div className="absolute right-[10%] top-4 h-32 w-72 rounded-full bg-emerald-300/25 blur-3xl" />
       </div>
 
-      <div className="mx-auto w-full max-w-4xl">
+      <div className="mx-auto w-full max-w-[41rem]">
         <h1 className="text-center font-display text-3xl leading-tight text-ink sm:text-4xl">
           מה יוצרים היום ל־{selected.name}?
         </h1>
@@ -139,7 +149,7 @@ async function HomeContent() {
           בוחרים שירות, ומקבלים סרטון מוכן לפרסום.
         </p>
 
-        <div className="mt-8">
+        <div className="mt-5">
           <PathwayCards hasQuestionnaire={hasQuestionnaire} />
         </div>
 

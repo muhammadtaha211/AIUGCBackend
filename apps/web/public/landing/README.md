@@ -8,7 +8,11 @@ on it. Nothing on screen ever says "placeholder". One slot is the exception: `in
 rather than draws — see its row below.
 
 Filled 2026-09-25: every clip slot (`demoBefore`, `demoAfter`, the four `hookClips`,
-`presenterSample`). Still empty: the two screenshots, `hookStudioShot` and `instagramShot`.
+`presenterSample`); `textBlockSample` added and filled 2026-10-10 (vault decision 0100). Still
+empty: the two screenshots, `hookStudioShot` and `instagramShot`.
+
+The dashboard's service cards (`/home`) have their own clips, in `public/previews/` with its own
+README; nothing here is shared with them.
 
 ## Replacing a slot
 
@@ -29,6 +33,7 @@ There is no third step: no import, no build config, no page edit.
 | `hookClips[0..3]` | `hook-1.mp4` … `hook-4.mp4` + `.jpg`  | Step 2's four-clip strip — that strip only                   |
 | `hookStudioShot`  | `hook-studio.png`                     | Step 3 — a screenshot of the hook studio, replacing its mock |
 | `presenterSample` | `presenter.mp4` + `presenter.jpg`     | The talking-head section (`#presenter`)                      |
+| `textBlockSample` | `text-block.mp4` + `text-block.jpg`   | The גוש טקסט section (`#text-block`)                         |
 | `instagramShot`   | `instagram.png`                       | The self-marketing band (`#proof`) — **hidden until set**    |
 
 `.jpg` files are the `poster` — the frame the browser shows before a clip plays.
@@ -49,10 +54,12 @@ was four tiles of the same clip under four HTML lines; founder's call to show th
 - **Encode for the web, not the archive.** The sources were 174 MB; these files are 11 MB. The
   recipe (ffmpeg): `-map 0:v:0 -an -map_metadata -1 -c:v libx264 -preset slow -pix_fmt yuv420p
 -movflags +faststart`, scaled and centre-cropped to 720×1280 at `-crf 26` (hooks, presenter) or
-  `-crf 30` (`demoAfter`). `demoBefore` is 87 s of a filmed monitor and moiré does not compress,
+  `-crf 30` (`demoAfter`); `textBlockSample` is the hooks' 720×1280 at `-crf 26`, which keeps its
+  burned text block readable at the 208–256px the page draws it. `demoBefore` is 87 s of a filmed monitor and moiré does not compress,
   so it is 540×960 with `hqdn3d=4:4:8:8` at `-crf 32` — the same picture at the ~200px the page
   draws it. `-map_metadata -1` is not optional: a phone recording carries its creation time
-  (and can carry its location). Posters are each clip's first frame (`-frames:v 1 -q:v 4`).
+  (and can carry its location). Posters are each clip's first frame (`-frames:v 1 -q:v 4`), except
+  `textBlockSample`'s, taken at 5 s (`-ss 5`) where the cut watermelon shows.
 - **Stills**: `hookStudioShot` and `instagramShot` are screenshots. Crop `instagramShot` to a
   phone aspect — its frame is shaped for it.
 - **Hook lines** are copy, not assets: they live beside the clips in `landing-media.ts`, but no

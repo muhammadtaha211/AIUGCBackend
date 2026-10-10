@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-09
+updated: 2026-10-10
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -119,6 +119,36 @@ come out, with two stops of his: the plan, and the merge with everything after i
 - **Going live (owed, under "Owed founder actions"):** merge, with no env change; then the box
   pull and restart. Until the restart the box keeps calling 4.6, which still works.
   `usage_events` has no model column, so record both moments here when they happen.
+
+**Example clips on the home cards, a higher home heading, גוש טקסט on the landing: BUILT
+2026-10-10 on `feat/home-previews-landing-c`, from `origin/main` `ecbb9eb` (phase 2 merged as PR
+#86). Gate all green at `e7f33e9` (lint, typecheck, remotion 97, core 1038, worker 7, web 606,
+admin 71). Not merged. No migration, no box step.**
+
+- **Decision:** [[0100-home-cards-show-example-clips-landing-sells-three]]. It records his five
+  decisions from the 2026-10-10 planning chat, the planning defaults (none struck), and three rulings
+  from this session:
+  - **S1** readable clips over the page fitting his window (options 1–4 shown as screenshots);
+  - **S2** `a` ships unedited after the session flagged personal-looking tab titles in it;
+  - **S3** the measuring session ran on tavnit.support.
+- **What exists:**
+  - each `/home` card is the icon, name and link line over its example clip (`public/previews/`,
+    540p, no audio). The card shows a still at rest and plays the clip only while hovered, silent
+    and looping with no controls. On touch the clip plays while the card is on screen. The
+    description stays for screen readers.
+  - the heading sits 15 px under the top bar at his window (it was 38).
+  - the landing strip has three cards, and a `#text-block` section after `#presenter` plays
+    `public/landing/text-block.mp4` (720p) lazily, like the other clips.
+  - not changed, listed for him: the shared footer's tagline and the root description still name
+    two services (the footer also shows on the held pages).
+- **MEASURED, the cost:**
+  - his window is 717×621, which is the phone layout (under 768 px wide). `/home` overflows there by
+    243 px after the change (412 before), 259 with a long strip;
+  - a desktop-width window fits from 830 px tall, 846 with a long strip (it was 719).
+- **FOUNDER-REPORTED, not repo-verified (2026-10-10):** on his screen `/home` needs a scroll to show
+  the recent strip in full.
+- **Pending his approval before the merge:** the new Hebrew strings (the landing's third card and
+  the `#text-block` section), listed in the task report.
 
 **Service C phase 2, the customer wizard: BUILT 2026-10-09 on `feat/service-c-phase-2`.
 Migrations 0053–0056 PUSHED TO PRODUCTION 2026-10-09 on his one-push approval, before the merge,
@@ -896,7 +926,10 @@ payment is kept.
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
-founder actions". The landing, `/pricing` and the legal pages stay as they are (his ruling 10).
+founder actions". `/pricing` and the legal pages stay as they are (his ruling 10); the landing's part
+of that hold was lifted 2026-10-10 and the landing now sells גוש טקסט on
+`feat/home-previews-landing-c`, not merged
+([[0100-home-cards-show-example-clips-landing-sells-three]]).
 
 **Low-effort thinking on גוש טקסט: TESTED and RULED OUT 2026-10-08 on
 `feat/text-block-thinking-low`, ₪1.65 of a ₪5 cap
@@ -1296,7 +1329,20 @@ the 2026-09-26 custom domain (founder-reported):**
      report taken as approved. Vercel deploys web and admin.
   5. Admin `/text-blocks`: assign each existing clip to a character. For a character used only
      here, create it with no voice and upload a **preview** image. Until then no customer sees C.
+     _(MEASURED 2026-10-10, read-only: production has 2 active `text_block_clips`, both with a
+     character, and `GET /api/personas?withTextBlocks=1` as a customer lists 2 characters. So the
+     picker is not empty; whether he counts this step done is his to say.)_
   6. Smoke test as a customer with credits: `/home/c/new` end to end, 25 credits debited.
+
+- **Home example clips + גוש טקסט on the landing (2026-10-10, `feat/home-previews-landing-c`).**
+  In order:
+  1. Approve or rewrite the new Hebrew strings listed in the task report: the landing's third card
+     and the `#text-block` section. Say whether the footer tagline and the root description, which
+     still name two services, should change too.
+  2. The signed-in walk on your own account and window. Hover each card, then click one; check
+     `main.scrollHeight - main.clientHeight` on `/home` (243 expected at 717×621 with one render, a
+     little more with your long strip).
+  3. Open the PR and merge. Vercel deploys web; no migration, no box step.
 
 - **Unattended cloud runs (2026-10-08, `tooling/unattended-cloud-runs`).** In order:
   1. ~~Merge the PR~~ MERGED as PR #84 (`1b709ff`, by `git log` 2026-10-09). It changes no product code, so Vercel's redeploy changes nothing customers see.

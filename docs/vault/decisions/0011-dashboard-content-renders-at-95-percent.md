@@ -70,3 +70,8 @@ small silent offset, not a crash.
 **Whether 0.95 is the right number.** It was never checked against the founder's own viewport
 — the measurement is `main.scrollHeight - main.clientHeight` on the real signed-in `/home`,
 and `0` means it fits. If it still overflows, this is a one-number change in one file.
+
+_(Measured 2026-10-10 at his window, 717×621, which is under 768px wide and so in the phone layout:
+412 before the example clips, 243 after. No zoom value could close that, and he chose readable clips
+over the fit — [[0100-home-cards-show-example-clips-landing-sells-three]] §6–7. 0.95 was left as
+it is.)_

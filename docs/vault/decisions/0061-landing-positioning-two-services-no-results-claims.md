@@ -27,6 +27,11 @@ The names are not new copy. `SERVICE_LABELS.a` is `"הוק + דמו"`, spaced
 card write it. `apps/web/src/lib/plans-ui.ts:116-117` already pins the pair, and the landing now
 matches it rather than inventing a third spelling.
 
+_(Replaced 2026-10-10 by [[0100-home-cards-show-example-clips-landing-sells-three]] §5, the
+founder's decision: `#features` is three cards, the third, **גוש טקסט**, linking to a new
+`#text-block` section after `#presenter`. The anchors `#features` and `#how` are unchanged. §2 to §4
+below bind the new section as they bind the rest of the page.)_
+
 ### 2. No results claim, anywhere, and no number
 
 **There are no customers. Nothing has been measured. So the page claims nothing.** Specifically

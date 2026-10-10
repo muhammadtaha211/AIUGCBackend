@@ -74,6 +74,10 @@ phase 1 charges nothing because `createTextBlockRender` never calls `quoteContex
 **FOUNDER-REPORTED.** **MEASURED:** none of `apps/web/src/app/page.tsx`, `/pricing`, `/terms`,
 `/privacy` changed on the branch.
 
+_(Lifted for the landing only, 2026-10-10, by the founder:
+[[0100-home-cards-show-example-clips-landing-sells-three]] §5. The landing sells גוש טקסט in its
+own section; `/pricing` and the legal pages stay held.)_
+
 ## Where it lives
 
 - `packages/core/src/text-block.ts` — the vocabulary and the burn check; `pipelines/text-blocks.ts`

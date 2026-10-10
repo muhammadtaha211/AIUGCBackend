@@ -23,6 +23,12 @@ already occupies. That is load-bearing: `/home` is sized to fit a laptop without
 (see the `zoom: 0.95` on the content pane in `apps/web/src/app/home/layout.tsx`), and every
 earlier version of this cost 16–86px.
 
+_(Amended 2026-10-10: since the service cards show their example clips at a readable size, the
+founder's choice over a smaller clip, `/home` fits a desktop-width window from about 830px tall,
+846 with a long recent strip; it was 719. Shorter windows scroll —
+[[0100-home-cards-show-example-clips-landing-sells-three]] §6–7. The rule here stands: the
+indicator still costs zero height.)_
+
 Both the bar's fill and the indeterminate sweep run **left to right, physically** — a
 `left-0` anchor and a `translateX(-100% → 320%)` keyframe, never logical `start-0`, in a
 `dir="rtl"` app.
