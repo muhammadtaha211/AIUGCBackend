@@ -73,11 +73,12 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
    top of `log.md`.
 
 3. **Save the spec.** Write the first message to `docs/unattended/runs/<YYYY-MM-DD>-<slug>/spec.md`,
-   byte for byte (the folder is prettier-ignored). Create `log.md` beside it (template below). Commit
-   both, then `git push -u origin <branch>`.
+   byte for byte (the folder is prettier-ignored). Create `log.md` beside it (template below), with
+   the approved plan in it: each step and its proof command, and any change he made at approval, in
+   his words. Commit both, then `git push -u origin <branch>`.
 4. **Implement** step by step, following CLAUDE.md's coding principles. Subagents may do steps; the
    main session commits their work.
-   - **After every finished step:** commit, update `log.md` in the same commit, then
+   - **After every finished step:** commit, tick the step in `log.md` in the same commit, then
      `git push origin <branch>`.
    - Always name the branch when you push. The VM pauses when idle and may be reclaimed, and
      uncommitted files, background commands and subagents are not restored.
@@ -147,7 +148,7 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
 
 Commit and push first, except for a stop in plan mode, in §After approval steps 1–2, or in a new
 session's branch check: there, commit and push nothing. Then ask in the session, and do nothing else
-until the founder answers. Stop for any of these:
+until the founder answers. Write his answer in `log.md`, in his words. Stop for any of these:
 
 - **Anything in CLAUDE.md's "When unsure":** money (billing, credits), Hebrew copy tone, the locked
   decisions.
@@ -255,8 +256,10 @@ mode, not Plan: the run's plan was approved in its first session, so there is no
 `log.md` and the run's `spec.md` first; the spec is that file, not this session's first message. Then
 it checks that its assigned branch is the branch `log.md` names. If the harness assigned another
 branch, stop and ask, naming both. Then it bootstraps (§After approval, step 1, with its stops) and
-resumes where `log.md` stopped, or brings main in. It never repeats §After approval steps 2 and 3: a
-run's branch is ahead of main by design, and its spec and log are already saved.
+resumes at the first unticked step of `log.md`'s plan, following his recorded changes and answers,
+or brings main in. If `log.md` holds no approved plan, it presents one built from `spec.md` and
+`log.md` and stops: nothing is written before he approves. It never repeats §After approval steps 2
+and 3: a run's branch is ahead of main by design, and its spec and log are already saved.
 
 ## The closing report
 
@@ -280,8 +283,14 @@ Before CLAUDE.md's end-of-task block (Next step, Test it manually, Branch), give
 Spec: spec.md. Cap: ₪<n>. Started <YYYY-MM-DD>.
 Branch: <assigned branch>, on origin/main <sha> before the first commit.
 
+Plan approved <YYYY-MM-DD>. His changes at approval: "<his words>" | none.
+
 ## Steps
-- [x] <step> (<commit sha>)
+- [x] <step>: <proof command> (<commit sha>)
+- [ ] <step>: <proof command>
+
+## His answers to stops
+- <YYYY-MM-DD>, <the stop>: "<his words>"
 
 ## Spend
 | check | calls | input tokens | output tokens | reserved (agorot) | actual (agorot) |

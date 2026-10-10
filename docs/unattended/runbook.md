@@ -88,7 +88,7 @@ You can have several runs in flight, each in its own session on its own branch.
 
 - **The SessionStart line doesn't say "cloud mode", or the run stops on `--check`.** The pre-push
   hook isn't in place. Check that the session has one repository and started from main (or from
-  the run's branch, for a session that continues a run), then start a new session.
+  the run's branch, for a session that continues a run or brings main in), then start a new session.
 - **The session never starts.** The setup script exited non-zero. Fix it in the environment and
   start again.
 - **The session stops before its first commit because main moved while it waited for your
@@ -96,8 +96,8 @@ You can have several runs in flight, each in its own session on its own branch.
   Unverified claims. Or start a new session.
 - **The session expired mid-run.** Everything up to the last finished step is pushed, and the
   branch's `log.md` says where it stopped. To continue, start a new session as in Each run, step 2,
-  but on the run's branch instead of main and in permission mode **Auto** (its plan was approved in
-  its first session), and say: "Continue the run in
+  but on the run's branch instead of main and in permission mode **Auto** (the plan you approved is
+  in `log.md`), and say: "Continue the run in
   `docs/unattended/runs/<date>-<slug>/log.md`."
 - **The session expired before you could say "bring main in".** Start a new session the same way
   and say: "Bring main in for the run in `docs/unattended/runs/<date>-<slug>/log.md`."
