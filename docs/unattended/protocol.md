@@ -68,8 +68,8 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
 
    If either check fails, stop and ask, and do not commit or push anything. If nothing is committed
    yet and HEAD is only behind `origin/main` (main moved while the plan waited), say so. If he answers
-   "fast-forward", run `git merge --ff-only origin/main`, re-confirm the spec's Unverified claims on
-   the new tree, and repeat this step. Once both checks pass, write the branch and that sha at the
+   "fast-forward", run `git merge --ff-only origin/main` and `pnpm install --frozen-lockfile`,
+   re-confirm the spec's Unverified claims on the new tree, and repeat this step. Once both checks pass, write the branch and that sha at the
    top of `log.md`.
 
 3. **Save the spec.** Write the first message to `docs/unattended/runs/<YYYY-MM-DD>-<slug>/spec.md`,
@@ -89,8 +89,14 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
        `fonts.gstatic.com` with `net::ERR_CERT_AUTHORITY_INVALID`;
      - the other six commands are green.
 
-     The first run measured it on 2026-10-09 (vault 0096, amended 2026-10-10). Record it in
-     `log.md`, and list it as owed (below).
+     The first run measured it on 2026-10-09 (vault 0096, amended 2026-10-10). test-runner's report
+     may leave out the logged line, so check it yourself; both lines must match:
+
+     ```
+     pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false test/frame-delivery.test.ts 2>&1 | grep -E 'NetworkError: A network error occurred|fonts\.gstatic\.com.*net::ERR_CERT_AUTHORITY_INVALID'
+     ```
+
+     Copy the matched lines into `log.md`, and list the failure as owed (below).
 
    - **Any other gate failure is a stop.**
 
@@ -139,8 +145,9 @@ mode)`. If it does not, **stop and ask**. Do not push anything.
 
 ## Stop and ask
 
-Commit and push first. Then ask in the session, and do nothing else until the founder answers. Stop
-for any of these:
+Commit and push first, except for a stop in plan mode, in §After approval steps 1–2, or in a new
+session's branch check: there, commit and push nothing. Then ask in the session, and do nothing else
+until the founder answers. Stop for any of these:
 
 - **Anything in CLAUDE.md's "When unsure":** money (billing, credits), Hebrew copy tone, the locked
   decisions.
@@ -167,8 +174,11 @@ for any of these:
 A cloud run can't produce these. List each with its exact command. Never write one as measured, and
 never drop one silently.
 
-- **The Remotion suite,** when the gate's only red is the known failure: run locally before the
-  merge, `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`.
+- **The Remotion suite,** when the gate's only red is the known failure. Run it locally before the
+  merge, on the run's branch at its pushed head, after the last "bring main in":
+  `git fetch origin && git switch <branch> && git pull --ff-only && pnpm install --frozen-lockfile`,
+  then `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`. Note the sha it ran
+  on (`git rev-parse HEAD`); a run on any other commit does not count.
 - **`db push --dry-run` for a new migration:** run locally per `.claude/rules/migrations.md`.
 - **Production read-backs:** the SQL, and the result expected.
 - **Vault facts** the work relies on that need production to re-measure.
@@ -218,7 +228,8 @@ started, or the closing report says the branch does not contain `origin/main`), 
    - `docs/vault/state-of-play.md`: keep both sides' entries.
    - `docs/repo-map.md`: take either side. Step 6 regenerates it.
 
-   Then commit the merge. Git commits it by itself when nothing conflicts.
+   Then commit the merge. Git commits it by itself when nothing conflicts. Then run
+   `pnpm install --frozen-lockfile` again: main may have changed the lockfile.
 
 4. **Check the decision numbers, whether or not anything conflicted.** A clash is not a git
    conflict, because the two notes have different file names.
@@ -239,11 +250,13 @@ If main moves again before he merges, he says it again.
 If the session has expired, he starts a new session on the run's branch and says "Bring main in for
 the run in `docs/unattended/runs/<date>-<slug>/log.md`".
 
-**A new session on a run's branch,** whether it continues a run or brings main in, reads `log.md`
-first. Then it checks that its assigned branch is the branch `log.md` names. If the harness assigned
-another branch, stop and ask, naming both. Then it bootstraps (§After approval, step 1, with its
-stops). The `origin/main` check (§After approval, step 2) is for a run's first commit only: a run's
-branch is ahead of main by design.
+**A new session on a run's branch,** whether it continues a run or brings main in, starts in Auto
+mode, not Plan: the run's plan was approved in its first session, so there is no plan stop. It reads
+`log.md` and the run's `spec.md` first; the spec is that file, not this session's first message. Then
+it checks that its assigned branch is the branch `log.md` names. If the harness assigned another
+branch, stop and ask, naming both. Then it bootstraps (§After approval, step 1, with its stops) and
+resumes where `log.md` stopped, or brings main in. It never repeats §After approval steps 2 and 3: a
+run's branch is ahead of main by design, and its spec and log are already saved.
 
 ## The closing report
 
@@ -286,17 +299,17 @@ Total: <x> of <cap × 100> agorot.
 
 ## CLAUDE.md in a cloud run
 
-| CLAUDE.md says                                                                                                          | In a cloud run                                                                                                                                                                                                                                                                                   |
-| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The file wins unless the founder overrides it in chat; ask when unsure                                                  | He is not watching. Every such question is a stop-and-ask in the session.                                                                                                                                                                                                                        |
-| §1: branch "in this checkout"; stop if the tree is dirty                                                                | The clone is the checkout. Work on the assigned branch, once it is confirmed on `origin/main`'s head and clean (above).                                                                                                                                                                          |
-| Re-measure a vault fact older than 14 days before relying on it                                                         | A fact that needs production can't be re-measured here. It is owed, with its command, and never asserted as current.                                                                                                                                                                             |
-| §3 and migrations.md: put the `db push --dry-run` output in Next step; run `migration list`; read back before and after | There is no database credential here. Each is owed with its command (decision 9). The `supabase.exe` path in migrations.md is Windows-only.                                                                                                                                                      |
-| Read secrets out of the env file inside the script                                                                      | There are no `.env` files. The only secret is `PAID_CHECK_ANTHROPIC_KEY`, passed as above.                                                                                                                                                                                                       |
-| Run the gate through the `test-runner` subagent                                                                         | Unchanged. It uses Bash when it has no PowerShell tool.                                                                                                                                                                                                                                          |
-| The `pnpm dev`, worker and CLI commands                                                                                 | They need `.env` files that point at production. Not used here.                                                                                                                                                                                                                                  |
-| Don't add spend; ask before any paid call                                                                               | Claude calls are pre-approved up to the spec's cap (decision 8, vault 0098). Everything else is unchanged.                                                                                                                                                                                       |
-| The gate's serial runs ("OOMs this machine")                                                                            | That was measured on the founder's machine. Keep them serial here anyway.                                                                                                                                                                                                                        |
-| Never push to main, never merge, never force-push                                                                       | Pushing to main is enforced by the pre-push hook. The two GitHub merge tools are refused by a PreToolUse hook; merging by any other route is instruction only and a stop. Merging `origin/main` into the run's own branch happens only when he says "bring main in". Force-push stays forbidden. |
-| §3: every task updates state-of-play and the repo map                                                                   | Unchanged. Parallel runs conflict in both; the conflicts are resolved when main is brought in.                                                                                                                                                                                                   |
-| Commit and push at the end of the task                                                                                  | Push after every finished step (decision 6).                                                                                                                                                                                                                                                     |
+| CLAUDE.md says                                                                                                          | In a cloud run                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The file wins unless the founder overrides it in chat; ask when unsure                                                  | He is not watching. Every such question is a stop-and-ask in the session.                                                                                                                                                                                                                                                                                             |
+| §1: branch "in this checkout"; stop if the tree is dirty                                                                | The clone is the checkout. Work on the assigned branch, once it is confirmed on `origin/main`'s head and clean (above).                                                                                                                                                                                                                                               |
+| Re-measure a vault fact older than 14 days before relying on it                                                         | A fact that needs production can't be re-measured here. It is owed, with its command, and never asserted as current.                                                                                                                                                                                                                                                  |
+| §3 and migrations.md: put the `db push --dry-run` output in Next step; run `migration list`; read back before and after | There is no database credential here. Each is owed with its command (decision 9). The `supabase.exe` path in migrations.md is Windows-only.                                                                                                                                                                                                                           |
+| Read secrets out of the env file inside the script                                                                      | There are no `.env` files. The only secret is `PAID_CHECK_ANTHROPIC_KEY`, passed as above.                                                                                                                                                                                                                                                                            |
+| Run the gate through the `test-runner` subagent                                                                         | Unchanged. It uses Bash when it has no PowerShell tool.                                                                                                                                                                                                                                                                                                               |
+| The `pnpm dev`, worker and CLI commands                                                                                 | They need `.env` files that point at production. Not used here.                                                                                                                                                                                                                                                                                                       |
+| Don't add spend; ask before any paid call                                                                               | Claude calls are pre-approved up to the spec's cap (decision 8, vault 0098). Everything else is unchanged.                                                                                                                                                                                                                                                            |
+| The gate's serial runs ("OOMs this machine")                                                                            | That was measured on the founder's machine. Keep them serial here anyway.                                                                                                                                                                                                                                                                                             |
+| Never push to main, never merge, never force-push                                                                       | Pushing to main is enforced by the pre-push hook. The two GitHub merge tools are refused by a PreToolUse hook; merging by any other route is instruction only and a stop. Merging `origin/main` into the run's own branch happens only on his words: "fast-forward" before the first commit (§After approval step 2), or "bring main in". Force-push stays forbidden. |
+| §3: every task updates state-of-play and the repo map                                                                   | Unchanged. Parallel runs conflict in both; the conflicts are resolved when main is brought in.                                                                                                                                                                                                                                                                        |
+| Commit and push at the end of the task                                                                                  | Push after every finished step (decision 6).                                                                                                                                                                                                                                                                                                                          |

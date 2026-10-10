@@ -57,6 +57,7 @@ comes after the merge). The run itself follows `protocol.md`.
    - spend against the cap;
    - each reviewer gap and how it closed;
    - what is owed, with commands. While the fonts failure stands, that includes the Remotion suite;
+   - whether the branch contains `origin/main` (if not, Stop 2 step 1);
    - the PR link. If the run couldn't open the PR, click **Create PR** in the session's diff view.
 7. **Stop 2, the merge and after.** In order:
    1. If anything has merged to main since the run's session started, or the report says the branch
@@ -64,8 +65,9 @@ comes after the merge). The run itself follows `protocol.md`.
       each conflict and how it was resolved, and the gate and one review round on the combined
       branch.
    2. Test the List-2 items.
-   3. Run the owed commands locally. If a migration is waiting, run its `db push --dry-run` from a
-      local session and authorise the push per `.claude/rules/migrations.md`.
+   3. Run the owed commands locally, on the run's branch at its head after step 1, as the report
+      gives them. If a migration is waiting, run its `db push --dry-run` from a local session and
+      authorise the push per `.claude/rules/migrations.md`.
    4. Merge on GitHub. Only you merge, one PR at a time.
    5. Do the box steps, in the order the report gives.
 
@@ -94,7 +96,8 @@ You can have several runs in flight, each in its own session on its own branch.
   Unverified claims. Or start a new session.
 - **The session expired mid-run.** Everything up to the last finished step is pushed, and the
   branch's `log.md` says where it stopped. To continue, start a new session as in Each run, step 2,
-  but on the run's branch instead of main, and say: "Continue the run in
+  but on the run's branch instead of main and in permission mode **Auto** (its plan was approved in
+  its first session), and say: "Continue the run in
   `docs/unattended/runs/<date>-<slug>/log.md`."
 - **The session expired before you could say "bring main in".** Start a new session the same way
   and say: "Bring main in for the run in `docs/unattended/runs/<date>-<slug>/log.md`."

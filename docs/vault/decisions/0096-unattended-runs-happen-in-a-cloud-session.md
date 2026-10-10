@@ -184,7 +184,13 @@ once, §Bringing main in), `runbook.md` and `spec-template.md`.
   conflict: two notes with one number have different file names. A review round that is not CLEAN
   is a stop.
 - A new session on a run's branch checks that the cloud assigned it the branch `log.md` names, and
-  stops if not. Whether the cloud keeps the branch a session is started on is unmeasured.
+  stops if not. Whether the cloud keeps the branch a session is started on is unmeasured. Such a
+  session starts in Auto, not Plan: the run's plan was approved in its first session.
+- After any merge of `origin/main` (bring main in, or the fast-forward), the session runs
+  `pnpm install --frozen-lockfile` again before the gate.
+- The known failure counts only when a grep of the single test's output shows both the
+  `NetworkError` and the `fonts.gstatic.com` certificate line. The owed Remotion run counts only on
+  the run's branch at its pushed head, after the last "bring main in".
 - The protocol, and CLAUDE.md §4's pointer to it, now also cover a cloud session whose first message
   names a run's `log.md` ("Continue the run in …", "Bring main in for the run in …"), not only one
   that opens with a spec.

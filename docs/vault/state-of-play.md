@@ -43,9 +43,9 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 **Unattended feature runs in a cloud session: SET UP 2026-10-08 on `tooling/unattended-cloud-runs`,
 MERGED as PR #84 (`1b709ff` on `origin/main`, MEASURED by `git log` 2026-10-09). The first run went
 2026-10-09: the inventory first-load retry, on `claude/inventory-first-load-retry-kv24q9`, PR #85,
-MERGED (`7f381e8` on `origin/main`, MEASURED by `git log` 2026-10-10). First-run fixes and parallel
-runs: DOCS WRITTEN 2026-10-10 on `claude/unattended-cloud-runs-s1en9c`; its settings rule is owed to
-a local session on that branch, and no PR is open yet.** One spec goes in, and a pushed branch, a PR
+MERGED 2026-10-09 15:19 +0300 (`7f381e8` on `origin/main`, MEASURED by `git log` 2026-10-10).
+First-run fixes and parallel runs: DOCS WRITTEN 2026-10-10 on `claude/unattended-cloud-runs-s1en9c`;
+its settings rule is owed to a local session on that branch, and no PR is open yet.** One spec goes in, and a pushed branch, a PR
 and a report come out, with two stops of his: the plan, and the merge with everything after it.
 
 - **Decisions:**
@@ -1377,15 +1377,17 @@ the 2026-09-26 custom domain (founder-reported):**
        is not built, that no PR is open, or that `claude mcp list` is owed:
        - in 0097: "Built: not yet", "It is owed: `claude mcp list`", and "once built";
        - in this file: the unattended header ("its settings rule is owed to a local session"), "Not
-         built yet (below)", "`.claude/settings.json` (SessionStart and ConfigChange only)", the
-         2026-10-10 entry's "Until that lands …", and this entry;
+         built yet (below)", "`.claude/settings.json` (SessionStart and ConfigChange only)", and in
+         the 2026-10-10 entry its "Until that lands …", its "No product code, … setting or hook
+         changed" (name the setting and the test file), its gate line's "owed to the local step"
+         (the local gate's result instead) and its "Still to do"; and this entry;
        - the header comment of `unattended-guard.test.ts`;
      - commit, run `pnpm repo-map`, push, and open the PR.
   2. Merge. No migration, no box step. Vercel's redeploy changes nothing customers see.
 
 - **The first unattended run's branch, `claude/inventory-first-load-retry-kv24q9`, PR #85
-  (2026-10-09).** MERGED (`7f381e8`, by `git log` 2026-10-10; FOUNDER-REPORTED the same day). Still
-  owed:
+  (2026-10-09).** MERGED 2026-10-09 15:19 +0300 (`7f381e8`, by `git log` 2026-10-10; FOUNDER-REPORTED
+  2026-10-10). Still owed:
   1. Run the Remotion suite locally, now on main:
      `pnpm --filter @aiugc/remotion exec vitest run --fileParallelism=false`. His ruling of
      2026-10-09 was that the PR not be merged before it passes; the cloud run could not run it green
