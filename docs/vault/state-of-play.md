@@ -806,7 +806,14 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-11) — social posting, PR 2 of 4: connecting accounts, `feat/social-posting-connect`, NOT merged
+## What landed (2026-10-11) — social posting, PR 2 of 4: connecting accounts, `feat/social-posting-connect`, MERGED as PR #91
+
+**Merged and deployed (MEASURED 2026-10-11):** `92f256b` on `origin/main` carries the branch head
+`a2479e1`; tavnit.ai serves it — `GET /social/deletion/<32 hex>` 200, an unsigned
+`POST /api/social/meta/data-deletion` 400, a signed-out `GET /connect/instagram` 404. Read-only on
+production (packages/core/.work/social-access-peek.ts): no `social_posting` row (= admins only),
+one admin account — the founder's — and no `social_accounts` row yet. So the חיבורים section shows
+for him alone; the connect itself waits on the env names on Vercel and the Meta console steps.
 
 [[0102-social-posting-label-mix-switch-key-2026-10-11]] (his five changes to PR 1, recorded with a
 dated pointer on 0101); the mechanics and the Meta runbook are `docs/09-social-posting.md`.
@@ -1058,10 +1065,10 @@ the older launch items. Item 0 no longer outranks everything the way it did — 
 taken a real payment — but what is left of it is still the part that decides whether the next
 payment is kept.
 
-**Social posting — PR 1 (core) MERGED as #89; PR 2 (connect) BUILT 2026-10-11** on
+**Social posting — PR 1 (core) MERGED as #89; PR 2 (connect) MERGED as #91 2026-10-11** from
 `feat/social-posting-connect` ([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]],
 [[0102-social-posting-label-mix-switch-key-2026-10-11]]; the two "What landed (2026-10-11)" entries
-above). 0060 is applied (2026-10-11). Next in order: PR 2's live connect (his OKs), then PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
+above). 0060 is applied and PR 2 is live behind the switch (2026-10-11). Next in order: PR 2's live connect on tavnit.ai (his OKs), then PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
 checks), PR 4 (TikTok, once his sandbox app exists). The push of 0057–0059, the env names and the
 live-test steps are under "Owed founder actions".
 
