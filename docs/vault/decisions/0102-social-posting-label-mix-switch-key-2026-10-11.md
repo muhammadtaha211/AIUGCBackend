@@ -22,7 +22,8 @@ default, or the customer ticks it per post. **His reason:** let the user decide,
 competitor does.
 
 **MEASURED:** `scheduled_posts.ai_label boolean NOT NULL DEFAULT false` (migration 0060, written
-in this task, **not applied** until he OKs the push); `schedulePosts` takes `aiLabel` (absent =
+in this task and **applied to production 2026-10-11** on his instruction, before PR 2 merged — read
+back before and after, [[production-migration-push-log]]); `schedulePosts` takes `aiLabel` (absent =
 false) and stores it on every row of the batch; `updateScheduledPost` changes it while the post is
 pending; the publish job sends `aiGenerated: post.aiLabel`, and the provider sends no
 `is_ai_generated` field at all when it is false (`meta-graph.ts`, pinned in `meta-graph.test.ts`).

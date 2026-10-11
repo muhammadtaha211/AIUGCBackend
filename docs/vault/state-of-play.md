@@ -813,8 +813,10 @@ dated pointer on 0101); the mechanics and the Meta runbook are `docs/09-social-p
 
 **What exists (MEASURED, on the branch):**
 
-- **0102 in core:** `scheduled_posts.ai_label` (migration **0060**, written, **NOT applied** — it
-  must reach production before the live connect and before PR 2 merges, the 0039 rule); the AI
+- **0102 in core:** `scheduled_posts.ai_label` (migration **0060** — **APPLIED to production
+  2026-10-11** on his instruction "OK, apply migration 0060.", before PR 2 merged as the 0039 rule
+  asks; read back before and after: no column → `ai_label | boolean | NO | false`, 0 post rows,
+  ledger 61 rows, 0000–0060 ([[production-migration-push-log]])); the AI
   label is the post's own tick, unticked by default on every service, `is_ai_generated` sent only
   when ticked; `SOUND_VOLUMES` per service — a 100/0, b 15/100, c 100/40 (sound/video), a retired
   full-format A render on b's; the switch's third setting
@@ -1059,7 +1061,7 @@ payment is kept.
 **Social posting — PR 1 (core) MERGED as #89; PR 2 (connect) BUILT 2026-10-11** on
 `feat/social-posting-connect` ([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]],
 [[0102-social-posting-label-mix-switch-key-2026-10-11]]; the two "What landed (2026-10-11)" entries
-above). Next in order: the push of 0060 and PR 2's live connect (his OKs), then PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
+above). 0060 is applied (2026-10-11). Next in order: PR 2's live connect (his OKs), then PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
 checks), PR 4 (TikTok, once his sandbox app exists). The push of 0057–0059, the env names and the
 live-test steps are under "Owed founder actions".
 
@@ -1458,8 +1460,8 @@ the 2026-09-26 custom domain (founder-reported):**
 
 - **Social posting — PR 2 (2026-10-11, `feat/social-posting-connect`).** Each its own OK: 1. the
   PR 2 strings (Appendix A's connect lines plus the DRAFT singular forms in
-  `apps/web/src/lib/social-ui.ts`) at PR review; 2. the ONE `db push` of **0060** — before the live
-  connect and before PR 2 merges; 3. placing `SOCIAL_TOKEN_KEY` (fingerprint 047bda40) on Vercel
+  `apps/web/src/lib/social-ui.ts`) at PR review; 2. ~~the ONE `db push` of **0060**~~ DONE 2026-10-11
+  on his instruction, read back before and after ([[production-migration-push-log]]); 3. placing `SOCIAL_TOKEN_KEY` (fingerprint 047bda40) on Vercel
   Production, the box and `apps/web/.env.local`, and `META_APP_ID` / `META_APP_SECRET` (and
   `META_LOGIN_CONFIG_ID` if the dashboard gives one) per docs/09 §Env names; 4. in the Meta app
   (yours alone), docs/09 runbook A–C: the configuration id, the redirect URI(s) with Check URI, the

@@ -488,9 +488,9 @@ code:
 
 **PR 2 — connecting.** The box is not involved.
 
-- (a) the `db push` of **0060** (`scheduled_posts.ai_label`) after `migration list` and
-  `db push --dry-run` — before the live connect and before PR 2 merges (the 0039 rule: the code
-  names the column in every post read);
+- (a) ~~the `db push` of **0060** (`scheduled_posts.ai_label`)~~ **done 2026-10-11**, before PR 2
+  merged (the 0039 rule: the code names the column in every post read), read back before and after
+  (vault `production-migration-push-log`);
 - (b) `SOCIAL_TOKEN_KEY` placed — the laptop file into Vercel Production, the box and
   `apps/web/.env.local`, the fingerprints compared — plus `META_APP_ID`, `META_APP_SECRET` (and
   `META_LOGIN_CONFIG_ID` if runbook A gave one) in `apps/web/.env.local` and Vercel Production;
