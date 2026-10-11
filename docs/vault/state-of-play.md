@@ -812,9 +812,10 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
 `docs/09-social-posting.md`. The founder approved the plan on 2026-10-11 with none of its open
 questions answered, so every recommendation stands as a PLANNING DEFAULT (listed in 0101).
 
-**What exists (MEASURED, the branch):** migrations 0057–0059 (three enum types; `social_accounts` and
-`scheduled_posts`, server-only; the alert index rebuilt with `post_failed`) — **NOT applied to
-production**; `secret-box.ts` (AES-256-GCM under `SOCIAL_TOKEN_KEY`); `providers/meta-graph.ts`
+**What exists (MEASURED; merged as PR #89 on 2026-10-11):** migrations 0057–0059 (three enum types;
+`social_accounts` and `scheduled_posts`, server-only; the alert index rebuilt with `post_failed`) —
+**APPLIED to production 2026-10-11** on the founder's one-push approval, read back before and after
+(ledger 60 rows, 0000–0059; [[production-migration-push-log]]); `secret-box.ts` (AES-256-GCM under `SOCIAL_TOKEN_KEY`); `providers/meta-graph.ts`
 with its DRY_RUN stub; `pipelines/social.ts` (the switch `app_config.social_posting`, connections,
 scheduling with its guards, the `publish_post` job, the daily `check_social_tokens`, Meta's deletion
 path); six test files. **No web surface and no TikTok.** Nothing a customer can reach changed.
@@ -1271,12 +1272,12 @@ Founder-reported from a dashboard unless a line says otherwise. **This section c
 subscription row was written.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0049 applied, ledger clean at 50 rows, no gaps, nothing pending** — MEASURED
-2026-10-01 right after the founder-authorized 0049 push, read-only against
-`supabase_migrations.schema_migrations` (count 50, first `0000`, last `0049`) and by
-`migration list` (0000–0049 local = remote). 0049's file lives on `feat/hook-text-color` until the
-merge, so `origin/main` holds 49 files against 50 ledger rows meanwhile — expected, not drift
-([[production-migration-push-log]]). The earlier 49-row line corrected a stale "0000–0047 / 48 rows" here;
+**Migrations 0000–0059 applied, ledger clean at 60 rows, no gaps, nothing pending** — MEASURED
+2026-10-11 right after the founder-authorized 0057–0059 push, read-only against
+`supabase_migrations.schema_migrations` (count 60, first `0000`, last `0059`) and by
+`migration list` (0000–0059 local = remote); `origin/main` holds the same 60 files
+([[production-migration-push-log]]). _(The earlier text of this paragraph recorded the 0049 push of
+2026-10-01 and a 49-files-against-50-rows interval that has long since closed.)_ The earlier 49-row line corrected a stale "0000–0047 / 48 rows" here;
 **CLAUDE.md still says 0000–0047 and is now the stale copy.** (Not resolved: CLAUDE.md in the tree
 that sentence was written in, ec0a324, already said 0000–0048, since f4d079e that morning. Since
 2026-09-29 CLAUDE.md holds no ledger count; the other copy is [[production-migration-push-log]].)
@@ -1384,8 +1385,9 @@ the 2026-09-26 custom domain (founder-reported):**
 
 - **Social posting (2026-10-11, `feat/social-posting-core` and the PRs after it).** In order, each
   its own OK (his §4): 1. the Hebrew strings of the plan's Appendix A — approve or change before PR 3
-  merges; 2. the ONE `db push` of 0057–0059 to production, after `migration list` and
-  `db push --dry-run` (needed before any live check); 3. the env names — `META_APP_ID`,
+  merges; 2. ~~the ONE `db push` of 0057–0059 to production~~ DONE 2026-10-11 on his approval
+  ("push 0057–0059, I approve this one push"), after PR #89 merged; read back before and after
+  ([[production-migration-push-log]]); 3. the env names — `META_APP_ID`,
   `META_APP_SECRET`, `SOCIAL_TOKEN_KEY` (and `META_LOGIN_CONFIG_ID` only if the dashboard gives
   Facebook Login a configuration) into `apps/web/.env.local` and Vercel Production;
   `META_APP_SECRET`, `SOCIAL_TOKEN_KEY` into the box's `apps/worker/.env`; 4. in the Meta app
