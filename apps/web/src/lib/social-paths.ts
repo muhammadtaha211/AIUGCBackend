@@ -6,7 +6,7 @@
 
 /** The pre-screen's link, carrying the return address and the "add another" flag along. */
 export function preScreenPath(opts: { returnTo: string | null; add: boolean }): string {
-  return `/home/settings/connect/instagram${query(opts)}`;
+  return `/connect/instagram${query(opts)}`;
 }
 
 /** The pre-screen's "המשך": the start route with the same two parameters. */

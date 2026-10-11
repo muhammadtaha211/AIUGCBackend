@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { getDb, getMetaDataDeletionStatus } from "@aiugc/core";
-import { isUuid } from "@/lib/service-b";
 import { DELETION_DONE, DELETION_NOT_FOUND, DELETION_TITLE } from "@/lib/social-ui";
 import { Ltr } from "../../../legal";
 
@@ -22,7 +21,11 @@ export default async function DeletionStatusPage({
   params: Promise<{ code: string }>;
 }) {
   const { code } = await params;
-  const status = isUuid(code) ? await getMetaDataDeletionStatus(getDb(), code) : undefined;
+  // The code processMetaDataDeletion issues: 32 hex digits. Anything else is
+  // answered without a query.
+  const status = /^[0-9a-f]{32}$/.test(code)
+    ? await getMetaDataDeletionStatus(getDb(), code)
+    : undefined;
 
   return (
     <>

@@ -71,11 +71,11 @@ const { GET: callback } = await import("../src/app/api/social/instagram/callback
 const { POST: disconnect } = await import("../src/app/api/social/accounts/[id]/disconnect/route");
 const { POST: dataDeletion } = await import("../src/app/api/social/meta/data-deletion/route");
 const { default: SettingsPage } = await import("../src/app/home/settings/page");
-const { default: PreScreenPage } = await import("../src/app/home/settings/connect/instagram/page");
+const { default: PreScreenPage } = await import("../src/app/connect/instagram/page");
 const { default: DeletionStatusPage } =
   await import("../src/app/(legal)/social/deletion/[code]/page");
 const { SocialAccountsSection } = await import("../src/app/home/settings/social-accounts");
-const { InstagramPreScreen } = await import("../src/app/home/settings/connect/instagram/prescreen");
+const { InstagramPreScreen } = await import("../src/app/connect/instagram/prescreen");
 const { OAUTH_COOKIE } = await import("../src/lib/social-oauth");
 const ui = await import("../src/lib/social-ui");
 
@@ -218,7 +218,34 @@ afterAll(async () => {
 
 describe("the switch: no trace for an account it does not allow", () => {
   it("an unnamed customer gets a 404 on every route, the 404 page on the pre-screen, no section in settings", async () => {
+    // An account the customer really owns (connected while the switch let them
+    // in, say): only the switch can turn the disconnect into a 404, not a
+    // missing row.
+    const [own] = await connectInstagram(db, customer, [samplePage("17841400000000077")]);
     as(customer);
+    for (const response of [
+      await start(new Request("http://localhost/api/social/instagram/start")),
+      await callback(callbackRequest({ code: "x", state: "y" })),
+      await disconnect(new Request("http://localhost/x", { method: "POST" }), forId(own!)),
+    ]) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual(NOT_FOUND);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    const [kept] = await db
+      .select()
+      .from(schema.socialAccounts)
+      .where(eq(schema.socialAccounts.id, own!));
+    expect(kept!.status).toBe("connected");
+    expect(kept!.accessTokenEnc).not.toBeNull();
+    await expect(PreScreenPage(settingsProps())).rejects.toThrow("NEXT_NOT_FOUND");
+    const tree = await SettingsPage(settingsProps({ social: "connected", n: "1" }));
+    expect(elements(tree).some((el) => el.type === SocialAccountsSection)).toBe(false);
+    expect(text(tree)).not.toContain(ui.SOCIAL_SECTION_TITLE);
+  });
+
+  it("a signed-out visitor gets the same 404 everywhere, never a 401 or a redirect that would say the page exists", async () => {
+    as(null);
     const someId = "99999999-9999-4999-8999-999999999999";
     for (const response of [
       await start(new Request("http://localhost/api/social/instagram/start")),
@@ -227,19 +254,8 @@ describe("the switch: no trace for an account it does not allow", () => {
     ]) {
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual(NOT_FOUND);
-      expect(response.headers.get("set-cookie")).toBeNull();
     }
     await expect(PreScreenPage(settingsProps())).rejects.toThrow("NEXT_NOT_FOUND");
-    const tree = await SettingsPage(settingsProps({ social: "connected", n: "1" }));
-    expect(elements(tree).some((el) => el.type === SocialAccountsSection)).toBe(false);
-    expect(text(tree)).not.toContain(ui.SOCIAL_SECTION_TITLE);
-  });
-
-  it("a signed-out visitor gets the same 404, never a 401 that would say the route exists", async () => {
-    as(null);
-    const response = await start(new Request("http://localhost/api/social/instagram/start"));
-    expect(response.status).toBe(404);
-    expect(await response.json()).toEqual(NOT_FOUND);
   });
 
   it("a named non-admin account sees the pre-screen, the section and every route", async () => {
@@ -533,13 +549,14 @@ describe("Meta's data-deletion callback", () => {
     const owner = await seedOwnerAndBusiness(db, { email: "deleter@social.test" });
     await connectInstagram(db, owner.userId, [samplePage("17841400000000099")]);
     const payload = { algorithm: "HMAC-SHA256", user_id: "fb_user_1", issued_at: 1 };
-    for (const body of [
+    const bodies: Record<string, string>[] = [
       {},
       { signed_request: "" },
       { signed_request: "garbage" },
       { signed_request: signedRequest(payload, "not_the_secret") },
       { signed_request: signedRequest({ ...payload, algorithm: "none" }) },
-    ]) {
+    ];
+    for (const body of bodies) {
       const response = await dataDeletion(deletionPost(body));
       expect(response.status).toBe(400);
     }
@@ -559,6 +576,8 @@ describe("Meta's data-deletion callback", () => {
     );
     expect(response.status).toBe(200);
     const body = (await response.json()) as { url: string; confirmation_code: string };
+    // Meta documents "an alphanumeric confirmation code".
+    expect(body.confirmation_code).toMatch(/^[0-9a-f]{32}$/);
     expect(body.url).toBe(`http://localhost/social/deletion/${body.confirmation_code}`);
     const left = await db
       .select()
@@ -594,9 +613,11 @@ describe("Meta's data-deletion callback", () => {
 describe("the Hebrew lines", () => {
   it("the disconnect confirm and its done line count what they say", () => {
     expect(ui.disconnectConfirm("חנות הפרחים", 0)).toEqual({
-      title: "לנתק את חנות הפרחים?",
+      title: "לנתק את ⁨חנות הפרחים⁩?",
       body: null,
     });
+    // An English name keeps its own punctuation inside the Hebrew question.
+    expect(ui.disconnectConfirm("Yoga & Co.", 0).title).toBe("לנתק את ⁨Yoga & Co.⁩?");
     expect(ui.disconnectConfirm("חנות הפרחים", 1).body).toBe("פרסום מתוזמן אחד לחשבון הזה יבוטל.");
     expect(ui.disconnectConfirm("חנות הפרחים", 3).body).toBe(
       "3 פרסומים מתוזמנים לחשבון הזה יבוטלו.",
@@ -604,7 +625,7 @@ describe("the Hebrew lines", () => {
     expect(ui.disconnectDoneLine(0)).toBe("החשבון נותק.");
     expect(ui.disconnectDoneLine(1)).toBe("החשבון נותק. פרסום מתוזמן אחד בוטל.");
     expect(ui.disconnectDoneLine(4)).toBe("החשבון נותק. 4 פרסומים מתוזמנים בוטלו.");
-    expect(ui.connectedLine(1, "חנות הפרחים")).toBe("החשבון חנות הפרחים חובר.");
+    expect(ui.connectedLine(1, "חנות הפרחים")).toBe("החשבון ⁨חנות הפרחים⁩ חובר.");
     expect(ui.connectedLine(3, null)).toBe("3 חשבונות חוברו.");
     expect(ui.accountName({ displayName: null, username: "flowers.tlv" })).toBe("flowers.tlv");
     expect(ui.parseSocialOutcome("connected")).toBe("connected");

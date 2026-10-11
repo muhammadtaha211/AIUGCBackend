@@ -2,7 +2,7 @@
 type: defect
 status: verified
 verified: 2026-10-11
-method: "read packages/core/src/jobs/queue.ts at feat/social-posting-connect (= origin/main 8bff2e8 for this file): complete() :185-190, reschedule() :196-213, checkpoint() :217-224, failPermanent() :230-235, failTransient() :246-260 and parkForBudget() :262 each end in `.where(eq(jobs.id, jobId))` and nothing else; recoverExpiredLeases() :168-183 requeues a `running` job whose locked_at is older than JOB_LEASE_MS (:156, 30 min); runJob in packages/core/src/jobs/worker.ts :77-160 settles by job.id. Found by the social-posting PR 1 session (report of 2026-10-11), written here on the founder's instruction in the PR 2 prompt."
+method: "read packages/core/src/jobs/queue.ts at feat/social-posting-connect (= origin/main 8bff2e8 for this file): complete() :185-190, reschedule() :196-213, checkpoint() :217-224, failPermanent() :230-235, failTransient() :246-260 and parkForBudget() :262 each end in `.where(eq(jobs.id, jobId))` and nothing else; recoverExpiredLeases() :168-183 requeues a `running` job whose locked_at is older than JOB_LEASE_MS (:156, 30 min); runJob in packages/core/src/jobs/worker.ts :77-172 settles by job.id. Found by the social-posting PR 1 session (report of 2026-10-11), written here on the founder's instruction in the PR 2 prompt."
 source: code
 ---
 

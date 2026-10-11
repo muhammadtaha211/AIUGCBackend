@@ -183,6 +183,25 @@ export class SocialSchedulingError extends Error {
   }
 }
 
+/**
+ * The posts a customer can still call back: not started (`scheduled`), or
+ * waiting out Instagram's quota with nothing at Meta yet (`publishing`, no
+ * container, `deferred_until` set). Manual cancel, disconnect, Meta's deletion
+ * and the disconnect confirm's count all read this one predicate, so the
+ * number the confirm promises is the number that gets cancelled.
+ */
+const cancellablePost = sql`(${scheduledPosts.status} = 'scheduled' or (${scheduledPosts.status} = 'publishing' and ${scheduledPosts.providerContainerId} is null and ${scheduledPosts.deferredUntil} is not null))`;
+
+/** What every cancel writes; the job then sees the row and ends as a no-op. */
+function cancelledNow() {
+  return {
+    status: "cancelled" as const,
+    cancelledAt: new Date(),
+    deferredUntil: null,
+    updatedAt: new Date(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Connections
 // ---------------------------------------------------------------------------
@@ -199,6 +218,7 @@ export interface SocialAccountView {
   status: "connected" | "expired";
   /** The sound picker's token is still good (Instagram). */
   canSearchSounds: boolean;
+  /** Posts a disconnect would cancel (`cancellablePost`) — what its confirm counts. */
   pendingPosts: number;
 }
 
@@ -225,7 +245,7 @@ export async function listSocialAccounts(db: Db, userId: string): Promise<Social
           scheduledPosts.socialAccountId,
           rows.map((r) => r.id),
         ),
-        inArray(scheduledPosts.status, ["scheduled", "publishing"]),
+        cancellablePost,
       ),
     )
     .groupBy(scheduledPosts.socialAccountId);
@@ -360,13 +380,8 @@ export async function disconnectSocialAccount(
     if (updated.length === 0) throw new SocialSchedulingError("not_found");
     const cancelled = await tx
       .update(scheduledPosts)
-      .set({ status: "cancelled", cancelledAt: new Date(), updatedAt: new Date() })
-      .where(
-        and(
-          eq(scheduledPosts.socialAccountId, opts.accountId),
-          eq(scheduledPosts.status, "scheduled"),
-        ),
-      )
+      .set(cancelledNow())
+      .where(and(eq(scheduledPosts.socialAccountId, opts.accountId), cancellablePost))
       .returning({ id: scheduledPosts.id });
     return { cancelled: cancelled.length };
   });
@@ -666,18 +681,8 @@ export async function cancelScheduledPost(
   if (!existing) throw new SocialSchedulingError("not_found");
   const [row] = await db
     .update(scheduledPosts)
-    .set({
-      status: "cancelled",
-      cancelledAt: new Date(),
-      deferredUntil: null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(scheduledPosts.id, opts.postId),
-        sql`(${scheduledPosts.status} = 'scheduled' or (${scheduledPosts.status} = 'publishing' and ${scheduledPosts.providerContainerId} is null and ${scheduledPosts.deferredUntil} is not null))`,
-      ),
-    )
+    .set(cancelledNow())
+    .where(and(eq(scheduledPosts.id, opts.postId), cancellablePost))
     .returning();
   if (!row) throw new SocialSchedulingError("not_pending");
   return toPostView(row);
@@ -1366,7 +1371,8 @@ export async function processMetaDataDeletion(
   db: Db,
   opts: { fbUserId: string },
 ): Promise<{ confirmationCode: string; accounts: number; cancelled: number }> {
-  const confirmationCode = randomUUID();
+  // Meta documents "an alphanumeric confirmation code": a UUID's 32 hex digits, no hyphens.
+  const confirmationCode = randomUUID().replace(/-/g, "");
   return db.transaction(async (tx) => {
     const accounts = await tx
       .update(socialAccounts)
@@ -1379,13 +1385,16 @@ export async function processMetaDataDeletion(
         displayName: null,
         pictureUrl: null,
         pageName: null,
-        disconnectedAt: new Date(),
+        // A row the customer disconnected earlier keeps its own date.
+        disconnectedAt: sql`coalesce(${socialAccounts.disconnectedAt}, now())`,
         updatedAt: new Date(),
       })
       .where(
         and(
           eq(socialAccounts.fbUserId, opts.fbUserId),
-          inArray(socialAccounts.status, ["connected", "expired"]),
+          // Disconnected rows too: ניתוק erases tokens but keeps the name and
+          // picture for post history, and Meta's request is for all of it.
+          inArray(socialAccounts.status, ["connected", "expired", "disconnected"]),
         ),
       )
       .returning({ id: socialAccounts.id });
@@ -1393,14 +1402,14 @@ export async function processMetaDataDeletion(
     if (accounts.length > 0) {
       const rows = await tx
         .update(scheduledPosts)
-        .set({ status: "cancelled", cancelledAt: new Date(), updatedAt: new Date() })
+        .set(cancelledNow())
         .where(
           and(
             inArray(
               scheduledPosts.socialAccountId,
               accounts.map((a) => a.id),
             ),
-            eq(scheduledPosts.status, "scheduled"),
+            cancellablePost,
           ),
         )
         .returning({ id: scheduledPosts.id });

@@ -129,22 +129,51 @@ describe("social accounts", () => {
     }
   });
 
-  it("disconnect erases every token, keeps the row, cancels the account's pending posts and says how many", async () => {
+  it("disconnect erases every token, keeps the row, cancels every post it can still call back — the number its confirm promised — and says how many", async () => {
     const { storage } = { storage: (await import("../src/storage")).getStorage() };
     const render = await seedReleasedRender(db, storage, storageRoot, { businessId });
     const [b] = (await listSocialAccounts(db, userId)).filter((v) => v.externalId === "ig_b");
-    const posts = await schedulePosts(db, {
-      userId,
-      videoRenderId: render.id,
-      accountIds: [b!.id],
-      scheduledAt: new Date(Date.now() + 3_600_000),
-      timezone: "Asia/Jerusalem",
-      caption: "",
-    });
-    expect(posts).toHaveLength(1);
+    const schedule = async (hours: number) =>
+      (
+        await schedulePosts(db, {
+          userId,
+          videoRenderId: render.id,
+          accountIds: [b!.id],
+          scheduledAt: new Date(Date.now() + hours * 3_600_000),
+          timezone: "Asia/Jerusalem",
+          caption: "",
+        })
+      )[0]!;
+    const posts = [await schedule(1)];
+    // Waiting out Instagram's quota: publishing, nothing at Meta yet — cancellable.
+    const deferred = await schedule(2);
+    await db
+      .update(schema.scheduledPosts)
+      .set({ status: "publishing", deferredUntil: new Date(Date.now() + 3_600_000) })
+      .where(eq(schema.scheduledPosts.id, deferred.id));
+    // Already at Meta: a container exists, so it cannot be called back.
+    const inFlight = await schedule(3);
+    await db
+      .update(schema.scheduledPosts)
+      .set({ status: "publishing", providerContainerId: "container_x" })
+      .where(eq(schema.scheduledPosts.id, inFlight.id));
 
+    const [before] = (await listSocialAccounts(db, userId)).filter((v) => v.id === b!.id);
+    expect(before!.pendingPosts).toBe(2);
     const result = await disconnectSocialAccount(db, { userId, accountId: b!.id });
-    expect(result.cancelled).toBe(1);
+    expect(result.cancelled).toBe(before!.pendingPosts);
+    const statusOf = async (id: string) =>
+      (
+        await db
+          .select({
+            status: schema.scheduledPosts.status,
+            deferredUntil: schema.scheduledPosts.deferredUntil,
+          })
+          .from(schema.scheduledPosts)
+          .where(eq(schema.scheduledPosts.id, id))
+      )[0]!;
+    expect(await statusOf(deferred.id)).toEqual({ status: "cancelled", deferredUntil: null });
+    expect((await statusOf(inFlight.id)).status).toBe("publishing");
     const row = await rawAccount(b!.id);
     expect(row.status).toBe("disconnected");
     expect(row.accessTokenEnc).toBeNull();
@@ -211,28 +240,39 @@ describe("social accounts", () => {
       caption: "",
     });
 
+    // The account disconnected by the earlier test kept its name and picture
+    // for post history; Meta's request is for those too.
+    const disconnected = (
+      await db
+        .select()
+        .from(schema.socialAccounts)
+        .where(eq(schema.socialAccounts.status, "disconnected"))
+    ).filter((r) => r.fbUserId === "fb_user_1");
+    expect(disconnected).toHaveLength(1);
+    expect(disconnected[0]!.username).not.toBeNull();
+
     const result = await processMetaDataDeletion(db, { fbUserId: "fb_user_1" });
-    expect(result.accounts).toBe(live.length);
+    expect(result.accounts).toBe(live.length + disconnected.length);
     expect(result.cancelled).toBe(1);
     const rows = await db
       .select()
       .from(schema.socialAccounts)
       .where(eq(schema.socialAccounts.fbUserId, "fb_user_1"));
     for (const row of rows) {
-      // The row disconnected by the earlier test was already history and stays so.
-      expect(["deleted", "disconnected"]).toContain(row.status);
+      expect(row.status).toBe("deleted");
       expect(row.accessTokenEnc).toBeNull();
       expect(row.userTokenEnc).toBeNull();
-      if (row.status === "deleted") {
-        // Deletion erases the identity fields too; a plain disconnect keeps them.
-        expect(row.username).toBeNull();
-        expect(row.pictureUrl).toBeNull();
-      }
+      expect(row.username).toBeNull();
+      expect(row.displayName).toBeNull();
+      expect(row.pictureUrl).toBeNull();
+      expect(row.pageName).toBeNull();
     }
-    expect(rows.filter((r) => r.status === "deleted")).toHaveLength(live.length);
+    // A row disconnected earlier keeps the date it was disconnected.
+    const again = rows.find((r) => r.id === disconnected[0]!.id)!;
+    expect(again.disconnectedAt!.getTime()).toBe(disconnected[0]!.disconnectedAt!.getTime());
     expect(await listSocialAccounts(db, userId)).toEqual([]);
     const status = await getMetaDataDeletionStatus(db, result.confirmationCode);
-    expect(status).toMatchObject({ accounts: live.length, cancelled: 1 });
+    expect(status).toMatchObject({ accounts: live.length + disconnected.length, cancelled: 1 });
     expect(await getMetaDataDeletionStatus(db, "nope")).toBeUndefined();
     // A second request for the same user finds nothing live and still answers.
     expect((await processMetaDataDeletion(db, { fbUserId: "fb_user_1" })).accounts).toBe(0);

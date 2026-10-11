@@ -77,7 +77,7 @@ TikTok pre-screen. **FOUNDER-REPORTED:** no TikTok developer app exists (2026-10
 **Replaces** docs/09's instruction that he generate the key with a `node -e` that printed it to the
 console. **His terms:** its value never appears in terminal output, the transcript, a commit or a
 report; then the session walks him through placing the same value on Vercel, on the box and in his
-local web env (each placement its own OK, CLAUDE.md §4).
+local web env (each placement its own OK — §4 of his prompt).
 
 **The way (the session's, approved at Stop 1):** one `node -e` writes 32 random bytes, base64, to a
 file outside the repo with the `wx` flag (it refuses to overwrite: a new key makes every sealed

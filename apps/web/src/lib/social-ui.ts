@@ -22,6 +22,15 @@ export const SOCIAL_CANCEL = "ביטול";
 export const SOCIAL_CONTINUE = "המשך";
 export const SOCIAL_EMPTY = "עוד אין חשבון מחובר.";
 
+/**
+ * A name inside a Hebrew sentence, bidi-isolated (FSI … PDI): an English
+ * account name like "Yoga & Co." would otherwise lose its trailing period to
+ * the sentence's direction. In strings only — markup uses <bdi>.
+ */
+export function isolated(name: string): string {
+  return `⁨${name}⁩`;
+}
+
 /** What a row calls the account: its name, else its handle, else a plain noun. */
 export function accountName(account: { displayName: string | null; username: string | null }) {
   return account.displayName ?? account.username ?? "החשבון";
@@ -36,7 +45,7 @@ export function disconnectConfirm(
   name: string,
   pending: number,
 ): { title: string; body: string | null } {
-  const title = `לנתק את ${name}?`;
+  const title = `לנתק את ${isolated(name)}?`;
   if (pending <= 0) return { title, body: null };
   // DRAFT: the singular.
   if (pending === 1) return { title, body: "פרסום מתוזמן אחד לחשבון הזה יבוטל." };
@@ -56,7 +65,7 @@ export const CONNECT_FAILED = "החיבור לאינסטגרם לא הושלם. 
 export const CONNECT_NO_ACCOUNT = "לא נמצא חשבון אינסטגרם מקצועי המקושר לעמוד פייסבוק בחשבון הזה.";
 
 export function connectedLine(count: number, name: string | null): string {
-  if (count === 1 && name) return `החשבון ${name} חובר.`;
+  if (count === 1 && name) return `החשבון ${isolated(name)} חובר.`;
   return `${count} חשבונות חוברו.`;
 }
 

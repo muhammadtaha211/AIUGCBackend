@@ -104,7 +104,9 @@ export function SocialAccountsSection({
               <li key={account.id} className="flex items-center gap-3 py-3">
                 <Avatar account={account} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-ink">{accountName(account)}</p>
+                  <p className="truncate text-sm font-medium text-ink">
+                    <bdi>{accountName(account)}</bdi>
+                  </p>
                   {account.username && (
                     <p className="truncate text-xs text-ink/55">
                       <bdi dir="ltr">@{account.username}</bdi>
