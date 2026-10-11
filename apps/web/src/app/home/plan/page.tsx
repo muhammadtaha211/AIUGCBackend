@@ -50,7 +50,8 @@ export default async function PlanPage({
   const view = await loadPlansView();
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 pb-16 pt-8 sm:pt-10">
+    // Tavnit's own plans, prices and dialogs: readable in a recording.
+    <div className="mx-auto w-full max-w-5xl px-6 pb-16 pt-8 sm:pt-10" data-ph-unmask>
       <h1 className="text-2xl font-semibold tracking-tight text-ink">{PLAN_PAGE_TITLE}</h1>
       <p className="mt-2 text-[15px] text-ink/65">{PLAN_PAGE_SUB}</p>
       <PlanManager view={view} checkout={checkout} />

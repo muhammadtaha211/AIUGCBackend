@@ -59,7 +59,8 @@ export default async function CheckoutPage({
   const nextCharge = formatDate(addOneMonth(new Date()));
 
   return (
-    <div className="mx-auto w-full max-w-lg px-6 pb-16 pt-8 sm:pt-10">
+    // The plan's name, price and terms: Tavnit's copy, readable in a recording.
+    <div className="mx-auto w-full max-w-lg px-6 pb-16 pt-8 sm:pt-10" data-ph-unmask>
       <Link
         href="/home/plan"
         className="text-sm text-ink/60 underline decoration-ink/25 underline-offset-4 transition-colors duration-150 hover:text-ink"

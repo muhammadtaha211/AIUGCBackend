@@ -65,6 +65,9 @@ export const OPERATOR_ADDRESS = "ברזיל 14, תל אביב, ישראל";
  * it must move whenever the terms text changes materially — otherwise the
  * acceptance record points at a version string the customer never read.
  * Moved 11.09.2026 → 17.09.2026 for the UPay site-requirements rewrite of §8
- * and the address change.
+ * and the address change. Moved 17.09.2026 → 11.10.2026 for the PostHog
+ * disclosure in /privacy (vault 0104): the terms text itself did not change,
+ * but /privacy calls itself part of the terms and §14 promises this date
+ * moves. Nothing compares a stored version against it (docs/legal-review.md P13).
  */
-export const UPDATED = "17.09.2026";
+export const UPDATED = "11.10.2026";

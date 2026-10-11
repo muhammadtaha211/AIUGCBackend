@@ -61,7 +61,7 @@ export default async function NewARenderPage() {
           initialCatalog={personaCatalog}
         />
       ) : (
-        <NoCreditsCard />
+        <NoCreditsCard service="a" />
       )}
     </div>
   );

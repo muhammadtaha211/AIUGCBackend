@@ -9,6 +9,8 @@ import { RenderPlayer } from "@/components/render-player";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
 import { useBalance } from "@/app/home/balance-context";
+import { renderRequestResult } from "@/lib/analytics";
+import { track } from "@/lib/analytics-client";
 import { ADD_CREDITS_LINK } from "@/lib/plans-ui";
 import {
   bShapeSummary,
@@ -109,6 +111,7 @@ export function StepRender({
       }),
     );
     setStarting(false);
+    track("render_requested", { service: "b", result: renderRequestResult(result) });
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       return setStartError(result.error);

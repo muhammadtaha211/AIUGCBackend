@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { useStepViewed } from "@/components/analytics";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
 import {
@@ -80,6 +81,8 @@ export function AWizard({ businessId, businessName, initialCatalog }: AWizardPro
   const [fatal, setFatal] = useState<string | null>(null);
   /** True while a ?demo= restore is being ownership-checked. */
   const [restoring, setRestoring] = useState(true);
+  // After the restore, so a reload counts the step it lands on, not step 0 first.
+  useStepViewed("a", steps[stepIndex]!, !restoring);
   /** The restore GET failed TRANSIENTLY (network blip / 5xx) — the URL keeps
    *  its ?demo= so a reload can retry; see shouldSyncIdentity. */
   const [restoreFailed, setRestoreFailed] = useState(false);
@@ -261,7 +264,9 @@ export function AWizard({ businessId, businessName, initialCatalog }: AWizardPro
   return (
     <div className="w-full max-w-2xl pt-4 sm:pt-6 lg:max-w-4xl">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-lg font-semibold tracking-tight text-ink">הוק + דמו</h1>
+        <h1 className="text-lg font-semibold tracking-tight text-ink" data-ph-unmask>
+          הוק + דמו
+        </h1>
         <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
 

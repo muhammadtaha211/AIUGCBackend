@@ -1,8 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { captureError } from "@/lib/analytics-client";
 
 /**
  * The app's only error boundary. Anything under /home that throws lands here
@@ -40,10 +41,17 @@ export default function HomeError({
 }) {
   const router = useRouter();
   const [retrying, startRetry] = useTransition();
+  // A boundary's catch never reaches window.onerror; report it here (vault 0104).
+  useEffect(() => {
+    captureError(error);
+  }, [error]);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 pt-8">
-      <div className="rounded-xl border border-ink/[0.08] bg-white p-6 text-center shadow-xl shadow-ink/[0.05] sm:p-10">
+      <div
+        className="rounded-xl border border-ink/[0.08] bg-white p-6 text-center shadow-xl shadow-ink/[0.05] sm:p-10"
+        data-ph-unmask
+      >
         <h1 className="text-lg font-medium text-ink">לא הצלחנו לטעון את הדף</h1>
         <p className="mt-3 text-sm leading-relaxed text-ink/60">התקלה אצלנו, לא בצד שלכם.</p>
 

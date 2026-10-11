@@ -161,6 +161,10 @@ _(Lifted for the landing only, 2026-10-10, by the founder:
 [[0100-home-cards-show-example-clips-landing-sells-three]] §5. `/pricing` and the legal pages stay
 untouched.)_
 
+_(Pointer 2026-10-11: `/privacy` and the shared `UPDATED` date were edited for PostHog, because the
+founder's PostHog prompt orders "`/privacy` says all of this in the same change"; `/pricing` and
+`/terms` text are untouched. [[0104-what-posthog-records-and-what-never-leaves]].)_
+
 ## 10. What else was decided while building it
 
 - **PLANNING DEFAULTS kept:** a change to a character of the other gender clears the texts already

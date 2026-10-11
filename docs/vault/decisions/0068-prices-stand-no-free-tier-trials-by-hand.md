@@ -139,6 +139,12 @@ strings under `apps/`, `packages/` and `supabase/` are two tests of the Sumit re
   does not.
 - [[live-account-census-2026-09-10]] — the census this event ends.
 
+_(Pointer 2026-10-11, PostHog: §4's "no analytics package, no UTM or referrer capture" is stale
+from `feat/posthog-web`. `apps/web` now counts visits with the referring site and the `utm_*`
+parameters, and joins a visitor to the account they create; there is still no source column in
+the database. [[0103-posthog-in-apps-web-eu-cloud-free-plan]],
+[[0104-what-posthog-records-and-what-never-leaves]].)_
+
 _(Pointer 2026-10-11: the posting feature changes no price — the founder's decision 12 of
 2026-10-10 names "any price change" as not now, so §1 stands with its sixty-day trigger.
 [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]].)_

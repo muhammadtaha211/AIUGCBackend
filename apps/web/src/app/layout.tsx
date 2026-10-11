@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Heebo, Secular_One } from "next/font/google";
+import { Analytics } from "@/components/analytics";
 import { NavProgress } from "@/components/nav-progress";
 import "./globals.css";
 
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans text-gray-100 antialiased">
         <NavProgress />
         {children}
+        <Analytics />
       </body>
     </html>
   );

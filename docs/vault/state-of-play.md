@@ -40,6 +40,45 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**PostHog on `apps/web`: BUILT 2026-10-11 on `feat/posthog-web`, NOT merged.** Visit counts on every
+page, session recordings from `/start` on, named funnel steps and browser errors, to PostHog's EU
+cloud; nothing loads until `NEXT_PUBLIC_POSTHOG_KEY` is set on Vercel, so merging alone changes
+nothing a visitor sees except the notice line and the `/privacy` text.
+
+- **Decisions:** [[0103-posthog-in-apps-web-eu-cloud-free-plan]] (the service, the boundary, errors
+  beside 0037, what is not built) and [[0104-what-posthog-records-and-what-never-leaves]] (counts,
+  recordings, identity, hiding, the notice). The wiring, the named steps, the env and the dashboard
+  settings: `docs/10-analytics.md`.
+- **What the founder reported on 2026-10-11 (FOUNDER-REPORTED, not repo-verified):** he created a
+  PostHog account; its dashboard address is `eu.posthog.com/project/302007/…`. Nothing else about the
+  account was reported. **Which settings he turned on is asked at the end of the task and recorded
+  here when he answers.**
+- **Planning defaults (PLANNING DEFAULT, unstruck):** `/login`, `/forgot-password` and
+  `/reset-password` are recorded and carry the notice; no proxy through our domain; where recording
+  runs is decided in the repo; console output captured only if checked (checked: nothing logs; left
+  off anyway).
+- **MEASURED:** 81 tests in `apps/web/test/analytics.test.ts`; the hiding check against a local
+  ingest stand-in, run before and after the review's fixes ([[posthog-hiding-check-2026-10-11]]):
+  none of seventeen marker values left the browser, public pages sent no recording, an admin
+  session sent PostHog nothing at all.
+- **An adversarial review of the diff (2026-10-11, five reviewers, one refuter each) confirmed 20
+  findings (16 distinct; 5 more were refuted), all fixed or documented before the PR.** The sharpest: a PostHog dashboard URL trigger
+  would have put the raw address (tokens included) into the recording as `matchedUrl`; an admin's
+  first seconds on `/home` after a password sign-in could have left before the account check
+  answered; a PostHog identity outlived a session ended without `signOut()`. The rest are in the
+  PR description.
+- **One switch is not the repo's (MEASURED in the SDK's source):** the SDK records nothing unless
+  the project's session replay is ON in PostHog's dashboard. PostHog's dashboard can also turn
+  network capture on regardless of local settings; it is dropped in code.
+- **Legal:** `/privacy` §3, §5, §6, §7, §8, §9 edited and `UPDATED` moved 17.09.2026 → 11.10.2026
+  (legal-review P13, P14; three reg-2 worksheet rows). This breaks the legal-pages hold of
+  [[0099-service-c-phase-2-opens-to-customers]] §9 on the prompt's explicit instruction; a dated
+  pointer there says so. `/pricing` and the terms text are untouched. Found while there, not fixed
+  (not this task's): `/privacy` §9 already lacked `aiugc.social_oauth` (social posting).
+- **Stale from this:** 0068's and this file's "no analytics package, no UTM or referrer capture"
+  (dated pointer on 0068; there is still no source column in the database); `docs/00-overview.md`'s
+  PostHog line (pointer added); 0037 gained a pointer.
+
 **Unattended feature runs in a cloud session: SET UP 2026-10-08 on `tooling/unattended-cloud-runs`,
 MERGED as PR #84 (`1b709ff` on `origin/main`, MEASURED by `git log` 2026-10-09). The first run went
 2026-10-09: the inventory first-load retry, on `claude/inventory-first-load-retry-kv24q9`, PR #85,
@@ -1458,6 +1497,19 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **PostHog (2026-10-11, `feat/posthog-web`).** Each its own OK, in order: 1. at PR review, the
+  Hebrew (the notice line, two wordings offered, and every `/privacy` sentence) and the planning
+  defaults to strike; 2. in PostHog's dashboard (yours alone): session replay ON (nothing records
+  without it), network capture OFF, console log capture OFF, "Discard client IP data" ON, and
+  authorized domains limited to `tavnit.ai` if offered; sign the DPA (self-serve on every plan,
+  per PostHog's docs) — legal-review P13; 3. tell the session which settings you turned on, to be
+  recorded above as FOUNDER-REPORTED; 4. merge; 5. on Vercel, `NEXT_PUBLIC_POSTHOG_KEY` on the web
+  project, Production (and Preview if you want the preview check to send), then a redeploy — the key
+  is inlined at build time; 6. the preview check: type a known phrase into `/start`, open a wizard
+  with a known business name, then find the session in PostHog and confirm neither appears and the
+  interface copy does; 7. counsel (legal-review P13, P14): the transfer basis, the notice-only
+  question for visitors with no account, and whether this is a §14 material change needing an email
+  to existing accounts.
 - **Social posting — PR 2 (2026-10-11, `feat/social-posting-connect`).** Each its own OK: 1. the
   PR 2 strings (Appendix A's connect lines plus the DRAFT singular forms in
   `apps/web/src/lib/social-ui.ts`) at PR review; 2. ~~the ONE `db push` of **0060**~~ DONE 2026-10-11

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Brand } from "@/components/brand";
+import { RecordingNotice } from "@/components/recording-notice";
 import { ForgotPasswordForm } from "./forgot-password-form";
 
 export const metadata: Metadata = { title: "איפוס סיסמה | תבנית" };
@@ -24,7 +25,7 @@ export default async function ForgotPasswordPage({
         className="absolute left-1/2 top-8 -z-10 h-56 w-[34rem] max-w-full -translate-x-1/2 rounded-full bg-accent/25 blur-3xl"
       />
 
-      <header className="flex h-16 shrink-0 items-center px-5 sm:px-8">
+      <header className="flex h-16 shrink-0 items-center px-5 sm:px-8" data-ph-unmask>
         <Link
           href="/"
           aria-label="לעמוד הראשי"
@@ -34,7 +35,7 @@ export default async function ForgotPasswordPage({
         </Link>
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-6 py-4">
+      <main className="flex flex-1 items-center justify-center px-6 py-4" data-ph-unmask>
         <div className="w-full max-w-md">
           <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-8">
             <h1 className="text-2xl font-semibold tracking-tight text-ink">איפוס סיסמה</h1>
@@ -54,6 +55,7 @@ export default async function ForgotPasswordPage({
               חזרה לכניסה
             </Link>
           </p>
+          <RecordingNotice className="mt-3 text-center" />
         </div>
       </main>
     </div>

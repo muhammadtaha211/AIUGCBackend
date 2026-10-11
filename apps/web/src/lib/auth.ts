@@ -6,6 +6,7 @@
 
 import type { AuthEmailFailureReason } from "@aiugc/core";
 import { isAuthApiError } from "@supabase/supabase-js";
+import { resetAnalytics, track } from "./analytics-client";
 import { createClient } from "./supabase/client";
 
 export type AuthResult = { ok: true } | { ok: false; error: string };
@@ -141,6 +142,10 @@ export async function signUp(email: string, password: string): Promise<AuthResul
       }
       return { ok: false, error: hebrewAuthError(error) };
     }
+    // The account row exists from here, confirmed or not. With confirmation ON,
+    // Supabase answers an already-registered address the same way, so this
+    // over-counts by those (docs/10-analytics.md).
+    track("account_created", { method: "password" });
     if (!data.session) {
       // Email confirmation is enabled in the dashboard — no session yet.
       return { ok: false, error: "שלחנו מייל אישור. אשרו אותו ואז היכנסו דרך מסך הכניסה." };
@@ -236,6 +241,7 @@ export async function signUpWithGoogle(): Promise<AuthResult> {
 }
 
 export async function signOut(): Promise<void> {
+  resetAnalytics();
   try {
     await createClient().auth.signOut();
   } catch {

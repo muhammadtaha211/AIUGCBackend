@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { track } from "@/lib/analytics-client";
 import {
   CHECKOUT_NO_REDIRECT,
   CHECKOUT_PAY_ACTION,
@@ -38,6 +39,9 @@ export function CheckoutForm({ planCode }: { planCode: string }) {
     }
     if (result.body.redirectUrl) {
       // Stays busy: the button is locked while the browser leaves for Sumit.
+      // A beacon, so the step survives the navigation; the redirect URL itself
+      // (it carries the email and the business name) is never sent.
+      track("checkout_started", { plan: planCode }, { beacon: true });
       window.location.assign(result.body.redirectUrl);
       return;
     }

@@ -26,7 +26,10 @@ export function OnboardingShell({ children }: { children: React.ReactNode }) {
         className="absolute right-[10%] top-28 -z-10 h-40 w-72 rounded-full bg-emerald-300/20 blur-3xl"
       />
 
-      <header className="sticky top-0 z-40 border-b border-ink/[0.06] bg-paper/85 backdrop-blur-md">
+      <header
+        className="sticky top-0 z-40 border-b border-ink/[0.06] bg-paper/85 backdrop-blur-md"
+        data-ph-unmask
+      >
         <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
           <Link
             href="/"

@@ -256,7 +256,7 @@ export function Sidebar({
         </div>
 
         {/* Nav — every row is a live page. */}
-        <nav aria-label="ניווט הדשבורד" className="mt-5 flex-1 space-y-0.5 px-3">
+        <nav aria-label="ניווט הדשבורד" className="mt-5 flex-1 space-y-0.5 px-3" data-ph-unmask>
           <SidebarItem
             icon={<House className="size-4" />}
             label="בית"
