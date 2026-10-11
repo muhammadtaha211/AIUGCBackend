@@ -2,7 +2,13 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
-import { getAccountBilling, getDb, questionnaireSchema, schema } from "@aiugc/core";
+import {
+  getAccountBilling,
+  getDb,
+  listSocialAccounts,
+  questionnaireSchema,
+  schema,
+} from "@aiugc/core";
 import { Button } from "@/components/ui/button";
 import { authedUser } from "@/lib/auth-user";
 import { questionnaireToDraft } from "@/lib/onboarding";
@@ -17,9 +23,19 @@ import {
   STATUS_LABELS,
 } from "@/lib/plans-ui";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
+import { postingAllowed } from "@/lib/social";
+import { socialReturnPath } from "@/lib/social-oauth";
+import {
+  accountName,
+  CONNECT_FAILED,
+  CONNECT_NO_ACCOUNT,
+  connectedLine,
+  parseSocialOutcome,
+} from "@/lib/social-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { BusinessCard } from "./business-card";
 import { SignOutButton } from "./sign-out-button";
+import { SocialAccountsSection, type SocialFlash } from "./social-accounts";
 
 /** The status pill's colours — styling only; the words come from STATUS_LABELS. */
 const STATUS_PILL: Record<string, string> = {
@@ -30,15 +46,20 @@ const STATUS_PILL: Record<string, string> = {
 
 /**
  * The one page behind both account-menu rows (פרופיל and הגדרות — vault
- * decision 0034): the account block, then every business the user owns with
- * an inline questionnaire editor. Same shell as /home/demos; no redirect on
+ * decision 0034): the account block, the plan row, חיבורים (the social
+ * accounts — only for an account the posting switch allows, decision 0101),
+ * then every business the user owns with an inline questionnaire editor. Same shell as /home/demos; no redirect on
  * an empty list — the section's empty state links to the wizard instead.
  *
  * Drizzle over getDb(), not supabase-js: getDb() bypasses RLS, so the owner
  * filter below IS the access rule — the same predicate RLS applies to the
  * sidebar's list (docs/vault/facts/data-api-surface-is-two-tables.md).
  */
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const supabase = await createServerSupabase();
   // authedUser throws on a FAILED read rather than letting it collapse into
   // "signed out" — see the note in @/lib/auth-user. A null user still means
@@ -83,6 +104,28 @@ export default async function SettingsPage() {
         },
         scheduledName,
       )
+    : null;
+
+  // חיבורים: nothing of it is read, let alone rendered, for an account the
+  // switch hides. `?social=` is the Facebook round trip's outcome, `?return=`
+  // the address a connect should land on (the schedule flow's, in PR 3).
+  const social = (await postingAllowed(user.id))
+    ? await (async () => {
+        const params = await searchParams;
+        const accounts = await listSocialAccounts(getDb(), user.id);
+        const outcome = parseSocialOutcome(params.social);
+        let flash: SocialFlash | null = null;
+        if (outcome === "error") flash = { kind: "error", text: CONNECT_FAILED };
+        if (outcome === "none") flash = { kind: "error", text: CONNECT_NO_ACCOUNT };
+        if (outcome === "connected") {
+          const count = Number(params.n);
+          const named = accounts.find((account) => account.id === params.id);
+          if (Number.isInteger(count) && count > 0) {
+            flash = { kind: "ok", text: connectedLine(count, named ? accountName(named) : null) };
+          }
+        }
+        return { accounts, flash, returnTo: socialReturnPath(params.return) };
+      })()
     : null;
 
   const cookieStore = await cookies();
@@ -158,6 +201,14 @@ export default async function SettingsPage() {
           </Link>
         </div>
       </section>
+
+      {social && (
+        <SocialAccountsSection
+          accounts={social.accounts}
+          flash={social.flash}
+          returnTo={social.returnTo}
+        />
+      )}
 
       <section className="mt-10">
         <div className="flex items-baseline justify-between gap-3">

@@ -45,6 +45,12 @@ why.
 
 ## Planning defaults (PLANNING DEFAULT, kept at approval)
 
+> **2026-10-11 — three of these moved ([[0102-social-posting-label-mix-switch-key-2026-10-11]]):**
+> the AI label is the customer's tick per post, unticked by default on every service (no longer per
+> service); the mix is per service — הוק + דמו 100/0, דמות AI 15/100, גוש טקסט 100/40 (no longer
+> 35/100); the switch gains a third setting, named accounts, beside admins and everyone. The
+> paragraphs below keep the original defaults as they were approved.
+
 From the prompt, unstruck: hidden until Meta approves the app, admins only, behind one switch
 (`app_config.social_posting`); TikTok built only once a sandbox app exists — none did at approval,
 so it is the next task and the Integrations section shows no TikTok card; connections belong to the
@@ -109,6 +115,10 @@ the sound picker, the calendar, the tag and the layout's switch are PRs 2 and 3;
 Nothing a customer can reach changed.
 
 ## Still his to rule (OPEN)
+
+> **2026-10-11:** the AI label and the bed are ruled, and the live-test executor is a planning
+> default (the box on `origin/main`, never a task branch) — [[0102-social-posting-label-mix-switch-key-2026-10-11]].
+> No TikTok developer app exists (FOUNDER-REPORTED, same day).
 
 Whether the recommendations above stand or move (the AI label per service, the 35 % bed, the
 deferral, `share_to_feed`); whether a failure email is ever built; the live-test executor (the box

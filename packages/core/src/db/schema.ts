@@ -932,6 +932,9 @@ export const scheduledPosts = pgTable(
     caption: text("caption").notNull().default(""),
     // Instagram only: a snapshot of the catalogue row picked (SoundSnapshot).
     sound: jsonb("sound"),
+    // The customer's own "made with AI" tick (0060, decision 0102): unticked by
+    // default on every service; the job sends Instagram's label only when true.
+    aiLabel: boolean("ai_label").notNull().default(false),
     status: scheduledPostStatus("status").notNull().default("scheduled"),
     // Meta's creation id (TikTok: the publish id), then the media id and
     // permalink the instant media_publish returns.

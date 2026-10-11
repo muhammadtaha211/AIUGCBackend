@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-10
+updated: 2026-10-11
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -806,7 +806,82 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-11) — social posting, PR 1 of 3: the core, `feat/social-posting-core`, NOT merged
+## What landed (2026-10-11) — social posting, PR 2 of 4: connecting accounts, `feat/social-posting-connect`, NOT merged
+
+[[0102-social-posting-label-mix-switch-key-2026-10-11]] (his five changes to PR 1, recorded with a
+dated pointer on 0101); the mechanics and the Meta runbook are `docs/09-social-posting.md`.
+
+**What exists (MEASURED, on the branch):**
+
+- **0102 in core:** `scheduled_posts.ai_label` (migration **0060** — **APPLIED to production
+  2026-10-11** on his instruction "OK, apply migration 0060.", before PR 2 merged as the 0039 rule
+  asks; read back before and after: no column → `ai_label | boolean | NO | false`, 0 post rows,
+  ledger 61 rows, 0000–0060 ([[production-migration-push-log]])); the AI
+  label is the post's own tick, unticked by default on every service, `is_ai_generated` sent only
+  when ticked; `SOUND_VOLUMES` per service — a 100/0, b 15/100, c 100/40 (sound/video), a retired
+  full-format A render on b's; the switch's third setting
+  `{"access":"named","userIds":[…]}`, and a row that does not parse hides instead of throwing.
+- **The web:** חיבורים in `/home/settings` (only for an allowed account; one Instagram card, no
+  TikTok card); the pre-screen at **`/connect/instagram`** — outside `/home` because a `notFound()`
+  under `/home`'s `loading.tsx` boundaries streams a 200 (found by the PR's review); the Facebook
+  round trip (`/api/social/instagram/start|callback`: a session-bound state cookie, `config_id` or
+  the scope list, `auth_type=rerequest` for הוספת חשבון, every Instagram account from one approval,
+  the return address honoured, never an open redirect); disconnect; Meta's deletion callback and
+  `/social/deletion/[code]`. Every social route answers a hidden or signed-out account with 404.
+- **Core fixes from the PR's adversarial review (25 agents, 9 of 20 findings survived):** Meta's
+  deletion now erases rows already disconnected in Tavnit (it skipped them — PR 1 code, live with
+  this PR); disconnect, manual cancel, Meta's deletion and the confirm's count share one
+  "cancellable" predicate (a post waiting out Instagram's quota with no container is cancelled too);
+  the confirmation code is 32 hex digits (Meta documents an alphanumeric code); display names are
+  bidi-isolated.
+- **Tests:** the full gate green on the branch after the review fixes (2026-10-11): `pnpm lint`
+  clean; typecheck, all six packages; remotion 97, core 1099 (78 files), worker 7, web 627 (29
+  files, `social-connect.test.ts` 20 of them), admin 71. Remotion, worker and admin are the
+  test-runner's counts from before the fixes, which touched none of them.
+- **Screenshots** (harness, sample data; desktop and 375 px): `.work/social-pr2/` (gitignored).
+- **`SOCIAL_TOKEN_KEY` generated 2026-10-11** into `C:\Users\USER\aiugc-keys\SOCIAL_TOKEN_KEY.txt`
+  (outside the repo, never printed), fingerprint **047bda40** (first 8 hex of its SHA-256). Not yet
+  placed anywhere — his three placements are under "Owed founder actions".
+- **Records:** [[job-settle-writes-have-no-ownership-check]] (defect, not fixed); docs/02's heavy-lane
+  list now names `analyze_demo`; [[data-api-surface-is-two-tables]]'s "only RLS stands between anon
+  and the data" corrected (two layers on the current project; grants re-measured).
+
+**Meta's gates, read on Meta's pages 2026-10-11 (detail and paths in docs/09's runbook):**
+MEASURED — Business-type apps have no modes and Standard Access serves role users only, so his
+"published" app still connects only his own accounts; "Ready for testing" = testable, not approved;
+Advanced Access needs App Review **and** Business Verification; Tavnit is a Tech Provider and five of
+its seven permissions need access verification after Business Verification; the dialog is Facebook
+Login for Business, `config_id` preferred and `scope` still accepted; Graph API v26.0 is the latest.
+UNVERIFIED — whether an עוסק פטור qualifies (no Meta page mentions sole traders or Israel; his
+Security Center says Start or Ineligible); whether an app published without a verified business
+stays published; whether `http://localhost` is accepted as a redirect URI (Enforce HTTPS argues
+against it); **whether `auth_type=rerequest` shows Facebook's Page list again** (Meta documents it
+only for declined permissions; the documented Page change is the user's Business Integrations
+setting) — a live check, with two fallbacks named in the runbook.
+
+**What the founder reported on 2026-10-11 (FOUNDER-REPORTED, not repo-verified):**
+
+- He merged PR 1 and told the session to apply 0057–0059 (done, read back).
+- He published the Meta app after filling in the privacy-policy link, the terms link, an address
+  and an email; Meta answered "Your app was successfully published".
+- The app's Permissions and features page shows "Ready for testing" on `business_management`,
+  `instagram_basic`, `instagram_content_publish`, `instagram_manage_messages`,
+  `pages_read_engagement`, `pages_show_list` and `public_profile`.
+- No business portfolio is connected to the app; he could not find a business-verification section.
+- He deleted the Explorer test Reel right after it posted; whether it was publicly visible, and
+  which service the video was, are both unknown.
+- No TikTok developer app exists.
+
+**Planning defaults of the PR 2 prompt (PLANNING DEFAULT, unstruck):** live checks use the box on
+`origin/main`, never a task branch; `instagram_manage_messages` is unused and the runbook tells him to
+remove it before review (docs/09 §C).
+
+**Read, not edited (his instruction):** 0061 §3's landing line, live at `apps/web/src/app/page.tsx:640`
+— "החשבון מסומן כדמות AI, כמו שאנחנו מבקשים מכל מי שמפרסם עם תבנית". Its first half (Tavnit's own
+account is marked) stands; its second half ("as we ask of everyone who publishes with Tavnit") is in
+tension with 0102 §1, where the label is the customer's choice and unticked by default.
+
+## What landed (2026-10-11) — social posting, PR 1 of 3: the core, `feat/social-posting-core`, MERGED as PR #89
 
 [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]]; the mechanics are
 `docs/09-social-posting.md`. The founder approved the plan on 2026-10-11 with none of its open
@@ -848,11 +923,11 @@ plan's own — the AI label on הוק + דמו and דמות AI only, the `35/100
 sound, hourly deferral on a spent Instagram quota, no silent AAC track for A renders, a 30-day
 horizon bounded by retention, `share_to_feed=true`, a per-account calendar, in-app failure notice
 only, the browser's zone, cancelled posts hidden, no permission revoke on disconnect, the User token
-kept for the sound picker. All in 0101.
+kept for the sound picker. All in 0101. _(2026-10-11: the AI label, the bed and the switch moved —
+[[0102-social-posting-label-mix-switch-key-2026-10-11]].)_
 
-**The queue for this feature:** PR 2 `feat/social-posting-connect` (the switch in the layout and
-routes, Integrations, the Instagram pre-screen, OAuth start/callback, disconnect, the deletion
-callback and status page, strings); PR 3 `feat/social-posting-schedule` (the player button and
+**The queue for this feature:** PR 2 `feat/social-posting-connect` (BUILT 2026-10-11, the entry
+above); PR 3 `feat/social-posting-schedule` (the player button and
 `scheduleHref`, the tag, the schedule flow, the sound picker, the calendar, the `/home` notice,
 strings, screenshots — the live checks run on it); PR 4 TikTok, once a sandbox app exists. The
 Hebrew strings are drafted in the plan's Appendix A and await his approval before merge.
@@ -983,10 +1058,10 @@ the older launch items. Item 0 no longer outranks everything the way it did — 
 taken a real payment — but what is left of it is still the part that decides whether the next
 payment is kept.
 
-**Social posting — PR 1 (core) BUILT 2026-10-11** on `feat/social-posting-core`
-([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]]; "What landed (2026-10-11)" above).
-Next in order: PR 2 (connect: the switch, Integrations, OAuth, disconnect, the deletion callback),
-PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
+**Social posting — PR 1 (core) MERGED as #89; PR 2 (connect) BUILT 2026-10-11** on
+`feat/social-posting-connect` ([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]],
+[[0102-social-posting-label-mix-switch-key-2026-10-11]]; the two "What landed (2026-10-11)" entries
+above). 0060 is applied (2026-10-11). Next in order: PR 2's live connect (his OKs), then PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
 checks), PR 4 (TikTok, once his sandbox app exists). The push of 0057–0059, the env names and the
 live-test steps are under "Owed founder actions".
 
@@ -1382,6 +1457,17 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **Social posting — PR 2 (2026-10-11, `feat/social-posting-connect`).** Each its own OK: 1. the
+  PR 2 strings (Appendix A's connect lines plus the DRAFT singular forms in
+  `apps/web/src/lib/social-ui.ts`) at PR review; 2. ~~the ONE `db push` of **0060**~~ DONE 2026-10-11
+  on his instruction, read back before and after ([[production-migration-push-log]]); 3. placing `SOCIAL_TOKEN_KEY` (fingerprint 047bda40) on Vercel
+  Production, the box and `apps/web/.env.local`, and `META_APP_ID` / `META_APP_SECRET` (and
+  `META_LOGIN_CONFIG_ID` if the dashboard gives one) per docs/09 §Env names; 4. in the Meta app
+  (yours alone), docs/09 runbook A–C: the configuration id, the redirect URI(s) with Check URI, the
+  deletion URL, removing `instagram_manage_messages`; 5. the live connect (docs/09 checklist a–i:
+  connect, add another, disconnect, a return address); 6. later, for review: a portfolio, Business
+  Verification, access verification, a non-admin reviewer account named in the switch (runbook E–I); 7. the privacy text on connected accounts and deletion is owed while the legal pages are held.
 
 - **Social posting (2026-10-11, `feat/social-posting-core` and the PRs after it).** In order, each
   its own OK (his §4): 1. the Hebrew strings of the plan's Appendix A — approve or change before PR 3

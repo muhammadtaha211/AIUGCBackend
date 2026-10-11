@@ -1,0 +1,32 @@
+-- Hand-written. Portable SQL: applies to any Postgres (Supabase, PGlite, plain PG).
+
+-- scheduled_posts.ai_label — the customer's own choice, per post, to mark it
+-- as made with AI (decision 0102, 2026-10-11). It replaces 0101's per-service
+-- default (AI_LABELLED_SERVICES: הוק + דמו and דמות AI labelled, גוש טקסט not):
+-- every post starts unticked on every service, and the publish job sends
+-- Instagram's `is_ai_generated=true` only for a row whose ai_label is true —
+-- otherwise it sends no label at all. The checkbox that sets it is the schedule
+-- flow's (web PR 3); until then every row is false.
+--
+-- NOT NULL DEFAULT false, so the rows 0058 already holds (none in production
+-- at the push of 0057–0059) read as unticked without a backfill.
+--
+-- It goes FIRST, ahead of its code (the 0039 rule): drizzle names every column
+-- of scheduled_posts in a bare select, so a build carrying `aiLabel` in
+-- schema.ts against a table without the column fails every post read —
+-- the publish job, the box's orphan sweep, the calendar.
+ALTER TABLE "scheduled_posts" ADD COLUMN IF NOT EXISTS "ai_label" boolean DEFAULT false NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- VERIFY BY READ-BACK, BEFORE AND AFTER:
+--
+--   select column_name, data_type, is_nullable, column_default
+--     from information_schema.columns
+--    where table_name = 'scheduled_posts' and column_name = 'ai_label';
+--
+-- BEFORE: no row. AFTER: one row — ai_label | boolean | NO | false.
+--
+--   select count(*) filter (where ai_label) as ticked, count(*) as rows from scheduled_posts;
+--
+-- AFTER: ticked 0, rows unchanged from BEFORE's `select count(*) from scheduled_posts`.
+-- ---------------------------------------------------------------------------

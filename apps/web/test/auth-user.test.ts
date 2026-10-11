@@ -164,6 +164,10 @@ const OUTSIDE_HOME: Record<string, { marker: string; why: string }> = {
     marker: "if (authReadFailed(error)) console.error",
     why: "a public page that reads the session only to pick the cards' call to action — a failed read is logged and shown the signed-out cards, never the error card",
   },
+  "app/connect/instagram/page.tsx": {
+    marker: "authedUser(",
+    why: "the social pre-screen sits outside /home so a hidden account gets a real 404 (no loading.tsx boundary streaming a 200); a failed read throws to app/error.tsx like every /home page, never collapses into signed-out",
+  },
   "app/api/billing/sumit/return/route.ts": {
     marker: "if (authReadFailed(error)) console.error",
     why: "the browser arrives from Sumit's payment page; a failed read is logged and treated as no session, so nothing completes and the customer goes through /login with this URL as next — the payment waits at Sumit, and signing in completes it",

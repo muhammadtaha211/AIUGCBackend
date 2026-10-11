@@ -1127,4 +1127,48 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0060: scheduled_posts.ai_label — boolean, not null, false for rows already there, idempotent", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0060")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    // A post that exists before the column does: it must read as unticked.
+    const user = "11111111-1111-4111-8111-111111111111";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO businesses (id, owner_user_id, name)
+        VALUES ('22222222-2222-4222-8222-222222222222', '${user}', 'b');
+      INSERT INTO video_renders (id, business_id, service, params, status)
+        VALUES ('33333333-3333-4333-8333-333333333333', '22222222-2222-4222-8222-222222222222', 'a', '{}', 'released');
+      INSERT INTO social_accounts (id, user_id, platform, external_id)
+        VALUES ('44444444-4444-4444-8444-444444444444', '${user}', 'instagram', 'ig1');
+      INSERT INTO scheduled_posts (user_id, business_id, video_render_id, social_account_id, platform, scheduled_at, timezone)
+        VALUES ('${user}', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333',
+                '44444444-4444-4444-8444-444444444444', 'instagram', now(), 'Asia/Jerusalem');
+    `);
+
+    const migration = readFileSync(
+      join(MIGRATIONS_DIR, "0060_scheduled_posts_ai_label.sql"),
+      "utf8",
+    );
+    await pg.exec(migration);
+    await pg.exec(migration);
+
+    const column = await pg.query<{
+      data_type: string;
+      is_nullable: string;
+      column_default: string;
+    }>(
+      `SELECT data_type, is_nullable, column_default FROM information_schema.columns
+        WHERE table_name = 'scheduled_posts' AND column_name = 'ai_label'`,
+    );
+    expect(column.rows).toEqual([
+      { data_type: "boolean", is_nullable: "NO", column_default: "false" },
+    ]);
+    const rows = await pg.query<{ ai_label: boolean }>("SELECT ai_label FROM scheduled_posts");
+    expect(rows.rows).toEqual([{ ai_label: false }]);
+
+    await pg.close();
+  });
 });

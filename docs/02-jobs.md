@@ -109,10 +109,13 @@ serves Service B's audio; the length fit and `planAOutro` are reachable only fro
 
 `apps/worker` runs two sequential lanes (`runLane`):
 
-- **heavy** — `render_video`, `lipsync`: strictly one at a time → Remotion render
-  concurrency is 1 by construction; lipsync jobs cost the lane nothing while pending
-  (they reschedule).
-- **light** — everything else: audio previews and copy stay responsive during a long render.
+- **heavy** — `render_video`, `lipsync`, `analyze_demo` (`HEAVY_JOB_TYPES`,
+  `packages/core/src/jobs/worker.ts`): strictly one at a time → Remotion render concurrency is 1
+  by construction; lipsync jobs cost the lane nothing while pending (they reschedule);
+  `analyze_demo` is minutes of ffmpeg plus batched vision calls, kept off the light lane so it
+  cannot stall previews.
+- **light** — everything else (audio previews, copy, `publish_post`, the daily jobs): previews and
+  copy stay responsive during a long render.
 
 `aiugc work [--once]` runs the identical lanes inline for the CLI phase. Scaling path (not
 built): a second worker box just works — SKIP LOCKED already handles it.
