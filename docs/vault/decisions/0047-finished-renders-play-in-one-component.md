@@ -97,3 +97,12 @@ one HTTP POST to the storage host, inside a route that already makes one or two.
   test for `GET /api/renders/[id]` is now possible and simply was not in scope here. What the route
   gained is one call whose two halves are each pinned on their own side: the filename by
   `apps/web/test/service-b-ui.test.ts`, the forwarding by `packages/core/test/storage.test.ts`.
+
+_(Pointer 2026-10-11, three facts MEASURED in the tree at `origin/main` 5976063: (1) there are
+**five** surfaces, not four — the גוש טקסט wizard's finish step
+(`apps/web/src/components/c-wizard/step-render.tsx`) also mounts `RenderPlayer`; (2) the disabled
+רמיקס button of part 3 **no longer exists** — commit 2cc3c1f dropped it and the component renders
+הורדה alone (`render-player.tsx:60-63`); (3) the line numbers above have drifted (a-wizard :364,
+b-wizard :321, render-player :34). The founder decided on 2026-10-10 that a second button,
+**תזמון פרסום**, joins הורדה on every one of those surfaces —
+[[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]], its web PR.)_

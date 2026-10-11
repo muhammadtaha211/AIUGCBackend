@@ -17,6 +17,19 @@ const envSchema = z.object({
   SUMIT_API_KEY: z.string().optional(),
   // JSON: { "<plan code>": "<the product's payment-page URL>" }.
   SUMIT_CHECKOUT_PAGES: z.string().optional(),
+  // Social posting (decision 0101). The Meta app that connects Instagram
+  // accounts and publishes Reels; the secret signs the code exchange,
+  // appsecret_proof and the data-deletion callback. META_LOGIN_CONFIG_ID is set
+  // only when the app dashboard gives Facebook Login a configuration id instead
+  // of a scope list. SOCIAL_TOKEN_KEY: 32 random bytes, base64 — the key
+  // secret-box.ts seals platform tokens under; needed wherever a token is
+  // opened (the web's OAuth and sound routes, the worker's publish job), and
+  // nowhere else. All optional: absent means the provider throws at use time,
+  // never at boot, so admin — which needs none of them — is untouched.
+  META_APP_ID: z.string().optional(),
+  META_APP_SECRET: z.string().optional(),
+  META_LOGIN_CONFIG_ID: z.string().optional(),
+  SOCIAL_TOKEN_KEY: z.string().optional(),
   DRY_RUN: z
     .string()
     .optional()

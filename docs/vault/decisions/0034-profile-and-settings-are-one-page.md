@@ -48,3 +48,9 @@ client would otherwise erase the customer's answered moments. Pinned by
 - Not built, by the brief: delete-business, editing `demo_notes`, any new column or migration.
 - The four category cards' copy moved from the wizard's first step into `BUSINESS_TYPE_OPTIONS`
   (`apps/web/src/lib/onboarding.ts`) so the editor and the wizard cannot drift.
+
+_(Pointer 2026-10-11: the founder decided on 2026-10-10 that this page also holds **חיבורים**, the
+Integrations section — connected Instagram (and later TikTok) accounts with connect, add another
+and disconnect — between the plan row and העסקים שלי. Decision
+[[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]]; the section itself lands in that
+task's web PR, not yet in the tree.)_

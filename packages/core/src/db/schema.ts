@@ -104,6 +104,23 @@ export const ledgerReason = pgEnum("ledger_reason", [
   "expire_period",
 ]);
 
+// 0057: social posting (decision 0101). 'tiktok' exists from day one so the
+// schema never moves when it is built; nothing writes it yet.
+export const socialPlatform = pgEnum("social_platform", ["instagram", "tiktok"]);
+export const socialAccountStatus = pgEnum("social_account_status", [
+  "connected",
+  "expired",
+  "disconnected",
+  "deleted",
+]);
+export const scheduledPostStatus = pgEnum("scheduled_post_status", [
+  "scheduled",
+  "publishing",
+  "posted",
+  "failed",
+  "cancelled",
+]);
+
 // ---------------------------------------------------------------------------
 // Identity & business
 // ---------------------------------------------------------------------------
@@ -755,7 +772,7 @@ export const events = pgTable(
     index("events_unnotified_alerts_idx")
       .on(t.createdAt)
       .where(
-        sql`${t.notifiedAt} is null and ${t.kind} in ('platform_budget_tripped', 'auth_email_send_failed')`,
+        sql`${t.notifiedAt} is null and ${t.kind} in ('platform_budget_tripped', 'auth_email_send_failed', 'post_failed')`,
       ),
   ],
 );
@@ -835,6 +852,115 @@ export const checkoutIntents = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (t) => [index("checkout_intents_user_status_idx").on(t.userId, t.status)],
+);
+
+// ---------------------------------------------------------------------------
+// Social posting (0057–0059, decision 0101) — docs/09-social-posting.md
+// ---------------------------------------------------------------------------
+
+// A connected platform account, owned by the Tavnit ACCOUNT, not a business.
+// Server-only (RLS on, no policies): read and written through getDb() with an
+// explicit user_id filter. Tokens are sealed by secret-box.ts and never leave
+// the server; the *_enc columns are erased on disconnect and deletion, the row
+// stays so post history keeps its foreign keys.
+export const socialAccounts = pgTable(
+  "social_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    platform: socialPlatform("platform").notNull(),
+    // Instagram user id / TikTok open_id.
+    externalId: text("external_id").notNull(),
+    username: text("username"),
+    displayName: text("display_name"),
+    pictureUrl: text("picture_url"),
+    // Instagram only: the linked Facebook Page and the Facebook user who
+    // connected it (the id Meta's data-deletion callback names).
+    pageId: text("page_id"),
+    pageName: text("page_name"),
+    fbUserId: text("fb_user_id"),
+    // Instagram: the PAGE token (no expiry per Meta); TikTok: the access token.
+    accessTokenEnc: text("access_token_enc"),
+    // Instagram only: the ~60-day USER token the sound search needs.
+    userTokenEnc: text("user_token_enc"),
+    userTokenExpiresAt: timestamp("user_token_expires_at", { withTimezone: true }),
+    // TikTok only.
+    refreshTokenEnc: text("refresh_token_enc"),
+    refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }),
+    status: socialAccountStatus("status").notNull().default("connected"),
+    lastError: text("last_error"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
+  },
+  (t) => [
+    // One LIVE row per account: a reconnect restores it in place; a
+    // disconnected or deleted row is history and lets a fresh row in.
+    uniqueIndex("social_accounts_live_idx")
+      .on(t.userId, t.platform, t.externalId)
+      .where(sql`${t.status} in ('connected', 'expired')`),
+    index("social_accounts_fb_user_idx").on(t.fbUserId),
+  ],
+);
+
+// One row per video × account. 'publishing' is the point of no return: the
+// publish job moves the row there as its first act, and every edit or cancel
+// is guarded on status = 'scheduled'.
+export const scheduledPosts = pgTable(
+  "scheduled_posts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    videoRenderId: uuid("video_render_id")
+      .notNull()
+      .references(() => videoRenders.id),
+    socialAccountId: uuid("social_account_id")
+      .notNull()
+      .references(() => socialAccounts.id),
+    platform: socialPlatform("platform").notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    // The IANA zone the customer scheduled in — display only; the instant above
+    // is what the job runs on.
+    timezone: text("timezone").notNull(),
+    caption: text("caption").notNull().default(""),
+    // Instagram only: a snapshot of the catalogue row picked (SoundSnapshot).
+    sound: jsonb("sound"),
+    status: scheduledPostStatus("status").notNull().default("scheduled"),
+    // Meta's creation id (TikTok: the publish id), then the media id and
+    // permalink the instant media_publish returns.
+    providerContainerId: text("provider_container_id"),
+    providerMediaId: text("provider_media_id"),
+    permalink: text("permalink"),
+    // The closed set in pipelines/social.ts; detail is the diagnostic and
+    // never reaches a customer; acknowledged clears the /home notice.
+    failureKind: text("failure_kind"),
+    failureDetail: text("failure_detail"),
+    failureAcknowledgedAt: timestamp("failure_acknowledged_at", { withTimezone: true }),
+    // Set while the job waits out Instagram's daily publishing quota.
+    deferredUntil: timestamp("deferred_until", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    postedAt: timestamp("posted_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("scheduled_posts_user_time_idx").on(t.userId, t.scheduledAt),
+    index("scheduled_posts_render_pending_idx")
+      .on(t.videoRenderId)
+      .where(sql`${t.status} in ('scheduled', 'publishing')`),
+    index("scheduled_posts_account_scheduled_idx")
+      .on(t.socialAccountId)
+      .where(sql`${t.status} = 'scheduled'`),
+  ],
 );
 
 export const appConfig = pgTable("app_config", {

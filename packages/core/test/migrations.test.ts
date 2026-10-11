@@ -1001,4 +1001,130 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0057: the three social enum types exist with their values in order, idempotently", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0057")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0057_social_enums.sql"), "utf8");
+    await pg.exec(migration);
+    // The DO blocks swallow duplicate_object, so a second apply is a no-op.
+    await pg.exec(migration);
+
+    const types = await pg.query<{ typname: string; labels: string[] }>(
+      `SELECT t.typname, array_agg(e.enumlabel ORDER BY e.enumsortorder) AS labels
+         FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+        WHERE t.typname IN ('social_platform', 'social_account_status', 'scheduled_post_status')
+        GROUP BY t.typname ORDER BY t.typname`,
+    );
+    expect(types.rows).toEqual([
+      {
+        typname: "scheduled_post_status",
+        labels: ["scheduled", "publishing", "posted", "failed", "cancelled"],
+      },
+      {
+        typname: "social_account_status",
+        labels: ["connected", "expired", "disconnected", "deleted"],
+      },
+      { typname: "social_platform", labels: ["instagram", "tiktok"] },
+    ]);
+
+    await pg.close();
+  });
+
+  it("0058: social_accounts and scheduled_posts — server-only RLS, the four FKs, the partial indexes, idempotent", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0058")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0058_social_tables.sql"), "utf8");
+    await pg.exec(migration);
+    await pg.exec(migration);
+
+    const rls = await pg.query<{ relname: string; relrowsecurity: boolean }>(
+      `SELECT relname, relrowsecurity FROM pg_class
+        WHERE relname IN ('social_accounts', 'scheduled_posts') ORDER BY relname`,
+    );
+    expect(rls.rows).toEqual([
+      { relname: "scheduled_posts", relrowsecurity: true },
+      { relname: "social_accounts", relrowsecurity: true },
+    ]);
+    const policies = await pg.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM pg_policies WHERE tablename IN ('social_accounts', 'scheduled_posts')",
+    );
+    expect(policies.rows).toEqual([{ n: "0" }]);
+    const indexes = await pg.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes
+        WHERE tablename IN ('social_accounts', 'scheduled_posts') ORDER BY indexname`,
+    );
+    expect(indexes.rows.map((r) => r.indexname)).toEqual([
+      "scheduled_posts_account_scheduled_idx",
+      "scheduled_posts_pkey",
+      "scheduled_posts_render_pending_idx",
+      "scheduled_posts_user_time_idx",
+      "social_accounts_fb_user_idx",
+      "social_accounts_live_idx",
+      "social_accounts_pkey",
+    ]);
+    const fks = await pg.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint
+        WHERE conrelid = 'public.scheduled_posts'::regclass AND contype = 'f' ORDER BY conname`,
+    );
+    expect(fks.rows.map((r) => r.conname)).toEqual([
+      "scheduled_posts_business_id_businesses_id_fk",
+      "scheduled_posts_social_account_id_social_accounts_id_fk",
+      "scheduled_posts_user_id_users_id_fk",
+      "scheduled_posts_video_render_id_video_renders_id_fk",
+    ]);
+
+    // The live-row uniqueness: a second connected row for the same account is
+    // refused, a disconnected one lets a fresh row in.
+    const user = "11111111-1111-4111-8111-111111111111";
+    await pg.exec(`INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local')`);
+    await pg.exec(
+      `INSERT INTO social_accounts (user_id, platform, external_id) VALUES ('${user}', 'instagram', 'ig1')`,
+    );
+    await expect(
+      pg.query(
+        `INSERT INTO social_accounts (user_id, platform, external_id) VALUES ('${user}', 'instagram', 'ig1')`,
+      ),
+    ).rejects.toThrow(/social_accounts_live_idx/);
+    await pg.exec(`UPDATE social_accounts SET status = 'disconnected'`);
+    await pg.exec(
+      `INSERT INTO social_accounts (user_id, platform, external_id) VALUES ('${user}', 'instagram', 'ig1')`,
+    );
+    const count = await pg.query<{ n: string }>("SELECT count(*)::text AS n FROM social_accounts");
+    expect(count.rows).toEqual([{ n: "2" }]);
+
+    await pg.close();
+  });
+
+  it("0059: the alert index predicate gains post_failed, idempotently", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0059")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const before = await pg.query<{ indexdef: string }>(
+      "SELECT indexdef FROM pg_indexes WHERE indexname = 'events_unnotified_alerts_idx'",
+    );
+    expect(before.rows[0]!.indexdef).not.toContain("post_failed");
+
+    const migration = readFileSync(
+      join(MIGRATIONS_DIR, "0059_events_alert_index_post_failed.sql"),
+      "utf8",
+    );
+    await pg.exec(migration);
+    await pg.exec(migration);
+
+    const after = await pg.query<{ indexdef: string }>(
+      "SELECT indexdef FROM pg_indexes WHERE indexname = 'events_unnotified_alerts_idx'",
+    );
+    expect(after.rows).toHaveLength(1);
+    for (const kind of ["platform_budget_tripped", "auth_email_send_failed", "post_failed"]) {
+      expect(after.rows[0]!.indexdef).toContain(kind);
+    }
+
+    await pg.close();
+  });
 });

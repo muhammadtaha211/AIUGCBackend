@@ -20,6 +20,7 @@ import {
   RENDER_RETRIES_EXHAUSTED_MESSAGE,
   WORK_PARK_EXPIRED_MESSAGE,
 } from "./renders";
+import { failOrphanedPosts } from "./social";
 
 export const REAPER_INTERVAL_MS = 60_000;
 
@@ -276,6 +277,13 @@ export async function handleReapDeadRenders(_job: Job, ctx: JobContext): Promise
     const ended = await failOverparkedWork(db);
     if (ended > 0) {
       log.warn({ ended }, "reaper: failed non-render work parked past the max park age");
+    }
+
+    // Social posting (0101): a post whose publish job died outside its handler
+    // would otherwise stay pending forever, silently.
+    const orphaned = await failOrphanedPosts(db);
+    if (orphaned > 0) {
+      log.warn({ orphaned }, "reaper: ended posts whose job died outside the handler");
     }
   } catch (err) {
     log.warn({ err }, "reaper: sweep failed — retrying next tick");
