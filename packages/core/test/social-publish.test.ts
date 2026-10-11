@@ -10,7 +10,6 @@ import { runLane } from "../src/jobs/worker";
 import { logger } from "../src/logger";
 import { handleReapDeadRenders } from "../src/pipelines/janitor";
 import {
-  AI_LABELLED_SERVICES,
   cancelScheduledPost,
   CONTAINER_MAX_POLLS,
   failOrphanedPosts,
@@ -37,8 +36,8 @@ import { tempStorage } from "./helpers/storage";
  * replayed — a crash after the container exists, a crash inside media_publish,
  * a lease reclaim — must leave exactly ONE container and ONE publish; a cancel
  * before the run leaves zero calls; every failure kind lands on the row with
- * the founder's alert beside it; the AI label and the volume mix follow the
- * service.
+ * the founder's alert beside it; the AI label follows the post's own tick and
+ * the volume mix follows the service (decision 0102).
  */
 describe("publish_post", () => {
   let db: Db;
@@ -91,7 +90,7 @@ describe("publish_post", () => {
     );
   }
 
-  async function schedule(service: "a" | "b" | "c" = "a", sound = true) {
+  async function schedule(service: "a" | "b" | "c" = "a", sound = true, aiLabel?: boolean) {
     const render = await seedReleasedRender(db, getStorage(), storageRoot, { businessId, service });
     const [post] = await schedulePosts(db, {
       userId,
@@ -101,6 +100,7 @@ describe("publish_post", () => {
       timezone: "Asia/Jerusalem",
       caption: "כיתוב לבדיקה",
       sound: sound ? { audioId: "audio_1", kind: "original_sound", title: "s" } : null,
+      ...(aiLabel === undefined ? {} : { aiLabel }),
     });
     await makeRunnable();
     return { post: post!, render };
@@ -152,32 +152,85 @@ describe("publish_post", () => {
     expect(JSON.stringify(row)).not.toContain("file://");
   });
 
-  it("the AI label and the mix follow the service: silent הוק + דמו gives the sound the floor and is labelled; a דמות AI keeps its own audio and is labelled; גוש טקסט is not labelled", async () => {
+  /** Which render each container was made for, by the signed URL Meta was handed. */
+  function containersByRender(renders: Record<string, { id: string }>) {
+    return new Map(
+      meta.containers.map((x) => [
+        Object.entries(renders).find(([, r]) => x.videoUrl.includes(r.id))![0],
+        x,
+      ]),
+    );
+  }
+
+  it("the mix follows the service, at the founder's numbers: הוק + דמו sound 100 over silence, דמות AI voice 100 over sound 15, גוש טקסט sound 100 over the clip at 40", async () => {
     const a = await schedule("a");
     const b = await schedule("b");
     const c = await schedule("c");
     await lanePass();
-    const byRender = new Map(
-      meta.containers.map((x) => [
-        x.videoUrl.includes(a.render.id) ? "a" : x.videoUrl.includes(b.render.id) ? "b" : "c",
-        x,
-      ]),
-    );
-    expect(byRender.get("a")).toMatchObject({
-      aiGenerated: true,
-      shareToFeed: true,
-      audio: { audioId: "audio_1", ...SOUND_VOLUMES.silentVideo },
+    const byRender = containersByRender({ a: a.render, b: b.render, c: c.render });
+    expect(byRender.get("a")!.audio).toEqual({
+      audioId: "audio_1",
+      audioVolume: 100,
+      videoVolume: 0,
     });
-    expect(byRender.get("b")).toMatchObject({
-      aiGenerated: true,
-      audio: { audioId: "audio_1", ...SOUND_VOLUMES.ownAudio },
+    expect(byRender.get("b")!.audio).toEqual({
+      audioId: "audio_1",
+      audioVolume: 15,
+      videoVolume: 100,
     });
-    expect(byRender.get("c")).toMatchObject({
-      aiGenerated: false,
-      audio: { audioId: "audio_1", ...SOUND_VOLUMES.ownAudio },
+    expect(byRender.get("c")!.audio).toEqual({
+      audioId: "audio_1",
+      audioVolume: 100,
+      videoVolume: 40,
     });
-    expect(AI_LABELLED_SERVICES).toEqual({ a: true, b: true, c: false });
+    expect(SOUND_VOLUMES).toEqual({
+      a: { audioVolume: 100, videoVolume: 0 },
+      b: { audioVolume: 15, videoVolume: 100 },
+      c: { audioVolume: 100, videoVolume: 40 },
+    });
+    expect(byRender.get("a")!.shareToFeed).toBe(true);
     expect((await postRow(c.post.id)).status).toBe("posted");
+  });
+
+  it("the AI label is the post's own tick: unticked by default on every service and sent for none of them; a ticked post sends it", async () => {
+    const a = await schedule("a");
+    const b = await schedule("b");
+    const c = await schedule("c");
+    const ticked = await schedule("c", true, true);
+    for (const { post } of [a, b, c]) expect((await postRow(post.id)).aiLabel).toBe(false);
+    expect((await postRow(ticked.post.id)).aiLabel).toBe(true);
+    await lanePass();
+    const byRender = containersByRender({
+      a: a.render,
+      b: b.render,
+      c: c.render,
+      ticked: ticked.render,
+    });
+    expect(byRender.get("a")!.aiGenerated).toBe(false);
+    expect(byRender.get("b")!.aiGenerated).toBe(false);
+    expect(byRender.get("c")!.aiGenerated).toBe(false);
+    expect(byRender.get("ticked")!.aiGenerated).toBe(true);
+  });
+
+  it("the tick can change while the post is pending, and the job sends what the row says at post time", async () => {
+    const render = await seedReleasedRender(db, getStorage(), storageRoot, {
+      businessId,
+      service: "b",
+    });
+    const [post] = await schedulePosts(db, {
+      userId,
+      videoRenderId: render.id,
+      accountIds: [accountId],
+      scheduledAt: new Date(Date.now() + 3_600_000),
+      timezone: "Asia/Jerusalem",
+      caption: "",
+    });
+    const view = await updateScheduledPost(db, { userId, postId: post!.id, aiLabel: true });
+    expect(view.aiLabel).toBe(true);
+    await makeRunnable();
+    await lanePass();
+    expect(meta.containers).toHaveLength(1);
+    expect(meta.containers[0]!.aiGenerated).toBe(true);
   });
 
   it("a container still in progress is polled once a minute through reschedule, never a second container", async () => {
@@ -593,7 +646,7 @@ describe("publish_post", () => {
     expect(meta.calls.publishingLimit).toBe(0);
   });
 
-  it("a retired full-format A render keeps its own audio under the sound, like B and C", async () => {
+  it("a retired full-format A render carries a voiceover, so it takes דמות AI's speech-on-top mix", async () => {
     const render = await seedReleasedRender(db, getStorage(), storageRoot, {
       businessId,
       service: "a",
@@ -613,7 +666,7 @@ describe("publish_post", () => {
     });
     await makeRunnable();
     await lanePass();
-    expect(meta.containers[0]!.audio).toEqual({ audioId: "audio_1", ...SOUND_VOLUMES.ownAudio });
+    expect(meta.containers[0]!.audio).toEqual({ audioId: "audio_1", ...SOUND_VOLUMES.b });
   });
 
   it("the last attempt dying after a publish attempt asks Meta first: a PUBLISHED container is posted, never failed", async () => {

@@ -17,12 +17,12 @@ the OAuth routes, the schedule flow, the sound picker, the calendar, the tag, th
 layout — PRs 2 and 3) and TikTok (PR 4, once a sandbox app exists). Nothing a customer can reach
 exists yet.
 
-## Data model (0057–0059)
+## Data model (0057–0060)
 
-| table             | one row per                                                                           | notes                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `social_accounts` | connected platform account, owned by the **Tavnit account** (`users`), not a business | `external_id` = IG user id / TikTok open_id; `page_id`/`page_name`/`fb_user_id` (Instagram); `access_token_enc` = the **Page token** (Meta: no expiry) or TikTok's 24-h access token; `user_token_enc` = the ~60-day User token the sound search is documented against; `status` connected / expired / disconnected / deleted; one LIVE row per account (`social_accounts_live_idx`, partial unique on connected+expired)        |
-| `scheduled_posts` | video × account                                                                       | `scheduled_at` (the instant) + `timezone` (display); `caption`, `sound` (a jsonb snapshot of the picked catalogue row, Instagram only); `status` scheduled / publishing / posted / failed / cancelled; `provider_container_id`, `provider_media_id`, `permalink`; `failure_kind` (closed set below), `failure_detail` (diagnostic, never shown), `failure_acknowledged_at`; `deferred_until` while waiting out Instagram's quota |
+| table             | one row per                                                                           | notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `social_accounts` | connected platform account, owned by the **Tavnit account** (`users`), not a business | `external_id` = IG user id / TikTok open_id; `page_id`/`page_name`/`fb_user_id` (Instagram); `access_token_enc` = the **Page token** (Meta: no expiry) or TikTok's 24-h access token; `user_token_enc` = the ~60-day User token the sound search is documented against; `status` connected / expired / disconnected / deleted; one LIVE row per account (`social_accounts_live_idx`, partial unique on connected+expired)                                                                                                 |
+| `scheduled_posts` | video × account                                                                       | `scheduled_at` (the instant) + `timezone` (display); `caption`, `sound` (a jsonb snapshot of the picked catalogue row, Instagram only), `ai_label` (the customer's "made with AI" tick, false by default — 0060, decision 0102); `status` scheduled / publishing / posted / failed / cancelled; `provider_container_id`, `provider_media_id`, `permalink`; `failure_kind` (closed set below), `failure_detail` (diagnostic, never shown), `failure_acknowledged_at`; `deferred_until` while waiting out Instagram's quota |
 
 Both are **server-only**: RLS on, no policies, read through `getDb()` with an explicit `user_id`
 filter in every route, exactly like `feedback`. The project exposes no new table to the Data API
@@ -82,9 +82,12 @@ schedulePosts ─▶ scheduled ──(job post:<id>, run_at = scheduled_at)─�
    **defer**: `reschedule` 60 min, status stays `publishing`, `deferred_until` set; after 24 h →
    `quota_exhausted`.
 5. Then mint a 1-hour signed URL, `POST /{ig}/media` (REELS, caption, `share_to_feed=true`,
-   `is_ai_generated=true` for services a and b, `audio_configuration` when a sound was picked: the
-   silent steps format at `audio 100 / video 0`, a דמות AI, a גוש טקסט or a retired full-format A
-   render at `audio 35 / video 100`) → **checkpoint `{containerId}` before anything else**.
+   `is_ai_generated=true` **only when the post's own `ai_label` is ticked** — no label field at all
+   otherwise (0102) — and `audio_configuration` when a sound was picked, at the service's mix
+   (0102, `SOUND_VOLUMES`): הוק + דמו `audio 100 / video 0` (the render is silent), דמות AI
+   `audio 15 / video 100` (the voice on top; a retired full-format A render takes this one too, for
+   its voiceover), גוש טקסט `audio 100 / video 40` (the sound leads, the clip's own sound under it))
+   → **checkpoint `{containerId}` before anything else**.
 6. `GET /{container}?fields=status_code,status`: `IN_PROGRESS` → `reschedule` 60 s, fail
    `platform_timeout` on the 30th read (counted in polls, not wall-clock — Tavnit's budget for a
    Reel, over Meta's five-minute suggestion); `ERROR` → `sound_unavailable` when the subcode text
@@ -146,13 +149,36 @@ container id) from everything a page reads, the way `toView` strips tokens from 
 
 ## The switch
 
-`app_config.social_posting` = `{"access":"admins"}` (the default when the row is absent —
-`getConfigValueOr`) or `{"access":"everyone"}`. `getPostingAccess(db, userId)` answers
-`allowed` for an admin always, else per the key. Every page and route the web PRs add checks it
-and answers 404 to a hidden customer. Turning it on after Meta's approval is one INSERT, no deploy:
+`app_config.social_posting` has three settings (decision 0102):
+
+| value                                        | who sees the feature                                    |
+| -------------------------------------------- | ------------------------------------------------------- |
+| `{"access":"admins"}` — also an absent row   | admins only                                             |
+| `{"access":"named","userIds":["<uuid>", …]}` | admins, plus the listed accounts (Meta's reviewer, say) |
+| `{"access":"everyone"}`                      | every signed-in account                                 |
+
+`getPostingAccess(db, userId)` answers `allowed` for an admin always, else per the key. **A value
+that does not parse hides the feature** (admins still see it) — a typo must not turn a customer's
+404 into an error page. Every page and route the web PRs add checks it and answers 404 to a hidden
+account; the settings page renders no Integrations section. The one exception is Meta's
+data-deletion callback and its status page, which Meta calls, not a customer. Each change is one
+statement in the SQL editor, no deploy.
+
+Name an account (by its email; the row stores the id, which never changes):
 
 ```sql
-insert into app_config (key, value) values ('social_posting', '{"access":"everyone"}'::jsonb);
+insert into app_config (key, value)
+select 'social_posting', jsonb_build_object('access', 'named', 'userIds', jsonb_agg(id))
+  from users where email in ('reviewer@example.com')
+on conflict (key) do update set value = excluded.value, updated_at = now();
+```
+
+Read it back: `select value from app_config where key = 'social_posting';` — the ids should be
+one per email you named. Open it to everyone after Meta's approval:
+
+```sql
+insert into app_config (key, value) values ('social_posting', '{"access":"everyone"}'::jsonb)
+on conflict (key) do update set value = excluded.value, updated_at = now();
 ```
 
 ## Env names (names only)
@@ -166,9 +192,34 @@ insert into app_config (key, value) values ('social_posting', '{"access":"everyo
 | `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | when TikTok is built                                                                      | when TikTok is built     |
 
 Admin needs none. Bare values, one line each, and a Vercel change reaches only deployments created
-after it (vault `env-values-differ-between-the-box-and-vercel`). Generate the key once:
-`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` — and never paste
-it anywhere a report or a shell history can read it back. All providers honour `DRY_RUN`: a
+after it (vault `env-values-differ-between-the-box-and-vercel`).
+
+**The key is generated once, into a file, and never printed** (decision 0102). The file sits
+outside the repo; `wx` refuses to overwrite an existing key, because a new key makes every sealed
+token unreadable and every account has to reconnect. In PowerShell on the laptop:
+
+```powershell
+node -e "const f=process.argv[1];const fs=require('fs');fs.mkdirSync(require('path').dirname(f),{recursive:true});fs.writeFileSync(f,require('crypto').randomBytes(32).toString('base64'),{flag:'wx'})" "$env:USERPROFILE\aiugc-keys\SOCIAL_TOKEN_KEY.txt"
+```
+
+Compare the three places by **fingerprint** (the first 8 hex characters of the value's SHA-256),
+never by the value. On the laptop:
+
+```powershell
+node -e "console.log(require('crypto').createHash('sha256').update(require('fs').readFileSync(process.argv[1],'utf8').trim()).digest('hex').slice(0,8))" "$env:USERPROFILE\aiugc-keys\SOCIAL_TOKEN_KEY.txt"
+```
+
+On the box, from the running process (prints a count and the fingerprint, never the value):
+
+```bash
+PID=$(systemctl show aiugc-worker -p MainPID --value)
+sudo tr '\0' '\n' < /proc/$PID/environ | grep -c '^SOCIAL_TOKEN_KEY='
+sudo tr '\0' '\n' < /proc/$PID/environ | sed -n 's/^SOCIAL_TOKEN_KEY=//p' | tr -d '\r\n' | sha256sum | cut -c1-8
+```
+
+Keep a copy in a password manager: losing the key means reconnecting every account, nothing worse.
+
+All providers honour `DRY_RUN`: a
 dry-run web "connects" a sample account and a dry-run worker "publishes" to nothing.
 
 ## Runbook: the Meta app's settings

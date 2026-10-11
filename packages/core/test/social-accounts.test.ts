@@ -36,7 +36,7 @@ import { tempStorage } from "./helpers/storage";
  * disconnect erases tokens and cancels pending posts; the daily check marks a
  * lapsed token expired and refreshes a good account's picture; Meta's deletion
  * callback erases by Facebook user; the switch hides everything from a
- * customer until the founder flips it.
+ * customer unless the founder names the account or opens it to everyone.
  */
 describe("social accounts", () => {
   let db: Db;
@@ -238,18 +238,44 @@ describe("social accounts", () => {
     expect((await processMetaDataDeletion(db, { fbUserId: "fb_user_1" })).accounts).toBe(0);
   });
 
-  it("the switch: a customer is hidden until app_config says everyone; an admin is always allowed", async () => {
-    expect(await getPostingAccess(db, userId)).toBe("hidden");
+  it("the switch: admins always; a named account under `named`, an unnamed customer hidden; everyone; a malformed row hides", async () => {
+    const setSwitch = (value: string) =>
+      db.execute(
+        sql`insert into app_config (key, value) values ('social_posting', ${value}::jsonb)
+            on conflict (key) do update set value = excluded.value`,
+      );
     const admin = await seedOwnerAndBusiness(db, { email: "admin@test.local", role: "admin" });
-    expect(await getPostingAccess(db, admin.userId)).toBe("allowed");
-    await db.execute(
-      sql`insert into app_config (key, value) values ('social_posting', '{"access":"everyone"}'::jsonb)`,
-    );
-    expect(await getPostingAccess(db, userId)).toBe("allowed");
-    await db.execute(
-      sql`update app_config set value = '{"access":"admins"}'::jsonb where key = 'social_posting'`,
-    );
+    const reviewer = await seedOwnerAndBusiness(db, { email: "reviewer@test.local" });
+
+    // Absent row = admins only.
     expect(await getPostingAccess(db, userId)).toBe("hidden");
+    expect(await getPostingAccess(db, reviewer.userId)).toBe("hidden");
+    expect(await getPostingAccess(db, admin.userId)).toBe("allowed");
+
+    await setSwitch(JSON.stringify({ access: "named", userIds: [reviewer.userId.toUpperCase()] }));
+    expect(await getPostingAccess(db, reviewer.userId)).toBe("allowed");
+    expect(await getPostingAccess(db, userId)).toBe("hidden");
+    expect(await getPostingAccess(db, admin.userId)).toBe("allowed");
+
+    await setSwitch('{"access":"everyone"}');
+    expect(await getPostingAccess(db, userId)).toBe("allowed");
+    expect(await getPostingAccess(db, reviewer.userId)).toBe("allowed");
+
+    await setSwitch('{"access":"admins"}');
+    expect(await getPostingAccess(db, userId)).toBe("hidden");
+    expect(await getPostingAccess(db, reviewer.userId)).toBe("hidden");
+
+    // A typo is not an error page: hidden for everyone but the admins.
+    for (const bad of [
+      '{"access":"named"}',
+      '{"access":"evryone"}',
+      '{"access":"named","userIds":["not-a-uuid"]}',
+      '"on"',
+    ]) {
+      await setSwitch(bad);
+      expect(await getPostingAccess(db, reviewer.userId)).toBe("hidden");
+      expect(await getPostingAccess(db, admin.userId)).toBe("allowed");
+    }
     await db.execute(sql`delete from app_config where key = 'social_posting'`);
   });
 });

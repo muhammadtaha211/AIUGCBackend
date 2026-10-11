@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { POST_FAILED } from "../alerts";
-import { getConfigValue, getConfigValueOr } from "../appConfig";
+import { getConfigValue } from "../appConfig";
 import { retentionDaysSchema } from "../config";
 import type { Db } from "../db";
 import {
+  appConfig,
   businesses,
   events,
   jobs,
@@ -70,17 +71,20 @@ export const CONTAINER_MAX_POLLS = 30;
 /** Instagram's daily quota is spent: wait it out hourly, up to a day. */
 export const QUOTA_DEFER_DELAY_MS = 60 * 60_000;
 export const QUOTA_DEFER_MAX_MS = 24 * 60 * 60_000;
-/** The mix (0101 Q2): a silent render gives the sound the floor; one with its own audio keeps it. */
+/**
+ * The mix per service (decision 0102, the founder's numbers, 2026-10-11): where
+ * nobody speaks the sound leads, where the character speaks the voice sits
+ * clearly on top. `audioVolume` is the picked sound, `videoVolume` the
+ * render's own audio. Nothing measured — judged on the first live posts.
+ */
 export const SOUND_VOLUMES = {
-  silentVideo: { audioVolume: 100, videoVolume: 0 },
-  ownAudio: { audioVolume: 35, videoVolume: 100 },
+  /** הוק + דמו: the render is silent. */
+  a: { audioVolume: 100, videoVolume: 0 },
+  /** דמות AI: the voice at full, the sound under it. */
+  b: { audioVolume: 15, videoVolume: 100 },
+  /** גוש טקסט: the sound leads, the clip's own sound under it. */
+  c: { audioVolume: 100, videoVolume: 40 },
 } as const;
-/** 0101 Q1: generated personas and the generated reaction clip are labelled; your own footage is not. */
-export const AI_LABELLED_SERVICES: Record<"a" | "b" | "c", boolean> = {
-  a: true,
-  b: true,
-  c: false,
-};
 /** 0101 Q6: a Reel also appears in the profile grid. */
 export const SHARE_TO_FEED = true;
 /** Signed URLs minted at post time; Meta downloads within the hour. */
@@ -108,22 +112,47 @@ export type SoundSnapshot = MetaAudioItem;
 // The switch
 // ---------------------------------------------------------------------------
 
-/** app_config.social_posting — absent means admins only (getConfigValueOr). */
-export const socialPostingSchema = z.object({ access: z.enum(["admins", "everyone"]) });
+/**
+ * app_config.social_posting — absent means admins only. `named` lets listed
+ * accounts in beside the admins (decision 0102): Meta's reviewer has to walk the
+ * flow inside Tavnit, and an admin account can open every customer's business.
+ * Accounts are named by user id, which never changes.
+ */
+export const socialPostingSchema = z.discriminatedUnion("access", [
+  z.object({ access: z.literal("admins") }),
+  z.object({ access: z.literal("named"), userIds: z.array(z.string().uuid()) }),
+  z.object({ access: z.literal("everyone") }),
+]);
 
 /**
- * Who sees the feature: admins always; everyone once the founder inserts
- * {"access":"everyone"} after Meta's approval. Checked in every page and route.
+ * Who sees the feature: admins always; a named account under `named`; everyone
+ * once the founder inserts {"access":"everyone"} after Meta's approval. Checked
+ * in every page and route. A row that does not parse hides the feature rather
+ * than throwing: a throw would turn a customer's 404 into a 500, which is a
+ * trace of the feature (0102).
  */
 export async function getPostingAccess(db: Db, userId: string): Promise<"allowed" | "hidden"> {
   const user = (
     await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1)
   )[0];
   if (user?.role === "admin") return "allowed";
-  const config = await getConfigValueOr(db, "social_posting", socialPostingSchema, {
-    access: "admins" as const,
-  });
-  return config.access === "everyone" ? "allowed" : "hidden";
+  const row = (
+    await db
+      .select({ value: appConfig.value })
+      .from(appConfig)
+      .where(eq(appConfig.key, "social_posting"))
+      .limit(1)
+  )[0];
+  const parsed = socialPostingSchema.safeParse(row?.value ?? { access: "admins" });
+  if (!parsed.success) return "hidden";
+  const config = parsed.data;
+  if (config.access === "everyone") return "allowed";
+  if (
+    config.access === "named" &&
+    config.userIds.some((id) => id.toLowerCase() === userId.toLowerCase())
+  )
+    return "allowed";
+  return "hidden";
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +398,8 @@ export interface SchedulePostsInput {
   timezone: string;
   caption: string;
   sound?: SoundSnapshot | null;
+  /** "Made with AI" — the customer's tick (0102); absent means unticked. */
+  aiLabel?: boolean;
 }
 
 /**
@@ -530,6 +561,7 @@ export async function schedulePosts(
           caption: input.caption,
           // The sound belongs to Instagram; a TikTok row of the same batch carries none.
           sound: account.platform === "instagram" && input.sound ? input.sound : null,
+          aiLabel: input.aiLabel ?? false,
         })
         .returning();
       await enqueue(tx as Db, {
@@ -560,6 +592,7 @@ export async function updateScheduledPost(
     timezone?: string;
     caption?: string;
     sound?: SoundSnapshot | null;
+    aiLabel?: boolean;
   },
   now: Date = new Date(),
 ): Promise<ScheduledPostView> {
@@ -601,6 +634,7 @@ export async function updateScheduledPost(
         ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
         ...(opts.caption !== undefined ? { caption: opts.caption } : {}),
         ...(opts.sound !== undefined ? { sound: opts.sound } : {}),
+        ...(opts.aiLabel !== undefined ? { aiLabel: opts.aiLabel } : {}),
         updatedAt: new Date(),
       })
       .where(and(eq(scheduledPosts.id, opts.postId), eq(scheduledPosts.status, "scheduled")))
@@ -1100,17 +1134,20 @@ export async function handlePublishPost(job: Job, ctx: JobContext): Promise<JobR
       const videoUrl = await getStorage().signedUrl(render.filePath, POST_SIGNED_URL_TTL_SECONDS);
       const sound = post.sound as SoundSnapshot | null;
       // The live הוק + דמו format is silent; the retired "full" format (CLI
-      // only, vault 0020) carries a voiceover and keeps it like B and C.
+      // only, vault 0020) carries a voiceover, so it takes B's speech-on-top mix.
       const format = (render.params as { format?: string } | null)?.format;
-      const silent = render.service === "a" && format !== "full";
-      const volumes = silent ? SOUND_VOLUMES.silentVideo : SOUND_VOLUMES.ownAudio;
+      const volumes =
+        render.service === "a" && format === "full"
+          ? SOUND_VOLUMES.b
+          : SOUND_VOLUMES[render.service];
       const { containerId } = await meta.createReelContainer({
         igUserId: account.externalId,
         token: accessToken,
         videoUrl,
         caption: post.caption,
         audio: sound ? { audioId: sound.audioId, ...volumes } : undefined,
-        aiGenerated: AI_LABELLED_SERVICES[render.service],
+        // The customer's own tick (0102); unticked sends no label at all.
+        aiGenerated: post.aiLabel,
         shareToFeed: SHARE_TO_FEED,
       });
       // BEFORE anything else: a retry polls this container instead of making another.

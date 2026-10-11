@@ -126,7 +126,7 @@ describe("HttpMetaGraph", () => {
       token: "T",
       videoUrl: "https://storage.example/renders/a.mp4?token=secret",
       caption: "כיתוב",
-      audio: { audioId: "587784541076604", audioVolume: 35, videoVolume: 100 },
+      audio: { audioId: "587784541076604", audioVolume: 15, videoVolume: 100 },
       aiGenerated: true,
       shareToFeed: true,
     });
@@ -142,7 +142,7 @@ describe("HttpMetaGraph", () => {
     expect(body.get("is_ai_generated")).toBe("true");
     expect(JSON.parse(body.get("audio_configuration")!)).toEqual({
       audio_id: "587784541076604",
-      audio_volume: 35,
+      audio_volume: 15,
       video_volume: 100,
     });
 
