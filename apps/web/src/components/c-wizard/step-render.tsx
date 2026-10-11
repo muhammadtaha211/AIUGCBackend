@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
 import { RenderProgress } from "@/components/ui/progress-bar";
 import { useBalance } from "@/app/home/balance-context";
+import { renderRequestResult } from "@/lib/analytics";
+import { track } from "@/lib/analytics-client";
 import { ADD_CREDITS_LINK } from "@/lib/plans-ui";
 import { hasShortfall, shortfallLine, type QuoteView } from "@/lib/quote-ui";
 import {
@@ -107,6 +109,7 @@ export function StepRender({
       { clipId, scriptId, textSafeArea },
     );
     setStarting(false);
+    track("render_requested", { service: "c", result: renderRequestResult(result) });
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       // The balance moved under us — the shortfall gate on the FRESH quote

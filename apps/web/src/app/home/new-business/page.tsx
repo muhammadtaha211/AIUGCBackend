@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { OnboardingFlow } from "@/components/onboarding/onboarding-flow";
 import { authedUser } from "@/lib/auth-user";
+import { ownedBusinesses } from "@/lib/businesses";
 import { DRAFT_WAITING_PARAM } from "@/lib/onboarding";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -29,10 +30,17 @@ export default async function NewBusinessPage({
   if (!user) redirect("/start");
 
   const params = await searchParams;
+  // For the analytics step home_first_arrival: is this the account's first business?
+  const firstBusiness =
+    ownedBusinesses(await supabase.from("businesses").select("id").limit(1)).length === 0;
 
   return (
     <div className="flex flex-col items-center px-6 pb-16">
-      <OnboardingFlow mode="additional" seedFromDraft={params[DRAFT_WAITING_PARAM] === "1"} />
+      <OnboardingFlow
+        mode="additional"
+        seedFromDraft={params[DRAFT_WAITING_PARAM] === "1"}
+        firstBusiness={firstBusiness}
+      />
     </div>
   );
 }

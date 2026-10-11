@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TrackStep } from "@/components/analytics";
 import { Button } from "@/components/ui/button";
 import { NO_CREDITS_PLANS_ACTION } from "@/lib/plans-ui";
 import { NO_CREDITS_BODY, NO_CREDITS_TITLE } from "@/lib/quote-ui";
@@ -10,9 +11,13 @@ import { NO_CREDITS_BODY, NO_CREDITS_TITLE } from "@/lib/quote-ui";
  * page, because since the plans build credits come from a subscription, not
  * from writing to us; home stays as the secondary way out.
  */
-export function NoCreditsCard() {
+export function NoCreditsCard({ service }: { service: "a" | "b" | "c" }) {
   return (
-    <div className="mt-16 w-full max-w-md rounded-xl border border-ink/[0.08] bg-white px-6 py-8 text-center">
+    <div
+      className="mt-16 w-full max-w-md rounded-xl border border-ink/[0.08] bg-white px-6 py-8 text-center"
+      data-ph-unmask
+    >
+      <TrackStep name="no_credits_wall" props={{ service }} />
       <h1 className="text-lg font-medium text-ink">{NO_CREDITS_TITLE}</h1>
       <p className="mt-3 text-sm leading-relaxed text-ink/60">{NO_CREDITS_BODY}</p>
       <div className="mt-6 flex flex-col gap-3">

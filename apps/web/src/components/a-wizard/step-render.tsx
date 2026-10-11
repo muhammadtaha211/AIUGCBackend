@@ -7,6 +7,8 @@ import { RenderPlayer } from "@/components/render-player";
 import { Button } from "@/components/ui/button";
 import { Check, Spinner } from "@/components/ui/icons";
 import { RenderProgress } from "@/components/ui/progress-bar";
+import { renderRequestResult } from "@/lib/analytics";
+import { track } from "@/lib/analytics-client";
 import {
   A_RENDER_STAGES,
   aRenderStageIndex,
@@ -121,6 +123,7 @@ export function StepARender({
       },
     );
     setStarting(false);
+    track("render_requested", { service: "a", result: renderRequestResult(result) });
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       // The balance moved under us — refresh the numbers the screen shows;

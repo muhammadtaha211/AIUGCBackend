@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { useStepViewed } from "@/components/analytics";
 import { StepPersona } from "@/components/b-wizard/step-persona";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ type CWizardProps = {
 export function CWizard({ businessId, businessName, initialCatalog }: CWizardProps) {
   const steps = C_WIZARD_STEPS;
   const [stepIndex, setStepIndex] = useState(0);
+  useStepViewed("c", steps[stepIndex]!);
   /** 403/404 from any call: the business/resource is gone for this session. */
   const [fatal, setFatal] = useState<string | null>(null);
 
@@ -118,7 +120,9 @@ export function CWizard({ businessId, businessName, initialCatalog }: CWizardPro
   return (
     <div className="w-full max-w-2xl pt-6 sm:pt-10 lg:max-w-4xl">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-lg font-semibold tracking-tight text-ink">{C_WIZARD_TITLE}</h1>
+        <h1 className="text-lg font-semibold tracking-tight text-ink" data-ph-unmask>
+          {C_WIZARD_TITLE}
+        </h1>
         <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
 

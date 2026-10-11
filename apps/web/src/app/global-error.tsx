@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
+import { captureError } from "@/lib/analytics-client";
+
 /**
  * Last resort: the only boundary that catches a throw in the ROOT layout, and
  * the only one that has to be self-contained. Next renders it INSTEAD of
@@ -16,6 +19,10 @@
  * this file is deliberately not clever — it runs on the day nothing else works.
  */
 export default function GlobalError({ error }: { error: Error & { digest?: string } }) {
+  // Reported if the SDK was already running when the root layout threw; a no-op otherwise.
+  useEffect(() => {
+    captureError(error);
+  }, [error]);
   return (
     <html lang="he" dir="rtl">
       <body

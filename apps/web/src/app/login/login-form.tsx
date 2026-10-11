@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
 import { GoogleG } from "@/components/ui/icons";
+import { track } from "@/lib/analytics-client";
 import { GOOGLE_SIGN_IN_ENABLED, signIn, signUpWithGoogle } from "@/lib/auth";
 import {
   afterSignupPath,
@@ -63,6 +64,7 @@ export function LoginForm({
     // signup the wizard's own completion sends to /home/plan.
     const plan = peekDraftPlan();
     const handoff = await postParkedDraft();
+    if (handoff === "stored") track("home_first_arrival", { to: plan ? "plan" : "home" });
     // The marker is read by /home/new-business/page.tsx, which opens the
     // "הוסף עסק" wizard with the kept answers already filled in.
     router.push(

@@ -1,8 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { captureError } from "@/lib/analytics-client";
 
 /**
  * The root error boundary: everything app/home/error.tsx does not reach. The
@@ -37,10 +38,17 @@ export default function RootError({
 }) {
   const router = useRouter();
   const [retrying, startRetry] = useTransition();
+  // A boundary's catch never reaches window.onerror; report it here (vault 0104).
+  useEffect(() => {
+    captureError(error);
+  }, [error]);
 
   return (
     <div className="flex min-h-dvh items-center justify-center px-6 py-16">
-      <div className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 p-6 text-center sm:p-10">
+      <div
+        className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 p-6 text-center sm:p-10"
+        data-ph-unmask
+      >
         <h1 className="text-lg font-medium text-gray-100">לא הצלחנו לטעון את הדף</h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-400">התקלה אצלנו, לא בצד שלכם.</p>
 

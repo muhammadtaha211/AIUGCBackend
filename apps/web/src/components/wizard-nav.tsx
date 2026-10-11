@@ -32,7 +32,11 @@ export function WizardNav({
   sticky = true,
 }: WizardNavProps) {
   return (
-    <nav aria-label="שלבי היצירה" className={sticky ? "lg:sticky lg:top-8" : undefined}>
+    <nav
+      aria-label="שלבי היצירה"
+      className={sticky ? "lg:sticky lg:top-8" : undefined}
+      data-ph-unmask
+    >
       {/* Mobile */}
       <div className="lg:hidden">
         <div className="flex items-baseline justify-between gap-3 text-sm">

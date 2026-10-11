@@ -1,3 +1,4 @@
+import { RecordingNotice } from "@/components/recording-notice";
 import { OptionCard } from "@/components/ui/option-card";
 import { BUSINESS_TYPE_OPTIONS, type BusinessType } from "@/lib/onboarding";
 
@@ -37,6 +38,8 @@ export function StepBusiness({ selected, onSelect }: StepBusinessProps) {
         <p className="mt-6 text-sm text-gray-500 light:text-ink/60">
           כל התהליך לוקח בערך שתי דקות.
         </p>
+        {/* Below the options, so it never pushes the first question down. */}
+        <RecordingNotice className="mt-3" />
       </div>
     </div>
   );

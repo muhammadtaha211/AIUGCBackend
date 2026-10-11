@@ -56,7 +56,7 @@ export default async function NewCRenderPage() {
           initialCatalog={personaCatalog}
         />
       ) : (
-        <NoCreditsCard />
+        <NoCreditsCard service="c" />
       )}
     </div>
   );

@@ -139,6 +139,9 @@ changing policy is an UPDATE, not a deploy.
   event also fires per terminal job, under a separate issue per kind. Still not covered: the
   lease sweep's deaths.
 - PostHog stays a web-app concern at launch (`events` table already captures stars server-side).
+  _(Pointer 2026-10-11: no longer intent. PostHog is wired in `apps/web` only — counts on public
+  pages, recordings from `/start` on, browser errors — and `apps/admin` has none:
+  [10-analytics.md](10-analytics.md), vault 0103 and 0104. The web apps still never load Sentry.)_
 
 ## Handover §8 checklist — where each question is answered
 
@@ -157,3 +160,4 @@ changing policy is an UPDATE, not a deploy.
 | Terms & privacy: the position each page takes, and why  | [legal-review.md](legal-review.md) — per-marker positions, statutes, what counsel must confirm                                     |
 | Observability                                           | this file, above                                                                                                                   |
 | Social posting: connections, scheduling, publish once   | [09-social-posting.md](09-social-posting.md) — data model, the publish job's checkpoints, the switch, the Meta and TikTok runbooks |
+| Product analytics (PostHog, web only)                   | [10-analytics.md](10-analytics.md) — the gate, what records where, what never leaves, the named steps, env, dashboard settings     |

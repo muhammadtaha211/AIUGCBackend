@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/plans/confirm-dialog";
 import { Amounts, PlanCards, type CardSlot } from "@/components/plans/plan-cards";
 import { Button } from "@/components/ui/button";
+import { track } from "@/lib/analytics-client";
 import {
   CANCEL_ACTION,
   CANCEL_CONFIRM,
@@ -105,6 +106,13 @@ export function PlanManager({
   useEffect(() => {
     void refresh(true);
   }, []);
+
+  // Named steps (docs/10-analytics.md). ?checkout= stays in the address, so a
+  // reload of the landing counts the outcome again.
+  useEffect(() => {
+    track("plans_viewed", {});
+    if (checkout) track("payment_returned", { outcome: checkout });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function open(intent: CardIntent, code: string) {
     // The two purchase intents leave the page; everything else is a dialog
@@ -246,6 +254,7 @@ export function PlanManager({
           : null;
         return (
           <ConfirmDialog
+            readable
             title={upgradeDialogTitle(plan.name)}
             onClose={close}
             busy={busy}
@@ -279,6 +288,7 @@ export function PlanManager({
         });
         return (
           <ConfirmDialog
+            readable
             title={downgradeDialogTitle(plan.name)}
             onClose={close}
             busy={busy}
@@ -304,6 +314,7 @@ export function PlanManager({
       case "cancel":
         return (
           <ConfirmDialog
+            readable
             title={CANCEL_DIALOG_TITLE}
             onClose={close}
             busy={busy}
@@ -338,6 +349,7 @@ export function PlanManager({
       case "resume":
         return (
           <ConfirmDialog
+            readable
             title={RESUME_DIALOG_TITLE}
             onClose={close}
             busy={busy}
@@ -364,6 +376,7 @@ export function PlanManager({
         // POST names the current code, not the card's.
         return (
           <ConfirmDialog
+            readable
             title={UNDO_DIALOG_TITLE}
             onClose={close}
             busy={busy}

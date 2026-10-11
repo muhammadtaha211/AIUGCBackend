@@ -54,7 +54,8 @@ export function StepCreate({
         onBack={onBack}
       />
 
-      <ul className="mt-6 space-y-2 rounded-xl bg-white/5 p-4 light:bg-paper">
+      {/* The customer's own answers: masked inside the readable questionnaire. */}
+      <ul className="mt-6 space-y-2 rounded-xl bg-white/5 p-4 light:bg-paper" data-ph-mask>
         {recap.map((line, index) => (
           <li
             key={index}

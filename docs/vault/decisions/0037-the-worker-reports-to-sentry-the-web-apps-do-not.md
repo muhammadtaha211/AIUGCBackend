@@ -122,6 +122,10 @@ by hand, so the OpenTelemetry patching and ESM loader hooks buy nothing. Tracing
 requires `tracesSampleRate`. Verified that events still deliver in full under these settings —
 [[worker-sentry-reporting]].
 
+_(Pointer 2026-10-11: browser errors from `apps/web` are now captured — through PostHog, not
+Sentry, beside this decision and not reopening it. The web apps still never load Sentry and the
+server routes still report nowhere: [[0103-posthog-in-apps-web-eu-cloud-free-plan]] §2.)_
+
 ## What this does not do
 
 It makes a death **visible**, not survivable. The worker still exits on a fatal and is still

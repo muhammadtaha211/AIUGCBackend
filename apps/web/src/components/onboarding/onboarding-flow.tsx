@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { isNewGoogleAccount } from "@/lib/analytics";
+import { track } from "@/lib/analytics-client";
 import { createClient } from "@/lib/supabase/client";
 import {
   additionalWizardDraft,
@@ -57,7 +59,7 @@ function ProgressHeader({ value, label }: { value: number; label: string }) {
 async function postDraft(
   draft: OnboardingDraft,
   allowCreate = false,
-): Promise<{ businessId: string } | { error: string }> {
+): Promise<{ businessId: string; stored: boolean } | { error: string }> {
   try {
     const response = await fetch("/api/onboarding/complete", {
       method: "POST",
@@ -67,11 +69,13 @@ async function postDraft(
     const body = (await response.json().catch(() => null)) as {
       error?: string;
       businessId?: string;
+      stored?: boolean;
     } | null;
     if (!response.ok || !body?.businessId) {
       return { error: body?.error ?? "השמירה נכשלה. נסו שוב בעוד רגע." };
     }
-    return { businessId: body.businessId };
+    // stored: true only when this post created the account's first business.
+    return { businessId: body.businessId, stored: body.stored === true };
   } catch {
     return { error: "בעיית תקשורת — בדקו את החיבור ונסו שוב." };
   }
@@ -96,12 +100,19 @@ type OnboardingFlowProps = {
    * and read back to land them on /home/plan instead of /home.
    */
   plan?: string | null;
+  /**
+   * "additional" only: the account has no business yet, so completing this
+   * wizard is its first arrival home (a signup whose questionnaire was not in
+   * this browser, or a Google account made from /login).
+   */
+  firstBusiness?: boolean;
 };
 
 export function OnboardingFlow({
   mode = "signup",
   seedFromDraft = false,
   plan = null,
+  firstBusiness = false,
 }: OnboardingFlowProps) {
   const router = useRouter();
   const [draft, setDraft] = useState<OnboardingDraft>(emptyDraft);
@@ -155,6 +166,14 @@ export function OnboardingFlow({
           const result = await postDraft(saved);
           if ("businessId" in result) {
             clearDraft();
+            if (result.stored) {
+              // A Google signup's account is born on this round trip; an email
+              // one was counted at signUp, before the confirmation mail.
+              if (user.app_metadata?.provider === "google") {
+                track("account_created", { method: "google" });
+              }
+              track("home_first_arrival", { to: (plan ?? saved.plan) ? "plan" : "home" });
+            }
             // The URL's plan is the newest intent, exactly as the merge above
             // treats it; `saved` (the localStorage draft, which carries the
             // plan from the visit before the OAuth hop) is the fallback —
@@ -166,6 +185,10 @@ export function OnboardingFlow({
           // The draft is worth more than the redirect — keep them here with it.
           setCompletionError("החשבון מחובר אבל השמירה נכשלה — רעננו את העמוד כדי לנסות שוב.");
         } else {
+          // A Google account created from /login (or with the questionnaire
+          // unfinished) lands here; it finishes its first business in the
+          // signed-in wizard, which reports the arrival.
+          if (isNewGoogleAccount(user)) track("account_created", { method: "google" });
           // Before setHydrated, so the wizard never flashes on the way out.
           router.replace("/home/new-business");
           return;
@@ -207,6 +230,7 @@ export function OnboardingFlow({
     const result = await postDraft(draft);
     if ("error" in result) return result.error;
     clearDraft();
+    if (result.stored) track("home_first_arrival", { to: draft.plan ? "plan" : "home" });
     router.push(afterSignupPath(draft.plan));
     return null;
   }
@@ -215,6 +239,7 @@ export function OnboardingFlow({
   async function completeAdditional(): Promise<string | null> {
     const result = await postDraft(draft, true);
     if ("error" in result) return result.error;
+    if (firstBusiness) track("home_first_arrival", { to: "home" });
     // The parked draft is a business now — this is where it is spent. Guarded,
     // so an ordinary "הוסף עסק" never deletes someone's public-wizard draft;
     // `seeded`, not the prop, so a navigation that dropped the marker cannot
@@ -230,6 +255,12 @@ export function OnboardingFlow({
   }
 
   const stepId = STEPS[draft.step] ?? "business";
+
+  // Each questionnaire step, the public wizard only; a restored draft counts
+  // as a view of the step it reopens on.
+  useEffect(() => {
+    if (hydrated && mode === "signup") track("start_step_viewed", { step: stepId });
+  }, [hydrated, mode, stepId]);
 
   if (!hydrated) {
     // One frame at most — avoids flashing step 0 before the saved draft loads.
@@ -304,13 +335,15 @@ export function OnboardingFlow({
   })();
 
   // One shell for every step: the scene stays put, only the questionnaire changes.
+  // data-ph-unmask: the questionnaire's own copy is readable in a recording; the
+  // fields never are, and the last step's recap of the answers is masked again.
   const content =
     stepId === "business" ? (
-      <div key={draft.step} className="step-in w-full">
+      <div key={draft.step} className="step-in w-full" data-ph-unmask>
         {step}
       </div>
     ) : (
-      <div id="onboarding-content" className="w-full max-w-2xl pt-6 sm:pt-10">
+      <div id="onboarding-content" className="w-full max-w-2xl pt-6 sm:pt-10" data-ph-unmask>
         <ProgressHeader
           value={STEP_PROGRESS[stepId]}
           label={mode === "additional" ? "עסק חדש" : "המודעה הראשונה שלכם"}

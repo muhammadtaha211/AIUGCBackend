@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
+import { useStepViewed } from "@/components/analytics";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
 import {
@@ -76,6 +77,7 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   const [render, setRender] = useState<RenderState | null>(null);
 
   const step = steps[stepIndex]!;
+  useStepViewed("b", step);
   /** The on-screen line the effect step shows and the render burns: the
    *  customer's edit, else the script call's draft. */
   const effectText = hookText ?? script?.hookText ?? "";
@@ -153,7 +155,9 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   return (
     <div className="w-full max-w-2xl pt-6 sm:pt-10 lg:max-w-4xl">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-lg font-semibold tracking-tight text-ink">סרטון עם דמות AI</h1>
+        <h1 className="text-lg font-semibold tracking-tight text-ink" data-ph-unmask>
+          סרטון עם דמות AI
+        </h1>
         <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
 

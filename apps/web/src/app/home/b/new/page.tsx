@@ -54,7 +54,7 @@ export default async function NewBRenderPage() {
           initialCatalog={personaCatalog}
         />
       ) : (
-        <NoCreditsCard />
+        <NoCreditsCard service="b" />
       )}
     </div>
   );
