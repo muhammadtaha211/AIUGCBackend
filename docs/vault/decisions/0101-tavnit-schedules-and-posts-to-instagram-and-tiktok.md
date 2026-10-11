@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-11
-method: "Founder decisions 1–12 of the task prompt 'schedule a finished video and post it to Instagram and TikTok' (from his planning chat of 2026-10-10), its planning defaults, and the plan's own defaults — the plan was approved on 2026-10-11 with no question of its §10 answered, so each recommendation there stands as a PLANNING DEFAULT until he rules. MEASURED in the tree at feat/social-posting-core: supabase/migrations/0057_social_enums.sql, 0058_social_tables.sql, 0059_events_alert_index_post_failed.sql; packages/core/src/secret-box.ts, providers/meta-graph.ts, pipelines/social.ts, alerts.ts, handlers.ts, jobs/schedule.ts, config.ts, db/schema.ts; packages/core/test/secret-box, meta-graph, social-accounts, social-scheduling, social-publish and migrations tests. The live-doc facts cited were read on developers.facebook.com and developers.tiktok.com on 2026-10-10 by twelve readers and re-fetched by one independent refuter per load-bearing line (the URLs are in docs/09-social-posting.md and docs/04-integrations.md). No production query, no paid call, no live post, no migration applied."
+method: "Founder decisions 1–12 of the task prompt 'schedule a finished video and post it to Instagram and TikTok' (from his planning chat of 2026-10-10), its planning defaults, and the plan's own defaults — the plan was approved on 2026-10-11 with no question of its §10 answered, so each recommendation there stands as a PLANNING DEFAULT until he rules. MEASURED in the tree at feat/social-posting-core: supabase/migrations/0057_social_enums.sql, 0058_social_tables.sql, 0059_events_alert_index_post_failed.sql; packages/core/src/secret-box.ts, providers/meta-graph.ts, pipelines/social.ts, alerts.ts, handlers.ts, jobs/schedule.ts, config.ts, db/schema.ts; packages/core/test/secret-box, meta-graph, social-accounts, social-scheduling, social-publish and migrations tests. The live-doc facts cited were read on developers.facebook.com and developers.tiktok.com on 2026-10-10 by twelve readers and re-fetched by one independent refuter per load-bearing line (the URLs are in docs/09-social-posting.md and docs/04-integrations.md). No production query, no paid call, no live post, no migration applied by the build task. PR #89 merged 2026-10-11; the same day the founder approved the one push of 0057–0059 ('push 0057–0059, I approve this one push') and it was applied with a read-back before and after (packages/core/.work/readback-0057-0059.ts: ledger 57 -> 60 rows, the three types, the two tables with RLS on and 0 policies, 7 indexes, the alert predicate with post_failed) — recorded in facts/production-migration-push-log.md."
 source: founder
 ---
 
@@ -98,7 +98,8 @@ serves it too, the column goes).
 
 ## What exists after PR 1 (MEASURED) and what does not
 
-Schema and the three migrations (not applied to production), `secret-box.ts`, the Meta wrapper with
+Schema and the three migrations (applied to production 2026-10-11 on the founder's one-push
+approval, after PR #89 merged — [[production-migration-push-log]]), `secret-box.ts`, the Meta wrapper with
 its DRY_RUN stub, `pipelines/social.ts` (the switch, connections, scheduling with its guards, the
 publish job, the daily token check, the deletion path), the registry entries, `POST_FAILED` in the
 alert kinds, and the tests — `social-publish.test.ts` replays every checkpoint (a crash after the
