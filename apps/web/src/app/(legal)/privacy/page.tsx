@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 /**
  * Every factual statement here was checked against the repo on 2026-09-02
  * (fact sheet in the session that wrote it). Change the code, change the text.
- * The PostHog sentences (§3, §5, §6, §7, §8, §9) were checked on 2026-10-11
+ * The PostHog sentences (§3, §5, §6, §7, §8, §9, §12) were checked on 2026-10-11
  * against lib/analytics.ts and a browser run against a local ingest stand-in
  * (docs/10-analytics.md); rows P13 and P14 in docs/legal-review.md.
  * Open legal questions, the positions this text takes and their legal basis are in
