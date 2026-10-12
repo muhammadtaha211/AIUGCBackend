@@ -335,7 +335,9 @@ describe("a failed switch read", () => {
     fixture.switchFails = true;
     fixture.businesses = [{ id: customerBusiness, name: "עסק", questionnaire: null }];
 
-    const sidebar = elements(await HomeLayout({ children: null })).find((el) => el.type === Sidebar)!;
+    const sidebar = elements(await HomeLayout({ children: null })).find(
+      (el) => el.type === Sidebar,
+    )!;
     expect((sidebar.props as { postingAllowed: boolean }).postingAllowed).toBe(false);
     const home = HomePage() as ReactElement<{ children: ReactElement }>;
     const content = await (home.props.children.type as () => Promise<ReactNode>)();

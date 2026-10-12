@@ -878,6 +878,22 @@ in the session's plans folder (`~/.claude/plans/steady-moseying-castle.md`) afte
   `social-copy.ts` (the failure lines, the email) — all for his approval at PR review.
 - **Screenshots** (harness with a mocked fetch, sample data; desktop and 375 px):
   `.work/social-pr3/` (gitignored).
+- **The adversarial review (2026-10-13):** six reviewers, one skeptic per finding — 31 confirmed
+  (many one defect seen from several sides), 4 refuted, all fixed in `d2708d9` but two. The worst:
+  the email linked to `/home/calendar`, which does not exist. Also fixed: the email's words
+  (פרסום, לוח הפרסומים, plurals, no reschedule for a missing file), a stable idempotency key (the
+  oldest due post), 401/403 as the account's fault (no row, an hour's pause), the body read inside
+  the timeout; `/home`, the layout and the renders routes no longer fail on a failed switch read;
+  the modals' button laid out from the open; the post page's stale state after a 409; the calendar's
+  spill-over days and Back month. **Not fixed, his call:** a signed-out reader of the email gets the
+  404 his no-trace rule gives (the email says the calendar opens after signing in); **known limit**
+  (true of `/connect/instagram` since PR 2): the 404's raw HTML names the route tree. **Not fixed,
+  minor:** "עכשיו" sends the browser's clock — one more than 60 s slow is refused as past, with the
+  line saying so.
+- **The gate (2026-10-13, at the review fixes):** `pnpm lint` clean; typecheck clean, all six
+  packages; remotion 97 (9 files), core 1130 (80), worker 7 (1), web 742 (31), admin 71 (5).
+  The first web run failed `auth-user.test.ts`'s session-read allowlist for the four `(posting)`
+  files — they are on it now, with the pre-screen's reason.
 
 **Read on the providers' own pages (MEASURED, 2026-10-12):**
 
