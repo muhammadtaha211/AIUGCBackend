@@ -6,6 +6,7 @@ import * as schema from "../src/db/schema";
 import { postingNotices } from "../src/pipelines/social";
 import {
   FAILURE_EMAIL_DAILY_CEILING,
+  failureEmailState,
   POST_FAILURE_EMAIL,
   resetFailureEmailPause,
   sweepPostFailureEmails,
@@ -133,9 +134,14 @@ describe("the post-failure email", () => {
     expect(fake.sent).toHaveLength(1);
     const [email] = fake.sent;
     expect(email!.to).toBe("founder@test.local");
-    expect(email!.subject).toBe("3 פוסטים שתוזמנו בתבנית לא פורסמו");
+    expect(email!.subject).toBe("3 פרסומים שתוזמנו בתבנית נכשלו");
     expect(email!.text).toContain("החיבור לחשבון פג. התחברו מחדש בהגדרות ותזמנו שוב.");
-    expect(email!.text).toContain("https://tavnit.ai/home/calendar");
+    // The calendar is /calendar (app/(posting)), never under /home.
+    expect(email!.text).toContain("https://tavnit.ai/calendar\n");
+    expect(email!.html).toContain('href="https://tavnit.ai/calendar"');
+    expect(email!.html).toContain("ללוח הפרסומים");
+    expect(email!.text).toContain("כל הפרטים, ואפשרות לתזמן שוב, בלוח הפרסומים:");
+    expect(email!.text).toContain("הלוח נפתח אחרי כניסה לחשבון בתבנית.");
     expect(email!.text.match(/^• /gm)).toHaveLength(3);
     for (const body of [email!.text, email!.html]) {
       expect(body).not.toContain("כיתוב פרטי של הלקוח");
@@ -162,10 +168,10 @@ describe("the post-failure email", () => {
     const result = await sweepPostFailureEmails(db, { ...WORKER, now });
     expect(result.sent).toBe(2);
     expect(fake.sent.map((e) => e.subject)).toEqual([
-      "פוסט שתוזמן בתבנית לא פורסם",
-      "פוסט שתוזמן בתבנית לא פורסם",
+      "פרסום שתוזמן בתבנית נכשל",
+      "פרסום שתוזמן בתבנית נכשל",
     ]);
-    expect(fake.sent[1]!.text).toContain("אינסטגרם לא קיבלה את הסרטון.");
+    expect(fake.sent.some((e) => e.text.includes("אינסטגרם לא קיבלה את הסרטון."))).toBe(true);
   });
 
   it("waits until the newest failure of a cause is 2 minutes old", async () => {
@@ -176,7 +182,7 @@ describe("the post-failure email", () => {
     expect(fake.sent).toHaveLength(0);
     await sweepPostFailureEmails(db, { ...WORKER, now: new Date(now.getTime() + 61_000) });
     expect(fake.sent).toHaveLength(1);
-    expect(fake.sent[0]!.subject).toBe("2 פוסטים שתוזמנו בתבנית לא פורסמו");
+    expect(fake.sent[0]!.subject).toBe("2 פרסומים שתוזמנו בתבנית נכשלו");
   });
 
   it("folds a later failure of the same cause inside 24 h: no second email, and none once the 24 h are over", async () => {
@@ -199,7 +205,7 @@ describe("the post-failure email", () => {
       now: new Date(t0.getTime() + 25 * HOUR + 5 * MIN),
     });
     expect(fake.sent).toHaveLength(2);
-    expect(fake.sent[1]!.subject).toBe("פוסט שתוזמן בתבנית לא פורסם");
+    expect(fake.sent[1]!.subject).toBe("פרסום שתוזמן בתבנית נכשל");
   });
 
   it("never emails a failure more than 24 h old", async () => {
@@ -394,6 +400,114 @@ describe("the post-failure email", () => {
       .update(schema.businesses)
       .set({ name: "עסק" })
       .where(eq(schema.businesses.id, adminBusinessId));
+  });
+
+  it("the reason speaks of several videos, or several accounts, when the email does", async () => {
+    const now = new Date();
+    const second = await seedRender(adminBusinessId, "b");
+    await seedFailed({ kind: "platform_refused", failedAt: new Date(now.getTime() - 10 * MIN) });
+    await seedFailed({
+      kind: "platform_refused",
+      renderId: second,
+      failedAt: new Date(now.getTime() - 9 * MIN),
+    });
+    const [otherAccount] = await connectInstagram(db, adminId, [samplePage("ig_plural", "p")]);
+    await seedFailed({ kind: "connection_expired", failedAt: new Date(now.getTime() - 10 * MIN) });
+    await seedFailed({
+      kind: "connection_expired",
+      accountId: otherAccount,
+      failedAt: new Date(now.getTime() - 9 * MIN),
+    });
+    await seedFailed({ kind: "file_missing", failedAt: new Date(now.getTime() - 10 * MIN) });
+
+    await sweepPostFailureEmails(db, { ...WORKER, now });
+    const byReason = (line: string) => fake.sent.find((email) => email.text.includes(line));
+    expect(byReason("אינסטגרם לא קיבלה את הסרטונים. אפשר להוריד אותם ולפרסם ידנית.")).toBeDefined();
+    expect(byReason("החיבור לחשבונות פג. התחברו מחדש בהגדרות ותזמנו שוב.")).toBeDefined();
+    // A missing file has nothing to schedule again.
+    const missing = byReason("קובץ הסרטון כבר לא שמור אצלנו.")!;
+    expect(missing.text).toContain("כל הפרטים בלוח הפרסומים:");
+    expect(missing.text).not.toContain("לתזמן שוב");
+  });
+
+  it("the idempotency key does not move as the burst grows, so a retry is deduplicated, not sent again", async () => {
+    const now = new Date();
+    const first = await seedFailed({ failedAt: new Date(now.getTime() - 10 * MIN) });
+    const keys: string[] = [];
+    let attempts = 0;
+    setEmailProvider({
+      async send(message) {
+        keys.push(message.idempotencyKey);
+        attempts += 1;
+        // The first attempt may have landed at Resend; the answer never came.
+        if (attempts === 1)
+          throw new EmailSendError("resend request failed: timeout", null, null, true, false);
+        return { id: "ok" };
+      },
+    });
+    await sweepPostFailureEmails(db, { ...WORKER, now });
+    // Another post of the same cause fails while the sweep is paused.
+    await seedFailed({ failedAt: new Date(now.getTime() + 1 * MIN) });
+    await sweepPostFailureEmails(db, { ...WORKER, now: new Date(now.getTime() + 6 * MIN) });
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[0]).toContain(first);
+  });
+
+  it("Resend's answer that the key was already used with another body counts as sent", async () => {
+    const now = new Date();
+    await seedFailed({ failedAt: new Date(now.getTime() - 10 * MIN) });
+    fake.failWith = new EmailSendError(
+      "resend 409 invalid_idempotent_request",
+      409,
+      "invalid_idempotent_request",
+      false,
+      false,
+    );
+    const result = await sweepPostFailureEmails(db, { ...WORKER, now });
+    expect(result).toMatchObject({ sent: 1, refused: 0 });
+    const rows = await emailRows();
+    expect(rows[0]!.payload).toMatchObject({ outcome: "sent" });
+  });
+
+  it("a 401 or 403 is the account's fault: no row, an hour's pause, and the failure still goes out once fixed", async () => {
+    const now = new Date();
+    await seedFailed({ failedAt: new Date(now.getTime() - 10 * MIN) });
+    fake.failWith = new EmailSendError(
+      "resend 403 validation_error",
+      403,
+      "validation_error",
+      false,
+      false,
+      true,
+    );
+    await sweepPostFailureEmails(db, { ...WORKER, now });
+    expect(await emailRows()).toHaveLength(0);
+    fake.failWith = undefined;
+    expect(
+      (await sweepPostFailureEmails(db, { ...WORKER, now: new Date(now.getTime() + 30 * MIN) }))
+        .off,
+    ).toBe("paused");
+    await sweepPostFailureEmails(db, { ...WORKER, now: new Date(now.getTime() + 61 * MIN) });
+    expect(fake.sent).toHaveLength(1);
+  });
+
+  it("the startup line and the sweep read one answer: on, no provider, or a developer machine", () => {
+    const saved = { ...process.env };
+    try {
+      expect(failureEmailState("box-1")).toBe("on");
+      process.env.DATABASE_URL = "postgresql://u@h:6543/postgres?ref=hyaqydcmwbnbaiqqufow";
+      resetEnvCache();
+      expect(failureEmailState("local")).toBe("local_worker");
+      expect(failureEmailState("box-1:light")).toBe("on");
+      setEmailProvider(undefined);
+      delete process.env.RESEND_API_KEY;
+      resetEnvCache();
+      expect(failureEmailState("box-1")).toBe("no_provider");
+    } finally {
+      process.env = { ...saved };
+      resetEnvCache();
+    }
   });
 
   describe("off", () => {

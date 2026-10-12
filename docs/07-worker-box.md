@@ -188,6 +188,9 @@ SUMIT_CHECKOUT_PAGES=PASTE-REAL-ORG-JSON-ON-ONE-LINE
 # appsecret_proof. Both names, or every scheduled post fails on its first attempt.
 META_APP_SECRET=PASTE-FROM-DESKTOP-ENV
 SOCIAL_TOKEN_KEY=PASTE-FROM-DESKTOP-ENV
+# The failure email (docs/09-social-posting.md, decision 0107): a SENDING-ONLY Resend key,
+# restricted to tavnit.ai. Absent = no email and nothing breaks; the box alone holds it.
+RESEND_API_KEY=PASTE-SENDING-ONLY-KEY
 WORKER_ID=hetzner
 ```
 

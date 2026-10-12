@@ -46,14 +46,15 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
   const cookieStore = await cookies();
   const selected = pickSelectedBusiness(businesses ?? [], cookieStore.get(BUSINESS_COOKIE)?.value);
 
-  // Best-effort: a failure only hides the credits card.
-  const { balance } = selected
-    ? await wizardGate(selected.id).catch(() => ({ balance: null }))
-    : { balance: null };
-
-  // Social posting's switch: the calendar row in the nav, or no trace of it.
-  // Best-effort like the balance — a failed read hides the row.
-  const posting = await postingAllowed(user.id).catch(() => false);
+  // Both best-effort and side by side: a failed balance read only hides the
+  // credits card; a failed read of social posting's switch only hides the
+  // calendar row (an allowed account's nav row, or no trace of it).
+  const [{ balance }, posting] = await Promise.all([
+    selected
+      ? wizardGate(selected.id).catch(() => ({ balance: null }))
+      : Promise.resolve({ balance: null }),
+    postingAllowed(user.id).catch(() => false),
+  ]);
 
   return (
     <div className="theme-light flex h-dvh flex-col overflow-hidden bg-paper text-ink md:flex-row">

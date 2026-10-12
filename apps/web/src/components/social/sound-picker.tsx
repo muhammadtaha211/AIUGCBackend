@@ -259,9 +259,9 @@ export function SoundPicker({
                               chosen ? "bg-accent/30" : "hover:bg-ink/[0.04]"
                             }`}
                           >
-                            <bdi className="block truncate text-sm text-ink">
-                              {sound.title || "—"}
-                            </bdi>
+                            <span className="block truncate text-sm text-ink">
+                              <bdi>{sound.title || "—"}</bdi>
+                            </span>
                             <span className="flex gap-2 text-xs text-ink/55">
                               {sound.creator && <bdi className="truncate">{sound.creator}</bdi>}
                               {length && <span dir="ltr">{length}</span>}

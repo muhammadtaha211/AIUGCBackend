@@ -97,19 +97,34 @@ export function PostDetail({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
-  useEffect(() => setForm(formFrom(initialPost)), [initialPost]);
+  // The server's copy wins whenever it changes — after a 409's refresh, the
+  // page must show the post as it now is, not the edit that was refused.
+  useEffect(() => {
+    setPost(initialPost);
+    setForm(formFrom(initialPost));
+  }, [initialPost]);
 
   const status = postDisplayStatus(post);
   const editable = post.status === "scheduled";
   const cancellable = editable || status === "deferred";
 
   const instant = form ? (form.isNow ? new Date() : fromInputs(form.date, form.time)) : null;
-  const problem = instant && horizon ? instantProblem(instant, new Date(), horizon) : null;
+  // Only a time that moves is checked: a caption or a sound can still change
+  // on a post whose own time has just passed while it waits for the worker.
+  const moved =
+    form !== null &&
+    instant !== null &&
+    (form.isNow || instant.getTime() !== new Date(post.scheduledAt).getTime());
+  const problem = moved && instant && horizon ? instantProblem(instant, new Date(), horizon) : null;
 
   async function save() {
-    if (!form || !instant) return;
+    if (!form) return;
+    // "עכשיו" is the moment of the click on שמירה, not of the last render.
+    const at = form.isNow ? new Date() : fromInputs(form.date, form.time);
+    if (!at) return;
     const original = new Date(post.scheduledAt);
-    const timeMoved = form.isNow || instant.getTime() !== original.getTime();
+    const timeMoved = form.isNow || at.getTime() !== original.getTime();
+    const instant = at;
     const body: Record<string, unknown> = {};
     if (timeMoved) {
       body.scheduledAt = instant.toISOString();
@@ -319,9 +334,13 @@ export function PostDetail({
           ))}
         {post.status === "failed" && (
           <>
-            <Link href={`/schedule/${post.render.id}?from=${post.id}`}>
-              <Button type="button">{RESCHEDULE_BUTTON}</Button>
-            </Link>
+            {/* Only while the file is kept: without it there is nothing to post
+                again (the schedule page would be a 404). */}
+            {downloadUrl && (
+              <Link href={`/schedule/${post.render.id}?from=${post.id}`}>
+                <Button type="button">{RESCHEDULE_BUTTON}</Button>
+              </Link>
+            )}
             {downloadUrl && (
               <a
                 href={downloadUrl}

@@ -92,8 +92,28 @@ describe("providers/resend", () => {
   it("a 4xx refusal never succeeds", async () => {
     stubFetch(422, { name: "validation_error", message: "Invalid `to` field." });
     expect(await sendError()).toMatchObject({ status: 422, retryable: false, dailyQuota: false });
+    expect(await sendError()).toMatchObject({ accountFault: false });
+  });
+
+  it("a 401 or 403 is the account's fault — a key or a domain — never one message's", async () => {
     stubFetch(403, { name: "validation_error", message: "The tavnit.ai domain is not verified." });
-    expect(await sendError()).toMatchObject({ status: 403, retryable: false });
+    expect(await sendError()).toMatchObject({ status: 403, retryable: false, accountFault: true });
+    stubFetch(401, {
+      name: "restricted_api_key",
+      message: "This API key is restricted to only send emails.",
+    });
+    expect(await sendError()).toMatchObject({ status: 401, accountFault: true });
+  });
+
+  it("a body that resets after the headers is a network fault too", async () => {
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      status: 200,
+      text: async () => {
+        throw new TypeError("terminated");
+      },
+    }));
+    expect(await sendError()).toMatchObject({ status: null, retryable: true });
   });
 
   it("a network fault may succeed later", async () => {

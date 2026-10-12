@@ -35,10 +35,16 @@ const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_TIMEOUT_MS = 10_000;
 
 /**
- * A send that did not go out. `retryable` is the caller's whole decision:
- * a network fault, a timeout, a 5xx or a per-second 429 may succeed on the next
- * tick; anything else (a bad address, a key Resend refuses) never will.
- * `dailyQuota` is Resend's own day spent — nothing more goes out until 00:00 UTC.
+ * A send that did not go out, in one of four kinds — the caller's whole decision:
+ * - `retryable`: a network fault, a timeout, a 5xx or a per-second 429 — the
+ *   same message may go out on a later tick;
+ * - `dailyQuota`: Resend's own day (or month) spent — nothing goes out until
+ *   00:00 UTC;
+ * - `accountFault`: a 401 or 403 — the key is missing, revoked or held to
+ *   another domain, or the domain is unverified. Nothing about THIS message
+ *   would change; every message fails until the founder fixes the account, so
+ *   no single cause is blamed for it;
+ * - none of the three: this message is refused (a 400/422, a bad address).
  */
 export class EmailSendError extends Error {
   constructor(
@@ -47,6 +53,7 @@ export class EmailSendError extends Error {
     readonly errorName: string | null,
     readonly retryable: boolean,
     readonly dailyQuota: boolean,
+    readonly accountFault = false,
   ) {
     super(message);
   }
@@ -59,6 +66,7 @@ class HttpResend implements EmailProvider {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
     let response: Response;
+    let text: string;
     try {
       response = await fetch(RESEND_ENDPOINT, {
         method: "POST",
@@ -76,13 +84,15 @@ class HttpResend implements EmailProvider {
         }),
         signal: controller.signal,
       });
+      // Inside the timeout and the catch: a body that stalls or resets is the
+      // same network fault as a request that never landed.
+      text = await response.text();
     } catch (err) {
       throw new EmailSendError(`resend request failed: ${String(err)}`, null, null, true, false);
     } finally {
       clearTimeout(timer);
     }
 
-    const text = await response.text();
     let json: { id?: string; name?: string; message?: string } | null = null;
     try {
       json = text ? JSON.parse(text) : null;
@@ -97,12 +107,14 @@ class HttpResend implements EmailProvider {
       const name = json?.name ?? null;
       const dailyQuota = name === "daily_quota_exceeded" || name === "monthly_quota_exceeded";
       const retryable = response.status >= 500 || (response.status === 429 && !dailyQuota);
+      const accountFault = response.status === 401 || response.status === 403;
       throw new EmailSendError(
         `resend ${response.status} ${name ?? "?"}: ${(json?.message ?? "").slice(0, 200)}`,
         response.status,
         name,
         retryable,
         dailyQuota,
+        accountFault,
       );
     }
     if (!json?.id)

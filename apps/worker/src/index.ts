@@ -4,7 +4,7 @@ import {
   ensureDailyJobs,
   ensureReaperJob,
   getDb,
-  getEmailProvider,
+  failureEmailState,
   getEnv,
   HEAVY_JOB_TYPES,
   logger,
@@ -129,8 +129,9 @@ async function main(): Promise<void> {
   // reported on the next boot rather than waiting out a full interval.
   await sweepAlerts(db);
   const alerts = setInterval(() => void sweepAlerts(db), ALERT_SWEEP_INTERVAL_MS);
-  // Says once whether failure emails are on — the key itself is never logged.
-  logger.info({ failureEmail: getEmailProvider() ? "on" : "off" }, "failure email");
+  // Says once whether failure emails are on, and if not why (no_provider,
+  // local_worker) — the sweep's own checks. The key itself is never logged.
+  logger.info({ failureEmail: failureEmailState(workerId) }, "failure email");
   const failureEmails = setInterval(
     () => void sweepFailureEmails(db),
     FAILURE_EMAIL_SWEEP_INTERVAL_MS,

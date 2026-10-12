@@ -48,8 +48,24 @@ export const FAILURE_EMAIL_FRESH_MS = 24 * 60 * 60 * 1000;
 export const FAILURE_EMAIL_DAILY_CEILING = 20;
 /** After a send that may succeed later (a network fault, a 5xx, a per-second 429). */
 export const FAILURE_EMAIL_RETRY_PAUSE_MS = 5 * 60 * 1000;
+/** After a 401/403: the key or the domain is wrong, and only the founder can fix it. */
+export const FAILURE_EMAIL_ACCOUNT_PAUSE_MS = 60 * 60 * 1000;
 
 export type FailureEmailOff = "no_provider" | "local_worker" | "paused";
+
+/**
+ * Whether this process sends failure emails at all, and if not, why: no key
+ * (or an empty one), a dry run, or `claim`'s own guard (jobs/queue.ts) — a
+ * developer machine never acts for the production box. The sweep and the
+ * worker's startup line read the same answer.
+ */
+export function failureEmailState(workerId: string): "on" | "no_provider" | "local_worker" {
+  if (!getEmailProvider()) return "no_provider";
+  if (isProductionDatabaseUrl(getEnv().DATABASE_URL) && isLocalWorkerId(workerId)) {
+    return "local_worker";
+  }
+  return "on";
+}
 
 export interface FailureEmailSweepResult {
   off?: FailureEmailOff;
@@ -97,6 +113,8 @@ export function formatPostTime(at: Date, timeZone: string): string {
 interface FailedPost {
   id: string;
   userId: string;
+  renderId: string;
+  accountId: string;
   email: string;
   failureKind: string;
   failedAt: Date;
@@ -121,13 +139,9 @@ export async function sweepPostFailureEmails(
   const now = opts.now ?? new Date();
   const result: FailureEmailSweepResult = { sent: 0, refused: 0, heldByCeiling: 0 };
 
-  const provider = getEmailProvider();
-  if (!provider) return { ...result, off: "no_provider" };
-  // `claim`'s own guard (jobs/queue.ts): a developer machine never acts for the
-  // production box. A dry-run worker already has no provider.
-  if (isProductionDatabaseUrl(getEnv().DATABASE_URL) && isLocalWorkerId(opts.workerId)) {
-    return { ...result, off: "local_worker" };
-  }
+  const state = failureEmailState(opts.workerId);
+  if (state !== "on") return { ...result, off: state };
+  const provider = getEmailProvider()!;
   if (pausedUntil && now < pausedUntil) return { ...result, off: "paused" };
   pausedUntil = undefined;
 
@@ -135,6 +149,8 @@ export async function sweepPostFailureEmails(
     .select({
       id: scheduledPosts.id,
       userId: scheduledPosts.userId,
+      renderId: scheduledPosts.videoRenderId,
+      accountId: scheduledPosts.socialAccountId,
       email: users.email,
       failureKind: scheduledPosts.failureKind,
       failedAt: scheduledPosts.failedAt,
@@ -194,9 +210,13 @@ export async function sweepPostFailureEmails(
     );
   let remaining = FAILURE_EMAIL_DAILY_CEILING - Number(today?.n ?? 0);
 
-  // Group by cause, oldest cause first.
+  // Group by cause, oldest cause first; inside a cause, oldest failure first
+  // (the id breaks a tie, so the order — and the key below — never wobbles).
   const causes = new Map<string, FailedPost[]>();
-  for (const post of [...failed].sort((a, b) => a.failedAt.getTime() - b.failedAt.getTime())) {
+  const ordered = [...failed].sort(
+    (a, b) => a.failedAt.getTime() - b.failedAt.getTime() || a.id.localeCompare(b.id),
+  );
+  for (const post of ordered) {
     const key = `${post.userId}:${post.failureKind}`;
     causes.set(key, [...(causes.get(key) ?? []), post]);
   }
@@ -229,6 +249,8 @@ export async function sweepPostFailureEmails(
     const message = failureEmail({
       kind: failureKind,
       posts: due.map((p): FailureEmailPost => ({
+        renderId: p.renderId,
+        accountId: p.accountId,
         service: p.service,
         businessName: p.businessName,
         accountName: p.username ? `@${p.username}` : (p.displayName ?? ""),
@@ -241,15 +263,37 @@ export async function sweepPostFailureEmails(
       const sent = await provider.send({
         to: email,
         ...message,
-        // Same cause and same newest post → the same key, so a crash between
-        // the send and the log row below is deduplicated by Resend (24 h).
-        idempotencyKey: `post-failure/${userId}/${failureKind}/${postIds[postIds.length - 1]}`,
+        // The cause and its OLDEST due post: a key that does not change while the
+        // burst grows, so a retry after an ambiguous send or a failed log write
+        // is deduplicated by Resend (24 h) instead of sent again.
+        idempotencyKey: `post-failure/${userId}/${failureKind}/${postIds[0]}`,
       });
       await logEmail(db, now, userId, failureKind, postIds, { outcome: "sent", resendId: sent.id });
       result.sent += 1;
       remaining -= 1;
     } catch (err) {
       if (!(err instanceof EmailSendError)) throw err;
+      // Resend saw this key with a different body: the first send went out
+      // (an earlier tick's, before the burst grew). It counts as sent.
+      if (err.status === 409 && err.errorName === "invalid_idempotent_request") {
+        await logEmail(db, now, userId, failureKind, postIds, {
+          outcome: "sent",
+          resendId: "idempotent-replay",
+        });
+        result.sent += 1;
+        remaining -= 1;
+        continue;
+      }
+      if (err.accountFault) {
+        // Not this cause's fault: no row, so nothing is blamed and the failures
+        // go out once the key or the domain is fixed (while under 24 h old).
+        pausedUntil = new Date(now.getTime() + FAILURE_EMAIL_ACCOUNT_PAUSE_MS);
+        logger.warn(
+          { status: err.status, error: err.errorName },
+          "failure email: Resend refused the account (key or domain) — paused an hour",
+        );
+        return result;
+      }
       if (err.dailyQuota) {
         pausedUntil = nextUtcMidnight(now);
         logger.warn(

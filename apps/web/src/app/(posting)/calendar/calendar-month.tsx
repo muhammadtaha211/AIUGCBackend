@@ -86,11 +86,19 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
   const [posts, setPosts] = useState<PostWire[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // The browser's month and day, after mount: the server's are not the customer's.
+  // The browser's month and day, after mount: the server's are not the
+  // customer's. The address bar wins over the prop: Back to a month the grid
+  // wrote with replaceState must land on that month, not the cached page's.
   useEffect(() => {
     const now = new Date();
     setToday(toDateInput(now));
-    const start = parseMonth(initialMonth) ?? { year: now.getFullYear(), month: now.getMonth() };
+    const inUrl = new URLSearchParams(window.location.search).get("month");
+    const start = parseMonth(
+      inUrl && /^\d{4}-(0[1-9]|1[0-2])$/.test(inUrl) ? inUrl : initialMonth,
+    ) ?? {
+      year: now.getFullYear(),
+      month: now.getMonth(),
+    };
     setMonth(start);
     setSelected(
       start.year === now.getFullYear() && start.month === now.getMonth() ? toDateInput(now) : null,
@@ -102,8 +110,12 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
     let live = true;
     setPosts(null);
     setError(null);
-    const from = new Date(month.year, month.month, 0); // the day before the 1st
-    const to = new Date(month.year, month.month + 1, 2); // the day after the last, inclusive
+    // Every day the grid draws, the neighbours' spill-over days included —
+    // at most six weeks, inside the route's 45 days.
+    const cells = monthGrid(month);
+    const from = cells[0]!;
+    const last = cells[cells.length - 1]!;
+    const to = new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1);
     void apiFetch<{ ok: true; posts: PostWire[] }>(
       `/api/social/posts?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
     ).then((result) => {
@@ -281,9 +293,9 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                       <span className="aspect-[9/16] w-8 shrink-0 rounded bg-ink/[0.06]" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <bdi className="block truncate text-sm font-medium text-ink">
-                        {accountLabel(post)}
-                      </bdi>
+                      <span className="block truncate text-sm font-medium text-ink">
+                        <bdi>{accountLabel(post)}</bdi>
+                      </span>
                       <span dir="ltr" className="block text-end text-xs tabular-nums text-ink/55">
                         {formatTime(new Date(post.scheduledAt))}
                       </span>

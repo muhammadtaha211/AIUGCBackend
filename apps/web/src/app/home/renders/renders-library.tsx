@@ -72,7 +72,14 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
 
   /** Fetch a fresh signed video URL on every open — never reuse a stale one. */
   async function play(renderId: string) {
-    setPlaying({ id: renderId });
+    // An allowed account's rows carry `scheduled` (social posting PR 3): the
+    // schedule button takes its place from the open, so nothing moves under
+    // the cursor when the signed URLs land.
+    const row = renders?.find((render) => render.id === renderId);
+    setPlaying({
+      id: renderId,
+      scheduleHref: row?.scheduled !== undefined ? `/schedule/${renderId}` : undefined,
+    });
     setPlayError(null);
     const result = await apiFetch<{
       status: string;

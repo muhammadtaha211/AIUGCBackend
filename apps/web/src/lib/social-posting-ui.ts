@@ -16,6 +16,7 @@
  */
 
 import type { SocialErrorCode } from "@aiugc/core";
+import { isolated } from "./social-ui";
 
 // ---------------------------------------------------------------------------
 // The player and the tiles
@@ -39,7 +40,8 @@ export const SCHEDULE_TITLE = "תזמון פרסום";
 export const STEP_ACCOUNTS_TITLE = "לאן מפרסמים?";
 export const STEP_ACCOUNTS_LEAD = "בוחרים חשבון אחד או יותר.";
 export const NO_ACCOUNT_TITLE = "עוד אין חשבון מחובר";
-// DRAFT: Appendix A's line without "או טיקטוק" — there is no TikTok card yet.
+// DRAFT: Appendix A's line without "או טיקטוק" (no TikTok card yet, 0102 §4) and
+// without "בהגדרות" (the button opens the Instagram pre-screen, not settings).
 export const NO_ACCOUNT_BODY = "מחברים חשבון אינסטגרם, וחוזרים לכאן לתזמן את הסרטון.";
 export const NO_ACCOUNT_CTA = "לחיבור חשבון";
 // DRAFT: an expired account in the list, which cannot be picked.
@@ -87,8 +89,9 @@ export const SOUND_NOTE =
   "הסאונד שחיפשתם לא כאן? אפשר להוריד את הסרטון ולפרסם אותו באפליקציה של אינסטגרם או טיקטוק, שם הבחירה רחבה יותר.";
 export const SOUND_NOTE_DOWNLOAD = "הורדת הסרטון";
 
+/** Catalogue titles are mostly Latin with brackets: isolated, or "(Sped Up)" flips. */
 export function chosenSoundLine(title: string): string {
-  return `נבחר: ${title}`;
+  return `נבחר: ${isolated(title)}`;
 }
 
 /**

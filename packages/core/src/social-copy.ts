@@ -54,8 +54,11 @@ export function failureLine(kind: string, platform: "instagram" | "tiktok"): str
   }
 }
 
-/** The calendar's address, absolute in the email and relative in the nav. */
-export const SOCIAL_CALENDAR_PATH = "/home/calendar";
+/**
+ * The calendar's address, absolute in the email and relative in the nav —
+ * outside /home on purpose (apps/web/src/app/(posting)/layout.tsx).
+ */
+export const SOCIAL_CALENDAR_PATH = "/calendar";
 export const TAVNIT_ORIGIN = "https://tavnit.ai";
 
 // ---------------------------------------------------------------------------
@@ -64,6 +67,9 @@ export const TAVNIT_ORIGIN = "https://tavnit.ai";
 
 /** One post as the email names it. */
 export interface FailureEmailPost {
+  /** Not shown: they decide whether the reason speaks of one video or account, or several. */
+  renderId: string;
+  accountId: string;
   service: "a" | "b" | "c";
   businessName: string;
   /** `@username`, or the display name when Meta gave no username. */
@@ -91,9 +97,48 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** DRAFT. */
+/** DRAFT. The app's own words: פרסום, not פוסט (0061). */
 export function failureEmailSubject(count: number): string {
-  return count === 1 ? "פוסט שתוזמן בתבנית לא פורסם" : `${count} פוסטים שתוזמנו בתבנית לא פורסמו`;
+  return count === 1 ? "פרסום שתוזמן בתבנית נכשל" : `${count} פרסומים שתוזמנו בתבנית נכשלו`;
+}
+
+/**
+ * The email's reason line: docs/09's failure line when the cause touched one
+ * video on one account, else its plural (DRAFT) — one email gathers every post
+ * of a cause, so "the video" may be three videos and "the account" two.
+ */
+export function failureEmailReason(
+  kind: string,
+  platform: "instagram" | "tiktok",
+  counts: { videos: number; accounts: number },
+): string {
+  const name = PLATFORM_LABELS[platform];
+  const manyVideos = counts.videos > 1;
+  const manyAccounts = counts.accounts > 1;
+  switch (kind as SocialFailureKindKey) {
+    case "connection_expired":
+      return manyAccounts
+        ? "החיבור לחשבונות פג. התחברו מחדש בהגדרות ותזמנו שוב."
+        : failureLine(kind, platform);
+    case "quota_exhausted":
+      return manyAccounts
+        ? "החשבונות עברו את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב."
+        : failureLine(kind, platform);
+    case "platform_refused":
+      return manyVideos
+        ? `${name} לא קיבלה את הסרטונים. אפשר להוריד אותם ולפרסם ידנית.`
+        : failureLine(kind, platform);
+    case "platform_timeout":
+      return manyVideos
+        ? `${name} לא סיימה לעבד את הסרטונים בזמן. נסו לתזמן שוב.`
+        : failureLine(kind, platform);
+    case "file_missing":
+      return manyVideos ? "קבצי הסרטונים כבר לא שמורים אצלנו." : failureLine(kind, platform);
+    default:
+      // sound_unavailable names the post's own sound, removed_on_platform and
+      // internal_error the post itself: one line reads right for one or many.
+      return failureLine(kind, platform);
+  }
 }
 
 function postLine(post: FailureEmailPost): string {
@@ -113,19 +158,27 @@ export function failureEmail(input: { kind: string; posts: FailureEmailPost[] })
 } {
   const { posts } = input;
   const platform = posts[0]?.platform ?? "instagram";
-  const reason = failureLine(input.kind, platform);
+  const reason = failureEmailReason(input.kind, platform, {
+    videos: new Set(posts.map((p) => p.renderId)).size,
+    accounts: new Set(posts.map((p) => p.accountId)).size,
+  });
   const listed = posts.slice(0, FAILURE_EMAIL_MAX_LISTED);
   const more = posts.length - listed.length;
   const calendarUrl = `${TAVNIT_ORIGIN}${SOCIAL_CALENDAR_PATH}`;
 
-  // DRAFT, every line below.
-  const opening =
-    posts.length === 1 ? "הפוסט הזה לא פורסם:" : `${posts.length} הפוסטים האלה לא פורסמו:`;
+  // DRAFT, every line below. The calendar is the app's "לוח הפרסומים", and a
+  // missing file has nothing to schedule again.
+  const opening = posts.length === 1 ? "הפרסום הזה נכשל:" : `${posts.length} הפרסומים האלה נכשלו:`;
   const moreLine = more > 0 ? `ועוד ${more}.` : null;
-  const calendarLead = "כל הפרטים, ואפשרות לתזמן שוב, ביומן הפרסומים:";
-  const calendarCta = "ליומן הפרסומים";
+  const calendarLead =
+    input.kind === "file_missing"
+      ? "כל הפרטים בלוח הפרסומים:"
+      : "כל הפרטים, ואפשרות לתזמן שוב, בלוח הפרסומים:";
+  const calendarCta = "ללוח הפרסומים";
+  // The calendar opens for a signed-in account only (a 404 for anyone else).
+  const signInLine = "הלוח נפתח אחרי כניסה לחשבון בתבנית.";
   const quietLine =
-    "אם עוד פוסטים ייכשלו מאותה סיבה ב־24 השעות הקרובות, לא נשלח מייל נוסף. הם יופיעו ביומן.";
+    "אם עוד פרסומים ייכשלו מאותה סיבה ב־24 השעות הקרובות, לא נשלח מייל נוסף. הם יופיעו בלוח.";
   const signature = "תבנית";
 
   const text = [
@@ -137,6 +190,7 @@ export function failureEmail(input: { kind: string; posts: FailureEmailPost[] })
     "",
     calendarLead,
     calendarUrl,
+    signInLine,
     "",
     quietLine,
     "",
@@ -152,7 +206,8 @@ export function failureEmail(input: { kind: string; posts: FailureEmailPost[] })
     ...(moreLine ? [`<p style="margin:0 0 16px">${escapeHtml(moreLine)}</p>`] : []),
     `<p style="margin:0 0 16px"><strong>${escapeHtml(reason)}</strong></p>`,
     `<p style="margin:0 0 8px">${escapeHtml(calendarLead)}</p>`,
-    `<p style="margin:0 0 24px"><a href="${calendarUrl}" style="display:inline-block;padding:10px 18px;background:#111;color:#fff;text-decoration:none;border-radius:8px">${escapeHtml(calendarCta)}</a></p>`,
+    `<p style="margin:0 0 8px"><a href="${calendarUrl}" style="display:inline-block;padding:10px 18px;background:#111;color:#fff;text-decoration:none;border-radius:8px">${escapeHtml(calendarCta)}</a></p>`,
+    `<p style="margin:0 0 24px;font-size:13px;color:#666">${escapeHtml(signInLine)}</p>`,
     `<p style="margin:0 0 16px;font-size:13px;color:#666">${escapeHtml(quietLine)}</p>`,
     `<p style="margin:0;color:#666">${escapeHtml(signature)}</p>`,
     `</div>`,

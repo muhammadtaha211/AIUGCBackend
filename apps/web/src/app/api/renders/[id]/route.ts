@@ -73,7 +73,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       if (render.thumbPath) {
         body.thumbUrl = await storage.signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS);
       }
-      if (render.filePath && (await postingAllowed(auth.userId))) {
+      // Best-effort: a failed switch read only hides the button.
+      if (render.filePath && (await postingAllowed(auth.userId).catch(() => false))) {
         body.scheduleHref = `/schedule/${id}`;
         body.pendingPosts = (await pendingPostsByRender(db, [id])).get(id) ?? 0;
       }

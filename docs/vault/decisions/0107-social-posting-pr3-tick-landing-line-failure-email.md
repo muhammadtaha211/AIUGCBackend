@@ -67,8 +67,11 @@ nothing is sent and nothing breaks, as with `SENTRY_DSN`.
   plan's 100 a day, and at least 2,380 of its 3,000 a month, left for the auth mail. Over it, a
   failure still under 24 h old goes out after 00:00 UTC, otherwise never. A `daily_quota_exceeded`
   pauses the sweep until 00:00 UTC; any other retryable refusal pauses it 5 minutes.
-- **Never twice:** an `Idempotency-Key` from the cause and its newest post (Resend keeps it 24 h);
-  the log row after the send. A permanent refusal is logged and never retried.
+- **Never twice:** an `Idempotency-Key` from the cause and its oldest due post (Resend keeps it
+  24 h), so the key holds while a burst grows; the log row after the send. A refusal of the message
+  itself (400/422) is logged and never retried; a 401/403 is the account's (key or domain) — no row,
+  an hour's pause. (The plan said "the newest post" and "a 4xx other than 429 is logged"; PR 3's
+  review found both let a cause email twice or lose its email, and the build changed them.)
 - **No migration:** the log is `events` rows of kind `post_failure_email` (actor = the account;
   payload: the failure kind, the post ids, the outcome — no address, no caption), served by the
   existing `events_kind_created_idx`; `scheduled_posts.failed_at` already exists. The kind is not an

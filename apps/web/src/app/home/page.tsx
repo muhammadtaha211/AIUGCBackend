@@ -110,7 +110,7 @@ async function HomeContent() {
   // Social posting's notice (PR 3): read only for an account the switch
   // allows — anyone else gets no query and no trace. Best-effort: a failed
   // read only hides the strip.
-  const notices = (await postingAllowed(user.id))
+  const notices = (await postingAllowed(user.id).catch(() => false))
     ? await postingNotices(getDb(), user.id).catch(() => null)
     : null;
 

@@ -680,7 +680,8 @@ Next.js 15.5.20 → 15.5.26 (commit `bfa65ae`); INP-08 (`65114f8`, merged 2026-0
 `93ba67e`, MEASURED 2026-10-01 as an ancestor of `origin/main` `d57b60a`). The INP-08 fix puts
 `-protocol_whitelist` on every ffmpeg/ffprobe input and a container allow-list on the demo ingest
 path. **It is worker code, and no box read since 2026-09-21 (`4100cc7`, which predates it) says the
-box runs it.** Founder-reported: Resend is on a paid plan; an
+box runs it.** Founder-reported: Resend is on a paid plan — **corrected by him 2026-10-12: the
+free plan** (100 a day, 3,000 a month; [[0107-social-posting-pr3-tick-landing-line-failure-email]]); an
 Anthropic hard monthly spend limit is set. Measured 2026-09-24: box firewall and key-only SSH.
 
 **Deferred, each with its trigger — no file paths, line numbers, parameters or mechanics here; audit
@@ -845,7 +846,65 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-12, later) — the live run, the ruling, the Page-first pre-screen, `feat/instagram-connect-page-steps`, NOT merged
+## What landed (2026-10-13) — social posting PR 3: schedule, sound picker, calendar, live posts, the failure email, `feat/social-posting-schedule`, NOT merged
+
+[[0107-social-posting-pr3-tick-landing-line-failure-email]] (his five decisions of 2026-10-12, with
+dated pointers on 0101, 0102 and 0061); the mechanics are docs/09 §The schedule flow and the
+calendar and §The failure email. Built from the approved plan of 2026-10-10 (§8, Appendix A), found
+in the session's plans folder (`~/.claude/plans/steady-moseying-castle.md`) after he asked.
+
+**What exists (MEASURED, on the branch):**
+
+- **The failure email (0107 §3):** a 60-second sweep on the worker beside the alert sweep
+  (`sweepFailureEmails`), core's `pipelines/social-failure-email.ts`, one Resend wrapper
+  (`providers/resend.ts`, plain `fetch`, 10 s timeout). A cause is (Tavnit account, failure kind):
+  one email per cause per 24 h, folded failures never emailed, sent once the newest failure is 2
+  minutes old, only failures under 24 h old, at most **20 a UTC day**. Log = `events` rows of kind
+  `post_failure_email`; **no migration**. Off with no `RESEND_API_KEY`, under `DRY_RUN`, and on a
+  `local`/`cli` worker against production. Never touches a post or the notice.
+- **The screens:** "תזמון פרסום" beside הורדה on the five player mounts; the grey "מתוזמן" tag;
+  `/schedule/[renderId]` (accounts → when → caption, sound, AI tick → done; `?from=` for a failed
+  post); the sound picker over `GET /api/social/instagram/sounds` (core `searchInstagramSounds`, the
+  User token); `/calendar` and `/calendar/[postId]`; the `/home` notice; "לוח פרסומים" in the
+  sidebar and the account menu. All behind the switch; a hidden account sees no trace.
+- **One change to the plan's paths (latitude, his §5):** the schedule page and the calendar are
+  `/schedule/…` and `/calendar…`, not under `/home`, in an `app/(posting)` group whose layout gates
+  before any Suspense boundary — under `/home`, `loading.tsx` makes `notFound()` stream a 200 (PR 2's
+  reason for `/connect/instagram`). Same frame (`HomeLayout`); `socialReturnPath` accepts the two.
+- **§2.1–2.2:** the AI tick is small, muted, unticked, last on the caption step, with one muted hint
+  line (DRAFT); the landing's `#proof` line now reads «החשבון מסומן כדמות AI, ואנחנו ממליצים לכל מי
+  שמפרסם עם תבנית לסמן גם את הסרטונים שלו כתוכן AI.» (DRAFT).
+- **Strings:** `apps/web/src/lib/social-posting-ui.ts` (Appendix A, the new ones DRAFT) and core's
+  `social-copy.ts` (the failure lines, the email) — all for his approval at PR review.
+- **Screenshots** (harness with a mocked fetch, sample data; desktop and 375 px):
+  `.work/social-pr3/` (gitignored).
+
+**Read on the providers' own pages (MEASURED, 2026-10-12):**
+
+- **Resend:** the free plan is "limited to 100 emails per day" and 3,000 a month; the day "is a UTC
+  calendar day"; `daily_quota_exceeded` and `rate_limit_exceeded` are 429; a `sending_access` key
+  "Can only send emails" and can be held to one domain; `Idempotency-Key` lasts 24 hours. Whether
+  SMTP sends count toward the same day: not stated (REASONED yes, one team).
+- **Meta** (each line re-fetched by a refuter; quotes and URLs in docs/09): a stream-less Reel is
+  neither allowed nor refused in the docs; the audio search is documented against "A valid User
+  access token" only; PPA blocks publishing with no documented error code and no way to detect it
+  in advance; Meta requires disclosure of photorealistic AI video, and `is_ai_generated` is "an
+  optional parameter to provide a self-disclosure".
+- **Retention (production, a SELECT-only probe):** `retention_days.released_renders` = **90**, so the
+  horizon is the earlier of 30 days and 88 days after release. `social_posting` has no row (admins
+  only); 0 scheduled posts; 4 connected accounts, 1 disconnected.
+
+**What the founder reported on 2026-10-12 (FOUNDER-REPORTED, not repo-verified):**
+
+- Resend is on the **free** plan — this corrects the security-audit section's "paid plan" line. He
+  will watch usage and upgrade if needed.
+- He will create a second Resend key, for sending only, for the worker.
+- He can now add Instagram accounts with no issue.
+
+**Not run:** nothing live — no post, no email, no env change, no deploy, no migration. Every PR 3
+check against Meta and Resend ran against fakes.
+
+## What landed (2026-10-12, later) — the live run, the ruling, the Page-first pre-screen, `feat/instagram-connect-page-steps`, MERGED as PR #94 (`e21bc78`)
 
 [[instagram-connect-live-run-2026-10-12]] (the run: database MEASURED read-only, the window
 FOUNDER-REPORTED) and [[0106-instagram-connect-stays-on-todays-flow-with-a-page-first]] (his
@@ -1168,10 +1227,12 @@ MERGED as #93 (`fc8a03d`), run live and RULED OFF 2026-10-12**
 [[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]],
 [[0106-instagram-connect-stays-on-todays-flow-with-a-page-first]],
 [[instagram-connect-live-run-2026-10-12]]; the "What landed" entries above). 0060 is applied
-(2026-10-11). Next in order: the Page-first pre-screen (`feat/instagram-connect-page-steps`, his
-string approval and merge), then **PR 3** (schedule: the button, the tag, the flow, the sound
-picker, the calendar, the notice; the live checks) — no longer blocked (0106). PR 4 (TikTok, once
-his sandbox app exists). The env names and the live-test steps are under "Owed founder actions".
+(2026-10-11). The Page-first pre-screen MERGED as #94. **PR 3 BUILT 2026-10-13** on
+`feat/social-posting-schedule` (the button, the tag, the flow, the sound picker, the calendar, the
+notice, the failure email — [[0107-social-posting-pr3-tick-landing-line-failure-email]]); next: his
+string approval and merge, then the live checks in 0107's order (docs/09 §Live-test checklist, PR
+3). PR 4 (TikTok, once his sandbox app exists). The env names and the live-test steps are under
+"Owed founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
@@ -1588,6 +1649,21 @@ the 2026-09-26 custom domain (founder-reported):**
   count (tokens null MEASURED), (v) a return address; the one-window checks (q)–(s) are DONE
   ([[instagram-connect-live-run-2026-10-12]]); 4. ~~his ruling~~ DONE 2026-10-12 (0106).
 
+- **Social posting — PR 3 (2026-10-13, `feat/social-posting-schedule`).** Each its own OK: 1. the
+  strings at PR review — `apps/web/src/lib/social-posting-ui.ts` (Appendix A; DRAFT marks the new
+  ones, among them the AI tick and its hint, the גוש טקסט mix line, the refusals), core's
+  `social-copy.ts` (the email's subject and body, DRAFT) and the landing's `#proof` line (DRAFT); 2. the merge (Vercel deploys Production itself); 3. the box on `origin/main` after the merge (pull,
+  install, restart); 4. a **sending-only** Resend key restricted to `tavnit.ai`, placed as
+  `RESEND_API_KEY` in the box's `apps/worker/.env` only (docs/09 §Env names: the steps and the
+  no-print proof) — before check (o), not before the others; 5. the live checks in 0107's order
+  (docs/09 checklist PR 3: (k) a הוק + דמו with a trending sound now, logged-out look; (l) two
+  accounts a few minutes ahead; (l2) a גוש טקסט post for the levels; (n) change then cancel; (v)
+  the way back to the video; (u) a disconnect's count; (w) the Page token on `ig_audio`, report
+  only — it needs `META_APP_SECRET`, which only Vercel and the box hold, so it did not run from this
+  machine; (o) the forced failure last, the notice and the email); 6. owed while the legal pages are
+  held, not edited: `/privacy`'s sentence on which emails Tavnit sends (it names Resend for the two
+  auth emails only) and the text on connected accounts.
+
 - **Social posting — PR 2 (2026-10-11, `feat/social-posting-connect`).** Each its own OK: 1. the
   PR 2 strings (Appendix A's connect lines plus the DRAFT singular forms in
   `apps/web/src/lib/social-ui.ts`) at PR review; 2. ~~the ONE `db push` of **0060**~~ DONE 2026-10-11
@@ -1610,9 +1686,9 @@ the 2026-09-26 custom domain (founder-reported):**
   Facebook Login a configuration) into `apps/web/.env.local` and Vercel Production;
   `META_APP_SECRET`, `SOCIAL_TOKEN_KEY` into the box's `apps/worker/.env`; 4. in the Meta app
   (yours alone): the localhost and production redirect URIs, the Privacy URL, the User Data
-  Deletion URL, the icon, the roles; 5. Facebook Pages for your other two Instagram accounts; 6. the live-test checklist of `docs/09-social-posting.md` once PR 3 exists (box on the branch,
-  `DRY_RUN=0` locally for the window, the logged-out look at your Explorer Reel, the A render first,
-  the forced failure last); 7. Meta's App Review and Business Verification after the web PRs are
+  Deletion URL, the icon, the roles; 5. Facebook Pages for your other two Instagram accounts; 6. ~~the live-test checklist once PR 3 exists (box on the branch, `DRY_RUN=0` locally)~~
+  superseded 2026-10-12: the box on `origin/main` after the merge, on tavnit.ai (0102 planning
+  default), in 0107's order — the PR 3 entry above; 7. Meta's App Review and Business Verification after the web PRs are
   live, then the app to Live and `social_posting` to `everyone`; 8. the TikTok developer app and
   sandbox, when you want PR 4.
 

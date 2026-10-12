@@ -23,6 +23,8 @@ const fixture = vi.hoisted(() => ({
   businesses: [] as { id: string; name: string; questionnaire: unknown }[],
   /** Reads of postingNotices — never for an account the switch hides. */
   noticeReads: 0,
+  /** Make the switch read itself fail, as a dropped connection would. */
+  switchFails: false,
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -40,6 +42,10 @@ vi.mock("@aiugc/core", async (importOriginal) => {
   return {
     ...actual,
     getDb: () => fixture.db,
+    getPostingAccess: (...args: Parameters<typeof actual.getPostingAccess>) => {
+      if (fixture.switchFails) return Promise.reject(new Error("ECONNRESET"));
+      return actual.getPostingAccess(...args);
+    },
     postingNotices: (...args: Parameters<typeof actual.postingNotices>) => {
       fixture.noticeReads++;
       return actual.postingNotices(...args);
@@ -218,6 +224,7 @@ beforeEach(async () => {
   await db.delete(schema.jobs).where(eq(schema.jobs.type, "publish_post"));
   await db.delete(schema.appConfig).where(eq(schema.appConfig.key, "social_posting"));
   fixture.noticeReads = 0;
+  fixture.switchFails = false;
   as(null);
 });
 
@@ -319,6 +326,30 @@ describe("the switch hides PR 3 from an account it does not allow", () => {
       (el) => el.type === Sidebar,
     )!;
     expect((sidebar.props as { postingAllowed: boolean }).postingAllowed).toBe(true);
+  });
+});
+
+describe("a failed switch read", () => {
+  it("hides social posting and breaks nothing that was there before", async () => {
+    as(customer);
+    fixture.switchFails = true;
+    fixture.businesses = [{ id: customerBusiness, name: "עסק", questionnaire: null }];
+
+    const sidebar = elements(await HomeLayout({ children: null })).find((el) => el.type === Sidebar)!;
+    expect((sidebar.props as { postingAllowed: boolean }).postingAllowed).toBe(false);
+    const home = HomePage() as ReactElement<{ children: ReactElement }>;
+    const content = await (home.props.children.type as () => Promise<ReactNode>)();
+    expect(elements(content).some((el) => el.type === PostingNotice)).toBe(false);
+
+    const render = await getRender(new Request("http://localhost"), params({ id: customerRender }));
+    expect(render.status).toBe(200);
+    expect("scheduleHref" in (await render.json())).toBe(false);
+    const list = await listRenders(
+      new Request("http://localhost/api"),
+      params({ businessId: customerBusiness }),
+    );
+    expect(list.status).toBe(200);
+    expect("scheduled" in (await list.json()).renders[0]).toBe(false);
   });
 });
 
@@ -487,6 +518,10 @@ describe("the grey tag and the player's line", () => {
       .set({ status: "failed", failureKind: "platform_refused", failedAt: new Date() })
       .where(eq(schema.scheduledPosts.id, first));
     expect(await tagged()).toBe(false);
+  });
+
+  it("a chosen sound's Latin title keeps its own direction", () => {
+    expect(ui.chosenSoundLine("Flowers (Sped Up)")).toBe("נבחר: \u2068Flowers (Sped Up)\u2069");
   });
 
   it("the pending line counts", () => {

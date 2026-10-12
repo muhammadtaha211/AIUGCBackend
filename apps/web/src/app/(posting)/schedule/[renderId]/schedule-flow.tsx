@@ -207,9 +207,9 @@ export function ScheduleFlow({
                       <span className="size-10 shrink-0 rounded-full bg-ink/[0.08]" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <bdi className="block truncate text-sm font-medium text-ink">
-                        {account.displayName ?? account.username ?? ""}
-                      </bdi>
+                      <span className="block truncate text-sm font-medium text-ink">
+                        <bdi>{account.displayName ?? account.username ?? ""}</bdi>
+                      </span>
                       {account.username && (
                         <span dir="ltr" className="block truncate text-end text-xs text-ink/55">
                           @{account.username}
@@ -329,7 +329,8 @@ export function ScheduleFlow({
             {doneLine(formatDay(scheduledAt), formatTime(scheduledAt))}
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link href="/calendar">
+            {/* The month the post is in — next month's post is not on this one. */}
+            <Link href={`/calendar?month=${toDateInput(scheduledAt).slice(0, 7)}`}>
               <Button type="button">{TO_CALENDAR}</Button>
             </Link>
             <Link href="/home/renders">
