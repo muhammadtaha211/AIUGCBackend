@@ -13,6 +13,12 @@ Tags as in [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]]: **FOUNDE
 are FOUNDER-REPORTED, 2026-10-12, not up for relitigation. The mechanics are in
 `docs/09-social-posting.md` (§Connecting an account, §The connect mode, runbook J).
 
+> **2026-10-12, after the live run — decision 5 is ruled
+> ([[0106-instagram-connect-stays-on-todays-flow-with-a-page-first]]):** the one-window setup
+> returned a code (Omri connected through it) but failed with Facebook's generic error for two of
+> three accounts ([[instagram-connect-live-run-2026-10-12]]). Customers get today's flow with the
+> Page linked first; the switch stays off, its code stays; PR 3 is unblocked.
+
 ## The five decisions (FOUNDER-REPORTED, 2026-10-12)
 
 1. **Sounds stay, so Tavnit stays on the Facebook login.** The options were Facebook login (sounds

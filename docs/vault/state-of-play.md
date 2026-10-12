@@ -845,7 +845,29 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-12) — Instagram connect: Meta's one-window setup behind a switch, `feat/instagram-onboarding-connect`, NOT merged
+## What landed (2026-10-12, later) — the live run, the ruling, the Page-first pre-screen, `feat/instagram-connect-page-steps`, NOT merged
+
+[[instagram-connect-live-run-2026-10-12]] (the run: database MEASURED read-only, the window
+FOUNDER-REPORTED) and [[0106-instagram-connect-stays-on-todays-flow-with-a-page-first]] (his
+ruling), with a dated pointer on 0105.
+
+- **#93 merged** (`fc8a03d`). Production first showed only the branch's Preview deploy; the
+  Production deploy of the merge followed (FOUNDER-REPORTED: "it's there now and says production").
+- **Switch off (15:15 UTC):** today's flow behaved as before by design; the round trip came back
+  connected (Shira refreshed), not on the old failure line.
+- **Switch on (15:27–~16:10):** Omri connected through Meta's one-window setup on the second try,
+  with a Page Meta created — by a **code in the query** (MEASURED: only the callback's server-side
+  exchange writes a row). Yael and the tavnit.ai account failed inside Meta's window with
+  Facebook's generic "Sorry, something went wrong" (REASONED: both are in his Accounts Center, Omri
+  is not; the one public report shows console error 1850019 and no Meta answer).
+- **Switch off again, a Page linked by hand:** Yael connected at once, with confirm alone — no
+  Edit settings.
+- Disconnect (u): Shira's row kept, both tokens null. Three live accounts, each once.
+- **His ruling (0106):** customers stay on today's flow, the Page linked first; the switch stays
+  off and its code stays; PR 3 is unblocked.
+- **This branch:** the today's-mode pre-screen rewritten from the run (DRAFT strings), the records.
+
+## What landed (2026-10-12) — Instagram connect: Meta's one-window setup behind a switch, `feat/instagram-onboarding-connect`, MERGED as PR #93 (`fc8a03d`)
 
 [[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]] (his five decisions of
 2026-10-12, dated pointers on 0101 and 0102); the mechanics are docs/09 §The connect mode and
@@ -1140,16 +1162,16 @@ taken a real payment — but what is left of it is still the part that decides w
 payment is kept.
 
 **Social posting — PR 1 (core) MERGED as #89; PR 2 (connect) MERGED as #91; the one-window setup
-BUILT 2026-10-12** on `feat/instagram-onboarding-connect`
+MERGED as #93 (`fc8a03d`), run live and RULED OFF 2026-10-12**
 ([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]],
 [[0102-social-posting-label-mix-switch-key-2026-10-11]],
-[[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]]; the "What landed"
-entries above). 0060 is applied (2026-10-11). Next in order: merge the one-window branch, his live
-run of it (docs/09 checklist q–v, each its own OK), his ruling on the result — then PR 3
-(schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
-checks), which waits for that ruling (0105 §5); if the window refuses the code, decision 4's Page
-steps first. PR 4 (TikTok, once his sandbox app exists). The env names and the live-test steps
-are under "Owed founder actions".
+[[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]],
+[[0106-instagram-connect-stays-on-todays-flow-with-a-page-first]],
+[[instagram-connect-live-run-2026-10-12]]; the "What landed" entries above). 0060 is applied
+(2026-10-11). Next in order: the Page-first pre-screen (`feat/instagram-connect-page-steps`, his
+string approval and merge), then **PR 3** (schedule: the button, the tag, the flow, the sound
+picker, the calendar, the notice; the live checks) — no longer blocked (0106). PR 4 (TikTok, once
+his sandbox app exists). The env names and the live-test steps are under "Owed founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
@@ -1557,13 +1579,14 @@ the 2026-09-26 custom domain (founder-reported):**
   interface copy does; 7. counsel (legal-review P13, P14): the transfer basis, the notice-only
   question for visitors with no account, and whether this is a §14 material change needing an email
   to existing accounts.
-- **Instagram one-window setup (2026-10-12, `feat/instagram-onboarding-connect`).** Each its own
-  OK: 1. the DRAFT Hebrew strings in `apps/web/src/lib/social-ui.ts` (the five outcome lines, the
-  pre-screen by mode) at PR review; 2. the Vercel runtime log lines for `GET
-/api/social/instagram/callback` at his 2026-10-12 Edit-settings attempt — the message text and
-  the **names** of the query parameters, never their values — to confirm the red error's cause; 3. merge, then the live checks of docs/09 (q) Omri through the one window with the mode on,
-  (r) Shira listed once, (s) mode off → Edit settings → connected, (t) optional 31-minute wait,
-  (u) disconnect, (v) a return address; 4. his ruling on the result (0105 §5), which unblocks PR 3.
+- **Instagram connect (2026-10-12, `feat/instagram-connect-page-steps`).** Each its own OK: 1. the
+  DRAFT Hebrew strings in `apps/web/src/lib/social-ui.ts` (the five outcome lines merged in #93,
+  and this branch's Page-first pre-screen) at PR review, then merge; 2. the Vercel runtime log lines
+  for `GET /api/social/instagram/callback` at his 2026-10-12 morning Edit-settings attempt — the
+  message text and the **names** of the query parameters, never their values — to confirm the red
+  error's cause (still REASONED); 3. what's left of docs/09's checks: (u) the disconnect confirm's
+  count (tokens null MEASURED), (v) a return address; the one-window checks (q)–(s) are DONE
+  ([[instagram-connect-live-run-2026-10-12]]); 4. ~~his ruling~~ DONE 2026-10-12 (0106).
 
 - **Social posting — PR 2 (2026-10-11, `feat/social-posting-connect`).** Each its own OK: 1. the
   PR 2 strings (Appendix A's connect lines plus the DRAFT singular forms in

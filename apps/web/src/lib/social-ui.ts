@@ -71,11 +71,19 @@ export function connectedLine(count: number, name: string | null): string {
   return `${count} חשבונות חוברו.`;
 }
 
-/** DRAFT (0105): the "what to do" half follows the Facebook window the mode opens. */
+/**
+ * Where a customer links (or creates) the Page, in Meta's own Hebrew labels for
+ * the Instagram app (Meta help 898752960195806, read 2026-10-12: "הקישו על דף
+ * ולאחר מכן הקישו על חיבור או יצירה."). Meta documents no instagram.com path.
+ * Meta's labels call a Page "דף"; Tavnit's own sentences keep "עמוד".
+ */
+const PAGE_LINK_PATH = "עריכת פרופיל ← דף ← חיבור או יצירה";
+
+/** DRAFT (0105, 0106): the "what to do" half follows the Facebook window the mode opens. */
 export function connectNoAccountLine(mode: InstagramConnectMode): string {
   return mode === "onboarding"
     ? "לא נמצא חשבון אינסטגרם מקצועי המקושר לעמוד פייסבוק. התחילו שוב, ובחלון של פייסבוק השלימו את המעבר לחשבון מקצועי, את יצירת העמוד ואת הקישור ביניהם לפני האישור."
-    : "לא נמצא חשבון אינסטגרם מקצועי המקושר לעמוד פייסבוק. לכל חשבון אינסטגרם צריך עמוד פייסבוק משלו, מקושר אליו; אחרי שקישרתם, התחילו שוב ובחלון של פייסבוק סמנו את העמוד ואת החשבון.";
+    : `לא נמצא חשבון אינסטגרם מקצועי המקושר לעמוד פייסבוק. לכל חשבון צריך עמוד משלו: באפליקציית אינסטגרם, ${PAGE_LINK_PATH}. אחרי שקישרתם, התחילו שוב.`;
 }
 
 // DRAFT (0105): the refusals and failures, one line each.
@@ -123,18 +131,25 @@ const PRESCREEN_FREE = "המעבר לחשבון מקצועי חינמי ומיי
 const PRESCREEN_WINDOW =
   "בלחיצה על המשך ייפתח חלון של פייסבוק לאישור. תבנית מקבלת הרשאה לראות את העמודים והחשבונות המקושרים ולפרסם אליהם.";
 /**
- * DRAFT (0105), from the founder's run of 2026-10-12: "Continue" brought back
- * only the account already connected, because the new one had no Page — so the
- * Page comes first, and "Edit settings" only after it. Facebook's own button
- * label, in English as he saw it, kept on one line (a no-break space).
+ * DRAFT (0106), from the founder's runs of 2026-10-12. In the morning
+ * "Continue" brought back only the account already connected, because the new
+ * one had no Page; in the afternoon, with a Page linked by hand, confirm alone
+ * added it. So the Page comes first, Continue is the default, and "Edit
+ * settings" is only the way back for an account that did not return (a grant
+ * that left its Page unticked). Facebook's button labels, in English as he saw
+ * them, each kept on one line (a no-break space).
  */
-const PRESCREEN_ADD_PAGE_FIRST = `לחשבון האינסטגרם החדש צריך עמוד פייסבוק משלו, מקושר אליו. רק אחרי זה: אם פייסבוק מציעה להמשיך עם ההגדרות הקודמות, לחצו על ${isolated("Edit settings")} וודאו שהעמוד והחשבון החדשים מסומנים.`;
+const PRESCREEN_ADD_PAGE_FIRST =
+  "לחשבון האינסטגרם החדש צריך עמוד פייסבוק משלו, מקושר אליו. בלי עמוד, פייסבוק מחזירה רק את החשבונות שכבר חוברו.";
+const PRESCREEN_PAGE_HOW = `אין לחשבון עמוד? באפליקציית אינסטגרם בטלפון: ${PAGE_LINK_PATH}. אפשר לבחור עמוד קיים או ליצור עמוד חדש.`;
+const PRESCREEN_ADD_CONTINUE = `אם פייסבוק מציעה להמשיך עם ההגדרות הקודמות, לחצו על ${isolated("Continue")}. אם החשבון החדש לא חזר, התחילו שוב, לחצו על ${isolated("Edit\u00a0settings")} וסמנו את העמוד והחשבון שלו.`;
 /** DRAFT (0105): Facebook's review screen, as the founder saw it on 2026-10-12. */
 const PRESCREEN_REVIEW =
   "במסך הסיכום פייסבוק כותבת שתבנית תוכל לנהל את כל מה שבתיק העסקי. תבנית משתמשת בהרשאה רק כדי למצוא את חשבונות האינסטגרם ולפרסם אליהם.";
 /**
- * DRAFT (0105), from Meta's business-login-for-instagram page, not from a run:
- * rewritten after the founder's live run of the one-window setup.
+ * DRAFT (0105), from Meta's business-login-for-instagram page. Unused while
+ * the one-window switch is off (0106); rewrite from the 2026-10-12 run if it
+ * is ever switched on for customers.
  */
 const PRESCREEN_ONBOARDING = [
   "בלחיצה על המשך ייפתח חלון של פייסבוק. אם חשבון האינסטגרם עוד לא מקצועי, או שאין לו עמוד פייסבוק, משלימים את זה באותו חלון: מעבר לחשבון מקצועי, יצירת עמוד וקישור ביניהם.",
@@ -148,16 +163,17 @@ export function preScreenLines(mode: InstagramConnectMode, add: boolean): readon
   if (add) {
     return [
       PRESCREEN_ADD_PAGE_FIRST,
-      PRESCREEN_PROFESSIONAL,
-      PRESCREEN_FREE,
+      PRESCREEN_PAGE_HOW,
       PRESCREEN_WINDOW,
+      PRESCREEN_ADD_CONTINUE,
       PRESCREEN_REVIEW,
     ];
   }
   return [
     PRESCREEN_PROFESSIONAL,
-    PRESCREEN_PAGE,
     PRESCREEN_FREE,
+    PRESCREEN_PAGE,
+    PRESCREEN_PAGE_HOW,
     PRESCREEN_WINDOW,
     PRESCREEN_REVIEW,
   ];

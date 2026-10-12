@@ -18,10 +18,12 @@ the switch's `named` setting), the חיבורים section in `/home/settings`, t
 the Facebook round trip, disconnect, Meta's deletion callback and its status page (§Connecting an
 account). Then (decision [`0105`](vault/decisions/0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch.md),
 `feat/instagram-onboarding-connect`): Meta's one-window setup behind its own SQL switch, a
-30-minute window, and a line of its own for every way back from Facebook (§The connect mode).
-**Not yet built:** the schedule flow, the player button, the sound picker, the calendar, the tag,
-the `/home` notice (PR 3, which waits for the founder's live result on the one-window setup) and
-TikTok (PR 4, once a sandbox app exists). Everything a customer could reach is behind the switch.
+30-minute window, and a line of its own for every way back from Facebook (§The connect mode). After
+the live run (decision [`0106`](vault/decisions/0106-instagram-connect-stays-on-todays-flow-with-a-page-first.md),
+`feat/instagram-connect-page-steps`): customers stay on today's connect, and the pre-screen tells
+them to link a Page first; the one-window switch stays off. **Not yet built:** the schedule flow,
+the player button, the sound picker, the calendar, the tag, the `/home` notice (PR 3) and TikTok
+(PR 4, once a sandbox app exists). Everything a customer could reach is behind the switch.
 
 ## Data model (0057–0060)
 
@@ -202,7 +204,10 @@ on conflict (key) do update set value = excluded.value, updated_at = now();
 ### The connect mode (0105)
 
 `app_config.instagram_connect` chooses which Facebook window חיבור חשבון and הוספת חשבון open.
-The founder flips it in SQL until he rules on the live result; no deploy either way.
+The founder flips it in SQL; no deploy either way. **Ruled 2026-10-12 (0106): off in production.**
+The one-window setup returned a code but failed with Facebook's generic error for two of three
+accounts (runbook J, [the live run](vault/facts/instagram-connect-live-run-2026-10-12.md)); the code stays, so it
+can be retried with the insert below.
 
 | value                        | the window                                                                                                                                                                                                                                                                                                                                      |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -539,20 +544,31 @@ line re-fetched by an independent refuter):
   in the window.
 
 How Tavnit calls it: §The connect mode — Meta's parameter set with `response_type=code`, never the
-fragment return. **UNVERIFIED — his live run settles each:**
+fragment return.
 
-- whether the window honours the code and returns `?code=&state=`;
-- whether the window appears for a profile that already linked Tavnit, or only the
-  "previously linked" screen;
-- whether a second Instagram account can be chosen or signed into inside the window;
-- whether a Page created in the window comes back from `me/accounts` on the same return;
-- whether `business_management` is still needed on this route (reported, not changed: the
-  Instagram use-case page lists it as required, and only community answers tie it to
-  business-owned Pages).
+**The live run, 2026-10-12, switch on** (vault `facts/instagram-connect-live-run-2026-10-12`; the
+database MEASURED, the window FOUNDER-REPORTED):
 
-If the window refuses the code or answers in the fragment, nothing more is built, and the options go
-back to him (0105): decision 4's Page steps on the pre-screen, a fragment-reading page (it breaks
-his limit), or the window for setup only, with its token thrown away unread.
+- **The code is honoured.** Omri connected through the window, and production writes a row only
+  after a server-side code exchange — so Meta answered `?code=` in the query.
+- **The window appears** for a profile that already linked Tavnit, with its own Instagram account
+  picker, the switch-to-professional flow and Page creation.
+- **A Page created in the window comes back** from `me/accounts` on the same return (Omri's, with
+  Meta's default name; its first creation attempt errored back to Tavnit, the second offered the
+  Page already made).
+- **It failed for two of three accounts:** Yael (professional, no Page) the moment it was picked,
+  before any password, even as the active account on instagram.com; tavnit.ai (personal; the
+  conversion worked) the moment the password went in. Facebook's "Sorry, something went wrong. We're
+  working on getting this fixed as soon as we can." — inside Meta's window, never back to Tavnit.
+  REASONED: both are in the same Accounts Center as the Facebook profile running the window, Omri is
+  not. The one public report (a Meta forum thread, about three years old) matches: only with this
+  mode, some accounts and not others, console error GraphQL 1850019, no answer from Meta.
+- **Still unknown:** whether `business_management` is needed on either route.
+
+**Today's flow, switch off, same day:** Yael, once a Page was linked to it by hand in Instagram,
+connected "so quick and seamless" — in Facebook's window he pressed confirm (continue), not Edit
+settings. **The ruling (0106):** customers get today's flow, with the Page linked first; the switch
+stays off and its code stays.
 
 The Graph API version in the code, `v26.0`, is the latest on Meta's changelog (introduced
 2026-07-29); the manual-flow page's example still prints v25.0.
@@ -613,14 +629,18 @@ deploys; the box is not involved. Each its own OK.
   picture. Note what the window showed at each step, and whether the address it returned to
   carried `?code=` or `#access_token`. **If `#access_token`: stop** — remove Tavnit under
   Facebook's Business Integrations (treat that token as exposed) and send the callback's log line;
-- (r) **Shira** is still listed once;
+  **run 2026-10-12: Omri connected on the second try, by a code; Yael and tavnit.ai failed inside
+  Meta's window (runbook J)**;
+- (r) **Shira** is still listed once; **run 2026-10-12: yes** (three live rows, each once);
 - (s) the mode off (the `delete`), then הוספת חשבון → **Edit settings** → tick → the "connected"
-  line, not a failure;
+  line, not a failure; **run 2026-10-12, with a Page linked by hand: Yael connected with confirm
+  alone, no Edit settings**;
 - (t) _optional — the test covers it:_ start, wait 31 minutes in Facebook's window, finish → the
   "more than half an hour" line;
 - (u) ניתוק on one account → the confirm's count, the done line, and the row's tokens read back null
   (`select access_token_enc is null, user_token_enc is null, status from social_accounts where id = '<id>';`
-  → `t | t | disconnected`);
+  → `t | t | disconnected`); **run 2026-10-12 on Shira: tokens null, `disconnected`, row kept (the
+  confirm's count not reported)**;
 - (v) `/connect/instagram?return=/home/renders` → המשך → finish → you land on `/home/renders`.
 
 **PR 3 — posting.** The box on `origin/main` after PR 3 merges, never a task branch (0102 planning

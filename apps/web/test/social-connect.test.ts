@@ -875,6 +875,24 @@ describe("the Hebrew lines", () => {
     expect(ui.parseSocialOutcome("<script>")).toBeNull();
   });
 
+  it("today's connect says how to link a Page first, in Meta's own labels; adding opens with it, Continue before Edit settings (0106)", () => {
+    const path = "עריכת פרופיל ← דף ← חיבור או יצירה";
+    const connect = ui.preScreenLines("standard", false);
+    const add = ui.preScreenLines("standard", true);
+    for (const lines of [connect, add]) {
+      expect(lines.filter((line) => line.includes(path))).toHaveLength(1);
+      expect(new Set(lines).size).toBe(lines.length);
+    }
+    expect(add[0]).toMatch(/^לחשבון האינסטגרם החדש צריך עמוד פייסבוק משלו/);
+    const continueLine = add.find((line) => line.includes("Continue"))!;
+    expect(continueLine.indexOf("Continue")).toBeLessThan(continueLine.indexOf("Edit"));
+    // Facebook's button labels stay whole, LTR islands inside the Hebrew.
+    expect(continueLine).toContain(ui.isolated("Edit settings"));
+    expect(ui.connectNoAccountLine("standard")).toContain(path);
+    // The one-window lines are untouched and unused while the switch is off.
+    expect(ui.preScreenLines("onboarding", true)).toEqual(ui.preScreenLines("onboarding", false));
+  });
+
   it("no line says a video is labelled as AI (0102)", () => {
     const all = Object.values(ui)
       .flatMap((v) => (typeof v === "string" ? [v] : Array.isArray(v) ? v : []))
