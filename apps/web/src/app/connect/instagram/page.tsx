@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { getDb, getInstagramConnectMode } from "@aiugc/core";
 import { authedUser } from "@/lib/auth-user";
 import { postingAllowed } from "@/lib/social";
 import { socialReturnPath } from "@/lib/social-oauth";
@@ -14,7 +15,8 @@ export const metadata: Metadata = {
 
 /**
  * /connect/instagram?return=&add=1 — the pre-screen behind "חיבור חשבון" and
- * "הוספת חשבון" (decision 0101, PR 2).
+ * "הוספת חשבון" (decision 0101, PR 2). What it says follows the Facebook
+ * window app_config.instagram_connect opens (0105).
  *
  * Outside /home ON PURPOSE. Every segment under /home sits inside the Suspense
  * boundary its loading.tsx opens, and a notFound() thrown inside a boundary
@@ -36,7 +38,11 @@ export default async function InstagramConnectPage({
   const params = await searchParams;
   return (
     <div className="theme-light min-h-dvh bg-paper text-ink">
-      <InstagramPreScreen returnTo={socialReturnPath(params.return)} add={params.add === "1"} />
+      <InstagramPreScreen
+        returnTo={socialReturnPath(params.return)}
+        add={params.add === "1"}
+        mode={await getInstagramConnectMode(getDb())}
+      />
     </div>
   );
 }

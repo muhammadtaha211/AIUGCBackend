@@ -23,6 +23,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 const fixture = vi.hoisted(() => ({
   user: null as { id: string; email: string } | null,
   db: undefined as unknown,
+  /** Reads of app_config.instagram_connect — never before the switch's gate. */
+  modeReads: 0,
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -36,6 +38,10 @@ vi.mock("@aiugc/core", async (importOriginal) => {
   return {
     ...actual,
     getDb: () => fixture.db,
+    getInstagramConnectMode: (db: Parameters<typeof actual.getInstagramConnectMode>[0]) => {
+      fixture.modeReads++;
+      return actual.getInstagramConnectMode(db);
+    },
     // The settings page's plan row; pinned in packages/core, not here.
     getAccountBilling: async () => ({
       subscription: null,
@@ -76,7 +82,13 @@ const { default: DeletionStatusPage } =
   await import("../src/app/(legal)/social/deletion/[code]/page");
 const { SocialAccountsSection } = await import("../src/app/home/settings/social-accounts");
 const { InstagramPreScreen } = await import("../src/app/connect/instagram/prescreen");
-const { OAUTH_COOKIE } = await import("../src/lib/social-oauth");
+const {
+  decodeOAuthCookie,
+  encodeOAuthCookie,
+  IG_ONBOARDING_EXTRAS,
+  OAUTH_COOKIE,
+  OAUTH_WINDOW_MS,
+} = await import("../src/lib/social-oauth");
 const ui = await import("../src/lib/social-ui");
 
 const schema = core.schema;
@@ -117,6 +129,24 @@ function setEnv(values: Record<string, string | undefined>) {
     else process.env[key] = value;
   }
   core.resetEnvCache();
+}
+
+/** app_config.instagram_connect as the founder sets it in SQL; null deletes the row. */
+async function setConnectMode(value: string | null) {
+  if (value === null) {
+    await db.execute(sql`delete from app_config where key = 'instagram_connect'`);
+    return;
+  }
+  await db.execute(
+    sql`insert into app_config (key, value) values ('instagram_connect', ${value}::jsonb)
+        on conflict (key) do update set value = excluded.value`,
+  );
+}
+
+/** The start route's cookie, re-sealed as if it had been issued `minutesAgo`. */
+function agedCookie(cookie: string, minutesAgo: number): string {
+  const saved = decodeOAuthCookie(cookie)!;
+  return encodeOAuthCookie({ ...saved, issuedAt: Date.now() - minutesAgo * 60_000 });
 }
 
 async function liveAccounts(userId: string) {
@@ -204,10 +234,12 @@ beforeAll(async () => {
   );
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   as(null);
   core.setMetaGraphProvider(undefined);
   setEnv({ DRY_RUN: "1", META_APP_ID: undefined, META_LOGIN_CONFIG_ID: undefined });
+  await setConnectMode(null);
+  fixture.modeReads = 0;
 });
 
 afterAll(async () => {
@@ -222,6 +254,10 @@ describe("the switch: no trace for an account it does not allow", () => {
     // in, say): only the switch can turn the disconnect into a 404, not a
     // missing row.
     const [own] = await connectInstagram(db, customer, [samplePage("17841400000000077")]);
+    // With Meta's one-window setup switched on, nothing changes for them —
+    // and a live start (not DRY_RUN's stub branch) would read the mode.
+    await setConnectMode('"onboarding"');
+    setEnv({ DRY_RUN: "0", META_APP_ID: "1234567890" });
     as(customer);
     for (const response of [
       await start(new Request("http://localhost/api/social/instagram/start")),
@@ -239,12 +275,22 @@ describe("the switch: no trace for an account it does not allow", () => {
     expect(kept!.status).toBe("connected");
     expect(kept!.accessTokenEnc).not.toBeNull();
     await expect(PreScreenPage(settingsProps())).rejects.toThrow("NEXT_NOT_FOUND");
-    const tree = await SettingsPage(settingsProps({ social: "connected", n: "1" }));
-    expect(elements(tree).some((el) => el.type === SocialAccountsSection)).toBe(false);
-    expect(text(tree)).not.toContain(ui.SOCIAL_SECTION_TITLE);
+    for (const social of ["connected", "none", "expired"]) {
+      const tree = await SettingsPage(settingsProps({ social, n: "1" }));
+      expect(elements(tree).some((el) => el.type === SocialAccountsSection)).toBe(false);
+      expect(text(tree)).not.toContain(ui.SOCIAL_SECTION_TITLE);
+    }
+    // The connect mode is read only behind the gate…
+    expect(fixture.modeReads).toBe(0);
+    // …and the count does see a read: the same start, by an allowed account.
+    as(reviewer);
+    expect((await startFlow()).response.status).toBe(307);
+    expect(fixture.modeReads).toBe(1);
   });
 
   it("a signed-out visitor gets the same 404 everywhere, never a 401 or a redirect that would say the page exists", async () => {
+    await setConnectMode('"onboarding"');
+    setEnv({ DRY_RUN: "0", META_APP_ID: "1234567890" });
     as(null);
     const someId = "99999999-9999-4999-8999-999999999999";
     for (const response of [
@@ -254,8 +300,10 @@ describe("the switch: no trace for an account it does not allow", () => {
     ]) {
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual(NOT_FOUND);
+      expect(response.headers.get("set-cookie")).toBeNull();
     }
     await expect(PreScreenPage(settingsProps())).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(fixture.modeReads).toBe(0);
   });
 
   it("a named non-admin account sees the pre-screen, the section and every route", async () => {
@@ -264,6 +312,7 @@ describe("the switch: no trace for an account it does not allow", () => {
     expect(elements(pre).find((el) => el.type === InstagramPreScreen)?.props).toEqual({
       returnTo: "/home/renders",
       add: true,
+      mode: "standard",
     });
     const tree = await SettingsPage(settingsProps());
     const section = elements(tree).find((el) => el.type === SocialAccountsSection);
@@ -294,11 +343,23 @@ describe("the Facebook round trip", () => {
     expect(url.searchParams.get("scope")).toBe(core.INSTAGRAM_SCOPES.join(","));
     expect(url.searchParams.has("auth_type")).toBe(false);
     expect(url.searchParams.get("state")!.length).toBeGreaterThanOrEqual(32);
+    // Today's request, nothing more: the one-window setup is off without its row.
+    expect([...url.searchParams.keys()]).toEqual([
+      "client_id",
+      "redirect_uri",
+      "state",
+      "response_type",
+      "scope",
+    ]);
     const setCookie = response.headers.get("set-cookie")!;
     expect(setCookie).toContain(`${OAUTH_COOKIE}=`);
     expect(setCookie).toMatch(/HttpOnly/i);
     expect(setCookie).toMatch(/SameSite=lax/i);
     expect(setCookie).toContain("Path=/api/social/instagram");
+    // The browser keeps it a day; the callback allows the window thirty minutes.
+    expect(setCookie).toMatch(/Max-Age=86400/i);
+    const saved = decodeOAuthCookie(response.cookies.get(OAUTH_COOKIE)?.value)!;
+    expect(Math.abs(saved.issuedAt - Date.now())).toBeLessThan(60_000);
   });
 
   it('"add another" asks Facebook again (auth_type=rerequest); a configuration id replaces the scope list', async () => {
@@ -311,6 +372,44 @@ describe("the Facebook round trip", () => {
     const url = new URL((await startFlow()).location);
     expect(url.searchParams.get("config_id")).toBe("cfg_42");
     expect(url.searchParams.has("scope")).toBe(false);
+  });
+
+  it("the one-window setup: switched on, start sends Meta's onboarding parameters with a code return; off, absent or a typo, today's request", async () => {
+    as(reviewer);
+    setEnv({ DRY_RUN: "0", META_APP_ID: "1234567890", META_LOGIN_CONFIG_ID: "cfg_42" });
+    await setConnectMode('"onboarding"');
+    for (const query of ["", "?add=1"]) {
+      const url = new URL((await startFlow(query)).location);
+      expect(`${url.origin}${url.pathname}`).toBe("https://www.facebook.com/v26.0/dialog/oauth");
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        client_id: "1234567890",
+        redirect_uri: "http://localhost/api/social/instagram/callback",
+        state: expect.stringMatching(/^[\w-]{32,}$/),
+        // A code in the query, never Meta's documented token in the fragment.
+        response_type: "code",
+        display: "page",
+        extras: '{"setup":{"channel":"IG_API_ONBOARDING"}}',
+        override_default_response_type: "true",
+        scope: core.INSTAGRAM_SCOPES.join(","),
+      });
+    }
+    expect(IG_ONBOARDING_EXTRAS).toBe('{"setup":{"channel":"IG_API_ONBOARDING"}}');
+
+    for (const mode of ['"standard"', '"Onboarding"', '{"mode":"onboarding"}', null]) {
+      await setConnectMode(mode);
+      const url = new URL((await startFlow("?add=1")).location);
+      // Order and count pinned too: today's request, byte for byte but the random state.
+      expect(
+        [...url.searchParams].map(([key, value]) => [key, key === "state" ? "<state>" : value]),
+      ).toEqual([
+        ["client_id", "1234567890"],
+        ["redirect_uri", "http://localhost/api/social/instagram/callback"],
+        ["state", "<state>"],
+        ["response_type", "code"],
+        ["config_id", "cfg_42"],
+        ["auth_type", "rerequest"],
+      ]);
+    }
   });
 
   it("no app id is a configuration fault: settings says the connect did not happen", async () => {
@@ -378,7 +477,8 @@ describe("the Facebook round trip", () => {
   it("a return address is honoured after connecting, and kept through a failure", async () => {
     as(reviewer);
     const { location } = await roundTrip(new FakeMeta(), "?return=%2Fhome%2Frenders%3Fx%3D1");
-    expect(location).toBe("http://localhost/home/renders?x=1");
+    // With a fragment of its own, so none Facebook appended can ride along.
+    expect(location).toBe("http://localhost/home/renders?x=1#");
 
     // The customer closes Facebook's window: the right state, and Facebook's refusal.
     const meta = new FakeMeta();
@@ -391,7 +491,7 @@ describe("the Facebook round trip", () => {
     expect(meta.calls.exchangeCode).toBe(0);
     const landed = new URL(refused.headers.get("location")!);
     expect(landed.pathname).toBe("/home/settings");
-    expect(landed.searchParams.get("social")).toBe("error");
+    expect(landed.searchParams.get("social")).toBe("cancelled");
     expect(landed.searchParams.get("return")).toBe("/home/renders");
   });
 
@@ -409,7 +509,7 @@ describe("the Facebook round trip", () => {
     }
   });
 
-  it("a forged, missing or someone else's state is refused before any exchange", async () => {
+  it("a forged, missing or someone else's state is refused before any exchange, with its own line", async () => {
     as(reviewer);
     const meta = new FakeMeta();
     core.setMetaGraphProvider(meta);
@@ -423,26 +523,169 @@ describe("the Facebook round trip", () => {
     ];
     for (const request of cases) {
       const response = await callback(request);
-      expect(new URL(response.headers.get("location")!).searchParams.get("social")).toBe("error");
+      expect(new URL(response.headers.get("location")!).searchParams.get("social")).toBe(
+        "mismatch",
+      );
+      expect(response.headers.get("set-cookie")).toMatch(new RegExp(`${OAUTH_COOKIE}=;`));
     }
     // The same cookie under another allowed session (the admin) is not theirs.
     as(admin);
     const crossed = await callback(callbackRequest({ code: "c", state }, cookie));
-    expect(new URL(crossed.headers.get("location")!).searchParams.get("social")).toBe("error");
+    expect(new URL(crossed.headers.get("location")!).searchParams.get("social")).toBe("mismatch");
     expect(meta.calls.exchangeCode).toBe(0);
+
+    const tree = await SettingsPage(settingsProps({ social: "mismatch" }));
+    const section = elements(tree).find((el) => el.type === SocialAccountsSection)!;
+    expect((section.props as { flash: unknown }).flash).toEqual({
+      kind: "error",
+      text: ui.CONNECT_MISMATCH,
+    });
   });
 
-  it("an approval with no Instagram professional account says so and connects nothing", async () => {
+  it("a return later than the window's thirty minutes is refused before any exchange, with its own line", async () => {
+    as(reviewer);
+    const meta = new FakeMeta();
+    core.setMetaGraphProvider(meta);
+    expect(OAUTH_WINDOW_MS).toBe(30 * 60_000);
+
+    const late = await startFlow("?return=%2Fhome%2Frenders");
+    const lateState = new URL(late.location).searchParams.get("state")!;
+    const refused = await callback(
+      callbackRequest({ code: "c", state: lateState }, agedCookie(late.cookie, 31)),
+    );
+    expect(meta.calls.exchangeCode).toBe(0);
+    expect(refused.headers.get("set-cookie")).toMatch(new RegExp(`${OAUTH_COOKIE}=;`));
+    const landed = new URL(refused.headers.get("location")!);
+    expect(landed.searchParams.get("social")).toBe("expired");
+    // The retry still lands where the customer was going.
+    expect(landed.searchParams.get("return")).toBe("/home/renders");
+    const tree = await SettingsPage(settingsProps({ social: "expired" }));
+    const section = elements(tree).find((el) => el.type === SocialAccountsSection)!;
+    expect((section.props as { flash: unknown }).flash).toEqual({
+      kind: "error",
+      text: ui.CONNECT_EXPIRED,
+    });
+
+    // A late cookie that is someone else's is foreign, not late.
+    as(admin);
+    const crossed = await callback(
+      callbackRequest({ code: "c", state: lateState }, agedCookie(late.cookie, 31)),
+    );
+    expect(new URL(crossed.headers.get("location")!).searchParams.get("social")).toBe("mismatch");
+
+    // Twenty-nine minutes in is still inside the window.
+    as(reviewer);
+    const slow = await startFlow();
+    const slowState = new URL(slow.location).searchParams.get("state")!;
+    const connected = await callback(
+      callbackRequest({ code: "c", state: slowState }, agedCookie(slow.cookie, 29)),
+    );
+    expect(new URL(connected.headers.get("location")!).searchParams.get("social")).toBe(
+      "connected",
+    );
+    expect(meta.calls.exchangeCode).toBe(1);
+  });
+
+  it("a closed window, a Facebook error and an empty return each land on their own line, with no exchange", async () => {
+    as(reviewer);
+    const meta = new FakeMeta();
+    core.setMetaGraphProvider(meta);
+    const { cookie, location } = await startFlow();
+    const state = new URL(location).searchParams.get("state")!;
+    const outcomes: [Record<string, string>, string, string][] = [
+      [
+        { error: "access_denied", error_reason: "user_denied", state },
+        "cancelled",
+        ui.CONNECT_CANCELLED,
+      ],
+      [{ error: "server_error", state }, "error", ui.CONNECT_FAILED],
+      // Meta's documented token return lives in the fragment, which never reaches a server.
+      [{}, "error", ui.CONNECT_FAILED],
+    ];
+    for (const [query, outcome, line] of outcomes) {
+      const response = await callback(callbackRequest(query, cookie));
+      expect(new URL(response.headers.get("location")!).searchParams.get("social")).toBe(outcome);
+      const tree = await SettingsPage(settingsProps({ social: outcome }));
+      const section = elements(tree).find((el) => el.type === SocialAccountsSection)!;
+      expect((section.props as { flash: unknown }).flash).toEqual({ kind: "error", text: line });
+    }
+    expect(meta.calls.exchangeCode).toBe(0);
+    // Every line is its own, and none is the bare "try again" of PR 2.
+    const lines = [
+      ui.CONNECT_EXPIRED,
+      ui.CONNECT_MISMATCH,
+      ui.CONNECT_CANCELLED,
+      ui.CONNECT_FAILED,
+      ui.connectNoAccountLine("standard"),
+      ui.connectNoAccountLine("onboarding"),
+    ];
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(lines).not.toContain("החיבור לאינסטגרם לא הושלם. נסו שוב.");
+  });
+
+  it("every address the callback sends the browser to carries a fragment of its own", async () => {
+    as(reviewer);
+    const locations: string[] = [];
+    locations.push((await roundTrip(new FakeMeta())).location);
+    locations.push((await roundTrip(new FakeMeta(), "?return=%2Fhome%2Frenders")).location);
+    locations.push((await roundTrip(new NoAccounts(), "?return=%2Fhome%2Frenders")).location);
+    const broken = new FakeMeta();
+    broken.throwOn.me = new core.MetaGraphError(500, { message: "boom", code: 1 });
+    locations.push((await roundTrip(broken)).location);
+    const { cookie, location } = await startFlow("?return=%2Fhome%2Frenders");
+    const state = new URL(location).searchParams.get("state")!;
+    for (const request of [
+      callbackRequest({}, cookie),
+      callbackRequest({ error: "access_denied", state }, cookie),
+      callbackRequest({ code: "c", state: "forged" }, cookie),
+      callbackRequest({ code: "c", state }, agedCookie(cookie, 31)),
+    ]) {
+      locations.push((await callback(request)).headers.get("location")!);
+    }
+    expect(locations).toHaveLength(8);
+    for (const at of locations) expect(at).toMatch(/^http:\/\/localhost\/home\/[^#]*#/);
+  });
+
+  it("an add that brings back an account already connected keeps its one row and adds only the new one", async () => {
+    as(reviewer);
+    const [shira] = await connectInstagram(db, reviewer, [
+      samplePage("17841400000000031", "-shira"),
+    ]);
+    class ShiraAndOmri extends FakeMeta {
+      override async pagesWithInstagram() {
+        await super.pagesWithInstagram();
+        return [
+          samplePage("17841400000000031", "-shira"),
+          samplePage("17841400000000032", "-omri"),
+        ];
+      }
+    }
+    for (let i = 0; i < 2; i++) {
+      const { location } = await roundTrip(new ShiraAndOmri(), "?add=1");
+      expect(new URL(location).searchParams.get("n")).toBe("2");
+      const rows = (await liveAccounts(reviewer)).filter((row) =>
+        ["17841400000000031", "17841400000000032"].includes(row.externalId),
+      );
+      expect(rows).toHaveLength(2);
+      expect(rows.find((row) => row.externalId === "17841400000000031")!.id).toBe(shira);
+      expect(rows.every((row) => row.status === "connected")).toBe(true);
+    }
+  });
+
+  it("an approval with no Instagram professional account says so, with what to do in the window the mode opens", async () => {
     as(admin);
     const { location } = await roundTrip(new NoAccounts());
     expect(new URL(location).searchParams.get("social")).toBe("none");
     expect(await liveAccounts(admin)).toEqual([]);
-    const tree = await SettingsPage(settingsProps({ social: "none" }));
-    const section = elements(tree).find((el) => el.type === SocialAccountsSection)!;
-    expect((section.props as { flash: unknown }).flash).toEqual({
-      kind: "error",
-      text: ui.CONNECT_NO_ACCOUNT,
-    });
+    for (const [mode, line] of [
+      [null, ui.connectNoAccountLine("standard")],
+      ['"onboarding"', ui.connectNoAccountLine("onboarding")],
+    ] as const) {
+      await setConnectMode(mode);
+      const tree = await SettingsPage(settingsProps({ social: "none" }));
+      const section = elements(tree).find((el) => el.type === SocialAccountsSection)!;
+      expect((section.props as { flash: unknown }).flash).toEqual({ kind: "error", text: line });
+    }
   });
 
   it("Meta refusing the code exchange lands on the failure line, not an error page", async () => {

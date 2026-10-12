@@ -155,6 +155,28 @@ export async function getPostingAccess(db: Db, userId: string): Promise<"allowed
   return "hidden";
 }
 
+/**
+ * app_config.instagram_connect — which Facebook window "חיבור חשבון" opens
+ * (decision 0105). `"onboarding"` asks for Meta's one-window setup (convert to
+ * professional, create the Page, link it — IG_API_ONBOARDING); absent means
+ * today's connect. Founder-flipped in SQL until he rules on the live result, so
+ * a value that does not parse is today's connect, never an error.
+ */
+export const instagramConnectModeSchema = z.enum(["standard", "onboarding"]);
+export type InstagramConnectMode = z.infer<typeof instagramConnectModeSchema>;
+
+export async function getInstagramConnectMode(db: Db): Promise<InstagramConnectMode> {
+  const row = (
+    await db
+      .select({ value: appConfig.value })
+      .from(appConfig)
+      .where(eq(appConfig.key, "instagram_connect"))
+      .limit(1)
+  )[0];
+  const parsed = instagramConnectModeSchema.safeParse(row?.value);
+  return parsed.success ? parsed.data : "standard";
+}
+
 // ---------------------------------------------------------------------------
 // Errors a route maps to Hebrew
 // ---------------------------------------------------------------------------

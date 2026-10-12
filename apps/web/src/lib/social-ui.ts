@@ -5,10 +5,13 @@
  * Pure — no `@/` imports — so the string tests reach it directly.
  *
  * The lines come from the approved plan's Appendix A. Those marked DRAFT are
- * new in PR 2 (the singular forms Appendix A left implicit) and wait for the
+ * new in PR 2 (the singular forms Appendix A left implicit) or in the 0105
+ * task (the outcome lines, the pre-screen by connect mode) and wait for the
  * founder's approval at PR review with the rest. 0061's rules: no reach or
  * results claim, the app's own vocabulary (חשבון, פרסום).
  */
+
+import type { InstagramConnectMode } from "@aiugc/core";
 
 export const SOCIAL_SECTION_TITLE = "חיבורים";
 export const SOCIAL_SECTION_LEAD = "החשבונות שתבנית מפרסמת אליהם.";
@@ -61,29 +64,104 @@ export function disconnectDoneLine(cancelled: number): string {
 }
 
 // The Facebook round trip's outcome, carried back to /home/settings as `?social=`.
-export const CONNECT_FAILED = "החיבור לאינסטגרם לא הושלם. נסו שוב.";
-export const CONNECT_NO_ACCOUNT = "לא נמצא חשבון אינסטגרם מקצועי המקושר לעמוד פייסבוק בחשבון הזה.";
+// Each line says what happened and what to do (decision 0105) — never a bare "try again".
 
 export function connectedLine(count: number, name: string | null): string {
   if (count === 1 && name) return `החשבון ${isolated(name)} חובר.`;
   return `${count} חשבונות חוברו.`;
 }
 
-export type SocialOutcome = "connected" | "none" | "error";
+/** DRAFT (0105): the "what to do" half follows the Facebook window the mode opens. */
+export function connectNoAccountLine(mode: InstagramConnectMode): string {
+  return mode === "onboarding"
+    ? "לא נמצא חשבון אינסטגרם מקצועי המקושר לעמוד פייסבוק. התחילו שוב, ובחלון של פייסבוק השלימו את המעבר לחשבון מקצועי, את יצירת העמוד ואת הקישור ביניהם לפני האישור."
+    : "לא נמצא חשבון אינסטגרם מקצועי המקושר לעמוד פייסבוק. לכל חשבון אינסטגרם צריך עמוד פייסבוק משלו, מקושר אליו; אחרי שקישרתם, התחילו שוב ובחלון של פייסבוק סמנו את העמוד ואת החשבון.";
+}
+
+// DRAFT (0105): the refusals and failures, one line each.
+export const CONNECT_EXPIRED =
+  "עברה יותר מחצי שעה מאז שנפתח החלון של פייסבוק, ולכן החיבור לא נשמר. התחילו את החיבור שוב מכאן.";
+export const CONNECT_MISMATCH =
+  "החזרה מפייסבוק לא תאמה את החיבור שהתחיל כאן — אולי נפתח חיבור נוסף בחלון אחר, או שהחשבון בתבנית התחלף בינתיים. התחילו את החיבור שוב מכאן, בחלון אחד.";
+export const CONNECT_CANCELLED =
+  "החלון של פייסבוק נסגר בלי אישור, ולא חובר שום חשבון. אפשר להתחיל שוב בכל זמן.";
+export const CONNECT_FAILED =
+  "פייסבוק לא השלימה את החיבור, ולא חובר שום חשבון. נסו שוב בעוד כמה דקות.";
+
+export type SocialOutcome = "connected" | "none" | "expired" | "mismatch" | "cancelled" | "error";
+const OUTCOMES: readonly SocialOutcome[] = [
+  "connected",
+  "none",
+  "expired",
+  "mismatch",
+  "cancelled",
+  "error",
+];
 
 /** `?social=` as the callback writes it; anything else is no outcome at all. */
 export function parseSocialOutcome(value: string | string[] | undefined): SocialOutcome | null {
-  return value === "connected" || value === "none" || value === "error" ? value : null;
+  return OUTCOMES.find((outcome) => outcome === value) ?? null;
+}
+
+/** The line a failed or refused round trip lands on; `connected` has its own. */
+export function connectOutcomeLine(
+  outcome: Exclude<SocialOutcome, "connected">,
+  mode: InstagramConnectMode,
+): string {
+  if (outcome === "none") return connectNoAccountLine(mode);
+  if (outcome === "expired") return CONNECT_EXPIRED;
+  if (outcome === "mismatch") return CONNECT_MISMATCH;
+  if (outcome === "cancelled") return CONNECT_CANCELLED;
+  return CONNECT_FAILED;
 }
 
 // The Instagram pre-screen, before Facebook's window opens.
 export const PRESCREEN_TITLE = "חיבור אינסטגרם";
-export const PRESCREEN_LINES = [
-  "נדרש חשבון אינסטגרם מקצועי (עסקי או יוצר).",
-  "החשבון צריך להיות מקושר לעמוד פייסבוק — עמוד אחד לכל חשבון אינסטגרם.",
-  "המעבר לחשבון מקצועי חינמי ומיידי, בהגדרות אינסטגרם.",
-  "בלחיצה על המשך ייפתח חלון של פייסבוק לאישור. תבנית מקבלת הרשאה לראות את העמודים והחשבונות המקושרים ולפרסם אליהם.",
+const PRESCREEN_PROFESSIONAL = "נדרש חשבון אינסטגרם מקצועי (עסקי או יוצר).";
+const PRESCREEN_PAGE = "החשבון צריך להיות מקושר לעמוד פייסבוק — עמוד אחד לכל חשבון אינסטגרם.";
+const PRESCREEN_FREE = "המעבר לחשבון מקצועי חינמי ומיידי, בהגדרות אינסטגרם.";
+const PRESCREEN_WINDOW =
+  "בלחיצה על המשך ייפתח חלון של פייסבוק לאישור. תבנית מקבלת הרשאה לראות את העמודים והחשבונות המקושרים ולפרסם אליהם.";
+/**
+ * DRAFT (0105), from the founder's run of 2026-10-12: "Continue" brought back
+ * only the account already connected, because the new one had no Page — so the
+ * Page comes first, and "Edit settings" only after it. Facebook's own button
+ * label, in English as he saw it, kept on one line (a no-break space).
+ */
+const PRESCREEN_ADD_PAGE_FIRST = `לחשבון האינסטגרם החדש צריך עמוד פייסבוק משלו, מקושר אליו. רק אחרי זה: אם פייסבוק מציעה להמשיך עם ההגדרות הקודמות, לחצו על ${isolated("Edit settings")} וודאו שהעמוד והחשבון החדשים מסומנים.`;
+/** DRAFT (0105): Facebook's review screen, as the founder saw it on 2026-10-12. */
+const PRESCREEN_REVIEW =
+  "במסך הסיכום פייסבוק כותבת שתבנית תוכל לנהל את כל מה שבתיק העסקי. תבנית משתמשת בהרשאה רק כדי למצוא את חשבונות האינסטגרם ולפרסם אליהם.";
+/**
+ * DRAFT (0105), from Meta's business-login-for-instagram page, not from a run:
+ * rewritten after the founder's live run of the one-window setup.
+ */
+const PRESCREEN_ONBOARDING = [
+  "בלחיצה על המשך ייפתח חלון של פייסבוק. אם חשבון האינסטגרם עוד לא מקצועי, או שאין לו עמוד פייסבוק, משלימים את זה באותו חלון: מעבר לחשבון מקצועי, יצירת עמוד וקישור ביניהם.",
+  "המעבר לחשבון מקצועי ויצירת העמוד חינמיים.",
+  "בסוף מאשרים, ותבנית מקבלת הרשאה לראות את העמודים והחשבונות המקושרים ולפרסם אליהם.",
 ] as const;
+
+/** What the pre-screen says, by the window the mode opens and whether an account is already connected. */
+export function preScreenLines(mode: InstagramConnectMode, add: boolean): readonly string[] {
+  if (mode === "onboarding") return PRESCREEN_ONBOARDING;
+  if (add) {
+    return [
+      PRESCREEN_ADD_PAGE_FIRST,
+      PRESCREEN_PROFESSIONAL,
+      PRESCREEN_FREE,
+      PRESCREEN_WINDOW,
+      PRESCREEN_REVIEW,
+    ];
+  }
+  return [
+    PRESCREEN_PROFESSIONAL,
+    PRESCREEN_PAGE,
+    PRESCREEN_FREE,
+    PRESCREEN_WINDOW,
+    PRESCREEN_REVIEW,
+  ];
+}
 
 // Meta's data-deletion status page (public; Meta links the user to it).
 export const DELETION_TITLE = "בקשת מחיקה";

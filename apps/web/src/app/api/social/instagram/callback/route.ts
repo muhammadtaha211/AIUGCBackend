@@ -2,12 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getDb, getMetaGraphProvider, upsertInstagramConnections } from "@aiugc/core";
 import { requirePostingUser } from "@/lib/social";
 import {
+  checkOAuthReturn,
   decodeOAuthCookie,
   instagramRedirectUri,
   OAUTH_COOKIE,
   OAUTH_COOKIE_PATH,
   settingsOutcomePath,
 } from "@/lib/social-oauth";
+import type { SocialOutcome } from "@/lib/social-ui";
 
 /**
  * GET /api/social/instagram/callback — where Facebook's dialog sends the
@@ -15,7 +17,9 @@ import {
  * start route wrote, exchanges the code (short-lived → long-lived User token →
  * the Facebook user id → every Page with an Instagram professional account)
  * and upserts EVERY such account in one go, sealing the Page token and the
- * User token. Then the return address, or settings with the outcome.
+ * User token. Then the return address, or settings with the outcome — each
+ * refusal and failure its own line and its own log line (0105), so the next
+ * failure explains itself.
  *
  * Never logs the code or a token: Meta's errors are logged by message only,
  * and the wrapper already keeps the token out of every URL it logs.
@@ -34,23 +38,43 @@ export async function GET(request: NextRequest) {
     response.cookies.set(OAUTH_COOKIE, "", { path: OAUTH_COOKIE_PATH, maxAge: 0 });
     return response;
   };
-  const failed = () => land(settingsOutcomePath("error", { returnTo }));
+  const refused = (outcome: Exclude<SocialOutcome, "connected">) =>
+    land(settingsOutcomePath(outcome, { returnTo }));
 
-  // A state we did not issue, or issued to another session, is never exchanged.
-  const state = url.searchParams.get("state");
-  if (!saved || saved.userId !== auth.userId || !state || state !== saved.state) {
-    console.warn("instagram callback: state missing or mismatched");
-    return failed();
-  }
-  // The user closed or refused the dialog: Facebook says so on the query string.
-  if (url.searchParams.has("error")) {
-    console.warn(
-      `instagram callback: dialog returned ${url.searchParams.get("error")} (${url.searchParams.get("error_reason") ?? "no reason"})`,
-    );
-    return failed();
-  }
   const code = url.searchParams.get("code");
-  if (!code) return failed();
+  const state = url.searchParams.get("state");
+  const error = url.searchParams.get("error");
+
+  // Nothing on the query at all is what Meta's documented token return (the
+  // address fragment, which never reaches a server) looks like from here.
+  if (!code && !state && !error) {
+    console.warn(
+      "instagram callback: the return carried no code, state or error (a fragment return?)",
+    );
+    return refused("error");
+  }
+  // The user closed or refused the dialog: Facebook says so on the query
+  // string. Nothing is exchanged, so the state is not needed to believe it —
+  // which also means anyone's link reaches this log line, so its values are
+  // quoted and capped (a newline must not forge a second entry).
+  if (error) {
+    const reason = url.searchParams.get("error_reason") ?? "no reason";
+    console.warn(
+      `instagram callback: dialog returned ${JSON.stringify(error.slice(0, 64))} (${JSON.stringify(reason.slice(0, 64))})`,
+    );
+    return refused(error === "access_denied" ? "cancelled" : "error");
+  }
+  // A state we did not issue, issued to another session, or issued too long
+  // ago is never exchanged.
+  const check = checkOAuthReturn(saved, { userId: auth.userId, state, now: Date.now() });
+  if (!check.ok) {
+    console.warn(`instagram callback: refused (${check.outcome}): ${check.reason}`);
+    return refused(check.outcome);
+  }
+  if (!code) {
+    console.warn("instagram callback: the return carried a state but no code");
+    return refused("error");
+  }
 
   try {
     const meta = getMetaGraphProvider();
@@ -58,7 +82,7 @@ export async function GET(request: NextRequest) {
     const longLived = await meta.exchangeLongLived(shortLived.accessToken);
     const fbUser = await meta.me(longLived.accessToken);
     const pages = await meta.pagesWithInstagram(longLived.accessToken);
-    if (pages.length === 0) return land(settingsOutcomePath("none", { returnTo }));
+    if (pages.length === 0) return refused("none");
 
     const accounts = await upsertInstagramConnections(getDb(), {
       userId: auth.userId,
@@ -80,6 +104,6 @@ export async function GET(request: NextRequest) {
     console.error(
       `instagram callback failed: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
     );
-    return failed();
+    return refused("error");
   }
 }

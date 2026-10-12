@@ -16,9 +16,12 @@ job, the daily token check, the deletion path. PR 2 (connect, `feat/social-posti
 decision 0102's changes to the core (the AI label per post — migration 0060, the mix per service,
 the switch's `named` setting), the חיבורים section in `/home/settings`, the Instagram pre-screen,
 the Facebook round trip, disconnect, Meta's deletion callback and its status page (§Connecting an
-account). **Not yet built:** the schedule flow, the player button, the sound picker, the calendar,
-the tag, the `/home` notice (PR 3) and TikTok (PR 4, once a sandbox app exists). Everything a
-customer could reach is behind the switch.
+account). Then (decision [`0105`](vault/decisions/0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch.md),
+`feat/instagram-onboarding-connect`): Meta's one-window setup behind its own SQL switch, a
+30-minute window, and a line of its own for every way back from Facebook (§The connect mode).
+**Not yet built:** the schedule flow, the player button, the sound picker, the calendar, the tag,
+the `/home` notice (PR 3, which waits for the founder's live result on the one-window setup) and
+TikTok (PR 4, once a sandbox app exists). Everything a customer could reach is behind the switch.
 
 ## Data model (0057–0060)
 
@@ -186,15 +189,51 @@ on conflict (key) do update set value = excluded.value, updated_at = now();
 
 ## Connecting an account (PR 2)
 
-| surface                                     | what it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/home/settings` → **חיבורים**              | Rendered only for an allowed account. One Instagram card: each connected account with its picture, name and @handle, מחובר / פג תוקף — התחברו מחדש, ניתוק behind a confirm that counts the posts it will cancel; חיבור חשבון / הוספת חשבון lead to the pre-screen. `?social=connected\|none\|error` (with `n`, `id`) is the round trip's outcome line; `?return=` is carried through. No TikTok card (0102).                                                                                 |
-| `/connect/instagram?return=&add=1`          | Tavnit's pre-screen (what Instagram needs, what Tavnit asks for), then המשך → the start route. **Outside `/home` on purpose:** every `/home` segment sits inside its `loading.tsx` Suspense boundary, where a `notFound()` streams into a response already sent as 200 — here a hidden or signed-out account gets a real 404, the same page an unknown path gets.                                                                                                                            |
-| `GET /api/social/instagram/start`           | Writes `aiugc.social_oauth` (HttpOnly, SameSite=Lax, path `/api/social/instagram`, 10 min: a random state, the session's user id, the return path) and redirects to `https://www.facebook.com/v26.0/dialog/oauth` with `config_id` when `META_LOGIN_CONFIG_ID` is set, else the five-permission `scope`; `auth_type=rerequest` for הוספת חשבון. DRY_RUN skips Facebook and lands on the callback with a stub code.                                                                           |
-| `GET /api/social/instagram/callback`        | Refuses a state it did not issue or issued to another session, before any exchange; `error=` (the window closed or refused) → the failure line. Otherwise code → short-lived → long-lived User token → `me` → every Page with an Instagram professional account, all upserted in one go (`upsertInstagramConnections`, both tokens sealed), then the return address, or settings with the count. Zero accounts → the "no professional account" line. The cookie is cleared on every outcome. |
-| `POST /api/social/accounts/[id]/disconnect` | `disconnectSocialAccount`: tokens erased, the row kept, every post it can still call back cancelled — `scheduled`, or `publishing` while waiting out Instagram's quota with no container (`cancellablePost`, the same predicate the confirm counts and manual cancel uses) — and the count answered.                                                                                                                                                                                         |
-| `POST /api/social/meta/data-deletion`       | Meta's callback, outside the switch and without a session. 400 and nothing touched unless `signed_request` verifies (HMAC-SHA256 over the encoded payload, the app secret); then `processMetaDataDeletion` — every row of that Facebook user, **disconnected ones included**, loses tokens and identity fields and becomes `deleted`, posts cancelled — and `{url, confirmation_code}` (32 hex digits: Meta documents an alphanumeric code).                                                 |
-| `/social/deletion/[code]`                   | The public status page that url points at (the legal pages' shell, noindex): done, or no such request.                                                                                                                                                                                                                                                                                                                                                                                       |
+| surface                                     | what it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/home/settings` → **חיבורים**              | Rendered only for an allowed account. One Instagram card: each connected account with its picture, name and @handle, מחובר / פג תוקף — התחברו מחדש, ניתוק behind a confirm that counts the posts it will cancel; חיבור חשבון / הוספת חשבון lead to the pre-screen. `?social=connected\|none\|expired\|mismatch\|cancelled\|error` (with `n`, `id`) is the round trip's outcome line — each says what happened and what to do, `none`'s advice following the connect mode; `?return=` is carried through. No TikTok card (0102).                                                                                                                                                                                                                                                                               |
+| `/connect/instagram?return=&add=1`          | Tavnit's pre-screen (what Instagram needs, what Tavnit asks for — its lines follow the connect mode and, in today's mode, `add`), then המשך → the start route. **Outside `/home` on purpose:** every `/home` segment sits inside its `loading.tsx` Suspense boundary, where a `notFound()` streams into a response already sent as 200 — here a hidden or signed-out account gets a real 404, the same page an unknown path gets.                                                                                                                                                                                                                                                                                                                                                                             |
+| `GET /api/social/instagram/start`           | Writes `aiugc.social_oauth` (HttpOnly, SameSite=Lax, path `/api/social/instagram`, kept 24 h by the browser: a random state, the session's user id, the return path, the issue time) and redirects to `https://www.facebook.com/v26.0/dialog/oauth`. Today's mode: `config_id` when `META_LOGIN_CONFIG_ID` is set (it is not, in Production — founder, 2026-10-12), else the five-permission `scope`; `auth_type=rerequest` for הוספת חשבון. The one-window mode: §The connect mode. DRY_RUN skips Facebook and lands on the callback with a stub code.                                                                                                                                                                                                                                                       |
+| `GET /api/social/instagram/callback`        | In order, before any exchange: a return with no code, state or error (what Meta's fragment return looks like from a server) → `error`; `error=access_denied` → `cancelled`, any other `error=` → `error`; a state it did not issue, issued to another session, or no cookie → `mismatch`; issued more than **30 minutes** ago → `expired`. Otherwise code → short-lived → long-lived User token → `me` → every Page with an Instagram professional account, all upserted in one go (`upsertInstagramConnections`, both tokens sealed; an account already live keeps its row), then the return address, or settings with the count. Zero accounts → `none`. Each refusal logs its own reason. The cookie is cleared on every outcome, and every address it sends the browser to carries a fragment of its own. |
+| `POST /api/social/accounts/[id]/disconnect` | `disconnectSocialAccount`: tokens erased, the row kept, every post it can still call back cancelled — `scheduled`, or `publishing` while waiting out Instagram's quota with no container (`cancellablePost`, the same predicate the confirm counts and manual cancel uses) — and the count answered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `POST /api/social/meta/data-deletion`       | Meta's callback, outside the switch and without a session. 400 and nothing touched unless `signed_request` verifies (HMAC-SHA256 over the encoded payload, the app secret); then `processMetaDataDeletion` — every row of that Facebook user, **disconnected ones included**, loses tokens and identity fields and becomes `deleted`, posts cancelled — and `{url, confirmation_code}` (32 hex digits: Meta documents an alphanumeric code).                                                                                                                                                                                                                                                                                                                                                                  |
+| `/social/deletion/[code]`                   | The public status page that url points at (the legal pages' shell, noindex): done, or no such request.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+
+### The connect mode (0105)
+
+`app_config.instagram_connect` chooses which Facebook window חיבור חשבון and הוספת חשבון open.
+The founder flips it in SQL until he rules on the live result; no deploy either way.
+
+| value                        | the window                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| absent (the default)         | today's connect, byte for byte (the start-route row above)                                                                                                                                                                                                                                                                                      |
+| `"onboarding"`               | Meta's one-window setup — convert to professional, create the Page, link it, approve — sent as Meta's own parameter set (`display=page`, `extras={"setup":{"channel":"IG_API_ONBOARDING"}}`, the five scopes; no `config_id`, no `auth_type`) with **one change: `response_type=code`**, plus `state` and `override_default_response_type=true` |
+| anything that does not parse | today's connect — a typo must not break the connect                                                                                                                                                                                                                                                                                             |
+
+Meta documents this mode **only with `response_type=token`**, which returns the tokens in the
+address fragment, where page script can read them. Tavnit never builds that return (0105). Whether
+Meta's window honours the code here is the live check below (runbook J). The callback is the same
+for both modes; the pre-screen and the "no account" line say what the mode's window does.
+
+```sql
+-- on
+insert into app_config (key, value) values ('instagram_connect', '"onboarding"'::jsonb)
+on conflict (key) do update set value = excluded.value, updated_at = now();
+-- read back: "onboarding", or no row
+select value from app_config where key = 'instagram_connect';
+-- off (today's connect)
+delete from app_config where key = 'instagram_connect';
+```
+
+It is read only after `social_posting`'s gate, so a hidden or signed-out account still gets the
+404 everywhere with the mode on.
+
+Known residual (from the branch's adversarial review): every redirect out of the callback carries
+its own fragment, but the uniform JSON 404 for a signed-out or hidden session sends no redirect. If
+Meta ever answered in the fragment and the return landed without a Tavnit session (another browser,
+a lapsed session), the token would stay in that tab's address bar and history. No script runs on a
+JSON 404 and PostHog drops fragments, so the hard limit holds; closing it would mean changing the
+uniform 404. The live check (q) treats any `#access_token` as exposed.
 
 Every social route answers a hidden **or signed-out** account with the same JSON 404 a missing
 resource gets (a 401 would say the route exists); a failed auth read stays 503. Known limit: that
@@ -444,18 +483,76 @@ Instagram Messaging review page).
 5. The app URL must be public, not localhost (Meta's App Review FAQ; not refuter-checked): the
    review runs on tavnit.ai, with PR 2 and PR 3 deployed and the reviewer named.
 
-### J. "הוספת חשבון" and Facebook's Page list
+### J. "הוספת חשבון", Facebook's "previously linked" screen, and the one-window setup
 
-- MEASURED: `auth_type=rerequest` re-asks for permissions the user **declined**; no Meta page ties
-  it, or any `auth_type`, to the Page or Instagram-account picker
-  (`facebook-login/guides/advanced/manual-flow`, the `FB.login` reference). The documented way for a
-  user to change which Pages an app reaches is Facebook's own **Settings & privacy → Settings →
-  Business Integrations → Tavnit → View and Edit** → tick the Page → Save
-  (https://www.facebook.com/help/405094243235242); `me/accounts` then returns it.
-- The code sends rerequest. **Whether Facebook's window shows the Page list again is a live check.**
-  If it does not, the fallbacks are that Business Integrations path (one more pre-screen line — a
-  Hebrew string to approve) and Meta's Instagram onboarding parameter
-  `extras={"setup":{"channel":"IG_API_ONBOARDING"}}` from its own example — both UNVERIFIED.
+Rewritten 2026-10-12 from the founder's live run (decision 0105). **FOUNDER-REPORTED**, today's
+mode, the scope list (`META_LOGIN_CONFIG_ID` is not set in Production):
+
+- **חיבור חשבון** connected Shira on tavnit.ai as admin, with its picture and name.
+- **הוספת חשבון** → Facebook showed "Continue as…? You've previously linked Tavnit", with **Edit
+  settings** and **Continue**, and no Page list. **Continue** brought back Shira only — because the
+  second account, Omri, has no Facebook Page. His previous settings were already "all current and
+  future", so nothing was left unticked.
+- **Edit settings** → Pages, then Businesses, then Instagram accounts, each preset to "all current
+  and future" → a review screen telling the user Tavnit can "manage everything in the portfolio" →
+  "connected". Tavnit then showed «החיבור לאינסטגרם לא הושלם. נסו שוב.» and Shira stayed connected.
+  He may have been in Facebook's window for more than ten minutes.
+- Signing into Instagram as another account in the same browser changed nothing.
+- Omri became a Business account on 2026-10-12 through Instagram's own flow. It has no Page; none is
+  to be created for it by anyone but him.
+
+What follows (REASONED): `auth_type=rerequest` re-asks only for declined permissions
+(`facebook-login/guides/advanced/manual-flow`) and did not bring the Page list back. Facebook's own
+**Edit settings** does, but it can bring a new Instagram account back only once that account has its
+own linked Page. So the add pre-screen (today's mode) opens with the Page requirement, and only then
+says to press Edit settings and check that the new Page and account are ticked (his ruling at
+Stop 1). Facebook's **Settings & privacy → Settings → Business Integrations → Tavnit → View and
+Edit** (https://www.facebook.com/help/405094243235242) reaches the same asset list from outside the
+dialog.
+
+**The red line.** The state cookie lived 10 minutes in the browser; an absent cookie fell on the one
+failure line. That fits his Edit-settings walk but is REASONED until his Vercel log lines for that
+callback are read: the message text, and the **names** of the query parameters (never their
+values). The callback now allows 30 minutes, keeps the cookie a day so a late return reads as late,
+and logs each refusal's reason.
+
+**The one-window setup.** MEASURED on Meta's pages on 2026-10-12 (four readers, each load-bearing
+line re-fetched by an independent refuter):
+
+- `instagram-platform/instagram-api-with-facebook-login/business-login-for-instagram`: the mode lets
+  a user convert to a professional account, create a Page and connect it "in a single window".
+  Six parameters, "All parameters are required": `client_id`, `display=page`, the `extras`,
+  `redirect_uri`, `response_type=token`, `scope`. The tokens (`access_token`, `long_lived_token`)
+  come back in the **fragment**. The page never mentions `state`, `config_id`, a `code` or a
+  server-side exchange. It advises showing the button only to users certain not to have onboarded.
+  Its example scope leaves out `business_management`, and the page does not say why.
+- The mode was announced as a beta (`messenger-platform/changelog`, 2022-05-19). No later
+  general-availability note was found.
+- `facebook-login/guides/advanced/manual-flow`: `code` returns in the query, `token` in the
+  fragment. `facebook-login/facebook-login-for-business`: User tokens use the "implicit grant by
+  default" but "can support authorization code grant". `override_default_response_type` is
+  documented only for the JS SDK.
+- `graph-api/changelog/non-versioned-changes/dec-5-2012`: a code must be exchanged "within 10
+  minutes of their creation", and only once. Time spent in the window does not age it.
+- `instagram-platform/content-publishing`: a Page that requires Page Publishing Authorization cannot
+  be published to until it is done, and the app cannot tell in advance — a PR 3 risk for a Page made
+  in the window.
+
+How Tavnit calls it: §The connect mode — Meta's parameter set with `response_type=code`, never the
+fragment return. **UNVERIFIED — his live run settles each:**
+
+- whether the window honours the code and returns `?code=&state=`;
+- whether the window appears for a profile that already linked Tavnit, or only the
+  "previously linked" screen;
+- whether a second Instagram account can be chosen or signed into inside the window;
+- whether a Page created in the window comes back from `me/accounts` on the same return;
+- whether `business_management` is still needed on this route (reported, not changed: the
+  Instagram use-case page lists it as required, and only community answers tie it to
+  business-owned Pages).
+
+If the window refuses the code or answers in the fragment, nothing more is built, and the options go
+back to him (0105): decision 4's Page steps on the pre-screen, a fragment-reading page (it breaks
+his limit), or the window for setup only, with its token thrown away unread.
 
 The Graph API version in the code, `v26.0`, is the latest on Meta's changelog (introduced
 2026-07-29); the manual-flow page's example still prints v25.0.
@@ -500,11 +597,31 @@ code:
   merges and deploys (the switch hides it from customers);
 - (e) connect your Instagram through Facebook's window → the account appears with its picture and
   name;
-- (f) הוספת חשבון → does Facebook show the Page list again (runbook J)?
-- (g) ניתוק → the count shown, the row's tokens read back null;
+- (f) הוספת חשבון → does Facebook show the Page list again (runbook J)? **Run 2026-10-12 on
+  tavnit.ai (FOUNDER-REPORTED):** no — "previously linked" with Continue / Edit settings; Continue
+  returned Shira only (Omri has no Page); Edit settings ended on Tavnit's failure line (runbook J);
+- (g) ניתוק → the count shown, the row's tokens read back null; **not yet run** — now (u) below;
 - (h) a return address: open `/connect/instagram?return=/home/renders`, continue → you land on
-  `/home/renders`;
+  `/home/renders`; **not yet run** — now (v) below;
 - (i) `DRY_RUN` back to 1.
+
+**The one-window setup (0105).** On tavnit.ai after `feat/instagram-onboarding-connect` merges and
+deploys; the box is not involved. Each its own OK.
+
+- (q) the mode on (§The connect mode's SQL, read back `"onboarding"`), then **Omri**: הוספת חשבון →
+  Meta's window → convert if asked, create the Page, link it, approve → Omri listed with its
+  picture. Note what the window showed at each step, and whether the address it returned to
+  carried `?code=` or `#access_token`. **If `#access_token`: stop** — remove Tavnit under
+  Facebook's Business Integrations (treat that token as exposed) and send the callback's log line;
+- (r) **Shira** is still listed once;
+- (s) the mode off (the `delete`), then הוספת חשבון → **Edit settings** → tick → the "connected"
+  line, not a failure;
+- (t) _optional — the test covers it:_ start, wait 31 minutes in Facebook's window, finish → the
+  "more than half an hour" line;
+- (u) ניתוק on one account → the confirm's count, the done line, and the row's tokens read back null
+  (`select access_token_enc is null, user_token_enc is null, status from social_accounts where id = '<id>';`
+  → `t | t | disconnected`);
+- (v) `/connect/instagram?return=/home/renders` → המשך → finish → you land on `/home/renders`.
 
 **PR 3 — posting.** The box on `origin/main` after PR 3 merges, never a task branch (0102 planning
 default).

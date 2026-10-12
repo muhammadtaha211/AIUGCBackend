@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-11
+updated: 2026-10-12
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -845,7 +845,49 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-11) — social posting, PR 2 of 4: connecting accounts, `feat/social-posting-connect`, NOT merged
+## What landed (2026-10-12) — Instagram connect: Meta's one-window setup behind a switch, `feat/instagram-onboarding-connect`, NOT merged
+
+[[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]] (his five decisions of
+2026-10-12, dated pointers on 0101 and 0102); the mechanics are docs/09 §The connect mode and
+runbook J. **PR 3 waits for his live result on this** (decision 5).
+
+**What the founder reported on 2026-10-12 (FOUNDER-REPORTED, not repo-verified):**
+
+- PR 2 is merged (git agrees: PR #91, `92f256b`), and he connected one account, Shira, on tavnit.ai
+  as admin; it appeared with its picture and name. Disconnect and the return address (docs/09
+  checklist g, h) are not tested.
+- הוספת חשבון: Facebook showed "Continue as…? You've previously linked Tavnit", with "Edit settings"
+  and "Continue", no Page list. "Continue" returned Shira only — because Omri has no Page (his
+  ruling at Stop 1; his previous settings were already "all current and future").
+- "Edit settings" led through Pages, Businesses and Instagram accounts, each preset to "all current
+  and future", then a review screen, then "connected". Tavnit then showed «החיבור לאינסטגרם לא
+  הושלם. נסו שוב.» Shira stayed connected. He may have been in Facebook's window more than ten
+  minutes.
+- Signing into Instagram as another account in the same browser changed nothing.
+- Omri, his second account, has no Facebook Page; it became a Business account that day through
+  Instagram's own flow.
+- Facebook's review screen tells the user that Tavnit can "manage everything in the portfolio".
+- Fastlane connects Instagram through Ayrshare on Instagram's own login, with no Page.
+- `META_LOGIN_CONFIG_ID` is not set in Vercel Production; the related variables there are
+  `META_APP_ID`, `META_APP_SECRET` and `SOCIAL_TOKEN_KEY`.
+
+**What exists (MEASURED, on the branch):** `app_config.instagram_connect` (`"onboarding"` = Meta's
+one-window setup with a code return; absent or unparseable = today's request, byte for byte; read
+only behind `social_posting`'s gate); the state cookie carries its issue time — 30 minutes for the
+window, kept a day by the browser; six callback outcomes, each its own Hebrew line (DRAFT) and its
+own log reason; every callback redirect carries its own fragment; the pre-screen's lines follow the
+mode, and in today's mode הוספת חשבון opens with the Page requirement, then Edit settings (his
+amendment). Tests: `social-connect.test.ts` 25, `social-accounts.test.ts` 7, passing. No migration,
+no env change, nothing live.
+
+**MEASURED on Meta's pages (2026-10-12, refuter-checked):** the one-window setup is documented only
+with `response_type=token` (the fragment), and as a 2022 beta; whether it honours a code is
+UNVERIFIED — his live run (docs/09 checklist q). A Facebook code lives 10 minutes from its creation.
+
+**The red error's cause:** REASONED — the 10-minute cookie — until his Vercel log lines are read
+(owed below).
+
+## What landed (2026-10-11) — social posting, PR 2 of 4: connecting accounts, `feat/social-posting-connect`, MERGED as PR #91 (`92f256b`)
 
 [[0102-social-posting-label-mix-switch-key-2026-10-11]] (his five changes to PR 1, recorded with a
 dated pointer on 0101); the mechanics and the Meta runbook are `docs/09-social-posting.md`.
@@ -1097,12 +1139,17 @@ the older launch items. Item 0 no longer outranks everything the way it did — 
 taken a real payment — but what is left of it is still the part that decides whether the next
 payment is kept.
 
-**Social posting — PR 1 (core) MERGED as #89; PR 2 (connect) BUILT 2026-10-11** on
-`feat/social-posting-connect` ([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]],
-[[0102-social-posting-label-mix-switch-key-2026-10-11]]; the two "What landed (2026-10-11)" entries
-above). 0060 is applied (2026-10-11). Next in order: PR 2's live connect (his OKs), then PR 3 (schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
-checks), PR 4 (TikTok, once his sandbox app exists). The push of 0057–0059, the env names and the
-live-test steps are under "Owed founder actions".
+**Social posting — PR 1 (core) MERGED as #89; PR 2 (connect) MERGED as #91; the one-window setup
+BUILT 2026-10-12** on `feat/instagram-onboarding-connect`
+([[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]],
+[[0102-social-posting-label-mix-switch-key-2026-10-11]],
+[[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]]; the "What landed"
+entries above). 0060 is applied (2026-10-11). Next in order: merge the one-window branch, his live
+run of it (docs/09 checklist q–v, each its own OK), his ruling on the result — then PR 3
+(schedule: the button, the tag, the flow, the sound picker, the calendar, the notice; the live
+checks), which waits for that ruling (0105 §5); if the window refuses the code, decision 4's Page
+steps first. PR 4 (TikTok, once his sandbox app exists). The env names and the live-test steps
+are under "Owed founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
@@ -1510,6 +1557,14 @@ the 2026-09-26 custom domain (founder-reported):**
   interface copy does; 7. counsel (legal-review P13, P14): the transfer basis, the notice-only
   question for visitors with no account, and whether this is a §14 material change needing an email
   to existing accounts.
+- **Instagram one-window setup (2026-10-12, `feat/instagram-onboarding-connect`).** Each its own
+  OK: 1. the DRAFT Hebrew strings in `apps/web/src/lib/social-ui.ts` (the five outcome lines, the
+  pre-screen by mode) at PR review; 2. the Vercel runtime log lines for `GET
+/api/social/instagram/callback` at his 2026-10-12 Edit-settings attempt — the message text and
+  the **names** of the query parameters, never their values — to confirm the red error's cause; 3. merge, then the live checks of docs/09 (q) Omri through the one window with the mode on,
+  (r) Shira listed once, (s) mode off → Edit settings → connected, (t) optional 31-minute wait,
+  (u) disconnect, (v) a return address; 4. his ruling on the result (0105 §5), which unblocks PR 3.
+
 - **Social posting — PR 2 (2026-10-11, `feat/social-posting-connect`).** Each its own OK: 1. the
   PR 2 strings (Appendix A's connect lines plus the DRAFT singular forms in
   `apps/web/src/lib/social-ui.ts`) at PR review; 2. ~~the ONE `db push` of **0060**~~ DONE 2026-10-11
@@ -1518,7 +1573,9 @@ the 2026-09-26 custom domain (founder-reported):**
   `META_LOGIN_CONFIG_ID` if the dashboard gives one) per docs/09 §Env names; 4. in the Meta app
   (yours alone), docs/09 runbook A–C: the configuration id, the redirect URI(s) with Check URI, the
   deletion URL, removing `instagram_manage_messages`; 5. the live connect (docs/09 checklist a–i:
-  connect, add another, disconnect, a return address); 6. later, for review: a portfolio, Business
+  connect, add another, disconnect, a return address) — connect and add another RUN 2026-10-12
+  (FOUNDER-REPORTED, the one-window entry above), disconnect and the return address moved to
+  checklist (u), (v); 6. later, for review: a portfolio, Business
   Verification, access verification, a non-admin reviewer account named in the switch (runbook E–I); 7. the privacy text on connected accounts and deletion is owed while the legal pages are held.
 
 - **Social posting (2026-10-11, `feat/social-posting-core` and the PRs after it).** In order, each

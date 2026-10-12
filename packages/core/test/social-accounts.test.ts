@@ -7,6 +7,7 @@ import { runLane } from "../src/jobs/worker";
 import { buildHandlers } from "../src/handlers";
 import {
   disconnectSocialAccount,
+  getInstagramConnectMode,
   getMetaDataDeletionStatus,
   getPostingAccess,
   listSocialAccounts,
@@ -317,5 +318,24 @@ describe("social accounts", () => {
       expect(await getPostingAccess(db, admin.userId)).toBe("allowed");
     }
     await db.execute(sql`delete from app_config where key = 'social_posting'`);
+  });
+
+  it("the connect mode: absent is today's connect; \"onboarding\" turns Meta's one-window setup on; a typo is today's connect", async () => {
+    const setMode = (value: string) =>
+      db.execute(
+        sql`insert into app_config (key, value) values ('instagram_connect', ${value}::jsonb)
+            on conflict (key) do update set value = excluded.value`,
+      );
+    expect(await getInstagramConnectMode(db)).toBe("standard");
+    await setMode('"onboarding"');
+    expect(await getInstagramConnectMode(db)).toBe("onboarding");
+    await setMode('"standard"');
+    expect(await getInstagramConnectMode(db)).toBe("standard");
+    for (const bad of ['"Onboarding"', '{"mode":"onboarding"}', "true", "null"]) {
+      await setMode(bad);
+      expect(await getInstagramConnectMode(db)).toBe("standard");
+    }
+    await db.execute(sql`delete from app_config where key = 'instagram_connect'`);
+    expect(await getInstagramConnectMode(db)).toBe("standard");
   });
 });
