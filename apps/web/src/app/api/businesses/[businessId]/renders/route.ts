@@ -9,6 +9,7 @@ import {
   getStorage,
   HEAVY_JOB_TYPES,
   isAdminOwned,
+  pendingPostsByRender,
   schema,
 } from "@aiugc/core";
 import {
@@ -30,6 +31,7 @@ import {
   RENDER_PAGE_SIZE,
   rendersPageParam,
 } from "@/lib/service-b-ui";
+import { postingAllowed } from "@/lib/social";
 
 /**
  * Create a Service B render. Core enforces the approved-audio gate and the
@@ -209,6 +211,15 @@ export async function GET(
     // this screen. Promise.all resolves in input order, so the body is
     // byte-identical to the serial loop this replaced — including the single
     // head `job`, which only one row asks for either way.
+    // The grey "מתוזמן" tag (social posting PR 3): one IN query, and only for
+    // an account the switch allows — the key is absent for everyone else.
+    const pending = (await postingAllowed(auth.userId))
+      ? await pendingPostsByRender(
+          db,
+          rows.filter((row) => row.status === "released").map((row) => row.id),
+        )
+      : null;
+
     const storage = getStorage();
     const renders = await Promise.all(
       rows.map(async (row) => ({
@@ -224,6 +235,7 @@ export async function GET(
         // really landed (refunded_at set in the refund transaction).
         refunded: row.status === "failed" ? row.refundedAt !== null : undefined,
         job: row.id === head?.id ? await headProgress(db, row.id) : undefined,
+        scheduled: pending ? (pending.get(row.id) ?? 0) > 0 : undefined,
       })),
     );
     if (page === null) return NextResponse.json({ renders });

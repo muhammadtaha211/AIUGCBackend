@@ -35,6 +35,8 @@ const BASE =
 export const PRIMARY_BUTTON_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.md}`;
 /** The lg size of the same, for the plan cards' public call-to-action links. */
 export const PRIMARY_BUTTON_LG_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.lg}`;
+/** The secondary look for a link: the player's "תזמון פרסום" beside הורדה. */
+export const SECONDARY_BUTTON_CLASS = `${BASE} ${VARIANT.secondary} ${SIZE.md}`;
 
 export function Button({
   variant = "primary",

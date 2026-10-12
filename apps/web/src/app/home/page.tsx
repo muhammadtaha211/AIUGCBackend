@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { getImageProps } from "next/image";
 import { redirect } from "next/navigation";
+import { getDb, postingNotices } from "@aiugc/core";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { authedUser } from "@/lib/auth-user";
 import { ownedBusinesses } from "@/lib/businesses";
@@ -12,7 +13,9 @@ import {
   PERSONA_CARD_SIZES,
   pickSelectedBusiness,
 } from "@/lib/service-b-ui";
+import { postingAllowed } from "@/lib/social";
 import { PathwayCards } from "./pathway-cards";
+import { PostingNotice } from "./posting-notice";
 import { RendersStrip } from "./renders-strip";
 
 /** The persona picker's first grid row (3 cols on sm+) — enough to warm the
@@ -104,6 +107,13 @@ async function HomeContent() {
   const selected = pickSelectedBusiness(businesses, cookieStore.get(BUSINESS_COOKIE)?.value)!;
   const hasQuestionnaire = selected.questionnaire != null;
 
+  // Social posting's notice (PR 3): read only for an account the switch
+  // allows — anyone else gets no query and no trace. Best-effort: a failed
+  // read only hides the strip.
+  const notices = (await postingAllowed(user.id))
+    ? await postingNotices(getDb(), user.id).catch(() => null)
+    : null;
+
   // Best-effort: a failed catalog read only costs the warm cache.
   const catalog = await loadPersonaCatalog("b").catch(() => []);
   const preloads = catalog
@@ -152,6 +162,13 @@ async function HomeContent() {
         <div className="mt-5">
           <PathwayCards hasQuestionnaire={hasQuestionnaire} />
         </div>
+
+        {notices && (
+          <PostingNotice
+            failures={notices.unacknowledgedFailures}
+            expired={notices.expiredAccounts}
+          />
+        )}
 
         <RendersStrip businessId={selected.id} />
       </div>

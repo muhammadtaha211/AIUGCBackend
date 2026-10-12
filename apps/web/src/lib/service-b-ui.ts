@@ -97,6 +97,9 @@ export type RenderRow = {
   /** The head in-flight row only, and only in the strip's shape — the library
    *  is a list of finished work, not a live indicator (see pickActiveHead). */
   job?: import("./service-a-ui").JobProgressWire;
+  /** The grey "מתוזמן" tag: a post of this video is waiting. Absent for an
+   *  account the social-posting switch hides. */
+  scheduled?: boolean;
 };
 
 /**
@@ -321,6 +324,10 @@ export type RenderState = {
   /** Render job progress while queued/rendering (type lives with the other
    *  8d wire shapes; the import is type-only, so no runtime dependency). */
   job?: import("./service-a-ui").JobProgressWire;
+  /** The player's "תזמון פרסום" and its pending line (social posting PR 3):
+   *  sent only for a released render and an account the switch allows. */
+  scheduleHref?: string;
+  pendingPosts?: number;
 };
 
 /**

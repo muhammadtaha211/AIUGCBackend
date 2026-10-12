@@ -5,8 +5,11 @@ import {
   InsufficientCreditsError,
   PLAN_STEPS_OVERLAP_MESSAGE,
   PlanChangeError,
+  POSTING_HORIZON_DAYS,
+  SocialSchedulingError,
 } from "@aiugc/core";
 import { STEPS_OVERLAP_BLOCK } from "./service-a-ui";
+import { socialErrorLine } from "./social-posting-ui";
 
 /**
  * Pure, unit-testable part of the HTTP error layer: the decision of which
@@ -64,6 +67,23 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
       422,
       "התוכן לא עבר את בדיקת התוכן שלנו. עדכנו את השאלון או את הטקסט שנבחר ונסו שוב.",
     );
+  }
+
+  // Social posting's refusals (PR 3): typed, like the one above, so a code can
+  // never be shadowed by a substring test below — "not_found" is not "not found".
+  // 409 when the post is past changing; 429 for Instagram's daily cap, a quota
+  // refusal like every 429 here; 404 for a post or render that is not theirs;
+  // 422 for the rest — a well-formed request the schedule cannot take.
+  if (err instanceof SocialSchedulingError) {
+    const status =
+      err.code === "not_found"
+        ? 404
+        : err.code === "not_pending"
+          ? 409
+          : err.code === "instagram_daily_cap"
+            ? 429
+            : 422;
+    return hit(status, socialErrorLine(err.code, POSTING_HORIZON_DAYS));
   }
 
   // The runaway-cost guards phrase their own refusal in Hebrew, in the

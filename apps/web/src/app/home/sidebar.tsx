@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Brand } from "@/components/brand";
 import { useBalance } from "./balance-context";
 import {
+  CalendarIcon,
   Check,
   ChevronDown,
   Clip,
@@ -21,12 +22,21 @@ import {
 import { signOut } from "@/lib/auth";
 import { CREDITS_BOX_LABEL, formatCredits } from "@/lib/plans-ui";
 import { BUSINESS_COOKIE } from "@/lib/service-b-ui";
+import { CALENDAR_NAV } from "@/lib/social-posting-ui";
 
 const MENU_ITEM =
   "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink/80 transition-colors duration-150 hover:bg-ink/5 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
 /** The account menu's rows — shared by the desktop popover and the mobile bar. */
-function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => void }) {
+function ProfileMenuItems({
+  email,
+  postingAllowed,
+  onClose,
+}: {
+  email: string;
+  postingAllowed: boolean;
+  onClose: () => void;
+}) {
   return (
     <>
       <p dir="ltr" className="truncate px-2.5 py-2 text-end text-sm font-medium text-ink">
@@ -45,6 +55,13 @@ function ProfileMenuItems({ email, onClose }: { email: string; onClose: () => vo
       <Link href="/home" role="menuitem" onClick={onClose} className={MENU_ITEM}>
         עמוד הבית
       </Link>
+      {/* Social posting's calendar (PR 3) — here too, because below md this
+          menu is the whole nav. Only for an account the switch allows. */}
+      {postingAllowed && (
+        <Link href="/calendar" role="menuitem" onClick={onClose} className={MENU_ITEM}>
+          {CALENDAR_NAV}
+        </Link>
+      )}
       <div className="mx-2 my-1.5 h-px bg-ink/[0.08]" />
       <button
         type="button"
@@ -76,10 +93,13 @@ export function Sidebar({
   businesses,
   selectedId,
   email,
+  postingAllowed = false,
 }: {
   businesses: { id: string; name: string }[];
   selectedId: string | null;
   email: string;
+  /** Social posting's switch for this account: the calendar row, or no trace. */
+  postingAllowed?: boolean;
 }) {
   // Server-seeded, pushed-to by the wizard's create/refund paths (null =
   // admin bypass — no credits chip). See balance-context.tsx.
@@ -172,7 +192,11 @@ export function Sidebar({
                 role="menu"
                 className="absolute end-0 top-full z-50 mt-2 w-56 rounded-xl border border-ink/10 bg-white p-1.5 shadow-xl shadow-ink/10"
               >
-                <ProfileMenuItems email={email} onClose={() => setOpenMenu(null)} />
+                <ProfileMenuItems
+                  email={email}
+                  postingAllowed={postingAllowed}
+                  onClose={() => setOpenMenu(null)}
+                />
               </div>
             )}
             <button
@@ -293,6 +317,14 @@ export function Sidebar({
             href="/home/c/new"
             active={pathname.startsWith("/home/c")}
           />
+          {postingAllowed && (
+            <SidebarItem
+              icon={<CalendarIcon className="size-4" />}
+              label={CALENDAR_NAV}
+              href="/calendar"
+              active={pathname.startsWith("/calendar")}
+            />
+          )}
           <SidebarItem
             icon={<Mail className="size-4" />}
             label="צור קשר"
@@ -309,7 +341,11 @@ export function Sidebar({
                 role="menu"
                 className="absolute bottom-full start-0 z-50 mb-2 w-56 rounded-xl border border-ink/10 bg-white p-1.5 shadow-xl shadow-ink/10"
               >
-                <ProfileMenuItems email={email} onClose={() => setOpenMenu(null)} />
+                <ProfileMenuItems
+                  email={email}
+                  postingAllowed={postingAllowed}
+                  onClose={() => setOpenMenu(null)}
+                />
               </div>
             )}
 

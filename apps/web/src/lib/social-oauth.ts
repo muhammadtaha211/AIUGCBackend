@@ -51,14 +51,21 @@ export function decodeOAuthCookie(raw: string | undefined): OAuthCookie | null {
 }
 
 /**
- * Where to land after connecting: a same-origin path under /home only
- * (`safeNextPath`'s rule without its Sumit exception), so the parameter can
- * never turn the round trip into an open redirect.
+ * Where to land after connecting: a same-origin path under /home, or the
+ * schedule flow and the calendar (PR 3, outside /home for their real 404 —
+ * app/(posting)/layout.tsx) — `safeNextPath`'s rule without its Sumit
+ * exception, so the parameter can never turn the round trip into an open
+ * redirect.
  */
 export function socialReturnPath(value: string | string[] | undefined | null): string | null {
   const safe = safeNextPath(value ?? undefined);
-  return safe && safe.startsWith("/home") ? safe : null;
+  if (safe && safe.startsWith("/home")) return safe;
+  return typeof value === "string" && POSTING_RETURN.test(value) ? value : null;
 }
+
+/** /schedule/<id> or /calendar[/<id>], with a query or fragment, nothing else. */
+const POSTING_RETURN =
+  /^\/(?:schedule\/[0-9a-f-]{36}|calendar(?:\/[0-9a-f-]{36})?)(?:[?#][^\s]*)?$/i;
 
 /**
  * Whether a return from Facebook belongs to the round trip this browser started

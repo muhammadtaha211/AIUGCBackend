@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { authedUser } from "@/lib/auth-user";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
+import { postingAllowed } from "@/lib/social";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { wizardGate } from "@/lib/wizard-gate";
 import { BalanceProvider } from "./balance-context";
@@ -50,6 +51,10 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
     ? await wizardGate(selected.id).catch(() => ({ balance: null }))
     : { balance: null };
 
+  // Social posting's switch: the calendar row in the nav, or no trace of it.
+  // Best-effort like the balance — a failed read hides the row.
+  const posting = await postingAllowed(user.id).catch(() => false);
+
   return (
     <div className="theme-light flex h-dvh flex-col overflow-hidden bg-paper text-ink md:flex-row">
       {/* Both the sidebar (reads) and the pages (the wizard's create/refund
@@ -59,6 +64,7 @@ export default async function HomeLayout({ children }: { children: React.ReactNo
           businesses={businesses ?? []}
           selectedId={selected?.id ?? null}
           email={user.email ?? ""}
+          postingAllowed={posting}
         />
         {/* The pane: the credits pill is a SIBLING of <main>, pinned to the
             pane's top-start corner and OUTSIDE the zoom below, so it keeps

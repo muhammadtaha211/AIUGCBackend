@@ -1,0 +1,139 @@
+/**
+ * The schedule flow's arithmetic (social posting PR 3), pure so the tests reach
+ * it: the browser's wall clock to an instant and back, the check the form runs
+ * before it asks the server, and the request body.
+ *
+ * Times are the customer's local time in the BROWSER's zone (0101 planning
+ * default, kept 2026-10-12, 0107 §4): a customer abroad schedules against the
+ * clock they are looking at. The row stores the instant and the zone; the zone
+ * is display only.
+ */
+
+import { horizonLine, PAST_LINE, retentionLine } from "./social-posting-ui";
+
+/** The browser's IANA zone ("Asia/Jerusalem"); UTC if it will not say. */
+export function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** `<input type="date">`'s value for an instant, in local time. */
+export function toDateInput(at: Date): string {
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/** `<input type="time">`'s value for an instant, in local time. */
+export function toTimeInput(at: Date): string {
+  return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/** The two inputs back to an instant, read as local wall time. Invalid → null. */
+export function fromInputs(date: string, time: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const [hh, mm] = time.split(":").map(Number) as [number, number];
+  if (hh > 23 || mm > 59) return null;
+  const at = new Date(y, m - 1, d, hh, mm, 0, 0);
+  // A Date rolls month 13 or 31 February over silently; the inputs must say
+  // exactly the day they name.
+  if (at.getFullYear() !== y || at.getMonth() !== m - 1 || at.getDate() !== d) return null;
+  return at;
+}
+
+/** The form's first suggestion: the next whole hour. */
+export function defaultInstant(now: Date): Date {
+  const at = new Date(now);
+  at.setMinutes(0, 0, 0);
+  at.setHours(at.getHours() + 1);
+  return at;
+}
+
+/** "13 באוקטובר" — the day as the done line and the calendar say it. */
+export function formatDay(at: Date): string {
+  return new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" }).format(at);
+}
+
+/** "14:30". */
+export function formatTime(at: Date): string {
+  return new Intl.DateTimeFormat("he-IL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(at);
+}
+
+/** "יום שלישי, 13 באוקטובר 2026, 14:30" — the post page's מועד. */
+export function formatWhen(at: Date): string {
+  return new Intl.DateTimeFormat("he-IL", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(at);
+}
+
+export interface Horizon {
+  /** The latest instant core will take for this video (ISO). */
+  maxScheduledAt: string;
+  limitedBy: "policy" | "retention";
+  days: number;
+}
+
+/**
+ * What the form says before it asks: the same rules core enforces (a minute of
+ * grace for "עכשיו", the horizon), worded with the date the page knows.
+ * Null = send it; the server still has the last word.
+ */
+export function instantProblem(at: Date, now: Date, horizon: Horizon): string | null {
+  if (at.getTime() < now.getTime() - 60_000) return PAST_LINE;
+  const max = new Date(horizon.maxScheduledAt);
+  if (at > max) {
+    return horizon.limitedBy === "retention"
+      ? retentionLine(formatDay(max))
+      : horizonLine(horizon.days);
+  }
+  return null;
+}
+
+export interface SoundChoice {
+  audioId: string;
+  kind: "original_sound" | "music";
+  title: string;
+  creator?: string;
+  durationMs?: number;
+  pictureUrl?: string;
+  previewUrl?: string;
+}
+
+/**
+ * POST /api/social/posts's body. The AI label rides only when the customer
+ * ticked it (0102 §1, 0107 §1): an unticked post sends no `aiLabel` at all, and
+ * core then sends Instagram no label field either.
+ */
+export function scheduleRequestBody(input: {
+  renderId: string;
+  accountIds: string[];
+  at: Date;
+  timezone: string;
+  caption: string;
+  sound: SoundChoice | null;
+  aiLabel: boolean;
+}): Record<string, unknown> {
+  return {
+    renderId: input.renderId,
+    accountIds: input.accountIds,
+    scheduledAt: input.at.toISOString(),
+    timezone: input.timezone,
+    caption: input.caption,
+    sound: input.sound,
+    ...(input.aiLabel ? { aiLabel: true } : {}),
+  };
+}
