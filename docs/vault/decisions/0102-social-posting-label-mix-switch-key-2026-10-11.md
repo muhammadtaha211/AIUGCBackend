@@ -14,6 +14,12 @@ the planning assistant, kept at his approval and not otherwise ruled). All five 
 FOUNDER-REPORTED, 2026-10-11, not up for relitigation. They change
 [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]], whose dated pointers lead here.
 
+> **2026-10-12 — a second switch sits beside this one's
+> ([[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]]):**
+> `app_config.instagram_connect` chooses which Facebook window "חיבור חשבון" opens (`"onboarding"`
+> = Meta's one-window setup; absent = today's). It is read only behind `social_posting`'s gate, so
+> a hidden account still sees no trace; §4's single Instagram card is unchanged.
+
 ## 1. The AI label is the customer's choice, per post, unticked by default on every service
 
 **Replaces** 0101's plan default (§10 Q1): `is_ai_generated=true` on הוק + דמו and דמות AI, never on

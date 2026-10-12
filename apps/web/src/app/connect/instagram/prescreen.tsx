@@ -1,23 +1,33 @@
 import Link from "next/link";
+import type { InstagramConnectMode } from "@aiugc/core";
 import { Button, PRIMARY_BUTTON_CLASS } from "@/components/ui/button";
 import { preScreenCancelPath, startPath } from "@/lib/social-paths";
-import { PRESCREEN_LINES, PRESCREEN_TITLE, SOCIAL_CANCEL, SOCIAL_CONTINUE } from "@/lib/social-ui";
+import { PRESCREEN_TITLE, preScreenLines, SOCIAL_CANCEL, SOCIAL_CONTINUE } from "@/lib/social-ui";
 
 /**
  * Tavnit's own explanation before Facebook's window (decision 0101, PR 2):
- * what Instagram needs from the account and what Tavnit is asking for. Pure
- * markup — the page decides who may see it.
+ * what Instagram needs from the account and what Tavnit is asking for, in the
+ * words of the window the connect mode opens (0105). Pure markup — the page
+ * decides who may see it and which mode is on.
  *
  * "המשך" is a plain <a>, not a <Link>: it goes to a route handler that
  * redirects to Facebook, which a client-side navigation cannot follow.
  */
-export function InstagramPreScreen({ returnTo, add }: { returnTo: string | null; add: boolean }) {
+export function InstagramPreScreen({
+  returnTo,
+  add,
+  mode,
+}: {
+  returnTo: string | null;
+  add: boolean;
+  mode: InstagramConnectMode;
+}) {
   return (
     <div className="mx-auto w-full max-w-xl px-6 pb-16 pt-8 sm:pt-10">
       <h1 className="text-2xl font-semibold tracking-tight text-ink">{PRESCREEN_TITLE}</h1>
       <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white p-5">
         <ul className="flex list-disc flex-col gap-3 ps-5 text-[15px] leading-relaxed text-ink/80 marker:text-ink/35">
-          {PRESCREEN_LINES.map((line) => (
+          {preScreenLines(mode, add).map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>

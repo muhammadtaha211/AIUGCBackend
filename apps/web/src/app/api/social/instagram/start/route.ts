@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getEnv } from "@aiugc/core";
+import { getDb, getEnv, getInstagramConnectMode } from "@aiugc/core";
 import { requirePostingUser } from "@/lib/social";
 import {
   encodeOAuthCookie,
@@ -16,8 +16,9 @@ import {
 /**
  * GET /api/social/instagram/start?return=&add=1 — the pre-screen's "המשך".
  * Writes the state cookie and sends the browser to Facebook's login dialog
- * (decision 0101, PR 2). A DRY_RUN web skips Facebook and lands on the
- * callback with a stub code, so the whole flow walks without Meta.
+ * (decision 0101, PR 2) — today's, or Meta's one-window setup when
+ * app_config.instagram_connect says so (0105). A DRY_RUN web skips Facebook and
+ * lands on the callback with a stub code, so the whole flow walks without Meta.
  */
 export async function GET(request: Request) {
   const auth = await requirePostingUser();
@@ -45,11 +46,13 @@ export async function GET(request: Request) {
       state,
       configId: env.META_LOGIN_CONFIG_ID || undefined,
       add,
+      mode: await getInstagramConnectMode(getDb()),
     });
   }
 
   const response = NextResponse.redirect(target);
-  response.cookies.set(OAUTH_COOKIE, encodeOAuthCookie({ state, userId: auth.userId, returnTo }), {
+  const cookie = encodeOAuthCookie({ state, userId: auth.userId, returnTo, issuedAt: Date.now() });
+  response.cookies.set(OAUTH_COOKIE, cookie, {
     httpOnly: true,
     // Lax: Facebook's redirect back is a top-level cross-site GET, which Lax sends.
     sameSite: "lax",

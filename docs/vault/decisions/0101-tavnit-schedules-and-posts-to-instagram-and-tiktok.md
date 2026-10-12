@@ -14,6 +14,12 @@ DEFAULT** (assumed by the planning assistant or this plan, kept at his approval 
 ruled). The mechanics live in `docs/09-social-posting.md`; this note records what was decided and
 why.
 
+> **2026-10-12 — decision 3 holds, for the sounds, and the connect gains Meta's one-window setup
+> behind a switch ([[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]]):**
+> Instagram's own login and Ayrshare are not built; "חיבור חשבון" can open Meta's onboarding mode
+> (convert, create the Page, link) with a code return, never the fragment; PR 3 waits for his live
+> result.
+
 ## The twelve decisions (FOUNDER-REPORTED, 2026-10-10, not up for relitigation)
 
 1. **Tavnit schedules and posts.** His reason, as user #1: the cost of 40 videos a month is 40

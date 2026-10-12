@@ -5,6 +5,7 @@ import { asc, eq } from "drizzle-orm";
 import {
   getAccountBilling,
   getDb,
+  getInstagramConnectMode,
   listSocialAccounts,
   questionnaireSchema,
   schema,
@@ -27,9 +28,8 @@ import { postingAllowed } from "@/lib/social";
 import { socialReturnPath } from "@/lib/social-oauth";
 import {
   accountName,
-  CONNECT_FAILED,
-  CONNECT_NO_ACCOUNT,
   connectedLine,
+  connectOutcomeLine,
   parseSocialOutcome,
 } from "@/lib/social-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -115,8 +115,11 @@ export default async function SettingsPage({
         const accounts = await listSocialAccounts(getDb(), user.id);
         const outcome = parseSocialOutcome(params.social);
         let flash: SocialFlash | null = null;
-        if (outcome === "error") flash = { kind: "error", text: CONNECT_FAILED };
-        if (outcome === "none") flash = { kind: "error", text: CONNECT_NO_ACCOUNT };
+        if (outcome && outcome !== "connected") {
+          // The "no account" line's advice follows the window the mode opens (0105).
+          const mode = outcome === "none" ? await getInstagramConnectMode(getDb()) : "standard";
+          flash = { kind: "error", text: connectOutcomeLine(outcome, mode) };
+        }
         if (outcome === "connected") {
           const count = Number(params.n);
           const named = accounts.find((account) => account.id === params.id);
