@@ -16,6 +16,7 @@
     "./plan-format": "./src/plan-format.ts",
     "./pricing": "./src/pricing.ts",
     "./service-b-timeline": "./src/service-b-timeline.ts",
+    "./social-copy": "./src/social-copy.ts",
     "./text-block": "./src/text-block.ts"
   },
   "scripts": {

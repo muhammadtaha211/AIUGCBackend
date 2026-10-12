@@ -14,6 +14,10 @@ the planning assistant, kept at his approval and not otherwise ruled). All five 
 FOUNDER-REPORTED, 2026-10-11, not up for relitigation. They change
 [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]], whose dated pointers lead here.
 
+> **2026-10-12 — §1 stands, and the tick is quiet ([[0107-social-posting-pr3-tick-landing-line-failure-email]]):**
+> small, muted, unticked, last on the schedule step — his reason: it is the customer's decision and
+> should not be in their face.
+
 > **2026-10-12 — a second switch sits beside this one's
 > ([[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]]):**
 > `app_config.instagram_connect` chooses which Facebook window "חיבור חשבון" opens (`"onboarding"`

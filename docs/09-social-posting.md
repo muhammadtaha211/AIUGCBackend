@@ -155,6 +155,42 @@ The lines ship with the web PR; `SOCIAL_FAILURE_KINDS` is the closed set they ma
 `failure_detail` is the diagnostic and never leaves the server: `toPostView` strips it (and the
 container id) from everything a page reads, the way `toView` strips tokens from an account.
 
+## The failure email (decision 0107)
+
+A post that fails for good is told twice: in the app (the `/home` notice and the calendar, from the
+post row) and by email to the Tavnit account's address, because the point of scheduling is not
+opening the app. The email is the worker's, never the publish job's: an email problem cannot fail,
+delay or retry a post, and the in-app notice is the same either way.
+
+- **Where:** `sweepFailureEmails` in `apps/worker/src/index.ts`, every 60 s beside the alert sweep,
+  one tick at a time; the rules in `pipelines/social-failure-email.ts`; the one Resend wrapper in
+  `providers/resend.ts` (plain `fetch` to `POST https://api.resend.com/emails`, 10 s timeout; the
+  status and Resend's error name logged, never the address, the subject or the body). `aiugc work
+--once` and the web apps never run it.
+- **Sender:** `תבנית <noreply@tavnit.ai>`, a constant — the auth mail's own (docs/08 §8A.2).
+- **Off:** no `RESEND_API_KEY` (or an empty line), `DRY_RUN`, or a `local`/`cli` worker id against
+  production (the guard `claim` uses) → no call and no row. The startup line says which:
+  `journalctl -u aiugc-worker -o cat | grep '"failure email"'` → `"failureEmail":"on"` or `"off"`.
+- **A cause** is (Tavnit account, `failure_kind`). One email per cause per **24 h**; a failure of
+  the same cause in the 24 h after an email is folded — never emailed, on the calendar and in the
+  notice. A cause goes out once its newest failure is **2 minutes** old, so posts that fail together
+  share one email. Only failures from the last **24 h** are emailed.
+- **The ceiling:** **20** failure emails per UTC day (Resend's day resets at 00:00 UTC), leaving 80
+  of the free plan's 100 a day for the sign-up and password mail. Over it, a failure still under
+  24 h old goes out after midnight UTC; older ones never. `daily_quota_exceeded` from Resend pauses
+  the sweep until 00:00 UTC; a network fault, a 5xx or a per-second 429 pauses it 5 minutes.
+- **Never twice:** the send carries `Idempotency-Key: post-failure/<user>/<kind>/<newest post id>`
+  (Resend keeps it 24 h), and the log row is written after the send. A permanent refusal (a 4xx
+  other than 429) is logged and not retried.
+- **The log** is `events` rows of kind `post_failure_email`: `actor_user_id` = the account, payload
+  `{failureKind, postIds, outcome: sent | refused, resendId | error}` — no address, no caption, no
+  diagnostic. Not an alert kind, so it never reaches Sentry. No migration.
+- **A hidden account** (the switch) gets no email.
+- **What it says** (`social-copy.ts` `failureEmail`, DRAFT): which posts (the service, the business,
+  the account, the planned time in the post's own zone; ten listed, the rest counted), the
+  failure-kind line above as the reason and what to do, a link to the calendar, and a line saying
+  that more failures of the same cause in the next 24 h will show there without another email.
+
 ## The switch
 
 `app_config.social_posting` has three settings (decision 0102):
@@ -252,13 +288,14 @@ or don't click it.
 
 ## Env names (names only)
 
-| name                                        | web (Vercel Production; `apps/web/.env.local` for the local live test)                    | box (`apps/worker/.env`) |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------ |
-| `META_APP_ID`                               | yes                                                                                       | —                        |
-| `META_APP_SECRET`                           | yes (code exchange, `appsecret_proof`, the deletion signature)                            | yes (`appsecret_proof`)  |
-| `META_LOGIN_CONFIG_ID`                      | only if the app dashboard gives Facebook Login a configuration id instead of a scope list | —                        |
-| `SOCIAL_TOKEN_KEY`                          | yes                                                                                       | yes                      |
-| `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | when TikTok is built                                                                      | when TikTok is built     |
+| name                                        | web (Vercel Production; `apps/web/.env.local` for the local live test)                    | box (`apps/worker/.env`)                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `META_APP_ID`                               | yes                                                                                       | —                                                                                                   |
+| `META_APP_SECRET`                           | yes (code exchange, `appsecret_proof`, the deletion signature)                            | yes (`appsecret_proof`)                                                                             |
+| `META_LOGIN_CONFIG_ID`                      | only if the app dashboard gives Facebook Login a configuration id instead of a scope list | —                                                                                                   |
+| `SOCIAL_TOKEN_KEY`                          | yes                                                                                       | yes                                                                                                 |
+| `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | when TikTok is built                                                                      | when TikTok is built                                                                                |
+| `RESEND_API_KEY`                            | — (the web sends no mail)                                                                 | yes — a **sending-only** key restricted to `tavnit.ai` (the failure email, 0107); absent = no email |
 
 Admin needs none. Bare values, one line each, and a Vercel change reaches only deployments created
 after it (vault `env-values-differ-between-the-box-and-vercel`).
@@ -287,6 +324,27 @@ sudo tr '\0' '\n' < /proc/$PID/environ | sed -n 's/^SOCIAL_TOKEN_KEY=//p' | tr -
 ```
 
 Keep a copy in a password manager: losing the key means reconnecting every account, nothing worse.
+
+**`RESEND_API_KEY` goes on the box only, and only once the box runs PR 3** (decision 0107). Its
+value is never pasted into a chat, a commit or a report.
+
+1. Resend's dashboard → **API Keys** → **Create API Key**: a name such as `worker-failure-email`,
+   **Permission: Sending access**, **Domain: tavnit.ai** → Add. Resend shows the key once; copy it.
+2. On the box, after PR 3 is on `origin/main`:
+   `cd ~/AIUGCBackend && git pull && pnpm install`, then `nano ~/AIUGCBackend/apps/worker/.env` and
+   add one line, `RESEND_API_KEY=` followed by the pasted value — one line, no quotes, no spaces.
+   Ctrl-O, Enter, Ctrl-X.
+3. `sudo systemctl restart aiugc-worker`.
+4. Prove the process has it, printing no key (docs/07 §13's way):
+
+```bash
+PID=$(systemctl show aiugc-worker -p MainPID --value)
+sudo tr '\0' '\n' < /proc/$PID/environ | grep -c '^RESEND_API_KEY=re_'
+journalctl -u aiugc-worker -o cat | grep '"failure email"' | tail -1
+```
+
+**Works:** `1`, then a line with `"failureEmail":"on"`. `0` or `"off"`: the line did not reach the
+process (a typo in the name, a wrapped value, or no restart).
 
 All providers honour `DRY_RUN`: a
 dry-run web "connects" a sample account and a dry-run worker "publishes" to nothing.

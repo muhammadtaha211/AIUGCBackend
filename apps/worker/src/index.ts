@@ -4,11 +4,13 @@ import {
   ensureDailyJobs,
   ensureReaperJob,
   getDb,
+  getEmailProvider,
   getEnv,
   HEAVY_JOB_TYPES,
   logger,
   markEventsNotified,
   pendingAlertEvents,
+  sweepPostFailureEmails,
 } from "@aiugc/core";
 import { superviseLane } from "./lanes";
 import { reportAlertEvent, reportFatal, reportTerminalJob } from "./reporting";
@@ -73,6 +75,33 @@ async function sweepAlerts(db: ReturnType<typeof getDb>): Promise<void> {
 }
 
 /**
+ * The failure email (decision 0107): a minute's cadence, like the alert sweep.
+ * The rules — the cause, the 24 h, the 2-minute quiet, the 20-a-day ceiling —
+ * are core's (pipelines/social-failure-email.ts); this only drives the clock.
+ * One tick at a time: a tick that finds the last one still sending skips, so
+ * the ceiling's count cannot race on this one box. Swallows everything, the way
+ * sweepAlerts does — an email fault must never become a worker fault, and it
+ * never touches a post.
+ */
+const FAILURE_EMAIL_SWEEP_INTERVAL_MS = 60_000;
+let failureEmailSweepRunning = false;
+
+async function sweepFailureEmails(db: ReturnType<typeof getDb>): Promise<void> {
+  if (failureEmailSweepRunning) return;
+  failureEmailSweepRunning = true;
+  try {
+    const result = await sweepPostFailureEmails(db, { workerId: getEnv().WORKER_ID });
+    if (result.sent + result.refused + result.heldByCeiling > 0) {
+      logger.info(result, "failure email sweep");
+    }
+  } catch (err) {
+    logger.warn({ err }, "failure email sweep failed — retrying next interval");
+  } finally {
+    failureEmailSweepRunning = false;
+  }
+}
+
+/**
  * The single worker process. Two lanes so a minutes-long Remotion render or
  * lip-sync wait never blocks an audio preview a user is waiting on:
  * - heavy: render_video, lipsync (sequential -> render concurrency is 1)
@@ -100,6 +129,12 @@ async function main(): Promise<void> {
   // reported on the next boot rather than waiting out a full interval.
   await sweepAlerts(db);
   const alerts = setInterval(() => void sweepAlerts(db), ALERT_SWEEP_INTERVAL_MS);
+  // Says once whether failure emails are on — the key itself is never logged.
+  logger.info({ failureEmail: getEmailProvider() ? "on" : "off" }, "failure email");
+  const failureEmails = setInterval(
+    () => void sweepFailureEmails(db),
+    FAILURE_EMAIL_SWEEP_INTERVAL_MS,
+  );
 
   logger.info({ workerId, dryRun: getEnv().DRY_RUN }, "worker started");
   await Promise.all([
@@ -120,6 +155,7 @@ async function main(): Promise<void> {
   ]);
   clearInterval(daily);
   clearInterval(alerts);
+  clearInterval(failureEmails);
   logger.info("worker stopped");
 }
 
