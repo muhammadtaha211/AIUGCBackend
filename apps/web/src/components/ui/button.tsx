@@ -35,8 +35,14 @@ const BASE =
 export const PRIMARY_BUTTON_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.md}`;
 /** The lg size of the same, for the plan cards' public call-to-action links. */
 export const PRIMARY_BUTTON_LG_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.lg}`;
-/** The secondary look for a link: the player's "תזמון פרסום" beside הורדה. */
-export const SECONDARY_BUTTON_CLASS = `${BASE} ${VARIANT.secondary} ${SIZE.md}`;
+/**
+ * The player's "תזמון פרסום" beside הורדה (decision 0108 §2): white at rest,
+ * light grey on hover, ink text in both — solid colours, so it reads the same
+ * on the modals' black backdrop and the wizards' paper. The secondary
+ * variant's light hover is a 4% ink tint, which over the modal's black is
+ * black, under black text.
+ */
+export const WHITE_BUTTON_CLASS = `${BASE} border border-ink/15 bg-white font-medium text-ink hover:bg-neutral-200 ${SIZE.md}`;
 
 export function Button({
   variant = "primary",

@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-12
+updated: 2026-10-13
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -846,7 +846,61 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-13) — social posting PR 3: schedule, sound picker, calendar, live posts, the failure email, `feat/social-posting-schedule`, NOT merged
+## What landed (2026-10-13, later) — social posting: four UI fixes after PR 3, `fix/social-posting-ui`, NOT merged
+
+[[0108-social-posting-four-ui-fixes-after-pr3]] (his five decisions of 2026-10-13, with a dated
+pointer on 0101); docs/09's screens table carries the new behaviour. **UI only, `apps/web` only**:
+no core function, no job, no limit, no email, no connect, no migration, no dependency.
+
+**What exists (MEASURED, on the branch):**
+
+- **The tag:** "פורסם" (green, the calendar's posted colour) once a post of the video went out and
+  none waits; "מתוזמן" (grey) while any waits; none for failed or cancelled posts alone. The list
+  route's `postTag`, from one grouped query in the web app (`postCountsByRender`); absent for a
+  hidden account, as before.
+- **The button:** `WHITE_BUTTON_CLASS` — white, `hover:bg-neutral-200`, ink text — on all five
+  player mounts. The cause was the `secondary` variant's `light:` hover, a 4 % ink tint that is black
+  over the modals' `bg-black/80`.
+- **The pickers:** each field one button; a month with the out-of-range days disabled and a 24-hour
+  list in 5-minute steps; keyboard throughout; the field reads "יום ד׳, 14.10". Shared with the post
+  page's edit form, which changed with it.
+- **The sounds:** a row whose link is an `instagram.com` page reads "האזנה באינסטגרם" and opens it in
+  a new tab; file rows unchanged.
+- **Tests:** `apps/web/test/social-schedule.test.ts`, 32 — the four tag cases through the route, a
+  hidden account with a posted and a waiting post seeing no tag, the tile's two colours, the 288
+  24-hour options, the range enforced in the month's markup, the two kinds of sound row.
+- **Screenshots** (harness with a mocked fetch, sample data; desktop and 375 px, headless Chrome over
+  CDP): `packages/core/.work/0108-shots/` (gitignored), with `report.json` — the computed colours,
+  the keyboard paths, the new tab.
+
+**What the tree answered (MEASURED; the prompt's §3):**
+
+- **A new-tab row** = a row whose `previewUrl` is Meta's `on_platform_audio_preview_link`: core
+  folds `on_platform_audio_preview_link ?? download_url` into one link and PR 3's picker opened it
+  when `<audio>.play()` refused. Planning's inference holds, with one edge: a row carrying both
+  fields would also have gone to Instagram (not known to happen; no live call).
+- **The tiles** could not tell a posted video (`pendingPostsByRender` counts waiting posts only); a
+  web-local query does it, no core change, no migration.
+- **"מתוזמן"** already followed the rule (scheduled or publishing).
+- **The fields** were the browser's own date and time inputs.
+- **The 5-minute step** fits: `publish_post` runs at the chosen minute (2 s lane poll), then Meta's
+  container is polled every 60 s.
+- **AM/PM elsewhere:** none — the calendar, the done line, the post page and the failure email all
+  format `he-IL` with `hour12: false`.
+
+**What the founder reported on 2026-10-13 (FOUNDER-REPORTED, not repo-verified):**
+
+- PR 3 is merged and works live for him.
+- In the trending original sounds, about the first ten opened an `instagram.com/reels/audio/…` page
+  in a new tab and the rest played inside Tavnit. Songs always played inside.
+
+**Not run:** nothing live — no post, no deploy, no production query. The pickers and rows were
+checked on a harness, not in a signed-in walk.
+
+## What landed (2026-10-13) — social posting PR 3: schedule, sound picker, calendar, live posts, the failure email, `feat/social-posting-schedule`, MERGED as PR #95 (`acb245f`)
+
+FOUNDER-REPORTED 2026-10-13: merged, and works live for him. Which of the live checks below
+("Owed founder actions") he ran was not reported.
 
 [[0107-social-posting-pr3-tick-landing-line-failure-email]] (his five decisions of 2026-10-12, with
 dated pointers on 0101, 0102 and 0061); the mechanics are docs/09 §The schedule flow and the
@@ -1243,11 +1297,13 @@ MERGED as #93 (`fc8a03d`), run live and RULED OFF 2026-10-12**
 [[0105-instagram-stays-on-facebook-login-one-window-setup-behind-a-switch]],
 [[0106-instagram-connect-stays-on-todays-flow-with-a-page-first]],
 [[instagram-connect-live-run-2026-10-12]]; the "What landed" entries above). 0060 is applied
-(2026-10-11). The Page-first pre-screen MERGED as #94. **PR 3 BUILT 2026-10-13** on
-`feat/social-posting-schedule` (the button, the tag, the flow, the sound picker, the calendar, the
-notice, the failure email — [[0107-social-posting-pr3-tick-landing-line-failure-email]]); next: his
-string approval and merge, then the live checks in 0107's order (docs/09 §Live-test checklist, PR
-3). PR 4 (TikTok, once his sandbox app exists). The env names and the live-test steps are under
+(2026-10-11). The Page-first pre-screen MERGED as #94. **PR 3 MERGED as #95** (`acb245f`; the
+button, the tag, the flow, the sound picker, the calendar, the notice, the failure email —
+[[0107-social-posting-pr3-tick-landing-line-failure-email]]), live and working for him
+(FOUNDER-REPORTED 2026-10-13). **Four UI fixes BUILT 2026-10-13** on `fix/social-posting-ui`
+([[0108-social-posting-four-ui-fixes-after-pr3]]: the "פורסם" tag, the button's colours, the
+pickers, the Instagram-only sounds); next: his review and merge, then the live checks in 0107's
+order (docs/09 §Live-test checklist, PR 3). PR 4 (TikTok, once his sandbox app exists). The env names and the live-test steps are under
 "Owed founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
@@ -1665,7 +1721,12 @@ the 2026-09-26 custom domain (founder-reported):**
   count (tokens null MEASURED), (v) a return address; the one-window checks (q)–(s) are DONE
   ([[instagram-connect-live-run-2026-10-12]]); 4. ~~his ruling~~ DONE 2026-10-12 (0106).
 
-- **Social posting — PR 3 (2026-10-13, `feat/social-posting-schedule`).** Each its own OK: 1. the
+- **Social posting — four UI fixes (2026-10-13, `fix/social-posting-ui`).** 1. the review and the
+  merge (no new string beyond his two; no env, no migration, no box restart); 2. the checks on
+  tavnit.ai in the task report, after Vercel deploys.
+
+- **Social posting — PR 3 (2026-10-13, `feat/social-posting-schedule`, MERGED as #95).** Items 1
+  and 2 are DONE (the merge); 3–6 are not reported. Each its own OK: 1. the
   strings at PR review — `apps/web/src/lib/social-posting-ui.ts` (Appendix A; DRAFT marks the new
   ones, among them the AI tick and its hint, the גוש טקסט mix line, the refusals), core's
   `social-copy.ts` (the email's subject and body, DRAFT) and the landing's `#proof` line (DRAFT); 2. the merge (Vercel deploys Production itself); 3. the box on `origin/main` after the merge (pull,

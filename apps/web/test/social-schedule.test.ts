@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Social posting PR 3 — the schedule flow (decisions 0101, 0102, 0107) over
- * the real route handlers, pages and layouts on PGlite:
+ * Social posting PR 3 — the schedule flow (decisions 0101, 0102, 0107, and
+ * 0108's four fixes) over the real route handlers, pages and layouts on PGlite:
  *
  * - the switch: an account it does not allow (and a signed-out visitor) gets a
  *   404 on every new route and page, and no button, tag, calendar row or
@@ -13,8 +13,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
  * - scheduling: a time past the horizon or past the file's life is refused in
  *   Hebrew; the AI label rides only when ticked;
  * - a pending post can be changed and cancelled; one being posted cannot;
- * - the grey tag shows while any post of the video is pending;
- * - the sound picker's proxy, and the connect's way back to the video.
+ * - the tile's tag: "מתוזמן" while any post of the video waits, "פורסם" once
+ *   one went out and none waits, nothing for failed posts alone;
+ * - the date and time pickers: 24-hour, 5-minute steps, the range enforced;
+ * - the sound picker's proxy, its Instagram-only rows, and the connect's way
+ *   back to the video.
  */
 
 const fixture = vi.hoisted(() => ({
@@ -101,6 +104,9 @@ const { Sidebar } = await import("../src/app/home/sidebar");
 const { PostingNotice } = await import("../src/app/home/posting-notice");
 const { ScheduleFlow } = await import("../src/app/(posting)/schedule/[renderId]/schedule-flow");
 const { AiTick } = await import("../src/components/social/ai-tick");
+const { MonthCalendar, TimeList } = await import("../src/components/social/when-fields");
+const { SoundPreview } = await import("../src/components/social/sound-picker");
+const { RenderTile } = await import("../src/app/home/render-tile");
 const { socialReturnPath } = await import("../src/lib/social-oauth");
 const form = await import("../src/lib/schedule-form");
 const ui = await import("../src/lib/social-posting-ui");
@@ -297,7 +303,7 @@ describe("the switch hides PR 3 from an account it does not allow", () => {
       )
     ).json();
     expect(list.renders).toHaveLength(1);
-    expect("scheduled" in list.renders[0]).toBe(false);
+    expect("postTag" in list.renders[0]).toBe(false);
 
     fixture.businesses = [{ id: customerBusiness, name: "עסק", questionnaire: null }];
     const frame = await HomeLayout({ children: null });
@@ -351,7 +357,7 @@ describe("a failed switch read", () => {
       params({ businessId: customerBusiness }),
     );
     expect(list.status).toBe(200);
-    expect("scheduled" in (await list.json()).renders[0]).toBe(false);
+    expect("postTag" in (await list.json()).renders[0]).toBe(false);
   });
 });
 
@@ -485,41 +491,105 @@ describe("scheduling", () => {
   });
 });
 
-describe("the grey tag and the player's line", () => {
+describe("the tile's tag and the player's line", () => {
   beforeEach(() => as(admin));
 
-  async function tagged(): Promise<boolean | undefined> {
+  async function tag(businessId = adminBusiness, renderId = adminRender) {
     const list = await (
-      await listRenders(new Request("http://localhost/api"), params({ businessId: adminBusiness }))
+      await listRenders(new Request("http://localhost/api"), params({ businessId }))
     ).json();
-    return list.renders.find((row: { id: string }) => row.id === adminRender)?.scheduled;
+    return list.renders.find((row: { id: string }) => row.id === renderId) as Record<
+      string,
+      unknown
+    >;
   }
 
-  it("shows while any post of the video is scheduled or publishing, and not after", async () => {
-    expect(await tagged()).toBe(false);
+  async function setStatus(id: string, status: "publishing" | "posted" | "failed" | "cancelled") {
+    await db
+      .update(schema.scheduledPosts)
+      .set({
+        status,
+        ...(status === "failed" ? { failureKind: "platform_refused", failedAt: new Date() } : {}),
+      })
+      .where(eq(schema.scheduledPosts.id, id));
+  }
+
+  it("the rule (0108 §1): waiting → מתוזמן, posted → פורסם, both → מתוזמן, failed only → none", () => {
+    expect(ui.postTag({ waiting: 1, posted: 0 })).toBe("scheduled");
+    expect(ui.postTag({ waiting: 0, posted: 1 })).toBe("posted");
+    expect(ui.postTag({ waiting: 2, posted: 3 })).toBe("scheduled");
+    expect(ui.postTag({ waiting: 0, posted: 0 })).toBeNull();
+    expect(ui.TILE_TAG).toBe("מתוזמן");
+    expect(ui.TILE_TAG_POSTED).toBe("פורסם");
+  });
+
+  it("the list route tags all four cases, from the posts themselves", async () => {
+    expect((await tag()).postTag).toBeNull();
     const first = (await (await schedule({})).json()).posts[0].id as string;
     const second = (await (await schedule({})).json()).posts[0].id as string;
-    expect(await tagged()).toBe(true);
 
+    // Waiting: scheduled, and a post being published still waits.
+    expect((await tag()).postTag).toBe("scheduled");
+    await setStatus(first, "publishing");
+    expect((await tag()).postTag).toBe("scheduled");
     const render = await (
       await getRender(new Request("http://localhost"), params({ id: adminRender }))
     ).json();
     expect(render.pendingPosts).toBe(2);
 
+    // Both: one went out, one still waits.
+    await setStatus(second, "posted");
+    expect((await tag()).postTag).toBe("scheduled");
+
+    // Posted: one went out and none waits — a failed one beside it changes nothing.
+    await setStatus(first, "failed");
+    expect((await tag()).postTag).toBe("posted");
+
+    // Failed only (a cancelled one beside it): no tag.
+    await setStatus(second, "cancelled");
+    expect((await tag()).postTag).toBeNull();
+    await setStatus(second, "failed");
+    expect((await tag()).postTag).toBeNull();
+  });
+
+  it("an account the switch hides sees no tag, though its video was posted and has a post waiting", async () => {
+    const [account] = await connectInstagram(db, customer, [samplePage("17841400000000077", "c")]);
+    const row = {
+      userId: customer,
+      businessId: customerBusiness,
+      videoRenderId: customerRender,
+      socialAccountId: account!,
+      platform: "instagram" as const,
+      scheduledAt: new Date(Date.now() + HOUR),
+      timezone: "Asia/Jerusalem",
+    };
+    await db.insert(schema.scheduledPosts).values([row, { ...row, status: "posted" }]);
+
+    as(customer);
+    const hidden = await tag(customerBusiness, customerRender);
+    expect(hidden.status).toBe("released");
+    expect("postTag" in hidden).toBe(false);
+
     await db
-      .update(schema.scheduledPosts)
-      .set({ status: "publishing" })
-      .where(eq(schema.scheduledPosts.id, first));
-    await db
-      .update(schema.scheduledPosts)
-      .set({ status: "posted" })
-      .where(eq(schema.scheduledPosts.id, second));
-    expect(await tagged()).toBe(true);
-    await db
-      .update(schema.scheduledPosts)
-      .set({ status: "failed", failureKind: "platform_refused", failedAt: new Date() })
-      .where(eq(schema.scheduledPosts.id, first));
-    expect(await tagged()).toBe(false);
+      .insert(schema.appConfig)
+      .values({ key: "social_posting", value: { access: "named", userIds: [customer] } });
+    expect((await tag(customerBusiness, customerRender)).postTag).toBe("scheduled");
+  });
+
+  it("the tile draws each tag in its own colour, and nothing for none", () => {
+    const tile = (postTag: "scheduled" | "posted" | null | undefined) =>
+      renderToStaticMarkup(
+        createElement(RenderTile, {
+          render: { id: "r", status: "released", thumbUrl: "t", refunded: undefined, postTag },
+          onPlay: () => {},
+        }),
+      );
+    expect(tile("scheduled")).toContain(`text-ink/70">${ui.TILE_TAG}<`);
+    expect(tile("posted")).toContain(`text-emerald-800">${ui.TILE_TAG_POSTED}<`);
+    for (const none of [null, undefined]) {
+      expect(tile(none)).not.toContain(ui.TILE_TAG);
+      expect(tile(none)).not.toContain(ui.TILE_TAG_POSTED);
+    }
   });
 
   it("a chosen sound's Latin title keeps its own direction", () => {
@@ -621,6 +691,116 @@ describe("the form's own check", () => {
     expect(form.fromInputs("2026-10-13", "24:00")).toBeNull();
     expect(form.fromInputs("2026-10-13", "12:60")).toBeNull();
     expect(form.fromInputs("", "")).toBeNull();
+  });
+});
+
+describe("the date and time pickers (0108 §3, §4)", () => {
+  /** The opening tag of the day's button in the month's markup. */
+  const dayButton = (markup: string, day: string) =>
+    markup.match(new RegExp(`<button[^>]*data-day="${day}"[^>]*>`))?.[0] ?? "";
+
+  it("the time list is 24-hour, in 5-minute steps, with no AM or PM", () => {
+    const times = form.timeOptions();
+    expect(times).toHaveLength(24 * 12);
+    expect(times.slice(0, 3)).toEqual(["00:00", "00:05", "00:10"]);
+    expect(times).toContain("13:00");
+    expect(times).toContain("18:45");
+    expect(times.at(-1)).toBe("23:55");
+    for (const time of times) expect(time).toMatch(/^([01]\d|2[0-3]):[0-5][05]$/);
+
+    const markup = renderToStaticMarkup(
+      createElement(TimeList, { value: "14:30", onPick: () => {}, onClose: () => {} }),
+    );
+    const shown = [...markup.matchAll(/role="option"[^>]*>([^<]*)<\/li>/g)].map((m) => m[1]);
+    expect(shown).toEqual(times);
+    expect(markup).not.toMatch(/AM|PM|לפנה"צ|אחה"צ/);
+    expect(markup).toMatch(/aria-selected="true"[^>]*>14:30</);
+  });
+
+  it("the list opens on the time, or the next step after it (עכשיו)", () => {
+    const times = form.timeOptions();
+    expect(times[form.timeOptionIndex(times, "14:30")]).toBe("14:30");
+    expect(times[form.timeOptionIndex(times, "14:37")]).toBe("14:40");
+    expect(times[form.timeOptionIndex(times, "23:58")]).toBe("23:55");
+  });
+
+  it("a day past the allowed range cannot be picked, nor one before it", () => {
+    const markup = renderToStaticMarkup(
+      createElement(MonthCalendar, {
+        value: "2026-10-14",
+        min: "2026-10-13",
+        max: "2026-10-20",
+        onPick: () => {},
+        onClose: () => {},
+      }),
+    );
+    expect(dayButton(markup, "2026-10-21")).toContain('disabled=""');
+    expect(dayButton(markup, "2026-10-31")).toContain('disabled=""');
+    expect(dayButton(markup, "2026-10-12")).toContain('disabled=""');
+    for (const open of ["2026-10-13", "2026-10-14", "2026-10-20"]) {
+      expect(dayButton(markup, open)).not.toBe("");
+      expect(dayButton(markup, open)).not.toContain('disabled=""');
+    }
+    expect(dayButton(markup, "2026-10-14")).toContain('aria-pressed="true"');
+
+    expect(form.dayPickable("2026-11-13", "2026-10-13", "2026-11-12")).toBe(false);
+    expect(form.dayPickable("2026-11-12", "2026-10-13", "2026-11-12")).toBe(true);
+    expect(form.dayPickable("2026-10-12", "2026-10-13", "2026-11-12")).toBe(false);
+  });
+
+  it("the month is Sunday first, and moves by whole local days", () => {
+    // 1 October 2026 is a Thursday: four empty cells before it.
+    const days = form.monthDays(2026, 9);
+    expect(days.slice(0, 5)).toEqual([null, null, null, null, "2026-10-01"]);
+    expect(days.at(-1)).toBe("2026-10-31");
+    expect(form.shiftDay("2026-10-31", 1)).toBe("2026-11-01");
+    expect(form.shiftDay("2026-03-01", -1)).toBe("2026-02-28");
+  });
+});
+
+describe("the sound row's play button (0108 §5)", () => {
+  const sound = (previewUrl?: string) => ({
+    audioId: "1",
+    kind: "original_sound" as const,
+    title: "Trending",
+    previewUrl,
+  });
+  const row = (previewUrl?: string) =>
+    renderToStaticMarkup(
+      createElement(SoundPreview, {
+        sound: sound(previewUrl),
+        playing: false,
+        onPlay: () => {},
+        onOpenInstagram: () => {},
+      }),
+    );
+
+  it("a sound with no file says האזנה באינסטגרם and opens Instagram's page in a new tab", () => {
+    const page = "https://www.instagram.com/reels/audio/587784541076604/";
+    const markup = row(page);
+    expect(markup).toMatch(/^<a /);
+    expect(markup).toContain(`href="${page}"`);
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('rel="noopener noreferrer"');
+    expect(markup).toContain(`>${ui.SOUND_ON_INSTAGRAM}</a>`);
+    expect(ui.SOUND_ON_INSTAGRAM).toBe("האזנה באינסטגרם");
+    expect(markup).not.toContain(ui.SOUND_PREVIEW_ARIA);
+    expect(form.isInstagramPage("https://instagram.com/reels/audio/1")).toBe(true);
+  });
+
+  it("a sound with a file keeps its play button, in place", () => {
+    for (const file of [
+      "https://scontent.cdninstagram.com/v/t39/audio.m4a",
+      "https://ig.example/preview.mp3",
+    ]) {
+      expect(form.isInstagramPage(file)).toBe(false);
+      const markup = row(file);
+      expect(markup).toMatch(/^<button type="button" aria-label="השמעת תצוגה מקדימה"/);
+      expect(markup).not.toContain("target=");
+      expect(markup).not.toContain(ui.SOUND_ON_INSTAGRAM);
+    }
+    expect(form.isInstagramPage("not a url")).toBe(false);
+    expect(row(undefined)).toContain(`aria-label="${ui.SOUND_NO_PREVIEW}"`);
   });
 });
 

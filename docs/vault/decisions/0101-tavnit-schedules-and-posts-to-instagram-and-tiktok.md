@@ -14,6 +14,12 @@ DEFAULT** (assumed by the planning assistant or this plan, kept at his approval 
 ruled). The mechanics live in `docs/09-social-posting.md`; this note records what was decided and
 why.
 
+> **2026-10-13 — four UI fixes after PR 3 ([[0108-social-posting-four-ui-fixes-after-pr3]]):**
+> decision 10's grey tag gains a second one, "פורסם", once a post went out and none waits; the
+> schedule button is white with a light-grey hover; the date and time are Tavnit's own pickers,
+> 24-hour in 5-minute steps; a sound Meta gives no file for stays, with "האזנה באינסטגרם".
+> Scheduling and publishing are unchanged.
+
 > **2026-10-12 — a failed post also sends an email ([[0107-social-posting-pr3-tick-landing-line-failure-email]]):**
 > the "in the app only" default below is replaced (one email per cause per 24 h, 20 a UTC day, from
 > the worker through Resend); the OPEN "whether a failure email is ever built" is answered; the other

@@ -24,6 +24,21 @@ import { isolated } from "./social-ui";
 
 export const SCHEDULE_BUTTON = "תזמון פרסום";
 export const TILE_TAG = "מתוזמן";
+/** FINAL (decision 0108 §1, the founder's word). */
+export const TILE_TAG_POSTED = "פורסם";
+
+export type PostTag = "scheduled" | "posted";
+
+/**
+ * The tile's tag (decision 0108 §1): "מתוזמן" while any post of the video
+ * waits (scheduled, or publishing — a quota wait included), else "פורסם" once
+ * at least one went out. A failed or cancelled post alone tags nothing.
+ */
+export function postTag(counts: { waiting: number; posted: number }): PostTag | null {
+  if (counts.waiting > 0) return "scheduled";
+  if (counts.posted > 0) return "posted";
+  return null;
+}
 
 /** Under the player while posts of this video wait. */
 export function pendingPostsLine(count: number): string | null {
@@ -81,6 +96,8 @@ export const SOUND_MORE = "עוד תוצאות";
 export const SOUND_NONE_FOUND = "לא נמצאו סאונדים.";
 export const SOUND_PREVIEW_ARIA = "השמעת תצוגה מקדימה";
 export const SOUND_NO_PREVIEW = "אין תצוגה מקדימה";
+/** FINAL (decision 0108 §5, the founder's word): the row Meta gave no file for. */
+export const SOUND_ON_INSTAGRAM = "האזנה באינסטגרם";
 export const SOUND_RECONNECT =
   "כדי לחפש סאונדים צריך להתחבר מחדש לחשבון בהגדרות. אפשר להמשיך בלי סאונד.";
 // DRAFT: the search failed for a reason that is not the token.

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Play, Spinner, Stop } from "@/components/ui/icons";
-import type { SoundChoice } from "@/lib/schedule-form";
+import { isInstagramPage, type SoundChoice } from "@/lib/schedule-form";
 import {
   chosenSoundLine,
   mixLine,
@@ -15,6 +15,7 @@ import {
   SOUND_NONE_FOUND,
   SOUND_NOTE,
   SOUND_NOTE_DOWNLOAD,
+  SOUND_ON_INSTAGRAM,
   SOUND_PREVIEW_ARIA,
   SOUND_RECONNECT,
   SOUND_SEARCH_FAILED,
@@ -152,11 +153,17 @@ export function SoundPicker({
     }
     element.src = sound.previewUrl;
     setPlaying(sound.audioId);
-    // Meta's preview may be a page rather than a playable file: open it instead.
+    // A link that is not a playable file after all: open it instead.
     element.play().catch(() => {
       setPlaying(null);
       window.open(sound.previewUrl, "_blank", "noopener,noreferrer");
     });
+  }
+
+  /** Instagram's page plays the sound there: the one playing here stops. */
+  function stopPreview() {
+    audio.current?.pause();
+    setPlaying(null);
   }
 
   const empty =
@@ -225,24 +232,12 @@ export function SoundPicker({
                           key={`${kind}:${sound.audioId}`}
                           className="flex items-center gap-3 p-2"
                         >
-                          {sound.previewUrl ? (
-                            <button
-                              type="button"
-                              onClick={() => preview(sound)}
-                              aria-label={SOUND_PREVIEW_ARIA}
-                              className="grid size-9 shrink-0 place-items-center rounded-full bg-ink/[0.06] text-ink hover:bg-ink/10"
-                            >
-                              {playing === sound.audioId ? <Stop /> : <Play />}
-                            </button>
-                          ) : (
-                            <span
-                              title={SOUND_NO_PREVIEW}
-                              aria-label={SOUND_NO_PREVIEW}
-                              className="grid size-9 shrink-0 place-items-center rounded-full bg-ink/[0.03] text-ink/25"
-                            >
-                              <Play />
-                            </span>
-                          )}
+                          <SoundPreview
+                            sound={sound}
+                            playing={playing === sound.audioId}
+                            onPlay={() => preview(sound)}
+                            onOpenInstagram={stopPreview}
+                          />
                           {sound.pictureUrl && (
                             // A Meta CDN link — next/image would refuse the host.
                             <img
@@ -301,5 +296,58 @@ export function SoundPicker({
         </a>
       </p>
     </div>
+  );
+}
+
+/**
+ * A row's preview control (decision 0108 §5). A file plays in place (▶/■); a
+ * sound Meta gives no file for — its only link is Instagram's own page — keeps
+ * its row, and its button says so and opens that page in a new tab. Exported
+ * for the tests.
+ */
+export function SoundPreview({
+  sound,
+  playing,
+  onPlay,
+  onOpenInstagram,
+}: {
+  sound: SoundChoice;
+  playing: boolean;
+  onPlay: () => void;
+  onOpenInstagram: () => void;
+}) {
+  if (!sound.previewUrl) {
+    return (
+      <span
+        title={SOUND_NO_PREVIEW}
+        aria-label={SOUND_NO_PREVIEW}
+        className="grid size-9 shrink-0 place-items-center rounded-full bg-ink/[0.03] text-ink/25"
+      >
+        <Play />
+      </span>
+    );
+  }
+  if (isInstagramPage(sound.previewUrl)) {
+    return (
+      <a
+        href={sound.previewUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={onOpenInstagram}
+        className="inline-flex h-9 shrink-0 items-center rounded-full bg-ink/[0.06] px-3 text-xs font-medium text-ink transition-colors duration-150 hover:bg-ink/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        {SOUND_ON_INSTAGRAM}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onPlay}
+      aria-label={SOUND_PREVIEW_ARIA}
+      className="grid size-9 shrink-0 place-items-center rounded-full bg-ink/[0.06] text-ink hover:bg-ink/10"
+    >
+      {playing ? <Stop /> : <Play />}
+    </button>
   );
 }
