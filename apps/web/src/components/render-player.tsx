@@ -1,7 +1,9 @@
 "use client";
 
-import { PRIMARY_BUTTON_CLASS } from "@/components/ui/button";
+import Link from "next/link";
+import { PRIMARY_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from "@/components/ui/button";
 import { Download, Spinner } from "@/components/ui/icons";
+import { pendingPostsLine, SCHEDULE_BUTTON } from "@/lib/social-posting-ui";
 
 type RenderPlayerProps = {
   /** The signed playback URL. Undefined = still being fetched — both modals
@@ -15,6 +17,15 @@ type RenderPlayerProps = {
   /** The video box itself. Only the border differs (the modals sit on a black
    *  backdrop, the wizards on paper), so unifying it would be a restyle. */
   frameClassName?: string;
+  /** "תזמון פרסום" (social posting, decision 0101 §6): present only when
+   *  GET /api/renders/[id] sent it — a released render, an account the switch
+   *  allows. Absent, the player is exactly what it was. */
+  scheduleHref?: string;
+  /** Posts of this video still waiting; the line under the buttons. */
+  pendingPosts?: number;
+  /** The modals sit on a black backdrop, the wizards on paper — the one line
+   *  of text under the buttons needs to know which. */
+  onDark?: boolean;
 };
 
 /**
@@ -37,8 +48,12 @@ export function RenderPlayer({
   autoPlay = false,
   className = "",
   frameClassName = "",
+  scheduleHref,
+  pendingPosts = 0,
+  onDark = false,
 }: RenderPlayerProps) {
   const frame = `aspect-[9/16] w-full rounded-xl border ${frameClassName}`;
+  const pendingLine = scheduleHref ? pendingPostsLine(pendingPosts) : null;
   return (
     <div className={className}>
       {videoUrl ? (
@@ -61,7 +76,9 @@ export function RenderPlayer({
           gone — remix is not being built, and a permanently-disabled button is
           a promise the product does not keep. That also retires the min-w-36
           wrap threshold, which existed so the PAIR could drop to two rows. */}
-      <div className="mt-3">
+      {/* One row: הורדה, and beside it "תזמון פרסום" when the account may
+          schedule — two columns, so neither moves when the other appears. */}
+      <div className={`mt-3 ${scheduleHref ? "grid grid-cols-2 gap-2" : ""}`}>
         <a
           href={downloadUrl}
           download
@@ -76,7 +93,17 @@ export function RenderPlayer({
           <Download />
           הורדה
         </a>
+        {scheduleHref && (
+          <Link href={scheduleHref} className={`${SECONDARY_BUTTON_CLASS} w-full`}>
+            {SCHEDULE_BUTTON}
+          </Link>
+        )}
       </div>
+      {pendingLine && (
+        <p className={`mt-2 text-center text-xs ${onDark ? "text-gray-300" : "text-ink/60"}`}>
+          {pendingLine}
+        </p>
+      )}
     </div>
   );
 }

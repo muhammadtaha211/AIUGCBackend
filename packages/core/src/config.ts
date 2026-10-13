@@ -30,6 +30,10 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_LOGIN_CONFIG_ID: z.string().optional(),
   SOCIAL_TOKEN_KEY: z.string().optional(),
+  // The failure email (decision 0107): a sending-only Resend key, set on the
+  // box alone. Absent or empty means no email is sent and nothing breaks, the
+  // way an unset SENTRY_DSN means no report (pipelines/social-failure-email.ts).
+  RESEND_API_KEY: z.string().optional(),
   DRY_RUN: z
     .string()
     .optional()

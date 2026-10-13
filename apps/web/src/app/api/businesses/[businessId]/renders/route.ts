@@ -9,6 +9,7 @@ import {
   getStorage,
   HEAVY_JOB_TYPES,
   isAdminOwned,
+  pendingPostsByRender,
   schema,
 } from "@aiugc/core";
 import {
@@ -30,6 +31,7 @@ import {
   RENDER_PAGE_SIZE,
   rendersPageParam,
 } from "@/lib/service-b-ui";
+import { postingAllowed } from "@/lib/social";
 
 /**
  * Create a Service B render. Core enforces the approved-audio gate and the
@@ -204,12 +206,25 @@ export async function GET(
     // queries, and every other active row is merely queued behind this one.
     const head = page === null ? pickActiveHead(rows) : undefined;
 
+    // The grey "מתוזמן" tag (social posting PR 3): one IN query, only for an
+    // account the switch allows (the key is absent for everyone else), and
+    // only when a row is released. Started beside the signing below, and
+    // best-effort: a failed read drops the tag, never the list.
+    const released = rows.filter((row) => row.status === "released").map((row) => row.id);
+    const pendingRead =
+      released.length === 0
+        ? Promise.resolve(null)
+        : postingAllowed(auth.userId)
+            .then((allowed) => (allowed ? pendingPostsByRender(db, released) : null))
+            .catch(() => null);
+
     // Concurrent, like the sibling demos route: signing is a network call per
     // released row, and a full page of 24 in series is the whole latency of
     // this screen. Promise.all resolves in input order, so the body is
     // byte-identical to the serial loop this replaced — including the single
     // head `job`, which only one row asks for either way.
     const storage = getStorage();
+    const pending = await pendingRead;
     const renders = await Promise.all(
       rows.map(async (row) => ({
         id: row.id,
@@ -224,6 +239,7 @@ export async function GET(
         // really landed (refunded_at set in the refund transaction).
         refunded: row.status === "failed" ? row.refundedAt !== null : undefined,
         job: row.id === head?.id ? await headProgress(db, row.id) : undefined,
+        scheduled: pending ? (pending.get(row.id) ?? 0) > 0 : undefined,
       })),
     );
     if (page === null) return NextResponse.json({ renders });

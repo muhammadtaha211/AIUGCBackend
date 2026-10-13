@@ -5,10 +5,12 @@ import {
   getJobProgress,
   getStorage,
   HEAVY_JOB_TYPES,
+  pendingPostsByRender,
   type JobProgress,
 } from "@aiugc/core";
 import { coreErrorResponse, requireRender, requireUser, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 import { renderDownloadFilename } from "@/lib/service-b-ui";
+import { postingAllowed } from "@/lib/social";
 
 /**
  * Poll a render. Status passes through core's states; the video (and thumb)
@@ -45,6 +47,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
        *  renderMedia percent, and the heartbeat that tells "still working"
        *  from "nothing is processing this". */
       job?: JobProgress;
+      /** The player's "תזמון פרסום" (social posting PR 3): released renders,
+       *  for an account the switch allows — absent for everyone else, so a
+       *  hidden account's player has no button and no trace. */
+      scheduleHref?: string;
+      /** Posts of this video still waiting (scheduled or publishing). */
+      pendingPosts?: number;
     } = {
       status: render.status,
     };
@@ -64,6 +72,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       }
       if (render.thumbPath) {
         body.thumbUrl = await storage.signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS);
+      }
+      // Best-effort: a failed switch read only hides the button.
+      if (render.filePath && (await postingAllowed(auth.userId).catch(() => false))) {
+        body.scheduleHref = `/schedule/${id}`;
+        body.pendingPosts = (await pendingPostsByRender(db, [id])).get(id) ?? 0;
       }
     }
     if (render.status === "failed") {

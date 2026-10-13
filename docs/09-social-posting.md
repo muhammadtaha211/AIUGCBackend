@@ -21,9 +21,12 @@ account). Then (decision [`0105`](vault/decisions/0105-instagram-stays-on-facebo
 30-minute window, and a line of its own for every way back from Facebook (§The connect mode). After
 the live run (decision [`0106`](vault/decisions/0106-instagram-connect-stays-on-todays-flow-with-a-page-first.md),
 `feat/instagram-connect-page-steps`): customers stay on today's connect, and the pre-screen tells
-them to link a Page first; the one-window switch stays off. **Not yet built:** the schedule flow,
-the player button, the sound picker, the calendar, the tag, the `/home` notice (PR 3) and TikTok
-(PR 4, once a sandbox app exists). Everything a customer could reach is behind the switch.
+them to link a Page first; the one-window switch stays off. PR 3 (`feat/social-posting-schedule`,
+decision [`0107`](vault/decisions/0107-social-posting-pr3-tick-landing-line-failure-email.md)): the
+player button, the tag, the schedule flow, the sound picker, the calendar and the post page, the
+`/home` notice, and the failure email (§The schedule flow and the calendar, §The failure email).
+**Not yet built:** TikTok (PR 4, once a sandbox app exists). Everything a customer could reach is
+behind the switch.
 
 ## Data model (0057–0060)
 
@@ -155,6 +158,53 @@ The lines ship with the web PR; `SOCIAL_FAILURE_KINDS` is the closed set they ma
 `failure_detail` is the diagnostic and never leaves the server: `toPostView` strips it (and the
 container id) from everything a page reads, the way `toView` strips tokens from an account.
 
+## The failure email (decision 0107)
+
+A post that fails for good is told twice: in the app (the `/home` notice and the calendar, from the
+post row) and by email to the Tavnit account's address, because the point of scheduling is not
+opening the app. The email is the worker's, never the publish job's: an email problem cannot fail,
+delay or retry a post, and the in-app notice is the same either way.
+
+- **Where:** `sweepFailureEmails` in `apps/worker/src/index.ts`, every 60 s beside the alert sweep,
+  one tick at a time; the rules in `pipelines/social-failure-email.ts`; the one Resend wrapper in
+  `providers/resend.ts` (plain `fetch` to `POST https://api.resend.com/emails`, 10 s timeout; the
+  status and Resend's error name logged, never the address, the subject or the body). `aiugc work
+--once` and the web apps never run it.
+- **Sender:** `תבנית <noreply@tavnit.ai>`, a constant — the auth mail's own (docs/08 §8A.2).
+- **Off:** no `RESEND_API_KEY` (or an empty line), `DRY_RUN`, or a `local`/`cli` worker id against
+  production (the guard `claim` uses) → no call and no row. The startup line says which, from the
+  sweep's own checks (`failureEmailState`):
+  `journalctl -u aiugc-worker -o cat | grep '"failure email"'` → `"failureEmail":"on"`,
+  `"no_provider"` or `"local_worker"`.
+- **A cause** is (Tavnit account, `failure_kind`). One email per cause per **24 h**; a failure of
+  the same cause in the 24 h after an email is folded — never emailed, on the calendar and in the
+  notice. A cause goes out once its newest failure is **2 minutes** old, so posts that fail together
+  share one email. Only failures from the last **24 h** are emailed.
+- **The ceiling:** **20** failure emails per UTC day (Resend's day resets at 00:00 UTC), leaving 80
+  of the free plan's 100 a day for the sign-up and password mail. Over it, a failure still under
+  24 h old goes out after midnight UTC; older ones never. `daily_quota_exceeded` from Resend pauses
+  the sweep until 00:00 UTC; a network fault, a 5xx, a per-second 429 or a body that stalls pauses
+  it 5 minutes; a **401 or 403** (the key is wrong, revoked or held to another domain, or the domain
+  is unverified) pauses it an hour and writes **no** row — the account's fault, not the cause's, so
+  the failures still go out once it is fixed, while under 24 h old.
+- **Never twice:** the send carries `Idempotency-Key: post-failure/<user>/<kind>/<oldest due post
+id>` — a key that does not move while the burst grows — and the log row is written after the send,
+  so a retry after an ambiguous send or a failed log write is deduplicated by Resend (24 h). Resend's
+  409 `invalid_idempotent_request` (the key seen with a longer list) counts as sent. A refusal of the
+  message itself (a 400 or 422, a bad address) is logged and not retried.
+- **The log** is `events` rows of kind `post_failure_email`: `actor_user_id` = the account, payload
+  `{failureKind, postIds, outcome: sent | refused, resendId | error}` — no address, no caption, no
+  diagnostic. Not an alert kind, so it never reaches Sentry. No migration.
+- **A hidden account** (the switch) gets no email.
+- **What it says** (`social-copy.ts` `failureEmail`, DRAFT): subject «פרסום שתוזמן בתבנית נכשל» /
+  «{n} פרסומים שתוזמנו בתבנית נכשלו»; which posts (the service, the business, the account, the
+  planned time in the post's own zone; ten listed, the rest counted); the failure-kind line above as
+  the reason and what to do — in the plural when the email lists several videos or several accounts
+  (`failureEmailReason`); "ללוח הפרסומים" to `https://tavnit.ai/calendar` (no "schedule again" for a
+  missing file); a line that the calendar opens after signing in (it is a 404 for anyone signed
+  out — the switch's no-trace rule); and a line that more failures of the same cause in the next
+  24 h show there without another email.
+
 ## The switch
 
 `app_config.social_posting` has three settings (decision 0102):
@@ -188,6 +238,71 @@ one per email you named. Open it to everyone after Meta's approval:
 insert into app_config (key, value) values ('social_posting', '{"access":"everyone"}'::jsonb)
 on conflict (key) do update set value = excluded.value, updated_at = now();
 ```
+
+## The schedule flow and the calendar (PR 3)
+
+The approved plan's §8 and Appendix A, with 0102 and 0107. Every line a customer reads is in
+`apps/web/src/lib/social-posting-ui.ts` (the new ones marked DRAFT); the failure lines and the email
+are core's `social-copy.ts`, because the worker writes the email.
+
+| surface                                                                                 | what it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RenderPlayer` (five mounts: the strip and library modals, the A, B and C finish steps) | "תזמון פרסום" beside הורדה, one row, two columns, and "מתוזמן לפרסום" / "מתוזמן ל־{n} פרסומים" under it. Fed by `GET /api/renders/[id]`'s `scheduleHref` and `pendingPosts`, which the route sends only for a released render with a file **and** an account the switch allows — absent, the player is what it was.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `RenderTile` (strip and all-videos page)                                                | The grey "מתוזמן" chip beside the status while any post of the video is `scheduled` or `publishing`: the list route's `scheduled`, one `IN` query, only for an allowed account (the key is absent otherwise).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `/schedule/[renderId]`                                                                  | A page, not a modal, so the first-time connect has an address to come back to. The caller's own released video (an admin's any), then: **accounts** (multi-select; an expired one cannot be picked; none connected → "עוד אין חשבון מחובר" and "לחיבור חשבון" to `/connect/instagram?return=/schedule/<id>`) → **when** (native date and time, the browser's zone, "עכשיו", the horizon checked before asking — 30 days, or the file's last day when that is sooner, worded with that date) → **caption, sound and the AI tick** (the tick last, small, muted, unticked) → **"תבנית ממשיכה מכאן"**. `?from=<postId>` is a failed post's "תזמון מחדש": the account, caption, sound and tick carried forward. |
+| the sound picker                                                                        | `GET /api/social/instagram/sounds?accountId&kind&q&after` → core's `searchInstagramSounds` → Meta's `ig_audio` with the account's **User** token (one kind per call: `original_sound` = סאונדים מרילס, `music` = מוזיקה). Trending while the search is empty; "עוד תוצאות" per group while Meta pages; ▶ plays the preview (or opens it, when it is a page rather than a file); `reconnect` when the User token is gone, past its ~60 days or refused as lapsed — the post then goes without a sound. Under the list, the note with "הורדת הסרטון". The mix line follows `SOUND_VOLUMES`, with its own line for גוש טקסט.                                                                                   |
+| `/calendar?month=YYYY-MM`                                                               | A Sunday-first month grid, right to left, the whole Tavnit account across its businesses; chips with the account's picture and the time, grey while waiting, green once posted, red when failed; cancelled posts are not on it; "+N" past three a day. Below md, dots, and the chosen day's list under the grid. The month is the browser's: the page fetches `GET /api/social/posts?from&to` (at most 45 days) a day wider on each side.                                                                                                                                                                                                                                                                   |
+| `/calendar/[postId]`                                                                    | The account, the time, the caption, the sound, the video. While `scheduled`: the edit form (`PATCH /api/social/posts/[id]`, only the fields that changed) and "ביטול הפרסום" behind a confirm. A quota wait (`publishing`, no container yet) can be cancelled, not edited. Once posting started: «הפרסום כבר התחיל ואי אפשר לשנות אותו.» (409). Failed: the failure line, "תזמון מחדש", הורדה. Posted: "צפייה בפוסט" when Meta gave a permalink.                                                                                                                                                                                                                                                            |
+| `/home`                                                                                 | The notice above the recent videos: «פרסום אחד נכשל» / «{n} פרסומים נכשלו» with "ללוח הפרסומים" and "הבנתי" (`POST /api/social/posts/acknowledge-failures`), and one line per expired account with posts waiting.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| the nav                                                                                 | "לוח פרסומים" in the desktop sidebar and in the account menu (below md the menu is the whole nav), only for an allowed account.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+**Why `/schedule` and `/calendar` are not under `/home`.** Every segment under `/home` sits inside the
+Suspense boundary `/home/loading.tsx` opens, and a `notFound()` inside it streams the 404 page into a
+response already sent as 200 — a trace (PR 2's reason for `/connect/instagram`). The two pages live
+in the `app/(posting)` route group, whose layout checks the session and the switch before any
+boundary and then draws the `/home` frame itself (`HomeLayout`). A hidden account and a signed-out
+visitor get a real 404 status and the 404 screen, never a redirect to `/start`. **Known limit**
+(found by PR 3's review, and true of `/connect/instagram` since PR 2): Next renders that 404 from the
+matched route tree, so the raw HTML's RSC data names `(posting)`, `calendar` or `schedule` where an
+unknown path's names `/_not-found` — a trace for someone reading the source, not for a customer; a
+middleware rewrite would close it, at the cost of the switch read at the edge. The
+connect's return address accepts `/schedule/<id>` and `/calendar[/<id>]` beside `/home…` and nothing
+else (`socialReturnPath`).
+
+**The refusals** (`SocialSchedulingError`, mapped by type in `api-errors.ts`): 404 for a post,
+account or video that is not the caller's; 409 for `not_pending`; 429 for Instagram's daily cap; 422
+for the rest, each with its own line (`socialErrorLine`).
+
+**Read on Meta's own pages 2026-10-12** (each load-bearing line re-fetched by an independent refuter):
+
+- **A Reel with no audio stream:** not stated. The Reels spec on the IG User Media reference gives
+  "Audio codec: AAC, 48khz sample rate maximum, 1 or 2 channels" and "Audio bitrate: 128kbps", and
+  says neither "required" nor "optional"; no error code names a missing audio stream (the nearest,
+  2207026, is "Unsupported video format"). The first live הוק + דמו post settles it (0107 §5).
+- **The audio search's token:** the Audio API page asks for "A valid User access token"
+  (`instagram_basic`, `instagram_content_publish`, granted through Facebook Login) and says nothing
+  of a Page token. Whether the Page token serves it too is a live reading (checklist (w)).
+- **`audio_configuration`:** `audio_id` required; `audio_volume` and `video_volume` optional,
+  default 100 — one refuter read `audio_volume` as 1–100 in the raw page (the rendered text says
+  0–100); `SOUND_VOLUMES` uses 100 and 15 for it, inside both. "Previewing a Reel with attached audio
+  is not supported."
+- **Page Publishing Authorization:** "An Instagram professional account connected to a Page that
+  requires Page Publishing Authorization (PPA) cannot be published to until PPA has been completed";
+  the container request fails ("PPA must be completed or the request will fail"); "there's no way for
+  you to determine if an app user's Page requires PPA". **Meta documents no error code for it.** It
+  arrives as a refusal of `POST /{ig}/media` and gets today's `platform_refused` line («אינסטגרם לא
+  קיבלה את הסרטון…»); a line of its own waits for the live error's code.
+- **Labelling AI video:** Meta's Community Standards (Misinformation) "require people to disclose,
+  using our AI-disclosure tool, whenever they post organic content with photorealistic video or
+  realistic-sounding audio that was digitally created or altered, and we may apply penalties if they
+  fail to do so"; `is_ai_generated` is documented as "An optional parameter to provide a
+  self-disclosure of AI usage in the post" (changelog 2026-06-22, "AI Info Label"). Whether the API
+  flag counts as the in-app disclosure tool, and whether Reels honour it, is not stated. The tick's
+  hint is one muted line of that rule.
+
+URLs: `developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media`,
+`…/content-publishing/`, `…/content-publishing/audio-api/`, `…/instagram-graph-api/reference/error-codes`,
+`…/instagram-platform/changelog`, `transparency.meta.com/policies/community-standards/misinformation/`.
 
 ## Connecting an account (PR 2)
 
@@ -252,13 +367,14 @@ or don't click it.
 
 ## Env names (names only)
 
-| name                                        | web (Vercel Production; `apps/web/.env.local` for the local live test)                    | box (`apps/worker/.env`) |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------ |
-| `META_APP_ID`                               | yes                                                                                       | —                        |
-| `META_APP_SECRET`                           | yes (code exchange, `appsecret_proof`, the deletion signature)                            | yes (`appsecret_proof`)  |
-| `META_LOGIN_CONFIG_ID`                      | only if the app dashboard gives Facebook Login a configuration id instead of a scope list | —                        |
-| `SOCIAL_TOKEN_KEY`                          | yes                                                                                       | yes                      |
-| `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | when TikTok is built                                                                      | when TikTok is built     |
+| name                                        | web (Vercel Production; `apps/web/.env.local` for the local live test)                    | box (`apps/worker/.env`)                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `META_APP_ID`                               | yes                                                                                       | —                                                                                                   |
+| `META_APP_SECRET`                           | yes (code exchange, `appsecret_proof`, the deletion signature)                            | yes (`appsecret_proof`)                                                                             |
+| `META_LOGIN_CONFIG_ID`                      | only if the app dashboard gives Facebook Login a configuration id instead of a scope list | —                                                                                                   |
+| `SOCIAL_TOKEN_KEY`                          | yes                                                                                       | yes                                                                                                 |
+| `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | when TikTok is built                                                                      | when TikTok is built                                                                                |
+| `RESEND_API_KEY`                            | — (the web sends no mail)                                                                 | yes — a **sending-only** key restricted to `tavnit.ai` (the failure email, 0107); absent = no email |
 
 Admin needs none. Bare values, one line each, and a Vercel change reaches only deployments created
 after it (vault `env-values-differ-between-the-box-and-vercel`).
@@ -287,6 +403,27 @@ sudo tr '\0' '\n' < /proc/$PID/environ | sed -n 's/^SOCIAL_TOKEN_KEY=//p' | tr -
 ```
 
 Keep a copy in a password manager: losing the key means reconnecting every account, nothing worse.
+
+**`RESEND_API_KEY` goes on the box only, and only once the box runs PR 3** (decision 0107). Its
+value is never pasted into a chat, a commit or a report.
+
+1. Resend's dashboard → **API Keys** → **Create API Key**: a name such as `worker-failure-email`,
+   **Permission: Sending access**, **Domain: tavnit.ai** → Add. Resend shows the key once; copy it.
+2. On the box, after PR 3 is on `origin/main`:
+   `cd ~/AIUGCBackend && git pull && pnpm install`, then `nano ~/AIUGCBackend/apps/worker/.env` and
+   add one line, `RESEND_API_KEY=` followed by the pasted value — one line, no quotes, no spaces.
+   Ctrl-O, Enter, Ctrl-X.
+3. `sudo systemctl restart aiugc-worker`.
+4. Prove the process has it, printing no key (docs/07 §13's way):
+
+```bash
+PID=$(systemctl show aiugc-worker -p MainPID --value)
+sudo tr '\0' '\n' < /proc/$PID/environ | grep -c '^RESEND_API_KEY=re_'
+journalctl -u aiugc-worker -o cat | grep '"failure email"' | tail -1
+```
+
+**Works:** `1`, then a line with `"failureEmail":"on"`. `0` or `"no_provider"`: the line did not
+reach the process (a typo in the name, a wrapped value, or no restart).
 
 All providers honour `DRY_RUN`: a
 dry-run web "connects" a sample account and a dry-run worker "publishes" to nothing.
@@ -643,20 +780,46 @@ deploys; the box is not involved. Each its own OK.
   confirm's count not reported)**;
 - (v) `/connect/instagram?return=/home/renders` → המשך → finish → you land on `/home/renders`.
 
-**PR 3 — posting.** The box on `origin/main` after PR 3 merges, never a task branch (0102 planning
-default).
+**PR 3 — posting.** On tavnit.ai, with the box on `origin/main` after PR 3 merges, never a task
+branch (0102 planning default). Each line its own OK; the order is decision 0107's.
 
-- (j) a logged-out look at the Reel you published from the Explorer (whether role-user posts are
-  public under Standard Access is unstated);
-- (k) the first live post: an **A render** with a sound — Meta's handling of a stream-less MP4 is
-  unstated in its docs;
-- (l) a B render (the voice over the sound at 15) and a C render (the sound over the clip at 40),
-  to judge the mix (0102);
+- **Before any of it:** PR 3 merged and its Vercel Production deploy "Ready"; the box pulled
+  (`cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`, then
+  `journalctl -u aiugc-worker -o cat | grep '"worker started"' | tail -1` shows today's time).
+- (k) **the first live post — a הוק + דמו with a trending sound, now, to one account.** Open a
+  released הוק + דמו video (the home strip or כל היצירות) → **תזמון פרסום** → tick one account →
+  המשך → **עכשיו** → המשך → a caption → under פופולריים pick a sound → **תזמון**. **Works:** within a
+  few minutes the calendar's chip turns green (פורסם); open it → **צפייה בפוסט**; in a logged-out
+  (private) window the Reel plays with the caption and the sound from its first second (this also
+  answers (j): whether a post made under Standard Access is public). **Broken:** the chip turns red
+  with «אינסטגרם לא קיבלה את הסרטון…» — **stop and report**: Meta refused a stream-less file, and a
+  silent audio track is its own task (0101).
+- (l) a post **a few minutes ahead to two accounts** (tick both, today, now + 5 minutes) → two chips
+  at that time, both green.
+- (l2) a **גוש טקסט** post with a sound, to judge the levels (the sound leads, the clip's own sound
+  under it at 40 — 0102 §2). A דמות AI post (the voice over the sound at 15) when convenient.
+- (n) **a pending post changed, then cancelled:** schedule one for tomorrow; open it from לוח
+  פרסומים; move its time and change the caption → **שמירה** → «השינויים נשמרו.»; then **ביטול
+  הפרסום** → **כן, לבטל** → «הפרסום בוטל.»; it leaves the grid and never posts.
+- (v) **the first-time path returns to the video:** open
+  `https://tavnit.ai/connect/instagram?return=/schedule/<a released render's id>` → המשך → confirm in
+  Facebook's window → you land back on that video's תזמון פרסום, the accounts listed. (A Tavnit
+  account with nothing connected sees the same path from "לחיבור חשבון" on the schedule page.)
+- (u) **a disconnect with a pending post shows the count:** schedule a post for tomorrow on one
+  account → הגדרות → חיבורים → **ניתוק** on it → the confirm reads «פרסום מתוזמן אחד לחשבון הזה
+  יבוטל.» → the done line → the post is gone from the calendar. Reconnect the account after.
+- (w) _report only:_ whether Meta's `ig_audio` answers the **Page** token too — if it does, the User
+  token column can go (0101). A read, no post.
 - (m) two readings the docs do not give, recorded in the vault when seen: the container `status`
   Meta returns for a withdrawn `audio_id` (the `sound_unavailable` match is provisional until then)
   and the error `media_publish` returns when the account's quota filled between the limit read and
-  the publish (a terminal `platform_refused` today; with the code known it joins the deferral path);
-- (n) edit one pending post's time and cancel another;
-- (o) the forced failure, last: remove Tavnit under Facebook's Business Integrations, let a pending
-  post run, see `connection_expired`, reconnect;
-- (p) `DRY_RUN` back to 1.
+  the publish (a terminal `platform_refused` today; with the code known it joins the deferral path).
+- (o) **the forced failure, last — the notice and the email.** `RESEND_API_KEY` placed on the box
+  first (§Env names) and the startup line saying `"failureEmail":"on"`. Schedule a post 10 minutes
+  ahead; remove Tavnit under Facebook's Settings → Business integrations; let the time pass.
+  **Works:** the chip is red with «החיבור לחשבון פג. התחברו מחדש בהגדרות ותזמנו שוב.»; `/home` shows
+  «פרסום אחד נכשל»; within about three minutes of the failure an email reaches the Tavnit account's
+  address, subject «פרסום שתוזמן בתבנית נכשל», with the post, the same line and a link to the
+  calendar. Then reconnect. **Broken:** no email after ten minutes — `journalctl -u aiugc-worker -o
+cat | grep 'failure email' | tail -5` says why (off, paused, refused), and the notice must still be
+  there.

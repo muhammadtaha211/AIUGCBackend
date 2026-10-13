@@ -7,6 +7,7 @@ import {
   cancelScheduledPost,
   CAPTION_MAX_CHARS,
   getScheduledPost,
+  getScheduledPostItem,
   INSTAGRAM_DAILY_POST_MARGIN,
   listScheduledPosts,
   pendingPostsByRender,
@@ -14,17 +15,21 @@ import {
   postingHorizon,
   postingNotices,
   schedulePosts,
+  searchInstagramSounds,
   SocialSchedulingError,
   updateScheduledPost,
 } from "../src/pipelines/social";
+import { setMetaGraphProvider } from "../src/providers/meta-graph";
 import { getStorage, setStorage } from "../src/storage";
 import { createTestDb } from "./helpers/pglite";
 import {
   connectInstagram,
+  FakeMeta,
   samplePage,
   seedOwnerAndBusiness,
   seedReleasedRender,
   socialTestEnv,
+  tokenLapse,
 } from "./helpers/social";
 import { tempStorage } from "./helpers/storage";
 
@@ -461,5 +466,55 @@ describe("social scheduling", () => {
       .set({ status: "connected" })
       .where(eq(schema.socialAccounts.id, accountId));
     await cancelScheduledPost(db, { userId, postId: pending!.id });
+  });
+
+  it("one post by id for its owner only, with its account and video (the post page, PR 3)", async () => {
+    const [row] = await schedulePosts(db, base());
+    const item = await getScheduledPostItem(db, { userId, postId: row!.id });
+    expect(item?.post.id).toBe(row!.id);
+    expect(item?.account.id).toBe(accountId);
+    expect(item?.render.id).toBe(renderId);
+    expect("failureDetail" in item!.post).toBe(false);
+    const { userId: stranger } = await seedOwnerAndBusiness(db, { email: "stranger@test.local" });
+    expect(await getScheduledPostItem(db, { userId: stranger, postId: row!.id })).toBeUndefined();
+    await cancelScheduledPost(db, { userId, postId: row!.id });
+  });
+
+  it("the sound search uses the User token, answers reconnect once it is gone or lapsed, and only for the owner's account", async () => {
+    const meta = new FakeMeta();
+    setMetaGraphProvider(meta);
+    try {
+      const found = await searchInstagramSounds(db, {
+        userId,
+        accountId,
+        kind: "music",
+        query: "שיר",
+      });
+      expect(found).toEqual({
+        status: "ok",
+        items: [{ audioId: "a1", kind: "music", title: "t" }],
+      });
+      expect(meta.calls.searchAudio).toBe(1);
+
+      meta.throwOnceOn.searchAudio = tokenLapse();
+      expect(await searchInstagramSounds(db, { userId, accountId, kind: "music" })).toEqual({
+        status: "reconnect",
+      });
+
+      const later = new Date(Date.now() + 61 * 86_400_000);
+      expect(
+        await searchInstagramSounds(db, { userId, accountId, kind: "original_sound" }, later),
+      ).toEqual({ status: "reconnect" });
+      expect(meta.calls.searchAudio).toBe(2);
+
+      const { userId: stranger } = await seedOwnerAndBusiness(db, {
+        email: "stranger2@test.local",
+      });
+      expect(
+        await code(searchInstagramSounds(db, { userId: stranger, accountId, kind: "music" })),
+      ).toBe("not_found");
+    } finally {
+      setMetaGraphProvider(undefined);
+    }
   });
 });

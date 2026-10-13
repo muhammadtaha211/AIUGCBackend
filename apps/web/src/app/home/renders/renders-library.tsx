@@ -24,6 +24,8 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
     id: string;
     videoUrl?: string;
     downloadUrl?: string;
+    scheduleHref?: string;
+    pendingPosts?: number;
   } | null>(null);
   /** The modal's own failure. Kept apart from the list's: this surface has no
    *  poll and no focus refetch, so an error written by a click would otherwise
@@ -70,11 +72,22 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
 
   /** Fetch a fresh signed video URL on every open — never reuse a stale one. */
   async function play(renderId: string) {
-    setPlaying({ id: renderId });
+    // An allowed account's rows carry `scheduled` (social posting PR 3): the
+    // schedule button takes its place from the open, so nothing moves under
+    // the cursor when the signed URLs land.
+    const row = renders?.find((render) => render.id === renderId);
+    setPlaying({
+      id: renderId,
+      scheduleHref: row?.scheduled !== undefined ? `/schedule/${renderId}` : undefined,
+    });
     setPlayError(null);
-    const result = await apiFetch<{ status: string; videoUrl?: string; downloadUrl?: string }>(
-      `/api/renders/${renderId}`,
-    );
+    const result = await apiFetch<{
+      status: string;
+      videoUrl?: string;
+      downloadUrl?: string;
+      scheduleHref?: string;
+      pendingPosts?: number;
+    }>(`/api/renders/${renderId}`);
     if (result.ok && result.body.videoUrl) {
       // Both URLs come from this one response — the download is never a
       // second request.
@@ -82,6 +95,8 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
         id: renderId,
         videoUrl: result.body.videoUrl,
         downloadUrl: result.body.downloadUrl,
+        scheduleHref: result.body.scheduleHref,
+        pendingPosts: result.body.pendingPosts,
       });
     } else {
       setPlaying(null);
@@ -186,6 +201,9 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
               downloadUrl={playing.downloadUrl}
               autoPlay
               frameClassName="border-white/10"
+              scheduleHref={playing.scheduleHref}
+              pendingPosts={playing.pendingPosts}
+              onDark
             />
             <button
               type="button"

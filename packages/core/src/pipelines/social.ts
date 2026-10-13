@@ -22,6 +22,7 @@ import {
   getMetaGraphProvider,
   isTokenLapse,
   MetaGraphError,
+  type AudioKind,
   type MetaAudioItem,
   type MetaPageWithInstagram,
 } from "../providers/meta-graph";
@@ -421,6 +422,54 @@ export function openAccountTokens(account: AccountRow): {
   };
 }
 
+/**
+ * The sound picker (PR 3): one `ig_audio` page of one kind, with the account's
+ * User token — the token Meta documents the search against (Audio API page,
+ * read 2026-10-12). `reconnect` when that token is missing, past its ~60 days
+ * or refused as lapsed: the picker then says so and the post goes on without a
+ * sound. The account must be the caller's own Instagram connection.
+ */
+export type SoundSearchResult =
+  { status: "ok"; items: MetaAudioItem[]; after?: string } | { status: "reconnect" };
+
+export async function searchInstagramSounds(
+  db: Db,
+  opts: { userId: string; accountId: string; kind: AudioKind; query?: string; after?: string },
+  now: Date = new Date(),
+): Promise<SoundSearchResult> {
+  const account = (
+    await db
+      .select()
+      .from(socialAccounts)
+      .where(
+        and(
+          eq(socialAccounts.id, opts.accountId),
+          eq(socialAccounts.userId, opts.userId),
+          eq(socialAccounts.platform, "instagram"),
+          inArray(socialAccounts.status, ["connected", "expired"]),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (!account) throw new SocialSchedulingError("not_found");
+  if (!toView(account, 0, now.getTime()).canSearchSounds) return { status: "reconnect" };
+  const { userToken } = openAccountTokens(account);
+  if (!userToken) return { status: "reconnect" };
+  try {
+    const page = await getMetaGraphProvider().searchAudio({
+      igUserId: account.externalId,
+      token: userToken,
+      kind: opts.kind,
+      query: opts.query,
+      after: opts.after,
+    });
+    return { status: "ok", ...page };
+  } catch (err) {
+    if (isTokenLapse(err)) return { status: "reconnect" };
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Scheduling
 // ---------------------------------------------------------------------------
@@ -774,6 +823,29 @@ export async function listScheduledPosts(
   db: Db,
   opts: { userId: string; from: Date; to: Date },
 ): Promise<ScheduledPostListItem[]> {
+  return postItems(
+    db,
+    and(
+      eq(scheduledPosts.userId, opts.userId),
+      gte(scheduledPosts.scheduledAt, opts.from),
+      lt(scheduledPosts.scheduledAt, opts.to),
+    ),
+  );
+}
+
+/** One calendar entry by id, its owner's only — the post page (PR 3). */
+export async function getScheduledPostItem(
+  db: Db,
+  opts: { userId: string; postId: string },
+): Promise<ScheduledPostListItem | undefined> {
+  const [item] = await postItems(
+    db,
+    and(eq(scheduledPosts.id, opts.postId), eq(scheduledPosts.userId, opts.userId)),
+  );
+  return item;
+}
+
+async function postItems(db: Db, where: ReturnType<typeof and>): Promise<ScheduledPostListItem[]> {
   const rows = await db
     .select({
       post: scheduledPosts,
@@ -789,13 +861,7 @@ export async function listScheduledPosts(
     .from(scheduledPosts)
     .innerJoin(socialAccounts, eq(socialAccounts.id, scheduledPosts.socialAccountId))
     .innerJoin(videoRenders, eq(videoRenders.id, scheduledPosts.videoRenderId))
-    .where(
-      and(
-        eq(scheduledPosts.userId, opts.userId),
-        gte(scheduledPosts.scheduledAt, opts.from),
-        lt(scheduledPosts.scheduledAt, opts.to),
-      ),
-    )
+    .where(where)
     .orderBy(asc(scheduledPosts.scheduledAt));
   return rows.map((r) => ({
     post: toPostView(r.post),

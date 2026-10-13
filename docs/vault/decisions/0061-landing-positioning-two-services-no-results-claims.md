@@ -54,6 +54,11 @@ page and keeps it.
 and every video on that account was made by the process the section above describes. The band
 **discloses the account as AI** in its own copy — "החשבון מסומן כדמות AI, כמו שאנחנו מבקשים מכל מי
 שמפרסם עם תבנית" — so the proof and the disclosure ship together.
+_(Amended 2026-10-12 by [[0107-social-posting-pr3-tick-landing-line-failure-email]] §2, the
+founder's decision: the first half stands; "as we ask of everyone who publishes" becomes a
+recommendation — «ואנחנו ממליצים לכל מי שמפרסם עם תבנית לסמן גם את הסרטונים שלו כתוכן AI»
+(DRAFT, his approval at PR review) — because the AI label is the customer's choice, unticked by
+default (0102 §1). That lifts the landing hold for this one sentence only.)_
 
 The presenter's name and the Instagram URL are founder-owed
 (`presenterName`, `instagramUrl` in `apps/web/src/lib/landing-media.ts`). `instagramUrl` is `null`

@@ -1,6 +1,7 @@
 "use client";
 
 import { isActiveRenderStatus, renderStatusLabel, type RenderRow } from "@/lib/service-b-ui";
+import { TILE_TAG } from "@/lib/social-posting-ui";
 
 const CHIP_COLORS: Record<string, string> = {
   released: "bg-accent/30 text-ink",
@@ -40,7 +41,7 @@ export function RenderTile({
   sweeping = false,
   onPlay,
 }: {
-  render: Pick<RenderRow, "id" | "status" | "thumbUrl" | "refunded">;
+  render: Pick<RenderRow, "id" | "status" | "thumbUrl" | "refunded" | "scheduled">;
   /** The head render's frame fraction, whole percent. Strip only. */
   percent?: number;
   /** Shimmer the empty tile — only while something is actually claiming it. */
@@ -100,8 +101,16 @@ export function RenderTile({
       ) : (
         thumb
       )}
-      <div className="mt-1.5 flex justify-center">
+      <div className="mt-1.5 flex flex-wrap justify-center gap-1">
         <StatusChip status={render.status} />
+        {/* Social posting's grey tag (decision 0101 §10): a post of this video
+            is waiting. The list route sends it only to an account the switch
+            allows. */}
+        {render.scheduled && (
+          <span className="rounded-full bg-ink/[0.06] px-2 py-0.5 text-xs font-medium text-ink/70">
+            {TILE_TAG}
+          </span>
+        )}
       </div>
       {/* Only when the refund really happened — never claim money
           moved when it didn't (same rule as failedRenderNotice). */}

@@ -149,6 +149,8 @@ export function StepARender({
     status: string;
     videoUrl?: string;
     downloadUrl?: string;
+    scheduleHref?: string;
+    pendingPosts?: number;
     failureReason?: string;
     refunded?: boolean;
     balance?: number;
@@ -167,6 +169,8 @@ export function StepARender({
         status: body.status,
         videoUrl: body.videoUrl,
         downloadUrl: body.downloadUrl,
+        scheduleHref: body.scheduleHref,
+        pendingPosts: body.pendingPosts,
         failureReason: body.failureReason,
         refunded: body.refunded,
         job: body.job,
@@ -367,6 +371,8 @@ export function StepARender({
           <RenderPlayer
             videoUrl={render.videoUrl}
             downloadUrl={render.downloadUrl}
+            scheduleHref={render.scheduleHref}
+            pendingPosts={render.pendingPosts}
             className="mx-auto mt-6 w-full max-w-60"
             frameClassName="border-ink/10"
           />
