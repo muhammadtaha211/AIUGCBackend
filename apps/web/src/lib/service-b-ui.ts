@@ -97,9 +97,10 @@ export type RenderRow = {
   /** The head in-flight row only, and only in the strip's shape — the library
    *  is a list of finished work, not a live indicator (see pickActiveHead). */
   job?: import("./service-a-ui").JobProgressWire;
-  /** The grey "מתוזמן" tag: a post of this video is waiting. Absent for an
-   *  account the social-posting switch hides. */
-  scheduled?: boolean;
+  /** The tile's tag (decision 0108 §1): "scheduled" (מתוזמן) while a post of
+   *  this video waits, "posted" (פורסם) once one went out and none waits, null
+   *  for neither. Absent for an account the social-posting switch hides. */
+  postTag?: "scheduled" | "posted" | null;
 };
 
 /**

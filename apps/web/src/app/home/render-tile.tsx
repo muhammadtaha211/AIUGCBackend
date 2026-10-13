@@ -1,11 +1,17 @@
 "use client";
 
 import { isActiveRenderStatus, renderStatusLabel, type RenderRow } from "@/lib/service-b-ui";
-import { TILE_TAG } from "@/lib/social-posting-ui";
+import { TILE_TAG, TILE_TAG_POSTED } from "@/lib/social-posting-ui";
 
 const CHIP_COLORS: Record<string, string> = {
   released: "bg-accent/30 text-ink",
   failed: "bg-red-100 text-red-700",
+};
+
+/** Grey while a post waits, green once one went out — the calendar's colours. */
+const POST_TAG = {
+  scheduled: { label: TILE_TAG, className: "bg-ink/[0.06] text-ink/70" },
+  posted: { label: TILE_TAG_POSTED, className: "bg-emerald-100 text-emerald-800" },
 };
 
 function StatusChip({ status }: { status: string }) {
@@ -41,7 +47,7 @@ export function RenderTile({
   sweeping = false,
   onPlay,
 }: {
-  render: Pick<RenderRow, "id" | "status" | "thumbUrl" | "refunded" | "scheduled">;
+  render: Pick<RenderRow, "id" | "status" | "thumbUrl" | "refunded" | "postTag">;
   /** The head render's frame fraction, whole percent. Strip only. */
   percent?: number;
   /** Shimmer the empty tile — only while something is actually claiming it. */
@@ -103,12 +109,14 @@ export function RenderTile({
       )}
       <div className="mt-1.5 flex flex-wrap justify-center gap-1">
         <StatusChip status={render.status} />
-        {/* Social posting's grey tag (decision 0101 §10): a post of this video
-            is waiting. The list route sends it only to an account the switch
-            allows. */}
-        {render.scheduled && (
-          <span className="rounded-full bg-ink/[0.06] px-2 py-0.5 text-xs font-medium text-ink/70">
-            {TILE_TAG}
+        {/* Social posting's tag (decisions 0101 §10, 0108 §1): "מתוזמן" while a
+            post of this video waits, "פורסם" once one went out. The list route
+            sends it only to an account the switch allows. */}
+        {render.postTag && (
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${POST_TAG[render.postTag].className}`}
+          >
+            {POST_TAG[render.postTag].label}
           </span>
         )}
       </div>

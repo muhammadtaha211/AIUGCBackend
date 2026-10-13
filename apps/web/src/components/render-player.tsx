@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { PRIMARY_BUTTON_CLASS, SECONDARY_BUTTON_CLASS } from "@/components/ui/button";
+import { PRIMARY_BUTTON_CLASS, WHITE_BUTTON_CLASS } from "@/components/ui/button";
 import { Download, Spinner } from "@/components/ui/icons";
 import { pendingPostsLine, SCHEDULE_BUTTON } from "@/lib/social-posting-ui";
 
@@ -94,7 +94,7 @@ export function RenderPlayer({
           הורדה
         </a>
         {scheduleHref && (
-          <Link href={scheduleHref} className={`${SECONDARY_BUTTON_CLASS} w-full`}>
+          <Link href={scheduleHref} className={`${WHITE_BUTTON_CLASS} w-full`}>
             {SCHEDULE_BUTTON}
           </Link>
         )}

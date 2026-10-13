@@ -1,6 +1,7 @@
 import { cache } from "react";
 import type { NextResponse } from "next/server";
-import { getDb, getPostingAccess } from "@aiugc/core";
+import { and, inArray, sql } from "drizzle-orm";
+import { getDb, getPostingAccess, schema } from "@aiugc/core";
 import { jsonError, NOT_FOUND, requireUser } from "@/lib/api";
 
 /**
@@ -30,4 +31,34 @@ export async function requirePostingUser(): Promise<
   }
   if (!(await postingAllowed(auth.userId))) return { response: jsonError(404, NOT_FOUND) };
   return auth;
+}
+
+/**
+ * Per video, its posts waiting (scheduled or publishing) and posted — what the
+ * tile's tag is decided from (postTag, decision 0108 §1). One grouped query
+ * over the page's released rows; a video with neither is absent.
+ */
+export async function postCountsByRender(
+  db: ReturnType<typeof getDb>,
+  renderIds: string[],
+): Promise<Map<string, { waiting: number; posted: number }>> {
+  if (renderIds.length === 0) return new Map();
+  const { scheduledPosts } = schema;
+  const rows = await db
+    .select({
+      renderId: scheduledPosts.videoRenderId,
+      waiting: sql<string>`count(*) filter (where ${scheduledPosts.status} in ('scheduled', 'publishing'))`,
+      posted: sql<string>`count(*) filter (where ${scheduledPosts.status} = 'posted')`,
+    })
+    .from(scheduledPosts)
+    .where(
+      and(
+        inArray(scheduledPosts.videoRenderId, renderIds),
+        inArray(scheduledPosts.status, ["scheduled", "publishing", "posted"]),
+      ),
+    )
+    .groupBy(scheduledPosts.videoRenderId);
+  return new Map(
+    rows.map((r) => [r.renderId, { waiting: Number(r.waiting), posted: Number(r.posted) }]),
+  );
 }
