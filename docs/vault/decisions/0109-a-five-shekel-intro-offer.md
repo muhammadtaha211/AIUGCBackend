@@ -174,6 +174,12 @@ Sumit's published MasterCards on the ₪5 page and the card it approved on 2026-
 ₪150 starter page (code 004) — so the approved ₪5, the second-attempt refusal after a real trial,
 the continue on the saved card and the receipt lines are still owed, on a day the terminal approves.
 
+_(Pushed and merged 2026-10-14, on the founder's instruction "go ahead and push migrations and
+merge the branch": migrations 0061 + 0062 pushed first and read back at both ends (ledger 63 rows
+0000–0062, the switch `{"enabled": false}`), then PR #97 merged as `d41eae6`. The switch is off and
+`SUMIT_INTRO_PAGE` is set nowhere, so no customer sees the offer until both are; the box restart is
+the founder's. The §8 walkthrough gap stands.)_
+
 ## Related
 
 - [[0068-prices-stand-no-free-tier-trials-by-hand]] — §2's "no self-serve tier" stands; this is a
