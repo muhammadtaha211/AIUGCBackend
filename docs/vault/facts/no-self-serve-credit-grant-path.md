@@ -8,6 +8,22 @@ source: code
 
 # An account that has never paid cannot reach a positive credit balance
 
+## Amended 2026-10-14 on `feat/intro-offer` — STILL HOLDS; a ₪5 payment is now the lowest door
+
+Code read on the branch, not a production query, not merged when written. The ₪5 intro offer
+([[0109-a-five-shekel-intro-offer]]) adds two production paths to a positive row, both behind a
+real payment, so the headline stands — but the table below is no longer complete, its "₪150 at the
+least" is now **₪5**, and `completeCheckout` is no longer the only production insert into
+`subscriptions`:
+
+| path to a positive row                                                                  | what stands in front of it                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `completeCheckout` → `activateIntroTrial` → `grantTrial` (`intro.ts`, `credits.ts`)     | the same four checks on a Sumit payment as a plan purchase, at the intro intent's 500 agorot; an account that never had a trial or any subscription and never completed a plan purchase, re-checked under the `users` lock; once per account by `intro_trials`' primary key                                                                                                      |
+| `continueFromTrial` / `settleContinueAttempts` → insert `subscriptions` + `grantPeriod` | an `intro_trials` row (itself bought for ₪5), and a charge on its saved card that the gateway reports ok — or, for the settle, a valid API payment of exactly the plan's price on that Sumit customer in the ten minutes after the click. `getBillingGateway` still refuses `DryRunGateway` against production, and `NotConfiguredGateway` is refused before anything is written |
+
+Every `creditLedger` insert still lives in `packages/core/src/pipelines/credits.ts` (`grantTrial`
+and `expireTrialRemainder` were added there). The expiry's `expire_trial` is negative.
+
 ## Re-read 2026-10-01 at `d57b60a` — STILL HOLDS, for a different reason
 
 Billing went live on 2026-09-21 ([[0062-hosted-checkout-via-sumit-payment-pages]]), so the

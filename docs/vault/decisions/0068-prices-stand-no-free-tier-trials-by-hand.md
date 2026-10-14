@@ -148,3 +148,12 @@ the database. [[0103-posthog-in-apps-web-eu-cloud-free-plan]],
 _(Pointer 2026-10-11: the posting feature changes no price — the founder's decision 12 of
 2026-10-10 names "any price change" as not now, so §1 stands with its sixty-day trigger.
 [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]].)_
+
+_(Pointer 2026-10-14, the ₪5 intro offer: an account that has never paid may now buy, once, 150
+credits for every service for ₪5, expiring 30 days after the payment and never turning into a
+charge by itself. §2 stands — it is a paid offer behind a card and a real payment, not a free or
+watermarked tier — and so does §1: no plan, price or rate moved. §3's hand trials stay the
+founder's tool; a hand-trial recipient may still buy the offer, and its expiry never takes their
+grant. §2's "a never-paid account's balance is 0 … without a real payment" now has a ₪5 payment
+among those payments, and the docs/05 lines §2 cites have moved (the section is now "No free tier —
+a subscription, or the ₪5 intro offer"). [[0109-a-five-shekel-intro-offer]].)_

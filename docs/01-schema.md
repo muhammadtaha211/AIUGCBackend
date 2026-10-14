@@ -196,8 +196,20 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   `subscriptions_one_live_per_user` (0041, replacing 0001's per-business one): at most one live
   subscription per account.
 - **gateway_events** — raw callback/charge log; `gateway_event_id` UNIQUE makes processing
-  idempotent. Kinds: `recurring_charge_success|failed` (renewals) and
-  `plan_change_charge_success|failed` (prorated upgrades).
+  idempotent. Kinds: `recurring_charge_success|failed` (renewals),
+  `plan_change_charge_success|failed` (prorated upgrades), `checkout_charge`,
+  `checkout_refused`, `checkout_unconfirmed` (the hosted checkout, 0062), and the ₪5 intro
+  offer's `intro_charge`, `continue_charge`, `continue_charge_failed`,
+  `continue_charge_unconfirmed`, `continue_charge_cleared`, `continue_charge_orphaned`
+  ([vault 0109](vault/decisions/0109-a-five-shekel-intro-offer.md)). `kind` is plain text.
+- **checkout_intents** (0048) — the hosted checkout's server-side half; since 0062 a `kind`
+  (`plan|intro`, CHECK) with `plan_code` NULL exactly for an intro intent.
+- **intro_trials** (0062) — one row per account that bought the ₪5 intro offer: `user_id` is the
+  PRIMARY KEY (once per account), the completed `intent_id`, the `sumit_customer_id` a continue
+  charges, `credits`, the ledger baseline at activation (`balance_before`, `manual_before`,
+  `open_debits_before`), `started_at`/`expires_at` (30 days after the payment), `expired_at`,
+  `converted_at` + `subscription_id`, and the continue attempt (`continue_attempt_at/_plan/_agorot`,
+  all or none). Server-only.
 - **terms_acceptances** (0046) — the record that a signed-in customer ticked the terms box at
   checkout: `user_id` (not null), `terms_version` (the date string the terms page shows at its
   head), `context` (`'checkout'`), `ip`, `user_agent`, `accepted_at`; index on `user_id`.
@@ -205,7 +217,8 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 - **credit_ledger** — append-only, keyed to the ACCOUNT since 0011: `user_id` NOT NULL is
   ownership (`balance = SUM(delta)` per user — one owner's businesses share one balance),
   `business_id` nullable context on spend rows (user-level grants have none). Reasons:
-  `grant_period`, `grant_manual`, `debit_render`, `refund_failed`, `expire_period`.
+  `grant_period`, `grant_manual`, `debit_render`, `refund_failed`, `expire_period`, and since
+  0061 the intro offer's `grant_trial` / `expire_trial` (ref = the intro intent).
   No-rollover = an `expire_period` row zeroing the remainder at each renewal — the
   `balance = SUM(delta)` invariant never bends.
 - **orders** — DFY tier tracking (status, price, payment kind: Bit/invoice, notes).
@@ -258,7 +271,8 @@ get read-only access. Policies:
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
   pronunciation_entries, `text_block_clips` (0052 — no customer SELECT policy, not even in
   phase 2: every reader is the server over `DATABASE_URL`, vault 0099), `social_accounts` and
-  `scheduled_posts` (0058, the same shape — tokens never reach a browser client), and `feedback` — whose ENABLE is in **0035**, not here, because a
+  `scheduled_posts` (0058, the same shape — tokens never reach a browser client), `intro_trials`
+  (0062), and `feedback` — whose ENABLE is in **0035**, not here, because a
   policy-less table needs no Supabase role and so stays portable
   ([vault 0035](vault/decisions/0035-a-policyless-table-keeps-its-rls-in-the-portable-file.md),
   measured in [facts](vault/facts/pglite-accepts-bare-enable-row-level-security.md)).
