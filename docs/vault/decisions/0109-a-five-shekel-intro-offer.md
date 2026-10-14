@@ -177,8 +177,9 @@ the continue on the saved card and the receipt lines are still owed, on a day th
 _(Pushed and merged 2026-10-14, on the founder's instruction "go ahead and push migrations and
 merge the branch": migrations 0061 + 0062 pushed first and read back at both ends (ledger 63 rows
 0000–0062, the switch `{"enabled": false}`), then PR #97 merged as `d41eae6`. The switch is off and
-`SUMIT_INTRO_PAGE` is set nowhere, so no customer sees the offer until both are; the box restart is
-the founder's. The §8 walkthrough gap stands.)_
+`SUMIT_INTRO_PAGE` is set nowhere, so no customer sees the offer until both are. The founder
+restarted the box the same evening; its first `expire_trials` succeeded at 19:50 UTC. The §8
+walkthrough gap stands.)_
 
 ## Related
 

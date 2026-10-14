@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-14
+updated: 2026-10-15
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -42,15 +42,16 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 
 **The ₪5 intro offer: MERGED 2026-10-14 as PR #97 (`d41eae6`); migrations 0061/0062 PUSHED the
 same day, before the merge; the switch is OFF and `SUMIT_INTRO_PAGE` is set nowhere, so no customer
-can see it yet. The box restart is the founder's (he said he would).** An account that has never paid buys, once, 150 credits for every service for ₪5 on its own
+can see it yet. The box runs it: the founder restarted it 2026-10-14, and its first `expire_trials`
+succeeded at 19:50 UTC.** An account that has never paid buys, once, 150 credits for every service for ₪5 on its own
 Sumit page, valid 30 days, never a charge by itself; "continue" charges the card saved at that
 payment for an ordinary first month. Behind `app_config.intro_offer` (seeded off) and
 `SUMIT_INTRO_PAGE` (unset everywhere but the founder's head). Decision
 [[0109-a-five-shekel-intro-offer]] (his eight decisions of 2026-10-13/14, the credits raised 145 →
 150 at plan review, his two plan-mode answers: a lost continue answer is settled automatically, the
 walkthrough runs off production); `docs/05-billing.md` §"The ₪5 intro offer" says what exists.
-**Nobody can see or buy the offer until** the migrations are pushed, the branch merged, the box
-deployed, `SUMIT_INTRO_PAGE` set on Vercel and the switch turned on — the owed list below. **The
+**Nobody can see or buy the offer until** `SUMIT_INTRO_PAGE` is set on Vercel and the switch is
+turned on (the migrations, the merge and the box are done) — the owed list below. **The
 merge alone does change three public things:** terms §8 gains the offer's bullet, `UPDATED` becomes
 14.10.2026 (the version every later purchase records, and the date `/privacy` shows), and the
 refused/unconfirmed checkout lines say "הרכישה" instead of "המסלול". Counsel's E12(a) — whether
@@ -912,6 +913,15 @@ expected), then PR #97 merged as `d41eae6` with its three Vercel previews green.
 he received two "payment failed" emails — Sumit's notices for the walkthrough's declined test-org
 attempts (the test org's `Mails` usage read 3), no money moved. No call against the real Sumit org,
 no paid call.
+
+**The box, 2026-10-14 (FOUNDER-REPORTED, then MEASURED):** he pulled and restarted it ("restarted
+the box"). Read-only against production at 21:07 UTC (`packages/core/.work/box-check-0109.ts`):
+`expire_trials:2026-10-14` created 19:50:03 UTC, claimed by `hetzner:light`, `succeeded` with no
+error — a job only the new code enqueues and handles, so the box runs the merge; the reaper singleton
+had ticked a minute before the read; no `reconcile_continue` row; the switch `{"enabled": false}`,
+0 trials, 0 intro intents. `git log -1` on the box was not read (no SSH from here): the job is the
+weaker no-SSH check of [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]]. He then
+OK'd the merge of these records (PR #98, "go ahead and merge 98").
 
 ## What landed (2026-10-13, later) — social posting: four UI fixes after PR 3, `fix/social-posting-ui`, MERGED as PR #96 (`9e7000b`)
 
@@ -1781,8 +1791,8 @@ the 2026-09-26 custom domain (founder-reported):**
      and merge the branch"): read back before and after, ledger 63 rows 0000–0062;
   5. ~~merge~~ DONE 2026-10-14, PR #97 → `d41eae6` (it published the §8 bullet and `UPDATED`
      14.10.2026 with E12(a) still open);
-  6. the box (pull, install, restart — `expire_trials` and `reconcile_continue` live there; it must
-     run before the switch, step 8);
+  6. ~~the box (pull, install, restart)~~ DONE 2026-10-14 by the founder; `expire_trials:2026-10-14`
+     succeeded on `hetzner:light` at 19:50 UTC (read-only, MEASURED);
   7. on Vercel, `SUMIT_INTRO_PAGE` = the real page's bare URL, then a redeploy; and read the web
      project's function time limit (Fluid on or off) — a continue's worst case is ~95 s, a kill is
      safe (the settle resolves it) but the customer then waits ten minutes;
