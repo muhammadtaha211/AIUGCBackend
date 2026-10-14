@@ -885,6 +885,31 @@ ORDER BY migration, layer DESC;
 -- ---------------------------------------------------------------------------
 -- RESULTS
 --
+-- 2026-10-14, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0061 + 0062** (the ₪5 intro offer: the two ledger reasons, checkout_intents.kind
+-- with plan_code nullable, intro_trials, the intro_offer switch seeded off;
+-- decision 0109) together, on the founder's instruction ("go ahead and push
+-- migrations and merge the branch"), BEFORE the merge of the code that names
+-- kind (rule 9). Pre-flight twice: `migration list` showed 0000-0060 local ==
+-- remote with 0061 and 0062 the only rows with an empty remote, and
+-- `db push --dry-run` named exactly those two files. The full test gate was
+-- green on the pushed tree (153209b). The apply printed "Applying migration
+-- 0061_ledger_reason_trial.sql..." and "...0062_intro_offer.sql..." and exited
+-- 0; the same Docker catalog-cache warning as before, not a failure. `db push`
+-- recorded both itself, the sixteenth push in a row with no repair.
+--
+-- Read at BOTH ends (packages/core/.work/readback-0061-0062.ts, the VERIFY
+-- blocks). BEFORE: ledger_reason's five; plan_code NOT NULL, no kind column, no
+-- kind constraints; 4 checkout_intents; no intro_trials; no intro_offer row;
+-- ledger 61 rows 0000-0060. AFTER: ledger_reason's five plus grant_trial,
+-- expire_trial; kind NOT NULL default 'plan'::text, plan_code nullable, both
+-- kind constraints; the 4 intents all 'plan'; intro_trials with relrowsecurity
+-- true, 0 policies, 17 columns, 0 rows; intro_offer = {"enabled": false};
+-- ledger 63 rows 0000-0062, NO GAPS. This file, run inside a READ ONLY
+-- transaction: 52 rows, 49 true — 0048 (now counting its ten columns by name),
+-- 0061 and 0062 true; not true only 0020 (NULL by design), 0022 (the expected
+-- false) and the data row 0028.
+--
 -- 2026-10-09, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0053 + 0054 + 0055 + 0056** (Service C phase 2: the c_text_block_credits
 -- key, text_block_clips.persona_id, personas.voice_id optional,

@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-14
+updated: 2026-10-15
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -40,16 +40,18 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**The ₪5 intro offer: BUILT 2026-10-14 on `feat/intro-offer`, NOT merged, migrations 0061/0062 NOT
-pushed.** An account that has never paid buys, once, 150 credits for every service for ₪5 on its own
+**The ₪5 intro offer: MERGED 2026-10-14 as PR #97 (`d41eae6`); migrations 0061/0062 PUSHED the
+same day, before the merge; the switch is OFF and `SUMIT_INTRO_PAGE` is set nowhere, so no customer
+can see it yet. The box runs it: the founder restarted it 2026-10-14, and its first `expire_trials`
+succeeded at 19:50 UTC.** An account that has never paid buys, once, 150 credits for every service for ₪5 on its own
 Sumit page, valid 30 days, never a charge by itself; "continue" charges the card saved at that
 payment for an ordinary first month. Behind `app_config.intro_offer` (seeded off) and
 `SUMIT_INTRO_PAGE` (unset everywhere but the founder's head). Decision
 [[0109-a-five-shekel-intro-offer]] (his eight decisions of 2026-10-13/14, the credits raised 145 →
 150 at plan review, his two plan-mode answers: a lost continue answer is settled automatically, the
 walkthrough runs off production); `docs/05-billing.md` §"The ₪5 intro offer" says what exists.
-**Nobody can see or buy the offer until** the migrations are pushed, the branch merged, the box
-deployed, `SUMIT_INTRO_PAGE` set on Vercel and the switch turned on — the owed list below. **The
+**Nobody can see or buy the offer until** `SUMIT_INTRO_PAGE` is set on Vercel and the switch is
+turned on (the migrations, the merge and the box are done) — the owed list below. **The
 merge alone does change three public things:** terms §8 gains the offer's bullet, `UPDATED` becomes
 14.10.2026 (the version every later purchase records, and the date `/privacy` shows), and the
 refused/unconfirmed checkout lines say "הרכישה" instead of "המסלול". Counsel's E12(a) — whether
@@ -863,7 +865,7 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-14) — the ₪5 intro offer, `feat/intro-offer`, NOT merged
+## What landed (2026-10-14) — the ₪5 intro offer, `feat/intro-offer`, MERGED as PR #97 (`d41eae6`); 0061/0062 PUSHED
 
 [[0109-a-five-shekel-intro-offer]]; dated pointers on 0068, 0051 and 0062; the two new paths added
 to [[no-self-serve-credit-grant-path]]; `docs/05-billing.md` (a new section, the unconfirmed query,
@@ -903,8 +905,23 @@ org's Operations quota of 100). Observed in passing: three declines left `Operat
 `Mails` at 3 — unlike 2026-09-21, when each attempt moved Operations by 1 (not written to a fact
 note). The founder's page text reads "מסלול היכרותת" (doubled ת).
 
-**Not run:** no production query, no migration push, no deploy, no call against the real Sumit org,
+**Then, on the founder's instruction the same day ("go ahead and push migrations and merge the
+branch"):** 0061 + 0062 pushed (pre-flight `migration list` + dry-run; read back before and after
+through `packages/core/.work/readback-0061-0062.ts`; `scripts/verify-migration-ledger.sql` against
+production 52 rows, 49 true — the not-true are 0020 NULL, 0022 false and the data row 0028, all
+expected), then PR #97 merged as `d41eae6` with its three Vercel previews green. **FOUNDER-REPORTED:**
+he received two "payment failed" emails — Sumit's notices for the walkthrough's declined test-org
+attempts (the test org's `Mails` usage read 3), no money moved. No call against the real Sumit org,
 no paid call.
+
+**The box, 2026-10-14 (FOUNDER-REPORTED, then MEASURED):** he pulled and restarted it ("restarted
+the box"). Read-only against production at 21:07 UTC (`packages/core/.work/box-check-0109.ts`):
+`expire_trials:2026-10-14` created 19:50:03 UTC, claimed by `hetzner:light`, `succeeded` with no
+error — a job only the new code enqueues and handles, so the box runs the merge; the reaper singleton
+had ticked a minute before the read; no `reconcile_continue` row; the switch `{"enabled": false}`,
+0 trials, 0 intro intents. `git log -1` on the box was not read (no SSH from here): the job is the
+weaker no-SSH check of [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]]. He then
+OK'd the merge of these records (PR #98, "go ahead and merge 98").
 
 ## What landed (2026-10-13, later) — social posting: four UI fixes after PR 3, `fix/social-posting-ui`, MERGED as PR #96 (`9e7000b`)
 
@@ -1345,7 +1362,7 @@ until someone measures whether a wallet payment leaves a chargeable saved card.
 
 ## The queue
 
-**The ₪5 intro offer — BUILT 2026-10-14 on `feat/intro-offer`, NOT merged** ([[0109-a-five-shekel-intro-offer]]);
+**The ₪5 intro offer — MERGED 2026-10-14 as PR #97, 0061/0062 pushed, switch off** ([[0109-a-five-shekel-intro-offer]]);
 its path to live is the owed list's first bullet.
 
 Two axes. **Money** (item 0) and **pipeline** (items 1–7, all from the 2026-09-18 diagnosis), then
@@ -1651,11 +1668,11 @@ Founder-reported from a dashboard unless a line says otherwise. **This section c
 subscription row was written.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0059 applied, ledger clean at 60 rows, no gaps, nothing pending** — MEASURED
-2026-10-11 right after the founder-authorized 0057–0059 push, read-only against
-`supabase_migrations.schema_migrations` (count 60, first `0000`, last `0059`) and by
-`migration list` (0000–0059 local = remote); `origin/main` holds the same 60 files
-([[production-migration-push-log]]). _(The earlier text of this paragraph recorded the 0049 push of
+**Migrations 0000–0062 applied, ledger clean at 63 rows, no gaps, nothing pending** — MEASURED
+2026-10-14 right after the founder-authorized 0061/0062 push, read-only against
+`supabase_migrations.schema_migrations` (count 63, first `0000`, last `0062`); `origin/main`
+holds the same 63 files after PR #97 ([[production-migration-push-log]]). _(This line said
+0000–0059 / 60 rows until today and missed the 0060 push of 2026-10-11.)_ _(The earlier text of this paragraph recorded the 0049 push of
 2026-10-01 and a 49-files-against-50-rows interval that has long since closed.)_ The earlier 49-row line corrected a stale "0000–0047 / 48 rows" here;
 **CLAUDE.md still says 0000–0047 and is now the stale copy.** (Not resolved: CLAUDE.md in the tree
 that sentence was written in, ec0a324, already said 0000–0048, since f4d079e that morning. Since
@@ -1770,10 +1787,12 @@ the 2026-09-26 custom domain (founder-reported):**
      charging the saved card, the two receipts' lines — `packages/core/.work/intro-walk.ts`;
   3. the real-org ₪5 page: fixed price ₪5, its own catalogue, **"קטלוג ללא מע"מ" OFF**, Bit off,
      redirect to the production return route;
-  4. OK the 0061/0062 push (dry-run in the PR report; read-backs in each file's VERIFY block);
-  5. merge (it publishes the §8 bullet and the new `UPDATED` — E12(a) is open);
-  6. the box (pull, install, restart — `expire_trials` and `reconcile_continue` live there; it must
-     run before the switch, step 8);
+  4. ~~OK the 0061/0062 push~~ DONE 2026-10-14 on his instruction ("go ahead and push migrations
+     and merge the branch"): read back before and after, ledger 63 rows 0000–0062;
+  5. ~~merge~~ DONE 2026-10-14, PR #97 → `d41eae6` (it published the §8 bullet and `UPDATED`
+     14.10.2026 with E12(a) still open);
+  6. ~~the box (pull, install, restart)~~ DONE 2026-10-14 by the founder; `expire_trials:2026-10-14`
+     succeeded on `hetzner:light` at 19:50 UTC (read-only, MEASURED);
   7. on Vercel, `SUMIT_INTRO_PAGE` = the real page's bare URL, then a redeploy; and read the web
      project's function time limit (Fluid on or off) — a continue's worst case is ~95 s, a kill is
      safe (the settle resolves it) but the customer then waits ten minutes;
