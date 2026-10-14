@@ -8,6 +8,7 @@ import {
   checkoutPath,
   CONTINUE_BUSY_LINE,
   CONTINUE_DECLINED_LINK,
+  CONTINUE_ORPHANED,
   CONTINUE_UNCONFIRMED_LINE,
   continueButton,
   TERMS_CHECKBOX_PREFIX,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/plans-ui";
 import { postJson } from "@/lib/use-api";
 
-type Outcome = { outcome: "activated" } | { outcome: "pending" };
+type Outcome = { outcome: "activated" } | { outcome: "pending" } | { outcome: "orphaned" };
 
 /**
  * The bottom of the continue page (decision 0109): the required terms checkbox
@@ -26,8 +27,10 @@ type Outcome = { outcome: "activated" } | { outcome: "pending" };
  *                 refreshes the credits pill
  *   pending       the charge's answer was lost — "do not try again", the form
  *                 locked; the plan page shows the same until it settles
+ *   orphaned      charged, but the account had joined a plan another way —
+ *                 "do not pay again, write to us", the form locked
  *   402           declined: the line, and the hosted checkout with another card
- *   409, 400, 503 the server's line (a refusal, nothing charged)
+ *   409, 400, 503 the server's line (a refusal before any charge)
  *   no answer     a network error, a timeout, a 5xx — nobody knows whether the
  *                 card was charged, so it reads exactly like pending. Never
  *                 "try again".
@@ -54,7 +57,7 @@ export function ContinueForm({ planCode, priceAgorot }: { planCode: string; pric
     }
     if (result.ok) {
       setLocked(true);
-      setError(CONTINUE_UNCONFIRMED_LINE);
+      setError(result.body.outcome === "orphaned" ? CONTINUE_ORPHANED : CONTINUE_UNCONFIRMED_LINE);
       setBusy(false);
       return;
     }

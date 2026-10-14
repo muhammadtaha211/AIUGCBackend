@@ -94,13 +94,17 @@ export default async function SettingsPage({
       ? {
           credits: trialView.credits,
           creditsLeft: trialView.creditsLeft,
+          ended: trialView.ended,
           expiresAt: trialView.expiresAt.toISOString(),
           expiredAt: trialView.expiredAt?.toISOString() ?? null,
           convertedAt: null,
           attemptPending: trialView.attemptPending,
         }
       : null;
-  const trialLive = trial !== null && trial.expiredAt === null;
+  const trialLive = trial !== null && !trial.ended;
+  // What survives day 30: everything that is not unused trial credit — the
+  // same remainder the expiry leaves, never the lifetime sum of hand grants.
+  const lasting = Math.max(0, billing.balance - (trial?.creditsLeft ?? 0));
   // billing.currentPlan is the subscribed row looked up WITHOUT the active
   // filter — a retired plan keeps serving (getAccountBilling's own note) and
   // still has a Hebrew name and a price. The code is the last resort only.
@@ -209,13 +213,14 @@ export default async function SettingsPage({
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink">{SETTINGS_NO_PLAN}</p>
               {trial && <p className="mt-1 text-sm text-ink/65">{trialLine(trial)}</p>}
-              {billing.manualOutstanding > 0 && (
-                <p className="mt-1 text-sm text-ink/65">
-                  {trialLive
-                    ? settingsManualCountLine(billing.manualOutstanding)
-                    : SETTINGS_MANUAL_CREDITS_LINE}
-                </p>
-              )}
+              {trialLive
+                ? lasting > 0 &&
+                  billing.manualOutstanding > 0 && (
+                    <p className="mt-1 text-sm text-ink/65">{settingsManualCountLine(lasting)}</p>
+                  )
+                : billing.manualOutstanding > 0 && (
+                    <p className="mt-1 text-sm text-ink/65">{SETTINGS_MANUAL_CREDITS_LINE}</p>
+                  )}
             </div>
           )}
           <Link href="/home/plan" className="shrink-0">

@@ -48,8 +48,13 @@ payment for an ordinary first month. Behind `app_config.intro_offer` (seeded off
 [[0109-a-five-shekel-intro-offer]] (his eight decisions of 2026-10-13/14, the credits raised 145 →
 150 at plan review, his two plan-mode answers: a lost continue answer is settled automatically, the
 walkthrough runs off production); `docs/05-billing.md` §"The ₪5 intro offer" says what exists.
-**Nothing changes for anyone until** the migrations are pushed, the branch merged, the box deployed,
-`SUMIT_INTRO_PAGE` set on Vercel and the switch turned on — the owed list below.
+**Nobody can see or buy the offer until** the migrations are pushed, the branch merged, the box
+deployed, `SUMIT_INTRO_PAGE` set on Vercel and the switch turned on — the owed list below. **The
+merge alone does change three public things:** terms §8 gains the offer's bullet, `UPDATED` becomes
+14.10.2026 (the version every later purchase records, and the date `/privacy` shows), and the
+refused/unconfirmed checkout lines say "הרכישה" instead of "המסלול". Counsel's E12(a) — whether
+the bullet is a material change under §14 — is not answered; merging before it ships the bullet
+first.
 
 **PostHog on `apps/web`: BUILT 2026-10-11 on `feat/posthog-web`, NOT merged.** Visit counts on every
 page, session recordings from `/start` on, named funnel steps and browser errors, to PostHog's EU
@@ -881,7 +886,7 @@ terms §8's bullet, `UPDATED` 14.10.2026, `docs/legal-review.md` E12.
   `/home/plan/continue`, the plan page's offer box, trial line, continue cards and pending notice,
   the intro landings, `NoCreditsCard`'s line, the settings trial line, one `/pricing` line. Every
   new line COPY PENDING FOUNDER REVIEW in `lib/plans-ui.ts`.
-- **Tests:** `packages/core/test/intro.test.ts` (30, PGlite — the founder's done-when list plus the
+- **Tests:** `packages/core/test/intro.test.ts` (33, PGlite — the founder's done-when list plus the
   races and edges the plan review found), `migrations.test.ts` (0061, 0062),
   `apps/web/test/intro-routes.test.ts` and the moved `plans-ui` / `analytics` / `account-routes` /
   `sumit-return-route` suites.
@@ -1766,24 +1771,25 @@ the 2026-09-26 custom domain (founder-reported):**
   3. the real-org ₪5 page: fixed price ₪5, its own catalogue, **"קטלוג ללא מע"מ" OFF**, Bit off,
      redirect to the production return route;
   4. OK the 0061/0062 push (dry-run in the PR report; read-backs in each file's VERIFY block);
-  5. merge; 6. the box (pull, install, restart — `expire_trials` and `reconcile_continue` live
-     there; before step 8);
-  6. on Vercel, `SUMIT_INTRO_PAGE` = the real page's bare URL, then a redeploy; and read the web
+  5. merge (it publishes the §8 bullet and the new `UPDATED` — E12(a) is open);
+  6. the box (pull, install, restart — `expire_trials` and `reconcile_continue` live there; it must
+     run before the switch, step 8);
+  7. on Vercel, `SUMIT_INTRO_PAGE` = the real page's bare URL, then a redeploy; and read the web
      project's function time limit (Fluid on or off) — a continue's worst case is ~95 s, a kill is
      safe (the settle resolves it) but the customer then waits ten minutes;
-  7. the switch: `update app_config set value = '{"enabled": true}'::jsonb, updated_at = now() where
+  8. the switch: `update app_config set value = '{"enabled": true}'::jsonb, updated_at = now() where
 key = 'intro_offer';`;
-  8. **the real ₪5 purchase** — from a NEW customer-role account (new email, new business name: Sumit
+  9. **the real ₪5 purchase** — from a NEW customer-role account (new email, new business name: Sumit
      matches returning customers by those, and tavnit.support already holds a subscription, so it is
      refused by design), in a browser profile that has never signed in as admin; a self-purchase,
      kept out of revenue figures;
-  9. **the real-terminal continue** — the first real saved-card charge;
-  10. the cost read-back after the trial is used: `aiugc costs --business <id> --from <date>` and
+  10. **the real-terminal continue** — the first real saved-card charge;
+  11. the cost read-back after the trial is used: `aiugc costs --business <id> --from <date>` and
       the account's `usage_events`;
-  11. **AUTH-03 (CAPTCHA on signup) before any campaign that promotes the offer**;
-  12. counsel: legal-review E12 (the §14 material-change question, the cancellation carve-out, the
+  12. **AUTH-03 (CAPTCHA on signup) before any campaign that promotes the offer**;
+  13. counsel: legal-review E12 (the §14 material-change question, the cancellation carve-out, the
       30-day expiry of paid credits);
-  13. the copy: every line marked COPY PENDING in `lib/plans-ui.ts`, the terms bullet, the receipt
+  14. the copy: every line marked COPY PENDING in `lib/plans-ui.ts`, the terms bullet, the receipt
       line `תבנית — מסלול <name>, חודש ראשון`.
 
 - **PostHog (2026-10-11, `feat/posthog-web`).** Each its own OK, in order: 1. at PR review, the

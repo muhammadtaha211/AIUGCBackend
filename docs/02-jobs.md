@@ -90,7 +90,7 @@ Service B        : synth_tts ─▶ ⏸ approve ⏸ ─▶ createBRender ─▶ 
 Service C        : admin registers a clip under its character ─▶ normalize_text_block_clip (30fps check, audio kept) · wizard: serveNextTextBlock (sync; generateTextBlocks only on an empty stock) — or the admin batch route ─▶ createTextBlockRender (quote, content-policy gate, debit 25) ─▶ render_video (the clip once, with its sound, under the text block) ─▶ released — never qc_pending; a failure refunds (vault 0089, 0099)
 Social posting   : schedulePosts (one tx: N scheduled_posts rows + N publish_post jobs, run_at = the instant) ─▶ publish_post (scheduled ─▶ publishing ▶ container ▶ poll… ▶ media_publish) ─▶ posted | failed (+ events post_failed) — never twice: see docs/09-social-posting.md
 Daily            : janitor (retention only) · billing_renewals · expire_trials (settle stale continues, then the ₪5 trials' day-30 expiry) · check_social_tokens — idempotency key = date, so each runs ONCE a day (the server worker re-attempts the enqueue hourly; `aiugc work` doesn't)
-Delayed          : reconcile_continue — one per continue from the ₪5 trial, run_at = the click + 10 min: looks its charge up in Sumit's list, activates the month or clears the attempt (vault 0109)
+Delayed          : reconcile_continue — one per continue from the ₪5 trial, run_at = the click + 10 min: looks its own attempt's charge up in Sumit's list, activates the month or clears the attempt; reschedules every 5 min for an hour while the list cannot be read (vault 0109)
 Continuous       : reap_dead_renders — singleton (constant key), reschedules itself every ~60s; ensured at both server-worker and `aiugc work` startup
 ```
 

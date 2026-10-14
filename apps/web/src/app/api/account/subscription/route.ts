@@ -59,6 +59,7 @@ export async function GET() {
         ? {
             credits: trial.credits,
             creditsLeft: trial.creditsLeft,
+            ended: trial.ended,
             expiresAt: trial.expiresAt.toISOString(),
             expiredAt: trial.expiredAt?.toISOString() ?? null,
             convertedAt: trial.convertedAt?.toISOString() ?? null,

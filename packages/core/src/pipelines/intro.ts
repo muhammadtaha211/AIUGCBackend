@@ -53,9 +53,9 @@ import {
  */
 
 /**
- * The numbers are the founder's (0109): ₪5, 30 days, and 150 credits — §2.2
+ * The numbers are the founder's (0109): ₪5, 30 days, and 150 credits — §1.2
  * said 145 (45 + 75 + 25, one of each service) and he raised it to 150 at plan
- * review. Constants, not config: only the on/off switch is a setting (§2.7),
+ * review. Constants, not config: only the on/off switch is a setting (§1.7),
  * and a number edited mid-checkout must not be able to refuse a paid ₪5.
  */
 export const INTRO_OFFER = { priceAgorot: 500, credits: 150, days: 30 } as const;
@@ -84,7 +84,7 @@ export async function introOfferEnabled(db: Db): Promise<boolean> {
 export type IntroEligibility = "eligible" | "already_used" | "has_paid" | "offer_off";
 
 /**
- * Once per account, and only an account that has never paid (§2.6): no trial
+ * Once per account, and only an account that has never paid (§1.6): no trial
  * before, no subscription ever in any status (cancelled and suspended
  * included), no completed plan purchase. No card or IP check — the address is
  * evidence only. Checked in this order so a trial account reads "already used".
@@ -156,8 +156,15 @@ function ledgerState(trial: TrialRow): TrialLedgerState {
   };
 }
 
+/**
+ * NO KEY UPDATE, not UPDATE: it still serializes against debitRender's FOR UPDATE
+ * and every other path here, but it does not block the FOR KEY SHARE that a
+ * credit_ledger insert's foreign key takes on the users row — so a renewal or
+ * a plan change holding its subscription lock across a charge can never form a
+ * deadlock cycle with a completion or a continue.
+ */
 async function lockUser(db: Db, userId: string): Promise<void> {
-  await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
+  await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("no key update");
 }
 
 async function lockTrial(db: Db, userId: string): Promise<TrialRow | undefined> {
@@ -229,7 +236,19 @@ export async function lockOpenTrial(db: Db, userId: string): Promise<TrialRow | 
  */
 export async function convertTrial(
   db: Db,
-  opts: { trial: TrialRow; subscriptionId: string; decisionAt: Date; now: Date },
+  opts: {
+    trial: TrialRow;
+    subscriptionId: string;
+    decisionAt: Date;
+    now: Date;
+    /**
+     * Only the continue's own activation clears the attempt. A hosted plan
+     * purchase that completes while a continue's answer is still unknown (a
+     * page opened before the click) leaves it open, so the settle still looks
+     * that charge up — and records it orphaned if it went through.
+     */
+    clearAttempt: boolean;
+  },
 ): Promise<void> {
   const { trial } = opts;
   let expiredAt = trial.expiredAt;
@@ -247,15 +266,21 @@ export async function convertTrial(
       expiredAt,
       convertedAt: opts.now,
       subscriptionId: opts.subscriptionId,
-      continueAttemptAt: null,
-      continueAttemptPlan: null,
-      continueAttemptAgorot: null,
+      ...(opts.clearAttempt
+        ? { continueAttemptAt: null, continueAttemptPlan: null, continueAttemptAgorot: null }
+        : {}),
     })
     .where(eq(introTrials.userId, trial.userId));
 }
 
 export type TrialView = {
   credits: number;
+  /**
+   * Past its 30 days — swept or not. Credits stay spendable until the sweep
+   * runs, but nothing may promise them past the date: a continue decided now
+   * expires them first.
+   */
+  ended: boolean;
   /** Unused trial credits while the trial is live; 0 once it expired or joined a plan. */
   creditsLeft: number;
   startedAt: Date;
@@ -267,7 +292,11 @@ export type TrialView = {
 };
 
 /** What the plan page and the continue page show. */
-export async function getTrialView(db: Db, userId: string): Promise<TrialView | null> {
+export async function getTrialView(
+  db: Db,
+  userId: string,
+  now: Date = new Date(),
+): Promise<TrialView | null> {
   const trial = (
     await db.select().from(introTrials).where(eq(introTrials.userId, userId)).limit(1)
   )[0];
@@ -275,6 +304,7 @@ export async function getTrialView(db: Db, userId: string): Promise<TrialView | 
   const live = !trial.expiredAt && !trial.convertedAt;
   return {
     credits: trial.credits,
+    ended: trial.expiredAt !== null || trial.expiresAt.getTime() <= now.getTime(),
     creditsLeft: live ? await unusedTrialCredits(db, userId, ledgerState(trial)) : 0,
     startedAt: trial.startedAt,
     expiresAt: trial.expiresAt,
@@ -459,7 +489,7 @@ export async function continueFromTrial(
     await enqueue(tx as Db, {
       type: "reconcile_continue",
       idempotencyKey: `reconcile_continue:${opts.userId}:${now.getTime()}`,
-      payload: { userId: opts.userId },
+      payload: { userId: opts.userId, attemptAt: now.toISOString() },
       runAt: new Date(now.getTime() + CONTINUE_SETTLE_AFTER_MS),
     });
     return { trial, plan };
@@ -617,6 +647,7 @@ async function applyContinuePayment(
       subscriptionId,
       decisionAt: opts.attemptAt,
       now: opts.now,
+      clearAttempt: true,
     });
     await grantPeriod(tx as Db, {
       userId: opts.userId,
@@ -652,7 +683,7 @@ export async function settleContinueAttempts(
   db: Db,
   client: SumitClient,
   now: Date = new Date(),
-  opts: { userId?: string } = {},
+  opts: { userId?: string; attemptAt?: Date } = {},
 ): Promise<{ activated: number; cleared: number; orphaned: number; waiting: number }> {
   const result = { activated: 0, cleared: 0, orphaned: 0, waiting: 0 };
   const open = await db
@@ -660,8 +691,13 @@ export async function settleContinueAttempts(
     .from(introTrials)
     .where(
       and(
+        // A job settles exactly the attempt that enqueued it (its run_at
+        // already carried the wait, on the database's clock); the daily
+        // backstop settles every attempt old enough on this one.
+        opts.attemptAt
+          ? eq(introTrials.continueAttemptAt, opts.attemptAt)
+          : lte(introTrials.continueAttemptAt, new Date(now.getTime() - CONTINUE_SETTLE_AFTER_MS)),
         isNotNull(introTrials.continueAttemptAt),
-        lte(introTrials.continueAttemptAt, new Date(now.getTime() - CONTINUE_SETTLE_AFTER_MS)),
         ...(opts.userId ? [eq(introTrials.userId, opts.userId)] : []),
       ),
     );
@@ -756,12 +792,38 @@ export async function settleContinueAttempts(
 }
 
 /** The delayed job each continue enqueues, CONTINUE_SETTLE_AFTER_MS after the click. */
+/** How often, and how many times, a settle whose payments list could not be read tries again. */
+export const CONTINUE_SETTLE_RETRY_MS = 5 * 60 * 1000;
+export const CONTINUE_SETTLE_MAX_RETRIES = 12;
+
+/**
+ * The delayed job each continue enqueues, CONTINUE_SETTLE_AFTER_MS after the
+ * click. It settles exactly the attempt that enqueued it — never a newer one,
+ * whose charge may still be in flight — and its run_at already carried the
+ * wait. When Sumit's list cannot be read (likely the very outage that lost the
+ * answer) it tries again every few minutes for an hour before leaving the
+ * attempt to the daily backstop, so a customer who paid is not left without
+ * the month for a day.
+ */
 export async function handleReconcileContinue(job: Job, ctx: JobContext): Promise<JobResult> {
-  const payload = job.payload as { userId?: unknown };
+  const payload = job.payload as { userId?: unknown; attemptAt?: unknown };
   const userId = typeof payload.userId === "string" ? payload.userId : undefined;
-  if (!userId) return { kind: "done" };
-  const summary = await settleContinueAttempts(ctx.db, getSumitClient(), new Date(), { userId });
-  ctx.log.info({ userId, ...summary }, "continue attempts settled");
+  const attemptAt = typeof payload.attemptAt === "string" ? new Date(payload.attemptAt) : undefined;
+  if (!userId || !attemptAt || Number.isNaN(attemptAt.getTime())) return { kind: "done" };
+  const summary = await settleContinueAttempts(ctx.db, getSumitClient(), new Date(), {
+    userId,
+    attemptAt,
+  });
+  ctx.log.info({ userId, ...summary }, "continue attempt settled");
+  const state = (job.state ?? {}) as { retries?: number };
+  const retries = typeof state.retries === "number" ? state.retries : 0;
+  if (summary.waiting > 0 && retries < CONTINUE_SETTLE_MAX_RETRIES) {
+    return {
+      kind: "reschedule",
+      delayMs: CONTINUE_SETTLE_RETRY_MS,
+      state: { retries: retries + 1 },
+    };
+  }
   return { kind: "done" };
 }
 

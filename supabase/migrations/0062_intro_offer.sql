@@ -15,7 +15,9 @@
 --      kind       'plan' | 'intro'. Text with a CHECK, not an enum (0048's
 --                 reasoning). The constant DEFAULT fills every existing row
 --                 with 'plan' and covers the deployed code, which inserts
---                 without naming it. Metadata-only on PG11+.
+--                 without naming it. No table rewrite on PG11+ (the constant
+--                 default is stored as metadata); the two CHECKs each validate
+--                 the existing rows in one short scan.
 --      plan_code  now NULL for an intro intent. The FK to plans stays (a NULL
 --                 skips it); checkout_intents_kind_plan_check keeps a plan
 --                 intent from losing its plan and an intro intent from
@@ -53,7 +55,7 @@
 --                           lost answer blocks a second charge until
 --                           reconcile_continue settles it. All three or none.
 --
--- 3. app_config intro_offer = {"enabled": false}: the off switch (spec §2.7).
+-- 3. app_config intro_offer = {"enabled": false}: the off switch (0109 §1.7).
 --    Seeded off; going live is one founder SQL statement, after the box carries
 --    the expire_trials and reconcile_continue handlers and SUMIT_INTRO_PAGE is
 --    set (docs/05-billing.md). Absent or unparseable reads as off. Only new

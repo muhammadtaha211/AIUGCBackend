@@ -266,6 +266,8 @@ export type IntroOfferView = { priceAgorot: number; credits: number; days: numbe
 export type TrialStateView = {
   credits: number;
   creditsLeft: number;
+  /** Past its 30 days, swept or not: nothing may promise its credits any more. */
+  ended: boolean;
   expiresAt: string;
   expiredAt: string | null;
   convertedAt: string | null;
@@ -522,7 +524,7 @@ export const CONTINUED_LINE = "החיוב בוצע והמסלול פעיל. הק
 
 /** The plan page's line for an account holding a trial that has not joined a plan. */
 export function trialLine(trial: TrialStateView): string {
-  if (trial.expiredAt) return `ההיכרות הסתיימה ב־${formatDate(trial.expiredAt)}.`;
+  if (trial.ended) return `ההיכרות הסתיימה ב־${formatDate(trial.expiredAt ?? trial.expiresAt)}.`;
   return `נותרו ${formatCredits(trial.creditsLeft)} קרדיטים מההיכרות, בתוקף עד ${formatDate(trial.expiresAt)}.`;
 }
 export const CONTINUE_ACTION = "הצטרפות בכרטיס השמור";

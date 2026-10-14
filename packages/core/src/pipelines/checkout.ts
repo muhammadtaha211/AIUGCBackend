@@ -139,7 +139,7 @@ async function expireStalePendingIntents(db: Db, now: Date): Promise<void> {
  * The ₪5 intro offer's intent (decision 0109): the row POST /api/account/intro
  * writes before the browser leaves for the offer's own Sumit page. Eligibility
  * first — once per account, never paid, the switch on — and a refusal writes
- * NOTHING (§6: refused before any intent is written). Then the same lazy
+ * NOTHING (0109 §1.6: refused before any intent is written). Then the same lazy
  * expiry and 30-minute reuse as a plan intent, a terms acceptance in context
  * 'intro', and a row with kind 'intro', no plan and the offer's price. The
  * return route and completeCheckout bind on it exactly as on a plan intent.
@@ -495,7 +495,14 @@ async function completeCheckoutTx(
     // (decision 0109): intent → users → intro_trials → subscriptions. The users
     // row serializes a ₪5 completing against a plan completing in another tab,
     // and against the trial sweep and a continue.
-    await tx.select({ id: users.id }).from(users).where(eq(users.id, intent.userId)).for("update");
+    // NO KEY UPDATE: it serializes against debitRender and the intro paths but
+    // never blocks the FOR KEY SHARE a ledger insert's foreign key takes, so a
+    // renewal holding its subscription lock across a charge cannot deadlock it.
+    await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, intent.userId))
+      .for("no key update");
 
     if (intent.kind === "intro") {
       const refusal = await activateIntroTrial(tx as Db, {
@@ -604,6 +611,9 @@ async function completeCheckoutTx(
         subscriptionId,
         decisionAt: payment.date ?? now,
         now,
+        // A continue still being confirmed keeps its attempt: the settle looks
+        // that charge up and records it orphaned if it went through.
+        clearAttempt: false,
       });
     }
     await grantPeriod(tx as Db, {
@@ -690,7 +700,18 @@ async function verifyHostedPayment(
     throw new CheckoutVerificationError("identifier_mismatch", undefined, payment);
   }
 
-  const saved = await client.getPaymentMethod(sumitCustomerId);
+  let saved: Awaited<ReturnType<SumitClient["getPaymentMethod"]>>;
+  try {
+    saved = await client.getPaymentMethod(sumitCustomerId);
+  } catch (err) {
+    // The intro's card is optional: a failed read must not hold back a paid ₪5.
+    if (opts.requireSavedCard) throw err;
+    logger.warn(
+      { intentId: intent.id, customerId: sumitCustomerId, error: String(err) },
+      "intro: could not read the saved card — activating without it",
+    );
+    return payment;
+  }
   if (!saved) {
     if (opts.requireSavedCard) {
       throw new CheckoutVerificationError("no_saved_card", undefined, payment);

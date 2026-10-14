@@ -5,7 +5,6 @@ import {
   CONTINUE_CONVERTED,
   CONTINUE_DECLINED_LINE,
   CONTINUE_NO_TRIAL,
-  CONTINUE_ORPHANED,
   INTRO_ALREADY_USED,
   INTRO_HAS_PAID,
   INTRO_OFF,
@@ -210,16 +209,17 @@ describe("POST /api/account/intro/continue", () => {
     expect(await response.json()).toEqual({ outcome: "pending" });
   });
 
-  it("402 on a decline (the page offers the hosted checkout), 409 on an orphaned charge", async () => {
+  it("402 on a decline (the page offers the hosted checkout); an orphaned charge is its own 200 body", async () => {
     fixture.continueFromTrial.mockResolvedValueOnce({ outcome: "declined", error: "(קוד 003)" });
     let response = await continueRoute(post("/api/account/intro/continue", body));
     expect(response.status).toBe(402);
     expect(await response.json()).toEqual({ ok: false, error: CONTINUE_DECLINED_LINE });
 
+    // Charged on an account that joined a plan meanwhile: a body the page locks on, not an error.
     fixture.continueFromTrial.mockResolvedValueOnce({ outcome: "orphaned", paymentId: "1" });
     response = await continueRoute(post("/api/account/intro/continue", body));
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ ok: false, error: CONTINUE_ORPHANED });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: "orphaned" });
   });
 
   it("each refusal before a charge has its line; no gateway is the 503", async () => {
@@ -261,6 +261,7 @@ describe("the offer on the subscription read", () => {
       trial: {
         credits: 150,
         creditsLeft: 105,
+        ended: false,
         startedAt: new Date("2026-10-14T10:00:00Z"),
         expiresAt: new Date("2026-11-13T10:00:00Z"),
         expiredAt: null,
@@ -273,6 +274,7 @@ describe("the offer on the subscription read", () => {
     expect(json.trial).toEqual({
       credits: 150,
       creditsLeft: 105,
+      ended: false,
       expiresAt: "2026-11-13T10:00:00.000Z",
       expiredAt: null,
       convertedAt: null,

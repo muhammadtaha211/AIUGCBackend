@@ -14,7 +14,7 @@ import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
  * before anything is written, and the return route binds on the intent — with
  * the offer's one refusal ladder in front: an account that already had a
  * trial, ever paid, or meets the switch off is a 409 before any write
- * (createIntroIntent refuses first, by §6 of the decision).
+ * (createIntroIntent refuses first, decision 0109 §1.6).
  */
 export async function POST(request: Request) {
   const auth = await requireUser();

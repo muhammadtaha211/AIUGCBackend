@@ -3,7 +3,7 @@ import { continueFromTrial, getBillingGateway, getDb } from "@aiugc/core";
 import { UPDATED as TERMS_VERSION } from "@/app/(legal)/legal";
 import { coreErrorResponse, INVALID_BODY, jsonError, requireUser } from "@/lib/api";
 import { clientIp, continueRequestSchema } from "@/lib/billing";
-import { CONTINUE_DECLINED_LINE, CONTINUE_ORPHANED } from "@/lib/plans-ui";
+import { CONTINUE_DECLINED_LINE } from "@/lib/plans-ui";
 
 /**
  * Continue from the ₪5 intro trial (decision 0109): charge the card Sumit saved
@@ -17,10 +17,12 @@ import { CONTINUE_DECLINED_LINE, CONTINUE_ORPHANED } from "@/lib/plans-ui";
  *                                  stays open and both purchase paths are shut
  *                                  until reconcile_continue settles it — the
  *                                  page says do not try again
+ *   200 { outcome: "orphaned" }   charged, but the account had joined a plan
+ *                                  another way meanwhile — recorded for a
+ *                                  refund by hand; the page says do not pay again
  *   402                            declined: the line, and the page offers the
  *                                  hosted checkout with another card
- *   409                            a refusal before any charge, or a charge on
- *                                  an account that joined a plan meanwhile
+ *   409                            a refusal before any charge
  *   503                            no gateway configured — nothing written
  *
  * A timeout or a 5xx reaches the page with no body, and the page reads it as
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
       case "declined":
         return jsonError(402, CONTINUE_DECLINED_LINE);
       case "orphaned":
-        return jsonError(409, CONTINUE_ORPHANED);
+        return NextResponse.json({ outcome: "orphaned" });
     }
   } catch (err) {
     return coreErrorResponse(err);

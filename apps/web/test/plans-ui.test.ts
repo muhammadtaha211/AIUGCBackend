@@ -397,6 +397,7 @@ describe("the ₪5 intro offer (decision 0109)", () => {
   const TRIAL = {
     credits: 150,
     creditsLeft: 105,
+    ended: false,
     expiresAt: "2026-11-13T10:00:00.000Z",
     expiredAt: null,
     convertedAt: null,
@@ -424,7 +425,7 @@ describe("the ₪5 intro offer (decision 0109)", () => {
     );
     // Still a continue after the trial ended: nothing left to keep, no card to re-enter.
     const ended = planCardStates(
-      noSub({ ...TRIAL, expiredAt: "2026-11-14T00:30:00.000Z" }),
+      noSub({ ...TRIAL, ended: true, expiredAt: "2026-11-14T00:30:00.000Z" }),
       LADDER,
     );
     expect(Object.values(ended.cards).map((c) => c.intent)).toEqual([
@@ -495,9 +496,11 @@ describe("the ₪5 intro offer (decision 0109)", () => {
 
   it("the trial line: credits left and the date while live, the end date once expired", () => {
     expect(trialLine(TRIAL)).toBe("נותרו 105 קרדיטים מההיכרות, בתוקף עד 13.11.2026.");
-    expect(trialLine({ ...TRIAL, expiredAt: "2026-11-14T00:30:00.000Z" })).toBe(
+    expect(trialLine({ ...TRIAL, ended: true, expiredAt: "2026-11-14T00:30:00.000Z" })).toBe(
       "ההיכרות הסתיימה ב־14.11.2026.",
     );
+    // Past the date, not yet swept: ended on the date itself, never "valid until" a past day.
+    expect(trialLine({ ...TRIAL, ended: true })).toBe("ההיכרות הסתיימה ב־13.11.2026.");
     expect(introSuccessLine(TRIAL)).toBe(
       "התשלום התקבל. 150 קרדיטים נטענו לחשבון, בתוקף עד 13.11.2026.",
     );

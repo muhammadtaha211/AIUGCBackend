@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-14
-method: "Founder decisions of 2026-10-13/14, given in the task prompt '₪5 intro offer' §2 as 'Decided … not up for relitigation', with his reasons; his two answers in plan mode on 2026-10-14 (a lost continue answer is settled automatically; the test-org walkthrough runs off production); and his change at plan review the same day (the credits 145 → 150). The planning defaults of that prompt were approved with the plan unstruck. MEASURED in the tree on feat/intro-offer: supabase/migrations/0061_ledger_reason_trial.sql, 0062_intro_offer.sql; packages/core/src/pipelines/intro.ts, checkout.ts (createIntroIntent, verifyHostedPayment, the kind branch), credits.ts (grantTrial, trialBaseline, unusedTrialCredits, expireTrialRemainder), handlers.ts, jobs/schedule.ts; apps/web routes api/account/intro, api/account/intro/continue, the return route, pages home/plan/intro, home/plan/continue, plan-manager, NoCreditsCard, /pricing, settings, lib/plans-ui.ts, lib/analytics.ts; terms §8 and legal.tsx UPDATED. Pinned by packages/core/test/intro.test.ts (30 cases, PGlite) and migrations.test.ts (0061, 0062), apps/web/test/intro-routes.test.ts, plans-ui.test.ts, sumit-return-route.test.ts, account-routes.test.ts. Test-org walkthrough 2026-10-14 off production (PGlite + the founder's TEST Sumit business, packages/core/.work/intro-walk.ts): partial — see §8. No production query, no migration push, no deploy, no call against the real Sumit organisation."
+method: "Founder decisions of 2026-10-13/14, given in the task prompt '₪5 intro offer' §2 as 'Decided … not up for relitigation', with his reasons; his two answers in plan mode on 2026-10-14 (a lost continue answer is settled automatically; the test-org walkthrough runs off production); and his change at plan review the same day (the credits 145 → 150). The planning defaults of that prompt were approved with the plan unstruck. MEASURED in the tree on feat/intro-offer: supabase/migrations/0061_ledger_reason_trial.sql, 0062_intro_offer.sql; packages/core/src/pipelines/intro.ts, checkout.ts (createIntroIntent, verifyHostedPayment, the kind branch), credits.ts (grantTrial, trialBaseline, unusedTrialCredits, expireTrialRemainder), handlers.ts, jobs/schedule.ts; apps/web routes api/account/intro, api/account/intro/continue, the return route, pages home/plan/intro, home/plan/continue, plan-manager, NoCreditsCard, /pricing, settings, lib/plans-ui.ts, lib/analytics.ts; terms §8 and legal.tsx UPDATED. Pinned by packages/core/test/intro.test.ts (33 cases, PGlite) and migrations.test.ts (0061, 0062), apps/web/test/intro-routes.test.ts, plans-ui.test.ts, sumit-return-route.test.ts, account-routes.test.ts. Test-org walkthrough 2026-10-14 off production (PGlite + the founder's TEST Sumit business, packages/core/.work/intro-walk.ts): partial — see §8. No production query, no migration push, no deploy, no call against the real Sumit organisation."
 source: founder
 ---
 
@@ -109,13 +109,18 @@ activation)`. Spend uses trial credits before manual ones. Everything subtracted
   draft of this formula took those back). Credits stay spendable until the sweep runs (≤ ~25 h).
 - **Continue** writes the attempt **before** charging, charges outside any transaction, records the
   answer at once, then activates under the locks. A lost answer or a killed function leaves the
-  attempt, which refuses both purchase paths until `reconcile_continue` settles it (found → the
-  month activates; not found → the attempt clears). A trial-only customer has no subscription, so
+  attempt: a new continue and a new hosted checkout both refuse until `reconcile_continue` settles
+  it (found → the month activates; not found → the attempt clears). A hosted page opened before the
+  click can still be paid and complete; the attempt then survives the conversion, and the settle
+  records the continue's charge `continue_charge_orphaned` if it went through. The job settles only
+  its own attempt and, when Sumit's list cannot be read, retries every five minutes for an hour
+  before leaving it to the daily backstop. A continue the settle activates starts its month at the
+  settle, not at the click (customer-favourable). A trial-only customer has no subscription, so
   nothing else charges it and the narrow list look is safe here as it is not for renewals (0062).
   A continue decided at or after the 30 days expires the leftover first; a hosted plan purchase
   converts the trial the same way.
 
-## 4. Accepted edges (REASONED, pinned in packages/core/test/intro.test.ts)
+## 4. Accepted edges (REASONED; the first two and the late-listing one pinned in packages/core/test/intro.test.ts, the /pricing and DFY ones not tested)
 
 - A trial-era render refunded **after** the sweep keeps its credits (≤ 150, customer-favourable).
 - After a continue, an account that spent a hand grant before the trial keeps up to that grant past
@@ -142,8 +147,9 @@ change for the analytics codes: §3 already promises codes only, including the p
 Per fully used trial, provider cost: the analysis ₪1.38 (one Sonnet 5.5 run, 2026-10-08) to ₪1.82
 (Sonnet 4.6 mean, 2026-10-02); the B ad's HeyGen ₪3.75 for 15 s at 25 agorot/s (**stale, 2026-08**)
 plus its TTS previews at 30 agorot per 1k characters (**stale, 2026-08**) and a few agorot of
-Claude; the C batch 13–15 agorot; the box renders on a monthly box. Roughly ₪6–6.5 — consistent with
-planning's ~₪7. Received: ₪5 less clearing (not in the vault), 3DS (an untagged ₪1-per-attempt
+Claude; the C batch 13–15 agorot; the box renders on a monthly box. Roughly ₪6–6.5 **for one of
+each** — consistent with planning's ~₪7. The costliest way to spend 150 credits is all on Service B
+(two 15 s ads, or one of 30 s): ≈ ₪7.5 of HeyGen plus TTS, about ₪8 (same stale rates). Received: ₪5 less clearing (not in the vault), 3DS (an untagged ₪1-per-attempt
 line in state-of-play's queue, unverified) and Sumit operations (a charge and its document are two
 operations; the price per extra operation is not recorded). The founder's real trial is the
 measurement (§1.3); `aiugc costs --business <id>` reads it back.
@@ -172,7 +178,8 @@ the continue on the saved card and the receipt lines are still owed, on a day th
 
 - [[0068-prices-stand-no-free-tier-trials-by-hand]] — §2's "no self-serve tier" stands; this is a
   paid offer, and its pointer says so.
-- [[0051-the-credit-unit-and-the-three-credit-only-plans]] — the plans and rates the 150 rests on.
+- [[0051-the-credit-unit-and-the-three-credit-only-plans]] — the plans, and the 45 and 75 the 150
+  rests on; [[0099-service-c-phase-2-opens-to-customers]] §7 — its 25 for a text block.
 - [[0062-hosted-checkout-via-sumit-payment-pages]] — the checkout this rides, and the saved card
   the continue charges.
 - [[0052-upgrade-credits-are-period-credits]], [[0053-downgrades-are-scheduled-not-applied]] —

@@ -261,7 +261,7 @@ is charged for an ordinary first month of a plan.
 
 - **The numbers** are one core constant, `INTRO_OFFER = { priceAgorot: 500, credits: 150, days: 30 }`
   (`packages/core/src/pipelines/intro.ts`); every surface gets them as arguments. Changing one is
-  a deploy *and* the Sumit page's price — the intent snapshots the price and completion refuses
+  a deploy _and_ the Sumit page's price — the intent snapshots the price and completion refuses
   any other amount.
 - **The switch** is `app_config.intro_offer = {"enabled": true|false}` (seeded off by 0062). Absent
   or unparseable reads as off, never a throw. It stops **new** intents and hides the offer; a page
@@ -302,7 +302,7 @@ is charged for an ordinary first month of a plan.
   date with no plan joined and no continue pending, under the `users` → trial locks,
   `expire_trial` takes
   `min(150, balance − balance_before − manual granted since − refunds of the renders open at
-  activation)`. Spend uses trial credits before manual ones; the subtrahend is everything that is
+activation)`. Spend uses trial credits before manual ones; the subtrahend is everything that is
   not trial, so **a manual grant is never taken** (pinned in `packages/core/test/intro.test.ts`).
   Credits stay spendable until the sweep runs (≤ ~25 h past the date). Accepted, pinned: a
   trial-era render refunded after the sweep keeps its credits.
@@ -317,22 +317,26 @@ is charged for an ordinary first month of a plan.
   2. `SumitGateway.chargeRecurring` on the trial's Sumit customer, description
      `תבנית — מסלול <name>, חודש ראשון`, outside any transaction; the answer is recorded at once
      (`continue_charge` / `continue_charge_failed` / `continue_charge_unconfirmed`);
-  3. ok → under the locks: a new `active` subscription (period from the click, full price, full
-     credits — not 0052's proration), `grantPeriod`, the trial `converted_at`. The leftover trial
+  3. ok → under the locks: a new `active` subscription (period from the click — or, for a continue
+     the settle activates later, from the settle; full price, full credits — not 0052's proration), `grantPeriod`, the trial `converted_at`. The leftover trial
      credits are untouched and leave with the period remainder at the first renewal or cancel —
      except for an account that spent a hand grant before the trial, where
      `expirePeriodRemainder`'s lifetime-manual rule keeps up to that grant (pre-existing,
      customer-favourable, pinned). A continue decided at or after the 30 days expires the leftover
      first. Declined → the attempt is cleared and the page offers the hosted checkout with another
-     card. Unconfirmed (or the function killed mid-charge) → the attempt stays and **both purchase
-     paths refuse** until it settles. Already converted meanwhile (a hosted page paid in another
+     card. Unconfirmed (or the function killed mid-charge) → the attempt stays, and a new continue
+     and a new hosted checkout both refuse until it settles; a hosted page opened before the click
+     can still be paid, and then the settle records the continue's charge orphaned if it went
+     through. Already converted meanwhile (a hosted page paid in another
      tab) → `continue_charge_orphaned`, refund by hand.
 - **Settling a lost answer — automatic** (founder, 2026-10-14): `reconcile_continue` (and the daily
   job as a backstop) reads Sumit's payments list over [attempt − 2 min, attempt + 10 min] for this
   customer, this exact amount, valid, no `ExternalIdentifier`. Found → the month activates on it.
   Not found → the attempt clears (`continue_charge_cleared`). Safe here as it is not for renewals:
   a trial's customer has no subscription, so nothing else charges it, and the open attempt refuses
-  every new charge.
+  every new continue and hosted checkout. Each job settles only the attempt that enqueued it; when
+  the list cannot be read it retries every five minutes for an hour, then leaves it to the daily
+  backstop.
 - **A hosted plan purchase converts the trial** exactly like a continue (the declined-continue
   fallback goes there), and `/home/plan?plan=<code>` sends an open trial to the continue page.
 - **Surfaces**: the offer box on `/home/plan` and one line in `NoCreditsCard` for an eligible
@@ -649,7 +653,7 @@ this row, never a deploy; the code does not know which pricing model won.
 **A positive credit balance is the only door.** There is no subscription lookup in the render path
 and no in-product free video of any kind, watermarked or not. Credits come from a plan, from the
 ₪5 intro offer (paid, once per never-paid account — see its section), or from a grant by hand in
-the admin console. "Free" is never printed (vault 0109 §4).
+the admin console. "Free" is never printed (vault 0109 §1.4).
 
 Kept dormant, not deleted: the Remotion watermark layer and `video_renders.watermarked`, and
 `businesses.sample_used_at` (no customer path sets them; vault 0068 §2).

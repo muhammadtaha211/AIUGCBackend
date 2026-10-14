@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema";
 import type { Db } from "../src/db";
-import type { SumitClient, SumitPayment } from "../src/gateways/sumit";
+import { setSumitClient, type SumitClient, type SumitPayment } from "../src/gateways/sumit";
 import {
   NotConfiguredGateway,
   processDueRenewals,
@@ -27,6 +27,9 @@ import {
   getTrialView,
   INTRO_OFFER,
   IntroOfferError,
+  CONTINUE_SETTLE_MAX_RETRIES,
+  CONTINUE_SETTLE_RETRY_MS,
+  handleReconcileContinue,
   settleContinueAttempts,
 } from "../src/pipelines/intro";
 import { buildHandlers } from "../src/handlers";
@@ -890,6 +893,122 @@ describe("the intro offer — settling a continue whose answer was lost", () => 
     const handlers = buildHandlers();
     expect(handlers).toHaveProperty("expire_trials");
     expect(handlers).toHaveProperty("reconcile_continue");
+    await pg.close();
+  });
+
+  it("a hosted page opened before an unconfirmed continue, paid meanwhile: the attempt survives the conversion and the settle records the continue charge orphaned", async () => {
+    const { db, pg } = await createTestDb();
+    await switchOn(db);
+    const { userId } = await account(db);
+    await buyIntro(db, userId);
+    const starter = await plan(db, "starter");
+    // The page is opened first (the decline fallback, another tab)…
+    const hosted = await createCheckoutIntent(db, {
+      userId,
+      planCode: "starter",
+      termsVersion: "v",
+      now: NOW,
+    });
+    // …then a continue whose answer is lost…
+    await continueFromTrial(db, gateway("unconfirmed").gw, continueOpts(userId));
+    // …then the page is paid and completes: one month, the trial converted.
+    await completeCheckout(db, {
+      intentId: hosted.intent.id,
+      sumitPaymentId: "2400009801",
+      sumitCustomerId: CUSTOMER,
+      now: NOW,
+      client: sumit({ intentId: hosted.intent.id, amountAgorot: starter.priceAgorot }),
+    });
+    const trial = (await trialRow(db, userId))!;
+    expect(trial.convertedAt).not.toBeNull();
+    expect(trial.continueAttemptAt).not.toBeNull();
+    // The continue's charge DID go through: the settle finds it and records it.
+    const charge: SumitPayment = {
+      id: 2400009802,
+      customerId: Number(CUSTOMER),
+      date: new Date(NOW.getTime() + 15_000),
+      valid: true,
+      status: "000",
+      statusDescription: null,
+      amountAgorot: starter.priceAgorot,
+      externalIdentifier: null,
+      documentId: 40003,
+      paymentMethod: null,
+    };
+    const summary = await settleContinueAttempts(
+      db,
+      sumit({ list: [charge] }),
+      new Date(NOW.getTime() + CONTINUE_SETTLE_AFTER_MS),
+    );
+    expect(summary).toMatchObject({ orphaned: 1, activated: 0 });
+    expect(await db.select().from(schema.subscriptions)).toHaveLength(1);
+    const orphaned = await db
+      .select()
+      .from(schema.gatewayEvents)
+      .where(eq(schema.gatewayEvents.kind, "continue_charge_orphaned"));
+    expect(orphaned.map((e) => e.gatewayEventId)).toEqual(["continue_orphaned_2400009802"]);
+    expect((await trialRow(db, userId))!.continueAttemptAt).toBeNull();
+    await pg.close();
+  });
+
+  it("the settle job settles only its own attempt, and retries a while when Sumit's list cannot be read", async () => {
+    const { db, pg } = await createTestDb();
+    const userId = await pendingTrial(db);
+    const attemptAt = (await trialRow(db, userId))!.continueAttemptAt!;
+    const failing: SumitClient = {
+      ...sumit({}),
+      async listPayments() {
+        throw new Error("sumit /billing/payments/list/: HTTP 503");
+      },
+    };
+    setSumitClient(failing);
+    try {
+      const job = (
+        await db.select().from(schema.jobs).where(eq(schema.jobs.type, "reconcile_continue"))
+      )[0]!;
+      expect(job.payload).toEqual({ userId, attemptAt: attemptAt.toISOString() });
+      const ctx = { db, log: { info() {} }, checkpoint: async () => {} } as never;
+      const first = await handleReconcileContinue(job, ctx);
+      expect(first).toEqual({
+        kind: "reschedule",
+        delayMs: CONTINUE_SETTLE_RETRY_MS,
+        state: { retries: 1 },
+      });
+      // Bounded: after the last retry it leaves the attempt to the daily backstop.
+      const last = await handleReconcileContinue(
+        { ...job, state: { retries: CONTINUE_SETTLE_MAX_RETRIES } },
+        ctx,
+      );
+      expect(last).toEqual({ kind: "done" });
+      expect((await trialRow(db, userId))!.continueAttemptAt).not.toBeNull();
+      // A job for an older attempt never touches the open one.
+      setSumitClient(sumit({}));
+      await handleReconcileContinue(
+        {
+          ...job,
+          payload: { userId, attemptAt: new Date(attemptAt.getTime() - 60_000).toISOString() },
+        },
+        ctx,
+      );
+      expect((await trialRow(db, userId))!.continueAttemptAt).not.toBeNull();
+      // Its own job, with the list readable and nothing in it, clears it.
+      await handleReconcileContinue(job, ctx);
+      expect((await trialRow(db, userId))!.continueAttemptAt).toBeNull();
+    } finally {
+      setSumitClient(undefined);
+    }
+    await pg.close();
+  });
+
+  it("a trial past its date reads as ended before the sweep runs, though its credits are still spendable", async () => {
+    const { db, pg } = await createTestDb();
+    await switchOn(db);
+    const { userId } = await account(db);
+    await buyIntro(db, userId);
+    const before = await getTrialView(db, userId, new Date(NOW.getTime() + 29 * DAY));
+    expect(before).toMatchObject({ ended: false, creditsLeft: 150 });
+    const after = await getTrialView(db, userId, new Date(NOW.getTime() + 30 * DAY + 3600_000));
+    expect(after).toMatchObject({ ended: true, creditsLeft: 150, expiredAt: null });
     await pg.close();
   });
 

@@ -61,7 +61,9 @@ export default async function ContinuePage({
     redirect("/home/plan");
   }
   const nextCharge = formatDate(addOneMonth(new Date()));
-  const keeps = !trial.expiredAt && trial.creditsLeft > 0;
+  // Past the 30 days (swept or not) the continue expires the leftover first,
+  // so the page never promises it then.
+  const keeps = !trial.ended && trial.creditsLeft > 0;
 
   return (
     // The plan's name, price and terms: Tavnit's copy, readable in a recording.

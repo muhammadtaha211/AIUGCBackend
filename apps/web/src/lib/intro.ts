@@ -12,8 +12,18 @@ import type { IntroOfferView } from "@/lib/plans-ui";
 
 export const INTRO_OFFER_VIEW: IntroOfferView = { ...INTRO_OFFER };
 
+let malformedLogged = false;
+
 export function introPageConfigured(): boolean {
-  return parseIntroPage(getEnv().SUMIT_INTRO_PAGE) !== null;
+  const raw = getEnv().SUMIT_INTRO_PAGE;
+  const ok = parseIntroPage(raw) !== null;
+  // Set but unusable (a quoted paste on Vercel, say) hides the offer on every
+  // surface — say so once per instance, or nothing would explain it.
+  if (raw && !ok && !malformedLogged) {
+    malformedLogged = true;
+    console.error("SUMIT_INTRO_PAGE is set but is not an https URL — the intro offer is hidden");
+  }
+  return ok;
 }
 
 /** The offer when THIS account may buy it now (eligible already includes the switch), else null. */

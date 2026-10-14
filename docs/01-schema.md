@@ -212,7 +212,8 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   all or none). Server-only.
 - **terms_acceptances** (0046) — the record that a signed-in customer ticked the terms box at
   checkout: `user_id` (not null), `terms_version` (the date string the terms page shows at its
-  head), `context` (`'checkout'`), `ip`, `user_agent`, `accepted_at`; index on `user_id`.
+  head), `context` (`'checkout'`, and since 0109 `'intro'` and `'continue'` — plain text), `ip`,
+  `user_agent`, `accepted_at`; index on `user_id`.
   Server-only: RLS on, no policies, the 0035 pattern.
 - **credit_ledger** — append-only, keyed to the ACCOUNT since 0011: `user_id` NOT NULL is
   ownership (`balance = SUM(delta)` per user — one owner's businesses share one balance),
@@ -242,7 +243,9 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   deliberately left empty and the read path unclamped — [04-integrations.md](04-integrations.md)
   §Anthropic),
   `retention_days`, `audio_preview_daily_limit`, `credit_costs`, `dunning`,
-  `imagegen_cost_agorot` (per-image cost estimate; a fal price change is an UPDATE here).
+  `imagegen_cost_agorot` (per-image cost estimate; a fal price change is an UPDATE here), and
+  `intro_offer` (`{"enabled": bool}`, seeded off by 0062 — the ₪5 intro offer's switch; absent or
+  unparseable reads as off, [vault 0109](vault/decisions/0109-a-five-shekel-intro-offer.md)).
   Several knobs are **opt-in and unseeded** — read with `getConfigValueOr`, so a missing row is
   the code default and toggling them is an INSERT/DELETE, never a migration:
   `tts_enhance` (boolean; absent = `false` = no v3 audio-tag pass), `tts_stability` (number;

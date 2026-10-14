@@ -216,5 +216,6 @@ every tier — the founder's decision 11 of 2026-10-10, "probably not" to a late
 _(Pointer 2026-10-14: §4's three plans stand unchanged — the ₪5 intro offer is not a fourth plan.
 It sells 150 credits once to an account that never paid, valid 30 days, on its own Sumit page; its
 "continue" starts an ordinary first month of one of these three at full price. No rate and no plan
-row changes; its 150 rests on this note's 45 / 75 / 25. Whether a ₪5 buyer starts this note's
+row changes; its 150 rests on this note's 45 and 75 and on
+[[0099-service-c-phase-2-opens-to-customers]] §7's 25 for a text block. Whether a ₪5 buyer starts this note's
 sixty-day review clock is OPEN. [[0109-a-five-shekel-intro-offer]].)_
