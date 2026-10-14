@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { PlanCards } from "@/components/plans/plan-cards";
+import { Amounts, PlanCards } from "@/components/plans/plan-cards";
 import { authReadFailed } from "@/lib/auth-user";
+import { publicIntroOffer } from "@/lib/intro";
 import { loadPlansViewCached } from "@/lib/plans";
 import {
   PRICING_FAQ,
@@ -9,6 +10,7 @@ import {
   PRICING_META_DESCRIPTION,
   PRICING_META_TITLE,
   PRICING_SUBLINE,
+  pricingIntroLine,
 } from "@/lib/plans-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -29,6 +31,11 @@ export const metadata: Metadata = {
  * signup. A failed read is logged and treated as signed out — a public page
  * never throws on a GoTrue blip; the worst outcome is the signup button for
  * someone who already has an account.
+ *
+ * One line under the cards names the ₪5 intro offer (decision 0109) while it
+ * is switched on and its page is configured — never a fourth card. Its
+ * numbers are core's INTRO_OFFER, read per request outside the cached plans
+ * view so the switch takes the line down at once.
  */
 export default async function PricingPage() {
   const supabase = await createServerSupabase();
@@ -39,7 +46,7 @@ export default async function PricingPage() {
   if (authReadFailed(error)) console.error("pricing: auth read failed", error);
   const mode = user ? "public-signed-in" : "public-signed-out";
 
-  const view = await loadPlansViewCached();
+  const [view, intro] = await Promise.all([loadPlansViewCached(), publicIntroOffer()]);
 
   return (
     <>
@@ -68,6 +75,11 @@ export default async function PricingPage() {
 
         <section className="mx-auto max-w-6xl px-5 pb-6 sm:px-8">
           <PlanCards view={view} mode={mode} />
+          {intro && (
+            <p className="mt-6 text-center text-sm text-ink/65">
+              <Amounts line={pricingIntroLine(intro)} />
+            </p>
+          )}
         </section>
       </div>
 

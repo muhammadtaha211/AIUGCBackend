@@ -442,7 +442,22 @@ export const STEP_EVENTS = {
   no_credits_wall: { service: SERVICES },
   plans_viewed: {},
   checkout_started: { plan: /^[a-z][a-z0-9_-]{0,39}$/ },
-  payment_returned: { outcome: ["success", "refused", "failed", "unconfirmed"] },
+  // The intro_* and continued codes are the ₪5 offer's (decision 0109): the
+  // same landings, told apart from a plan's. checkout_started tells them apart
+  // by its plan code, "intro".
+  payment_returned: {
+    outcome: [
+      "success",
+      "refused",
+      "failed",
+      "unconfirmed",
+      "intro",
+      "intro_refused",
+      "intro_failed",
+      "intro_unconfirmed",
+      "continued",
+    ],
+  },
   wizard_step_viewed: {
     service: SERVICES,
     step: [

@@ -3,11 +3,20 @@ import {
   BudgetError,
   ContentPolicyError,
   InsufficientCreditsError,
+  IntroOfferError,
   PLAN_STEPS_OVERLAP_MESSAGE,
   PlanChangeError,
   POSTING_HORIZON_DAYS,
   SocialSchedulingError,
 } from "@aiugc/core";
+import {
+  ATTEMPT_PENDING_LINE,
+  CONTINUE_CONVERTED,
+  CONTINUE_NO_TRIAL,
+  INTRO_ALREADY_USED,
+  INTRO_HAS_PAID,
+  INTRO_OFF,
+} from "./plans-ui";
 import { STEPS_OVERLAP_BLOCK } from "./service-a-ui";
 import { socialErrorLine } from "./social-posting-ui";
 
@@ -197,6 +206,29 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
         return hit(409, "אין שינוי ממתין לביטול.");
       case "no_recurring_ref":
         return hit(409, "אין אמצעי תשלום שמור בחשבון הזה.");
+      case "unknown_plan":
+        return hit(400, INVALID_BODY);
+    }
+  }
+  // The ₪5 intro offer (decision 0109), typed by `code` like PlanChangeError.
+  // Every one is raised before any money moves; 409 because each is the
+  // account's state, not a bad request — except a plan code off the ladder.
+  if (err instanceof IntroOfferError) {
+    switch (err.code) {
+      case "already_used":
+        return hit(409, INTRO_ALREADY_USED);
+      case "has_paid":
+        return hit(409, INTRO_HAS_PAID);
+      case "offer_off":
+        return hit(409, INTRO_OFF);
+      case "no_trial":
+        return hit(409, CONTINUE_NO_TRIAL);
+      case "converted":
+        return hit(409, CONTINUE_CONVERTED);
+      case "attempt_pending":
+        return hit(409, ATTEMPT_PENDING_LINE);
+      case "already_subscribed":
+        return hit(409, ALREADY_SUBSCRIBED);
       case "unknown_plan":
         return hit(400, INVALID_BODY);
     }

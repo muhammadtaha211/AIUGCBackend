@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CWizard } from "@/components/c-wizard/c-wizard";
 import { NoCreditsCard } from "@/components/no-credits-card";
 import { authedUser } from "@/lib/auth-user";
+import { introOfferFor } from "@/lib/intro";
 import { ownedBusinesses } from "@/lib/businesses";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
@@ -39,6 +40,9 @@ export default async function NewCRenderPage() {
 
   // Spam control only — the 402 at confirm is the real boundary. Admin bypasses.
   const gate = await wizardGate(selected.id);
+  // The ₪5 intro offer for the no-credits card (decision 0109) — read only when
+  // the card is what renders, so a wizard load pays nothing for it.
+  const intro = gate.allowed ? null : await introOfferFor(user.id);
 
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
   const personaCatalog = await loadPersonaCatalog("c").catch(() => undefined);
@@ -56,7 +60,7 @@ export default async function NewCRenderPage() {
           initialCatalog={personaCatalog}
         />
       ) : (
-        <NoCreditsCard service="c" />
+        <NoCreditsCard service="c" intro={intro} />
       )}
     </div>
   );

@@ -56,6 +56,10 @@ import { createServerSupabase } from "@/lib/supabase/server";
  *                          effort, since when the failure IS the database that
  *                          write fails too and the log line is the record.
  *
+ * An intro intent (the ₪5 offer, decision 0109) lands on the same four with an
+ * `intro` prefix — `?checkout=intro` for its success — once the intent is
+ * known; the page shows the same lines, and the analytics step tells them apart.
+ *
  * Why the default is `unconfirmed` and not `failed`: measured on the test
  * business, the payment page redirects here ONLY after a payment it accepted
  * — a decline re-rendered the page and the browser never left it. So a
@@ -77,6 +81,23 @@ const SUCCESS = "/home/plan?checkout=success";
 const FAILED = "/home/plan?checkout=failed";
 const REFUSED = "/home/plan?checkout=refused";
 const UNCONFIRMED = "/home/plan?checkout=unconfirmed";
+/**
+ * The ₪5 intro offer's own codes (decision 0109) — the same lines on the page,
+ * but the payment_returned step tells a trial from a plan. Only reachable once
+ * the intent is known; before that a return lands on the plan codes above.
+ */
+const INTRO_LANDINGS = {
+  success: "/home/plan?checkout=intro",
+  failed: "/home/plan?checkout=intro_failed",
+  refused: "/home/plan?checkout=intro_refused",
+  unconfirmed: "/home/plan?checkout=intro_unconfirmed",
+};
+const PLAN_LANDINGS = {
+  success: SUCCESS,
+  failed: FAILED,
+  refused: REFUSED,
+  unconfirmed: UNCONFIRMED,
+};
 const limiter = new IpRateLimiter(10, 60_000);
 
 function landing(request: Request, path: string): NextResponse {
@@ -131,6 +152,8 @@ export async function GET(request: Request) {
   }
 
   const ids = `intent ${params.intentId}, payment ${params.paymentId}, customer ${params.customerId}, returnPath ${returnPath}`;
+  // Plan codes until the intent says otherwise.
+  let landings = PLAN_LANDINGS;
 
   try {
     const db = getDb();
@@ -145,12 +168,13 @@ export async function GET(request: Request) {
       console.warn(`sumit return: session user is not the intent's account — ${ids}`);
       return jsonError(403, "החשבון המחובר אינו החשבון שביצע את התשלום.");
     }
+    if (intent.kind === "intro") landings = INTRO_LANDINGS;
     await completeCheckout(db, {
       intentId: params.intentId,
       sumitPaymentId: params.paymentId,
       sumitCustomerId: params.customerId,
     });
-    return landing(request, SUCCESS);
+    return landing(request, landings.success);
   } catch (err) {
     if (err instanceof CheckoutVerificationError && err.payment) {
       // Sumit answered, the payment is valid, and core refused to activate on
@@ -158,13 +182,13 @@ export async function GET(request: Request) {
       console.error(
         `sumit return: verification refused (${err.reason}) — ${ids} — the payment is valid at Sumit: refund or activate by hand`,
       );
-      return landing(request, REFUSED);
+      return landing(request, landings.refused);
     }
     if (err instanceof CheckoutVerificationError && err.reason === "payment_invalid") {
       // The only answer that earns "אפשר לנסות שוב": Sumit read the payment
       // and said ValidPayment is false. Nothing moved, nothing to record.
       console.error(`sumit return: Sumit says the payment is not valid — ${ids} — ${err.message}`);
-      return landing(request, FAILED);
+      return landing(request, landings.failed);
     }
     const reason = unconfirmedReason(err);
     const detail = err instanceof Error ? err.message : String(err);
@@ -189,6 +213,6 @@ export async function GET(request: Request) {
     } catch (recordErr) {
       console.error(`sumit return: could not record the unconfirmed return — ${ids}`, recordErr);
     }
-    return landing(request, UNCONFIRMED);
+    return landing(request, landings.unconfirmed);
   }
 }

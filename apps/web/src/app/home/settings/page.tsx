@@ -6,6 +6,7 @@ import {
   getAccountBilling,
   getDb,
   getInstagramConnectMode,
+  getTrialView,
   listSocialAccounts,
   questionnaireSchema,
   schema,
@@ -20,8 +21,10 @@ import {
   SETTINGS_MANUAL_CREDITS_LINE,
   SETTINGS_NO_PLAN,
   SETTINGS_PLAN_TITLE,
+  settingsManualCountLine,
   settingsPlanSummary,
   STATUS_LABELS,
+  trialLine,
 } from "@/lib/plans-ui";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
 import { postingAllowed } from "@/lib/social";
@@ -79,8 +82,25 @@ export default async function SettingsPage({
 
   // The same read /home/plan works from, so this row and that page cannot
   // disagree about the plan, its dates or what is pending on it.
-  const billing = await getAccountBilling(getDb(), { userId: user.id });
+  const [billing, trialView] = await Promise.all([
+    getAccountBilling(getDb(), { userId: user.id }),
+    getTrialView(getDb(), user.id),
+  ]);
   const sub = billing.subscription;
+  // A ₪5 intro trial that has not joined a plan (decision 0109): its own line,
+  // and the manual line then names its count — not every credit is manual.
+  const trial =
+    trialView && !trialView.convertedAt
+      ? {
+          credits: trialView.credits,
+          creditsLeft: trialView.creditsLeft,
+          expiresAt: trialView.expiresAt.toISOString(),
+          expiredAt: trialView.expiredAt?.toISOString() ?? null,
+          convertedAt: null,
+          attemptPending: trialView.attemptPending,
+        }
+      : null;
+  const trialLive = trial !== null && trial.expiredAt === null;
   // billing.currentPlan is the subscribed row looked up WITHOUT the active
   // filter — a retired plan keeps serving (getAccountBilling's own note) and
   // still has a Hebrew name and a price. The code is the last resort only.
@@ -188,8 +208,13 @@ export default async function SettingsPage({
           ) : (
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink">{SETTINGS_NO_PLAN}</p>
+              {trial && <p className="mt-1 text-sm text-ink/65">{trialLine(trial)}</p>}
               {billing.manualOutstanding > 0 && (
-                <p className="mt-1 text-sm text-ink/65">{SETTINGS_MANUAL_CREDITS_LINE}</p>
+                <p className="mt-1 text-sm text-ink/65">
+                  {trialLive
+                    ? settingsManualCountLine(billing.manualOutstanding)
+                    : SETTINGS_MANUAL_CREDITS_LINE}
+                </p>
               )}
             </div>
           )}

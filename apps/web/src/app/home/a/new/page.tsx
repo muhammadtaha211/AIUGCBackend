@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AWizard } from "@/components/a-wizard/a-wizard";
 import { NoCreditsCard } from "@/components/no-credits-card";
 import { authedUser } from "@/lib/auth-user";
+import { introOfferFor } from "@/lib/intro";
 import { ownedBusinesses } from "@/lib/businesses";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
@@ -43,6 +44,9 @@ export default async function NewARenderPage() {
   // Spam control only — nothing else stands in front of the upload routes
   // today (billing is not wired; the burn is bounded by the account caps).
   const gate = await wizardGate(selected.id);
+  // The ₪5 intro offer for the no-credits card (decision 0109) — read only when
+  // the card is what renders, so a wizard load pays nothing for it.
+  const intro = gate.allowed ? null : await introOfferFor(user.id);
 
   // Undefined on failure: the wizard falls back to the client fetch + retry UI.
   const personaCatalog = await loadPersonaCatalog("a").catch(() => undefined);
@@ -61,7 +65,7 @@ export default async function NewARenderPage() {
           initialCatalog={personaCatalog}
         />
       ) : (
-        <NoCreditsCard service="a" />
+        <NoCreditsCard service="a" intro={intro} />
       )}
     </div>
   );
