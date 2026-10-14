@@ -4,6 +4,7 @@ import {
   businesses,
   checkoutIntents,
   gatewayEvents,
+  introTrials,
   plans,
   subscriptions,
   users,
@@ -12,6 +13,14 @@ import { getSumitClient, type SumitClient, type SumitPayment } from "../gateways
 import { logger } from "../logger";
 import { addOneMonth, liveSubscription, PlanChangeError, recordTermsAcceptance } from "./billing";
 import { expirePeriodRemainder, grantPeriod } from "./credits";
+import {
+  activateIntroTrial,
+  convertTrial,
+  INTRO_OFFER,
+  introEligibility,
+  IntroOfferError,
+  lockOpenTrial,
+} from "./intro";
 
 /**
  * Hosted checkout via Sumit payment pages (decision 0062). The customer pays
@@ -59,16 +68,18 @@ export async function createCheckoutIntent(
   if (live && live.status !== "suspended") {
     throw new CheckoutVerificationError("already_subscribed", live.status);
   }
+  // A continue whose answer is not known yet (intro.ts): a second purchase now
+  // could charge the same customer twice. Refused until it settles.
+  const trial = (
+    await db
+      .select({ attemptAt: introTrials.continueAttemptAt })
+      .from(introTrials)
+      .where(eq(introTrials.userId, opts.userId))
+      .limit(1)
+  )[0];
+  if (trial?.attemptAt) throw new IntroOfferError("attempt_pending");
 
-  await db
-    .update(checkoutIntents)
-    .set({ status: "expired" })
-    .where(
-      and(
-        eq(checkoutIntents.status, "pending"),
-        lt(checkoutIntents.createdAt, new Date(now.getTime() - INTENT_TTL_MS)),
-      ),
-    );
+  await expireStalePendingIntents(db, now);
 
   const reusable = (
     await db
@@ -103,6 +114,84 @@ export async function createCheckoutIntent(
       userId: opts.userId,
       planCode: plan.code,
       priceAgorot: plan.priceAgorot,
+      status: "pending",
+      termsAcceptanceId: acceptance.id,
+      createdAt: now,
+    })
+    .returning();
+  return { intent: inserted[0]!, reused: false };
+}
+
+/** Pending intents older than INTENT_TTL_MS stop being reused (they stay payable). */
+async function expireStalePendingIntents(db: Db, now: Date): Promise<void> {
+  await db
+    .update(checkoutIntents)
+    .set({ status: "expired" })
+    .where(
+      and(
+        eq(checkoutIntents.status, "pending"),
+        lt(checkoutIntents.createdAt, new Date(now.getTime() - INTENT_TTL_MS)),
+      ),
+    );
+}
+
+/**
+ * The ₪5 intro offer's intent (decision 0109): the row POST /api/account/intro
+ * writes before the browser leaves for the offer's own Sumit page. Eligibility
+ * first — once per account, never paid, the switch on — and a refusal writes
+ * NOTHING (§6: refused before any intent is written). Then the same lazy
+ * expiry and 30-minute reuse as a plan intent, a terms acceptance in context
+ * 'intro', and a row with kind 'intro', no plan and the offer's price. The
+ * return route and completeCheckout bind on it exactly as on a plan intent.
+ */
+export async function createIntroIntent(
+  db: Db,
+  opts: {
+    userId: string;
+    termsVersion: string;
+    ip?: string | null;
+    userAgent?: string | null;
+    now?: Date;
+  },
+): Promise<{ intent: IntentRow; reused: boolean }> {
+  const now = opts.now ?? new Date();
+
+  const eligibility = await introEligibility(db, opts.userId);
+  if (eligibility !== "eligible") throw new IntroOfferError(eligibility);
+
+  await expireStalePendingIntents(db, now);
+
+  const reusable = (
+    await db
+      .select()
+      .from(checkoutIntents)
+      .where(
+        and(
+          eq(checkoutIntents.userId, opts.userId),
+          eq(checkoutIntents.kind, "intro"),
+          eq(checkoutIntents.status, "pending"),
+          gt(checkoutIntents.createdAt, new Date(now.getTime() - INTENT_REUSE_MS)),
+        ),
+      )
+      .orderBy(asc(checkoutIntents.createdAt))
+      .limit(1)
+  )[0];
+  if (reusable) return { intent: reusable, reused: true };
+
+  const acceptance = await recordTermsAcceptance(db, {
+    userId: opts.userId,
+    termsVersion: opts.termsVersion,
+    context: "intro",
+    ip: opts.ip,
+    userAgent: opts.userAgent,
+  });
+  const inserted = await db
+    .insert(checkoutIntents)
+    .values({
+      userId: opts.userId,
+      kind: "intro",
+      planCode: null,
+      priceAgorot: INTRO_OFFER.priceAgorot,
       status: "pending",
       termsAcceptanceId: acceptance.id,
       createdAt: now,
@@ -147,7 +236,11 @@ export type CheckoutVerificationReason =
   | "identifier_mismatch"
   | "no_saved_card"
   | "already_subscribed"
-  | "intent_already_completed";
+  | "intent_already_completed"
+  // The ₪5 offer (intro.ts), re-checked once the payment is verified: a second
+  // trial (two paid tabs), or a plan bought between the intent and the payment.
+  | "intro_already_used"
+  | "not_eligible";
 
 /**
  * Typed so the return route can log the reason and choose a landing; the
@@ -174,9 +267,12 @@ export class CheckoutVerificationError extends Error {
 export type CheckoutOutcome = {
   /** `replayed` — the intent was already completed; nothing was granted again. */
   outcome: "completed" | "replayed";
+  /** Which purchase completed — the return route lands an intro on its own line. */
+  kind: "plan" | "intro";
   intentId: string;
   subscriptionId: string | null;
-  planCode: string;
+  /** null for the intro offer. */
+  planCode: string | null;
 };
 
 /**
@@ -370,8 +466,9 @@ async function completeCheckoutTx(
       );
       return {
         outcome: "replayed",
+        kind: intent.kind,
         intentId: intent.id,
-        subscriptionId: existing?.id ?? null,
+        subscriptionId: intent.kind === "intro" ? null : (existing?.id ?? null),
         planCode: intent.planCode,
       };
     }
@@ -381,50 +478,84 @@ async function completeCheckoutTx(
     // against the snapshotted price like any other — refusing it would take
     // the money and activate nothing.
 
-    const payment = await client.getPayment(opts.sumitPaymentId);
-    if (!payment) throw new CheckoutVerificationError("payment_not_found", opts.sumitPaymentId);
-    if (!payment.valid) {
-      throw new CheckoutVerificationError("payment_invalid", payment.status ?? "invalid");
+    const payment = await verifyHostedPayment(
+      client,
+      intent,
+      opts.sumitPaymentId,
+      opts.sumitCustomerId,
+      {
+        // A plan's renewals charge the saved card, so a plan activation needs one.
+        // The ₪5 only needs it for an optional continue, which falls back to the
+        // hosted page when the charge is refused — never refuse a paid trial over it.
+        requireSavedCard: intent.kind === "plan",
+      },
+    );
+
+    // One lock order on every path that touches an account's purchases
+    // (decision 0109): intent → users → intro_trials → subscriptions. The users
+    // row serializes a ₪5 completing against a plan completing in another tab,
+    // and against the trial sweep and a continue.
+    await tx.select({ id: users.id }).from(users).where(eq(users.id, intent.userId)).for("update");
+
+    if (intent.kind === "intro") {
+      const refusal = await activateIntroTrial(tx as Db, {
+        userId: intent.userId,
+        intentId: intent.id,
+        sumitCustomerId: opts.sumitCustomerId,
+        payment,
+        now,
+      });
+      if (refusal) throw new CheckoutVerificationError(refusal, undefined, payment);
+      await tx
+        .insert(gatewayEvents)
+        .values({
+          gateway: "sumit",
+          gatewayEventId: String(payment.id),
+          kind: "intro_charge",
+          payload: {
+            intentId: intent.id,
+            amountAgorot: payment.amountAgorot,
+            sumitCustomerId: opts.sumitCustomerId,
+            documentId: payment.documentId,
+          },
+          processedAt: now,
+        })
+        .onConflictDoNothing({ target: gatewayEvents.gatewayEventId });
+      await tx
+        .update(checkoutIntents)
+        .set({
+          status: "completed",
+          sumitPaymentId: String(payment.id),
+          sumitCustomerId: opts.sumitCustomerId,
+          completedAt: now,
+        })
+        .where(eq(checkoutIntents.id, intent.id));
+      logger.info(
+        { intentId: intent.id, userId: intent.userId, paymentId: payment.id },
+        "checkout started the intro trial",
+      );
+      return {
+        outcome: "completed",
+        kind: "intro",
+        intentId: intent.id,
+        subscriptionId: null,
+        planCode: null,
+      };
     }
-    if (payment.amountAgorot !== intent.priceAgorot) {
+
+    if (intent.planCode === null) {
       throw new CheckoutVerificationError(
-        "amount_mismatch",
-        `paid ${payment.amountAgorot}, intent ${intent.priceAgorot}`,
+        "intent_not_found",
+        "plan intent without a plan",
         payment,
       );
     }
-    if (String(payment.customerId) !== opts.sumitCustomerId) {
-      throw new CheckoutVerificationError("customer_mismatch", undefined, payment);
-    }
-    if (payment.externalIdentifier !== intent.id) {
-      throw new CheckoutVerificationError("identifier_mismatch", undefined, payment);
-    }
-
-    const saved = await client.getPaymentMethod(opts.sumitCustomerId);
-    if (!saved) throw new CheckoutVerificationError("no_saved_card", undefined, payment);
-    const paying = payment.paymentMethod;
-    if (
-      paying?.token &&
-      paying.expirationMonth &&
-      paying.expirationYear &&
-      saved.token !== paying.token
-    ) {
-      try {
-        await client.setPaymentMethod(opts.sumitCustomerId, {
-          token: paying.token,
-          expirationMonth: paying.expirationMonth,
-          expirationYear: paying.expirationYear,
-        });
-      } catch (err) {
-        logger.error(
-          { intentId: intent.id, customerId: opts.sumitCustomerId, error: String(err) },
-          "could not make the paying card the customer's default — renewals may hit the wrong card",
-        );
-      }
-    }
-
     const plan = (await tx.select().from(plans).where(eq(plans.code, intent.planCode)).limit(1))[0];
     if (!plan) throw new CheckoutVerificationError("intent_not_found", "plan gone");
+
+    // A trial account joining a plan on the hosted page converts its trial,
+    // exactly as a continue would. Locked before any subscription row.
+    const trial = await lockOpenTrial(tx as Db, intent.userId);
 
     const live = (
       await tx
@@ -466,6 +597,15 @@ async function completeCheckoutTx(
         .returning({ id: subscriptions.id });
       subscriptionId = inserted[0]!.id;
     }
+    if (trial) {
+      // Before the grant: the trial's own expiry counts every non-manual credit.
+      await convertTrial(tx as Db, {
+        trial,
+        subscriptionId,
+        decisionAt: payment.date ?? now,
+        now,
+      });
+    }
     await grantPeriod(tx as Db, {
       userId: intent.userId,
       credits: plan.monthlyCredits,
@@ -505,6 +645,81 @@ async function completeCheckoutTx(
       { intentId: intent.id, subscriptionId, planCode: plan.code, paymentId: payment.id },
       live ? "checkout reactivated the subscription" : "checkout created the subscription",
     );
-    return { outcome: "completed", intentId: intent.id, subscriptionId, planCode: plan.code };
+    return {
+      outcome: "completed",
+      kind: "plan",
+      intentId: intent.id,
+      subscriptionId,
+      planCode: plan.code,
+    };
   });
+}
+
+/**
+ * The plan-agnostic half of a completion: the payment Sumit holds must be
+ * valid, at the intent's exact price, from the customer the return named, and
+ * carry this intent's id — and the customer's saved default card is aligned to
+ * the card that paid (measured 2026-09-21: a declined first card stays the
+ * default otherwise). Throws CheckoutVerificationError; every refusal raised
+ * after the payment is known valid carries it, so it is recorded as
+ * `checkout_refused`.
+ */
+async function verifyHostedPayment(
+  client: SumitClient,
+  intent: IntentRow,
+  sumitPaymentId: string,
+  sumitCustomerId: string,
+  opts: { requireSavedCard: boolean },
+): Promise<SumitPayment> {
+  const payment = await client.getPayment(sumitPaymentId);
+  if (!payment) throw new CheckoutVerificationError("payment_not_found", sumitPaymentId);
+  if (!payment.valid) {
+    throw new CheckoutVerificationError("payment_invalid", payment.status ?? "invalid");
+  }
+  if (payment.amountAgorot !== intent.priceAgorot) {
+    throw new CheckoutVerificationError(
+      "amount_mismatch",
+      `paid ${payment.amountAgorot}, intent ${intent.priceAgorot}`,
+      payment,
+    );
+  }
+  if (String(payment.customerId) !== sumitCustomerId) {
+    throw new CheckoutVerificationError("customer_mismatch", undefined, payment);
+  }
+  if (payment.externalIdentifier !== intent.id) {
+    throw new CheckoutVerificationError("identifier_mismatch", undefined, payment);
+  }
+
+  const saved = await client.getPaymentMethod(sumitCustomerId);
+  if (!saved) {
+    if (opts.requireSavedCard) {
+      throw new CheckoutVerificationError("no_saved_card", undefined, payment);
+    }
+    logger.warn(
+      { intentId: intent.id, customerId: sumitCustomerId },
+      "intro payment left no saved card — a continue will fall back to the payment page",
+    );
+    return payment;
+  }
+  const paying = payment.paymentMethod;
+  if (
+    paying?.token &&
+    paying.expirationMonth &&
+    paying.expirationYear &&
+    saved.token !== paying.token
+  ) {
+    try {
+      await client.setPaymentMethod(sumitCustomerId, {
+        token: paying.token,
+        expirationMonth: paying.expirationMonth,
+        expirationYear: paying.expirationYear,
+      });
+    } catch (err) {
+      logger.error(
+        { intentId: intent.id, customerId: sumitCustomerId, error: String(err) },
+        "could not make the paying card the customer's default — renewals may hit the wrong card",
+      );
+    }
+  }
+  return payment;
 }

@@ -174,3 +174,121 @@ export async function expirePeriodRemainder(
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// The ₪5 intro offer's credits (decision 0109). A trial grant is neither
+// manual (never expires) nor period (rides a subscription): it expires 30 days
+// after the payment unless the account joins a plan first, and spend uses it
+// BEFORE any manual credit — the same order expirePeriodRemainder encodes for
+// period credits. pipelines/intro.ts holds the locks; these only read and write.
+// ---------------------------------------------------------------------------
+
+/** The +credits row written when the ₪5 payment is verified; ref = the intro intent. */
+export async function grantTrial(
+  db: Db,
+  opts: { userId: string; credits: number; intentId: string },
+): Promise<void> {
+  await db.insert(creditLedger).values({
+    userId: opts.userId,
+    delta: opts.credits,
+    reason: "grant_trial",
+    refId: opts.intentId,
+  });
+}
+
+/**
+ * Where the account stood the moment its trial began, in ONE statement so the
+ * three numbers share a snapshot (grants and refunds take no lock): the
+ * balance, the lifetime manual grants, and the renders it had been debited for
+ * and not refunded. For a never-paid account every credit in that balance is
+ * manual — or a refund of its own spend — so it IS the manual layer; a later
+ * refund of one of those open renders hands manual credits back.
+ */
+export async function trialBaseline(
+  db: Db,
+  userId: string,
+): Promise<{ balance: number; manual: number; openDebits: string[] }> {
+  const rows = await db
+    .select({
+      balance: sql<string>`coalesce(sum(${creditLedger.delta}), 0)`,
+      manual: sql<string>`coalesce(sum(${creditLedger.delta}) filter (where ${creditLedger.reason} = 'grant_manual'), 0)`,
+      openDebits: sql<string[] | null>`(
+        select jsonb_agg(d.ref_id) from credit_ledger d
+        where d.user_id = ${userId} and d.reason = 'debit_render'
+          and not exists (
+            select 1 from credit_ledger r where r.reason = 'refund_failed' and r.ref_id = d.ref_id
+          )
+      )`,
+    })
+    .from(creditLedger)
+    .where(eq(creditLedger.userId, userId));
+  return {
+    balance: Number(rows[0]?.balance ?? 0),
+    manual: Number(rows[0]?.manual ?? 0),
+    openDebits: rows[0]?.openDebits ?? [],
+  };
+}
+
+export type TrialLedgerState = {
+  credits: number;
+  balanceBefore: number;
+  manualBefore: number;
+  openDebitsBefore: string[];
+};
+
+/**
+ * The trial credits not yet spent:
+ *
+ *   min(credits, balance − balance_before − manual granted since − refunds of
+ *   the renders open at activation), never below 0.
+ *
+ * Everything in the balance that is not trial is the manual layer at
+ * activation plus what was granted by hand or refunded to it since — so
+ * subtracting it leaves the trial remainder, and an expiry of that amount can
+ * never reach a manual credit. No clock is involved: the three live numbers
+ * are read in one statement.
+ */
+export async function unusedTrialCredits(
+  db: Db,
+  userId: string,
+  trial: TrialLedgerState,
+): Promise<number> {
+  const rows = await db
+    .select({
+      balance: sql<string>`coalesce(sum(${creditLedger.delta}), 0)`,
+      manual: sql<string>`coalesce(sum(${creditLedger.delta}) filter (where ${creditLedger.reason} = 'grant_manual'), 0)`,
+      refundsOfOpen: sql<string>`coalesce(sum(${creditLedger.delta}) filter (
+        where ${creditLedger.reason} = 'refund_failed'
+          and ${creditLedger.refId}::text in (select jsonb_array_elements_text(${JSON.stringify(trial.openDebitsBefore)}::jsonb))
+      ), 0)`,
+    })
+    .from(creditLedger)
+    .where(eq(creditLedger.userId, userId));
+  const balance = Number(rows[0]?.balance ?? 0);
+  const manualSince = Number(rows[0]?.manual ?? 0) - trial.manualBefore;
+  const refundsOfOpen = Number(rows[0]?.refundsOfOpen ?? 0);
+  const left = balance - trial.balanceBefore - manualSince - refundsOfOpen;
+  return Math.max(0, Math.min(trial.credits, left));
+}
+
+/**
+ * Day 30: expire the unused trial credits (ref = the intro intent). The caller
+ * holds the users and trial locks and has checked that no period grant exists
+ * yet — the formula counts every non-manual credit as trial. Returns what it
+ * expired; nothing is written at 0.
+ */
+export async function expireTrialRemainder(
+  db: Db,
+  opts: { userId: string; intentId: string; trial: TrialLedgerState },
+): Promise<number> {
+  const expirable = await unusedTrialCredits(db, opts.userId, opts.trial);
+  if (expirable > 0) {
+    await db.insert(creditLedger).values({
+      userId: opts.userId,
+      delta: -expirable,
+      reason: "expire_trial",
+      refId: opts.intentId,
+    });
+  }
+  return expirable;
+}

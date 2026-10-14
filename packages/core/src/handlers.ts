@@ -12,6 +12,7 @@ import { handleGenerateComposite } from "./pipelines/composites";
 import { handleAnalyzeDemo, handleGroupAnalysisSections } from "./pipelines/demo-analysis";
 import { handlePlanDemoSteps } from "./pipelines/demo-step-plans";
 import { handleIngestDemo } from "./pipelines/demos";
+import { handleExpireTrials, handleReconcileContinue } from "./pipelines/intro";
 import { handleJanitor, handleReapDeadRenders } from "./pipelines/janitor";
 import { handleLipsync, handleRenderVideo } from "./pipelines/renders";
 import { handleCheckSocialTokens, handlePublishPost } from "./pipelines/social";
@@ -81,6 +82,10 @@ export function buildHandlers(): HandlerRegistry {
     janitor: handleJanitor,
     reap_dead_renders: handleReapDeadRenders,
     billing_renewals: handleBillingRenewals,
+    // The ₪5 intro offer (0109): the day-30 expiry, and the settle of a
+    // continue whose charge answer was lost.
+    expire_trials: handleExpireTrials,
+    reconcile_continue: handleReconcileContinue,
     // Social posting (0101): light lane — network calls that poll through
     // reschedule, never a lock held longer than one round trip.
     publish_post: handlePublishPost,

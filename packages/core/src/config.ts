@@ -17,6 +17,9 @@ const envSchema = z.object({
   SUMIT_API_KEY: z.string().optional(),
   // JSON: { "<plan code>": "<the product's payment-page URL>" }.
   SUMIT_CHECKOUT_PAGES: z.string().optional(),
+  // The ₪5 intro offer's own payment page (decision 0109): one https URL, the
+  // same shape as a SUMIT_CHECKOUT_PAGES value. Unset hides the offer.
+  SUMIT_INTRO_PAGE: z.string().optional(),
   // Social posting (decision 0101). The Meta app that connects Instagram
   // accounts and publishes Reels; the secret signs the code exchange,
   // appsecret_proof and the data-deletion callback. META_LOGIN_CONFIG_ID is set

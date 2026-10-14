@@ -11,6 +11,9 @@ export async function ensureDailyJobs(db: Db, now: Date = new Date()): Promise<v
   const day = now.toISOString().slice(0, 10);
   await enqueue(db, { type: "janitor", idempotencyKey: `janitor:${day}` });
   await enqueue(db, { type: "billing_renewals", idempotencyKey: `billing_renewals:${day}` });
+  // The ₪5 intro offer (0109): unused trial credits expire 30 days after the
+  // payment, and any continue still unsettled is settled first.
+  await enqueue(db, { type: "expire_trials", idempotencyKey: `expire_trials:${day}` });
   // Social posting (0101): one cheap call per connected account marks a lapsed
   // token `expired` before a scheduled post would fail on it.
   await enqueue(db, { type: "check_social_tokens", idempotencyKey: `check_social_tokens:${day}` });

@@ -73,6 +73,8 @@ export const PORTABLE_MIGRATIONS = [
   "0058_social_tables.sql",
   "0059_events_alert_index_post_failed.sql",
   "0060_scheduled_posts_ai_label.sql",
+  "0061_ledger_reason_trial.sql",
+  "0062_intro_offer.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

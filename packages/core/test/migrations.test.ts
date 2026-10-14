@@ -631,7 +631,8 @@ describe("migrations", () => {
     const columns = await pg.query(
       "SELECT 1 FROM information_schema.columns WHERE table_name = 'checkout_intents'",
     );
-    expect(columns.rows).toHaveLength(10);
+    // 0048's ten, plus 0062's kind.
+    expect(columns.rows).toHaveLength(11);
 
     const [user] = await db.insert(schema.users).values({ email: "buyer@test.local" }).returning();
     const base = { userId: user!.id, planCode: "starter", priceAgorot: 15000 };
@@ -1168,6 +1169,124 @@ describe("migrations", () => {
     ]);
     const rows = await pg.query<{ ai_label: boolean }>("SELECT ai_label FROM scheduled_posts");
     expect(rows.rows).toEqual([{ ai_label: false }]);
+
+    await pg.close();
+  });
+
+  it("0061: ledger_reason gains grant_trial and expire_trial, last, idempotently", async () => {
+    const { pg } = await createTestDb();
+    await pg.exec(readFileSync(join(MIGRATIONS_DIR, "0061_ledger_reason_trial.sql"), "utf8"));
+
+    const labels = await pg.query<{ enumlabel: string }>(
+      `SELECT enumlabel FROM pg_enum WHERE enumtypid = 'public.ledger_reason'::regtype ORDER BY enumsortorder`,
+    );
+    expect(labels.rows.map((r) => r.enumlabel)).toEqual([
+      "grant_period",
+      "grant_manual",
+      "debit_render",
+      "refund_failed",
+      "expire_period",
+      "grant_trial",
+      "expire_trial",
+    ]);
+    await pg.close();
+  });
+
+  it("0062: checkout_intents.kind + nullable plan_code, intro_trials server-only with its FKs and CHECK, the switch seeded off, idempotent", async () => {
+    // The pre-0062 shape with a plan intent already in it: it must read as 'plan'.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0062")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const user = "11111111-1111-4111-8111-111111111111";
+    const planIntent = "22222222-2222-4222-8222-222222222222";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO checkout_intents (id, user_id, plan_code, price_agorot)
+        VALUES ('${planIntent}', '${user}', 'starter', 15000);
+    `);
+
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0062_intro_offer.sql"), "utf8");
+    await pg.exec(migration);
+    await pg.exec(migration);
+
+    const kinds = await pg.query<{ id: string; kind: string }>(
+      "SELECT id, kind FROM checkout_intents",
+    );
+    expect(kinds.rows).toEqual([{ id: planIntent, kind: "plan" }]);
+    const cols = await pg.query<{ column_name: string; is_nullable: string }>(
+      `SELECT column_name, is_nullable FROM information_schema.columns
+        WHERE table_name = 'checkout_intents' AND column_name IN ('kind', 'plan_code') ORDER BY column_name`,
+    );
+    expect(cols.rows).toEqual([
+      { column_name: "kind", is_nullable: "NO" },
+      { column_name: "plan_code", is_nullable: "YES" },
+    ]);
+    // The pairing: a plan intent keeps its plan, an intro intent carries none.
+    await expect(
+      pg.query(
+        `INSERT INTO checkout_intents (user_id, kind, plan_code, price_agorot) VALUES ('${user}', 'plan', NULL, 500)`,
+      ),
+    ).rejects.toThrow(/checkout_intents_kind_plan_check/);
+    await expect(
+      pg.query(
+        `INSERT INTO checkout_intents (user_id, kind, plan_code, price_agorot) VALUES ('${user}', 'intro', 'starter', 500)`,
+      ),
+    ).rejects.toThrow(/checkout_intents_kind_plan_check/);
+    await expect(
+      pg.query(
+        `INSERT INTO checkout_intents (user_id, kind, plan_code, price_agorot) VALUES ('${user}', 'gift', NULL, 500)`,
+      ),
+    ).rejects.toThrow(/checkout_intents_kind_check/);
+    const intro = await pg.query<{ id: string }>(
+      `INSERT INTO checkout_intents (user_id, kind, plan_code, price_agorot) VALUES ('${user}', 'intro', NULL, 500) RETURNING id`,
+    );
+    const introIntent = intro.rows[0]!.id;
+
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.intro_trials'::regclass",
+    );
+    expect(rls.rows[0]?.relrowsecurity).toBe(true);
+    expect(
+      (await pg.query("SELECT 1 FROM pg_policies WHERE tablename = 'intro_trials'")).rows,
+    ).toHaveLength(0);
+    expect(
+      (await pg.query("SELECT 1 FROM information_schema.columns WHERE table_name = 'intro_trials'"))
+        .rows,
+    ).toHaveLength(17);
+    const fks = await pg.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint WHERE conrelid = 'public.intro_trials'::regclass AND contype = 'f' ORDER BY conname`,
+    );
+    expect(fks.rows.map((r) => r.conname)).toEqual([
+      "intro_trials_continue_attempt_plan_plans_code_fk",
+      "intro_trials_intent_id_checkout_intents_id_fk",
+      "intro_trials_subscription_id_subscriptions_id_fk",
+      "intro_trials_user_id_users_id_fk",
+    ]);
+
+    const trialCols =
+      "user_id, intent_id, sumit_customer_id, price_agorot, credits, balance_before, manual_before, started_at, expires_at";
+    const trialVals = `'${user}', '${introIntent}', '1001', 500, 150, 0, 0, now(), now() + interval '30 days'`;
+    // The attempt columns move together.
+    await expect(
+      pg.query(
+        `INSERT INTO intro_trials (${trialCols}, continue_attempt_at) VALUES (${trialVals}, now())`,
+      ),
+    ).rejects.toThrow(/intro_trials_attempt_check/);
+    await pg.query(`INSERT INTO intro_trials (${trialCols}) VALUES (${trialVals})`);
+    const stored = await pg.query<{ open: unknown }>(
+      "SELECT open_debits_before AS open FROM intro_trials",
+    );
+    expect(stored.rows).toEqual([{ open: [] }]);
+    // Once per account: the user is the key.
+    await expect(
+      pg.query(`INSERT INTO intro_trials (${trialCols}) VALUES (${trialVals})`),
+    ).rejects.toThrow(/intro_trials_pkey/);
+
+    const seed = await pg.query<{ value: unknown; kind: string }>(
+      "SELECT value, jsonb_typeof(value -> 'enabled') AS kind FROM app_config WHERE key = 'intro_offer'",
+    );
+    expect(seed.rows).toEqual([{ value: { enabled: false }, kind: "boolean" }]);
 
     await pg.close();
   });
