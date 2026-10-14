@@ -102,6 +102,9 @@ export const ledgerReason = pgEnum("ledger_reason", [
   "debit_render",
   "refund_failed",
   "expire_period",
+  // 0061: the ₪5 intro offer (decision 0109) — its grant, and its day-30 expiry.
+  "grant_trial",
+  "expire_trial",
 ]);
 
 // 0057: social posting (decision 0101). 'tiktok' exists from day one so the
@@ -835,10 +838,12 @@ export const checkoutIntents = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id),
-    planCode: text("plan_code")
-      .notNull()
-      .references(() => plans.code),
-    // The plan's price when the intent was created; the payment must match it.
+    // 0062: 'plan' | 'intro' — a CHECK in the migration, text here. An intro
+    // intent is the ₪5 offer (decision 0109) and carries no plan.
+    kind: text("kind").$type<"plan" | "intro">().notNull().default("plan"),
+    // NULL exactly when kind = 'intro' (checkout_intents_kind_plan_check).
+    planCode: text("plan_code").references(() => plans.code),
+    // The price when the intent was created; the payment must match it.
     priceAgorot: integer("price_agorot").notNull(),
     // 'pending' | 'completed' | 'expired' — a CHECK in the migration, text here.
     status: text("status").notNull().default("pending"),
@@ -853,6 +858,42 @@ export const checkoutIntents = pgTable(
   },
   (t) => [index("checkout_intents_user_status_idx").on(t.userId, t.status)],
 );
+
+// 0062: one row per account that bought the ₪5 intro offer (decision 0109) —
+// user_id is the key, so the offer is once per account by construction.
+// Server-only (RLS on, no policies). pipelines/intro.ts owns it.
+export const introTrials = pgTable("intro_trials", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  intentId: uuid("intent_id")
+    .notNull()
+    .unique()
+    .references(() => checkoutIntents.id),
+  // The Sumit customer the ₪5 page created: what a continue charges.
+  sumitCustomerId: text("sumit_customer_id").notNull(),
+  priceAgorot: integer("price_agorot").notNull(),
+  credits: integer("credits").notNull(),
+  // The account at activation, read in one statement under the users lock:
+  // what the day-30 expiry measures the trial's spend against
+  // (credits.ts expireTrialRemainder).
+  balanceBefore: integer("balance_before").notNull(),
+  manualBefore: integer("manual_before").notNull(),
+  // Render ids debited and not yet refunded at activation; their later
+  // refunds give back manual credits, never trial ones.
+  openDebitsBefore: jsonb("open_debits_before").$type<string[]>().notNull().default([]),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  expiredAt: timestamp("expired_at", { withTimezone: true }),
+  convertedAt: timestamp("converted_at", { withTimezone: true }),
+  subscriptionId: uuid("subscription_id").references(() => subscriptions.id),
+  // A continue charge in flight or whose answer was lost: written before the
+  // saved card is charged, cleared when the answer is known. All or none.
+  continueAttemptAt: timestamp("continue_attempt_at", { withTimezone: true }),
+  continueAttemptPlan: text("continue_attempt_plan").references(() => plans.code),
+  continueAttemptAgorot: integer("continue_attempt_agorot"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // Social posting (0057–0059, decision 0101) — docs/09-social-posting.md

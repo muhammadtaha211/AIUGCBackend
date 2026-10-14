@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039 and 0041-0056 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039, 0041-0056 and 0061-0062 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,13 +33,15 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 47 rows: **45 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 49 rows: **47 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
 -- which this sentence had missed; 0044-0047 then added one each, to 38,
 -- 0048 one more on 2026-09-21, to 39, 0049 one on 2026-10-01, to 40, 0050
 -- one on 2026-10-02, to 41, 0051/0052 one each on 2026-10-07, to 43, and
 -- 0053-0056 one each on 2026-10-09, to 47 — written with the feature branch,
--- before any push, like 0049 and 0050.) Two of those
+-- before any push, like 0049 and 0050 — and 0061/0062 one each on 2026-10-14,
+-- to 49 rows and 47 true, on feat/intro-offer before any push. 0057-0060 have
+-- no row here.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -634,10 +636,16 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- (user_id, status) index, the five named constraints (payment-id UNIQUE, the
 -- status CHECK, three FKs) and RLS enabled with no policy (0046's pattern).
 -- to_regclass so a missing table reads false instead of erroring the file.
+-- The ten are counted BY NAME since 2026-10-14: 0062 adds an eleventh, kind,
+-- and owns it in its own row (0052's precedent), so a bare count would read
+-- false on a correct database.
 ('0048', 'structural', (SELECT
   to_regclass('public.checkout_intents') IS NOT NULL
   AND (SELECT count(*) FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = 'checkout_intents') = 10
+       WHERE table_schema = 'public' AND table_name = 'checkout_intents'
+         AND column_name IN ('id', 'user_id', 'plan_code', 'price_agorot', 'status',
+                             'sumit_payment_id', 'sumit_customer_id',
+                             'terms_acceptance_id', 'created_at', 'completed_at')) = 10
   AND EXISTS (SELECT 1 FROM pg_indexes
     WHERE schemaname = 'public' AND tablename = 'checkout_intents'
       AND indexname = 'checkout_intents_user_status_idx')
@@ -769,6 +777,40 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     AND column_name = 'shown_at' AND data_type = 'timestamp with time zone'
     AND is_nullable = 'YES')),
   'scripts.shown_at: timestamptz, nullable (NULL = never served)'),
+
+-- 0061: the ₪5 intro offer's two ledger reasons (decision 0109), last in
+-- ledger_reason's sort order. Written 2026-10-14 with the feature, before any push.
+('0061', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM pg_enum
+    WHERE enumtypid = 'public.ledger_reason'::regtype AND enumlabel = 'grant_trial')
+  AND EXISTS (SELECT 1 FROM pg_enum
+    WHERE enumtypid = 'public.ledger_reason'::regtype AND enumlabel = 'expire_trial')
+  AND (SELECT count(*) FROM pg_enum WHERE enumtypid = 'public.ledger_reason'::regtype) = 7),
+  'ledger_reason has its five plus grant_trial, expire_trial'),
+
+-- 0062: the intro offer's schema (decision 0109) -- checkout_intents.kind (text,
+-- NOT NULL, default 'plan') with its two CHECKs and plan_code nullable;
+-- intro_trials with its 17 columns, RLS on and no policy; the switch row.
+('0062', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'checkout_intents'
+      AND column_name = 'kind' AND data_type = 'text'
+      AND is_nullable = 'NO' AND column_default = '''plan''::text')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'checkout_intents'
+      AND column_name = 'plan_code' AND is_nullable = 'YES')
+  AND (SELECT count(*) FROM pg_constraint
+    WHERE conrelid = to_regclass('public.checkout_intents')
+      AND conname IN ('checkout_intents_kind_check', 'checkout_intents_kind_plan_check')) = 2
+  AND to_regclass('public.intro_trials') IS NOT NULL
+  AND (SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'intro_trials') = 17
+  AND COALESCE((SELECT relrowsecurity FROM pg_class
+       WHERE oid = to_regclass('public.intro_trials')), false)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'intro_trials')
+  AND EXISTS (SELECT 1 FROM app_config WHERE key = 'intro_offer')),
+  'checkout_intents.kind + its CHECKs, plan_code nullable; intro_trials 17 columns, RLS on, no policy; intro_offer row'),
 
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or

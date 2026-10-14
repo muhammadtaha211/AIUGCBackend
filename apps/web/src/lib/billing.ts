@@ -21,6 +21,21 @@ export const checkoutRequestSchema = z.object({
 });
 
 /**
+ * POST /api/account/intro (the ₪5 offer, decision 0109). Only the checkbox:
+ * the offer has one price and no plan. The checkout form also sends its
+ * `planCode` ("intro", for the analytics step); zod drops it.
+ */
+export const introRequestSchema = z.object({
+  acceptedTerms: z.literal(true),
+});
+
+/** POST /api/account/intro/continue — the plan to join on the saved card, and the checkbox. */
+export const continueRequestSchema = z.object({
+  planCode: z.string().trim().min(1).max(40),
+  acceptedTerms: z.literal(true),
+});
+
+/**
  * The first hop of x-forwarded-for, or null. Vercel sets the header; the
  * first entry is the client as the edge saw it. Stored for the record, never
  * trusted for anything else.
@@ -58,6 +73,21 @@ export function parseCheckoutPages(raw: string | undefined): Record<string, stri
     pages[code] = value;
   }
   return pages;
+}
+
+/**
+ * SUMIT_INTRO_PAGE: the ₪5 offer's one payment-page URL, https only. null when
+ * unset or malformed — the offer is then hidden and its route answers 503. A
+ * key of its own rather than an "intro" entry in SUMIT_CHECKOUT_PAGES, because
+ * one bad entry there nulls the whole map and every plan checkout with it.
+ */
+export function parseIntroPage(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    return new URL(raw).protocol === "https:" ? raw : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

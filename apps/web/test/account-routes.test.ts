@@ -14,6 +14,7 @@ const fixture = vi.hoisted(() => ({
     email: string;
   } | null,
   getAccountBilling: vi.fn(),
+  getAccountIntro: vi.fn(),
   changePlan: vi.fn(),
   cancelSubscription: vi.fn(),
   resumeSubscription: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock("@aiugc/core", async (importOriginal) => {
     getDb: () => ({}),
     getBillingGateway: () => new actual.NotConfiguredGateway(),
     getAccountBilling: fixture.getAccountBilling,
+    getAccountIntro: fixture.getAccountIntro,
     changePlan: fixture.changePlan,
     cancelSubscription: fixture.cancelSubscription,
     resumeSubscription: fixture.resumeSubscription,
@@ -78,6 +80,8 @@ function post(path: string, body: unknown, headers: Record<string, string> = {})
 beforeEach(() => {
   fixture.user = signedIn;
   fixture.getAccountBilling.mockReset();
+  fixture.getAccountIntro.mockReset();
+  fixture.getAccountIntro.mockResolvedValue({ trial: null, introEligible: false });
   fixture.changePlan.mockReset();
   fixture.cancelSubscription.mockReset();
   fixture.resumeSubscription.mockReset();
@@ -159,6 +163,8 @@ describe("GET /api/account/subscription", () => {
       balance: 12,
       manualOutstanding: 2,
       quotes: { pro: { kind: "upgrade" } },
+      trial: null,
+      intro: null,
     });
     expect(fixture.getAccountBilling).toHaveBeenCalledWith(expect.anything(), {
       userId: signedIn.id,

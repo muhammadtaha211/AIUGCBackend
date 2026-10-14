@@ -246,3 +246,12 @@ Hebrew line for the new landing is marked COPY PENDING FOUNDER REVIEW in
 - [[../facts/sumit-payment-page-saves-the-card]] — what was measured
 - [[../facts/sumit-payments-list-honours-utc-offsets]] — the reconcile window's timestamps
 - [[../facts/sumit-test-org-configuration]] — the organisation it was measured on
+
+_(Pointer 2026-10-14, the ₪5 intro offer: a second kind of intent rides this checkout —
+`checkout_intents.kind = 'intro'`, no plan, 500 agorot — through the same return route and the
+same server-to-server verification (except that an intro needs no saved card), on its own page
+(`SUMIT_INTRO_PAGE`). Its "continue" charges the card this note's page saved through
+`/billing/payments/charge/` at the customer's click, writing the attempt before the charge, and a
+lost answer there is settled later by a narrow list look that is safe for a trial-only customer
+(nothing else charges it while the attempt is open) — unlike this note's renewals. The unconfirmed-returns query now also resolves
+on `intro_charge`. [[0109-a-five-shekel-intro-offer]].)_

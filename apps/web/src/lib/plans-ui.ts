@@ -187,10 +187,11 @@ export const CHECKOUT_FAILED_LINE = "התשלום לא הושלם. אפשר לנ
  * to activate on it (a price that no longer matches, an account that is
  * already subscribed, a card Sumit did not save). The one thing this line
  * must do is stop a second payment; the founder settles it from the
- * checkout_refused event and the Sumit payment.
+ * checkout_refused event and the Sumit payment. "הרכישה", not "המסלול": the
+ * same line answers a refused ₪5 intro (decision 0109).
  */
 export const CHECKOUT_REFUSED_LINE =
-  "התשלום נקלט, אבל לא הצלחנו להפעיל את המסלול. אין צורך לשלם שוב — כתבו לנו ונסדיר את זה.";
+  "התשלום נקלט, אבל לא הצלחנו להפעיל את הרכישה. אין צורך לשלם שוב — כתבו לנו ונסדיר את זה.";
 /**
  * ?checkout=unconfirmed — the browser came back from Sumit's payment page,
  * which (measured) only redirects after a payment it accepted, and the return
@@ -203,12 +204,28 @@ export const CHECKOUT_REFUSED_LINE =
  * COPY PENDING FOUNDER REVIEW.
  */
 export const CHECKOUT_UNCONFIRMED_LINE =
-  "התשלום נקלט ואנחנו מאמתים אותו מול חברת הסליקה. אין צורך לשלם שוב — אם המסלול עדיין לא פעיל, כתבו לנו ונשלים את ההפעלה.";
+  "התשלום נקלט ואנחנו מאמתים אותו מול חברת הסליקה. אין צורך לשלם שוב — אם הרכישה עדיין לא פעילה, כתבו לנו ונשלים את ההפעלה.";
 /** The link under both lines that say "write to us" — the contact page the site already offers. */
 export const CHECKOUT_REFUSED_CONTACT = "לעמוד יצירת הקשר";
 
-/** The values the return route lands on; anything else on the query is ignored. */
-export const CHECKOUT_STATES = ["success", "refused", "failed", "unconfirmed"] as const;
+/**
+ * The values the return route and the continue page land on; anything else on
+ * the query is ignored. The intro_* values are the ₪5 offer's own return
+ * (decision 0109) — the same lines as a plan's, but a code of their own so the
+ * payment_returned step tells a trial from a plan; `continued` is a continue
+ * that activated a month on the saved card.
+ */
+export const CHECKOUT_STATES = [
+  "success",
+  "refused",
+  "failed",
+  "unconfirmed",
+  "intro",
+  "intro_refused",
+  "intro_failed",
+  "intro_unconfirmed",
+  "continued",
+] as const;
 export type CheckoutState = (typeof CHECKOUT_STATES)[number];
 
 /** /home/plan's ?checkout= parameter, or null when it is absent or not one of ours. */
@@ -242,6 +259,21 @@ export function scheduledOnBadge(date: string): string {
   return `מהחיוב הבא · ${date}`;
 }
 
+/** The ₪5 intro offer's numbers (core's INTRO_OFFER), handed to every line that names them. */
+export type IntroOfferView = { priceAgorot: number; credits: number; days: number };
+
+/** The account's intro trial as the client sees it (core's TrialView, dates as ISO strings). */
+export type TrialStateView = {
+  credits: number;
+  creditsLeft: number;
+  /** Past its 30 days, swept or not: nothing may promise its credits any more. */
+  ended: boolean;
+  expiresAt: string;
+  expiredAt: string | null;
+  convertedAt: string | null;
+  attemptPending: boolean;
+};
+
 /** GET /api/account/subscription as the client sees it. */
 export type SubscriptionView = {
   subscription: {
@@ -258,10 +290,14 @@ export type SubscriptionView = {
   balance: number;
   manualOutstanding: number;
   quotes: Record<string, PlanChangeQuote>;
+  /** The account's intro trial, in any state, or null when it never bought one. */
+  trial: TrialStateView | null;
+  /** The offer when THIS account may buy it now (eligible, switched on, its page set); else null. */
+  intro: IntroOfferView | null;
 };
 
 export type CardIntent =
-  "checkout" | "renew" | "upgrade" | "downgrade" | "cancel" | "resume" | "undo";
+  "checkout" | "renew" | "upgrade" | "downgrade" | "cancel" | "resume" | "undo" | "continue";
 
 export type CardState = {
   intent: CardIntent;
@@ -288,7 +324,10 @@ export function pendingKind(sub: SubscriptionView["subscription"]): PendingKind 
 /**
  * The button matrix (founder, 2026-09-17), one card state per plan code:
  *
- *   no live subscription   every card → checkout
+ *   no live subscription   every card → checkout — or, for an account holding
+ *                          an intro trial that has not joined a plan, every
+ *                          card → continue on the saved card (decision 0109),
+ *                          all disabled while a continue's answer is pending
  *   suspended              banner; every card → renew (checkout again)
  *   past_due               banner; only the current card's cancel is enabled
  *   active                 current → cancel (or resume when a stop is pending);
@@ -307,14 +346,23 @@ export function planCardStates(
   const sub = view.subscription;
 
   if (!sub) {
+    const trial = view.trial && !view.trial.convertedAt ? view.trial : null;
     for (const plan of ladder) {
-      cards[plan.code] = {
-        intent: "checkout",
-        label: CHOOSE_PLAN_ACTION,
-        current: false,
-        disabled: false,
-        tone: "primary",
-      };
+      cards[plan.code] = trial
+        ? {
+            intent: "continue",
+            label: CONTINUE_ACTION,
+            current: false,
+            disabled: trial.attemptPending,
+            tone: "primary",
+          }
+        : {
+            intent: "checkout",
+            label: CHOOSE_PLAN_ACTION,
+            current: false,
+            disabled: false,
+            tone: "primary",
+          };
     }
     return { banner: null, cards };
   }
@@ -424,6 +472,103 @@ export const CHECKOUT_PAY_ACTION = "המשך לתשלום המאובטח";
 export const CHECKOUT_NO_REDIRECT = "לא התקבל קישור לתשלום. נסו שוב בעוד רגע.";
 /** Added to the checkout lines when the account is renewing a suspended subscription. */
 export const RENEW_LINE = "החידוש מפעיל את המנוי מחדש עם תקופת חיוב חדשה מהיום.";
+
+/* ---------- the ₪5 intro offer (decision 0109) ----------
+ *
+ * COPY PENDING FOUNDER REVIEW — every line in this section. The numbers are
+ * core's INTRO_OFFER and the trial row, always as arguments. The rules of the
+ * decision hold on every line: never "חינם", never "N סרטונים", and the narrow
+ * line in both halves — the intro never becomes a charge by itself, while the
+ * plans still renew monthly. No punctuation directly after a ₪ amount: Amounts
+ * would pull it into the LTR island.
+ */
+
+/** The offer's summary page; the continue page takes the plan on the query. */
+export const INTRO_PATH = "/home/plan/intro";
+export function continuePath(planCode: string): string {
+  return `/home/plan/continue?${PLAN_PARAM}=${encodeURIComponent(planCode)}`;
+}
+
+export function introOfferTitle(offer: IntroOfferView): string {
+  return `להתחיל בהיכרות ב־${formatShekels(offer.priceAgorot)}`;
+}
+export function introOfferLine(offer: IntroOfferView): string {
+  return `${formatCredits(offer.credits)} קרדיטים לכל השירותים, בתוקף ${offer.days} יום מיום התשלום. פעם אחת לכל חשבון שעוד לא רכש מסלול.`;
+}
+/** Both halves of the decision's narrow line. */
+export const INTRO_NEVER_CHARGES_LINE =
+  "ההיכרות לא הופכת לחיוב מעצמה. המסלולים החודשיים מתחדשים מדי חודש עד שמבטלים אותם.";
+export const INTRO_OFFER_ACTION = "לפרטי ההיכרות";
+
+export const INTRO_META_TITLE = "היכרות | תבנית";
+export const INTRO_TITLE = "היכרות עם תבנית";
+export function introPriceLine(offer: IntroOfferView): string {
+  return `תשלום חד־פעמי של ${formatShekels(offer.priceAgorot)}`;
+}
+export function introCreditsLine(offer: IntroOfferView): string {
+  return `${formatCredits(offer.credits)} קרדיטים לכל השירותים`;
+}
+export function introValidityLine(offer: IntroOfferView): string {
+  return `הקרדיטים בתוקף ${offer.days} יום מיום התשלום, ומה שלא נוצל עד אז פוקע.`;
+}
+export const INTRO_ONCE_LINE = "ההיכרות זמינה פעם אחת לכל חשבון שעוד לא רכש מסלול.";
+export const INTRO_CONTINUE_LINE =
+  "אפשר להצטרף למסלול מתי שתרצו, בכרטיס ששמרתם בתשלום ההיכרות — בלי להזין אותו שוב.";
+
+/** ?checkout=intro, and the trial is in the re-read. */
+export function introSuccessLine(trial: TrialStateView): string {
+  return `התשלום התקבל. ${formatCredits(trial.credits)} קרדיטים נטענו לחשבון, בתוקף עד ${formatDate(trial.expiresAt)}.`;
+}
+/** ?checkout=continued, and the month is in the re-read. */
+export const CONTINUED_LINE = "החיוב בוצע והמסלול פעיל. הקרדיטים של החודש נטענו לחשבון.";
+
+/** The plan page's line for an account holding a trial that has not joined a plan. */
+export function trialLine(trial: TrialStateView): string {
+  if (trial.ended) return `ההיכרות הסתיימה ב־${formatDate(trial.expiredAt ?? trial.expiresAt)}.`;
+  return `נותרו ${formatCredits(trial.creditsLeft)} קרדיטים מההיכרות, בתוקף עד ${formatDate(trial.expiresAt)}.`;
+}
+export const CONTINUE_ACTION = "הצטרפות בכרטיס השמור";
+/** A continue whose answer is not known yet: both purchase paths are shut until it settles. */
+export const ATTEMPT_PENDING_LINE =
+  "אנחנו מאמתים את החיוב האחרון מול חברת הסליקה, וזה יתעדכן כאן בדקות הקרובות. אין לנסות שוב בינתיים — אם זה לא מתעדכן, כתבו לנו.";
+
+export const CONTINUE_META_TITLE = "הצטרפות למסלול | תבנית";
+export function continueChargeLine(nextChargeDate: string): string {
+  return `החיוב היום בכרטיס ששמרתם בתשלום ההיכרות, הבא ב־${nextChargeDate}`;
+}
+export function continueLeftoverLine(creditsLeft: number): string {
+  return `${formatCredits(creditsLeft)} הקרדיטים שנותרו מההיכרות יישארו בחשבון עד סוף החודש הראשון.`;
+}
+/** The button names the amount: this click charges the saved card at once. */
+export function continueButton(priceAgorot: number): string {
+  return `אישור וחיוב ${formatShekels(priceAgorot)}`;
+}
+export const CONTINUE_BUSY_LINE = "מאשרים את החיוב מול חברת הסליקה — לא לסגור את הדף.";
+export const CONTINUE_DECLINED_LINE =
+  "החיוב בכרטיס השמור לא אושר. אפשר להצטרף עם כרטיס אחר בעמוד התשלום.";
+export const CONTINUE_DECLINED_LINK = "לעמוד התשלום";
+/** A lost answer, a timeout, a 5xx: nobody knows yet whether the card was charged. Never "try again". */
+export const CONTINUE_UNCONFIRMED_LINE =
+  "לא הצלחנו לוודא אם החיוב בוצע. אין לנסות שוב — נבדוק מול חברת הסליקה, והמסלול יתעדכן כאן.";
+
+/* The refusals the two intro routes answer with (api-errors.ts maps them). */
+export const INTRO_ALREADY_USED = "ההיכרות כבר נוצלה בחשבון הזה. אפשר לבחור מסלול.";
+export const INTRO_HAS_PAID = "ההיכרות מיועדת לחשבון שעוד לא רכש מסלול. אפשר לבחור מסלול.";
+export const INTRO_OFF = "ההיכרות אינה זמינה כרגע.";
+export const CONTINUE_NO_TRIAL = "אין היכרות בחשבון הזה. אפשר לבחור מסלול.";
+export const CONTINUE_CONVERTED = "החשבון כבר הצטרף למסלול.";
+export const CONTINUE_ORPHANED =
+  "החשבון כבר הצטרף למסלול בדרך אחרת, ולכן החיוב הזה לא הפעיל דבר. אין צורך לשלם שוב — כתבו לנו ונסדיר אותו.";
+
+/** NoCreditsCard, for an account that may buy the offer. */
+export function noCreditsIntroLine(offer: IntroOfferView): string {
+  return `חשבון חדש? אפשר להתחיל בהיכרות חד־פעמית: ${formatCredits(offer.credits)} קרדיטים לכל השירותים ב־${formatShekels(offer.priceAgorot)}`;
+}
+
+/** The one /pricing line under the cards — never a fourth card. */
+export function pricingIntroLine(offer: IntroOfferView): string {
+  return `חשבון חדש יכול להתחיל בהיכרות חד־פעמית: ${formatCredits(offer.credits)} קרדיטים לכל השירותים, בתוקף ${offer.days} יום ובלי חיוב חוזר, ב־${formatShekels(offer.priceAgorot)}`;
+}
 
 /* ---------- dialogs ---------- */
 
@@ -564,6 +709,10 @@ export const SETTINGS_NO_PLAN = "אין מנוי פעיל";
 export const SETTINGS_CHOOSE_PLAN = "בחירת מסלול";
 export const SETTINGS_CHANGE_PLAN = "שינוי מסלול";
 export const SETTINGS_MANUAL_CREDITS_LINE = "הקרדיטים שבחשבון נטענו ידנית ואינם פוקעים.";
+/** With a live intro trial, not every credit is manual — the manual line names its count. COPY PENDING FOUNDER REVIEW. */
+export function settingsManualCountLine(manual: number): string {
+  return `${formatCredits(manual)} קרדיטים שנטענו ידנית אינם פוקעים.`;
+}
 
 /** "₪300 לחודש · 2,500 קרדיטים" */
 export function settingsPlanSummary(plan: { priceAgorot: number; monthlyCredits: number }): string {

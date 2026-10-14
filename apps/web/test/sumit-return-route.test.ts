@@ -312,6 +312,55 @@ describe("GET /api/billing/sumit/return", () => {
     warn.mockRestore();
   });
 
+  it("a ₪5 intro intent (decision 0109) lands on its own codes — success, refused, failed, unconfirmed", async () => {
+    fixture.getCheckoutIntent.mockResolvedValue({
+      id: INTENT,
+      userId: BUYER,
+      status: "pending",
+      kind: "intro",
+    });
+    fixture.completeCheckout.mockResolvedValue({
+      outcome: "completed",
+      kind: "intro",
+      intentId: INTENT,
+      subscriptionId: null,
+      planCode: null,
+    });
+    expect((await get(RETURN)).headers.get("location")).toBe(
+      "http://localhost:3000/home/plan?checkout=intro",
+    );
+
+    fixture.completeCheckout.mockRejectedValueOnce(
+      new core.CheckoutVerificationError("intro_already_used", undefined, {
+        id: 2376907759,
+        customerId: 2376907140,
+        date: null,
+        valid: true,
+        status: "000",
+        statusDescription: null,
+        amountAgorot: 500,
+        externalIdentifier: INTENT,
+        documentId: 1,
+        paymentMethod: null,
+      }),
+    );
+    expect((await get(RETURN)).headers.get("location")).toBe(
+      "http://localhost:3000/home/plan?checkout=intro_refused",
+    );
+
+    fixture.completeCheckout.mockRejectedValueOnce(
+      new core.CheckoutVerificationError("payment_invalid", "003"),
+    );
+    expect((await get(RETURN)).headers.get("location")).toBe(
+      "http://localhost:3000/home/plan?checkout=intro_failed",
+    );
+
+    fixture.completeCheckout.mockRejectedValueOnce(new Error("connection reset"));
+    expect((await get(RETURN)).headers.get("location")).toBe(
+      "http://localhost:3000/home/plan?checkout=intro_unconfirmed",
+    );
+  });
+
   it("rate-limits one address to 10 a minute", async () => {
     for (let i = 0; i < 10; i++) expect((await get(RETURN, "198.51.100.9")).status).toBe(303);
     const eleventh = await get(RETURN, "198.51.100.9");

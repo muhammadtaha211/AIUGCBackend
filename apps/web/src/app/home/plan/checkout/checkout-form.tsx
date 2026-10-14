@@ -19,8 +19,17 @@ import { postJson } from "@/lib/use-api";
  * button. A 200 carrying redirectUrl sends the whole window to Sumit's page;
  * anything else stays here with the server's Hebrew line — today's 503 when
  * the pages are not configured, a 400, a 5xx.
+ *
+ * The ₪5 intro page (decision 0109) uses the same form against its own
+ * endpoint, with planCode "intro" — the code its checkout_started step carries.
  */
-export function CheckoutForm({ planCode }: { planCode: string }) {
+export function CheckoutForm({
+  planCode,
+  endpoint = "/api/account/checkout",
+}: {
+  planCode: string;
+  endpoint?: string;
+}) {
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +37,7 @@ export function CheckoutForm({ planCode }: { planCode: string }) {
   async function pay() {
     setBusy(true);
     setError(null);
-    const result = await postJson<{ redirectUrl?: string }>("/api/account/checkout", {
+    const result = await postJson<{ redirectUrl?: string }>(endpoint, {
       planCode,
       acceptedTerms: true,
     });

@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/plans/confirm-dialog";
 import { Amounts, PlanCards, type CardSlot } from "@/components/plans/plan-cards";
-import { Button } from "@/components/ui/button";
+import { Button, PRIMARY_BUTTON_CLASS } from "@/components/ui/button";
 import { track } from "@/lib/analytics-client";
 import {
+  ATTEMPT_PENDING_LINE,
   CANCEL_ACTION,
   CANCEL_CONFIRM,
   CANCEL_DIALOG_TITLE,
@@ -20,7 +21,17 @@ import {
   CHECKOUT_SUCCESS_LINE,
   CHECKOUT_UNCONFIRMED_LINE,
   checkoutPath,
+  CONTINUED_LINE,
+  continuePath,
   DIALOG_BACK,
+  INTRO_CONTINUE_LINE,
+  INTRO_NEVER_CHARGES_LINE,
+  INTRO_OFFER_ACTION,
+  INTRO_PATH,
+  introOfferLine,
+  introOfferTitle,
+  introSuccessLine,
+  trialLine,
   downgradeDialogBody,
   downgradeDialogTitle,
   pendingKind,
@@ -115,10 +126,15 @@ export function PlanManager({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function open(intent: CardIntent, code: string) {
-    // The two purchase intents leave the page; everything else is a dialog
-    // over the live subscription.
+    // The purchase intents leave the page; everything else is a dialog over
+    // the live subscription. A continue from the ₪5 trial (decision 0109) is
+    // its own summary page — the checkout without the card step.
     if (intent === "checkout" || intent === "renew") {
       router.push(checkoutPath(code));
+      return;
+    }
+    if (intent === "continue") {
+      router.push(continuePath(code));
       return;
     }
     setError(null);
@@ -198,6 +214,17 @@ export function PlanManager({
   // Same helper as the settings row, so the two never disagree.
   const status =
     live && current ? `${current.name} · ${periodLine(live, scheduled?.name ?? null)}` : null;
+
+  // The ₪5 intro offer (decision 0109). The offer box only for an account the
+  // API says may buy it now, and never under a landing that says a payment is
+  // already in flight — a second ₪5 there would be refused after the money moved.
+  const paymentInFlight =
+    checkout === "refused" ||
+    checkout === "unconfirmed" ||
+    checkout === "intro_refused" ||
+    checkout === "intro_unconfirmed";
+  const offer = !live && !paymentInFlight ? sub.intro : null;
+  const trial = !live && sub.trial && !sub.trial.convertedAt ? sub.trial : null;
 
   const slots: Record<string, CardSlot> = {};
   for (const [code, card] of Object.entries(cards)) {
@@ -413,7 +440,19 @@ export function PlanManager({
           {live?.status === "active" ? CHECKOUT_SUCCESS_LINE : CHECKOUT_PENDING_LINE}
         </p>
       )}
-      {checkout === "refused" && (
+      {/* The ₪5 and the continue, held to the same rule: say it only when the
+          re-read shows it. */}
+      {checkout === "intro" && (
+        <p role="status" className="mb-5 rounded-lg bg-accent/25 px-3 py-2.5 text-sm text-ink">
+          {sub.trial ? introSuccessLine(sub.trial) : CHECKOUT_PENDING_LINE}
+        </p>
+      )}
+      {checkout === "continued" && (
+        <p role="status" className="mb-5 rounded-lg bg-accent/25 px-3 py-2.5 text-sm text-ink">
+          {live?.status === "active" ? CONTINUED_LINE : CHECKOUT_PENDING_LINE}
+        </p>
+      )}
+      {(checkout === "refused" || checkout === "intro_refused") && (
         <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
           {CHECKOUT_REFUSED_LINE}{" "}
           <Link href="/contact" className="underline underline-offset-2">
@@ -424,7 +463,7 @@ export function PlanManager({
       {/* The return leg could not confirm a payment the page had already taken:
           same job as the refused line — stop a second payment — for the case
           where we do not yet know what happened. */}
-      {checkout === "unconfirmed" && (
+      {(checkout === "unconfirmed" || checkout === "intro_unconfirmed") && (
         <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
           {CHECKOUT_UNCONFIRMED_LINE}{" "}
           <Link href="/contact" className="underline underline-offset-2">
@@ -432,7 +471,7 @@ export function PlanManager({
           </Link>
         </p>
       )}
-      {checkout === "failed" && (
+      {(checkout === "failed" || checkout === "intro_failed") && (
         <p role="alert" className="mb-5 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
           {CHECKOUT_FAILED_LINE}
         </p>
@@ -448,6 +487,35 @@ export function PlanManager({
         </p>
       )}
       {status && <p className="mb-5 text-sm text-ink/65">{status}</p>}
+      {trial?.attemptPending && (
+        <p role="alert" className="mb-5 rounded-lg bg-amber-100 px-3 py-2.5 text-sm text-amber-900">
+          {ATTEMPT_PENDING_LINE}{" "}
+          <Link href="/contact" className="underline underline-offset-2">
+            {CHECKOUT_REFUSED_CONTACT}
+          </Link>
+        </p>
+      )}
+      {trial && !trial.attemptPending && (
+        <div className="mb-5 space-y-1 text-sm text-ink/65">
+          <p>{trialLine(trial)}</p>
+          <p>{INTRO_CONTINUE_LINE}</p>
+        </div>
+      )}
+      {offer && (
+        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-ink/[0.08] bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-base font-semibold text-ink">
+              <Amounts line={introOfferTitle(offer)} />
+            </p>
+            <p className="text-sm text-ink/70">{introOfferLine(offer)}</p>
+            <p className="text-sm text-ink/60">{INTRO_NEVER_CHARGES_LINE}</p>
+          </div>
+          {/* A link that looks like the primary button — never a <button> in an <a>. */}
+          <Link href={INTRO_PATH} className={`${PRIMARY_BUTTON_CLASS} shrink-0`}>
+            {INTRO_OFFER_ACTION}
+          </Link>
+        </div>
+      )}
       {live && current && !currentOnLadder && (
         <div className="mb-5 flex flex-col gap-3 rounded-xl border border-ink/[0.08] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-ink/80">{retiredPlanLine(current.name)}</p>

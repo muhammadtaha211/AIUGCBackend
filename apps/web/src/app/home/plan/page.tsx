@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { getDb, getTrialView } from "@aiugc/core";
 import { authedUser } from "@/lib/auth-user";
 import { parsePlanParam, PLAN_PARAM } from "@/lib/onboarding";
 import { loadPlansView } from "@/lib/plans";
 import {
   checkoutPath,
+  continuePath,
   parseCheckoutParam,
   PLAN_META_TITLE,
   PLAN_PAGE_SUB,
@@ -25,8 +27,10 @@ import { PlanManager } from "./plan-manager";
  *
  * ?plan=<code> (the /pricing and signup hand-off) goes straight to that
  * plan's checkout page, which decides for itself whether this account can
- * buy; ?checkout=success|refused|failed|unconfirmed is where the return route
- * sends the browser.
+ * buy — or, for an account holding a ₪5 intro trial that has not joined a plan
+ * (decision 0109), to the continue page, so joining never asks for the card
+ * again; ?checkout=… is where the return route and the continue page send the
+ * browser (CHECKOUT_STATES).
  */
 export const metadata: Metadata = { title: PLAN_META_TITLE };
 
@@ -45,7 +49,13 @@ export default async function PlanPage({
   const params = await searchParams;
   // The same parser /start uses for the same param — one slug rule, one place.
   const plan = parsePlanParam(params[PLAN_PARAM]);
-  if (plan) redirect(checkoutPath(plan));
+  if (plan) {
+    const trial = await getTrialView(getDb(), user.id);
+    // A continue still being confirmed falls through to the checkout page,
+    // whose own gate sends it back here to the notice.
+    const continues = trial && !trial.convertedAt && !trial.attemptPending;
+    redirect(continues ? continuePath(plan) : checkoutPath(plan));
+  }
   const checkout = parseCheckoutParam(params.checkout);
   const view = await loadPlansView();
 

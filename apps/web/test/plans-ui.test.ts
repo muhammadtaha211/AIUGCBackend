@@ -3,21 +3,38 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { PlanChangeQuote } from "@aiugc/core/plan-change";
 import {
+  ATTEMPT_PENDING_LINE,
   BANNER_PAST_DUE,
   BANNER_SUSPENDED,
   cancelDialogBody,
   CHECKOUT_FAILED_LINE,
   CHECKOUT_STATES,
   CHECKOUT_UNCONFIRMED_LINE,
+  CONTINUE_ACTION,
+  CONTINUE_UNCONFIRMED_LINE,
+  continueButton,
+  continuePath,
   CURRENT_PLAN_BADGE,
   downgradeDialogBody,
   formatDate,
   formatShekels,
+  INTRO_NEVER_CHARGES_LINE,
+  INTRO_ONCE_LINE,
+  INTRO_PATH,
+  introCreditsLine,
+  introOfferLine,
+  introOfferTitle,
+  introPriceLine,
+  introSuccessLine,
+  introValidityLine,
+  noCreditsIntroLine,
   parseCheckoutParam,
   pendingKind,
   periodLine,
   planCardStates,
+  pricingIntroLine,
   rateLine,
+  trialLine,
   type SubscriptionView,
   upgradeDialogBody,
 } from "@/lib/plans-ui";
@@ -74,6 +91,8 @@ function onPro(
     balance: 2500,
     manualOutstanding: 0,
     quotes: { starter: quote("downgrade"), studio: quote("upgrade") },
+    trial: null,
+    intro: null,
   };
 }
 
@@ -107,6 +126,8 @@ describe("planCardStates — the button matrix", () => {
         balance: 0,
         manualOutstanding: 0,
         quotes: {},
+        trial: null,
+        intro: null,
       },
       LADDER,
     );
@@ -308,7 +329,17 @@ describe("the ?checkout= landing the return route sends the browser to", () => {
   it("the plan page accepts every value the route lands on, and nothing else", () => {
     // Spelled out, not derived: the loops below iterate the same array they
     // test, so this is what pins it against the route's four landing constants.
-    expect([...CHECKOUT_STATES]).toEqual(["success", "refused", "failed", "unconfirmed"]);
+    expect([...CHECKOUT_STATES]).toEqual([
+      "success",
+      "refused",
+      "failed",
+      "unconfirmed",
+      "intro",
+      "intro_refused",
+      "intro_failed",
+      "intro_unconfirmed",
+      "continued",
+    ]);
     for (const state of CHECKOUT_STATES) expect(parseCheckoutParam(state)).toBe(state);
     expect(parseCheckoutParam(undefined)).toBeNull();
     expect(parseCheckoutParam("")).toBeNull();
@@ -350,10 +381,133 @@ describe("the ?checkout= landing the return route sends the browser to", () => {
     for (const state of CHECKOUT_STATES) {
       expect(source, `no branch renders ?checkout=${state}`).toContain(`checkout === "${state}"`);
     }
-    const banner = source.split(`{checkout === "unconfirmed" && (`)[1]?.split("</p>")[0] ?? "";
+    const banner =
+      source
+        .split(`{(checkout === "unconfirmed" || checkout === "intro_unconfirmed") && (`)[1]
+        ?.split("</p>")[0] ?? "";
     expect(banner).toContain("CHECKOUT_UNCONFIRMED_LINE");
     // The same contact page the refused banner offers — not a new channel.
     expect(banner).toContain(`href="/contact"`);
     expect(banner).toContain("CHECKOUT_REFUSED_CONTACT");
+  });
+});
+
+describe("the ₪5 intro offer (decision 0109)", () => {
+  const OFFER = { priceAgorot: 500, credits: 150, days: 30 };
+  const TRIAL = {
+    credits: 150,
+    creditsLeft: 105,
+    ended: false,
+    expiresAt: "2026-11-13T10:00:00.000Z",
+    expiredAt: null,
+    convertedAt: null,
+    attemptPending: false,
+  };
+
+  function noSub(trial: SubscriptionView["trial"]): SubscriptionView {
+    return {
+      subscription: null,
+      plans: LADDER,
+      currentPlan: null,
+      balance: 105,
+      manualOutstanding: 0,
+      quotes: {},
+      trial,
+      intro: null,
+    };
+  }
+
+  it("a trial that has not joined a plan turns every card into a continue on the saved card", () => {
+    const { cards } = planCardStates(noSub(TRIAL), LADDER);
+    expect(Object.values(cards).map((c) => c.intent)).toEqual(["continue", "continue", "continue"]);
+    expect(Object.values(cards).every((c) => c.label === CONTINUE_ACTION && !c.disabled)).toBe(
+      true,
+    );
+    // Still a continue after the trial ended: nothing left to keep, no card to re-enter.
+    const ended = planCardStates(
+      noSub({ ...TRIAL, ended: true, expiredAt: "2026-11-14T00:30:00.000Z" }),
+      LADDER,
+    );
+    expect(Object.values(ended.cards).map((c) => c.intent)).toEqual([
+      "continue",
+      "continue",
+      "continue",
+    ]);
+  });
+
+  it("a continue still being confirmed disables every card; a converted trial is a plain checkout again", () => {
+    const pending = planCardStates(noSub({ ...TRIAL, attemptPending: true }), LADDER);
+    expect(Object.values(pending.cards).every((c) => c.disabled)).toBe(true);
+    const converted = planCardStates(
+      noSub({ ...TRIAL, convertedAt: "2026-10-20T10:00:00.000Z" }),
+      LADDER,
+    );
+    expect(Object.values(converted.cards).map((c) => c.intent)).toEqual([
+      "checkout",
+      "checkout",
+      "checkout",
+    ]);
+  });
+
+  it("the numbers arrive as arguments, and the offer's own lines never say free, videos, or monthly", () => {
+    const lines = [
+      introOfferTitle(OFFER),
+      introOfferLine(OFFER),
+      introPriceLine(OFFER),
+      introCreditsLine(OFFER),
+      introValidityLine(OFFER),
+      INTRO_ONCE_LINE,
+      noCreditsIntroLine(OFFER),
+      pricingIntroLine(OFFER),
+    ];
+    for (const line of lines) {
+      expect(line).not.toMatch(/חינם|סרטונים|לחודש|בחודש|מתחדש/);
+    }
+    expect(introPriceLine(OFFER)).toBe("תשלום חד־פעמי של ₪5");
+    expect(introCreditsLine(OFFER)).toBe("150 קרדיטים לכל השירותים");
+    expect(introValidityLine({ ...OFFER, days: 45 })).toContain("45 יום");
+    expect(pricingIntroLine({ ...OFFER, credits: 1500 })).toContain("1,500 קרדיטים");
+  });
+
+  it("both halves of the narrow line: never a charge by itself, while the plans still renew", () => {
+    expect(INTRO_NEVER_CHARGES_LINE).toContain("לא הופכת לחיוב מעצמה");
+    expect(INTRO_NEVER_CHARGES_LINE).toContain("מתחדשים מדי חודש");
+  });
+
+  it("no punctuation sits directly after a ₪ amount, where Amounts would pull it into the LTR island", () => {
+    for (const line of [
+      introOfferTitle(OFFER),
+      introPriceLine(OFFER),
+      noCreditsIntroLine(OFFER),
+      pricingIntroLine(OFFER),
+      continueButton(15000),
+    ]) {
+      expect(line).not.toMatch(/₪[\d.,]*\d[.,:;!?]/);
+    }
+    expect(continueButton(15000)).toBe("אישור וחיוב ₪150");
+  });
+
+  it("a lost continue answer and a pending attempt tell the customer NOT to try again", () => {
+    for (const line of [CONTINUE_UNCONFIRMED_LINE, ATTEMPT_PENDING_LINE]) {
+      expect(line).toContain("אין לנסות שוב");
+      expect(line).not.toContain("נסו שוב");
+    }
+  });
+
+  it("the trial line: credits left and the date while live, the end date once expired", () => {
+    expect(trialLine(TRIAL)).toBe("נותרו 105 קרדיטים מההיכרות, בתוקף עד 13.11.2026.");
+    expect(trialLine({ ...TRIAL, ended: true, expiredAt: "2026-11-14T00:30:00.000Z" })).toBe(
+      "ההיכרות הסתיימה ב־14.11.2026.",
+    );
+    // Past the date, not yet swept: ended on the date itself, never "valid until" a past day.
+    expect(trialLine({ ...TRIAL, ended: true })).toBe("ההיכרות הסתיימה ב־13.11.2026.");
+    expect(introSuccessLine(TRIAL)).toBe(
+      "התשלום התקבל. 150 קרדיטים נטענו לחשבון, בתוקף עד 13.11.2026.",
+    );
+  });
+
+  it("the continue and intro paths", () => {
+    expect(continuePath("pro")).toBe("/home/plan/continue?plan=pro");
+    expect(INTRO_PATH).toBe("/home/plan/intro");
   });
 });

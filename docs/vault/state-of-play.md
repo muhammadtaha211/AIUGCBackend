@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-13
+updated: 2026-10-14
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -39,6 +39,22 @@ so the attribution is his, not measured. This is the event 0041/0042 named, so
 identifying about the signup is written anywhere in the repo, by instruction. The same day's
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
+
+**The ₪5 intro offer: BUILT 2026-10-14 on `feat/intro-offer`, NOT merged, migrations 0061/0062 NOT
+pushed.** An account that has never paid buys, once, 150 credits for every service for ₪5 on its own
+Sumit page, valid 30 days, never a charge by itself; "continue" charges the card saved at that
+payment for an ordinary first month. Behind `app_config.intro_offer` (seeded off) and
+`SUMIT_INTRO_PAGE` (unset everywhere but the founder's head). Decision
+[[0109-a-five-shekel-intro-offer]] (his eight decisions of 2026-10-13/14, the credits raised 145 →
+150 at plan review, his two plan-mode answers: a lost continue answer is settled automatically, the
+walkthrough runs off production); `docs/05-billing.md` §"The ₪5 intro offer" says what exists.
+**Nobody can see or buy the offer until** the migrations are pushed, the branch merged, the box
+deployed, `SUMIT_INTRO_PAGE` set on Vercel and the switch turned on — the owed list below. **The
+merge alone does change three public things:** terms §8 gains the offer's bullet, `UPDATED` becomes
+14.10.2026 (the version every later purchase records, and the date `/privacy` shows), and the
+refused/unconfirmed checkout lines say "הרכישה" instead of "המסלול". Counsel's E12(a) — whether
+the bullet is a material change under §14 — is not answered; merging before it ships the bullet
+first.
 
 **PostHog on `apps/web`: BUILT 2026-10-11 on `feat/posthog-web`, NOT merged.** Visit counts on every
 page, session recordings from `/start` on, named funnel steps and browser errors, to PostHog's EU
@@ -618,7 +634,8 @@ re-gated. **MEASURED 2026-10-01, the box runs the fix:**
 **Billing shipped 2026-09-17 and is all merged.** `origin/main` carries the engine (`54c6231`), the
 customer-facing half (`7ccb708`) and the legal/public pass (`d215eae`); migrations 0044–0047 applied.
 Read the notes, not a summary: 0052–0058 in `decisions/`. `UPDATED` in `(legal)/legal.tsx` is
-`17.09.2026` and is load-bearing — both /terms' date and the string checkout writes into
+`11.10.2026` on `origin/main` (`14.10.2026` on `feat/intro-offer`, for the intro offer's §8 bullet)
+and is load-bearing — both /terms' date and the string checkout writes into
 `terms_acceptances.terms_version`. **The first sale has happened** — one row now carries
 `17.09.2026` ([[first-real-purchase-2026-09-21]]), so changing `UPDATED` from here on changes what
 later buyers accept, not what nobody accepted.
@@ -846,7 +863,50 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-13, later) — social posting: four UI fixes after PR 3, `fix/social-posting-ui`, NOT merged
+## What landed (2026-10-14) — the ₪5 intro offer, `feat/intro-offer`, NOT merged
+
+[[0109-a-five-shekel-intro-offer]]; dated pointers on 0068, 0051 and 0062; the two new paths added
+to [[no-self-serve-credit-grant-path]]; `docs/05-billing.md` (a new section, the unconfirmed query,
+the env paragraph, "No free tier"), `docs/01-schema.md`, `docs/02-jobs.md`, `docs/10-analytics.md`;
+terms §8's bullet, `UPDATED` 14.10.2026, `docs/legal-review.md` E12.
+
+**What exists (MEASURED, on the branch):**
+
+- **Migrations (not pushed):** 0061 (`ledger_reason` + `grant_trial`, `expire_trial`, alone) and 0062
+  (`checkout_intents.kind` + nullable `plan_code` with the pairing CHECK; `intro_trials`, user id as
+  the key; `app_config.intro_offer = {"enabled": false}`). Both must be pushed **before** the merge:
+  `schema.ts` names `checkout_intents.kind` in every bare select.
+- **Core:** `pipelines/intro.ts` (the offer constant, the switch, eligibility, activation, the
+  day-30 sweep `expire_trials`, `continueFromTrial`, `settleContinueAttempts` behind the delayed
+  `reconcile_continue` job); `checkout.ts` (`createIntroIntent`, `verifyHostedPayment`, the kind
+  branch, a hosted plan purchase converts an open trial, `createCheckoutIntent` refuses while a
+  continue is pending); `credits.ts` (the trial's ledger writers). One lock order: intent → users →
+  intro_trials → subscriptions.
+- **Web:** `POST /api/account/intro`, `POST /api/account/intro/continue`, `/home/plan/intro`,
+  `/home/plan/continue`, the plan page's offer box, trial line, continue cards and pending notice,
+  the intro landings, `NoCreditsCard`'s line, the settings trial line, one `/pricing` line. Every
+  new line COPY PENDING FOUNDER REVIEW in `lib/plans-ui.ts`.
+- **Tests:** `packages/core/test/intro.test.ts` (33, PGlite — the founder's done-when list plus the
+  races and edges the plan review found), `migrations.test.ts` (0061, 0062),
+  `apps/web/test/intro-routes.test.ts` and the moved `plans-ui` / `analytics` / `account-routes` /
+  `sumit-return-route` suites.
+
+**The test-org walkthrough, 2026-10-14 (MEASURED, off production, PARTIAL):** the ₪5 page renders
+under testbusiness at ₪5 ("תבנית - היכרות"); our intent id comes back as the payment's
+ExternalIdentifier on the new catalogue; a decline stays on the page; `completeCheckout` on it
+refuses `payment_invalid` and writes nothing. **The test terminal declined every card that day**
+(code 004) — two published MasterCards on the ₪5 page, and on the ₪150 starter page the very card
+it approved on 2026-09-21 — so the approved ₪5, the second attempt after a real trial, the continue
+on the saved card and the receipt lines are still owed. Driver: `packages/core/.work/intro-walk.ts`
+(gitignored; persistent PGlite in the session scratchpad; refuses unless `listquotas` reads the test
+org's Operations quota of 100). Observed in passing: three declines left `Operations` usage at 0 and
+`Mails` at 3 — unlike 2026-09-21, when each attempt moved Operations by 1 (not written to a fact
+note). The founder's page text reads "מסלול היכרותת" (doubled ת).
+
+**Not run:** no production query, no migration push, no deploy, no call against the real Sumit org,
+no paid call.
+
+## What landed (2026-10-13, later) — social posting: four UI fixes after PR 3, `fix/social-posting-ui`, MERGED as PR #96 (`9e7000b`)
 
 [[0108-social-posting-four-ui-fixes-after-pr3]] (his five decisions of 2026-10-13, with a dated
 pointer on 0101); docs/09's screens table carries the new behaviour. **UI only, `apps/web` only**:
@@ -1285,6 +1345,9 @@ until someone measures whether a wallet payment leaves a chargeable saved card.
 
 ## The queue
 
+**The ₪5 intro offer — BUILT 2026-10-14 on `feat/intro-offer`, NOT merged** ([[0109-a-five-shekel-intro-offer]]);
+its path to live is the owed list's first bullet.
+
 Two axes. **Money** (item 0) and **pipeline** (items 1–7, all from the 2026-09-18 diagnosis), then
 the older launch items. Item 0 no longer outranks everything the way it did — billing exists and has
 taken a real payment — but what is left of it is still the part that decides whether the next
@@ -1698,6 +1761,36 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **The ₪5 intro offer (2026-10-14, `feat/intro-offer`).** Each its own OK, in order:
+  1. ~~the test-org ₪5 page~~ DONE 2026-10-14 (`…/138f5dl/14m9m60/14m9m61/payment/`, redirect to
+     localhost);
+  2. **finish the test walkthrough on a day the test terminal approves a card** (it declined all
+     on 2026-10-14): the approved ₪5 → trial active, the second attempt refused, the continue
+     charging the saved card, the two receipts' lines — `packages/core/.work/intro-walk.ts`;
+  3. the real-org ₪5 page: fixed price ₪5, its own catalogue, **"קטלוג ללא מע"מ" OFF**, Bit off,
+     redirect to the production return route;
+  4. OK the 0061/0062 push (dry-run in the PR report; read-backs in each file's VERIFY block);
+  5. merge (it publishes the §8 bullet and the new `UPDATED` — E12(a) is open);
+  6. the box (pull, install, restart — `expire_trials` and `reconcile_continue` live there; it must
+     run before the switch, step 8);
+  7. on Vercel, `SUMIT_INTRO_PAGE` = the real page's bare URL, then a redeploy; and read the web
+     project's function time limit (Fluid on or off) — a continue's worst case is ~95 s, a kill is
+     safe (the settle resolves it) but the customer then waits ten minutes;
+  8. the switch: `update app_config set value = '{"enabled": true}'::jsonb, updated_at = now() where
+key = 'intro_offer';`;
+  9. **the real ₪5 purchase** — from a NEW customer-role account (new email, new business name: Sumit
+     matches returning customers by those, and tavnit.support already holds a subscription, so it is
+     refused by design), in a browser profile that has never signed in as admin; a self-purchase,
+     kept out of revenue figures;
+  10. **the real-terminal continue** — the first real saved-card charge;
+  11. the cost read-back after the trial is used: `aiugc costs --business <id> --from <date>` and
+      the account's `usage_events`;
+  12. **AUTH-03 (CAPTCHA on signup) before any campaign that promotes the offer**;
+  13. counsel: legal-review E12 (the §14 material-change question, the cancellation carve-out, the
+      30-day expiry of paid credits);
+  14. the copy: every line marked COPY PENDING in `lib/plans-ui.ts`, the terms bullet, the receipt
+      line `תבנית — מסלול <name>, חודש ראשון`.
 
 - **PostHog (2026-10-11, `feat/posthog-web`).** Each its own OK, in order: 1. at PR review, the
   Hebrew (the notice line, two wordings offered, and every `/privacy` sentence) and the planning

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { addOneMonth, getAccountBilling, getDb } from "@aiugc/core";
+import { addOneMonth, getAccountBilling, getDb, getTrialView } from "@aiugc/core";
 import { Amounts } from "@/components/plans/plan-cards";
 import { authedUser } from "@/lib/auth-user";
 import { parsePlanParam, PLAN_PARAM } from "@/lib/onboarding";
@@ -47,14 +47,20 @@ export default async function CheckoutPage({
   const code = parsePlanParam(params[PLAN_PARAM]);
   if (!code) redirect("/home/plan");
 
-  const [view, billing] = await Promise.all([
+  const db = getDb();
+  const [view, billing, trial] = await Promise.all([
     loadPlansView(),
-    getAccountBilling(getDb(), { userId: user.id }),
+    getAccountBilling(db, { userId: user.id }),
+    getTrialView(db, user.id),
   ]);
   const plan = view.plans.find((candidate) => candidate.code === code);
   if (!plan) redirect("/home/plan");
   const live = billing.subscription;
   if (live && live.status !== "suspended") redirect("/home/plan");
+  // A continue from the ₪5 trial whose charge is still being confirmed
+  // (decision 0109): a second purchase now could charge twice. The plan page
+  // says so; createCheckoutIntent refuses it too.
+  if (trial?.attemptPending) redirect("/home/plan");
   const renew = live?.status === "suspended";
   const nextCharge = formatDate(addOneMonth(new Date()));
 

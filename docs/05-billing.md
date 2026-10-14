@@ -146,10 +146,10 @@ which is why every failure line carries the intent, payment and customer ids and
 replayable return path. Before the session and ownership checks (malformed parameters, no
 session, an unknown intent) **nothing is written at all**; only the line changes.
 
-There is no "resolved" column. **A row is resolved when a `checkout_charge` exists under the
-same payment id** — which is what happens when the cause is fixed and the founder replays the
-return URL while signed in as that customer (measured 2026-09-21: the replay activated the
-subscription normally). The open ones:
+There is no "resolved" column. **A row is resolved when a `checkout_charge` — or, for the ₪5
+intro offer, an `intro_charge` — exists under the same payment id** — which is what happens when
+the cause is fixed and the founder replays the return URL while signed in as that customer
+(measured 2026-09-21: the replay activated the subscription normally). The open ones:
 
 ```sql
 select e.payload->>'intentId'   as intent,
@@ -161,7 +161,7 @@ from gateway_events e
 where e.kind = 'checkout_unconfirmed'
   and not exists (
     select 1 from gateway_events c
-    where c.kind = 'checkout_charge'
+    where c.kind in ('checkout_charge', 'intro_charge')
       and c.gateway_event_id = e.payload->>'sumitPaymentId'
   )
 order by e.received_at desc;
@@ -197,7 +197,8 @@ the retry, visibly, and refunded by hand (decision 0062).
 an intent; Bit stays off on the pages (and at the clearing level in the real org).
 
 **Environment** — `SUMIT_COMPANY_ID`, `SUMIT_API_KEY`, `SUMIT_CHECKOUT_PAGES` (JSON, plan code →
-payment-page URL). All optional and read through `packages/core/src/config.ts`; absent means
+payment-page URL), and since 2026-10-14 `SUMIT_INTRO_PAGE` (one bare https URL, the ₪5 intro
+offer's page — see its section below). All optional and read through `packages/core/src/config.ts`; absent means
 today's behaviour (`NotConfiguredGateway`, checkout 503). **Which Sumit organisation** — the
 founder's test business or the real one — is decided by these values alone: test keys and test
 pages locally, production keys and pages on Vercel and the worker box. `getBillingGateway()`
@@ -249,6 +250,116 @@ the first customers cannot be refunded out of Sumit at all — so a paid-but-una
 recovered by fixing the cause and **replaying the return URL**, which is what worked on 2026-09-21
 ([`facts/sumit-real-org-configuration.md`](vault/facts/sumit-real-org-configuration.md),
 [`facts/first-real-purchase-2026-09-21.md`](vault/facts/first-real-purchase-2026-09-21.md)).
+
+## The ₪5 intro offer (built 2026-10-14)
+
+Decision [`0109`](vault/decisions/0109-a-five-shekel-intro-offer.md). An account that has **never
+paid** buys, **once**, on its own Sumit page, **150 credits for every service for ₪5**, expiring
+**30 days after the payment**. It is not a fourth plan, it never renews, and it **never becomes a
+charge by itself**. "Continue" is the customer's choice: the card Sumit saved at the ₪5 payment
+is charged for an ordinary first month of a plan.
+
+- **The numbers** are one core constant, `INTRO_OFFER = { priceAgorot: 500, credits: 150, days: 30 }`
+  (`packages/core/src/pipelines/intro.ts`); every surface gets them as arguments. Changing one is
+  a deploy _and_ the Sumit page's price — the intent snapshots the price and completion refuses
+  any other amount.
+- **The switch** is `app_config.intro_offer = {"enabled": true|false}` (seeded off by 0062). Absent
+  or unparseable reads as off, never a throw. It stops **new** intents and hides the offer; a page
+  already paid still activates, and running trials, the sweep and the continue never read it.
+
+  ```sql
+  -- on (after the box carries expire_trials / reconcile_continue and SUMIT_INTRO_PAGE is set)
+  update app_config set value = '{"enabled": true}'::jsonb, updated_at = now() where key = 'intro_offer';
+  -- off
+  update app_config set value = '{"enabled": false}'::jsonb, updated_at = now() where key = 'intro_offer';
+  ```
+
+- **The page** is `SUMIT_INTRO_PAGE`: one bare https URL, the ₪5 product's payment page
+  (`https://pay.sumit.co.il/<org>/<catalog>/<product>/payment/`), read by apps/web only. Unset or
+  not https → the offer is hidden everywhere and `POST /api/account/intro` answers 503 before any
+  write. A key of its own, because one bad entry in `SUMIT_CHECKOUT_PAGES` nulls every plan's
+  page. On the Sumit side: its own fixed-price catalogue, one product (its name is the ₪5 receipt
+  line), redirect to the same return route, **"קטלוג ללא מע"מ" OFF on the real org** (the ₪5
+  payment creates the customer every later continue and renewal charges), Bit off.
+- **Eligibility** (`introEligibility`), in order: `already_used` (an `intro_trials` row),
+  `has_paid` (any `subscriptions` row in any status, or a completed plan intent), `offer_off`.
+  No card or IP check; the address is stored in `terms_acceptances` as evidence only. DFY
+  `orders` are not counted (no code writes them).
+- **The purchase** is the hosted checkout's own path (0062): `POST /api/account/intro` →
+  `createIntroIntent` refuses an ineligible account **before writing anything**, then writes a
+  `terms_acceptances` row (context `intro`) and a `checkout_intents` row with `kind = 'intro'`, no
+  plan, `price_agorot = 500` → the browser leaves for the page → the same return route →
+  `completeCheckout`. Verification is unchanged except that an intro needs no saved card (only the
+  optional continue does). Under the `users` lock it re-checks `already_used` / `has_paid` (two
+  paid tabs, or a plan bought in between → `checkout_refused`, refund by hand), then writes the
+  `intro_trials` row (`started_at` = the payment's own date, `expires_at` = +30 days),
+  `grant_trial +150` (ref = the intent) and a `gateway_events` row `intro_charge` under the payment
+  id. The return lands on `?checkout=intro` (and `intro_refused` / `intro_failed` /
+  `intro_unconfirmed`), the same lines as a plan's.
+- **No renewal ever fires for a trial**: `processDueRenewals` reads only `subscriptions`, and a
+  trial writes none.
+- **Day 30** — the daily `expire_trials` job (beside `billing_renewals`): for every trial past its
+  date with no plan joined and no continue pending, under the `users` → trial locks,
+  `expire_trial` takes
+  `min(150, balance − balance_before − manual granted since − refunds of the renders open at
+activation)`. Spend uses trial credits before manual ones; the subtrahend is everything that is
+  not trial, so **a manual grant is never taken** (pinned in `packages/core/test/intro.test.ts`).
+  Credits stay spendable until the sweep runs (≤ ~25 h past the date). Accepted, pinned: a
+  trial-era render refunded after the sweep keeps its credits.
+- **Continue** — `/home/plan/continue?plan=<code>` (the checkout summary without the card step:
+  price, credits, "today on the saved card, next on …", the auto-renewal line, the leftover line,
+  VAT, the terms checkbox, one button naming the amount) → `POST /api/account/intro/continue` →
+  `continueFromTrial`:
+  1. under the locks: refuse `no_trial` / `converted` / `attempt_pending` / `already_subscribed` /
+     `unknown_plan`; record the acceptance (context `continue`); **write the attempt**
+     (`continue_attempt_at/_plan/_agorot`) and enqueue `reconcile_continue` for 10 minutes on —
+     committed before the card is touched;
+  2. `SumitGateway.chargeRecurring` on the trial's Sumit customer, description
+     `תבנית — מסלול <name>, חודש ראשון`, outside any transaction; the answer is recorded at once
+     (`continue_charge` / `continue_charge_failed` / `continue_charge_unconfirmed`);
+  3. ok → under the locks: a new `active` subscription (period from the click — or, for a continue
+     the settle activates later, from the settle; full price, full credits — not 0052's proration), `grantPeriod`, the trial `converted_at`. The leftover trial
+     credits are untouched and leave with the period remainder at the first renewal or cancel —
+     except for an account that spent a hand grant before the trial, where
+     `expirePeriodRemainder`'s lifetime-manual rule keeps up to that grant (pre-existing,
+     customer-favourable, pinned). A continue decided at or after the 30 days expires the leftover
+     first. Declined → the attempt is cleared and the page offers the hosted checkout with another
+     card. Unconfirmed (or the function killed mid-charge) → the attempt stays, and a new continue
+     and a new hosted checkout both refuse until it settles; a hosted page opened before the click
+     can still be paid, and then the settle records the continue's charge orphaned if it went
+     through. Already converted meanwhile (a hosted page paid in another
+     tab) → `continue_charge_orphaned`, refund by hand.
+- **Settling a lost answer — automatic** (founder, 2026-10-14): `reconcile_continue` (and the daily
+  job as a backstop) reads Sumit's payments list over [attempt − 2 min, attempt + 10 min] for this
+  customer, this exact amount, valid, no `ExternalIdentifier`. Found → the month activates on it.
+  Not found → the attempt clears (`continue_charge_cleared`). Safe here as it is not for renewals:
+  a trial's customer has no subscription, so nothing else charges it, and the open attempt refuses
+  every new continue and hosted checkout. Each job settles only the attempt that enqueued it; when
+  the list cannot be read it retries every five minutes for an hour, then leaves it to the daily
+  backstop.
+- **A hosted plan purchase converts the trial** exactly like a continue (the declined-continue
+  fallback goes there), and `/home/plan?plan=<code>` sends an open trial to the continue page.
+- **Surfaces**: the offer box on `/home/plan` and one line in `NoCreditsCard` for an eligible
+  account, one line under the `/pricing` cards (read per request, outside the cached view); the
+  trial line on `/home/plan` and `/home/settings`; never a fourth card, never on the landing.
+  PostHog: `checkout_started {plan: "intro"}`; `payment_returned` gains `intro`, `intro_refused`,
+  `intro_failed`, `intro_unconfirmed`, `continued`.
+
+The founder's reads (production, read-only):
+
+```sql
+-- every trial, its state and whether it joined a plan
+select t.user_id, t.started_at, t.expires_at, t.expired_at, t.converted_at, s.plan_code,
+       t.continue_attempt_at
+from intro_trials t left join subscriptions s on s.id = t.subscription_id
+order by t.started_at desc;
+-- continues still being settled (the settle normally clears these within ~10 minutes)
+select user_id, continue_attempt_at, continue_attempt_plan, continue_attempt_agorot
+from intro_trials where continue_attempt_at is not null;
+-- continue charges that need a hand: paid on an account that had already joined a plan
+select gateway_event_id, payload, received_at from gateway_events
+where kind = 'continue_charge_orphaned' order by received_at desc;
+```
 
 ## Subscription lifecycle
 
@@ -537,15 +648,15 @@ this row, never a deploy; the code does not know which pricing model won.
   per-account caps: that is how cold-outreach samples run on the production pipeline, and they
   come out un-watermarked deliberately.
 
-### No subscription, no free tier
+### No free tier — a subscription, or the ₪5 intro offer
 
 **A positive credit balance is the only door.** There is no subscription lookup in the render path
-and no in-product free video of any kind, watermarked or not. Credits are granted today (admin
-console) and purchased once payments exist.
+and no in-product free video of any kind, watermarked or not. Credits come from a plan, from the
+₪5 intro offer (paid, once per never-paid account — see its section), or from a grant by hand in
+the admin console. "Free" is never printed (vault 0109 §1.4).
 
-Kept dormant, not deleted, because payments will want them: the Remotion watermark layer and
-`video_renders.watermarked`, `businesses.sample_used_at`, the `subscriptions` table, and
-`grantPeriod` / `expirePeriodRemainder`.
+Kept dormant, not deleted: the Remotion watermark layer and `video_renders.watermarked`, and
+`businesses.sample_used_at` (no customer path sets them; vault 0068 §2).
 
 ## Quotas and caps
 
