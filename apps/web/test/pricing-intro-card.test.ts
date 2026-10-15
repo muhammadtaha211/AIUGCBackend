@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -5,7 +7,7 @@ import type { CreditCosts } from "@aiugc/core/pricing";
 import type { PlanRow } from "../src/lib/plans";
 import {
   INTRO_CARD_CLAIM,
-  INTRO_CARD_SUB,
+  INTRO_CARD_BADGE,
   INTRO_CARD_TITLE,
   INTRO_OFFER_ACTION,
   INTRO_PATH,
@@ -141,19 +143,24 @@ describe("the gate (pricingIntroOffer)", () => {
 });
 
 describe("the /pricing page", () => {
-  it("a stranger: the lime card first in the row, its button to plain signup", async () => {
+  it("a stranger: the gradient card first in the row, its pill on top, its button to plain signup", async () => {
     const html = await renderPricing();
     const card = introArticle(html);
     expect(card).toContain(INTRO_CARD_TITLE);
-    expect(card).toContain(INTRO_CARD_SUB);
+    // The "new customers" line is the pill over the card's top edge now (0113), not a line under the title.
+    expect(card).toMatch(
+      new RegExp(`<span class="absolute inset-x-0 -top-3[^"]*">${INTRO_CARD_BADGE}</span>`),
+    );
+    expect(card.indexOf(INTRO_CARD_BADGE)).toBeLessThan(card.indexOf(INTRO_CARD_TITLE));
+    expect(card.split(INTRO_CARD_BADGE).length - 1).toBe(1);
     expect(card).toContain("₪5");
     expect(card).toContain("150 קרדיטים, בתוקף 30 יום");
     expect(card).toContain(INTRO_CARD_CLAIM);
     expect(card).toContain('href="/start"');
     expect(card).toContain(PUBLIC_SIGNED_OUT_ACTION);
-    // The article itself is lime: its own opening tag, not the button inside it (the
-    // primary variant's bg-accent is in the button's class list too).
-    expect(card.split(">")[0]).toMatch(/(?:^|\s)bg-accent(?=\s|")/);
+    // The article itself carries the brand gradient (lime to emerald): its own opening tag,
+    // not the button inside it.
+    expect(card.split(">")[0]).toContain("bg-gradient-to-br from-accent to-emerald-300");
     // A one-time purchase: nothing on it says monthly, renews, free, or a count of videos.
     expect(card).not.toMatch(/לחודש|בחודש|מתחדש|חינם|סרטונים|לפחות/);
     expect(card).not.toContain(POPULAR_BADGE);
@@ -196,7 +203,10 @@ describe("the plan cards", () => {
     for (const mode of ["public-signed-out", "app"] as const) {
       const html = renderToStaticMarkup(createElement(PlanCards, { view, mode }));
       expect(html).toContain("סרטוני גוש טקסט");
-      expect(html).toContain("עד 40 סרטוני גוש טקסט");
+      expect(html).toContain("לדוגמה: בערך 10 סרטונים");
+      expect(html).toContain("או 40 מודעות הוק + דמו");
+      expect(html).toContain("או 40 סרטוני גוש טקסט");
+      expect(html).not.toContain("עד ");
       expect(html).not.toContain("קרדיטים ל־20 שנ׳");
       expect(html).not.toContain("ניתוח ההקלטה");
       expect(html).not.toContain("עוסק פטור");
@@ -210,5 +220,36 @@ describe("the plan cards", () => {
     );
     expect(html).not.toContain(INTRO_CARD_TITLE);
     expect(html).toContain("md:grid-cols-3");
+  });
+
+  it("/home/plan (app mode): the same card first in the row, its button to the offer's page", () => {
+    const html = renderToStaticMarkup(
+      createElement(PlanCards, {
+        view,
+        mode: "app",
+        intro: { offer: OFFER, action: { href: INTRO_PATH, label: INTRO_OFFER_ACTION } },
+      }),
+    );
+    const card = introArticle(html);
+    expect(card).toContain(INTRO_CARD_TITLE);
+    expect(card).toContain(INTRO_CARD_BADGE);
+    expect(card).toContain(`href="${INTRO_PATH}"`);
+    expect(html.split("<article").length - 1).toBe(4);
+    expect(html).toContain("lg:grid-cols-2");
+    expect(html).not.toContain("grid-cols-4");
+    // Without the offer the app row is the three plans, as before.
+    const plain = renderToStaticMarkup(createElement(PlanCards, { view, mode: "app" }));
+    expect(plain).not.toContain(INTRO_CARD_TITLE);
+    expect(plain).toContain("lg:grid-cols-3");
+  });
+
+  it("/home/plan hands the card the offer the account may buy, and no longer draws the old box", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/app/home/plan/plan-manager.tsx", import.meta.url)),
+      "utf8",
+    );
+    expect(source).toContain("const offer = !live && !paymentInFlight ? sub.intro : null;");
+    expect(source).toContain("intro={offer && { offer, action: introCardAction(true) }}");
+    expect(source).not.toMatch(/introOfferTitle|introOfferLine|INTRO_NEVER_CHARGES_LINE/);
   });
 });

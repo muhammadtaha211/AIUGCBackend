@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039, 0041-0056 and 0061-0062 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039, 0041-0056 and 0061-0063 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -41,7 +41,9 @@
 -- 0053-0056 one each on 2026-10-09, to 47 — written with the feature branch,
 -- before any push, like 0049 and 0050 — and 0061/0062 one each on 2026-10-14,
 -- to 49 rows and 47 true, on feat/intro-offer before any push. 0057-0060 have
--- no row here.) Two of those
+-- no row here. 0063 (2026-10-15) added NO row: it moved the three plan prices
+-- one shekel down, so '0043-plans' folded into '0043+0063-plans' at the current
+-- values, as '0038+0040' did.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -505,13 +507,16 @@ WITH checks(migration, layer, applied, note) AS (VALUES
     AND value -> 'b_minimum_credits' = '75'::jsonb)),
   'seeded config: b_per_second 5 AND b_minimum_credits 75 (the new Service B floor)'),
 
-('0043-plans', 'structural', (SELECT NOT EXISTS (
+-- 0063 (2026-10-15, vault 0113) moved each price one shekel down under a guard
+-- on 0043's values, so 0043's literals would read FALSE on a correct database;
+-- folded here at the CURRENT values, like '0038+0040'.
+('0043+0063-plans', 'structural', (SELECT NOT EXISTS (
   SELECT 1 FROM plans
   WHERE (code, price_agorot, monthly_credits, allows_service_b) NOT IN (
-    ('starter', 15000, 1000, true),
-    ('pro',     30000, 2500, true),
-    ('studio',  50000, 5000, true)))),
-  'plans: 150/300/500 ILS at 1000/2500/5000 credits, Service B on all three'),
+    ('starter', 14900, 1000, true),
+    ('pro',     29900, 2500, true),
+    ('studio',  49900, 5000, true)))),
+  'plans: 149/299/499 ILS at 1000/2500/5000 credits, Service B on all three (0063 prices)'),
 
 -- 0041: subscriptions re-keyed from the business to the ACCOUNT. Asserts all
 -- four halves, because each is a different failure: user_id present but
@@ -579,7 +584,7 @@ WITH checks(migration, layer, applied, note) AS (VALUES
 -- 0044: the Hebrew plan names and the gateway default. The name UPDATEs are
 -- GUARDED on the Latin names, so as with 0040 a miss exits 0 and still records
 -- the version -- this row is how a silent no-op is found. NOT IN over every
--- plans row, like '0043-plans', so a fourth plan would need a row edit here.
+-- plans row, like '0043+0063-plans', so a fourth plan would need a row edit here.
 ('0044', 'structural', (SELECT NOT EXISTS (
   SELECT 1 FROM plans
   WHERE (code, name) NOT IN (

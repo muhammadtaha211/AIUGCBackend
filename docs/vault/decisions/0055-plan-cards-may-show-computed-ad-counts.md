@@ -9,6 +9,10 @@ supersedes: "[[0051-the-credit-unit-and-the-three-credit-only-plans]] §5, narro
 
 # 0055 — A plan card may show "עד N" ad counts, computed live, with the length stated
 
+> **2026-10-15** ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]]): the counts are an estimate. The line says "בערך", not "עד", and
+> the hook+demo count is the render price alone (starter 40, not 39). One recording's first ad
+> also carries the analysis, so the hook+demo figure can be one ad over.
+
 > **2026-10-15** ([[0112-pricing-names-three-services-and-shows-the-intro-card]]): the estimate names a third count, גוש טקסט, through
 > `quoteServiceC` (the form in §3 now has three counts); the credit key under it and the VAT
 > footnote under the cards are removed, on both `/pricing` and `/home/plan` (the footnote on the

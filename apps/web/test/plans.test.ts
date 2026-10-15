@@ -6,12 +6,15 @@ import {
   INTRO_CARD_CLAIM,
   introCardCreditsLine,
   introCardPriceLine,
+  priceLine,
+  rateLine,
 } from "@/lib/plans-ui";
 
 /**
  * The plan view model's arithmetic against the 0043 rates and the three 0043
  * plans (migrations 0043 + 0044, vault 0051): every number a plan card shows
- * is pinned here, so a card can never print a count the credits would not buy.
+ * is pinned here. The counts are what the credits buy, except hook+demo, which
+ * counts at the render price alone and so is an estimate ("בערך", vault 0113).
  */
 
 /** The credit_costs row as 0043 set it, with 0053's Service C flat. */
@@ -59,11 +62,11 @@ describe("buildPlansView — the 0043 ladder", () => {
     expect(view.plans.map((p) => p.discountPctVsCheapest)).toEqual([0, 20, 33]);
   });
 
-  it("counts: starter 10 / 39 / 40, pro 25 / 99 / 100, studio 50 / 199 / 200", () => {
+  it("counts: starter 10 / 40 / 40, pro 25 / 100 / 100, studio 50 / 200 / 200 (0113: hook+demo at the render price)", () => {
     expect(view.plans.map((p) => [p.countB, p.countA, p.countC])).toEqual([
-      [10, 39, 40],
-      [25, 99, 100],
-      [50, 199, 200],
+      [10, 40, 40],
+      [25, 100, 100],
+      [50, 200, 200],
     ]);
   });
 
@@ -88,7 +91,7 @@ describe("buildPlansView — edges", () => {
   it("a rate change moves the counts with no other edit", () => {
     const pricier = buildPlansView(PLANS, { ...COSTS, a_steps_credits: 50 });
     expect(pricier.examples.aNext).toBe(50);
-    expect(pricier.plans[0]!.countA).toBe(1 + Math.floor((1000 - 70) / 50));
+    expect(pricier.plans[0]!.countA).toBe(20);
     const pricierC = buildPlansView(PLANS, { ...COSTS, c_text_block_credits: 30 });
     expect(pricierC.examples.cAd).toBe(30);
     expect(pricierC.plans[0]!.countC).toBe(33);
@@ -138,8 +141,32 @@ describe("the card sentences read the view, never a literal", () => {
 
   it("estimate line on starter: all three services, the talking head's length stated", () => {
     expect(estimateLine(view.plans[0]!, view.examples)).toBe(
-      "לדוגמה: עד 10 סרטונים עם דמות AI של 20 שנ׳, או עד 39 מודעות הוק + דמו מהקלטה אחת, או עד 40 סרטוני גוש טקסט",
+      "לדוגמה: בערך 10 סרטונים עם דמות AI של 20 שנ׳, או 40 מודעות הוק + דמו מהקלטה אחת, או 40 סרטוני גוש טקסט",
     );
+  });
+
+  it("the 0063 prices: ₪149 / ₪299 / ₪499, the rates still print ₪0.15 / ₪0.12 / ₪0.10, discounts 20 / 33", () => {
+    const live = buildPlansView(
+      PLANS.map((p) => ({ ...p, priceAgorot: p.priceAgorot - 100 })),
+      COSTS,
+    );
+    expect(live.plans.map((p) => priceLine(p.priceAgorot))).toEqual([
+      "₪149 לחודש",
+      "₪299 לחודש",
+      "₪499 לחודש",
+    ]);
+    expect(live.plans.map((p) => rateLine(p.rateAgorotPerCredit))).toEqual([
+      "₪0.15 לקרדיט",
+      "₪0.12 לקרדיט",
+      "₪0.10 לקרדיט",
+    ]);
+    expect(live.plans.map((p) => p.discountPctVsCheapest)).toEqual([0, 20, 33]);
+    // The counts are credits, not money: unchanged.
+    expect(live.plans.map((p) => [p.countB, p.countA, p.countC])).toEqual([
+      [10, 40, 40],
+      [25, 100, 100],
+      [50, 200, 200],
+    ]);
   });
 
   it("never phrases a count as videos per month, and never mentions VAT as included", () => {

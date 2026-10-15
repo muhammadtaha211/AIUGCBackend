@@ -75,6 +75,7 @@ export const PORTABLE_MIGRATIONS = [
   "0060_scheduled_posts_ai_label.sql",
   "0061_ledger_reason_trial.sql",
   "0062_intro_offer.sql",
+  "0063_plan_prices_minus_one_shekel.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

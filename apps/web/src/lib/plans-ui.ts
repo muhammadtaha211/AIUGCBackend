@@ -11,8 +11,8 @@
  * plans table and credit_costs; the wording is a first draft.
  *
  * Two rules from vault 0051 §5 (as narrowed by 0055) and 0046 §2 hold on
- * every line: never "N סרטונים בחודש" as a feature — only the computed "עד N"
- * estimate with its length stated — and never "כולל מע״מ", which is false
+ * every line: never "N סרטונים בחודש" as a feature — only the computed
+ * "בערך N" estimate with its length stated (0113) — and never "כולל מע״מ", which is false
  * today and wrong at conversion.
  */
 
@@ -33,7 +33,7 @@ export type PlanView = {
   discountPctVsCheapest: number;
   /** Whole Service B ads of PlanExamples.bSeconds the month's credits buy. */
   countB: number;
-  /** Whole hook+demo ads off ONE recording: first at aFirst, the rest at aNext. */
+  /** Hook+demo ads off ONE recording at the render price (aNext); the line says "בערך". */
   countA: number;
   /** Whole גוש טקסט videos at PlanExamples.cAd each. */
   countC: number;
@@ -122,7 +122,7 @@ export function discountLabel(discountPct: number): string {
  * PENDING FOUNDER REVIEW).
  */
 export function estimateLine(plan: PlanView, examples: PlanExamples): string {
-  return `לדוגמה: עד ${formatCredits(plan.countB)} סרטונים עם דמות AI של ${examples.bSeconds} שנ׳, או עד ${formatCredits(plan.countA)} מודעות הוק + דמו מהקלטה אחת, או עד ${formatCredits(plan.countC)} סרטוני גוש טקסט`;
+  return `לדוגמה: בערך ${formatCredits(plan.countB)} סרטונים עם דמות AI של ${examples.bSeconds} שנ׳, או ${formatCredits(plan.countA)} מודעות הוק + דמו מהקלטה אחת, או ${formatCredits(plan.countC)} סרטוני גוש טקסט`;
 }
 
 /* ---------- /pricing ---------- */
@@ -485,12 +485,6 @@ export function continuePath(planCode: string): string {
   return `/home/plan/continue?${PLAN_PARAM}=${encodeURIComponent(planCode)}`;
 }
 
-export function introOfferTitle(offer: IntroOfferView): string {
-  return `להתחיל בהיכרות ב־${formatShekels(offer.priceAgorot)}`;
-}
-export function introOfferLine(offer: IntroOfferView): string {
-  return `${formatCredits(offer.credits)} קרדיטים לכל השירותים, בתוקף ${offer.days} יום מיום התשלום. פעם אחת לכל חשבון שעוד לא רכש מסלול.`;
-}
 /** Both halves of the decision's narrow line. */
 export const INTRO_NEVER_CHARGES_LINE =
   "ההיכרות לא הופכת לחיוב מעצמה. המסלולים החודשיים מתחדשים מדי חודש עד שמבטלים אותם.";
@@ -562,13 +556,17 @@ export function noCreditsIntroLine(offer: IntroOfferView): string {
 }
 
 /*
- * The /pricing card (decision 0112): a fourth card in the plans' row, lime.
+ * The intro card (decisions 0112, 0113): a fourth card in the plans' row, on
+ * the brand gradient, on /pricing and /home/plan.
  * A one-time purchase, so nothing on it says monthly or renews (0109 §1.1).
  * The title is the founder's own.
  */
 export const INTRO_CARD_TITLE = "חבילת התנסות";
-/** Only an account that has never paid may buy it (0109 §1.6). */
-export const INTRO_CARD_SUB = "ללקוחות חדשים בלבד";
+/**
+ * The pill over the card's top edge, where the popular card has its own (0113).
+ * Only an account that has never paid may buy it (0109 §1.6).
+ */
+export const INTRO_CARD_BADGE = "ללקוחות חדשים בלבד";
 export function introCardPriceLine(offer: IntroOfferView): string {
   return `${formatShekels(offer.priceAgorot)} בתשלום חד־פעמי`;
 }

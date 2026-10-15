@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/plans/confirm-dialog";
 import { Amounts, PlanCards, type CardSlot } from "@/components/plans/plan-cards";
-import { Button, PRIMARY_BUTTON_CLASS } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { track } from "@/lib/analytics-client";
 import {
   ATTEMPT_PENDING_LINE,
@@ -25,11 +25,7 @@ import {
   continuePath,
   DIALOG_BACK,
   INTRO_CONTINUE_LINE,
-  INTRO_NEVER_CHARGES_LINE,
-  INTRO_OFFER_ACTION,
-  INTRO_PATH,
-  introOfferLine,
-  introOfferTitle,
+  introCardAction,
   introSuccessLine,
   trialLine,
   downgradeDialogBody,
@@ -215,9 +211,10 @@ export function PlanManager({
   const status =
     live && current ? `${current.name} · ${periodLine(live, scheduled?.name ?? null)}` : null;
 
-  // The ₪5 intro offer (decision 0109). The offer box only for an account the
-  // API says may buy it now, and never under a landing that says a payment is
-  // already in flight — a second ₪5 there would be refused after the money moved.
+  // The ₪5 intro offer (decision 0109): the intro card in the plans' row
+  // (0113), only for an account the API says may buy it now, and never under a
+  // landing that says a payment is already in flight — a second ₪5 there would
+  // be refused after the money moved.
   const paymentInFlight =
     checkout === "refused" ||
     checkout === "unconfirmed" ||
@@ -496,21 +493,6 @@ export function PlanManager({
           <p>{INTRO_CONTINUE_LINE}</p>
         </div>
       )}
-      {offer && (
-        <div className="mb-6 flex flex-col gap-4 rounded-xl border border-ink/[0.08] bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 space-y-1.5">
-            <p className="text-base font-semibold text-ink">
-              <Amounts line={introOfferTitle(offer)} />
-            </p>
-            <p className="text-sm text-ink/70">{introOfferLine(offer)}</p>
-            <p className="text-sm text-ink/60">{INTRO_NEVER_CHARGES_LINE}</p>
-          </div>
-          {/* A link that looks like the primary button — never a <button> in an <a>. */}
-          <Link href={INTRO_PATH} className={`${PRIMARY_BUTTON_CLASS} shrink-0`}>
-            {INTRO_OFFER_ACTION}
-          </Link>
-        </div>
-      )}
       {live && current && !currentOnLadder && (
         <div className="mb-5 flex flex-col gap-3 rounded-xl border border-ink/[0.08] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-ink/80">{retiredPlanLine(current.name)}</p>
@@ -536,7 +518,12 @@ export function PlanManager({
         </div>
       )}
 
-      <PlanCards view={view} mode="app" slots={slots} />
+      <PlanCards
+        view={view}
+        mode="app"
+        slots={slots}
+        intro={offer && { offer, action: introCardAction(true) }}
+      />
 
       {renderDialog()}
     </div>

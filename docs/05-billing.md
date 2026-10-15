@@ -340,7 +340,7 @@ activation)`. Spend uses trial credits before manual ones; the subtrahend is eve
   backstop.
 - **A hosted plan purchase converts the trial** exactly like a continue (the declined-continue
   fallback goes there), and `/home/plan?plan=<code>` sends an open trial to the continue page.
-- **Surfaces**: the offer box on `/home/plan` and one line in `NoCreditsCard` for an eligible
+- **Surfaces**: the intro card in `/home/plan`'s plans row (decision 0113; it replaced the offer box) and one line in `NoCreditsCard` for an eligible
   account; on `/pricing` a fourth card, `חבילת התנסות`, first in the plans' row (decision 0112),
   for a stranger while the offer is live and for a signed-in account only while it may buy (read per
   request, outside the cached view); the trial line on `/home/plan` and `/home/settings`; never on
@@ -439,14 +439,14 @@ checkout (Sumit page) ──return + verify──▶ active ──period end─�
 
 ## Credits
 
-**Unit: 1000 credits = ₪150, i.e. ₪0.15 per credit on the base tier** (migration 0043,
+**Unit: 1000 credits = ₪149 since 2026-10-15 (₪150 from 0043 to 0063), about ₪0.15 per credit on the base tier** (migration 0043,
 [`0051`](vault/decisions/0051-the-credit-unit-and-the-three-credit-only-plans.md)). A credit is a
 unit of money, not of time. The older rule — "1 credit = 1 second" — is **retired**: nothing in
 code ever depended on it, and it stopped being true the moment the steps format priced a render as
 a flat. Service B is still **priced per second** of approved VO, now with a floor; Service A steps
 is two flats.
 
-> **Migration 0043 was applied to production on 2026-09-17** and these are the live prices. The
+> **Migration 0043 was applied to production on 2026-09-17** and these were the live prices (the credit rates still are; 0063 moved the three plan prices one shekel down on 2026-10-15). The
 > before-read returned the 0039 rates and 0001's placeholder plan prices with all four guards
 > matching; the after-read, through `getConfigValue(db, 'credit_costs', creditCostsSchema)`, returned
 > the ten rates below and the three plan rows. Ledger **44 rows, 0000–0043**, recorded by `db push`
@@ -468,9 +468,13 @@ change if and when it comes.
 
 | code      | name    | price      | credits/mo | per credit | Service B |
 | --------- | ------- | ---------- | ---------- | ---------- | --------- |
-| `starter` | התחלה   | ₪150 (net) | 1000       | ₪0.15      | ✔         |
-| `pro`     | מתקדם   | ₪300 (net) | 2500       | ₪0.12      | ✔         |
-| `studio`  | פרימיום | ₪500 (net) | 5000       | ₪0.10      | ✔         |
+| `starter` | התחלה   | ₪149 (net) | 1000       | ₪0.15      | ✔         |
+| `pro`     | מתקדם   | ₪299 (net) | 2500       | ₪0.12      | ✔         |
+| `studio`  | פרימיום | ₪499 (net) | 5000       | ₪0.10      | ✔         |
+
+The prices are migration 0063's ([`0113`](vault/decisions/0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less.md)): one shekel under 0043's ₪150 / ₪300 / ₪500,
+matching the Sumit payment pages. Every charge reads this row: the hosted checkout's amount check,
+renewals, the ₪5 trial's continue, and the upgrade proration.
 
 Prices are **net** — we ship as עוסק פטור, so no VAT is added today and on conversion it goes on
 top. The Hebrew display names are the founder's (2026-09-17) and live in `plans.name` since

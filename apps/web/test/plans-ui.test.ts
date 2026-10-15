@@ -19,7 +19,7 @@ import {
   formatDate,
   formatShekels,
   INTRO_CARD_CLAIM,
-  INTRO_CARD_SUB,
+  INTRO_CARD_BADGE,
   INTRO_CARD_TITLE,
   INTRO_NEVER_CHARGES_LINE,
   INTRO_OFFER_ACTION,
@@ -29,8 +29,6 @@ import {
   introCardCreditsLine,
   introCardPriceLine,
   introCreditsLine,
-  introOfferLine,
-  introOfferTitle,
   introPriceLine,
   introSuccessLine,
   introValidityLine,
@@ -458,15 +456,13 @@ describe("the ₪5 intro offer (decision 0109)", () => {
 
   it("the numbers arrive as arguments, and the offer's own lines never say free, videos, or monthly", () => {
     const lines = [
-      introOfferTitle(OFFER),
-      introOfferLine(OFFER),
       introPriceLine(OFFER),
       introCreditsLine(OFFER),
       introValidityLine(OFFER),
       INTRO_ONCE_LINE,
       noCreditsIntroLine(OFFER),
       INTRO_CARD_TITLE,
-      INTRO_CARD_SUB,
+      INTRO_CARD_BADGE,
       introCardPriceLine(OFFER),
       introCardCreditsLine(OFFER),
       INTRO_CARD_CLAIM,
@@ -481,14 +477,14 @@ describe("the ₪5 intro offer (decision 0109)", () => {
 
   it("the /pricing card (decision 0112): his title verbatim, its numbers as arguments, no 'at least'", () => {
     expect(INTRO_CARD_TITLE).toBe("חבילת התנסות");
-    expect(INTRO_CARD_SUB).toBe("ללקוחות חדשים בלבד");
+    expect(INTRO_CARD_BADGE).toBe("ללקוחות חדשים בלבד");
     expect(introCardPriceLine(OFFER)).toBe("₪5 בתשלום חד־פעמי");
     expect(introCardCreditsLine(OFFER)).toBe("150 קרדיטים, בתוקף 30 יום");
     expect(introCardCreditsLine({ ...OFFER, credits: 1500, days: 45 })).toBe(
       "1,500 קרדיטים, בתוקף 45 יום",
     );
     expect(introCardPriceLine({ ...OFFER, priceAgorot: 750 })).toBe("₪7.50 בתשלום חד־פעמי");
-    for (const line of [INTRO_CARD_SUB, introCardCreditsLine(OFFER), INTRO_CARD_CLAIM]) {
+    for (const line of [INTRO_CARD_BADGE, introCardCreditsLine(OFFER), INTRO_CARD_CLAIM]) {
       expect(line).not.toContain("לפחות");
     }
   });
@@ -505,7 +501,6 @@ describe("the ₪5 intro offer (decision 0109)", () => {
 
   it("no punctuation sits directly after a ₪ amount, where Amounts would pull it into the LTR island", () => {
     for (const line of [
-      introOfferTitle(OFFER),
       introPriceLine(OFFER),
       noCreditsIntroLine(OFFER),
       introCardPriceLine(OFFER),

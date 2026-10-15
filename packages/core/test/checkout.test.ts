@@ -76,7 +76,8 @@ function fake(opts: {
         valid: true,
         status: "000",
         statusDescription: " (קוד 000)",
-        amountAgorot: 15000,
+        // The starter price since 0063 (₪149).
+        amountAgorot: 14900,
         externalIdentifier: null,
         documentId: 2376907762,
         paymentMethod: PAYING,
@@ -265,7 +266,7 @@ describe("completeCheckout", () => {
       gatewayEventId: PAYMENT_ID,
       kind: "checkout_charge",
     });
-    expect(events[0]!.payload).toMatchObject({ intentId: intent.id, amountAgorot: 15000 });
+    expect(events[0]!.payload).toMatchObject({ intentId: intent.id, amountAgorot: 14900 });
 
     const done = (await db.select().from(schema.checkoutIntents))[0]!;
     expect(done).toMatchObject({
@@ -362,11 +363,11 @@ describe("completeCheckout", () => {
     await pg.close();
   });
 
-  it("an amount that differs from the intent's price changes nothing", async () => {
+  it("an amount that differs from the intent's price changes nothing (the pre-0063 ₪150 for a ₪149 plan)", async () => {
     const { db, pg } = await createTestDb();
     const { userId } = await account(db);
     const intent = await intentFor(db, userId);
-    const { client } = fake({ payment: { externalIdentifier: intent.id, amountAgorot: 14900 } });
+    const { client } = fake({ payment: { externalIdentifier: intent.id, amountAgorot: 15000 } });
 
     await expect(
       completeCheckout(db, {
@@ -394,7 +395,7 @@ describe("completeCheckout", () => {
       intentId: intent.id,
       reason: "amount_mismatch",
       sumitPaymentId: PAYMENT_ID,
-      amountAgorot: 14900,
+      amountAgorot: 15000,
     });
     await pg.close();
   });
@@ -712,7 +713,7 @@ describe("recordUnconfirmedCheckoutReturn", () => {
         sumitPaymentId: PAYMENT_ID,
         sumitCustomerId: CUSTOMER,
         now: NOW,
-        client: fake({ payment: { externalIdentifier: intent.id, amountAgorot: 14900 } }).client,
+        client: fake({ payment: { externalIdentifier: intent.id, amountAgorot: 15000 } }).client,
       }),
     ).rejects.toMatchObject({ reason: "amount_mismatch" });
 
@@ -722,7 +723,7 @@ describe("recordUnconfirmedCheckoutReturn", () => {
     expect(rows.map((r) => r.kind).sort()).toEqual(["checkout_refused", "checkout_unconfirmed"]);
     const refused = rows.find((r) => r.kind === "checkout_refused")!;
     expect(refused.gatewayEventId).toBe(`sumit_refused_${PAYMENT_ID}`);
-    expect(refused.payload).toMatchObject({ reason: "amount_mismatch", amountAgorot: 14900 });
+    expect(refused.payload).toMatchObject({ reason: "amount_mismatch", amountAgorot: 15000 });
     expect(refused.processedAt?.getTime()).toBe(NOW.getTime());
     await pg.close();
   });

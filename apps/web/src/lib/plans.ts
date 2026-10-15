@@ -25,9 +25,10 @@ import type { PlanExamples, PlansView, PlanView } from "@/lib/plans-ui";
  * This is the ONLY place a plan price, rate or count is computed (founder
  * constraint, 2026-09-17): components format what they are handed.
  *
- * The "עד N" counts are the one sanctioned count on a card — vault 0055,
- * which narrows 0051 §5's copy rule to exactly this computed form with the
- * Service B length stated beside it; 0112 added the third.
+ * The "בערך N" counts are the one sanctioned count on a card — vault 0055,
+ * which narrows 0051 §5's copy rule to this computed form with the Service B
+ * length stated beside it; 0112 added the third, and 0113 made all three an
+ * estimate ("בערך", not "עד").
  */
 
 /** The Service B example length, in seconds — stated on the card beside the count. */
@@ -79,9 +80,10 @@ export function buildPlansView(rows: PlanRow[], costs: CreditCosts): PlansView {
           ? Math.max(0, Math.round(((cheapestRate - rate) / cheapestRate) * 100))
           : 0,
       countB: bAd > 0 ? Math.floor(credits / bAd) : 0,
-      // One recording: the first ad carries the analysis, every later one is
-      // the render alone (vault 0048).
-      countA: credits >= aFirst && aNext > 0 ? 1 + Math.floor((credits - aFirst) / aNext) : 0,
+      // The render price alone (founder, 2026-10-15, vault 0113): the one-time
+      // analysis on the first ad (0048) sits inside the line's "בערך". A plan
+      // that cannot pay for one first ad still counts 0.
+      countA: credits >= aFirst && aNext > 0 ? Math.floor(credits / aNext) : 0,
       // A flat per render (decision 0099), so a plain division.
       countC: cAd > 0 ? Math.floor(credits / cAd) : 0,
       popular: row.code === POPULAR_CODE,
@@ -115,8 +117,9 @@ export async function loadPlansView(): Promise<PlansView> {
  * change reaches the marketing page within the hour and the signed-in page
  * immediately, which is the right way round.
  */
-// The key part names the view's shape: bump it when PlanView or PlanExamples
-// changes, so an entry cached before a deploy can never reach the new code.
-export const loadPlansViewCached = unstable_cache(loadPlansView, ["plans-view", "v2"], {
+// The key part names the view's shape and meaning: bump it when PlanView or
+// PlanExamples changes, or what a count means (0113: v3), so an entry cached
+// before a deploy can never reach the new code.
+export const loadPlansViewCached = unstable_cache(loadPlansView, ["plans-view", "v3"], {
   revalidate: 3600,
 });

@@ -8,8 +8,8 @@ import {
   creditsLine,
   discountLabel,
   estimateLine,
+  INTRO_CARD_BADGE,
   INTRO_CARD_CLAIM,
-  INTRO_CARD_SUB,
   INTRO_CARD_TITLE,
   introCardCreditsLine,
   introCardPriceLine,
@@ -26,19 +26,20 @@ import {
 
 /**
  * The three plan cards, shared by /pricing (public, signed out or in) and
- * /home/plan (app), and on /pricing the ₪5 intro card beside them while the
- * offer is live (decision 0112). Every sentence and number on a card is a
+ * /home/plan (app), and the ₪5 intro card beside them: on /pricing while the
+ * offer is live, on /home/plan while the account may buy it (decisions 0112,
+ * 0113). Every sentence and number on a card is a
  * plans-ui line over the view model — nothing here computes a price, a rate or a count
  * (lib/plans.ts is the one place that does). The card only decides what goes
  * big, what goes small, and which button sits at the bottom.
  *
  * Two bold elements: the popular card is inverted — paper on ink instead of
- * ink on paper — and carries the lime pill; the intro card is the one lime
- * card, ink on lime. Everything else stays quiet, in the same three tokens the
- * rest of the app uses.
+ * ink on paper — and carries the lime pill; the intro card is the one
+ * gradient card, ink on the brand gradient (lime to emerald, the sidebar
+ * avatar's), with an ink pill. Everything else stays quiet.
  *
- * RTL: the grid's first child (the intro card on /pricing while the offer is
- * live, otherwise the cheapest plan) sits on the RIGHT, which is where a Hebrew
+ * RTL: the grid's first child (the intro card when it shows, otherwise the
+ * cheapest plan) sits on the RIGHT, which is where a Hebrew
  * reader starts.
  */
 
@@ -242,9 +243,10 @@ function PlanCard({
 }
 
 /**
- * The ₪5 intro offer as a card (decision 0112): lime with ink text, the
- * inverse of the popular card. Its numbers are core's INTRO_OFFER, handed in;
- * the button is ink because the primary button is lime.
+ * The ₪5 intro offer as a card (decisions 0112, 0113): ink text on the brand
+ * gradient, its "new customers" pill over the top edge where the popular card
+ * has its own. Its numbers are core's INTRO_OFFER, handed in; the button is
+ * ink because the primary button is lime.
  */
 function IntroCard({
   offer,
@@ -257,12 +259,14 @@ function IntroCard({
   return (
     <article
       aria-labelledby={headingId}
-      className="relative flex flex-col rounded-xl bg-accent p-6 text-ink shadow-xl shadow-ink/[0.05] ring-1 ring-ink/10 sm:p-7"
+      className="relative flex flex-col rounded-xl bg-gradient-to-br from-accent to-emerald-300 p-6 text-ink shadow-xl shadow-ink/[0.05] ring-1 ring-ink/10 sm:p-7"
     >
+      <span className="absolute inset-x-0 -top-3 mx-auto w-fit rounded-full bg-ink px-3 py-1 text-xs font-semibold text-accent">
+        {INTRO_CARD_BADGE}
+      </span>
       <h2 id={headingId} className="text-lg font-semibold">
         {INTRO_CARD_TITLE}
       </h2>
-      <p className="mt-1 text-sm text-ink/75">{INTRO_CARD_SUB}</p>
       <p className="mt-3 text-sm text-ink/75">
         <Amounts
           line={introCardPriceLine(offer)}
@@ -292,7 +296,7 @@ export function PlanCards({
   view: PlansView;
   mode: PlanCardsMode;
   slots?: Record<string, CardSlot>;
-  /** /pricing only: the intro card, first in the row (on the right), while the offer is live. */
+  /** The intro card, first in the row (on the right): /pricing while the offer is live, /home/plan while the account may buy it. */
   intro?: { offer: IntroOfferView; action: { href: string; label: string } } | null;
 }) {
   // pt-3 leaves room for the popular pill, which overhangs its card's top
@@ -300,9 +304,17 @@ export function PlanCards({
   // app: there the cards live in a pane 256px narrower than the viewport (and
   // zoomed), so a md viewport gives each card ~100px. With the intro card the
   // public row is four from xl and two by two from md: four at lg would leave
-  // each card ~170px for its text.
+  // each card ~170px for its text. In the app the intro card makes it two by
+  // two from lg, at every width: the pane is capped at max-w-5xl, so four
+  // across would always be ~218px, which wraps the price away from "לחודש".
   const columns =
-    mode === "app" ? "lg:grid-cols-3" : intro ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3";
+    mode === "app"
+      ? intro
+        ? "lg:grid-cols-2"
+        : "lg:grid-cols-3"
+      : intro
+        ? "md:grid-cols-2 xl:grid-cols-4"
+        : "md:grid-cols-3";
   return (
     <div>
       <div className={`grid items-stretch gap-5 pt-3 ${columns}`}>
