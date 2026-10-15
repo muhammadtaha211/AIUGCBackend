@@ -923,6 +923,25 @@ had ticked a minute before the read; no `reconcile_continue` row; the switch `{"
 weaker no-SSH check of [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]]. He then
 OK'd the merge of these records (PR #98, "go ahead and merge 98").
 
+## What landed (2026-10-15, later) — readable badge and warnings, `fix/readable-badge-and-warnings`, NOT merged
+
+Placed below 2026-10-14 so it does not collide with PR #99's entry above it. Four lines in the app
+were dark-theme colours left on light surfaces. The PostHog task's recon found the first two; they
+are fixed here in the app's own house style. Contrast was computed from Tailwind 4.3.3's values and
+re-measured from the browser's computed colours on a throwaway page (deleted):
+
+- the `/home/demos` "מוכן" badge, from `bg-accent/15 text-accent` (1.17:1) to `bg-accent/25
+text-ink` (17.7:1), the "active" plan pill's style;
+- the A hook studio's small-text warning, from `text-amber-300/90` (1.40:1) to `text-amber-700`
+  (5.03:1 on white, 4.70 on paper), the style of the other inline warnings;
+- the same warning in the B effect step, from `text-amber-600` (3.19:1) to `text-amber-700`;
+- B's audio step "script changed" notice, from `bg-amber-500/10 text-amber-200` (1.15:1) to
+  `bg-amber-50 text-amber-900` (8.7:1), the app's other alert boxes. It normally never shows.
+
+**Left as they are, dead code:** `components/a-wizard/step-script.tsx` (imported nowhere) and B
+`step-audio`'s `measuredEnding` line (`b-wizard.tsx` never passes `demoDurationMs`) still carry
+`text-amber-300/90`. They can never render.
+
 ## What landed (2026-10-13, later) — social posting: four UI fixes after PR 3, `fix/social-posting-ui`, MERGED as PR #96 (`9e7000b`)
 
 [[0108-social-posting-four-ui-fixes-after-pr3]] (his five decisions of 2026-10-13, with a dated

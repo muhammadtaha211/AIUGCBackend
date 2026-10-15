@@ -129,7 +129,7 @@ export function StepEffect({
               את הטקסט, ומהפינות כדי לשנות גודל.
             </p>
             {belowFloor && (
-              <p className="mt-1.5 text-[12px] text-amber-600">
+              <p className="mt-1.5 text-[12px] text-amber-700">
                 רק לתשומת לב, בגודל הזה הטקסט עלול להיות קשה לקריאה בטלפון. אפשר להגדיל את האזור או
                 לקצר את המשפט.
               </p>
