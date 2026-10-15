@@ -82,7 +82,8 @@ number below was measured on the founder's test business the same day
 
 1. **Summary page** — `/home/plan/checkout?plan=<code>` (also where `/home/plan?plan=<code>`
    and the cards' "בחירת המסלול" / "חידוש המנוי" lead). Price, credits, first and next charge
-   dates, the VAT footnote, the required terms checkbox, one button. Only an account with no
+   dates, the required terms checkbox, one button (the VAT footnote is gone since 2026-10-15,
+   decision 0112; terms §8 still says it). Only an account with no
    live subscription or a `suspended` one gets here; everyone else is sent back to `/home/plan`.
 2. **`POST /api/account/checkout`** `{ planCode, acceptedTerms: true }` → `createCheckoutIntent`
    writes the `terms_acceptances` row and a `checkout_intents` row (migration 0048) with the
@@ -308,7 +309,7 @@ activation)`. Spend uses trial credits before manual ones; the subtrahend is eve
   trial-era render refunded after the sweep keeps its credits.
 - **Continue** — `/home/plan/continue?plan=<code>` (the checkout summary without the card step:
   price, credits, "today on the saved card, next on …", the auto-renewal line, the leftover line,
-  VAT, the terms checkbox, one button naming the amount) → `POST /api/account/intro/continue` →
+  the terms checkbox, one button naming the amount; no VAT line since 2026-10-15, decision 0112) → `POST /api/account/intro/continue` →
   `continueFromTrial`:
   1. under the locks: refuse `no_trial` / `converted` / `attempt_pending` / `already_subscribed` /
      `unknown_plan`; record the acceptance (context `continue`); **write the attempt**
@@ -340,8 +341,10 @@ activation)`. Spend uses trial credits before manual ones; the subtrahend is eve
 - **A hosted plan purchase converts the trial** exactly like a continue (the declined-continue
   fallback goes there), and `/home/plan?plan=<code>` sends an open trial to the continue page.
 - **Surfaces**: the offer box on `/home/plan` and one line in `NoCreditsCard` for an eligible
-  account, one line under the `/pricing` cards (read per request, outside the cached view); the
-  trial line on `/home/plan` and `/home/settings`; never a fourth card, never on the landing.
+  account; on `/pricing` a fourth card, `חבילת התנסות`, first in the plans' row (decision 0112),
+  for a stranger while the offer is live and for a signed-in account only while it may buy (read per
+  request, outside the cached view); the trial line on `/home/plan` and `/home/settings`; never on
+  the landing.
   PostHog: `checkout_started {plan: "intro"}`; `payment_returned` gains `intro`, `intro_refused`,
   `intro_failed`, `intro_unconfirmed`, `continued`.
 

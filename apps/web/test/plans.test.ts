@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { CreditCosts } from "@aiugc/core/pricing";
 import { B_EXAMPLE_SECONDS, buildPlansView, type PlanRow } from "@/lib/plans";
-import { creditKeyLine, estimateLine } from "@/lib/plans-ui";
+import {
+  estimateLine,
+  INTRO_CARD_CLAIM,
+  introCardCreditsLine,
+  introCardPriceLine,
+} from "@/lib/plans-ui";
 
 /**
  * The plan view model's arithmetic against the 0043 rates and the three 0043
@@ -39,13 +44,13 @@ describe("buildPlansView — the 0043 ladder", () => {
     expect(view.plans.map((p) => p.popular)).toEqual([false, true, false]);
   });
 
-  it("prices the two examples through the quote functions: B 20s = 100, A 45 then 25", () => {
+  it("prices the three examples through the quote functions: B 20s = 100, A 45 then 25, C 25", () => {
     expect(view.examples).toEqual({
       bAd: 100,
       bSeconds: B_EXAMPLE_SECONDS,
       aFirst: 45,
       aNext: 25,
-      analysis: 20,
+      cAd: 25,
     });
   });
 
@@ -54,11 +59,11 @@ describe("buildPlansView — the 0043 ladder", () => {
     expect(view.plans.map((p) => p.discountPctVsCheapest)).toEqual([0, 20, 33]);
   });
 
-  it("counts: starter 10 / 39, pro 25 / 99, studio 50 / 199", () => {
-    expect(view.plans.map((p) => [p.countB, p.countA])).toEqual([
-      [10, 39],
-      [25, 99],
-      [50, 199],
+  it("counts: starter 10 / 39 / 40, pro 25 / 99 / 100, studio 50 / 199 / 200", () => {
+    expect(view.plans.map((p) => [p.countB, p.countA, p.countC])).toEqual([
+      [10, 39, 40],
+      [25, 99, 100],
+      [50, 199, 200],
     ]);
   });
 
@@ -84,6 +89,14 @@ describe("buildPlansView — edges", () => {
     const pricier = buildPlansView(PLANS, { ...COSTS, a_steps_credits: 50 });
     expect(pricier.examples.aNext).toBe(50);
     expect(pricier.plans[0]!.countA).toBe(1 + Math.floor((1000 - 70) / 50));
+    const pricierC = buildPlansView(PLANS, { ...COSTS, c_text_block_credits: 30 });
+    expect(pricierC.examples.cAd).toBe(30);
+    expect(pricierC.plans[0]!.countC).toBe(33);
+  });
+
+  it("a text block priced at 0 counts 0, never Infinity", () => {
+    const free = buildPlansView(PLANS, { ...COSTS, c_text_block_credits: 0 });
+    expect(free.plans.map((p) => p.countC)).toEqual([0, 0, 0]);
   });
 
   it("a plan that is pricier per credit than the cheapest gets 0, never a negative discount", () => {
@@ -111,7 +124,7 @@ describe("buildPlansView — edges", () => {
     const broken = view.plans.find((p) => p.code === "broken")!;
     expect(broken.rateAgorotPerCredit).toBe(0);
     expect(broken.discountPctVsCheapest).toBe(0);
-    expect([broken.countB, broken.countA]).toEqual([0, 0]);
+    expect([broken.countB, broken.countA, broken.countC]).toEqual([0, 0, 0]);
     // And the healthy plan beside it is unaffected: a 0 cheapest rate means no discount for anyone.
     expect(view.plans.find((p) => p.code === "starter")!.discountPctVsCheapest).toBe(0);
     expect(Number.isFinite(view.plans.find((p) => p.code === "starter")!.rateAgorotPerCredit)).toBe(
@@ -123,22 +136,19 @@ describe("buildPlansView — edges", () => {
 describe("the card sentences read the view, never a literal", () => {
   const view = buildPlansView(PLANS, COSTS);
 
-  it("estimate line on starter", () => {
+  it("estimate line on starter: all three services, the talking head's length stated", () => {
     expect(estimateLine(view.plans[0]!, view.examples)).toBe(
-      "לדוגמה: עד 10 סרטונים עם דמות AI של 20 שנ׳, או עד 39 מודעות הוק + דמו מהקלטה אחת",
-    );
-  });
-
-  it("credit key line", () => {
-    expect(creditKeyLine(view.examples)).toBe(
-      "סרטון עם דמות AI: 100 קרדיטים ל־20 שנ׳ · הוק + דמו: 25 קרדיטים, ועוד 20 חד־פעמית על ניתוח ההקלטה",
+      "לדוגמה: עד 10 סרטונים עם דמות AI של 20 שנ׳, או עד 39 מודעות הוק + דמו מהקלטה אחת, או עד 40 סרטוני גוש טקסט",
     );
   });
 
   it("never phrases a count as videos per month, and never mentions VAT as included", () => {
+    const offer = { priceAgorot: 500, credits: 150, days: 30 };
     const text = [
       ...view.plans.map((p) => estimateLine(p, view.examples)),
-      creditKeyLine(view.examples),
+      introCardPriceLine(offer),
+      introCardCreditsLine(offer),
+      INTRO_CARD_CLAIM,
     ].join("\n");
     expect(text).not.toContain("סרטונים בחודש");
     expect(text).not.toContain("כולל מע״מ");

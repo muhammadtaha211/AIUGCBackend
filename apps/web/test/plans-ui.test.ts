@@ -18,9 +18,16 @@ import {
   downgradeDialogBody,
   formatDate,
   formatShekels,
+  INTRO_CARD_CLAIM,
+  INTRO_CARD_SUB,
+  INTRO_CARD_TITLE,
   INTRO_NEVER_CHARGES_LINE,
+  INTRO_OFFER_ACTION,
   INTRO_ONCE_LINE,
   INTRO_PATH,
+  introCardAction,
+  introCardCreditsLine,
+  introCardPriceLine,
   introCreditsLine,
   introOfferLine,
   introOfferTitle,
@@ -32,7 +39,7 @@ import {
   pendingKind,
   periodLine,
   planCardStates,
-  pricingIntroLine,
+  PUBLIC_SIGNED_OUT_ACTION,
   rateLine,
   trialLine,
   type SubscriptionView,
@@ -458,7 +465,11 @@ describe("the ₪5 intro offer (decision 0109)", () => {
       introValidityLine(OFFER),
       INTRO_ONCE_LINE,
       noCreditsIntroLine(OFFER),
-      pricingIntroLine(OFFER),
+      INTRO_CARD_TITLE,
+      INTRO_CARD_SUB,
+      introCardPriceLine(OFFER),
+      introCardCreditsLine(OFFER),
+      INTRO_CARD_CLAIM,
     ];
     for (const line of lines) {
       expect(line).not.toMatch(/חינם|סרטונים|לחודש|בחודש|מתחדש/);
@@ -466,7 +477,25 @@ describe("the ₪5 intro offer (decision 0109)", () => {
     expect(introPriceLine(OFFER)).toBe("תשלום חד־פעמי של ₪5");
     expect(introCreditsLine(OFFER)).toBe("150 קרדיטים לכל השירותים");
     expect(introValidityLine({ ...OFFER, days: 45 })).toContain("45 יום");
-    expect(pricingIntroLine({ ...OFFER, credits: 1500 })).toContain("1,500 קרדיטים");
+  });
+
+  it("the /pricing card (decision 0112): his title verbatim, its numbers as arguments, no 'at least'", () => {
+    expect(INTRO_CARD_TITLE).toBe("חבילת התנסות");
+    expect(INTRO_CARD_SUB).toBe("ללקוחות חדשים בלבד");
+    expect(introCardPriceLine(OFFER)).toBe("₪5 בתשלום חד־פעמי");
+    expect(introCardCreditsLine(OFFER)).toBe("150 קרדיטים, בתוקף 30 יום");
+    expect(introCardCreditsLine({ ...OFFER, credits: 1500, days: 45 })).toBe(
+      "1,500 קרדיטים, בתוקף 45 יום",
+    );
+    expect(introCardPriceLine({ ...OFFER, priceAgorot: 750 })).toBe("₪7.50 בתשלום חד־פעמי");
+    for (const line of [INTRO_CARD_SUB, introCardCreditsLine(OFFER), INTRO_CARD_CLAIM]) {
+      expect(line).not.toContain("לפחות");
+    }
+  });
+
+  it("the card's button: a stranger to plain signup, an account that may buy to the offer's page", () => {
+    expect(introCardAction(false)).toEqual({ href: "/start", label: PUBLIC_SIGNED_OUT_ACTION });
+    expect(introCardAction(true)).toEqual({ href: INTRO_PATH, label: INTRO_OFFER_ACTION });
   });
 
   it("both halves of the narrow line: never a charge by itself, while the plans still renew", () => {
@@ -479,7 +508,7 @@ describe("the ₪5 intro offer (decision 0109)", () => {
       introOfferTitle(OFFER),
       introPriceLine(OFFER),
       noCreditsIntroLine(OFFER),
-      pricingIntroLine(OFFER),
+      introCardPriceLine(OFFER),
       continueButton(15000),
     ]) {
       expect(line).not.toMatch(/₪[\d.,]*\d[.,:;!?]/);

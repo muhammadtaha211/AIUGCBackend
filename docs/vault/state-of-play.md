@@ -41,8 +41,9 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
 **The ₪5 intro offer: MERGED 2026-10-14 as PR #97 (`d41eae6`); migrations 0061/0062 PUSHED the
-same day, before the merge; the switch is OFF and `SUMIT_INTRO_PAGE` is set nowhere, so no customer
-can see it yet. The box runs it: the founder restarted it 2026-10-14, and its first `expire_trials`
+same day, before the merge. LIVE since: MEASURED 2026-10-15, `https://tavnit.ai/pricing` shows the
+offer to a signed-out visitor and `app_config.intro_offer` reads enabled, so `SUMIT_INTRO_PAGE` is
+set on Vercel and the switch is on (who set them, and when, is not recorded here). The box runs it: the founder restarted it 2026-10-14, and its first `expire_trials`
 succeeded at 19:50 UTC.** An account that has never paid buys, once, 150 credits for every service for ₪5 on its own
 Sumit page, valid 30 days, never a charge by itself; "continue" charges the card saved at that
 payment for an ordinary first month. Behind `app_config.intro_offer` (seeded off) and
@@ -50,8 +51,8 @@ payment for an ordinary first month. Behind `app_config.intro_offer` (seeded off
 [[0109-a-five-shekel-intro-offer]] (his eight decisions of 2026-10-13/14, the credits raised 145 →
 150 at plan review, his two plan-mode answers: a lost continue answer is settled automatically, the
 walkthrough runs off production); `docs/05-billing.md` §"The ₪5 intro offer" says what exists.
-**Nobody can see or buy the offer until** `SUMIT_INTRO_PAGE` is set on Vercel and the switch is
-turned on (the migrations, the merge and the box are done) — the owed list below. **The
+Owed-list steps 7 and 8 (the Vercel env and the switch) are therefore done; the rest of that list
+stands. Since 2026-10-15 `/pricing` shows it as a lime card ([[0112-pricing-names-three-services-and-shows-the-intro-card]]). **The
 merge alone does change three public things:** terms §8 gains the offer's bullet, `UPDATED` becomes
 14.10.2026 (the version every later purchase records, and the date `/privacy` shows), and the
 refused/unconfirmed checkout lines say "הרכישה" instead of "המסלול". Counsel's E12(a) — whether
@@ -873,7 +874,27 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-15, last) — the A example footage's browser text blurred, `fix/blur-a-example-footage`
+## What landed (2026-10-15, after the blur) — `/pricing`: three services, no footnote, the ₪5 card, `feat/pricing-intro-card`
+
+[[0112-pricing-names-three-services-and-shows-the-intro-card]] records his six decisions (the
+countdown and the gradient set aside), the planning defaults (unstruck) and the claim's arithmetic.
+Dated pointers on [[0055-plan-cards-may-show-computed-ad-counts]],
+[[0099-service-c-phase-2-opens-to-customers]] §9, [[0089-service-c-text-block-exists-admin-only-phase-1]] §5
+and [[0109-a-five-shekel-intro-offer]] (the "one line" default struck). Merged at his instruction
+in chat, like the blur.
+
+- **Every plan card** (`/pricing` and `/home/plan`): the estimate names all three services (the
+  third count through `quoteServiceC`). The credit key under it and the VAT footnote are gone, the
+  footnote from the checkout, continue and intro summaries too. Terms §8 is untouched.
+- **The ₪5 offer is a lime card**, `חבילת התנסות`, first in the row. It shows to a stranger while
+  the offer is live, and to a signed-in account only while it may buy. Its button goes to `/start`
+  for a stranger and to `/home/plan/intro` for an account. The old line under the cards (no link,
+  shown to every signed-in account too) is gone.
+- **The offer is LIVE in production** (MEASURED today: the live page shows it), so the card shows
+  on tavnit.ai as soon as this deploys.
+- **Copy:** every new string is COPY PENDING FOUNDER REVIEW except his title.
+
+## What landed (2026-10-15, later) — the A example footage's browser text blurred, `fix/blur-a-example-footage`, MERGED as PR #103 (`c08697f`)
 
 [[0111-the-a-example-footage-has-its-browser-text-blurred]] records his four decisions, the
 three planning defaults (unstruck) and his session OK on the regions. Dated pointers on
@@ -1474,8 +1495,9 @@ until someone measures whether a wallet payment leaves a chargeable saved card.
 
 ## The queue
 
-**The ₪5 intro offer — MERGED 2026-10-14 as PR #97, 0061/0062 pushed, switch off** ([[0109-a-five-shekel-intro-offer]]);
-its path to live is the owed list's first bullet.
+**The ₪5 intro offer — MERGED 2026-10-14 as PR #97, 0061/0062 pushed, LIVE (MEASURED 2026-10-15)** ([[0109-a-five-shekel-intro-offer]]);
+what is still owed (from the real ₪5 purchase on) is the owed list's "The ₪5 intro offer" bullet,
+steps 9 onward.
 
 Two axes. **Money** (item 0) and **pipeline** (items 1–7, all from the 2026-09-18 diagnosis), then
 the older launch items. Item 0 no longer outranks everything the way it did — billing exists and has
@@ -1500,9 +1522,11 @@ order (docs/09 §Live-test checklist, PR 3). PR 4 (TikTok, once his sandbox app 
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
-founder actions". `/pricing` and the legal pages stay as they are (his ruling 10); the landing's part
-of that hold was lifted 2026-10-10 and the landing sells גוש טקסט since PR #87 (merged 2026-10-10)
-([[0100-home-cards-show-example-clips-landing-sells-three]]).
+founder actions". The legal pages stay as they are (his ruling 10). The landing's part of that hold
+was lifted 2026-10-10 and the landing sells גוש טקסט since PR #87 (merged 2026-10-10)
+([[0100-home-cards-show-example-clips-landing-sells-three]]); `/pricing`'s part was lifted 2026-10-15:
+each plan card's estimate names גוש טקסט as a third count
+([[0112-pricing-names-three-services-and-shows-the-intro-card]]).
 
 **Low-effort thinking on גוש טקסט: TESTED and RULED OUT 2026-10-08 on
 `feat/text-block-thinking-low`, ₪1.65 of a ₪5 cap
@@ -1911,11 +1935,11 @@ the 2026-09-26 custom domain (founder-reported):**
      14.10.2026 with E12(a) still open);
   6. ~~the box (pull, install, restart)~~ DONE 2026-10-14 by the founder; `expire_trials:2026-10-14`
      succeeded on `hetzner:light` at 19:50 UTC (read-only, MEASURED);
-  7. on Vercel, `SUMIT_INTRO_PAGE` = the real page's bare URL, then a redeploy; and read the web
+  7. ~~on Vercel, `SUMIT_INTRO_PAGE`~~ DONE by 2026-10-15 (MEASURED: the live `/pricing` shows the
+     offer); still owed from this step: read the web
      project's function time limit (Fluid on or off) — a continue's worst case is ~95 s, a kill is
      safe (the settle resolves it) but the customer then waits ten minutes;
-  8. the switch: `update app_config set value = '{"enabled": true}'::jsonb, updated_at = now() where
-key = 'intro_offer';`;
+  8. ~~the switch~~ DONE by 2026-10-15 (MEASURED: `app_config.intro_offer` reads enabled);
   9. **the real ₪5 purchase** — from a NEW customer-role account (new email, new business name: Sumit
      matches returning customers by those, and tavnit.support already holds a subscription, so it is
      refused by design), in a browser profile that has never signed in as admin; a self-purchase,

@@ -15,7 +15,6 @@ import {
   introCreditsLine,
   introPriceLine,
   introValidityLine,
-  VAT_FOOTNOTE,
 } from "@/lib/plans-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { CheckoutForm } from "../checkout/checkout-form";
@@ -24,8 +23,8 @@ import { CheckoutForm } from "../checkout/checkout-form";
  * The ₪5 intro offer's summary before its Sumit payment page (decision 0109):
  * the one-time price, the credits for every service, how long they last, that
  * it is once per account, both halves of the narrow line (the intro never
- * becomes a charge by itself; the plans renew monthly), the VAT and secure
- * lines, the required terms checkbox and one button — the checkout page's
+ * becomes a charge by itself; the plans renew monthly), the secure line, the
+ * required terms checkbox and one button — the checkout page's
  * shell without a single monthly line. Only an account that may buy it now
  * gets here (eligible, the switch on, the page configured); anyone else goes
  * back to the plan page, where the offer box is not shown either.
@@ -64,7 +63,6 @@ export default async function IntroPage() {
           <p>{INTRO_ONCE_LINE}</p>
           <p>{INTRO_NEVER_CHARGES_LINE}</p>
           <p>{INTRO_CONTINUE_LINE}</p>
-          <p className="text-sm text-ink/65">{VAT_FOOTNOTE}</p>
           <p className="text-sm text-ink/65">{CHECKOUT_SECURE_LINE}</p>
         </div>
 

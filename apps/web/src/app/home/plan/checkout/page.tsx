@@ -17,7 +17,6 @@ import {
   formatDate,
   priceLine,
   RENEW_LINE,
-  VAT_FOOTNOTE,
 } from "@/lib/plans-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { CheckoutForm } from "./checkout-form";
@@ -26,7 +25,7 @@ import { CheckoutForm } from "./checkout-form";
  * The order summary before the customer leaves for Sumit's payment page
  * (founder decision 2026-09-21: no payment from a popup — decision 0062).
  * One plan, its price and credits, when the first and the next charge fall,
- * the VAT footnote, the required terms checkbox and the one button. Reached
+ * the required terms checkbox and the one button. Reached
  * from the plan cards and from /home/plan?plan=<code> (the /pricing and
  * signup hand-off), and only by an account with nothing live or a suspended
  * subscription — anyone else is sent back to the plan page, where the
@@ -89,7 +88,6 @@ export default async function CheckoutPage({
           <p>{firstChargeLine(nextCharge)}</p>
           <p>{CHECKOUT_RENEWAL_LINE}</p>
           {renew && <p>{RENEW_LINE}</p>}
-          <p className="text-sm text-ink/65">{VAT_FOOTNOTE}</p>
           <p className="text-sm text-ink/65">{CHECKOUT_SECURE_LINE}</p>
         </div>
 

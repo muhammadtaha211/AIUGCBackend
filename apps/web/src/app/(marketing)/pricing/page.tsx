@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
-import { Amounts, PlanCards } from "@/components/plans/plan-cards";
+import { PlanCards } from "@/components/plans/plan-cards";
 import { authReadFailed } from "@/lib/auth-user";
-import { publicIntroOffer } from "@/lib/intro";
+import { pricingIntroOffer } from "@/lib/intro";
 import { loadPlansViewCached } from "@/lib/plans";
 import {
+  introCardAction,
   PRICING_FAQ,
   PRICING_FAQ_TITLE,
   PRICING_HEADLINE,
   PRICING_META_DESCRIPTION,
   PRICING_META_TITLE,
   PRICING_SUBLINE,
-  pricingIntroLine,
 } from "@/lib/plans-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 
@@ -20,22 +20,25 @@ export const metadata: Metadata = {
 };
 
 /**
- * The public pricing page: a short hero, the three plan cards, the FAQ. Every
+ * The public pricing page: a short hero, the plan cards (the three plans, and
+ * the intro card while the offer is live), the FAQ. Every
  * price, rate and count on it is computed once in lib/plans.ts and drawn by
  * PlanCards — this file carries no number and no shekel amount, by the
  * founder's constraint of 2026-09-17.
  *
  * The session is read HERE, not in SiteHeader (which stays auth-unaware and
  * shared with the landing and legal pages), and only to pick the cards' call
- * to action: a signed-in visitor is sent to /home/plan, a signed-out one to
- * signup. A failed read is logged and treated as signed out — a public page
- * never throws on a GoTrue blip; the worst outcome is the signup button for
- * someone who already has an account.
+ * to action and the intro card's gate: a signed-in visitor is sent to
+ * /home/plan, a signed-out one to signup. A failed read is logged and treated
+ * as signed out — a public page never throws on a GoTrue blip; the worst
+ * outcome is the signup button for someone who already has an account (and,
+ * while the offer is live, the intro card with it).
  *
- * One line under the cards names the ₪5 intro offer (decision 0109) while it
- * is switched on and its page is configured — never a fourth card. Its
- * numbers are core's INTRO_OFFER, read per request outside the cached plans
- * view so the switch takes the line down at once.
+ * The ₪5 intro offer (decision 0109) is a fourth card in the row (decision
+ * 0112) while it is switched on and its page is configured, and for a
+ * signed-in visitor only while that account may buy it. Its numbers are core's
+ * INTRO_OFFER, read per request outside the cached plans view so the switch
+ * takes the card down at once.
  */
 export default async function PricingPage() {
   const supabase = await createServerSupabase();
@@ -46,7 +49,10 @@ export default async function PricingPage() {
   if (authReadFailed(error)) console.error("pricing: auth read failed", error);
   const mode = user ? "public-signed-in" : "public-signed-out";
 
-  const [view, intro] = await Promise.all([loadPlansViewCached(), publicIntroOffer()]);
+  const [view, intro] = await Promise.all([
+    loadPlansViewCached(),
+    pricingIntroOffer(user?.id ?? null),
+  ]);
 
   return (
     <>
@@ -74,12 +80,11 @@ export default async function PricingPage() {
         </section>
 
         <section className="mx-auto max-w-6xl px-5 pb-6 sm:px-8">
-          <PlanCards view={view} mode={mode} />
-          {intro && (
-            <p className="mt-6 text-center text-sm text-ink/65">
-              <Amounts line={pricingIntroLine(intro)} />
-            </p>
-          )}
+          <PlanCards
+            view={view}
+            mode={mode}
+            intro={intro && { offer: intro, action: introCardAction(Boolean(user)) }}
+          />
         </section>
       </div>
 

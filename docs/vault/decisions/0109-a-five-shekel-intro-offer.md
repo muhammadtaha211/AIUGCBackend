@@ -65,7 +65,9 @@ IP check.
 ### PLANNING DEFAULT (approved with the plan, never ruled on)
 
 - The offer appears on `/home/plan` and in `NoCreditsCard` for an eligible account, and as one line
-  on `/pricing` — never a fourth card. The landing is untouched (0061 §2–4).
+  on `/pricing` — never a fourth card. The landing is untouched (0061 §2–4). _Struck 2026-10-15 by
+  the founder: on `/pricing` the offer is a fourth card, `חבילת התנסות`, lime, while the line is
+  gone ([[0112-pricing-names-three-services-and-shows-the-intro-card]]). §1.1 stands: a one-time purchase, not a plan._
 - Continue is the checkout summary without the card step: price, the auto-renewal line, the terms
   checkbox (0054/0056), one button. A declined charge tells the customer and falls back to today's
   checkout page.
@@ -127,7 +129,10 @@ activation)`. Spend uses trial credits before manual ones. Everything subtracted
   the first renewal: `expirePeriodRemainder` subtracts the lifetime manual sum. Pre-existing for any
   hand-granted account that buys a plan; renewal logic was left untouched by instruction.
 - Signing up through a `/pricing` plan card goes straight to that plan's hosted checkout and skips
-  the offer box (the `/pricing` line names the offer; no extra surface was added).
+  the offer box (the `/pricing` line names the offer; no extra surface was added). _Since
+  2026-10-15 the line is gone: the offer is a fourth card with its own button, to `/start` for a
+  stranger ([[0112-pricing-names-three-services-and-shows-the-intro-card]] §4). The plan cards
+  still skip the offer box._
 - A charge Sumit lists more than ten minutes after the click is 0062's accepted residual: the
   attempt clears, a retry charges again, visibly, refunded by hand.
 - DFY `orders` do not count as "paid" (no code writes them).
