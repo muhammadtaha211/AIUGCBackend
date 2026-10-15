@@ -48,16 +48,17 @@ export function demoUploadPath(businessId: string, uploadId: string, type: strin
 
 /**
  * The founder-curated good-input example served on the demo step: a sample
- * recording and the ad it produced. Fixed storage paths — replacing the
- * example is overwriting these two objects (upsert put), never a code change.
- * Filled 2026-09-25 from the landing's demo pair: ad.mp4 IS
- * apps/web/public/landing/demo-after.mp4, but recording.mp4 is its own 720p
- * CRF 28 encode (20 MB) — the landing's 540p copy smears on-screen text at
+ * recording and the ad it produced. Fixed storage paths. Replacing the example
+ * means new keys and a change here: the objects are cached for an hour
+ * (max-age=3600), so an overwrite can keep serving the old bytes.
+ * The -v2 pair (2026-10-15, vault 0111) is the 2026-09-25 pair with the URL
+ * step's browser text blurred: ad-v2.mp4 IS
+ * apps/web/public/landing/demo-after.mp4, and recording-v2.mp4 is its own 720p
+ * CRF 28 encode (19 MB) — the landing's 540p copy smears on-screen text at
  * this size and fullscreen, under a rule that says that text must be readable.
- * Re-run packages/core/.work/upload-a-samples.ts (gitignored) to replace them.
  */
-export const A_SAMPLE_RECORDING_PATH = "assets/samples/a-steps/recording.mp4";
-export const A_SAMPLE_AD_PATH = "assets/samples/a-steps/ad.mp4";
+export const A_SAMPLE_RECORDING_PATH = "assets/samples/a-steps/recording-v2.mp4";
+export const A_SAMPLE_AD_PATH = "assets/samples/a-steps/ad-v2.mp4";
 
 /** Register accepts only paths this business's own upload-url route minted. */
 export function isOwnedDemoUploadPath(businessId: string, uploadPath: string): boolean {
