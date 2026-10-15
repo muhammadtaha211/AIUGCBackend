@@ -60,8 +60,8 @@ first.
 
 **PostHog on `apps/web`: MERGED 2026-10-11 as PR #92 (`81c3b30`, MEASURED by `git log`; this file
 said "NOT merged" until 2026-10-15). Recording in production is confirmed (FOUNDER-REPORTED, below).
-Since 2026-10-15 every page records and only the sensitive is hidden, on `feat/posthog-record-every-page`,
-NOT merged** ([[0110-posthog-records-every-page-hides-only-the-sensitive]], the section "What landed
+Since 2026-10-15 every page records and only the sensitive is hidden: MERGED that day as PR #99
+(`40a1e29`)** ([[0110-posthog-records-every-page-hides-only-the-sensitive]], the section "What landed
 (2026-10-15)" below). Visit counts on every page, session recordings, named funnel steps and browser
 errors go to PostHog's EU cloud.
 
@@ -873,7 +873,10 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-15) — PostHog records every page, hides only the sensitive, `feat/posthog-record-every-page`, NOT merged
+## What landed (2026-10-15) — PostHog records every page, hides only the sensitive, `feat/posthog-record-every-page`, MERGED as PR #99 (`40a1e29`)
+
+**FOUNDER-REPORTED:** merged at his instruction in chat ("merge everything", 2026-10-15), together
+with PRs #100 and #101 below. No planning default was struck, so the three in 0110 §2 stand.
 
 [[0110-posthog-records-every-page-hides-only-the-sensitive]] records his six decisions of
 2026-10-15 and the three planning defaults (unstruck until PR review). Dated pointers on
@@ -909,13 +912,11 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   compares or forces re-acceptance, and no email is sent. Legal-review P13 and P14, the owed list,
   and reg-2 worksheet rows 136 and 137 each gained a dated line.
 - **Found, not fixed (not this task's):**
-  - `/privacy` §6 still says the landing loads picsum stand-in images. No picsum image renders: the
-    one slot that would has a mock fallback.
   - `docs/03-storage.md` says the `{download}` option has one caller (it has three), and its fal.ai
     line is half stale.
   - `GET /api/renders/[id]` signs a `thumbUrl` nothing reads.
-  - The `/home/demos` "מוכן" badge is lime on a lime tint, about 1.2:1.
-  - The hook-studio warning is amber-300 on white, about 1.4:1.
+  - The stale picsum sentence and the two unreadable lines it also listed were fixed the same day,
+    by PRs #101 and #100.
 
 ## What landed (2026-10-14) — the ₪5 intro offer, `feat/intro-offer`, MERGED as PR #97 (`d41eae6`); 0061/0062 PUSHED
 
@@ -975,9 +976,9 @@ had ticked a minute before the read; no `reconcile_continue` row; the switch `{"
 weaker no-SSH check of [[0039-three-deploy-axes-and-the-box-is-the-one-that-forgets]]. He then
 OK'd the merge of these records (PR #98, "go ahead and merge 98").
 
-## What landed (2026-10-15, later) — readable badge and warnings, `fix/readable-badge-and-warnings`, NOT merged
+## What landed (2026-10-15, later) — readable badge and warnings, `fix/readable-badge-and-warnings`, MERGED as PR #100 (`385c1e8`)
 
-Placed below 2026-10-14 so it does not collide with PR #99's entry above it. Four lines in the app
+Four lines in the app
 were dark-theme colours left on light surfaces. The PostHog task's recon found the first two; they
 are fixed here in the app's own house style. Contrast was computed from Tailwind 4.3.3's values and
 re-measured from the browser's computed colours on a throwaway page (deleted):
@@ -1045,9 +1046,9 @@ no core function, no job, no limit, no email, no connect, no migration, no depen
 **Not run:** nothing live — no post, no deploy, no production query. The pickers and rows were
 checked on a harness, not in a signed-in walk.
 
-## What landed (2026-10-15, later still) — `/privacy` drops the picsum sentence, `docs/privacy-drop-picsum`, NOT merged
+## What landed (2026-10-15, later still) — `/privacy` drops the picsum sentence, `docs/privacy-drop-picsum`, MERGED as PR #101 (`817ca2e`)
 
-Placed here so it does not collide with PRs #99 and #100. `/privacy` §6 said the landing loads
+`/privacy` §6 said the landing loads
 temporary images from `picsum.photos`; MEASURED by reading the code and in the browser, none does.
 `hookStudioShot` always renders its mock, `instagramShot` hides while its `src` is null, and every
 other slot has our own file. A full scroll of the landing made 12 media elements and no
@@ -1061,7 +1062,7 @@ third-party request.
   `docs/legal/database-definitions-document.md` still names picsum, because that draft is frozen
   (decision 0043).
 - **FOUNDER-REPORTED (2026-10-15):** `UPDATED` is not moved here; PR #99 moves it to 15.10.2026.
-  Merged alone before #99, the page changes while still showing 14.10.2026.
+  #99 merged first, so the page shows 15.10.2026.
 
 ## What landed (2026-10-13) — social posting PR 3: schedule, sound picker, calendar, live posts, the failure email, `feat/social-posting-schedule`, MERGED as PR #95 (`acb245f`)
 
@@ -1900,13 +1901,10 @@ key = 'intro_offer';`;
   14. the copy: every line marked COPY PENDING in `lib/plans-ui.ts`, the terms bullet, the receipt
       line `תבנית — מסלול <name>, חודש ראשון`.
 
-- **PostHog every page (2026-10-15, `feat/posthog-record-every-page`).** Each its own OK: 1. at PR
-  review, the `/privacy` Hebrew (every changed sentence is in the PR description), the footer and
-  `/start` screenshots, and the three planning defaults to strike; 2. merge (the legal date then
-  shows 15.10.2026; if the merge is later, move `UPDATED` to that day first); 3. after the deploy,
+- **PostHog every page (2026-10-15, merged as PR #99).** Each its own OK: 1. after the deploy,
   watch one production replay of the landing and of a wizard and confirm the business content shows
-  and the email does not; 4. decide separately whether to lengthen any signed-link lifetime,
-  knowing that the token rule keeps customer media boxed regardless (0110 §3); 5. counsel: the §14
+  and the email does not; 2. decide separately whether to lengthen any signed-link lifetime,
+  knowing that the token rule keeps customer media boxed regardless (0110 §3); 3. counsel: the §14
   email question now covers recording every page and showing business content (legal-review P13,
   P14). Your normal browser carries `aiugc.analytics.off` from your admin sign-in: it will never
   record there, by design.

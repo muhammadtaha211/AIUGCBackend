@@ -58,7 +58,7 @@ expired-account notice on `/home`), the contact and feedback forms whole, and th
 test pins a mark in each of those files. The 2026-10-11 readable markers (`data-ph-unmask`, `ConfirmDialog
 readable`) and the recap's mask are removed. Sumit's page is on its own domain and never recorded.
 
-**PLANNING DEFAULTS, unstruck at the time of writing:** the contact and feedback forms are hidden
+**PLANNING DEFAULTS, unstruck; merged as PR #99 on 2026-10-15 with none struck (FOUNDER-REPORTED: "merge everything"):** the contact and feedback forms are hidden
 whole, message included (a message to support is not ad content and may carry a phone number); the
 signed-in shell shows the business name and the credit balance, only the email hidden; the footer
 line on public pages is the same sentence as `/start`'s.
