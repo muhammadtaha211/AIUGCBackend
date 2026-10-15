@@ -31,6 +31,10 @@ from all five, and the constant is deleted.
 
 ## 3. The estimate names גוש טקסט as a third count
 
+> **2026-10-15** ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]] §4): the line says "בערך", not "עד", and the hook+demo
+> count is the render price alone, so starter / pro / studio now read 10 / 40 / 40, 25 / 100 / 100
+> and 50 / 200 / 200.
+
 **FOUNDER-REPORTED.** His reason: mention the third service. This lifts the `/pricing` half of
 [[0099-service-c-phase-2-opens-to-customers]] §9 and
 [[0089-service-c-text-block-exists-admin-only-phase-1]] §5; the legal pages stay held.
@@ -47,6 +51,9 @@ of a service), and the service's name is `SERVICE_LABELS.c`'s.
 
 ## 4. The ₪5 offer is a fourth card, not a line
 
+> **2026-10-15** ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]]): the subtitle is now a pill over the card's top edge, and the
+> card is on `/home/plan` too.
+
 **FOUNDER-REPORTED.** His reason: shown as a tier it looks desirable.
 
 - **Title:** `חבילת התנסות` (his, verbatim).
@@ -60,6 +67,9 @@ of a service), and the service's name is `SERVICE_LABELS.c`'s.
 "לפחות" or a count of videos (pinned in tests).
 
 ## 5. The one lime card, ink text
+
+> **2026-10-15** ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]]): reversed by the founder. The card is now the brand gradient,
+> lime to emerald (`from-accent to-emerald-300`, the sidebar avatar's).
 
 **FOUNDER-REPORTED.** It is the inverse of pro's ink card. **Set aside:** he asked for a rainbow
 gradient; planning recommended staying inside the page's palette (0055: no new hue), and he

@@ -180,7 +180,8 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
 - **plans** — code PK, price (agorot), monthly credits, `allows_service_b`. Seeded placeholders:
   starter ₪299/40cr (A only), pro ₪599/100cr, studio ₪999/200cr. Migration 0043 (**applied
   2026-09-17**) replaced all three — starter ₪150/1000cr, pro ₪300/2500cr, studio
-  ₪500/5000cr, `allows_service_b` true on all three — those are the live values; see
+  ₪500/5000cr, `allows_service_b` true on all three. Migration 0063 (**applied 2026-10-15**)
+  took one shekel off each: ₪149 / ₪299 / ₪499, the live values; see
   [05-billing.md](05-billing.md). `name` is Hebrew since 0044 (**applied 2026-09-17**): התחלה /
   מתקדם / פרימיום.
 - **subscriptions** — keyed to the ACCOUNT since 0041: `user_id` NOT NULL and **no `business_id`

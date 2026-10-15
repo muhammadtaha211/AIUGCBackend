@@ -8,6 +8,8 @@ source: founder
 
 # 0068 — Prices stand, there is no self-serve free tier, trials are granted by hand, and the first stranger gets none
 
+> **2026-10-15** ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]]): the prices moved one shekel down, ₪149 / ₪299 / ₪499.
+
 Four decisions, taken together on 2026-10-01, the day the first person who is not the founder
 signed up. Every claim carries one tag: **FOUNDER-REPORTED** (his statement or his reasoning, not
 checkable here), **MEASURED** (read in the tree at `d57b60a`, or measured with git), **REASONED**

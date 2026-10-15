@@ -37,7 +37,7 @@ plan, never ruled on separately), **OPEN** (nobody has decided).
    narrow one: the trial never becomes a charge by itself, while paid plans still renew monthly as
    terms §8 says. "Free" and "N videos" are never printed (0051 §5).
 5. **Continue is the customer's choice, with no card re-entry.** It charges the card Sumit saved at
-   the ₪5 payment and starts an ordinary first month at ₪150 or a higher plan: full credits,
+   the ₪5 payment and starts an ordinary first month at ₪150 (₪149 since 2026-10-15, [[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]] §5) or a higher plan: full credits,
    period from that moment. Leftover trial credits are kept until that month ends; the 30-day
    expiry no longer applies after a continue. Not [[0052-upgrade-credits-are-period-credits]]'s
    proration. _Reason:_ prorating from a ₪5 base gives an odd first charge and keeps the trial's
@@ -68,6 +68,7 @@ IP check.
   on `/pricing` — never a fourth card. The landing is untouched (0061 §2–4). _Struck 2026-10-15 by
   the founder: on `/pricing` the offer is a fourth card, `חבילת התנסות`, lime, while the line is
   gone ([[0112-pricing-names-three-services-and-shows-the-intro-card]]). §1.1 stands: a one-time purchase, not a plan._
+  _2026-10-15: the card is now the brand gradient, not lime, and is on `/home/plan` too ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]])._
 - Continue is the checkout summary without the card step: price, the auto-renewal line, the terms
   checkbox (0054/0056), one button. A declined charge tells the customer and falls back to today's
   checkout page.
@@ -133,6 +134,8 @@ activation)`. Spend uses trial credits before manual ones. Everything subtracted
   2026-10-15 the line is gone: the offer is a fourth card with its own button, to `/start` for a
   stranger ([[0112-pricing-names-three-services-and-shows-the-intro-card]] §4). The plan cards
   still skip the offer box._
+  _2026-10-15: on `/home/plan` too, the offer box is replaced by the same card in the plans' row
+  ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]]); the narrow line stays on `/home/plan/intro`._
 - A charge Sumit lists more than ten minutes after the click is 0062's accepted residual: the
   attempt clears, a retry charges again, visibly, refunded by hand.
 - DFY `orders` do not count as "paid" (no code writes them).

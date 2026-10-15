@@ -8,6 +8,9 @@ source: founder
 
 # 0051 — The credit is worth ₪0.15, and the three plans differ by credit volume only
 
+> **2026-10-15** ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]]): each plan is one shekel less, ₪149 / ₪299 / ₪499 (migration
+> 0063, pushed); credits unchanged, and the rates still print ₪0.15 / ₪0.12 / ₪0.10.
+
 ## The decision
 
 ### 1. The unit

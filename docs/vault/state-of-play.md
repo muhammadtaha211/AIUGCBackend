@@ -52,7 +52,7 @@ payment for an ordinary first month. Behind `app_config.intro_offer` (seeded off
 150 at plan review, his two plan-mode answers: a lost continue answer is settled automatically, the
 walkthrough runs off production); `docs/05-billing.md` §"The ₪5 intro offer" says what exists.
 Owed-list steps 7 and 8 (the Vercel env and the switch) are therefore done; the rest of that list
-stands. Since 2026-10-15 `/pricing` shows it as a lime card ([[0112-pricing-names-three-services-and-shows-the-intro-card]]). **The
+stands. Since 2026-10-15 `/pricing` shows it as a card ([[0112-pricing-names-three-services-and-shows-the-intro-card]]), and `/home/plan` shows the same card to an account that may buy it, in the brand gradient (lime to emerald) ([[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]]). **The
 merge alone does change three public things:** terms §8 gains the offer's bullet, `UPDATED` becomes
 14.10.2026 (the version every later purchase records, and the date `/privacy` shows), and the
 refused/unconfirmed checkout lines say "הרכישה" instead of "המסלול". Counsel's E12(a) — whether
@@ -874,7 +874,27 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-15, after the blur) — `/pricing`: three services, no footnote, the ₪5 card, `feat/pricing-intro-card`
+## What landed (2026-10-15, last) — the intro card on `/home/plan`, "בערך" estimates, each plan ₪1 less, `feat/plan-intro-card-prices`; 0063 PUSHED
+
+[[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]] records his five
+requests and the push. Dated pointers on 0112 §4–§5, 0109, 0055, 0051 and 0068;
+[[production-migration-push-log]] has the 0063 row. Merged at his instruction in chat.
+
+- **Prices ₪149 / ₪299 / ₪499 (migration 0063, PUSHED 2026-10-15 on his answer in session,
+  before the merge).** He had already set the Sumit pages to them. `plans.price_agorot` is what
+  the checkout's amount check, renewals, the trial's continue and upgrades all read, so until 0063
+  a ₪149 starter payment would have been refused as `amount_mismatch`. Nobody was hit: no plan
+  purchase and no pending intent before the push (MEASURED). Read back 14900 / 29900 / 49900, with
+  credits unchanged.
+- **`/home/plan`:** the offer box is gone. The same intro card sits first in the plans row (two by
+  two), for an account that may buy it.
+- **Both pages:**
+  - the card is the brand gradient (lime to emerald), with an ink `ללקוחות חדשים בלבד` pill on
+    top and no line under the title;
+  - every estimate says "בערך" and counts hook+demo at the render price (40 / 100 / 200);
+  - the `/pricing` cache key is bumped, so the new prices show on deploy, not up to an hour later.
+
+## What landed (2026-10-15, after the blur) — `/pricing`: three services, no footnote, the ₪5 card, `feat/pricing-intro-card`, MERGED as PR #104 (`bef4721`)
 
 [[0112-pricing-names-three-services-and-shows-the-intro-card]] records his six decisions (the
 countdown and the gradient set aside), the planning defaults (unstruck) and the claim's arithmetic.

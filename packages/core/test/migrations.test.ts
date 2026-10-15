@@ -1290,4 +1290,48 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0063: each plan one shekel less, guarded on the 0043 price, idempotent, a hand-set price left alone", async () => {
+    // The pre-0063 database, with studio hand-set to a price 0043 never wrote.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0063")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    await pg.exec(`UPDATE plans SET price_agorot = 45000 WHERE code = 'studio'`);
+    const migration = readFileSync(
+      join(MIGRATIONS_DIR, "0063_plan_prices_minus_one_shekel.sql"),
+      "utf8",
+    );
+    const read = async () =>
+      (
+        await pg.query<{ code: string; price_agorot: number; monthly_credits: number }>(
+          "SELECT code, price_agorot, monthly_credits FROM plans ORDER BY code",
+        )
+      ).rows;
+
+    await pg.exec(migration);
+    const after = await read();
+    expect(after).toEqual([
+      { code: "pro", price_agorot: 29900, monthly_credits: 2500 },
+      { code: "starter", price_agorot: 14900, monthly_credits: 1000 },
+      { code: "studio", price_agorot: 45000, monthly_credits: 5000 },
+    ]);
+    // A second run is a no-op: the guards no longer match.
+    await pg.exec(migration);
+    expect(await read()).toEqual(after);
+    await pg.close();
+  });
+
+  it("0063 on the whole chain: the live ladder is 14900 / 29900 / 49900", async () => {
+    const { pg } = await createTestDb();
+    const rows = await pg.query<{ code: string; price_agorot: number }>(
+      "SELECT code, price_agorot FROM plans ORDER BY price_agorot",
+    );
+    expect(rows.rows).toEqual([
+      { code: "starter", price_agorot: 14900 },
+      { code: "pro", price_agorot: 29900 },
+      { code: "studio", price_agorot: 49900 },
+    ]);
+    await pg.close();
+  });
 });
