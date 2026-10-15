@@ -78,6 +78,8 @@ export function SocialAccountsSection({
       {notice && (
         <p
           role={notice.kind === "error" ? "alert" : "status"}
+          // A success line can name the account (connectedLine): hidden in a recording.
+          data-ph-mask={notice.kind === "ok" || undefined}
           className={`mt-3 rounded-lg px-3 py-2.5 text-sm ${
             notice.kind === "error" ? "bg-red-100 text-red-700" : "bg-accent/20 text-ink"
           }`}
@@ -104,11 +106,11 @@ export function SocialAccountsSection({
               <li key={account.id} className="flex items-center gap-3 py-3">
                 <Avatar account={account} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-ink">
+                  <p className="truncate text-sm font-medium text-ink" data-ph-mask>
                     <bdi>{accountName(account)}</bdi>
                   </p>
                   {account.username && (
-                    <p className="truncate text-xs text-ink/55">
+                    <p className="truncate text-xs text-ink/55" data-ph-mask>
                       <bdi dir="ltr">@{account.username}</bdi>
                     </p>
                   )}
@@ -146,6 +148,8 @@ export function SocialAccountsSection({
       {target && confirm && (
         <ConfirmDialog
           title={confirm.title}
+          // The title names the account.
+          sensitive
           onClose={() => setTarget(null)}
           busy={busy}
           error={error}
@@ -195,6 +199,7 @@ function Avatar({ account }: { account: SocialAccountView }) {
         referrerPolicy="no-referrer"
         onError={() => setBroken(true)}
         className="size-10 shrink-0 rounded-full border border-ink/[0.08] object-cover"
+        data-ph-mask
       />
     );
   }
@@ -202,6 +207,7 @@ function Avatar({ account }: { account: SocialAccountView }) {
     <span
       aria-hidden
       className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ink/[0.06] text-sm font-semibold text-ink/70"
+      data-ph-mask
     >
       {accountName(account).slice(0, 1)}
     </span>

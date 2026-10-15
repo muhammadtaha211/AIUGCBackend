@@ -1,12 +1,16 @@
 ---
 type: fact
-status: verified
+status: superseded
 verified: 2026-10-11
 method: "Scripts in the session scratchpad, not committed (recipe in docs/10-analytics.md, 'The hiding check'): ingest.mjs, a node http server on 127.0.0.1:8789 standing in for PostHog's ingest (GET /array/<key>/config answers {sessionRecording:{endpoint:'/s/'},supportedCompression:['gzip-js','base64']}; every /e/ and /s/ body recorded, gunzipped, each compressed snapshot inflated); the web dev server started through a temporary .claude/launch.json entry (reverted) with NEXT_PUBLIC_POSTHOG_KEY=phc_local_hiding_check and NEXT_PUBLIC_POSTHOG_HOST=http://127.0.0.1:8789 set in its own process only; drive.mjs, headless Chrome 141-class over raw CDP with a normal desktop user agent and --disable-blink-features=AutomationControlled; analyze.mjs, a per-phase split and a substring search of every captured byte. Tree: feat/posthog-web before the first commit, posthog-js 1.434.15. A throwaway harness page at apps/web/src/app/start/probe/page.tsx (deleted with apps/web/.next after the run) mounted the real Sidebar, C StepStudio, WizardNav and RenderPlayer with marker values. No production write: /start was typed up to the signup step and never submitted; the admin and customer sessions were a throwaway cookie value with /api/analytics/viewer answered through CDP's Fetch domain. Run twice the same day: run 1 before the adversarial review's fixes, under a made-up cookie name (sb-probe-auth-token) the runtime then accepted; run 2 on the final tree (exact cookie name, the copy-not-mutate scrubbers, the constant input mask, the per-route address snapshot, the sign-in gate), under this project's real session-cookie name with an unparseable value — curl with that cookie on /start, /start/probe and / got 200 and no Set-Cookie, so the middleware leaves it alone."
 source: browser
 ---
 
 # What leaves the browser with PostHog wired, measured against a local stand-in
+
+> **Superseded 2026-10-15** by [[posthog-hiding-check-2026-10-15]], the same recipe re-run after
+> [[0110-posthog-records-every-page-hides-only-the-sensitive]] made every page record and only the
+> sensitive hidden. This note stays as the measurement of the 2026-10-11 policy.
 
 Two runs, 2026-10-11, eight phases each; the table is run 2, on the final tree. Run 1 (before the
 review's fixes) gave the same answer in every row: the same markers absent, the same requests. Requests counted at the stand-in; media requests the harness

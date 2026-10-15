@@ -39,7 +39,11 @@ function ProfileMenuItems({
 }) {
   return (
     <>
-      <p dir="ltr" className="truncate px-2.5 py-2 text-end text-sm font-medium text-ink">
+      <p
+        dir="ltr"
+        className="truncate px-2.5 py-2 text-end text-sm font-medium text-ink"
+        data-ph-mask
+      >
         {email}
       </p>
       <div className="mx-2 mb-1.5 h-px bg-ink/[0.08]" />
@@ -206,6 +210,7 @@ export function Sidebar({
               aria-label="תפריט החשבון"
               onClick={() => setOpenMenu(openMenu === "mobileProfile" ? null : "mobileProfile")}
               className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-accent to-emerald-300 text-sm font-bold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              data-ph-mask
             >
               {email.charAt(0).toUpperCase()}
             </button>
@@ -280,7 +285,7 @@ export function Sidebar({
         </div>
 
         {/* Nav — every row is a live page. */}
-        <nav aria-label="ניווט הדשבורד" className="mt-5 flex-1 space-y-0.5 px-3" data-ph-unmask>
+        <nav aria-label="ניווט הדשבורד" className="mt-5 flex-1 space-y-0.5 px-3">
           <SidebarItem
             icon={<House className="size-4" />}
             label="בית"
@@ -359,10 +364,15 @@ export function Sidebar({
               <span
                 aria-hidden
                 className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent to-emerald-300 text-sm font-bold text-ink"
+                data-ph-mask
               >
                 {email.charAt(0).toUpperCase()}
               </span>
-              <span dir="ltr" className="min-w-0 flex-1 truncate text-end text-sm text-ink/80">
+              <span
+                dir="ltr"
+                className="min-w-0 flex-1 truncate text-end text-sm text-ink/80"
+                data-ph-mask
+              >
                 {email}
               </span>
             </button>

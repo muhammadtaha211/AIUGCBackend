@@ -58,10 +58,18 @@ refused/unconfirmed checkout lines say "הרכישה" instead of "המסלול".
 the bullet is a material change under §14 — is not answered; merging before it ships the bullet
 first.
 
-**PostHog on `apps/web`: BUILT 2026-10-11 on `feat/posthog-web`, NOT merged.** Visit counts on every
-page, session recordings from `/start` on, named funnel steps and browser errors, to PostHog's EU
-cloud; nothing loads until `NEXT_PUBLIC_POSTHOG_KEY` is set on Vercel, so merging alone changes
-nothing a visitor sees except the notice line and the `/privacy` text.
+**PostHog on `apps/web`: MERGED 2026-10-11 as PR #92 (`81c3b30`, MEASURED by `git log`; this file
+said "NOT merged" until 2026-10-15). Recording in production is confirmed (FOUNDER-REPORTED, below).
+Since 2026-10-15 every page records and only the sensitive is hidden, on `feat/posthog-record-every-page`,
+NOT merged** ([[0110-posthog-records-every-page-hides-only-the-sensitive]], the section "What landed
+(2026-10-15)" below). Visit counts on every page, session recordings, named funnel steps and browser
+errors go to PostHog's EU cloud.
+
+- **FOUNDER-REPORTED (2026-10-15):** a customer sign-in in a normal browser produced no recording;
+  the same in an incognito window did. The cause, as planning read it from `docs/10-analytics.md`:
+  that browser carries `aiugc.analytics.off` from his admin sign-in on 2026-10-11. That is the first
+  production recording confirmed. Nothing else about the PostHog dashboard has changed since
+  2026-10-11.
 
 - **Decisions:** [[0103-posthog-in-apps-web-eu-cloud-free-plan]] (the service, the boundary, errors
   beside 0037, what is not built) and [[0104-what-posthog-records-and-what-never-leaves]] (counts,
@@ -864,6 +872,50 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-15) — PostHog records every page, hides only the sensitive, `feat/posthog-record-every-page`, NOT merged
+
+[[0110-posthog-records-every-page-hides-only-the-sensitive]] records his six decisions of
+2026-10-15 and the three planning defaults (unstruck until PR review). Dated pointers on
+[[0104-what-posthog-records-and-what-never-leaves]] §1 and §3 and on
+[[posthog-hiding-check-2026-10-11]]. The measurement is [[posthog-hiding-check-2026-10-15]].
+
+- **Every page records**, the landing and `/pricing` included; nothing stops the recorder between a
+  public page and an app page. **A customer's sign-in leaves no gap:** the batches recorded between
+  the cookie and the gate's answer are held and then sent, and the gate is asked at once. **An
+  admin's sign-in still sends nothing** from the cookie on, and marks the device. The same holds
+  when an admin's session is written over a live customer's, which the gate now catches by
+  comparing the cookie's value. All MEASURED in tests (106 in `apps/web/test/analytics.test.ts`)
+  and in the browser, on the final tree.
+- **An adversarial review of the diff** (five lenses, each finding re-checked by a refuter)
+  confirmed 21 findings and refuted 3; all were fixed or documented before the PR. The sharpest:
+  - an email typed into an ordinary field leaked keystroke by keystroke until the address was
+    complete; it is now hidden from its `@` on, and `/privacy` says what came before is recorded;
+  - the gate noticed a session cookie appearing or vanishing but not changing hands;
+  - `:is()` in the block selector would have voided it on older browsers;
+  - the `/home` expired-account notice and the post page's link named the Instagram account.
+- **Hidden:** passwords, codes and tokens; password, email and phone fields; email addresses
+  anywhere; the account email; a connected Instagram account's name, username and picture; the
+  contact and feedback forms whole; the deletion code; media that would not play in a replay.
+  **Shown:** everything else, business content included.
+- **Media:** every signed link apps/web mints lives 3600 s (`SIGNED_URL_TTL_SECONDS`), so every
+  customer video and image stays a blank box. Only Tavnit's own public media shows: the persona
+  images and the site's examples. No lifetime was changed. Lengthening alone would not make customer
+  media play, because the token rides in the query, which the hidden list strips (0110 §3).
+- **The notice** is in every public page's footer, and every instance is now 11 px at 45% ink
+  (3.0:1), from 12 px at 50%.
+- **Legal:** `/privacy` §3's recording sentences and §6's last sentence rewritten. `UPDATED` moved
+  14.10.2026 → 15.10.2026: both pages show it, new `terms_acceptances` rows record it, nothing
+  compares or forces re-acceptance, and no email is sent. Legal-review P13 and P14, the owed list,
+  and reg-2 worksheet rows 136 and 137 each gained a dated line.
+- **Found, not fixed (not this task's):**
+  - `/privacy` §6 still says the landing loads picsum stand-in images. No picsum image renders: the
+    one slot that would has a mock fallback.
+  - `docs/03-storage.md` says the `{download}` option has one caller (it has three), and its fal.ai
+    line is half stale.
+  - `GET /api/renders/[id]` signs a `thumbUrl` nothing reads.
+  - The `/home/demos` "מוכן" badge is lime on a lime tint, about 1.2:1.
+  - The hook-studio warning is amber-300 on white, about 1.4:1.
 
 ## What landed (2026-10-14) — the ₪5 intro offer, `feat/intro-offer`, MERGED as PR #97 (`d41eae6`); 0061/0062 PUSHED
 
@@ -1830,7 +1882,17 @@ key = 'intro_offer';`;
   14. the copy: every line marked COPY PENDING in `lib/plans-ui.ts`, the terms bullet, the receipt
       line `תבנית — מסלול <name>, חודש ראשון`.
 
-- **PostHog (2026-10-11, `feat/posthog-web`).** Each its own OK, in order: 1. at PR review, the
+- **PostHog every page (2026-10-15, `feat/posthog-record-every-page`).** Each its own OK: 1. at PR
+  review, the `/privacy` Hebrew (every changed sentence is in the PR description), the footer and
+  `/start` screenshots, and the three planning defaults to strike; 2. merge (the legal date then
+  shows 15.10.2026; if the merge is later, move `UPDATED` to that day first); 3. after the deploy,
+  watch one production replay of the landing and of a wizard and confirm the business content shows
+  and the email does not; 4. decide separately whether to lengthen any signed-link lifetime,
+  knowing that the token rule keeps customer media boxed regardless (0110 §3); 5. counsel: the §14
+  email question now covers recording every page and showing business content (legal-review P13,
+  P14). Your normal browser carries `aiugc.analytics.off` from your admin sign-in: it will never
+  record there, by design.
+- **PostHog (2026-10-11, `feat/posthog-web`, merged as PR #92).** Each its own OK, in order: 1. at PR review, the
   Hebrew (the notice line, two wordings offered, and every `/privacy` sentence) and the planning
   defaults to strike; 2. in PostHog's dashboard (yours alone): session replay ON (nothing records
   without it), network capture OFF, console log capture OFF, "Discard client IP data" ON, and

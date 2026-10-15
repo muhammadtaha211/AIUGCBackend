@@ -3,8 +3,12 @@
 Decisions: [`0103`](vault/decisions/0103-posthog-in-apps-web-eu-cloud-free-plan.md) (the service, the
 boundary, what is not built) and
 [`0104`](vault/decisions/0104-what-posthog-records-and-what-never-leaves.md) (counts, recordings,
-identity, hiding, the notice). The measured hiding check:
-[`facts/posthog-hiding-check-2026-10-11.md`](vault/facts/posthog-hiding-check-2026-10-11.md).
+identity, hiding, the notice), whose §1 and §3 are superseded by
+[`0110`](vault/decisions/0110-posthog-records-every-page-hides-only-the-sensitive.md) (every page
+records; only the sensitive is hidden; media shows where it plays; the notice on every public page).
+The measured hiding check:
+[`facts/posthog-hiding-check-2026-10-15.md`](vault/facts/posthog-hiding-check-2026-10-15.md)
+(which supersedes the 2026-10-11 one).
 `/privacy` §3, §5, §6, §7, §8 and §9 describe this file; rows P13 and P14 of `legal-review.md`.
 
 **Goal.** For a visitor who never pays, tell whether they left at the prices or got stuck, without
@@ -12,14 +16,14 @@ anyone telling us.
 
 ## Where it lives
 
-| File                                           | What it is                                                                                                                                                                                                          |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/lib/analytics.ts`                | The policy, pure and node-tested: the settings (key, EU host), which paths record, the address scrubber, the `before_send` scrubber, the recording masks, the SDK options, the named steps and their allowed codes. |
-| `apps/web/src/lib/analytics-client.ts`         | The runtime: the one gate (`captureDecision`), the lazy SDK import, pageviews per route, identify, `track`, `captureError`, `resetAnalytics`. The only file that imports `posthog-js` at run time.                  |
-| `apps/web/src/components/analytics.tsx`        | `<Analytics />` (mounted once in the root layout), `useStepViewed` (the wizards) and `<TrackStep />` (a step fired from a server component).                                                                        |
-| `apps/web/src/app/api/analytics/viewer`        | `GET`: `{ admin: true }` for an admin account, `{ admin: false, id }` for a customer, 401 signed out. Asked only when a Supabase session cookie is present.                                                         |
-| `apps/web/src/components/recording-notice.tsx` | The notice line: first screen of `/start`, and `/login`, `/forgot-password`, `/reset-password`.                                                                                                                     |
-| `apps/web/test/analytics.test.ts`              | The proofs (below).                                                                                                                                                                                                 |
+| File                                           | What it is                                                                                                                                                                                         |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/lib/analytics.ts`                | The policy, pure and node-tested: the settings (key, EU host), the address scrubber, the `before_send` scrubber, the recording masks, the SDK options, the named steps and their allowed codes.    |
+| `apps/web/src/lib/analytics-client.ts`         | The runtime: the one gate (`captureDecision`), the lazy SDK import, pageviews per route, identify, `track`, `captureError`, `resetAnalytics`. The only file that imports `posthog-js` at run time. |
+| `apps/web/src/components/analytics.tsx`        | `<Analytics />` (mounted once in the root layout), `useStepViewed` (the wizards) and `<TrackStep />` (a step fired from a server component).                                                       |
+| `apps/web/src/app/api/analytics/viewer`        | `GET`: `{ admin: true }` for an admin account, `{ admin: false, id }` for a customer, 401 signed out. Asked only when a Supabase session cookie is present.                                        |
+| `apps/web/src/components/recording-notice.tsx` | The notice line: first screen of `/start` (and `/home/new-business`, which shares it), `/login`, `/forgot-password`, `/reset-password`, and `SiteFooter` on every public page.                     |
+| `apps/web/test/analytics.test.ts`              | The proofs (below).                                                                                                                                                                                |
 
 `posthog-js` is pinned exactly at **1.434.15** (2026-09-26, the newest release more than two weeks
 old on 2026-10-11) and imported as `posthog-js/full/no-external`: recording and error capture
@@ -40,11 +44,28 @@ its `package.json` and sources).
    the user id. Cannot tell (5xx, network) → **off**.
 4. Otherwise, an anonymous visitor: **on**.
 
-While the gate says no, `before_send` drops every event, recordings and errors included. Between
-routes, an event also leaves only while the session cookie is present or absent exactly as it was
-when the gate last decided (`canSend`), so a sign-in or a sign-out stops everything at the moment
-the cookie changes, until the next route has asked who it is. Moving to accept/decline later is one
-more condition in `captureDecision`.
+While the gate says no, `before_send` drops every event, recordings and errors included, and
+nothing is queued until it says yes again. Between routes, an event also leaves only while the
+session cookie has exactly the value the gate last decided for and no tab has marked the device
+(`admit`). So a sign-in, a sign-out, another account's session written over this one (Supabase
+replaces the cookie's value without removing it), a token refresh or another tab's admin sign-in
+stops everything at the moment it happens. What happens next (vault 0110, "no gap at sign-in"):
+
+- The gate is asked again **at once**, not on the next route (`recheck`); an answer fetched for a
+  cookie value that changed meanwhile is asked again.
+- Meanwhile the recorder's batches (up to ten, about twenty seconds) and the steps and errors fired
+  through `track` / `captureError` are **held** in memory, not dropped.
+- The answer decides them. A sign-in's go out only if the account is a customer's: the batches
+  re-sent as the recorder's own request (`release`: `_url` the `/s/` endpoint,
+  `_batchKey: "recordings"`, `_noTruncate`, `skip_client_rate_limiting`, pinned against
+  posthog-js's `_captureSnapshot` in a test), then the steps, so the replay has no gap. Any other
+  change's go out if the answer allows them and the identity did not change: a token refresh, or a
+  sign-out through `signOut()`, which resets the identity before the cookie goes. An admin's answer
+  drops them, stops the recording and marks the device, as before; so does an answer that cannot
+  be had, and a changed identity (a session that ended without `signOut()`, another account).
+- Events the SDK raises itself in that moment (an uncaught error) are dropped, not held.
+
+Moving to accept/decline later is one more condition in `captureDecision`.
 
 **Identity:** a PostHog identity left in the browser by a session that ended without `signOut()`
 (a server-side sign-out, a revoked token) or by another account is reset before the next event;
@@ -57,16 +78,17 @@ in there, nothing is sent, and the device stays off.
 
 ## Counted, recorded
 
-| Pages                                                                                                 | What is sent                                                                                                                    |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `/start`, `/login`, `/forgot-password`, `/reset-password`, `/home/**`, `/connect/**`                  | `$pageview`, the session recording, named steps, browser errors, `$identify`                                                    |
-| Everything else (`/`, `/pricing`, `/about`, `/contact`, `/privacy`, `/terms`, `/social/deletion/:id`) | `$pageview` with the referring site and campaign parameters, browser errors, `$identify` for a signed-in customer; no recording |
+**Every page records** (vault 0110): the landing, `/pricing` and every other public page, `/start`,
+the auth pages, everything signed in. Each route sends `$pageview` (address cut down, campaign kept),
+the recording, named steps, browser errors and, for a signed-in customer, `$identify`. Nothing stops
+the recorder between a public page and an app page. The SDK starts with recording disabled and
+`startSessionRecording` runs once the gate has answered, on every route.
 
-`isRecordedPath` in `analytics.ts` is the list. The SDK starts with recording disabled and
-`startSessionRecording` / `stopSessionRecording` run on every route change; leaving a recorded page
-for a public one also stops the recorder inside the navigation's commit (`stopRecordingIfPublic`,
-a layout effect), before its observer sees the public page's DOM. That ordering is React's and the
-DOM's, REASONED, not measured.
+**MEASURED in posthog-js 1.434.15's source, not decided here:** the recorder holds a fresh page's
+first batch until the visitor interacts (`_holdFlushUntilInteraction`; a scroll, a click, typing),
+or until a clean unload of a page that was visible; and the first batch reached the stand-in about
+five seconds after the interaction in the hiding check. A visit with no interaction and no clean
+unload ships no recording.
 
 The pageview's address and campaign are read when the route is reported (`pageviewProperties`),
 not when the SDK has finished loading, so a visitor who taps on before it loads is not counted on
@@ -81,39 +103,73 @@ the wrong page.
   trigger puts the raw address into `$recording_started` as `matchedUrl`), to what the SDK reads
   for targeting (`get_current_url`), and to addresses quoted inside an error message. Referrers are
   cut to their origin. Click ids (`fbclid`, `gclid`, …), `$fbc` and the search keyword are deleted.
-- **Recordings, hidden by default**: `maskTextSelector: "*"` sends every text node through
-  `maskText`, which hides it unless it sits under `data-ph-unmask` and not under `data-ph-mask`
-  or inside a form field. Every input is masked (`maskAllInputs`) to the same five asterisks
-  (`maskInput`), so a field's length does not leave either; masked page text keeps one asterisk
-  per character and its spaces, so the replay keeps its layout. Attributes go through
-  `maskAttribute` (addresses lose tokens, `srcset` goes whole, words are hidden unless readable).
-  Every `img`, `video`, `audio`, `canvas`, `iframe`, file input and hidden input is replaced by a
-  blank box (`BLOCK_SELECTOR`). Captured network requests and console lines are dropped twice
-  (`maskReplayRequest` returns null; the snapshot scrubber removes plugin events), because
-  PostHog's dashboard can turn network capture on regardless of the local setting.
+- **Recordings: shown as on screen, the sensitive hidden** (vault 0110). `maskTextSelector: "*"`
+  and `maskAllInputs: true` send every text node and every text field through `maskText` /
+  `maskInput`, and every attribute through `maskAttribute`, so the policy is ours and the dashboard's
+  masking settings cannot override it. They show the page as it was, except:
+  - inside `data-ph-mask` (`MASK`): text as one asterisk per character with its spaces, a field as
+    the same five asterisks whatever was typed, words and links in attributes gone, and every
+    image and video a blank box;
+  - in any field that is a password, email or phone field, a password field switched to text
+    (rrweb's `data-rr-is-password`), or that says `autocomplete` username, email, tel,
+    current-password, new-password or one-time-code (`SENSITIVE`), marked or not;
+  - an email address anywhere else, in text, a field or an attribute (`EMAIL`, a pattern): from the
+    word before its `@` to the end of the word, so one being typed into an ordinary field is
+    hidden from the moment its `@` is typed. What was typed before the `@` has been recorded by
+    then, because posthog-js records every keystroke and offers no way to sample them. A word that
+    starts with `@` (a handle) shows; an address written with spaces around the `@` is not
+    recognised;
+  - the codes in an address shown or typed (a product link with a preview key, say): `http(s)`
+    addresses in text and fields are cut down like any other (`sanitizeUrl`);
+  - text with no element to place it.
+- **Media** shows where a replay watched the next day would still play it (`isPlayableMedia`, and
+  the same rule in CSS in `BLOCK_SELECTOR`, read from the attribute as the page wrote it). A replay
+  carries the link, not the pixels: the viewer's browser fetches it then. A link with no query
+  plays and is kept whole and absolute (rrweb records `poster` as written); so does Next's image
+  optimiser serving such a link, with its `srcset`. Anything else (a signed link, the Meta CDN, a
+  `blob:` or `data:` address, an `/api/` route) is a blank box of the same size, and its address
+  is cut down besides. Canvases, frames, embeds, file inputs and hidden inputs are always boxes (a
+  hidden input's value can be a token, a file input's is the file's name, and the recorder masks
+  neither). Captured network requests and console lines are dropped twice (`maskReplayRequest`
+  returns null; the snapshot scrubber removes plugin events), because PostHog's dashboard can turn
+  network capture on regardless of the local setting.
 - **No click events** (`autocapture: false`), no heatmaps, no dead clicks, no web vitals, no
   console capture, no surveys, no feature flags (`advanced_disable_feature_flags`, which also stops
   the `/flags` request that bypasses `before_send`).
 - **Storage**: `persistence: "localStorage"` — no cookie, so nothing of PostHog's rides on
   requests to our own server.
 
-### Marking a screen readable
+### Marking a field hidden
 
-`data-ph-unmask` on a container makes Tavnit's own copy inside it readable; form fields stay
-masked inside it. Put `data-ph-mask` on anything inside such a container that shows a customer's
-own content, and never render customer content inside a marked container without it. A screen
-nobody marked comes out as asterisks. Marked today: the `/start` questionnaire (its recap of the
-answers is masked again), the onboarding header, every `StepHeader`, every field label, the three
-auth pages, the wizard rail and the three wizard titles, the sidebar's nav links,
-`NoCreditsCard`, `/home/plan` (its dialogs too, through `ConfirmDialog readable`),
-`/home/plan/checkout`, and the ₪5 intro offer's `/home/plan/intro` and `/home/plan/continue`
-(vault 0109), the two error cards, the notice line. `/home/plan` shows the customer's own
-plan and billing state (next charge, a pending change, a failed charge), which is readable there
-by design and said so in `/privacy` §3.
+Shown is the default; the hidden set is the list above and nothing else. To hide something new,
+put `data-ph-mask` on the smallest element that holds it: its text, fields, attribute words and
+links, and any image or video inside it, all go. Where the identity cannot be isolated from the
+copy around it (a sentence built with the account's name in it, a `title` attribute), mark the
+container. `ConfirmDialog sensitive` does it for a dialog, which is portalled out of any marked
+region. A field needs no mark if it is a password, email or phone field or carries one of the
+`autocomplete` hints above.
 
-| Comes out readable                                                                                                                                             | Partly hidden                                                                                                                                                                                                                                                                                       | Fully hidden                                                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/start` steps 1–4, the three auth pages, `/home/plan`, `/home/plan/checkout`, `/home/plan/intro`, `/home/plan/continue`, the no-credits card, the error cards | `/start` signup step and `/home/new-business` (questionnaire readable, recap masked), every wizard (title, rail and step headers readable; everything the customer wrote or was given, the business name, media, hidden), the signed-in shell (nav readable; email, business names, credits hidden) | `/home` body (greeting with the business name, render strip), `/home/renders`, `/home/demos`, `/home/settings`, `/home/feedback`, `/connect/instagram` |
+Marked today: the account email (the sidebar's menu and profile row, the avatar letter, the mobile
+avatar button, `/home/settings`), a connected Instagram account's name, username and picture
+(`/home/settings` and its success line and disconnect dialog, `/schedule/[renderId]`'s account
+picker, `/calendar`'s day list and post chips, `/calendar/[postId]` and its link to the post, the
+expired-account notice on `/home`), the contact and feedback forms whole and the email their
+confirmations show, and the deletion code on `/social/deletion/[code]`. A test pins a mark in each
+of these files.
+Sumit's payment page is on its own domain and never recorded.
+
+| Shown as on screen                                                                                                                                                                                                                                                                                                  | Partly hidden                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Fully hidden                                                                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| The landing, `/pricing`, `/about`, `/privacy`, `/terms` (their media is Tavnit's own static files and plays); `/start` steps 1 to 4; `/home/new-business` (answers and recap); `/home/plan` and its checkout, intro and continue pages; the no-credits card; the error cards; the notice line; `/connect/instagram` | `/start` signup step and the three auth pages (fields shown except email and password); every wizard (the business content, the scripts, hook lines, captions and texts shown and typed; every customer video and image a box); the signed-in shell (business name and credits shown, the email hidden); `/home/settings` (questionnaires shown; the email and connected accounts hidden); `/home` (greeting and business name shown, render thumbnails boxed, the expired-account notice hidden); `/home/demos` (demo thumbnails boxed); `/home/renders`, `/schedule`, `/calendar` (render boxes, account hidden); `/contact` (page shown, form hidden); `/social/deletion/[code]` (the code hidden) | `/home/feedback`'s form; the contact form; Sumit's payment page (another domain, never recorded) |
+
+| Media                                                                           | Link                                                    | Lifetime (MEASURED)                                          | In a replay                                                 |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------- |
+| Demos, demo and analysis thumbnails, the A example pair                         | signed (Supabase)                                       | 3600 s (`SIGNED_URL_TTL_SECONDS`, `apps/web/src/lib/api.ts`) | box                                                         |
+| Renders (`videoUrl`; `downloadUrl` is a link, not media) and their thumbnails   | signed                                                  | 3600 s                                                       | box (the download link's address is kept without its token) |
+| Hook clips, text-block clips, TTS audio (opener clips: no component shows them) | signed                                                  | 3600 s                                                       | box                                                         |
+| Persona images                                                                  | public catalogue bucket, through Next's image optimiser | none (a 3600 s signed fallback when `catalog_path` is null)  | plays (the fallback: box)                                   |
+| The landing's and the `/home` cards' example clips and stills, the brand mark   | Tavnit's static files                                   | none                                                         | plays                                                       |
+| A connected account's picture, the sound picker's covers and previews           | Meta CDN, signed by Meta                                | Meta's, not in the code                                      | box (the picture is hidden anyway)                          |
 
 ## Named steps
 
@@ -146,8 +202,9 @@ and what the three error boundaries catch, through `captureError`).
   address.
 - `account_created` (`google`, no finished questionnaire) counts again if that person reloads
   `/start` within the ten minutes.
-- An error, or a step fired by a page's own effects, in the moment between a sign-in and the next
-  route's answer is dropped, not sent late.
+- A step fired in the moment between a session change and the gate's answer is held with the
+  recording and follows it (sent on a customer's answer after a sign-in, dropped on an admin's);
+  an uncaught error the SDK catches itself in that moment is dropped.
 
 **Skipped:** the in-wizard credits shortfall at the confirm step is not a separate step; a refused
 render request shows as `render_requested` with `result: no_credits`.
@@ -189,3 +246,11 @@ mounts the real sidebar, C studio and render player with marker values, and an a
 throwaway value under this project's real session-cookie name, which the middleware leaves alone,
 and the viewer route answered through CDP's Fetch domain). Then every captured byte is searched for
 the markers. Results: [`facts/posthog-hiding-check-2026-10-11.md`](vault/facts/posthog-hiding-check-2026-10-11.md).
+
+**The 2026-10-15 run** (vault 0110) used the same recipe with these changes. The harness page also
+mounted the settings social card, the feedback and contact forms, a public and a signed image and a
+hidden input. Markers came in two lists: hidden kinds, which must be absent, and shown kinds, which
+must be present. The sign-in phases set this project's real session-cookie name on an open page,
+with the viewer route's answer delayed seven seconds by CDP's Fetch domain, after waiting until the
+page's pre-sign-in batch had reached the stand-in, so that any later request is the gate's doing.
+Results: [`facts/posthog-hiding-check-2026-10-15.md`](vault/facts/posthog-hiding-check-2026-10-15.md).

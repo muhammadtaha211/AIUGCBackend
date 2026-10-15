@@ -72,6 +72,9 @@ export const OPERATOR_ADDRESS = "ברזיל 14, תל אביב, ישראל";
  * Moved 11.10.2026 → 14.10.2026 for the ₪5 intro offer's bullet in §8 (vault
  * 0109). One constant for both pages, so /privacy's displayed date moves with
  * it though its text did not change — the 11.10 move set that precedent the
- * other way round. If the merge lands on a later day, move it to that day.
+ * other way round. Moved 14.10.2026 → 15.10.2026 for /privacy §3 and §6 when
+ * every page began recording and only the sensitive stayed hidden (vault 0110);
+ * the terms text did not change. If the merge lands on a later day, move it to
+ * that day.
  */
-export const UPDATED = "14.10.2026";
+export const UPDATED = "15.10.2026";

@@ -293,7 +293,7 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                       <span className="aspect-[9/16] w-8 shrink-0 rounded bg-ink/[0.06]" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-ink">
+                      <span className="block truncate text-sm font-medium text-ink" data-ph-mask>
                         <bdi>{accountLabel(post)}</bdi>
                       </span>
                       <span dir="ltr" className="block text-end text-xs tabular-nums text-ink/55">
@@ -321,6 +321,8 @@ function PostChip({ post }: { post: PostWire }) {
       href={`/calendar/${post.id}`}
       title={`${accountLabel(post)} · ${POST_STATUS_LABELS[status]}`}
       className={`flex items-center gap-1 rounded-md px-1 py-0.5 text-[11px] transition-opacity duration-150 hover:opacity-80 ${CHIP[status]}`}
+      // The title and the picture are the account's: the chip is hidden in a recording.
+      data-ph-mask
     >
       {post.account.pictureUrl ? (
         <img

@@ -44,7 +44,7 @@ export function FeedbackForm({ businessId, email }: { businessId: string | null;
             screen reader gets no signal that the message went. */}
         <p role="status" className="text-[15px] font-medium text-ink">
           תודה! קיבלנו, נחזור אליכם למייל{" "}
-          <span dir="ltr" className="font-semibold">
+          <span dir="ltr" className="font-semibold" data-ph-mask>
             {email}
           </span>
         </p>
@@ -68,6 +68,9 @@ export function FeedbackForm({ businessId, email }: { businessId: string | null;
   return (
     <form
       className="mt-8 rounded-xl border border-ink/[0.08] bg-white p-6"
+      // A message to support is not ad content and may carry a phone number:
+      // the whole form is hidden in a recording (vault 0110).
+      data-ph-mask
       onSubmit={(event) => {
         event.preventDefault();
         if (trimmed && !sending) void send();

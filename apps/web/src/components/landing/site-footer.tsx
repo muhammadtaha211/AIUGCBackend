@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
+import { RecordingNotice } from "@/components/recording-notice";
 import { NAV_PRICING } from "@/lib/plans-ui";
 
 /**
@@ -95,9 +96,13 @@ export function SiteFooter() {
         </nav>
       </div>
       <div className="border-t border-ink/[0.06]">
-        <p className="mx-auto max-w-6xl px-5 py-5 text-sm text-ink/45 sm:px-8">
-          © תבנית <span dir="ltr">2026</span>. כל הזכויות שמורות.
-        </p>
+        <div className="mx-auto max-w-6xl px-5 py-5 sm:px-8">
+          <p className="text-sm text-ink/45">
+            © תבנית <span dir="ltr">2026</span>. כל הזכויות שמורות.
+          </p>
+          {/* Every public page is recorded too (vault 0110). */}
+          <RecordingNotice className="mt-1" />
+        </div>
       </div>
     </footer>
   );
