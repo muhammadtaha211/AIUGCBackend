@@ -5,16 +5,20 @@ import { useId } from "react";
 import { Button, PRIMARY_BUTTON_LG_CLASS } from "@/components/ui/button";
 import { startWithPlanPath } from "@/lib/onboarding";
 import {
-  creditKeyLine,
   creditsLine,
   discountLabel,
   estimateLine,
+  INTRO_CARD_CLAIM,
+  INTRO_CARD_SUB,
+  INTRO_CARD_TITLE,
+  introCardCreditsLine,
+  introCardPriceLine,
   POPULAR_BADGE,
   priceLine,
   PUBLIC_SIGNED_IN_ACTION,
   PUBLIC_SIGNED_OUT_ACTION,
   rateLine,
-  VAT_FOOTNOTE,
+  type IntroOfferView,
   type PlanExamples,
   type PlansView,
   type PlanView,
@@ -22,17 +26,20 @@ import {
 
 /**
  * The three plan cards, shared by /pricing (public, signed out or in) and
- * /home/plan (app). Every sentence and number on a card is a plans-ui line
- * over the view model — nothing here computes a price, a rate or a count
+ * /home/plan (app), and on /pricing the ₪5 intro card beside them while the
+ * offer is live (decision 0112). Every sentence and number on a card is a
+ * plans-ui line over the view model — nothing here computes a price, a rate or a count
  * (lib/plans.ts is the one place that does). The card only decides what goes
  * big, what goes small, and which button sits at the bottom.
  *
- * One bold element: the popular card is inverted — paper on ink instead of
- * ink on paper — and carries the lime pill. Everything else stays quiet, in
- * the same three tokens the rest of the app uses.
+ * Two bold elements: the popular card is inverted — paper on ink instead of
+ * ink on paper — and carries the lime pill; the intro card is the one lime
+ * card, ink on lime. Everything else stays quiet, in the same three tokens the
+ * rest of the app uses.
  *
- * RTL: the grid's first child (the cheapest plan) sits on the RIGHT, which is
- * where a Hebrew reader starts.
+ * RTL: the grid's first child (the intro card on /pricing while the offer is
+ * live, otherwise the cheapest plan) sits on the RIGHT, which is where a Hebrew
+ * reader starts.
  */
 
 export type CardSlot = {
@@ -224,15 +231,53 @@ function PlanCard({
       <p className={`mt-5 text-sm leading-relaxed ${inverted ? "text-paper/80" : "text-ink/75"}`}>
         {estimateLine(plan, examples)}
       </p>
-      {/* /65, not /55: 12px text needs 4.5:1 on white, and ink at 55% is 4.2. */}
-      <p className={`mt-2 text-xs leading-relaxed ${inverted ? "text-paper/55" : "text-ink/65"}`}>
-        {creditKeyLine(examples)}
-      </p>
 
-      {/* mt-auto: the buttons line up across the three cards whatever the
+      {/* mt-auto: the buttons line up across the cards whatever the
           estimate lines wrap to. */}
       <div className="mt-auto pt-6">
         <CardAction plan={plan} mode={mode} slot={slot} inverted={inverted} />
+      </div>
+    </article>
+  );
+}
+
+/**
+ * The ₪5 intro offer as a card (decision 0112): lime with ink text, the
+ * inverse of the popular card. Its numbers are core's INTRO_OFFER, handed in;
+ * the button is ink because the primary button is lime.
+ */
+function IntroCard({
+  offer,
+  action,
+}: {
+  offer: IntroOfferView;
+  action: { href: string; label: string };
+}) {
+  const headingId = useId();
+  return (
+    <article
+      aria-labelledby={headingId}
+      className="relative flex flex-col rounded-xl bg-accent p-6 text-ink shadow-xl shadow-ink/[0.05] ring-1 ring-ink/10 sm:p-7"
+    >
+      <h2 id={headingId} className="text-lg font-semibold">
+        {INTRO_CARD_TITLE}
+      </h2>
+      <p className="mt-1 text-sm text-ink/75">{INTRO_CARD_SUB}</p>
+      <p className="mt-3 text-sm text-ink/75">
+        <Amounts
+          line={introCardPriceLine(offer)}
+          amountClassName="font-display text-4xl text-ink sm:text-5xl"
+        />
+      </p>
+      <p className="mt-2 text-sm text-ink/75">{introCardCreditsLine(offer)}</p>
+      <p className="mt-5 text-sm leading-relaxed text-ink/85">{INTRO_CARD_CLAIM}</p>
+      <div className="mt-auto pt-6">
+        <Link
+          href={action.href}
+          className={`${PRIMARY_BUTTON_LG_CLASS} w-full !bg-ink !text-paper hover:!bg-ink/85 focus-visible:!outline-ink`}
+        >
+          {action.label}
+        </Link>
       </div>
     </article>
   );
@@ -242,20 +287,26 @@ export function PlanCards({
   view,
   mode,
   slots,
+  intro,
 }: {
   view: PlansView;
   mode: PlanCardsMode;
   slots?: Record<string, CardSlot>;
+  /** /pricing only: the intro card, first in the row (on the right), while the offer is live. */
+  intro?: { offer: IntroOfferView; action: { href: string; label: string } } | null;
 }) {
+  // pt-3 leaves room for the popular pill, which overhangs its card's top
+  // edge. Three columns from md on the public page, but only from lg in the
+  // app: there the cards live in a pane 256px narrower than the viewport (and
+  // zoomed), so a md viewport gives each card ~100px. With the intro card the
+  // public row is four from xl and two by two from md: four at lg would leave
+  // each card ~170px for its text.
+  const columns =
+    mode === "app" ? "lg:grid-cols-3" : intro ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3";
   return (
     <div>
-      {/* pt-3 leaves room for the popular pill, which overhangs its card's top
-          edge. Three columns from md on the public page, but only from lg in
-          the app: there the cards live in a pane 256px narrower than the
-          viewport (and zoomed), so a md viewport gives each card ~100px. */}
-      <div
-        className={`grid items-stretch gap-5 pt-3 ${mode === "app" ? "lg:grid-cols-3" : "md:grid-cols-3"}`}
-      >
+      <div className={`grid items-stretch gap-5 pt-3 ${columns}`}>
+        {intro && <IntroCard offer={intro.offer} action={intro.action} />}
         {view.plans.map((plan) => (
           <PlanCard
             key={plan.code}
@@ -266,8 +317,6 @@ export function PlanCards({
           />
         ))}
       </div>
-      {/* Belongs to the cards, on both pages — terms §8, vault 0046 §2. */}
-      <p className="mt-6 text-center text-sm text-ink/65">{VAT_FOOTNOTE}</p>
     </div>
   );
 }

@@ -35,11 +35,13 @@ export type PlanView = {
   countB: number;
   /** Whole hook+demo ads off ONE recording: first at aFirst, the rest at aNext. */
   countA: number;
+  /** Whole גוש טקסט videos at PlanExamples.cAd each. */
+  countC: number;
   /** The one card drawn inverted with the "הכי פופולרי" pill. */
   popular: boolean;
 };
 
-/** The two worked examples every card is priced against, from credit_costs. */
+/** The three worked examples every card is priced against, from credit_costs. */
 export type PlanExamples = {
   /** Credits for one Service B ad of `bSeconds`. */
   bAd: number;
@@ -48,8 +50,8 @@ export type PlanExamples = {
   aFirst: number;
   /** Credits for every later ad off that same recording. */
   aNext: number;
-  /** The one-time analysis part of aFirst. */
-  analysis: number;
+  /** Credits for one גוש טקסט video: a flat per render. */
+  cAd: number;
 };
 
 export type PlansView = { plans: PlanView[]; examples: PlanExamples };
@@ -115,16 +117,12 @@ export function discountLabel(discountPct: number): string {
  *
  * The product names are the APP's, not the card's own (founder, 2026-09-17):
  * "סרטון עם דמות AI" as the wizard and the dashboard card write it, and
- * "הוק + דמו" spaced as SERVICE_LABELS.a writes it. These two sentences were
- * the only place in the repo that said "סרטוני דמות AI" or "הוק+דמו".
+ * "הוק + דמו" spaced as SERVICE_LABELS.a writes it, and "גוש טקסט" as
+ * SERVICE_LABELS.c and the C wizard write it (the third count since 0112, COPY
+ * PENDING FOUNDER REVIEW).
  */
 export function estimateLine(plan: PlanView, examples: PlanExamples): string {
-  return `לדוגמה: עד ${formatCredits(plan.countB)} סרטונים עם דמות AI של ${examples.bSeconds} שנ׳, או עד ${formatCredits(plan.countA)} מודעות הוק + דמו מהקלטה אחת`;
-}
-
-/** The credit key under the estimate: what each example ad costs. */
-export function creditKeyLine(examples: PlanExamples): string {
-  return `סרטון עם דמות AI: ${formatCredits(examples.bAd)} קרדיטים ל־${examples.bSeconds} שנ׳ · הוק + דמו: ${formatCredits(examples.aNext)} קרדיטים, ועוד ${formatCredits(examples.analysis)} חד־פעמית על ניתוח ההקלטה`;
+  return `לדוגמה: עד ${formatCredits(plan.countB)} סרטונים עם דמות AI של ${examples.bSeconds} שנ׳, או עד ${formatCredits(plan.countA)} מודעות הוק + דמו מהקלטה אחת, או עד ${formatCredits(plan.countC)} סרטוני גוש טקסט`;
 }
 
 /* ---------- /pricing ---------- */
@@ -137,8 +135,6 @@ export const PRICING_META_DESCRIPTION =
 export const PRICING_HEADLINE = "מסלול אחד, שלושה גדלים";
 export const PRICING_SUBLINE =
   "אין הפתעות: מנוי חודשי, ביטול בכל רגע, וההבדל היחיד בין המסלולים הוא כמות הקרדיטים.";
-/** Matches terms §8 — we ship as עוסק פטור (vault 0046 §2). */
-export const VAT_FOOTNOTE = "המחירים סופיים. אנחנו עוסק פטור, ולכן לא מתווסף מע״מ.";
 export const PUBLIC_SIGNED_OUT_ACTION = "מתחילים";
 export const PUBLIC_SIGNED_IN_ACTION = "לבחירת מסלול";
 export const PRICING_FAQ_TITLE = "שאלות שחוזרות";
@@ -565,9 +561,35 @@ export function noCreditsIntroLine(offer: IntroOfferView): string {
   return `חשבון חדש? אפשר להתחיל בהיכרות חד־פעמית: ${formatCredits(offer.credits)} קרדיטים לכל השירותים ב־${formatShekels(offer.priceAgorot)}`;
 }
 
-/** The one /pricing line under the cards — never a fourth card. */
-export function pricingIntroLine(offer: IntroOfferView): string {
-  return `חשבון חדש יכול להתחיל בהיכרות חד־פעמית: ${formatCredits(offer.credits)} קרדיטים לכל השירותים, בתוקף ${offer.days} יום ובלי חיוב חוזר, ב־${formatShekels(offer.priceAgorot)}`;
+/*
+ * The /pricing card (decision 0112): a fourth card in the plans' row, lime.
+ * A one-time purchase, so nothing on it says monthly or renews (0109 §1.1).
+ * The title is the founder's own.
+ */
+export const INTRO_CARD_TITLE = "חבילת התנסות";
+/** Only an account that has never paid may buy it (0109 §1.6). */
+export const INTRO_CARD_SUB = "ללקוחות חדשים בלבד";
+export function introCardPriceLine(offer: IntroOfferView): string {
+  return `${formatShekels(offer.priceAgorot)} בתשלום חד־פעמי`;
+}
+export function introCardCreditsLine(offer: IntroOfferView): string {
+  return `${formatCredits(offer.credits)} קרדיטים, בתוקף ${offer.days} יום`;
+}
+/**
+ * Read back against the quote functions at the wizards' defaults (0112): a
+ * first hook+demo ad, a talking head at the B wizard's 15-second preset and a
+ * גוש טקסט video fit the offer's credits. No count of videos, never "לפחות".
+ */
+export const INTRO_CARD_CLAIM = "מספיקים כדי לנסות כל אחד מהשירותים";
+
+/**
+ * Where the card's button goes: a stranger to signup, a signed-in account (only
+ * ever shown the card when it may buy) to the offer's own page.
+ */
+export function introCardAction(signedIn: boolean): { href: string; label: string } {
+  return signedIn
+    ? { href: INTRO_PATH, label: INTRO_OFFER_ACTION }
+    : { href: "/start", label: PUBLIC_SIGNED_OUT_ACTION };
 }
 
 /* ---------- dialogs ---------- */

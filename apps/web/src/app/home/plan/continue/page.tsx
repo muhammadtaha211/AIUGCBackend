@@ -16,7 +16,6 @@ import {
   creditsLine,
   formatDate,
   priceLine,
-  VAT_FOOTNOTE,
 } from "@/lib/plans-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { ContinueForm } from "./continue-form";
@@ -26,7 +25,7 @@ import { ContinueForm } from "./continue-form";
  * without the card step — the plan's price and credits, that today's charge is
  * on the card saved at the ₪5 payment and when the next one falls, the
  * auto-renewal line, the leftover trial credits it keeps (only while the trial
- * is live), the VAT footnote, the required terms checkbox, one button that
+ * is live), the required terms checkbox, one button that
  * names the amount. An ordinary first month: full price, full credits, the
  * period from the click — not 0052's proration.
  *
@@ -90,7 +89,6 @@ export default async function ContinuePage({
           <p>{continueChargeLine(nextCharge)}</p>
           <p>{CHECKOUT_RENEWAL_LINE}</p>
           {keeps && <p>{continueLeftoverLine(trial.creditsLeft)}</p>}
-          <p className="text-sm text-ink/65">{VAT_FOOTNOTE}</p>
         </div>
 
         <ContinueForm planCode={plan.code} priceAgorot={plan.priceAgorot} />

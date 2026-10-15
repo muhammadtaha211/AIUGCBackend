@@ -78,6 +78,9 @@ _(Lifted for the landing only, 2026-10-10, by the founder:
 [[0100-home-cards-show-example-clips-landing-sells-three]] §5. The landing sells גוש טקסט in its
 own section; `/pricing` and the legal pages stay held.)_
 
+_(Lifted for `/pricing`, 2026-10-15, by the founder: the plan cards name גוש טקסט as a third
+count. The legal pages stay held. [[0112-pricing-names-three-services-and-shows-the-intro-card]].)_
+
 ## Where it lives
 
 - `packages/core/src/text-block.ts` — the vocabulary and the burn check; `pipelines/text-blocks.ts`

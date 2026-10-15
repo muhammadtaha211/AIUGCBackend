@@ -33,12 +33,21 @@ export async function introOfferFor(userId: string): Promise<IntroOfferView | nu
 }
 
 /**
- * /pricing: the offer when it is switched on and its page set, whoever is
- * reading. Read per request, outside the cached plans view, so turning the
- * switch off takes the line down at once; a failed read hides one optional
- * line rather than the page.
+ * /pricing's card (decision 0112): for a signed-in account, only when THAT
+ * account may buy it; for a stranger, whenever the offer is live. Read per
+ * request, outside the cached plans view, so turning the switch off takes the
+ * card down at once; a failed read hides one optional card rather than the page.
  */
-export async function publicIntroOffer(): Promise<IntroOfferView | null> {
+export async function pricingIntroOffer(userId: string | null): Promise<IntroOfferView | null> {
+  if (!userId) return publicIntroOffer();
+  return introOfferFor(userId).catch((err: unknown) => {
+    console.error("pricing: intro eligibility read failed", err);
+    return null;
+  });
+}
+
+/** The offer when it is switched on and its page set, whoever is reading. */
+async function publicIntroOffer(): Promise<IntroOfferView | null> {
   if (!introPageConfigured()) return null;
   const on = await introOfferEnabled(getDb()).catch((err: unknown) => {
     console.error("pricing: intro offer switch read failed", err);

@@ -165,6 +165,9 @@ _(Pointer 2026-10-11: `/privacy` and the shared `UPDATED` date were edited for P
 founder's PostHog prompt orders "`/privacy` says all of this in the same change"; `/pricing` and
 `/terms` text are untouched. [[0104-what-posthog-records-and-what-never-leaves]].)_
 
+_(Lifted for `/pricing`, 2026-10-15, by the founder: each plan card's estimate names גוש טקסט as a
+third count, computed through `quoteServiceC`. The legal pages stay held. [[0112-pricing-names-three-services-and-shows-the-intro-card]].)_
+
 ## 10. What else was decided while building it
 
 - **PLANNING DEFAULTS kept:** a change to a character of the other gender clears the texts already
