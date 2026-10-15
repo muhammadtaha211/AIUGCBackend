@@ -974,6 +974,24 @@ no core function, no job, no limit, no email, no connect, no migration, no depen
 **Not run:** nothing live — no post, no deploy, no production query. The pickers and rows were
 checked on a harness, not in a signed-in walk.
 
+## What landed (2026-10-15, later still) — `/privacy` drops the picsum sentence, `docs/privacy-drop-picsum`, NOT merged
+
+Placed here so it does not collide with PRs #99 and #100. `/privacy` §6 said the landing loads
+temporary images from `picsum.photos`; MEASURED by reading the code and in the browser, none does.
+`hookStudioShot` always renders its mock, `instagramShot` hides while its `src` is null, and every
+other slot has our own file. A full scroll of the landing made 12 media elements and no
+third-party request.
+
+- **Removed:** the subtitle "תמונות בדף הבית" and its three sentences.
+- **Also removed:** the dead fallback in `AdFrame` that could still have drawn a picsum still, and
+  the `seed` prop it left unused, so the removal stays true. `apps/web/test/landing-media.test.ts`
+  pins that the landing's media is our own files.
+- **Legal docs:** legal-review row P15 added; reg-2 worksheet row 168 marked moot.
+  `docs/legal/database-definitions-document.md` still names picsum, because that draft is frozen
+  (decision 0043).
+- **FOUNDER-REPORTED (2026-10-15):** `UPDATED` is not moved here; PR #99 moves it to 15.10.2026.
+  Merged alone before #99, the page changes while still showing 14.10.2026.
+
 ## What landed (2026-10-13) — social posting PR 3: schedule, sound picker, calendar, live posts, the failure email, `feat/social-posting-schedule`, MERGED as PR #95 (`acb245f`)
 
 FOUNDER-REPORTED 2026-10-13: merged, and works live for him. Which of the live checks below
