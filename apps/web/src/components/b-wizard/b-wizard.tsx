@@ -155,9 +155,7 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   return (
     <div className="w-full max-w-2xl pt-6 sm:pt-10 lg:max-w-4xl">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-lg font-semibold tracking-tight text-ink" data-ph-unmask>
-          סרטון עם דמות AI
-        </h1>
+        <h1 className="text-lg font-semibold tracking-tight text-ink">סרטון עם דמות AI</h1>
         <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
 

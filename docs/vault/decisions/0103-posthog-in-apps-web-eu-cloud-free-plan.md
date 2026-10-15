@@ -90,5 +90,6 @@ SDK, no source-map upload, no `instrumentation-client.ts`, and the wiring writte
 - [[0104-what-posthog-records-and-what-never-leaves]] — the other four decisions.
 - [[0037-the-worker-reports-to-sentry-the-web-apps-do-not]] — the boundary this sits beside.
 - [[0068-prices-stand-no-free-tier-trials-by-hand]] — its "no analytics package" is stale from this.
-- [[posthog-hiding-check-2026-10-11]] — what leaves the browser, measured.
+- [[posthog-hiding-check-2026-10-11]] — what leaves the browser, measured; superseded on
+  2026-10-15 by [[posthog-hiding-check-2026-10-15]] (vault 0110).
 - `docs/10-analytics.md` — the wiring, the named steps, the env and the dashboard settings.

@@ -48,10 +48,7 @@ export default function HomeError({
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 pt-8">
-      <div
-        className="rounded-xl border border-ink/[0.08] bg-white p-6 text-center shadow-xl shadow-ink/[0.05] sm:p-10"
-        data-ph-unmask
-      >
+      <div className="rounded-xl border border-ink/[0.08] bg-white p-6 text-center shadow-xl shadow-ink/[0.05] sm:p-10">
         <h1 className="text-lg font-medium text-ink">לא הצלחנו לטעון את הדף</h1>
         <p className="mt-3 text-sm leading-relaxed text-ink/60">התקלה אצלנו, לא בצד שלכם.</p>
 

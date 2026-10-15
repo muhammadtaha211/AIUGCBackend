@@ -63,7 +63,10 @@ export function PostingNotice({
           key={account.id}
           className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
         >
-          <span>{expiredNoticeLine(isolated(account.name), account.pendingPosts)}</span>
+          {/* The line names the account: hidden in a recording (vault 0110). */}
+          <span data-ph-mask>
+            {expiredNoticeLine(isolated(account.name), account.pendingPosts)}
+          </span>
           <Link
             href="/home/settings#connections"
             className="ms-auto font-medium underline underline-offset-4"

@@ -13,6 +13,10 @@ FOUNDER-REPORTED, 2026-10-11, not up for relitigation.
 
 ## 1. Counts on public pages, recordings from `/start` onward
 
+> **Superseded 2026-10-15** by [[0110-posthog-records-every-page-hides-only-the-sensitive]] §1 and
+> §5: every page records, the landing included, and nothing stops the recorder between public and
+> app pages. Kept below as it was decided and measured.
+
 **FOUNDER-REPORTED, decision 2.** Planning advised leaving `/start` out of the first version,
 because it records people who have no account. He chose to include it: someone who quits the
 questionnaire leaves no trace anywhere else.
@@ -30,6 +34,10 @@ ordering, not measured). MEASURED in the browser: the landing and `/pricing` sen
 `$pageview` each and no recording ([[posthog-hiding-check-2026-10-11]]).
 
 ## 2. The user id only, and the `/start` session joins the account
+
+> **2026-10-15:** `canSend` below is `admit` since [[0110-posthog-records-every-page-hides-only-the-sensitive]]
+> §5, which compares the cookie's value rather than its presence and holds what it stops instead
+> of dropping it. The rule here stands.
 
 **FOUNDER-REPORTED, decision 3.** PostHog knows the account by its Tavnit user id and nothing else:
 no name, no email.
@@ -57,6 +65,10 @@ config. **What it cannot see (REASONED):** an admin's first anonymous visit on a
 never shown an admin session.
 
 ## 3. Customer content hidden, Tavnit's interface visible, hidden by default
+
+> **Superseded 2026-10-15** by [[0110-posthog-records-every-page-hides-only-the-sensitive]] §2 and
+> §3: shown is the default; only passwords, codes and tokens, emails and identity fields, two forms
+> and media that would not play in a replay are hidden. Kept below as it was decided and measured.
 
 **FOUNDER-REPORTED, decision 4** (planning's reason, accepted): he can already read a customer's
 text in his own database, so hiding it in recordings costs him nothing.

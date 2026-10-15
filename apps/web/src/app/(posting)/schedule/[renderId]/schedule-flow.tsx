@@ -202,16 +202,21 @@ export function ScheduleFlow({
                         src={account.pictureUrl}
                         alt=""
                         className="size-10 shrink-0 rounded-full object-cover"
+                        data-ph-mask
                       />
                     ) : (
                       <span className="size-10 shrink-0 rounded-full bg-ink/[0.08]" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-ink">
+                      <span className="block truncate text-sm font-medium text-ink" data-ph-mask>
                         <bdi>{account.displayName ?? account.username ?? ""}</bdi>
                       </span>
                       {account.username && (
-                        <span dir="ltr" className="block truncate text-end text-xs text-ink/55">
+                        <span
+                          dir="ltr"
+                          className="block truncate text-end text-xs text-ink/55"
+                          data-ph-mask
+                        >
                           @{account.username}
                         </span>
                       )}

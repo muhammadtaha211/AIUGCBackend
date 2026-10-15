@@ -1,16 +1,16 @@
 import type { BeforeSendFn, CaptureResult, PostHogConfig } from "posthog-js";
 
 /**
- * PostHog in apps/web, the policy half: what may be sent, from which pages, and
- * how every payload is scrubbed before it leaves the browser (vault 0103, 0104;
+ * PostHog in apps/web, the policy half: what may be sent, and how every payload
+ * is scrubbed before it leaves the browser (vault 0103, 0104, 0110;
  * docs/10-analytics.md lists the named steps). Pure: a type-only posthog-js
  * import and no `window` at module load, so all of it is unit-tested in node.
  * The runtime half, which loads the SDK and calls it, is lib/analytics-client.ts.
  *
- * What never leaves (0104): anything typed, a customer's own content shown back
- * to them, their videos and images and the signed links to them, and passwords,
- * one-time codes and tokens, including those carried in an address. Change a
- * rule here and /privacy §3, §6 and §9 change in the same commit.
+ * Every page records (0110). What never leaves: passwords, one-time codes and
+ * tokens, including those carried in an address; email addresses and the other
+ * marks of who someone is; and media whose link would not play in a replay.
+ * Change a rule here and /privacy §3 and §6 change in the same commit.
  */
 
 /** PostHog's EU cloud, the only one allowed (0103). */
@@ -39,26 +39,6 @@ export function analyticsSettings(env: { key?: string; host?: string }): Analyti
     return null;
   }
   return { key, host };
-}
-
-/**
- * Where a session is recorded (0104 §2): the questionnaire, the three auth pages
- * and everything signed in. Every other page only counts the visit. Decided
- * here, not in PostHog's dashboard, so it can be read and tested.
- */
-const RECORDED_PREFIXES = [
-  "/start",
-  "/login",
-  "/forgot-password",
-  "/reset-password",
-  "/home",
-  "/connect",
-];
-
-export function isRecordedPath(pathname: string): boolean {
-  return RECORDED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -230,38 +210,135 @@ export function scrubEvent(event: CaptureResult | null): CaptureResult | null {
 }
 
 // ---------------------------------------------------------------------------
-// Recordings: hidden by default
+// Recordings: shown as on screen, the sensitive hidden
 // ---------------------------------------------------------------------------
 
 /**
- * The two markers. `data-ph-unmask` makes Tavnit's own interface inside it
- * readable in a recording; `data-ph-mask` hides everything inside it again, and
- * wins wherever the two meet. Text nobody marked comes out as asterisks (one per
- * character, spaces kept, so the replay keeps its layout), and a form field never
- * comes out readable, marked or not: its value is a fixed run of asterisks.
+ * The marker. `data-ph-mask` hides everything inside it: its text, its fields,
+ * the words and links in its attributes, and its images (blank boxes). It goes
+ * on whatever shows who someone is — an email, a connected account's name and
+ * picture — and on a whole form that carries such things (vault 0110). The
+ * rest of a recording is the page as it was on screen: Tavnit's interface, and
+ * the business content a customer types and is shown back.
  */
-export const UNMASK = "data-ph-unmask";
 export const MASK = "data-ph-mask";
+
+/**
+ * Hidden wherever they are, marked or not: password, email and phone fields, a
+ * password field the page has switched to plain text (rrweb marks it), and any
+ * field the browser is told holds a username, an email, a phone number, a
+ * password or a one-time code.
+ */
+const SENSITIVE = [
+  `[${MASK}]`,
+  "input[type=password]",
+  "input[type=email]",
+  "input[type=tel]",
+  "[data-rr-is-password]",
+  ...["username", "email", "tel", "current-password", "new-password", "one-time-code"].map(
+    (hint) => `[autocomplete~="${hint}"]`,
+  ),
+].join(", ");
 
 type ElementLike = { closest(selector: string): unknown };
 
-const HIDDEN_ALWAYS = `[${MASK}], input, textarea, select, option, [contenteditable]`;
-
-export function isReadable(element: ElementLike | null | undefined): boolean {
-  if (!element) return false;
-  return element.closest(`[${UNMASK}]`) !== null && element.closest(HIDDEN_ALWAYS) === null;
+/** Whether an element is or sits inside something sensitive. With no element, nothing says it is not. */
+export function isHidden(element: ElementLike | null | undefined): boolean {
+  return !element || element.closest(SENSITIVE) !== null;
 }
+
+/**
+ * An email address shown anywhere else (typed into an answer, say) is hidden
+ * like an email field: from the first character before its "@" to the end of
+ * the word, so one being typed is hidden from the moment its "@" is. What was
+ * typed before the "@" has already been recorded by then (posthog-js records
+ * every keystroke). A word that starts with "@", a handle, shows. Bounded, so a
+ * long string cannot make it slow.
+ */
+const EMAIL = /[^\s@<>()[\]"',;:]{1,64}@[^\s@<>()[\]"',;:]{0,255}/g;
 
 function hide(text: string): string {
   return text.replace(/\S/g, "*");
 }
 
-/** Every text node goes through here (maskTextSelector "*"). */
-export function maskText(text: string, element?: ElementLike | null): string {
-  return isReadable(element) ? text : hide(text);
+/** Shown text and typed values: an email hidden, and an address cut down like any other. */
+function shown(text: string): string {
+  return scrubUrlsInText(text).replace(EMAIL, hide);
 }
 
-const URL_ATTRIBUTES = new Set(["href", "src", "action", "formaction", "poster", "xlink:href"]);
+/**
+ * Every text node goes through here (maskTextSelector "*"): hidden text keeps
+ * one asterisk per character and its spaces, so the replay keeps its layout.
+ */
+export function maskText(text: string, element?: ElementLike | null): string {
+  return isHidden(element) ? hide(text) : shown(text);
+}
+
+/**
+ * Every field's value. A hidden field's is the same five asterisks whatever was
+ * typed, or nothing for an empty one, so not even its length leaves.
+ */
+export function maskInput(text: string, element?: ElementLike | null): string {
+  if (isHidden(element)) return text ? "*****" : "";
+  return shown(text);
+}
+
+const LOOPBACK = /^(localhost|127\.0\.0\.1)$/;
+
+/**
+ * Whether a media link plays in a replay watched the next day (vault 0110). A
+ * replay carries the link, not the pixels, and the viewer's browser fetches it
+ * then. A link with no query does: Tavnit's own files, the public catalogue
+ * bucket, the landing's stand-in stills; and so does Next's image optimiser
+ * serving one. A signed link does not: its token rides in the query, and it
+ * dies an hour after it was made. Nor does a blob: or data: address (the first
+ * lives only in the visitor's tab, the second is the pixels), or an /api/ route.
+ */
+export function isPlayableMedia(raw: string, base: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw, base);
+  } catch {
+    return false;
+  }
+  const web =
+    url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK.test(url.hostname));
+  if (!web || url.username || url.password || url.hash || url.pathname.startsWith("/api/")) {
+    return false;
+  }
+  if (url.pathname === "/_next/image") {
+    const inner = url.searchParams.get("url");
+    const known = [...url.searchParams.keys()].every((key) => ["url", "w", "q"].includes(key));
+    return known && inner !== null && isPlayableMedia(inner, url.href);
+  }
+  return url.search === "";
+}
+
+function pageAddress(): string | undefined {
+  return (globalThis as { location?: { href?: string } }).location?.href;
+}
+
+/**
+ * A playable link stays whole, made absolute (rrweb records `poster` as the page
+ * wrote it, and the replay is not on our origin); any other is cut down like an
+ * address, and inside a hidden container it goes entirely.
+ */
+function maskMediaLink(value: string, hidden: boolean): string {
+  if (hidden) return "";
+  const base = pageAddress();
+  if (base && isPlayableMedia(value, base)) return new URL(value, base).href;
+  return sanitizeUrl(value);
+}
+
+/** A srcset stays only if every candidate in it plays. */
+function maskSrcset(value: string, hidden: boolean): string {
+  const base = pageAddress();
+  if (hidden || !base) return "";
+  const links = value.split(",").map((candidate) => candidate.trim().split(/\s+/)[0] ?? "");
+  return links.every((link) => link && isPlayableMedia(link, base)) ? value : "";
+}
+
+const URL_ATTRIBUTES = new Set(["href", "action", "formaction", "xlink:href"]);
 const TEXT_ATTRIBUTES = new Set([
   "alt",
   "title",
@@ -277,37 +354,63 @@ const TEXT_ATTRIBUTES = new Set([
 ]);
 
 /**
- * Every attribute goes through here. Addresses lose their tokens, `srcset` goes
- * whole, inline styles lose their `url(...)`, and words — alt text, a title, a
- * placeholder, an aria-label, any `data-*` — are hidden unless readable.
- * Structure (class, role, type, svg geometry) passes, or the replay could not
- * draw the page.
+ * Every attribute goes through here. A media link that plays stays whole and
+ * any other address loses its codes; inline styles lose their `url(...)`; words
+ * — alt text, a title, a placeholder, an aria-label, any `data-*` — show unless
+ * hidden, an email in them excepted; and inside a hidden container every link
+ * goes too. Structure (class, role, type, svg geometry, rrweb's own rr_*)
+ * passes, or the replay could not draw the page.
  */
 export function maskAttribute(name: string, value: string, element?: ElementLike | null): string {
   const attribute = name.toLowerCase();
-  if (URL_ATTRIBUTES.has(attribute)) return sanitizeUrl(value);
-  if (attribute === "srcset" || attribute === "imagesrcset") return "";
-  if (attribute === "style") return value.replace(/url\([^)]*\)/gi, "url()");
   if (attribute.startsWith("data-ph-")) return value;
+  const hidden = isHidden(element);
+  if (attribute === "src" || attribute === "poster") return maskMediaLink(value, hidden);
+  if (attribute === "srcset" || attribute === "imagesrcset") return maskSrcset(value, hidden);
+  if (URL_ATTRIBUTES.has(attribute)) return hidden ? "" : sanitizeUrl(value);
+  if (attribute === "style") return value.replace(/url\([^)]*\)/gi, "url()");
   if (TEXT_ATTRIBUTES.has(attribute) || attribute.startsWith("data-")) {
-    return isReadable(element) ? value : hide(value);
+    return hidden ? hide(value) : shown(value);
   }
   return value;
 }
 
 /**
- * Replaced by a blank box of the same size, attributes and children dropped:
- * every image, video and sound (customer media, signed links, and Tavnit's own
- * alike — cheaper than telling them apart), and the two input types the
- * recorder never masks (a file input's value is the file's name).
+ * The same media rule as isPlayableMedia, in CSS, read from the attribute as the
+ * page wrote it: a link with a query (a signed link's token, the Meta CDN's
+ * signature) unless it is Next's image optimiser serving one without; a blob:
+ * or data: address; an /api/ route. Plain compound selectors only, no :is(): a
+ * browser that cannot parse one part rejects the whole list, and rrweb then
+ * blocks nothing.
  */
-export const BLOCK_SELECTOR =
-  "img, picture, video, audio, source, canvas, iframe, object, embed, input[type=file], input[type=hidden], [data-ph-block]";
+const NOT_PLAYABLE = ["src", "poster", "srcset"].flatMap((a) => [
+  `[${a}^="blob:"]`,
+  `[${a}^="data:"]`,
+  `[${a}^="/api/"]`,
+  `[${a}*="?"]:not([${a}^="/_next/image?"])`,
+  ...["%3F", "url=%2Fapi%2F", "url=blob", "url=data"].map(
+    (inner) => `[${a}^="/_next/image?"][${a}*="${inner}"]`,
+  ),
+]);
 
-/** A masked field's value: the same five asterisks whatever was typed, or nothing for an empty field. */
-export function maskInput(text: string): string {
-  return text ? "*****" : "";
-}
+/**
+ * Replaced by a blank box of the same size, attributes and children dropped:
+ * media that will not play in a replay (its link is cut down besides), every
+ * image and video inside a hidden container, canvases, frames and embeds, and
+ * the two input types the recorder never masks (a hidden input's value can be a
+ * token, a file input's is the file's name).
+ */
+export const BLOCK_SELECTOR = [
+  ...["img", "video", "audio", "source"].flatMap((tag) => NOT_PLAYABLE.map((rule) => tag + rule)),
+  ...["img", "picture", "video", "audio"].flatMap((tag) => [`[${MASK}] ${tag}`, `${tag}[${MASK}]`]),
+  "canvas",
+  "iframe",
+  "object",
+  "embed",
+  "input[type=file]",
+  "input[type=hidden]",
+  "[data-ph-block]",
+].join(", ");
 
 /**
  * The page's address and its kept campaign parameters, read when the route is
@@ -355,14 +458,15 @@ export function maskReplayRequest<T extends { name?: string }>(request: T): T | 
  * sampling, minimum duration and URL triggers decide WHICH sessions record,
  * never what goes into one.
  *
- * `allowed` is consulted on every event. While it says no, before_send drops
- * the event, recordings and errors included.
+ * `admit` is consulted on every event. While it says no, before_send drops the
+ * event, recordings and errors included (the runtime may hold a recording
+ * batch and send it again later, which runs it through here again).
  */
 export function posthogOptions(
   settings: AnalyticsSettings,
-  allowed: () => boolean,
+  admit: (event: CaptureResult) => boolean,
 ): Partial<PostHogConfig> {
-  const beforeSend: BeforeSendFn = (event) => (allowed() ? scrubEvent(event) : null);
+  const beforeSend: BeforeSendFn = (event) => (event && admit(event) ? scrubEvent(event) : null);
   return {
     api_host: settings.host,
     ui_host: settings.host === POSTHOG_EU_HOST ? POSTHOG_EU_UI_HOST : null,

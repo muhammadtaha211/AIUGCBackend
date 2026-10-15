@@ -198,7 +198,7 @@ export function PostDetail({
 
       <dl className="mt-5 grid grid-cols-[auto_1fr] items-start gap-x-6 gap-y-4 rounded-xl border border-ink/10 bg-white p-5">
         <dt className={field}>{FIELD_ACCOUNT}</dt>
-        <dd className="flex min-w-0 items-center gap-2 text-sm text-ink">
+        <dd className="flex min-w-0 items-center gap-2 text-sm text-ink" data-ph-mask>
           {post.account.pictureUrl && (
             <img
               src={post.account.pictureUrl}
@@ -358,6 +358,8 @@ export function PostDetail({
             target="_blank"
             rel="noreferrer"
             className="inline-flex h-10 items-center rounded-lg border border-ink/15 bg-white px-4 text-sm font-medium text-ink hover:bg-ink/[0.04]"
+            // The post's address leads to the account: hidden in a recording (vault 0110).
+            data-ph-mask
           >
             {VIEW_POST_BUTTON}
           </a>

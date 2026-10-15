@@ -45,10 +45,7 @@ export default function RootError({
 
   return (
     <div className="flex min-h-dvh items-center justify-center px-6 py-16">
-      <div
-        className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 p-6 text-center sm:p-10"
-        data-ph-unmask
-      >
+      <div className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 p-6 text-center sm:p-10">
         <h1 className="text-lg font-medium text-gray-100">לא הצלחנו לטעון את הדף</h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-400">התקלה אצלנו, לא בצד שלכם.</p>
 
