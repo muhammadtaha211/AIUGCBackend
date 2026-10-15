@@ -46,6 +46,10 @@ invisible until its first frame plays, so a blocked start shows the still.
 
 ## 3. The sources
 
+> **2026-10-15:** `hook-demo.mp4` was re-encoded from `a` with the browser text in its URL step
+> blurred (now 1,755,658 bytes; `hook-demo.jpg` unchanged), and the landing's demo pair with it
+> ([[0111-the-a-example-footage-has-its-browser-text-blurred]]).
+
 **FOUNDER-REPORTED:** `C:\Users\USER\Desktop\materialfortavnit\` `a` for הוק + דמו, `b` for סרטון
 עם דמות AI, `c` for גוש טקסט. His files stay untouched; only web copies are committed.
 
@@ -151,7 +155,8 @@ read back:
   He gave no reason. This supersedes the prompt's goal that the recent strip be fully visible
   without scrolling at his window.
 
-- **S2, FOUNDER-REPORTED: `a` ships unedited.** The session flagged, without quoting them, two
+- **S2, FOUNDER-REPORTED: `a` ships unedited.** _Reversed 2026-10-15: the browser text is now
+  blurred on every copy ([[0111-the-a-example-footage-has-its-browser-text-blurred]])._ The session flagged, without quoting them, two
   browser-tab titles that look personal (around 3–5 s and 9 s) and an address bar showing a URL
   with a production row id (around 13–14 s), in a file public at tavnit.ai and shown to every
   customer. The options offered: blur those areas in the web copy (recommended), use it as is

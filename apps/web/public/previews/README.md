@@ -33,7 +33,13 @@ yuv420p -movflags +faststart`. No denoise: it smears burned text. `-map_metadata
   phone's creation time and location.
 - **Stills** are one frame of the encode, `-ss <t> -frames:v 1 -q:v 4`, picked where the burned
   text is on screen: `hook-demo` at 0.5 s, `presenter` at 1 s, `text-block` at 5 s.
-- **Size.** Keep each file under the largest clip in `public/landing/` (4.2 MB); `hook-demo.mp4`,
-  a filmed monitor whose moiré compresses badly, is the largest at 2.2 MB.
+- **Size.** Keep each file under the largest clip in `public/landing/` (3.7 MB); `hook-demo.mp4`,
+  a filmed monitor whose moiré compresses badly, is the largest at 1.8 MB.
+- **`hook-demo.mp4` has the browser text blurred** (2026-10-15, vault decision 0111): the tab title,
+  the bookmarks bar and the address bar's suggestion and history list in the URL step (2.93–4.93
+  s), the same inside the sample recording the upload step plays (8.93–10.93 s), and the steps
+  screen's first frames (10.93–11.07 s), whose text quotes the tab title. The typed `tavnit.ai` and
+  the burned step labels stay sharp. The blur runs on `a` at its full resolution, before the recipe
+  above. `hook-demo.jpg` (0.5 s) comes before all of it and came out byte-identical.
 
 Replacing a clip is a file drop under the same name plus a new still; there is nothing to edit.

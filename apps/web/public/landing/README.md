@@ -8,8 +8,10 @@ on it. Nothing on screen ever says "placeholder". One slot is the exception: `in
 rather than draws — see its row below.
 
 Filled 2026-09-25: every clip slot (`demoBefore`, `demoAfter`, the four `hookClips`,
-`presenterSample`); `textBlockSample` added and filled 2026-10-10 (vault decision 0100). Still
-empty: the two screenshots, `hookStudioShot` and `instagramShot`.
+`presenterSample`); `textBlockSample` added and filled 2026-10-10 (vault decision 0100);
+`demoBefore` (with its poster) and `demoAfter` re-encoded 2026-10-15 with the URL step's browser
+text blurred (vault decision 0111). Still empty: the two screenshots, `hookStudioShot` and
+`instagramShot`.
 
 The dashboard's service cards (`/home`) have their own clips, in `public/previews/` with its own
 README; nothing here is shared with them.
@@ -49,6 +51,14 @@ was four tiles of the same clip under four HTML lines; founder's call to show th
   nothing until it scrolls near the viewport (`components/landing/landing-video.tsx`) — only its
   poster loads with the page.
 - **`demoAfter` is the finished ad, its hook line burned in** — the page draws no line over it.
+- **The URL step's browser text is blurred** in `demoBefore` (0–7.37 s, so its poster too) and
+  `demoAfter` (2.93–5.93 s): the tab title, the bookmarks bar and the address bar's suggestion
+  and history list. The typed `tavnit.ai` and the burned step label stay sharp. A re-encode starts
+  from the source and keeps the blur, applied at the source's resolution before the recipe below:
+  `demoBefore` from the founder's `Desktop\AIassets\finaledited.mp4`, `demoAfter` from his
+  `Downloads\finishedHookAndDemo.mp4`. The regions, the method and the checks are in vault 0111.
+  The same pair is the A wizard's example in storage (`samples/a-steps/recording-v2.mp4`, a 720p
+  `-crf 28` encode of the same blurred recording, and `ad-v2.mp4`, this `demoAfter`).
 - **The `hookClips` carry no text, and the page draws none over them.** Step 2 shows the bank
   clips bare, as they sit in the bank.
 - **Encode for the web, not the archive.** The sources were 174 MB; these files are 11 MB. The

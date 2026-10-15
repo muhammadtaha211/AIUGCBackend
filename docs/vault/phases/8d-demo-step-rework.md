@@ -49,6 +49,9 @@ contract it changed — see below.
   `samples/a-steps/recording.mp4`, 37,456,844 bytes, created `2026-08-22T00:17:58.753Z`;
   `samples/a-steps/ad.mp4`, 4,448,834 bytes, created `2026-08-22T00:17:59.764Z`. Both sign
   successfully. They were uploaded 1 h 12 m before this commit was authored.
+  _2026-10-15: the paths are now `samples/a-steps/recording-v2.mp4` and `ad-v2.mp4`, the
+  2026-09-25 pair with the browser text in its URL step blurred, under new keys because the
+  objects are cached for an hour ([[0111-the-a-example-footage-has-its-browser-text-blurred]])._
 - **A duplicate-upload brake.** `DUPLICATE_DURATION_TOLERANCE_MS = 250`
   (`apps/web/src/lib/service-a-ui.ts:94`) and `duplicateDemoMatch` (`:106`) — duration is the only
   signal the browser has before the bytes move, so a match is a question with an explicit

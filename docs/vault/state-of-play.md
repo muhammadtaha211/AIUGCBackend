@@ -873,6 +873,28 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
+## What landed (2026-10-15, last) — the A example footage's browser text blurred, `fix/blur-a-example-footage`
+
+[[0111-the-a-example-footage-has-its-browser-text-blurred]] records his four decisions, the
+three planning defaults (unstruck) and his session OK on the regions. Dated pointers on
+[[0100-home-cards-show-example-clips-landing-sells-three]] §3 and S2 (reversed) and on
+[[8d-demo-step-rework]]'s sample-pair bullet. Merged at his instruction in chat ("for this one
+time, when you're done with each branch, go ahead and merge").
+
+- **Every copy showed the URL step's browser text** (tab title, bookmarks bar, the address bar's
+  history list): the home card's `hook-demo.mp4`, the landing's `demo-before.mp4` (and its poster)
+  and `demo-after.mp4`, and the wizard's storage pair. Each was re-encoded from its source, every
+  one of which re-encodes byte-for-byte to the old copy; the text is blurred at the source's
+  resolution, and the typed `tavnit.ai` and the burned step labels stay sharp.
+- **Storage:** new keys, `samples/a-steps/recording-v2.mp4` and `ad-v2.mp4`, uploaded with his OK
+  and read back byte-identical; the two constants in `apps/web/src/lib/service-a.ts` name them. The
+  old objects stay (owed list).
+- **Checked:** per-frame edge sharpness inside the blurred areas (24–76 → ≤ 4), probe parity,
+  frames outside the windows mostly bit-identical and otherwise as faithful to the source as
+  before, and playback in headless Chrome at localhost:3000.
+- **Found, not fixed:** `packages/core/.work/upload-a-samples.ts` (gitignored, local) still writes
+  the old keys with upsert; the blur scripts sit beside it in `packages/core/.work/blur-a/`.
+
 ## What landed (2026-10-15) — PostHog records every page, hides only the sensitive, `feat/posthog-record-every-page`, MERGED as PR #99 (`40a1e29`)
 
 **FOUNDER-REPORTED:** merged at his instruction in chat ("merge everything", 2026-10-15), together
@@ -1869,6 +1891,12 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Delete the old A example pair from storage, when nothing serves it** (0111 §4). Once the
+  `-v2` constants are live on Vercel and an hour has passed (the signed links' lifetime), the old
+  `assets/samples/a-steps/recording.mp4` and `ad.mp4` are referenced by nothing; they still hold
+  the unblurred text. The one delete, his call, not run:
+  `supabase.storage.from("assets").remove(["samples/a-steps/recording.mp4", "samples/a-steps/ad.mp4"])`
+  (service-role client), or Storage → `assets` → `samples/a-steps` in the dashboard.
 - **The ₪5 intro offer (2026-10-14, `feat/intro-offer`).** Each its own OK, in order:
   1. ~~the test-org ₪5 page~~ DONE 2026-10-14 (`…/138f5dl/14m9m60/14m9m61/payment/`, redirect to
      localhost);
