@@ -5,9 +5,8 @@
  * the expected filenames.
  *
  * A `null` src means "not shot yet". The page then draws its own still in that
- * slot — today's AdFrame with the slot's label on it. It never prints the word
- * "placeholder" on screen, and it never reaches the network for anything but
- * the picsum stand-in the landing already used.
+ * slot — an empty AdFrame with the slot's label on it. It never prints the word
+ * "placeholder" on screen, and it never reaches the network.
  *
  * One exception: `instagramShot` hides its column instead of drawing a still.
  *

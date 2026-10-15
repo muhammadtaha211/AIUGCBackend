@@ -25,18 +25,17 @@ import { HOOKS, LANDING_MEDIA } from "@/lib/landing-media";
 /* ---------- shared bits ---------- */
 
 /**
- * A 9:16 ad frame — the product's actual output shape. Without children it
- * draws placeholder photography (picsum); `MediaSlot` fills it with the real
- * clip or screenshot once one exists.
+ * A 9:16 ad frame — the product's actual output shape. Without children it is a
+ * plain dark frame wearing its label; `MediaSlot` fills it with the real clip or
+ * screenshot once one exists. It loads nothing from a third party: /privacy
+ * names no image service for the landing.
  */
 function AdFrame({
-  seed,
   hook,
   caption,
   className = "",
   children,
 }: {
-  seed: string;
   hook?: string;
   caption?: string;
   className?: string;
@@ -46,14 +45,7 @@ function AdFrame({
     <div
       className={`relative aspect-[9/16] overflow-hidden rounded-xl bg-ink shadow-lg shadow-ink/15 ring-1 ring-ink/10 ${className}`}
     >
-      {children ?? (
-        <img
-          src={`https://picsum.photos/seed/${seed}/270/480`}
-          alt=""
-          loading="lazy"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-      )}
+      {children}
       {hook && (
         <p className="absolute inset-x-2 top-3 text-center text-[13px] font-extrabold leading-snug text-white [text-shadow:0_1px_8px_rgb(0_0_0/0.7)]">
           {hook}
@@ -72,17 +64,14 @@ function AdFrame({
 
 /**
  * One slot from `lib/landing-media.ts`. Real footage when its `src` is set,
- * otherwise the stand-in: the `fallback` if the slot has one, else the AdFrame
- * still wearing the slot's own label. Nothing here ever prints the word
+ * otherwise the stand-in: the `fallback` if the slot has one, else the empty
+ * AdFrame wearing the slot's own label. Nothing here ever prints the word
  * "placeholder" on screen.
- *
- * `seed` only feeds that still, so a slot with its own `fallback` never uses it.
  */
 function MediaSlot({
   src,
   poster,
   alt,
-  seed,
   kind = "video",
   hook,
   caption,
@@ -92,7 +81,6 @@ function MediaSlot({
   src: string | null;
   poster?: string | null;
   alt: string;
-  seed: string;
   kind?: "video" | "image";
   hook?: string;
   caption?: string;
@@ -104,12 +92,10 @@ function MediaSlot({
   // its line, and it would otherwise print at the top and the bottom both.
   const stillCaption = caption ?? (hook === undefined ? alt : undefined);
   if (!src) {
-    return (
-      fallback ?? <AdFrame seed={seed} hook={hook} caption={stillCaption} className={className} />
-    );
+    return fallback ?? <AdFrame hook={hook} caption={stillCaption} className={className} />;
   }
   return (
-    <AdFrame seed={seed} hook={hook} caption={caption} className={className}>
+    <AdFrame hook={hook} caption={caption} className={className}>
       {kind === "image" ? (
         <img
           src={src}
@@ -330,14 +316,12 @@ function HookAndDemo() {
       <div className="mt-12 flex flex-row-reverse items-center justify-center gap-4 sm:gap-10">
         <MediaSlot
           {...LANDING_MEDIA.demoBefore}
-          seed="tavnit-demo"
           caption={LANDING_MEDIA.demoBefore.alt}
           className="w-32 shrink-0 sm:w-48"
         />
         <ArrowStart className="size-7 shrink-0 -scale-x-100 text-ink/25 sm:size-10" />
         <MediaSlot
           {...LANDING_MEDIA.demoAfter}
-          seed="tavnit-demo"
           caption={LANDING_MEDIA.demoAfter.alt}
           className="w-32 shrink-0 sm:w-48"
         />
@@ -410,7 +394,6 @@ function HowItWorks() {
             <div className="flex justify-center">
               <MediaSlot
                 {...LANDING_MEDIA.demoBefore}
-                seed="tavnit-demo"
                 caption={LANDING_MEDIA.demoBefore.alt}
                 className="w-44 sm:w-52"
               />
@@ -426,13 +409,7 @@ function HowItWorks() {
             </p>
             <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
               {LANDING_MEDIA.hookClips.map((clip, i) => (
-                <MediaSlot
-                  key={clip.line}
-                  src={clip.src}
-                  poster={clip.poster}
-                  alt={clip.line}
-                  seed={`tavnit-hook-${i + 1}`}
-                />
+                <MediaSlot key={clip.line} src={clip.src} poster={clip.poster} alt={clip.line} />
               ))}
             </div>
           </div>
@@ -444,7 +421,6 @@ function HowItWorks() {
                 {...LANDING_MEDIA.hookStudioShot}
                 poster={null}
                 kind="image"
-                seed="tavnit-hook-studio"
                 className="w-44 sm:w-52"
                 fallback={<HookStudioMock />}
               />
@@ -469,7 +445,7 @@ function HowItWorks() {
               </p>
             </div>
             <div className="flex justify-center">
-              <MediaSlot {...LANDING_MEDIA.demoAfter} seed="tavnit-demo" className="w-44 sm:w-52" />
+              <MediaSlot {...LANDING_MEDIA.demoAfter} className="w-44 sm:w-52" />
             </div>
           </div>
         </div>
@@ -524,7 +500,6 @@ function Presenter() {
         <div className="flex justify-center">
           <MediaSlot
             {...LANDING_MEDIA.presenterSample}
-            seed="tavnit-persona"
             caption={LANDING_MEDIA.presenterSample.alt}
             className="w-52 sm:w-64"
           />
@@ -596,7 +571,6 @@ function TextBlockSection() {
         <div className="flex justify-center sm:order-last">
           <MediaSlot
             {...LANDING_MEDIA.textBlockSample}
-            seed="tavnit-text-block"
             caption={LANDING_MEDIA.textBlockSample.alt}
             className="w-52 sm:w-64"
           />
@@ -660,7 +634,6 @@ function Proof() {
               {...LANDING_MEDIA.instagramShot}
               poster={null}
               kind="image"
-              seed="tavnit-instagram"
               caption={LANDING_MEDIA.instagramShot.alt}
               className="w-52 sm:w-64"
             />
