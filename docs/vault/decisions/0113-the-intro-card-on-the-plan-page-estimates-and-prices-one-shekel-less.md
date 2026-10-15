@@ -15,6 +15,9 @@ Where no reason is given, he gave none.
 
 ## 1. `/home/plan` shows the same card in place of the offer box
 
+> **2026-10-15, later** ([[0114-plan-page-cards-in-one-row-of-four]]): the founder asked for one row
+> of four instead of two by two; the cards are drawn a size down so they fit.
+
 **FOUNDER-REPORTED.** The box he quoted (`להתחיל בהיכרות ב־₪5`, the credits and once-per-account
 line, and the "never a charge by itself" line) is gone. The card from
 [[0112-pricing-names-three-services-and-shows-the-intro-card]] is first in the plans' row instead.

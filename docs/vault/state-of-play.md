@@ -874,7 +874,15 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-15, last) — the intro card on `/home/plan`, "בערך" estimates, each plan ₪1 less, `feat/plan-intro-card-prices`; 0063 PUSHED
+## What landed (2026-10-15, last) — `/home/plan`'s cards in one row of four, `feat/plan-row-of-four`
+
+[[0114-plan-page-cards-in-one-row-of-four]]; dated pointer on 0113 §1. Merged at his instruction in
+chat. With the intro card, `/home/plan`'s four cards are one row from `lg`, each drawn a size down
+(padding, price, rate, estimate, buttons), and no longer two by two. Measured at 1024–1920 px: one
+row, prices on one line, nothing overflowing. `/pricing`, and `/home/plan` without the card, are
+unchanged.
+
+## What landed (2026-10-15, later still) — the intro card on `/home/plan`, "בערך" estimates, each plan ₪1 less, `feat/plan-intro-card-prices`, MERGED as PR #105 (`41bdc37`); 0063 PUSHED
 
 [[0113-the-intro-card-on-the-plan-page-estimates-and-prices-one-shekel-less]] records his five
 requests and the push. Dated pointers on 0112 §4–§5, 0109, 0055, 0051 and 0068;
