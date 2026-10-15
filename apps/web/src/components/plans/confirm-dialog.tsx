@@ -27,7 +27,7 @@ export function ConfirmDialog({
   footer,
   error,
   busy = false,
-  readable = false,
+  sensitive = false,
 }: {
   title: string;
   onClose: () => void;
@@ -35,8 +35,8 @@ export function ConfirmDialog({
   footer: ReactNode;
   error?: string | null;
   busy?: boolean;
-  /** Tavnit's own copy only (the plan dialogs): readable in a recording. The portal leaves any marked region. */
-  readable?: boolean;
+  /** The dialog shows who someone is (an account's name): hidden in a recording. The portal leaves any marked region. */
+  sensitive?: boolean;
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -111,7 +111,7 @@ export function ConfirmDialog({
   return createPortal(
     <div
       className="theme-light fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4 sm:p-6"
-      data-ph-unmask={readable || undefined}
+      data-ph-mask={sensitive || undefined}
       onClick={() => {
         if (!busy) onClose();
       }}

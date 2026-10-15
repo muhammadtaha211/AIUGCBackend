@@ -30,10 +30,7 @@ export function NoCreditsCard({
   intro?: IntroOfferView | null;
 }) {
   return (
-    <div
-      className="mt-16 w-full max-w-md rounded-xl border border-ink/[0.08] bg-white px-6 py-8 text-center"
-      data-ph-unmask
-    >
+    <div className="mt-16 w-full max-w-md rounded-xl border border-ink/[0.08] bg-white px-6 py-8 text-center">
       <TrackStep name="no_credits_wall" props={{ service }} />
       <h1 className="text-lg font-medium text-ink">{NO_CREDITS_TITLE}</h1>
       <p className="mt-3 text-sm leading-relaxed text-ink/60">{NO_CREDITS_BODY}</p>

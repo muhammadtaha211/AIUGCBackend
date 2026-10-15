@@ -281,7 +281,6 @@ export function PlanManager({
           : null;
         return (
           <ConfirmDialog
-            readable
             title={upgradeDialogTitle(plan.name)}
             onClose={close}
             busy={busy}
@@ -315,7 +314,6 @@ export function PlanManager({
         });
         return (
           <ConfirmDialog
-            readable
             title={downgradeDialogTitle(plan.name)}
             onClose={close}
             busy={busy}
@@ -341,7 +339,6 @@ export function PlanManager({
       case "cancel":
         return (
           <ConfirmDialog
-            readable
             title={CANCEL_DIALOG_TITLE}
             onClose={close}
             busy={busy}
@@ -376,7 +373,6 @@ export function PlanManager({
       case "resume":
         return (
           <ConfirmDialog
-            readable
             title={RESUME_DIALOG_TITLE}
             onClose={close}
             busy={busy}
@@ -403,7 +399,6 @@ export function PlanManager({
         // POST names the current code, not the card's.
         return (
           <ConfirmDialog
-            readable
             title={UNDO_DIALOG_TITLE}
             onClose={close}
             busy={busy}

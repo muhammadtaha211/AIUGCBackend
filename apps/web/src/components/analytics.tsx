@@ -1,25 +1,20 @@
 "use client";
 
-import { useEffect, useLayoutEffect } from "react";
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { onRoute, stopRecordingIfPublic, track } from "@/lib/analytics-client";
+import { onRoute, track } from "@/lib/analytics-client";
 import type { StepName, StepProps } from "@/lib/analytics";
 
 /**
  * Mounted once, in the root layout: tells the analytics runtime about every
- * route, which counts the visit and starts or stops the recording for it
- * (lib/analytics.ts isRecordedPath). Renders nothing. usePathname only, so the
- * static marketing pages stay static.
+ * route, which counts the visit and keeps the recording going (every page
+ * records, vault 0110). Renders nothing. usePathname only, so the static
+ * marketing pages stay static.
  */
 export function Analytics() {
   const pathname = usePathname();
-  // Inside the commit, before the recorder's observer sees the new page: a
-  // public page reached from a recorded one never enters that recording.
-  useLayoutEffect(() => {
-    stopRecordingIfPublic(pathname);
-  }, [pathname]);
   useEffect(() => {
-    void onRoute(pathname);
+    void onRoute();
   }, [pathname]);
   return null;
 }

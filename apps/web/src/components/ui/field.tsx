@@ -14,12 +14,7 @@ function FieldShell({ label, hint, error, id, children }: FieldShellProps) {
   return (
     <div>
       <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        {/* A label is fixed copy; the field under it stays masked in a recording. */}
-        <label
-          htmlFor={id}
-          className="text-sm font-medium text-gray-200 light:text-ink"
-          data-ph-unmask
-        >
+        <label htmlFor={id} className="text-sm font-medium text-gray-200 light:text-ink">
           {label}
         </label>
         {hint && <span className="text-[13px] text-gray-500 light:text-ink/60">{hint}</span>}

@@ -10,9 +10,8 @@ export function StepHeader({
   sub?: string;
   onBack?: () => void;
 }) {
-  // Every caller passes fixed copy, so the header is readable in a recording.
   return (
-    <header data-ph-unmask>
+    <header>
       {onBack && (
         <button
           type="button"

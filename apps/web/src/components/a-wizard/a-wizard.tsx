@@ -264,9 +264,7 @@ export function AWizard({ businessId, businessName, initialCatalog }: AWizardPro
   return (
     <div className="w-full max-w-2xl pt-4 sm:pt-6 lg:max-w-4xl">
       <div className="flex items-baseline justify-between gap-3">
-        <h1 className="text-lg font-semibold tracking-tight text-ink" data-ph-unmask>
-          הוק + דמו
-        </h1>
+        <h1 className="text-lg font-semibold tracking-tight text-ink">הוק + דמו</h1>
         <span className="truncate text-sm text-ink/60">{businessName}</span>
       </div>
 

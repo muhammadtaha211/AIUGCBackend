@@ -7,8 +7,8 @@ import {
   analyticsSettings,
   ANALYTICS_OFF_KEY,
   BLOCK_SELECTOR,
-  isReadable,
-  isRecordedPath,
+  isHidden,
+  isPlayableMedia,
   maskAttribute,
   maskReplayRequest,
   maskInput,
@@ -31,13 +31,15 @@ import { wizardSteps } from "../src/lib/service-b-ui";
 import { C_WIZARD_STEPS } from "../src/lib/service-c-ui";
 
 /**
- * PostHog in apps/web (vault 0103, 0104; docs/10-analytics.md). What the
- * founder's "done when" asks the tests to prove: no key, nothing loads; an
- * admin account sends nothing; public pages count and do not record while
- * /start and signed-in pages record; the account is identified by id only; a
- * named step cannot carry free text; an address is sent without its codes.
- * Plus the masking rules a recording runs through, which the browser check
- * (docs/10-analytics.md, "The hiding check") measured end to end.
+ * PostHog in apps/web (vault 0103, 0104, 0110; docs/10-analytics.md). What
+ * the founder's "done when" asks the tests to prove: no key, nothing loads;
+ * every page records and nothing stops it between public and app pages; a
+ * customer's sign-in leaves no gap while an admin's still stops everything and
+ * marks the device; the account is identified by id only; passwords, codes,
+ * emails and identity fields are masked while business content and interface
+ * copy are not; a named step cannot carry free text; an address is sent
+ * without its codes. The browser check (docs/10-analytics.md, "The hiding
+ * check") measures the masking end to end.
  */
 
 const WEB = join(__dirname, "..");
@@ -77,30 +79,6 @@ describe("analyticsSettings", () => {
       key: "phc_x",
       host: "http://127.0.0.1:8789",
     });
-  });
-});
-
-describe("isRecordedPath", () => {
-  it.each([
-    ["/start", true],
-    ["/login", true],
-    ["/forgot-password", true],
-    ["/reset-password", true],
-    ["/home", true],
-    ["/home/a/new", true],
-    ["/home/plan/checkout", true],
-    ["/connect/instagram", true],
-    ["/", false],
-    ["/pricing", false],
-    ["/privacy", false],
-    ["/terms", false],
-    ["/about", false],
-    ["/contact", false],
-    ["/social/deletion/abc", false],
-    ["/started", false],
-    ["/homepage", false],
-  ])("%s → %s", (pathname, recorded) => {
-    expect(isRecordedPath(pathname)).toBe(recorded);
   });
 });
 
@@ -297,78 +275,260 @@ describe("scrubEvent", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Recordings: hidden by default
+// Recordings: shown as on screen, the sensitive hidden
 // ---------------------------------------------------------------------------
 
-/** A stand-in element: its ancestor chain, nearest first, matched by tag or [attribute]. */
+/**
+ * A stand-in element: its ancestor chain, nearest first, each written as a tag
+ * and its attributes (`input type=password`, `form data-ph-mask`). closest()
+ * understands tags, [name], [name=value] and [name~="value"], which is all the
+ * policy's selectors use.
+ */
 function el(...chain: Array<string>): { closest(selector: string): unknown } {
   const nodes = chain.map((spec) => {
-    const [tag, ...attrs] = spec.split(" ");
+    const [tag, ...pairs] = spec.split(" ");
+    const attrs = new Map(
+      pairs.map((pair) => {
+        const [name, value = ""] = pair.split("=");
+        return [name!, value] as const;
+      }),
+    );
     return { tag: tag!, attrs };
   });
-  const matches = (node: { tag: string; attrs: string[] }, selector: string) =>
-    selector
-      .split(",")
-      .map((part) => part.trim())
-      .some((part) =>
-        part.startsWith("[") ? node.attrs.includes(part.slice(1, -1)) : node.tag === part,
-      );
-  return { closest: (selector) => nodes.find((node) => matches(node, selector)) ?? null };
+  const matchesPart = (node: (typeof nodes)[number], part: string) => {
+    const parsed = /^([a-z]*)((?:\[[^\]]+\])*)$/.exec(part);
+    if (!parsed || (parsed[1] && parsed[1] !== node.tag)) return false;
+    for (const [, name, op, value] of parsed[2]!.matchAll(
+      /\[([a-z-]+)(?:(~?=)"?([^"\]]*)"?)?\]/g,
+    )) {
+      const actual = node.attrs.get(name!);
+      if (actual === undefined) return false;
+      if (op === "=" && actual !== value) return false;
+      if (op === "~=" && !actual.split(/\s+/).includes(value!)) return false;
+    }
+    return true;
+  };
+  return {
+    closest: (selector) =>
+      nodes.find((node) =>
+        selector
+          .split(",")
+          .map((part) => part.trim())
+          .some((part) => matchesPart(node, part)),
+      ) ?? null,
+  };
 }
 
 describe("recording masks", () => {
-  it("hides text nobody marked", () => {
-    expect(maskText("העסק של דנה", el("span", "div", "body"))).toBe("**** ** ***");
-    expect(isReadable(null)).toBe(false);
-  });
-
-  it("shows text under data-ph-unmask", () => {
-    expect(maskText("איזו מודעה אתם יוצרים היום?", el("h1", "div data-ph-unmask", "body"))).toBe(
+  it("shows interface copy and business content as they are on screen", () => {
+    expect(maskText("איזו מודעה אתם יוצרים היום?", el("h1", "div", "body"))).toBe(
       "איזו מודעה אתם יוצרים היום?",
     );
+    expect(maskText("העסק של דנה", el("span", "aside", "body"))).toBe("העסק של דנה");
+    expect(maskText("קהל היעד: אמהות", el("li", "ul", "div"))).toBe("קהל היעד: אמהות");
+    expect(maskText("פילאטיס", el("option", "select"))).toBe("פילאטיס");
   });
 
-  it("lets data-ph-mask win inside a readable region", () => {
-    expect(maskText("קהל היעד: אמהות", el("span", "ul data-ph-mask", "div data-ph-unmask"))).toBe(
-      "*** ***** *****",
+  it("shows what a customer types into a business field", () => {
+    expect(maskInput("סטודיו יוגה בחיפה", el("textarea", "form"))).toBe("סטודיו יוגה בחיפה");
+    expect(maskInput("קורס אונליין", el("input type=text", "div"))).toBe("קורס אונליין");
+  });
+
+  it("hides everything inside data-ph-mask: text, fields, words and links", () => {
+    expect(isHidden(el("span", "p data-ph-mask"))).toBe(true);
+    expect(maskText("dana@example.co.il", el("p data-ph-mask"))).toBe("******************");
+    expect(maskText("@dana_yoga", el("bdi", "span data-ph-mask"))).toBe("**********");
+    expect(maskInput("אפשר לחזור אליי ב-0501234567", el("textarea", "form data-ph-mask"))).toBe(
+      "*****",
+    );
+    expect(maskAttribute("title", "דנה יוגה · מתוזמן", el("a data-ph-mask"))).toBe(
+      "*** **** * ******",
+    );
+    expect(
+      maskAttribute("href", "https://www.instagram.com/dana_yoga", el("a", "dd data-ph-mask")),
+    ).toBe("");
+  });
+
+  it("hides passwords, emails, phone numbers and codes in any field, marked or not", () => {
+    for (const field of [
+      el("input type=password"),
+      el("input type=email"),
+      el("input type=tel"),
+      el("input type=text data-rr-is-password=true"),
+      el("input autocomplete=one-time-code"),
+      el("input autocomplete=username"),
+      el("input autocomplete=new-password"),
+    ]) {
+      expect(maskInput("a-13-char-pw!", field)).toBe("*****");
+      expect(maskInput("", field)).toBe("");
+      expect(maskAttribute("value", "a-13-char-pw!", field)).toBe("*************");
+    }
+  });
+
+  it("hides an email address wherever it shows", () => {
+    expect(maskText("כתבו לנו: hello@studio-dana.co.il ונחזור", el("p"))).toBe(
+      `כתבו לנו: ${"*".repeat("hello@studio-dana.co.il".length)} ונחזור`,
+    );
+    expect(maskInput("פרטים במייל dana@x.com", el("textarea"))).toBe("פרטים במייל **********");
+    expect(maskAttribute("aria-label", "dana@x.com", el("button"))).toBe("**********");
+  });
+
+  it("hides an address being typed from the moment its @ is, and shows a handle", () => {
+    const address = "dana.cohen@studio-dana.co.il";
+    for (let end = address.indexOf("@") + 1; end <= address.length; end++) {
+      const typed = `פרטים: ${address.slice(0, end)}`;
+      expect(maskInput(typed, el("textarea"))).toBe(`פרטים: ${"*".repeat(end)}`);
+    }
+    expect(maskText("עקבו אחרינו @dana_yoga", el("p"))).toBe("עקבו אחרינו @dana_yoga");
+    // Bounded: a long run with no address costs no backtracking.
+    const long = "x".repeat(30_000);
+    const started = performance.now();
+    expect(maskInput(`${long}@`, el("textarea"))).toBe(
+      `${"x".repeat(30_000 - 64)}${"*".repeat(65)}`,
+    );
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it("cuts the codes out of an address typed into a field", () => {
+    expect(
+      maskInput("https://shop.co.il/p/yoga?preview_key=SECRET&utm_source=ig", el("input")),
+    ).toBe("https://shop.co.il/p/yoga?utm_source=ig");
+    expect(maskText("הקישור: https://shop.co.il/s?token=T", el("li"))).toBe(
+      "הקישור: https://shop.co.il/s",
     );
   });
 
-  it("never shows a field's text, marked or not", () => {
-    for (const tag of ["textarea", "option", "select", "input"]) {
-      expect(maskText("typed", el(tag, "div data-ph-unmask"))).toBe("*****");
-    }
-    expect(maskText("typed", el("p", "div contenteditable", "div data-ph-unmask"))).toBe("*****");
+  it("hides text it cannot place", () => {
+    expect(isHidden(null)).toBe(true);
+    expect(maskText("טקסט", null)).toBe("****");
   });
 
-  it("strips tokens from addresses and hides words in attributes", () => {
-    const readable = el("img", "div data-ph-unmask");
-    const hidden = el("span", "div");
+  it("shows words in attributes, keeps structure, and cuts an address down", () => {
+    const plain = el("a", "nav");
+    expect(maskAttribute("aria-label", "שלבי היצירה", plain)).toBe("שלבי היצירה");
+    expect(maskAttribute("data-step", "studio", plain)).toBe("studio");
+    expect(maskAttribute("class", "text-sm text-ink", plain)).toBe("text-sm text-ink");
+    expect(maskAttribute("rr_width", "120px", plain)).toBe("120px");
+    expect(maskAttribute("href", "/home/renders?x=1#y", plain)).toBe("/home/renders");
+    expect(maskAttribute("href", "/reset-password?token_hash=abc&type=recovery", plain)).toBe(
+      "/reset-password",
+    );
     expect(
-      maskAttribute("src", "https://x.supabase.co/storage/v1/object/sign/a.mp4?token=eyJ", hidden),
-    ).toBe("https://x.supabase.co/storage/v1/object/sign/a.mp4");
-    expect(maskAttribute("href", "/home/renders?x=1#y", hidden)).toBe("/home/renders");
-    expect(maskAttribute("srcset", "/_next/image?url=a%3Ftoken%3Dt 1x", readable)).toBe("");
-    expect(
-      maskAttribute("style", "background-image: url(https://x/?token=t); width: 40%", hidden),
+      maskAttribute("style", "background-image: url(https://x/?token=t); width: 40%", plain),
     ).toBe("background-image: url(); width: 40%");
-    expect(maskAttribute("aria-label", "העסק של דנה", hidden)).toBe("**** ** ***");
-    expect(maskAttribute("aria-label", "שלבי היצירה", readable)).toBe("שלבי היצירה");
-    expect(maskAttribute("value", "typed", el("input", "div data-ph-unmask"))).toBe("*****");
-    expect(maskAttribute("data-anything", "secret", hidden)).toBe("******");
-    expect(maskAttribute("class", "text-sm text-ink", hidden)).toBe("text-sm text-ink");
+  });
+});
+
+describe("media in a recording", () => {
+  const page = "https://tavnit.ai/home/b/new";
+
+  it.each([
+    ["Tavnit's own file", "/landing/presenter.mp4", true],
+    ["Tavnit's own file, absolute", "https://tavnit.ai/previews/hook-demo.jpg", true],
+    ["a build asset", "/_next/static/media/brand-mark.3f2a1c9d.png", true],
+    [
+      "the public catalogue",
+      "https://ref.supabase.co/storage/v1/object/public/catalog/bank/persona_image/9b2d0c3e-1d4f-4a5b-8c6d-7e8f9a0b1c2d/0123456789abcdef.jpg",
+      true,
+    ],
+    [
+      "Next's optimiser serving the catalogue",
+      "/_next/image?url=https%3A%2F%2Fref.supabase.co%2Fstorage%2Fv1%2Fobject%2Fpublic%2Fcatalog%2Fa.jpg&w=640&q=60",
+      true,
+    ],
+    ["a stand-in still", "https://picsum.photos/seed/hook/270/480", true],
+    [
+      "a signed link",
+      "https://ref.supabase.co/storage/v1/object/sign/renders/out.mp4?token=eyJhbGci",
+      false,
+    ],
+    [
+      "Next's optimiser serving a signed link",
+      "/_next/image?url=https%3A%2F%2Fref.supabase.co%2Fstorage%2Fv1%2Fobject%2Fsign%2Fa.jpg%3Ftoken%3DeyJ&w=640&q=60",
+      false,
+    ],
+    [
+      "the Meta CDN",
+      "https://scontent.cdninstagram.com/v/t51/p.jpg?stp=dst&oh=00_A&oe=6720",
+      false,
+    ],
+    ["a blob from the visitor's tab", "blob:https://tavnit.ai/1f0e", false],
+    ["a data: image", "data:image/png;base64,iVBORw0KGgo=", false],
+    ["an /api/ route", "/api/renders/abc/video", false],
+    ["an insecure host", "http://example.com/a.jpg", false],
+  ])("%s → %s", (_label, link, playable) => {
+    expect(isPlayableMedia(link, page)).toBe(playable);
   });
 
-  it("masks every field to the same five asterisks, so its length does not leave", () => {
-    expect(maskInput("a-13-char-pw!")).toBe("*****");
-    expect(maskInput("x")).toBe("*****");
-    expect(maskInput("")).toBe("");
+  describe("on the page", () => {
+    beforeEach(() => {
+      vi.stubGlobal("location", { href: page });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("keeps a playable link whole and absolute, so the replay fetches it", () => {
+      const video = el("video", "div");
+      expect(maskAttribute("poster", "/landing/presenter.jpg", video)).toBe(
+        "https://tavnit.ai/landing/presenter.jpg",
+      );
+      const catalogue =
+        "/_next/image?url=https%3A%2F%2Fref.supabase.co%2Fstorage%2Fv1%2Fobject%2Fpublic%2Fcatalog%2Fa.jpg&w=640&q=60";
+      expect(maskAttribute("src", catalogue, el("img"))).toBe(`https://tavnit.ai${catalogue}`);
+      expect(
+        maskAttribute(
+          "srcset",
+          `${catalogue} 1x, ${catalogue.replace("640", "1080")} 2x`,
+          el("img"),
+        ),
+      ).toBe(`${catalogue} 1x, ${catalogue.replace("640", "1080")} 2x`);
+    });
+
+    it("cuts a link that would not play down to an address without its codes", () => {
+      expect(
+        maskAttribute(
+          "src",
+          "https://x.supabase.co/storage/v1/object/sign/renders/9b2d0c3e-1d4f-4a5b-8c6d-7e8f9a0b1c2d/out.mp4?token=eyJ",
+          el("video"),
+        ),
+      ).toBe("https://x.supabase.co/storage/v1/object/sign/renders/:id/out.mp4");
+      expect(
+        maskAttribute("srcset", "/_next/image?url=a%3Ftoken%3Dt&w=640&q=60 1x", el("img")),
+      ).toBe("");
+    });
+
+    it("drops every link inside a hidden container", () => {
+      expect(maskAttribute("src", "/landing/presenter.jpg", el("img", "dd data-ph-mask"))).toBe("");
+      expect(maskAttribute("srcset", "/landing/a.jpg 1x", el("img data-ph-mask"))).toBe("");
+    });
   });
 
-  it("blocks media and the two inputs the recorder never masks", () => {
-    for (const selector of ["img", "video", "audio", "input[type=file]", "input[type=hidden]"]) {
-      expect(BLOCK_SELECTOR.split(", ")).toContain(selector);
+  it("boxes media that will not play, media inside a hidden container, and what is never recorded", () => {
+    const parts = BLOCK_SELECTOR.split(", ");
+    // Never media as such: Tavnit's own files and the public catalogue play.
+    for (const tag of ["img", "video", "audio", "source", "picture"])
+      expect(parts).not.toContain(tag);
+    for (const part of [
+      `img[src*="?"]:not([src^="/_next/image?"])`,
+      `video[src*="?"]:not([src^="/_next/image?"])`,
+      `source[src*="?"]:not([src^="/_next/image?"])`,
+      `img[src^="/_next/image?"][src*="%3F"]`,
+      `img[srcset*="?"]:not([srcset^="/_next/image?"])`,
+      `video[poster^="data:"]`,
+      `video[src^="blob:"]`,
+      `audio[src^="/api/"]`,
+      "[data-ph-mask] img",
+      "video[data-ph-mask]",
+      "canvas",
+      "iframe",
+      "input[type=file]",
+      "input[type=hidden]",
+    ]) {
+      expect(parts).toContain(part);
     }
+    // Plain compound selectors only: one part a browser cannot parse voids the whole list.
+    expect(BLOCK_SELECTOR).not.toContain(":is(");
   });
 
   it("cuts the page address the recorder writes and drops captured network requests", () => {
@@ -522,7 +682,7 @@ type SdkDouble = Record<
   | "reset"
   | "get_property",
   ReturnType<typeof vi.fn>
->;
+> & { requestRouter: { endpointFor: ReturnType<typeof vi.fn> } };
 
 const sdk = vi.hoisted(() => ({ ph: null as null | SdkDouble }));
 
@@ -549,7 +709,13 @@ describe("the runtime", () => {
     // The project ref is "ref", so the session cookie is sb-ref-auth-token.
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ref.supabase.co");
     vi.resetModules();
-    return import("../src/lib/analytics-client");
+    const runtime = await import("../src/lib/analytics-client");
+    // A route as the browser reports it: the address changes, then <Analytics /> calls in.
+    const visit = (path: string) => {
+      location.href = `https://tavnit.ai${path}`;
+      return runtime.onRoute();
+    };
+    return { ...runtime, visit };
   }
 
   function initOptions() {
@@ -557,16 +723,29 @@ describe("the runtime", () => {
   }
 
   beforeEach(() => {
+    // As the SDK does: identify() makes the id the distinct id and stores it as
+    // $user_id; reset() starts a new anonymous id and forgets it.
+    let distinctId = "anon-1";
+    let userId: string | undefined;
     sdk.ph = {
       init: vi.fn(),
-      identify: vi.fn(),
+      identify: vi.fn((id: string) => {
+        distinctId = id;
+        userId = id;
+      }),
       capture: vi.fn(),
       startSessionRecording: vi.fn(),
       stopSessionRecording: vi.fn(),
-      get_distinct_id: vi.fn(() => "anon-1"),
+      get_distinct_id: vi.fn(() => distinctId),
       captureException: vi.fn(),
-      reset: vi.fn(),
-      get_property: vi.fn(() => undefined),
+      reset: vi.fn(() => {
+        distinctId = "anon-2";
+        userId = undefined;
+      }),
+      get_property: vi.fn((key: string) => (key === "$user_id" ? userId : undefined)),
+      requestRouter: {
+        endpointFor: vi.fn((_target: string, path: string) => `https://eu.i.posthog.com${path}`),
+      },
     };
     cookie = "";
     location.href = "https://tavnit.ai/";
@@ -601,31 +780,43 @@ describe("the runtime", () => {
   }
 
   it("with no key, nothing loads and nothing is asked", async () => {
-    const { onRoute, track } = await client("");
+    const { visit, track } = await client("");
     cookie = "sb-ref-auth-token=base64-abc";
-    await onRoute("/start");
+    await visit("/start");
     track("plans_viewed", {});
     expect(loads()).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("a public page counts the visit and never records", async () => {
-    const { onRoute } = await client();
-    await onRoute("/");
+  it("records every page, the landing and the other public pages included", async () => {
+    const { visit } = await client();
+    await visit("/");
     expect(loads()).toBe(1);
+    // Nothing records before the gate has answered; then the page records.
     expect(initOptions().disable_session_recording).toBe(true);
-    expect(sdk.ph!.startSessionRecording).not.toHaveBeenCalled();
-    expect(sdk.ph!.stopSessionRecording).toHaveBeenCalled();
+    expect(sdk.ph!.startSessionRecording).toHaveBeenCalledTimes(1);
     expect(sdk.ph!.capture).toHaveBeenCalledWith("$pageview", {
       $current_url: "https://tavnit.ai/",
       $pathname: "/",
     });
+    for (const path of [
+      "/pricing",
+      "/about",
+      "/contact",
+      "/privacy",
+      "/terms",
+      "/social/deletion/x",
+    ]) {
+      await visit(path);
+    }
+    expect(sdk.ph!.startSessionRecording).toHaveBeenCalledTimes(7);
+    expect(sdk.ph!.stopSessionRecording).not.toHaveBeenCalled();
   });
 
   it("counts the page the route was reported on, even if the visitor moved on before the SDK loaded", async () => {
     const { onRoute } = await client();
     location.href = "https://tavnit.ai/?utm_source=instagram&fbclid=x";
-    const done = onRoute("/");
+    const done = onRoute();
     location.href = "https://tavnit.ai/start";
     await done;
     expect(sdk.ph!.capture).toHaveBeenCalledWith("$pageview", {
@@ -636,52 +827,229 @@ describe("the runtime", () => {
   });
 
   it("ignores another Supabase project's leftover cookie", async () => {
-    const { onRoute } = await client();
+    const { visit } = await client();
     cookie = "sb-oldproject-auth-token=base64-stale";
-    await onRoute("/home");
+    await visit("/home");
     expect(fetchMock).not.toHaveBeenCalled();
     expect(sdk.ph!.identify).not.toHaveBeenCalled();
   });
 
-  it("stops the recorder inside the commit that leaves for a public page", async () => {
-    const { onRoute, stopRecordingIfPublic } = await client();
-    await onRoute("/start");
-    sdk.ph!.stopSessionRecording.mockClear();
-    stopRecordingIfPublic("/start/next");
-    expect(sdk.ph!.stopSessionRecording).not.toHaveBeenCalled();
-    stopRecordingIfPublic("/privacy");
-    expect(sdk.ph!.stopSessionRecording).toHaveBeenCalledTimes(1);
-  });
-
-  it("/start and signed-in pages record", async () => {
-    const { onRoute } = await client();
-    await onRoute("/start");
-    expect(sdk.ph!.startSessionRecording).toHaveBeenCalledTimes(1);
-    await onRoute("/pricing");
-    expect(sdk.ph!.stopSessionRecording).toHaveBeenCalledTimes(1);
+  it("never stops between public and app pages", async () => {
+    const { visit } = await client();
+    await visit("/pricing");
+    await visit("/start");
     cookie = "sb-ref-auth-token=base64-abc";
     viewer(200, { admin: false, id: "user-1" });
-    await onRoute("/home/a/new");
-    expect(sdk.ph!.startSessionRecording).toHaveBeenCalledTimes(2);
+    await visit("/home/a/new");
+    await visit("/");
+    await visit("/calendar");
+    expect(sdk.ph!.stopSessionRecording).not.toHaveBeenCalled();
+    expect(sdk.ph!.startSessionRecording).toHaveBeenCalledTimes(5);
+  });
+
+  /** The recorder's own request for a batch (posthog-js's _captureSnapshot, pinned below). */
+  const RECORDING_REQUEST = {
+    _url: "https://eu.i.posthog.com/s/",
+    _noTruncate: true,
+    _batchKey: "recordings",
+    skip_client_rate_limiting: true,
+  };
+
+  it("a customer's sign-in leaves no gap: what was recorded meanwhile goes out once the account is known", async () => {
+    const { visit, track } = await client();
+    await visit("/login");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    // The sign-in writes the cookie. Until the gate knows who it is, nothing
+    // leaves, but the recording batch is held, not lost, and so is the step.
+    cookie = "sb-ref-auth-token=base64-abc";
+    viewer(200, { admin: false, id: "user-1" });
+    const batch = { $snapshot_data: [{ type: 3, data: "the sign-in" }], $session_id: "s1" };
+    expect(beforeSend(event({ event: "$snapshot", properties: batch }))).toBeNull();
+    track("home_first_arrival", { to: "home" });
+    expect(sdk.ph!.capture).toHaveBeenCalledTimes(1); // the /login pageview only
+    await visit("/home");
+    expect(sdk.ph!.identify.mock.calls).toEqual([["user-1"]]);
+    expect(sdk.ph!.capture).toHaveBeenCalledWith("$snapshot", batch, RECORDING_REQUEST);
+    expect(sdk.ph!.capture).toHaveBeenCalledWith("home_first_arrival", { to: "home" }, undefined);
+    expect(sdk.ph!.stopSessionRecording).not.toHaveBeenCalled();
+    // The session matches the answer again: events leave at once.
+    expect(beforeSend(event({ event: "$snapshot", properties: {} }))).not.toBeNull();
+  });
+
+  it("asks at once, not on the next route, when the session changes under a page", async () => {
+    const { visit } = await client();
+    await visit("/reset-password");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    cookie = "sb-ref-auth-token=base64-abc";
+    viewer(200, { admin: false, id: "user-1" });
+    const batch = { $snapshot_data: [{ type: 3 }] };
+    expect(beforeSend(event({ event: "$snapshot", properties: batch }))).toBeNull();
+    await vi.waitFor(() => {
+      expect(sdk.ph!.capture).toHaveBeenCalledWith("$snapshot", batch, RECORDING_REQUEST);
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/analytics/viewer", { cache: "no-store" });
+  });
+
+  it("an admin's sign-in drops what was held, stops the recording and marks the device", async () => {
+    const { visit } = await client();
+    await visit("/login");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    cookie = "sb-ref-auth-token=base64-abc";
+    viewer(200, { admin: true });
+    expect(
+      beforeSend(event({ event: "$snapshot", properties: { $snapshot_data: [] } })),
+    ).toBeNull();
+    await visit("/home");
+    expect(sdk.ph!.capture).toHaveBeenCalledTimes(1); // the /login pageview only
+    expect(sdk.ph!.stopSessionRecording).toHaveBeenCalled();
+    expect(store.get(ANALYTICS_OFF_KEY)).toBe("1");
+  });
+
+  it("drops what a sign-in held when that session is gone before it was checked", async () => {
+    const { visit, track } = await client();
+    await visit("/login");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    cookie = "sb-ref-auth-token=base64-abc";
+    let answer: (value: unknown) => void = () => {};
+    fetchMock.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    expect(
+      beforeSend(event({ event: "$snapshot", properties: { $snapshot_data: [] } })),
+    ).toBeNull();
+    track("plans_viewed", {});
+    // Signed out again before the check answered: the next answer is anonymous,
+    // and nothing a sign-in held goes out on an anonymous answer.
+    cookie = "";
+    answer({ status: 401, ok: false, json: async () => ({}) });
+    await visit("/");
+    const names = sdk.ph!.capture.mock.calls.map(([name]) => name);
+    expect(names).not.toContain("$snapshot");
+    expect(names).not.toContain("plans_viewed");
+  });
+
+  it("a sign-out through signOut() sends what it held with the anonymous answer", async () => {
+    const { visit, resetAnalytics } = await client();
+    cookie = "sb-ref-auth-token=base64-abc";
+    viewer(200, { admin: false, id: "user-1" });
+    await visit("/home/settings");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    resetAnalytics(); // signOut() resets before Supabase clears the cookie
+    cookie = "";
+    const batch = { $snapshot_data: [{ type: 3, data: "after the sign-out" }] };
+    expect(beforeSend(event({ event: "$snapshot", properties: batch }))).toBeNull();
+    await visit("/");
+    expect(sdk.ph!.capture).toHaveBeenCalledWith("$snapshot", batch, RECORDING_REQUEST);
+  });
+
+  it("a session that ended any other way drops what it held: the identity changed", async () => {
+    const { visit } = await client();
+    cookie = "sb-ref-auth-token=base64-abc";
+    viewer(200, { admin: false, id: "user-1" });
+    await visit("/home/settings");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    cookie = "";
+    expect(
+      beforeSend(event({ event: "$snapshot", properties: { $snapshot_data: [] } })),
+    ).toBeNull();
+    await visit("/");
+    expect(sdk.ph!.reset).toHaveBeenCalled();
+    expect(sdk.ph!.capture.mock.calls.map(([name]) => name)).not.toContain("$snapshot");
+  });
+
+  it("an admin's session written over a customer's is stopped at once, not on the next route", async () => {
+    const { visit, track } = await client();
+    cookie = "sb-ref-auth-token=base64-customer";
+    viewer(200, { admin: false, id: "user-1" });
+    await visit("/home");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    const sent = sdk.ph!.capture.mock.calls.length;
+    // Another sign-in replaces the cookie's value; it is never absent in between.
+    cookie = "sb-ref-auth-token=base64-admin";
+    viewer(200, { admin: true });
+    expect(
+      beforeSend(event({ event: "$snapshot", properties: { $snapshot_data: [] } })),
+    ).toBeNull();
+    track("plans_viewed", {});
+    await vi.waitFor(() => expect(store.get(ANALYTICS_OFF_KEY)).toBe("1"));
+    expect(sdk.ph!.stopSessionRecording).toHaveBeenCalled();
+    expect(sdk.ph!.capture.mock.calls.length).toBe(sent);
+    expect(beforeSend(event({ event: "$snapshot", properties: {} }))).toBeNull();
+  });
+
+  it("a token refresh holds for one answer and then sends what it held", async () => {
+    const { visit } = await client();
+    cookie = "sb-ref-auth-token=base64-before";
+    viewer(200, { admin: false, id: "user-1" });
+    await visit("/home");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    cookie = "sb-ref-auth-token=base64-refreshed";
+    const batch = { $snapshot_data: [{ type: 3, data: "during the refresh" }] };
+    expect(beforeSend(event({ event: "$snapshot", properties: batch }))).toBeNull();
+    await vi.waitFor(() => {
+      expect(sdk.ph!.capture).toHaveBeenCalledWith("$snapshot", batch, RECORDING_REQUEST);
+    });
+    expect(sdk.ph!.reset).not.toHaveBeenCalled();
+  });
+
+  it("stops when another tab has marked the device", async () => {
+    const { visit } = await client();
+    cookie = "sb-ref-auth-token=base64-abc";
+    viewer(200, { admin: false, id: "user-1" });
+    await visit("/home");
+    const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
+    store.set(ANALYTICS_OFF_KEY, "1");
+    expect(
+      beforeSend(event({ event: "$snapshot", properties: { $snapshot_data: [] } })),
+    ).toBeNull();
+    await vi.waitFor(() => expect(sdk.ph!.stopSessionRecording).toHaveBeenCalled());
+    expect(sdk.ph!.capture.mock.calls.map(([name]) => name)).not.toContain("$snapshot");
+  });
+
+  it("queues nothing once the gate has said no, even where the device cannot be marked", async () => {
+    const { visit, track } = await client();
+    // No working localStorage: the device mark cannot be kept.
+    vi.stubGlobal("window", { location, localStorage: null });
+    cookie = "sb-ref-auth-token=base64-admin";
+    viewer(200, { admin: true });
+    await visit("/home/a/new");
+    track("wizard_step_viewed", { service: "a", step: "persona" });
+    // The admin's session ends; the next visitor is anonymous.
+    cookie = "";
+    await visit("/");
+    expect(sdk.ph!.capture.mock.calls.map(([name]) => name)).toEqual(["$pageview"]);
+  });
+
+  it("re-sends a held batch exactly as the recorder sends one", () => {
+    const recorder = readFileSync(
+      join(
+        WEB,
+        "node_modules/posthog-js/lib/src/extensions/replay/external/lazy-loaded-session-recorder.js",
+      ),
+      "utf8",
+    );
+    expect(recorder).toContain("var BASE_ENDPOINT = '/s/';");
+    expect(recorder).toContain("exports.SESSION_RECORDING_BATCH_KEY = 'recordings';");
+    expect(recorder).toMatch(
+      /this\._instance\.capture\('\$snapshot', properties, \{\s*_url: this\._instance\.requestRouter\.endpointFor\('api', this\._endpoint\),\s*_noTruncate: true,\s*_batchKey: exports\.SESSION_RECORDING_BATCH_KEY,\s*skip_client_rate_limiting: true,\s*\}\);/,
+    );
   });
 
   it("an admin account sends nothing, and the device stays off afterwards", async () => {
-    const { onRoute, track } = await client();
+    const { visit, track } = await client();
     cookie = "sb-ref-auth-token=base64-abc";
     viewer(200, { admin: true });
-    await onRoute("/home");
+    await visit("/home");
     track("plans_viewed", {});
     expect(loads()).toBe(0);
     expect(store.get(ANALYTICS_OFF_KEY)).toBe("1");
 
     cookie = "";
-    await onRoute("/");
+    await visit("/");
     expect(loads()).toBe(0);
   });
 
   it("an admin who signs in after an anonymous page is cut off at once", async () => {
-    const { onRoute, track } = await client();
-    await onRoute("/login");
+    const { visit, track } = await client();
+    await visit("/login");
     const beforeSend = initOptions().before_send as (e: CaptureResult) => CaptureResult | null;
     // The sign-in writes the cookie; before the next route has even asked who
     // this is, nothing leaves: no recording chunk, no step.
@@ -690,7 +1058,7 @@ describe("the runtime", () => {
     track("plans_viewed", {});
     expect(sdk.ph!.capture).toHaveBeenCalledTimes(1); // the /login pageview only
     viewer(200, { admin: true });
-    await onRoute("/home");
+    await visit("/home");
     expect(sdk.ph!.stopSessionRecording).toHaveBeenCalled();
     expect(sdk.ph!.capture).toHaveBeenCalledTimes(1); // the /login pageview only
     expect(beforeSend(event({ event: "$snapshot", properties: {} }))).toBeNull();
@@ -698,38 +1066,38 @@ describe("the runtime", () => {
   });
 
   it("when the account cannot be checked, nothing is sent", async () => {
-    const { onRoute } = await client();
+    const { visit } = await client();
     cookie = "sb-ref-auth-token=base64-abc";
     viewer(503, { ok: false });
-    await onRoute("/home");
+    await visit("/home");
     expect(loads()).toBe(0);
   });
 
   it("identifies a customer by the user id and nothing else", async () => {
-    const { onRoute } = await client();
+    const { visit } = await client();
     cookie = "sb-ref-auth-token=base64-abc";
     viewer(200, { admin: false, id: "user-1" });
-    await onRoute("/home");
+    await visit("/home");
     expect(fetchMock).toHaveBeenCalledWith("/api/analytics/viewer", { cache: "no-store" });
     expect(sdk.ph!.identify).toHaveBeenCalledTimes(1);
     expect(sdk.ph!.identify.mock.calls[0]).toEqual(["user-1"]);
   });
 
   it("joins a /start visitor to the account they create", async () => {
-    const { onRoute } = await client();
-    await onRoute("/start");
+    const { visit } = await client();
+    await visit("/start");
     expect(sdk.ph!.identify).not.toHaveBeenCalled();
     cookie = "sb-ref-auth-token=base64-abc";
     viewer(200, { admin: false, id: "user-1" });
-    await onRoute("/home");
+    await visit("/home");
     expect(sdk.ph!.identify.mock.calls).toEqual([["user-1"]]);
   });
 
   it("sends a step's codes, refuses free text, and holds early steps until the gate opens", async () => {
-    const { onRoute, track } = await client();
+    const { visit, track } = await client();
     track("start_step_viewed", { step: "business" });
     expect(sdk.ph!.capture).not.toHaveBeenCalled();
-    await onRoute("/start");
+    await visit("/start");
     expect(sdk.ph!.capture).toHaveBeenCalledWith(
       "start_step_viewed",
       { step: "business" },
@@ -748,49 +1116,49 @@ describe("the runtime", () => {
   });
 
   it("does not carry over an identity whose session ended without signOut()", async () => {
-    const { onRoute } = await client();
+    const { visit } = await client();
     sdk.ph!.get_property.mockImplementation((key: string) =>
       key === "$user_id" ? "user-A" : undefined,
     );
-    await onRoute("/start");
+    await visit("/start");
     expect(sdk.ph!.reset).toHaveBeenCalledTimes(1);
   });
 
   it("starts another account fresh, then identifies it", async () => {
-    const { onRoute } = await client();
+    const { visit } = await client();
     sdk.ph!.get_property.mockImplementation((key: string) =>
       key === "$user_id" ? "user-A" : undefined,
     );
     cookie = "sb-ref-auth-token=base64-b";
     viewer(200, { admin: false, id: "user-B" });
-    await onRoute("/home");
+    await visit("/home");
     expect(sdk.ph!.reset).toHaveBeenCalledTimes(1);
     expect(sdk.ph!.identify.mock.calls).toEqual([["user-B"]]);
   });
 
   it("keeps an error caught before the SDK loaded and sends it once the gate opens", async () => {
-    const { onRoute, captureError } = await client();
+    const { visit, captureError } = await client();
     const error = new Error("render failed");
     captureError(error);
     expect(sdk.ph!.captureException).not.toHaveBeenCalled();
     cookie = "sb-ref-auth-token=base64-abc";
     viewer(200, { admin: false, id: "user-1" });
-    await onRoute("/home/renders");
+    await visit("/home/renders");
     expect(sdk.ph!.captureException).toHaveBeenCalledWith(error);
   });
 
   it("drops a held error when the gate says no", async () => {
-    const { onRoute, captureError } = await client();
+    const { visit, captureError } = await client();
     captureError(new Error("x"));
     cookie = "sb-ref-auth-token=base64-abc";
     viewer(200, { admin: true });
-    await onRoute("/home");
+    await visit("/home");
     expect(sdk.ph!.captureException).not.toHaveBeenCalled();
   });
 
   it("forgets the person on sign-out", async () => {
-    const { onRoute, resetAnalytics } = await client();
-    await onRoute("/home/settings");
+    const { visit, resetAnalytics } = await client();
+    await visit("/home/settings");
     resetAnalytics();
     expect(sdk.ph!.reset).toHaveBeenCalled();
   });
@@ -799,6 +1167,37 @@ describe("the runtime", () => {
 // ---------------------------------------------------------------------------
 // Where things live
 // ---------------------------------------------------------------------------
+
+describe("who someone is stays out of a recording", () => {
+  it.each([
+    ["the account email in the shell", "app/home/sidebar.tsx", 4],
+    ["the account email in settings", "app/home/settings/page.tsx", 1],
+    ["the connected account in settings", "app/home/settings/social-accounts.tsx", 5],
+    [
+      "the account in the schedule picker",
+      "app/(posting)/schedule/[renderId]/schedule-flow.tsx",
+      3,
+    ],
+    ["the account in the calendar", "app/(posting)/calendar/calendar-month.tsx", 2],
+    ["the account and the post's link", "app/(posting)/calendar/[postId]/post-detail.tsx", 2],
+    ["the expired-account notice on /home", "app/home/posting-notice.tsx", 1],
+    ["the contact form and its confirmation", "app/(marketing)/contact/contact-form.tsx", 2],
+    ["the feedback form and its confirmation", "app/home/feedback/feedback-form.tsx", 2],
+    ["the deletion code", "app/(legal)/social/deletion/[code]/page.tsx", 1],
+  ])("%s is marked", (_label, file, marks) => {
+    const source = readFileSync(join(SRC, file), "utf8");
+    // `data-ph-mask` itself, or ConfirmDialog's `sensitive`, which sets it.
+    expect(source.match(/data-ph-mask|^\s+sensitive$/gm)?.length ?? 0).toBeGreaterThanOrEqual(
+      marks,
+    );
+  });
+
+  it("leaves no readable-by-default marker behind", () => {
+    for (const file of sourceFiles(SRC)) {
+      expect(readFileSync(file, "utf8"), file).not.toMatch(/data-ph-unmask|\breadable\b=/);
+    }
+  });
+});
 
 describe("the SDK's boundaries", () => {
   it("is imported in one file, lazily, and nowhere statically", () => {
@@ -866,6 +1265,24 @@ describe("the notice line", () => {
     };
     const tree = elements(await Page({ searchParams: Promise.resolve({}) }));
     expect(tree.some((node) => node.type === RecordingNotice)).toBe(true);
+  });
+
+  it("is in the footer every public page shares", async () => {
+    const { RecordingNotice } = await import("../src/components/recording-notice");
+    const { SiteFooter } = await import("../src/components/landing/site-footer");
+    expect(elements(SiteFooter()).some((node) => node.type === RecordingNotice)).toBe(true);
+    // The landing, /about, /contact, /pricing, /privacy, /terms and /social/deletion/:code.
+    for (const file of ["page.tsx", "(marketing)/layout.tsx", "(legal)/layout.tsx"]) {
+      expect(readFileSync(join(SRC, "app", file), "utf8"), file).toContain("<SiteFooter />");
+    }
+  });
+
+  it("is the site's smallest, faintest readable line", async () => {
+    const { RecordingNotice } = await import("../src/components/recording-notice");
+    const line = RecordingNotice({}) as ReactElement<{ className: string }>;
+    expect(line.props.className.split(" ")).toEqual(
+      expect.arrayContaining(["text-[11px]", "text-ink/45"]),
+    );
   });
 
   it("is named in /privacy with every storage key the SDK and the gate write", () => {
