@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useId } from "react";
-import { Button, PRIMARY_BUTTON_LG_CLASS } from "@/components/ui/button";
+import { Button, PRIMARY_BUTTON_CLASS, PRIMARY_BUTTON_LG_CLASS } from "@/components/ui/button";
 import { startWithPlanPath } from "@/lib/onboarding";
 import {
   creditsLine,
@@ -108,11 +108,13 @@ function CardAction({
   mode,
   slot,
   inverted,
+  compact,
 }: {
   plan: PlanView;
   mode: PlanCardsMode;
   slot?: CardSlot;
   inverted: boolean;
+  compact: boolean;
 }) {
   // The public actions are links that LOOK like the primary button — the
   // button classes on the anchor itself, never a <button> nested in an <a>
@@ -141,7 +143,7 @@ function CardAction({
     <>
       <Button
         type="button"
-        size="lg"
+        size={compact ? "md" : "lg"}
         variant={action.tone}
         disabled={action.disabled}
         loading={action.loading}
@@ -164,11 +166,14 @@ function PlanCard({
   examples,
   mode,
   slot,
+  compact,
 }: {
   plan: PlanView;
   examples: PlanExamples;
   mode: PlanCardsMode;
   slot?: CardSlot;
+  /** The four-card app row (0114): every size a step down so four fit the pane. */
+  compact: boolean;
 }) {
   const headingId = useId();
   const inverted = plan.popular;
@@ -185,7 +190,7 @@ function PlanCard({
   return (
     <article
       aria-labelledby={headingId}
-      className={`relative flex flex-col rounded-xl p-6 sm:p-7 ${surface} ${ring}`}
+      className={`relative flex flex-col rounded-xl ${compact ? "p-4" : "p-6 sm:p-7"} ${surface} ${ring}`}
     >
       {inverted && (
         <span className="absolute inset-x-0 -top-3 mx-auto w-fit rounded-full bg-accent px-3 py-1 text-xs font-semibold text-ink">
@@ -201,21 +206,23 @@ function PlanCard({
           {slot.badge}
         </span>
       )}
-      <h2 id={headingId} className="text-lg font-semibold">
+      <h2 id={headingId} className={`${compact ? "text-base" : "text-lg"} font-semibold`}>
         {plan.name}
       </h2>
-      <p className={`mt-3 text-sm ${muted}`}>
+      <p className={`mt-3 ${compact ? "whitespace-nowrap text-[13px]" : "text-sm"} ${muted}`}>
         <Amounts
           line={priceLine(plan.priceAgorot)}
-          amountClassName={`font-display text-4xl sm:text-5xl ${inverted ? "text-paper" : "text-ink"}`}
+          amountClassName={`font-display ${compact ? "text-3xl" : "text-4xl sm:text-5xl"} ${inverted ? "text-paper" : "text-ink"}`}
         />
       </p>
-      <p className={`mt-2 text-sm ${muted}`}>{creditsLine(plan.monthlyCredits)}</p>
+      <p className={`mt-2 ${compact ? "text-[13px]" : "text-sm"} ${muted}`}>
+        {creditsLine(plan.monthlyCredits)}
+      </p>
 
       {/* The rate is the card's differentiator (founder, 2026-09-17): the
           largest thing after the price, with the discount beside it. */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <p className="text-2xl font-semibold">
+      <div className={`${compact ? "mt-4" : "mt-5"} flex flex-wrap items-center gap-2`}>
+        <p className={`${compact ? "text-lg" : "text-2xl"} font-semibold`}>
           <Amounts line={rateLine(plan.rateAgorotPerCredit)} />
         </p>
         {plan.discountPctVsCheapest > 0 && (
@@ -229,14 +236,16 @@ function PlanCard({
         )}
       </div>
 
-      <p className={`mt-5 text-sm leading-relaxed ${inverted ? "text-paper/80" : "text-ink/75"}`}>
+      <p
+        className={`${compact ? "mt-4 text-[13px]" : "mt-5 text-sm"} leading-relaxed ${inverted ? "text-paper/80" : "text-ink/75"}`}
+      >
         {estimateLine(plan, examples)}
       </p>
 
       {/* mt-auto: the buttons line up across the cards whatever the
           estimate lines wrap to. */}
-      <div className="mt-auto pt-6">
-        <CardAction plan={plan} mode={mode} slot={slot} inverted={inverted} />
+      <div className={`mt-auto ${compact ? "pt-5" : "pt-6"}`}>
+        <CardAction plan={plan} mode={mode} slot={slot} inverted={inverted} compact={compact} />
       </div>
     </article>
   );
@@ -251,34 +260,39 @@ function PlanCard({
 function IntroCard({
   offer,
   action,
+  compact,
 }: {
   offer: IntroOfferView;
   action: { href: string; label: string };
+  compact: boolean;
 }) {
   const headingId = useId();
+  const small = compact ? "text-[13px]" : "text-sm";
   return (
     <article
       aria-labelledby={headingId}
-      className="relative flex flex-col rounded-xl bg-gradient-to-br from-accent to-emerald-300 p-6 text-ink shadow-xl shadow-ink/[0.05] ring-1 ring-ink/10 sm:p-7"
+      className={`relative flex flex-col rounded-xl bg-gradient-to-br from-accent to-emerald-300 ${compact ? "p-4" : "p-6 sm:p-7"} text-ink shadow-xl shadow-ink/[0.05] ring-1 ring-ink/10`}
     >
       <span className="absolute inset-x-0 -top-3 mx-auto w-fit rounded-full bg-ink px-3 py-1 text-xs font-semibold text-accent">
         {INTRO_CARD_BADGE}
       </span>
-      <h2 id={headingId} className="text-lg font-semibold">
+      <h2 id={headingId} className={`${compact ? "text-base" : "text-lg"} font-semibold`}>
         {INTRO_CARD_TITLE}
       </h2>
-      <p className="mt-3 text-sm text-ink/75">
+      <p className={`mt-3 ${compact ? "whitespace-nowrap" : ""} ${small} text-ink/75`}>
         <Amounts
           line={introCardPriceLine(offer)}
-          amountClassName="font-display text-4xl text-ink sm:text-5xl"
+          amountClassName={`font-display ${compact ? "text-3xl" : "text-4xl sm:text-5xl"} text-ink`}
         />
       </p>
-      <p className="mt-2 text-sm text-ink/75">{introCardCreditsLine(offer)}</p>
-      <p className="mt-5 text-sm leading-relaxed text-ink/85">{INTRO_CARD_CLAIM}</p>
-      <div className="mt-auto pt-6">
+      <p className={`mt-2 ${small} text-ink/75`}>{introCardCreditsLine(offer)}</p>
+      <p className={`${compact ? "mt-4" : "mt-5"} ${small} leading-relaxed text-ink/85`}>
+        {INTRO_CARD_CLAIM}
+      </p>
+      <div className={`mt-auto ${compact ? "pt-5" : "pt-6"}`}>
         <Link
           href={action.href}
-          className={`${PRIMARY_BUTTON_LG_CLASS} w-full !bg-ink !text-paper hover:!bg-ink/85 focus-visible:!outline-ink`}
+          className={`${compact ? PRIMARY_BUTTON_CLASS : PRIMARY_BUTTON_LG_CLASS} w-full !bg-ink !text-paper hover:!bg-ink/85 focus-visible:!outline-ink`}
         >
           {action.label}
         </Link>
@@ -304,21 +318,22 @@ export function PlanCards({
   // app: there the cards live in a pane 256px narrower than the viewport (and
   // zoomed), so a md viewport gives each card ~100px. With the intro card the
   // public row is four from xl and two by two from md: four at lg would leave
-  // each card ~170px for its text. In the app the intro card makes it two by
-  // two from lg, at every width: the pane is capped at max-w-5xl, so four
-  // across would always be ~218px, which wraps the price away from "לחודש".
+  // each card ~170px for its text. In the app the intro card makes one row of
+  // four from lg (founder, 2026-10-15, vault 0114) with every size a step down
+  // (`compact`): the pane is capped at max-w-5xl, so a card is ~178-232px wide.
+  const compact = mode === "app" && Boolean(intro);
   const columns =
     mode === "app"
       ? intro
-        ? "lg:grid-cols-2"
+        ? "lg:grid-cols-4"
         : "lg:grid-cols-3"
       : intro
         ? "md:grid-cols-2 xl:grid-cols-4"
         : "md:grid-cols-3";
   return (
     <div>
-      <div className={`grid items-stretch gap-5 pt-3 ${columns}`}>
-        {intro && <IntroCard offer={intro.offer} action={intro.action} />}
+      <div className={`grid items-stretch ${compact ? "gap-4" : "gap-5"} pt-3 ${columns}`}>
+        {intro && <IntroCard offer={intro.offer} action={intro.action} compact={compact} />}
         {view.plans.map((plan) => (
           <PlanCard
             key={plan.code}
@@ -326,6 +341,7 @@ export function PlanCards({
             examples={view.examples}
             mode={mode}
             slot={slots?.[plan.code]}
+            compact={compact}
           />
         ))}
       </div>

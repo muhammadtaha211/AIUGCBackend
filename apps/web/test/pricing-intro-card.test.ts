@@ -235,12 +235,20 @@ describe("the plan cards", () => {
     expect(card).toContain(INTRO_CARD_BADGE);
     expect(card).toContain(`href="${INTRO_PATH}"`);
     expect(html.split("<article").length - 1).toBe(4);
-    expect(html).toContain("lg:grid-cols-2");
-    expect(html).not.toContain("grid-cols-4");
+    // One row of four from lg (0114), every card a size down so four fit the pane.
+    expect(html).toContain("lg:grid-cols-4");
+    expect(card.split(">")[0]).toContain(" p-4 ");
+    expect(card).toContain("font-display text-3xl");
+    const planCard = articles(html)[1] ?? "";
+    expect(planCard.split(">")[0]).toContain(" p-4 ");
+    expect(planCard).toContain("font-display text-3xl");
+    expect(planCard).not.toContain("text-5xl");
     // Without the offer the app row is the three plans, as before.
     const plain = renderToStaticMarkup(createElement(PlanCards, { view, mode: "app" }));
     expect(plain).not.toContain(INTRO_CARD_TITLE);
     expect(plain).toContain("lg:grid-cols-3");
+    // Without the intro card nothing is shrunk.
+    expect(plain).toContain("text-5xl");
   });
 
   it("/home/plan hands the card the offer the account may buy, and no longer draws the old box", () => {
