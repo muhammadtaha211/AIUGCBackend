@@ -1,8 +1,7 @@
-import type { PostHog } from "posthog-js";
+import type { CaptureOptions, CaptureResult, PostHog } from "posthog-js";
 import {
   ANALYTICS_OFF_KEY,
   analyticsSettings,
-  isRecordedPath,
   pageviewProperties,
   posthogOptions,
   stepProperties,
@@ -44,12 +43,32 @@ const SESSION_COOKIE = (() => {
 
 let posthog: PostHog | null = null;
 let loading: Promise<PostHog | null> | null = null;
-/** The last decision; read with signedIn by canSend() on every event. */
+/** The last decision; read with decidedCookie by admit() on every event. */
 let allowed = false;
-/** Whether that decision was made with a session cookie present. */
-let signedIn = false;
-/** Steps fired before the SDK finished loading; flushed once, dropped if the gate says no. */
+/** The session cookie's value that decision was made for; null when there was none. */
+let decidedCookie: string | null = null;
+/** The gate has said no: nothing is queued until it says yes again. */
+let refused = false;
+/** Steps and errors fired before the SDK finished loading; flushed once, dropped if the gate says no. */
 let pending: Array<(ph: PostHog) => void> = [];
+/**
+ * What the recorder flushed, and the steps and errors fired, while the session
+ * cookie no longer matched the last decision: a sign-in, a sign-out, another
+ * account's session written over this one, a token refresh. Neither sent nor
+ * dropped, but held for the next decision, which is asked at once. A sign-in's
+ * go out if the account is a customer's; the rest go out if the answer allows
+ * them and the identity did not change; anything else drops them. So a
+ * customer's sign-in leaves no gap in the recording, and an admin's still sends
+ * nothing from the moment the cookie changes (vault 0110).
+ */
+let held: {
+  batches: CaptureResult[];
+  steps: Array<(ph: PostHog) => void>;
+  signingIn: boolean;
+} | null = null;
+/** About twenty seconds of recording; an answer that takes longer loses the rest. */
+const HELD_LIMIT = 10;
+let rechecking = false;
 let viewer: { cookie: string; result: Promise<Viewer> } | null = null;
 let routes: Promise<void> = Promise.resolve();
 
@@ -88,14 +107,34 @@ function sessionCookie(): string | null {
 }
 
 /**
- * Whether an event may leave right now: the last decision said yes, AND the
- * session is still the one it was made for. A sign-in or sign-out flips the
- * second at the moment the cookie changes, so nothing is sent for the new
- * person until the next route has asked who they are (an admin's first seconds
- * on /home included).
+ * Whether the session is still the one the last decision was made for — the
+ * same cookie value, not just a cookie — and no tab has marked this device off.
  */
-function canSend(): boolean {
-  return allowed && (sessionCookie() !== null) === signedIn;
+function sessionUnchanged(): boolean {
+  return sessionCookie() === decidedCookie && !deviceIsOff();
+}
+
+/** Keeps a batch or a step for the next answer, and asks for it now. */
+function hold(batch: CaptureResult | null, step: ((ph: PostHog) => void) | null): void {
+  held ??= { batches: [], steps: [], signingIn: decidedCookie === null };
+  if (batch && held.batches.length < HELD_LIMIT) held.batches.push(batch);
+  if (step && held.steps.length < 20) held.steps.push(step);
+  recheck();
+}
+
+/**
+ * Whether an event may leave right now (before_send asks, for every event): the
+ * last decision said yes, AND the session is still the one it was made for. A
+ * change of session breaks the second at the moment the cookie changes, and
+ * from then nothing leaves until the gate has asked who it is now (an admin's
+ * first seconds on /home included). A recording batch is held for that answer
+ * meanwhile, and the question is asked at once rather than on the next route.
+ */
+function admit(event: CaptureResult): boolean {
+  if (!allowed) return false;
+  if (sessionUnchanged()) return true;
+  hold(event.event === "$snapshot" ? event : null, null);
+  return false;
 }
 
 async function fetchViewer(): Promise<Viewer> {
@@ -113,8 +152,7 @@ async function fetchViewer(): Promise<Viewer> {
 }
 
 /** Asked once per session cookie; a failed answer is asked again on the next page. */
-async function currentViewer(): Promise<Viewer> {
-  const cookie = sessionCookie();
+async function currentViewer(cookie: string | null): Promise<Viewer> {
   if (!cookie) return { kind: "anonymous" };
   if (viewer?.cookie !== cookie) viewer = { cookie, result: fetchViewer() };
   const result = await viewer.result;
@@ -129,27 +167,23 @@ async function currentViewer(): Promise<Viewer> {
  * the answer is no. Moving to accept/decline later is one more condition here.
  */
 export async function captureDecision(): Promise<
-  { allowed: false } | { allowed: true; userId: string | null; signedIn: boolean }
+  { allowed: false } | { allowed: true; userId: string | null; cookie: string | null }
 > {
   if (!settings || deviceIsOff()) return { allowed: false };
   const cookie = sessionCookie();
-  const who = await currentViewer();
+  const who = await currentViewer(cookie);
   if (who.kind === "admin") {
     markDeviceOff();
     return { allowed: false };
   }
   if (who.kind === "unknown") return { allowed: false };
-  return {
-    allowed: true,
-    userId: who.kind === "customer" ? who.id : null,
-    signedIn: cookie !== null,
-  };
+  return { allowed: true, userId: who.kind === "customer" ? who.id : null, cookie };
 }
 
 function load(): Promise<PostHog | null> {
   loading ??= import("posthog-js/full/no-external")
     .then(({ default: ph }) => {
-      ph.init(settings!.key, posthogOptions(settings!, canSend));
+      ph.init(settings!.key, posthogOptions(settings!, admit));
       posthog = ph;
       return ph;
     })
@@ -159,32 +193,87 @@ function load(): Promise<PostHog | null> {
 
 function stop(): void {
   allowed = false;
+  refused = true;
   pending = [];
+  held = null;
   posthog?.stopSessionRecording();
 }
 
-async function applyRoute(pathname: string, href: string): Promise<void> {
-  const decision = await captureDecision();
-  if (!decision.allowed) {
-    stop();
-    return;
-  }
-  allowed = true;
-  signedIn = decision.signedIn;
-  const ph = await load();
-  if (!ph || !allowed) return;
-  // An identity left by a session that ended without signOut() (a server-side
-  // sign-out, a revoked token), or by another account, is not carried over.
-  const stored = ph.get_property("$user_id") as string | undefined;
-  if (stored && stored !== decision.userId) ph.reset();
-  // The user id and nothing else: no name, no email, no person properties.
-  if (decision.userId && ph.get_distinct_id() !== decision.userId) ph.identify(decision.userId);
-  if (isRecordedPath(pathname)) ph.startSessionRecording();
-  else ph.stopSessionRecording();
-  ph.capture("$pageview", pageviewProperties(href));
+/**
+ * Sends what was held across a session change, if the answer allows it: the
+ * batches as the same request the recorder itself makes (posthog-js's
+ * _captureSnapshot, pinned in test/analytics.test.ts), through before_send
+ * again, then the steps.
+ */
+function release(ph: PostHog, userId: string | null, switched: boolean): void {
+  const kept = held;
+  held = null;
+  if (!kept || switched || (kept.signingIn && !userId)) return;
+  const options: CaptureOptions = {
+    _url: ph.requestRouter.endpointFor("api", "/s/"),
+    _noTruncate: true,
+    _batchKey: "recordings",
+    skip_client_rate_limiting: true,
+  };
+  for (const event of kept.batches) ph.capture("$snapshot", event.properties, options);
+  for (const send of kept.steps) send(ph);
+}
+
+function flushPending(ph: PostHog): void {
   const queued = pending;
   pending = [];
   for (const send of queued) send(ph);
+}
+
+/** Asks the gate and applies the answer: the SDK, the identity, the recording, the held batches. */
+async function decide(): Promise<PostHog | null> {
+  let decision = await captureDecision();
+  // An answer for a session that changed while it was asked is asked again.
+  for (let again = 0; decision.allowed && sessionCookie() !== decision.cookie; again++) {
+    decision = again < 2 ? await captureDecision() : { allowed: false };
+  }
+  if (!decision.allowed) {
+    stop();
+    return null;
+  }
+  allowed = true;
+  refused = false;
+  decidedCookie = decision.cookie;
+  const ph = await load();
+  if (!ph || !allowed) return null;
+  // An identity left by a session that ended without signOut() (a server-side
+  // sign-out, a revoked token), or by another account, is not carried over.
+  const stored = ph.get_property("$user_id") as string | undefined;
+  const switched = Boolean(stored && stored !== decision.userId);
+  if (switched) ph.reset();
+  // The user id and nothing else: no name, no email, no person properties.
+  if (decision.userId && ph.get_distinct_id() !== decision.userId) ph.identify(decision.userId);
+  // Every page records (vault 0110).
+  ph.startSessionRecording();
+  release(ph, decision.userId, switched);
+  return ph;
+}
+
+async function applyRoute(href: string): Promise<void> {
+  const ph = await decide();
+  if (!ph) return;
+  ph.capture("$pageview", pageviewProperties(href));
+  flushPending(ph);
+}
+
+/** The question asked between two routes, when the session changed under the last answer. */
+function recheck(): void {
+  if (rechecking) return;
+  rechecking = true;
+  routes = routes
+    .then(async () => {
+      rechecking = false;
+      const ph = await decide();
+      if (ph) flushPending(ph);
+    })
+    .catch(() => {
+      rechecking = false;
+    });
 }
 
 /**
@@ -192,19 +281,11 @@ async function applyRoute(pathname: string, href: string): Promise<void> {
  * keeps its order; the address is read now, not when the SDK gets to it. The
  * promise is only awaited by the tests.
  */
-export function onRoute(pathname: string): Promise<void> {
+export function onRoute(): Promise<void> {
   if (!settings) return Promise.resolve();
   const href = window.location.href;
-  routes = routes.then(() => applyRoute(pathname, href)).catch(() => {});
+  routes = routes.then(() => applyRoute(href)).catch(() => {});
   return routes;
-}
-
-/**
- * Called during the commit that leaves a recorded page for a public one, so
- * the recorder is torn down before it sees the public page's DOM.
- */
-export function stopRecordingIfPublic(pathname: string): void {
-  if (posthog && !isRecordedPath(pathname)) posthog.stopSessionRecording();
 }
 
 /**
@@ -226,8 +307,21 @@ export function track<N extends StepName>(
       clean,
       options.beacon ? { send_instantly: true, transport: "sendBeacon" } : undefined,
     );
-  if (posthog && canSend()) send(posthog);
-  else if (!posthog && pending.length < 20) pending.push(send);
+  queue(send);
+}
+
+/**
+ * Sends now if the gate allows it; holds it while the SDK loads, or with the
+ * recording while a new session is being checked; drops it once the gate has
+ * said no.
+ */
+function queue(send: (ph: PostHog) => void): void {
+  if (posthog && allowed) {
+    if (sessionUnchanged()) send(posthog);
+    else hold(null, send);
+  } else if (!posthog && !refused && pending.length < 20) {
+    pending.push(send);
+  }
 }
 
 /**
@@ -237,9 +331,7 @@ export function track<N extends StepName>(
  */
 export function captureError(error: unknown): void {
   if (!settings) return;
-  const send = (ph: PostHog) => ph.captureException(error);
-  if (posthog && canSend()) send(posthog);
-  else if (!posthog && pending.length < 20) pending.push(send);
+  queue((ph: PostHog) => ph.captureException(error));
 }
 
 /** On sign-out: the next person on this browser starts as a new anonymous visitor. */

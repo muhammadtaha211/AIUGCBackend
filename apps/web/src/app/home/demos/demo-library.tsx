@@ -88,7 +88,7 @@ function statusLabel(status: string): string {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  ready: "bg-accent/15 text-accent",
+  ready: "bg-accent/25 text-ink",
   rejected: "bg-red-100 text-red-700",
 };
 

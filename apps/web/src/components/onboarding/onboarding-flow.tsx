@@ -335,15 +335,13 @@ export function OnboardingFlow({
   })();
 
   // One shell for every step: the scene stays put, only the questionnaire changes.
-  // data-ph-unmask: the questionnaire's own copy is readable in a recording; the
-  // fields never are, and the last step's recap of the answers is masked again.
   const content =
     stepId === "business" ? (
-      <div key={draft.step} className="step-in w-full" data-ph-unmask>
+      <div key={draft.step} className="step-in w-full">
         {step}
       </div>
     ) : (
-      <div id="onboarding-content" className="w-full max-w-2xl pt-6 sm:pt-10" data-ph-unmask>
+      <div id="onboarding-content" className="w-full max-w-2xl pt-6 sm:pt-10">
         <ProgressHeader
           value={STEP_PROGRESS[stepId]}
           label={mode === "additional" ? "עסק חדש" : "המודעה הראשונה שלכם"}

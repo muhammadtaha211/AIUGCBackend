@@ -181,7 +181,11 @@ export default async function SettingsPage({
         <div className="mt-3 flex flex-col gap-4 rounded-xl border border-ink/[0.08] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-medium text-ink/60">אימייל</p>
-            <p dir="ltr" className="mt-0.5 truncate text-end text-sm font-medium text-ink">
+            <p
+              dir="ltr"
+              className="mt-0.5 truncate text-end text-sm font-medium text-ink"
+              data-ph-mask
+            >
               {user.email}
             </p>
           </div>

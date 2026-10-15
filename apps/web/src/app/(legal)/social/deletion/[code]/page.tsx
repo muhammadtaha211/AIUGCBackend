@@ -33,7 +33,12 @@ export default async function DeletionStatusPage({
       <p className="mt-6 text-[15px] leading-relaxed text-ink/80">
         {status ? (
           <>
-            {DELETION_DONE.before} <Ltr>{code}</Ltr> {DELETION_DONE.after}
+            {DELETION_DONE.before}{" "}
+            {/* The confirmation code is a code: hidden in a recording (vault 0110). */}
+            <span data-ph-mask>
+              <Ltr>{code}</Ltr>
+            </span>{" "}
+            {DELETION_DONE.after}
           </>
         ) : (
           DELETION_NOT_FOUND
