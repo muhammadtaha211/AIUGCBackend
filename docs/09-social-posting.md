@@ -955,7 +955,8 @@ target user's TikTok app on a phone beside the screen:
 
 **PR 4 — TikTok, in the sandbox.** On tavnit.ai after PR 4 merges and deploys, the box on
 `origin/main`, the sandbox pair placed (§Runbook: the TikTok app), the sandbox's target user. Before
-the merge: `db push` of **0064** and **0065** with their read-backs (the 0060 rule — the build names
+the merge: ~~`db push` of **0064** and **0065** with their read-backs~~ **done 2026-10-17**, read back
+before and after (vault `production-migration-push-log`) (the 0060 rule — the build names
 the new columns in every read).
 
 - (t1) connect → the TikTok card lists the account with its name and picture; read back

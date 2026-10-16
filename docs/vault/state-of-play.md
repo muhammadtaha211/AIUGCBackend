@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-16
+updated: 2026-10-17
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -874,7 +874,7 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, PR #107 OPEN (not merged); 0064/0065 NOT pushed
+## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, PR #107 OPEN (not merged); 0064/0065 PUSHED 2026-10-17
 
 [[0115-tiktok-inbox-posting-pr4]] (his seven decisions, his five approval changes, the planning
 defaults he approved); facts [[tiktok-api-attaches-no-sound-2026-10-16]] and
@@ -884,8 +884,10 @@ prompt and the approved plan are in the repo (`docs/claude/prompts/`, `docs/clau
 
 **What exists (MEASURED, on the branch):** migrations **0064** (`scheduled_post_status` +
 `delivered`, alone) and **0065** (`social_accounts.access_token_expires_at`,
-`scheduled_posts.delivered_at`) — written, pinned in `migrations.test.ts`, **not pushed**; the push
-goes before the merge (the 0060 rule), on his OK (granted in the plan approval). `providers/tiktok.ts`
+`scheduled_posts.delivered_at`) — pinned in `migrations.test.ts`, **pushed 2026-10-17** before the
+merge (the 0060 rule) on his instruction in session, read back before and after: `delivered` after
+`publishing`, both columns `timestamp with time zone` nullable, row counts unchanged, ledger 66 /
+0000 / 0065 ([[production-migration-push-log]]). `providers/tiktok.ts`
 (Login Kit web, flat OAuth errors, the PULL inbox init, status, the webhook signature, a DRY_RUN
 stub); the TikTok section of `pipelines/social.ts` (connect upsert, tokens refreshed under a row
 lock, the inbox delivery through `auth.tavnit.ai`, the webhook's events, the daily half);
@@ -1583,8 +1585,8 @@ button, the tag, the flow, the sound picker, the calendar, the notice, the failu
 [[0108-social-posting-four-ui-fixes-after-pr3]]; this line said "BUILT … next: his review and merge"
 until 2026-10-16). PR 3's live checks in 0107's order are still unreported (docs/09 §Live-test
 checklist, PR 3). **PR 4 — TikTok inbox posting — BUILT 2026-10-16** on `feat/tiktok-inbox-posting`,
-PR #107 open ([[0115-tiktok-inbox-posting-pr4]]; the "What landed" entry above); next, each his OK: the
-push of 0064/0065 with read-backs, the merge, the sandbox pair on Vercel and the box, the box pull,
+PR #107 open ([[0115-tiktok-inbox-posting-pr4]]; the "What landed" entry above); 0064/0065 PUSHED 2026-10-17; next, each
+his OK: the merge, the sandbox pair on Vercel and the box, the box pull,
 the sandbox live checks (docs/09 checklist PR 4). The env names and the live-test steps are under
 "Owed founder actions".
 
@@ -1893,10 +1895,12 @@ env value is placed anywhere yet.
 muhammad@tavnit.ai → his Gmail; Resend's records untouched.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0062 applied, ledger clean at 63 rows, no gaps, nothing pending** — MEASURED
-2026-10-14 right after the founder-authorized 0061/0062 push, read-only against
-`supabase_migrations.schema_migrations` (count 63, first `0000`, last `0062`); `origin/main`
-holds the same 63 files after PR #97 ([[production-migration-push-log]]). _(This line said
+**Migrations 0000–0065 applied, ledger clean at 66 rows, no gaps, nothing pending** — MEASURED
+2026-10-17 right after the founder-authorized 0064/0065 push (TikTok, PR #107 — pushed before its
+merge, so `origin/main` holds 0000–0063 until #107 merges), read-only against
+`supabase_migrations.schema_migrations` (count 66, first `0000`, last `0065`)
+([[production-migration-push-log]]). _(This line said 0000–0062 / 63 rows until 2026-10-17 and
+missed the 0063 push of 2026-10-15.)_ _(This line said
 0000–0059 / 60 rows until today and missed the 0060 push of 2026-10-11.)_ _(The earlier text of this paragraph recorded the 0049 push of
 2026-10-01 and a 49-files-against-50-rows interval that has long since closed.)_ The earlier 49-row line corrected a stale "0000–0047 / 48 rows" here;
 **CLAUDE.md still says 0000–0047 and is now the stale copy.** (Not resolved: CLAUDE.md in the tree
@@ -2009,9 +2013,9 @@ the 2026-09-26 custom domain (founder-reported):**
   card and its outcome lines), `apps/web/src/lib/social-posting-ui.ts` (the inbox note, the done
   lines, the no-account lines, the pending-cap refusal, the delivered and deferred labels),
   `packages/core/src/social-copy.ts` (TikTok's `quota_exhausted` lines) — final wording of the
-  inbox lines after the live run shows where the video lands (his approval §1); 2. the push of
-  **0064 and 0065** BEFORE the merge, with their read-backs (granted in the approval; the dry-run is
-  in the task report); 3. the merge (Vercel deploys); 4. the **sandbox** pair as
+  inbox lines after the live run shows where the video lands (his approval §1); 2. ~~the push of
+  **0064 and 0065** BEFORE the merge, with their read-backs~~ DONE 2026-10-17 on his instruction
+  ([[production-migration-push-log]]); 3. the merge (Vercel deploys); 4. the **sandbox** pair as
   `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` on Vercel Production (redeploy) and in the box's
   `apps/worker/.env` (docs/09 §Runbook: the TikTok app — the no-print proof), then the box pull and
   restart; 5. confirm in TikTok's console: the sandbox's webhook field holds
