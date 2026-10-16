@@ -870,7 +870,11 @@ export async function cancelScheduledPost(
 }
 
 /** The /home notice's "הבנתי": every failed post of the account stops counting. */
-export async function acknowledgeFailedPosts(db: Db, userId: string): Promise<number> {
+export async function acknowledgeFailedPosts(
+  db: Db,
+  userId: string,
+  platforms?: readonly SocialPlatform[],
+): Promise<number> {
   const rows = await db
     .update(scheduledPosts)
     .set({ failureAcknowledgedAt: new Date() })
@@ -879,6 +883,7 @@ export async function acknowledgeFailedPosts(db: Db, userId: string): Promise<nu
         eq(scheduledPosts.userId, userId),
         eq(scheduledPosts.status, "failed"),
         isNull(scheduledPosts.failureAcknowledgedAt),
+        platformIn(scheduledPosts.platform, platforms),
       ),
     )
     .returning({ id: scheduledPosts.id });
@@ -1784,6 +1789,12 @@ async function tiktokToken(db: Db, accountId: string): Promise<TiktokTokenOutcom
       tokens = await getTiktokProvider().refresh(openSecret(account.refreshTokenEnc, aad));
     } catch (err) {
       if (isTiktokTokenLapse(err)) return { lapsed: (err as Error).message };
+      // Any other refusal of the token endpoint (invalid_client, a key and secret
+      // that do not match) is our configuration, not TikTok refusing a video:
+      // internal_error, never platform_refused.
+      if (err instanceof TiktokApiError) {
+        throw new PermanentError(`tiktok token refresh refused: ${err.message}`);
+      }
       throw err;
     }
     await tx
@@ -1935,10 +1946,15 @@ async function publishTiktok(
     state.polls = 0;
     delete state.deferredSince;
     await ctx.checkpoint({ ...state });
+  }
+  // The row learns the upload's id — again on a resumed run when the write after
+  // the checkpoint was lost: the webhook, the daily poll and the removal find the
+  // post by it.
+  if (post.providerContainerId !== state.publishId) {
     await db
       .update(scheduledPosts)
-      .set({ providerContainerId: publishId, deferredUntil: null, updatedAt: new Date() })
-      .where(eq(scheduledPosts.id, postId));
+      .set({ providerContainerId: state.publishId, deferredUntil: null, updatedAt: new Date() })
+      .where(and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "publishing")));
   }
 
   const [current] = await db
@@ -1980,6 +1996,12 @@ async function publishTiktok(
         // one fresh upload, never two.
         const fresh: PublishState = { reinitiated: true };
         await ctx.checkpoint({ ...fresh });
+        // The failed upload's id goes: until the fresh one lands the post holds
+        // nothing at TikTok, so a cap wait stays cancellable and a removal fails it.
+        await db
+          .update(scheduledPosts)
+          .set({ providerContainerId: null, updatedAt: new Date() })
+          .where(and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "publishing")));
         ctx.log.warn({ postId, reason }, "tiktok upload failed; initiating once more");
         return { kind: "reschedule", delayMs: 0, state: { ...fresh } };
       }
@@ -2148,53 +2170,57 @@ async function removeTiktokAuthorization(
   opts: { openId: string; at: Date; reason: unknown },
 ): Promise<{ accounts: number; failed: number }> {
   const why = `authorization removed in TikTok (reason ${String(opts.reason ?? "?")})`;
-  const accounts = await db
-    .update(socialAccounts)
-    .set({
-      status: "disconnected",
-      accessTokenEnc: null,
-      refreshTokenEnc: null,
-      userTokenEnc: null,
-      accessTokenExpiresAt: null,
-      lastError: why,
-      disconnectedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(socialAccounts.platform, "tiktok"),
-        eq(socialAccounts.externalId, opts.openId),
-        inArray(socialAccounts.status, ["connected", "expired"]),
-        lte(socialAccounts.connectedAt, opts.at),
-      ),
-    )
-    .returning({ id: socialAccounts.id });
-  let failed = 0;
-  if (accounts.length > 0) {
-    // Waiting = nothing at TikTok yet: scheduled, or publishing with no upload.
-    const waiting = await db
-      .select({ id: scheduledPosts.id })
-      .from(scheduledPosts)
+  // One transaction: a fault failing a post rolls the disconnect back too, so
+  // TikTok's retry replays both halves (failPost nests as a savepoint).
+  return db.transaction(async (tx) => {
+    const accounts = await tx
+      .update(socialAccounts)
+      .set({
+        status: "disconnected",
+        accessTokenEnc: null,
+        refreshTokenEnc: null,
+        userTokenEnc: null,
+        accessTokenExpiresAt: null,
+        lastError: why,
+        disconnectedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(
         and(
-          inArray(
-            scheduledPosts.socialAccountId,
-            accounts.map((a) => a.id),
-          ),
-          or(
-            eq(scheduledPosts.status, "scheduled"),
-            and(
-              eq(scheduledPosts.status, "publishing"),
-              isNull(scheduledPosts.providerContainerId),
+          eq(socialAccounts.platform, "tiktok"),
+          eq(socialAccounts.externalId, opts.openId),
+          inArray(socialAccounts.status, ["connected", "expired"]),
+          lte(socialAccounts.connectedAt, opts.at),
+        ),
+      )
+      .returning({ id: socialAccounts.id });
+    let failed = 0;
+    if (accounts.length > 0) {
+      // Waiting = nothing at TikTok yet: scheduled, or publishing with no upload.
+      const waiting = await tx
+        .select({ id: scheduledPosts.id })
+        .from(scheduledPosts)
+        .where(
+          and(
+            inArray(
+              scheduledPosts.socialAccountId,
+              accounts.map((a) => a.id),
+            ),
+            or(
+              eq(scheduledPosts.status, "scheduled"),
+              and(
+                eq(scheduledPosts.status, "publishing"),
+                isNull(scheduledPosts.providerContainerId),
+              ),
             ),
           ),
-        ),
-      );
-    for (const row of waiting) {
-      if (await failPost(db, row.id, "connection_expired", why)) failed++;
+        );
+      for (const row of waiting) {
+        if (await failPost(tx as Db, row.id, "connection_expired", why)) failed++;
+      }
     }
-  }
-  return { accounts: accounts.length, failed };
+    return { accounts: accounts.length, failed };
+  });
 }
 
 /**

@@ -45,10 +45,10 @@ only: the video is in the owner's TikTok and waits for them to post it). TikTok 
 already named for it: `refresh_token_enc` + `refresh_expires_at`, `provider_container_id` = the
 publish id, `provider_media_id` = TikTok's post id (kept as text: 19 digits overflow a JS number).
 
-| table             | one row per                                                                           | notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `social_accounts` | connected platform account, owned by the **Tavnit account** (`users`), not a business | `external_id` = IG user id / TikTok open_id; `page_id`/`page_name`/`fb_user_id` (Instagram); `access_token_enc` = the **Page token** (Meta: no expiry) or TikTok's 24-h access token; `user_token_enc` = the ~60-day User token the sound search is documented against; `status` connected / expired / disconnected / deleted; one LIVE row per account (`social_accounts_live_idx`, partial unique on connected+expired)                                                                                                 |
-| `scheduled_posts` | video × account                                                                       | `scheduled_at` (the instant) + `timezone` (display); `caption`, `sound` (a jsonb snapshot of the picked catalogue row, Instagram only), `ai_label` (the customer's "made with AI" tick, false by default — 0060, decision 0102); `status` scheduled / publishing / posted / failed / cancelled; `provider_container_id`, `provider_media_id`, `permalink`; `failure_kind` (closed set below), `failure_detail` (diagnostic, never shown), `failure_acknowledged_at`; `deferred_until` while waiting out Instagram's quota |
+| table             | one row per                                                                           | notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `social_accounts` | connected platform account, owned by the **Tavnit account** (`users`), not a business | `external_id` = IG user id / TikTok open_id; `page_id`/`page_name`/`fb_user_id` (Instagram); `access_token_enc` = the **Page token** (Meta: no expiry) or TikTok's 24-h access token; `user_token_enc` = the ~60-day User token the sound search is documented against; `status` connected / expired / disconnected / deleted; one LIVE row per account (`social_accounts_live_idx`, partial unique on connected+expired)                                                                                                                                                               |
+| `scheduled_posts` | video × account                                                                       | `scheduled_at` (the instant) + `timezone` (display); `caption`, `sound` (a jsonb snapshot of the picked catalogue row, Instagram only), `ai_label` (the customer's "made with AI" tick, false by default — 0060, decision 0102); `status` scheduled / publishing / delivered (TikTok only, 0064) / posted / failed / cancelled; `provider_container_id`, `provider_media_id`, `permalink`; `failure_kind` (closed set below), `failure_detail` (diagnostic, never shown), `failure_acknowledged_at`; `deferred_until` while waiting out Instagram's quota or TikTok's pending-share cap |
 
 Both are **server-only**: RLS on, no policies, read through `getDb()` with an explicit `user_id`
 filter in every route, exactly like `feedback`. The project exposes no new table to the Data API
@@ -252,10 +252,12 @@ under Instagram's.
 | `{"access":"named","userIds":["<uuid>", …]}` | admins, plus the listed accounts (Meta's reviewer, say) |
 | `{"access":"everyone"}`                      | every signed-in account                                 |
 
-`getPostingAccess(db, userId)` answers `allowed` for an admin always, else per the key. **A value
-that does not parse hides the feature** (admins still see it) — a typo must not turn a customer's
-404 into an error page. Every page and route the web PRs add checks it and answers 404 to a hidden
-account; the settings page renders no Integrations section. The one exception is Meta's
+`getPlatformAccess(db, userId)` answers each platform: an admin always, else per that platform's key.
+**A value that does not parse hides that platform** (admins still see it) — a typo must not turn a
+customer's 404 into an error page. `getPostingAccess` answers `allowed` when any platform does; the
+shared pages and routes check it (and filter what they show by platform), each platform's own routes
+check that platform, and a hidden account gets a 404; with no platform allowed, the settings page
+renders no Integrations section. The one exception is Meta's
 data-deletion callback and its status page, which Meta calls, not a customer. Each change is one
 statement in the SQL editor, no deploy.
 
@@ -824,6 +826,9 @@ moved to now on every connect). Tokens never reach the browser.
 transaction holding `SELECT … FOR UPDATE` on the account row and re-reading after the lock, and
 stores every value TikTok returns (rotation-safe). A lapse (`invalid_grant`, `access_token_invalid`,
 `scope_not_authorized`, a missing token) marks the account `expired` — the existing pill and notice.
+Any other refusal of the token endpoint (`invalid_client` — a key and secret that do not match) is
+our configuration: the post fails as `internal_error`, never as TikTok refusing the video, and the
+account stays connected.
 
 **The transfer: `PULL_FROM_URL` through `https://auth.tavnit.ai`.** The Supabase custom domain
 (0063) fronts Storage: a signed render URL fetched through it answers 200 `video/mp4` with no
@@ -843,7 +848,8 @@ Instagram run is untouched):
 2. No publish id yet: a post waiting out the cap first claims its row back (`deferred_until` cleared
    where the post is still `publishing` — a cancel that landed in the wait wins and nothing reaches
    TikTok); the render must keep its file (`file_missing`); init → **checkpoint `{publishId}` before
-   anything else**, then `provider_container_id`. A 403 pending cap → wait hourly
+   anything else**, then `provider_container_id` (written again on a resumed run when the write
+   after the checkpoint was lost — the webhook and the daily poll find the post by it). A 403 pending cap → wait hourly
    (`deferred_until`, cancellable), `quota_exhausted` after a day; a 401 → `connection_expired`;
    another refusal (a ban, `url_ownership_unverified`) → `platform_refused` with TikTok's code in
    the detail; 429, 5xx or the network → the queue's retry (an ambiguous init may leave a spare
@@ -853,8 +859,8 @@ Instagram run is untouched):
    one status read, each poll its own run 60 s apart (a reschedule, so the lane is free between
    them), at most **65** (TikTok's pull hour, with room): `PROCESSING_*` → again;
    `SEND_TO_USER_INBOX` → **`delivered`**; `PUBLISH_COMPLETE` → posted; `FAILED` → `auth_removed` is
-   `connection_expired`, `internal` or `video_pull_failed` get **one** fresh upload and then
-   `platform_timeout` / `platform_refused`, anything else `platform_refused`; 65 polls →
+   `connection_expired`, `internal` or `video_pull_failed` get **one** fresh upload (the failed upload's id is dropped
+   first, so a cap wait after it stays cancellable) and then `platform_timeout` / `platform_refused`, anything else `platform_refused`; 65 polls →
    `platform_timeout`.
 4. The nets: the last attempt and the orphan sweep read the status for a checkpointed publish id
    before calling a TikTok post failed (delivered or posted wins).
@@ -875,7 +881,8 @@ text (a 19-digit id overflows a JS number). Handled (`processTiktokEvent`):
   Tavnit account) becomes `disconnected` — it leaves חיבורים, like ניתוק — with its tokens erased,
   and its posts still waiting (`scheduled`, or `publishing` with no upload) **fail now as
   `connection_expired`**: the notice and the failure email reach the owner at once. A row
-  reconnected after the event keeps its connection (`connected_at` moved on reconnect);
+  reconnected after the event keeps its connection (`connected_at` moved on reconnect). Both halves run
+  in one transaction, so a fault rolls the disconnect back and TikTok's retry replays all of it;
 - everything else → 200, nothing written — `post.publish.failed` too: the job's poll owns failure
   (the webhook would otherwise race the job's one fresh upload), and the nets cover a dead job.
 

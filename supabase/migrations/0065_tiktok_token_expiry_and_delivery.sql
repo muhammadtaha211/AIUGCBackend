@@ -3,8 +3,8 @@
 -- TikTok inbox posting (PR 4, decision 0115). Two nullable columns, no backfill:
 --
 --   social_accounts.access_token_expires_at — when the sealed TikTok access
---     token (access_token_enc, 24 h per TikTok) stops working; the worker and
---     the web refresh it inside a row lock when under 10 minutes remain.
+--     token (access_token_enc, 24 h per TikTok) stops working; the worker
+--     refreshes it inside a row lock when under 10 minutes remain.
 --     Instagram rows leave it null (its Page token has no expiry; the User
 --     token keeps user_token_expires_at).
 --   scheduled_posts.delivered_at — when a TikTok post reached the owner's inbox

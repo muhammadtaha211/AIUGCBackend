@@ -258,10 +258,13 @@ export const POST_STATUS_LABELS: Record<PostDisplayStatus, string> = {
 export const DEFERRED_LABEL_TIKTOK = "ממתין שטיקטוק תקבל עוד סרטונים לחשבון";
 
 /** The status's word for a post on this platform: the wait is worded per platform. */
+// DRAFT (PR 4): TikTok while the file is on its way — Tavnit sends to TikTok, it never publishes there.
+export const PUBLISHING_LABEL_TIKTOK = "בשליחה לטיקטוק…";
+
 export function postStatusLabel(status: PostDisplayStatus, platform: SocialPlatformKey): string {
-  return status === "deferred" && platform === "tiktok"
-    ? DEFERRED_LABEL_TIKTOK
-    : POST_STATUS_LABELS[status];
+  if (platform === "tiktok" && status === "deferred") return DEFERRED_LABEL_TIKTOK;
+  if (platform === "tiktok" && status === "publishing") return PUBLISHING_LABEL_TIKTOK;
+  return POST_STATUS_LABELS[status];
 }
 
 // DRAFT (PR 4): the post page of a TikTok post that reached the owner's TikTok.

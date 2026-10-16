@@ -6,6 +6,7 @@ import * as schema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { runLane } from "../src/jobs/worker";
 import {
+  acknowledgeFailedPosts,
   allowedPlatforms,
   cancelScheduledPost,
   failOrphanedPosts,
@@ -718,5 +719,85 @@ describe("TikTok inbox posting", () => {
     tiktok.statuses = [{ code: "SEND_TO_USER_INBOX" }];
     expect(await failOrphanedPosts(db)).toBeGreaterThanOrEqual(1);
     expect((await postRow(posts[0]!.id)).status).toBe("delivered");
+  });
+  // -------------------------------------------------------------------------
+  // The adversarial review's fixes (2026-10-16)
+  // -------------------------------------------------------------------------
+
+  it("a row write lost after the checkpoint is made good on the next run, so the webhook still finds the post", async () => {
+    const { accountId } = await freshAccount();
+    const { posts } = await scheduleTiktok([accountId]);
+    const post = posts[0]!;
+    tiktok.statuses = [{ code: "PROCESSING_DOWNLOAD" }, { code: "SEND_TO_USER_INBOX" }];
+    await lanePass();
+    const publishId = `${tiktok.idPrefix}1`;
+    // The checkpoint landed; the row write after it did not.
+    await db
+      .update(schema.scheduledPosts)
+      .set({ providerContainerId: null })
+      .where(eq(schema.scheduledPosts.id, post.id));
+    await makeRunnable();
+    await lanePass();
+    let row = await postRow(post.id);
+    expect(row.providerContainerId).toBe(publishId);
+    expect(row.status).toBe("delivered");
+    expect(tiktok.calls.initInboxPull).toBe(1);
+    await processTiktokEvent(
+      db,
+      event("post.publish.complete", JSON.stringify({ publish_id: publishId })),
+    );
+    row = await postRow(post.id);
+    expect(row.status).toBe("posted");
+  });
+
+  it("the one fresh upload drops the failed upload's id, so a cap wait after it can still be cancelled", async () => {
+    const { accountId } = await freshAccount();
+    const { posts } = await scheduleTiktok([accountId]);
+    const post = posts[0]!;
+    tiktok.statuses = [{ code: "FAILED", failReason: "internal" }];
+    // The first upload is accepted and FAILs; the fresh one meets TikTok's cap.
+    const accept = tiktok.initInboxPull.bind(tiktok);
+    let inits = 0;
+    tiktok.initInboxPull = async (token, url) => {
+      inits++;
+      if (inits === 2) throw tiktokRefusal("spam_risk_too_many_pending_share", 403);
+      return accept(token, url);
+    };
+    await lanePass();
+    // The fresh upload is a reschedule with no delay: it may already have run.
+    if (inits < 2) {
+      await makeRunnable();
+      await lanePass();
+    }
+    expect(inits).toBe(2);
+    const row = await postRow(post.id);
+    expect(row.status).toBe("publishing");
+    expect(row.deferredUntil).toBeInstanceOf(Date);
+    expect(row.providerContainerId).toBeNull();
+    const cancelled = await cancelScheduledPost(db, { userId, postId: post.id });
+    expect(cancelled.status).toBe("cancelled");
+  });
+
+  it("a refresh refused for our configuration (invalid_client) fails the post as internal_error and leaves the account connected", async () => {
+    const { accountId } = await freshAccount({ accessExpiresAt: new Date(Date.now() - 1000) });
+    const { posts } = await scheduleTiktok([accountId]);
+    tiktok.throwOn.refresh = tiktokRefusal("invalid_client", 401);
+    await lanePass();
+    expect((await postRow(posts[0]!.id)).failureKind).toBe("internal_error");
+    expect((await accountRow(accountId)).status).toBe("connected");
+    expect(tiktok.calls.initInboxPull).toBe(0);
+  });
+
+  it("acknowledging failures touches only the platforms the caller's switches allow", async () => {
+    const { accountId } = await freshAccount();
+    const { posts } = await scheduleTiktok([accountId], new Date(Date.now() + 3_600_000));
+    await db
+      .update(schema.scheduledPosts)
+      .set({ status: "failed", failureKind: "platform_refused", failedAt: new Date() })
+      .where(eq(schema.scheduledPosts.id, posts[0]!.id));
+    await acknowledgeFailedPosts(db, userId, ["instagram"]);
+    expect((await postRow(posts[0]!.id)).failureAcknowledgedAt).toBeNull();
+    await acknowledgeFailedPosts(db, userId, ["tiktok"]);
+    expect((await postRow(posts[0]!.id)).failureAcknowledgedAt).toBeInstanceOf(Date);
   });
 });

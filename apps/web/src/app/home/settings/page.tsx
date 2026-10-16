@@ -144,7 +144,8 @@ export default async function SettingsPage({
           const outcome = parseSocialOutcome(params.social);
           const outcomePlatform = parseSocialPlatform(params.p);
           let flash: SocialFlash | null = null;
-          if (outcome && outcome !== "connected") {
+          // A platform the switches hide gets no line, even from a hand-made address.
+          if (outcome && outcome !== "connected" && platforms.includes(outcomePlatform)) {
             // The "no account" line's advice follows the window the mode opens (0105).
             const mode =
               outcome === "none" && outcomePlatform === "instagram"

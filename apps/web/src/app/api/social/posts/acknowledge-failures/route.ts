@@ -12,7 +12,7 @@ export async function POST() {
   const auth = await requirePostingUser();
   if ("response" in auth) return auth.response;
   try {
-    const acknowledged = await acknowledgeFailedPosts(getDb(), auth.userId);
+    const acknowledged = await acknowledgeFailedPosts(getDb(), auth.userId, auth.platforms);
     return NextResponse.json({ ok: true, acknowledged });
   } catch (err) {
     return coreErrorResponse(err);

@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-16
-method: "Founder decisions of §2 of the task prompt 'PR 4: TikTok inbox posting' (2026-10-16, docs/claude/prompts/2026-10-16-tiktok-inbox-posting.md), each 'Not up for relitigation', with his reasons; his approval of the plan the same day 'with these changes' (five) and his explicit OKs (docs/claude/plans/2026-10-16-tiktok-inbox-posting.md §The founder's approval). TikTok's pages read live on 2026-10-16 through WebFetch by four independent readers and re-checked by three critics and a verifier (developers.tiktok.com/doc/: login-kit-web, oauth-user-access-token-management, oauth-error-handling, tiktok-api-v2-get-user-info, content-posting-api-get-started-upload-content, content-posting-api-reference-upload-video, content-posting-api-reference-get-video-status, content-posting-api-media-transfer-guide, webhooks-overview, webhooks-events, webhooks-verification, content-sharing-guidelines, add-a-sandbox, content-posting-api-reference-direct-post, tiktok-api-scopes, embed-player, getting-started-design-guidelines). MEASURED in the tree at feat/tiktok-inbox-posting: packages/core/src/providers/tiktok.ts, packages/core/src/pipelines/social.ts (the TikTok section, getPlatformAccess, assertAccountCaps, schedulePosts), packages/core/src/pipelines/social-failure-email.ts, supabase/migrations/0064, 0065; packages/core/test/tiktok.test.ts (16), social-tiktok.test.ts (23), social-failure-email.test.ts (24), migrations.test.ts (31), passing 2026-10-16. The custom-domain probe: [[custom-domain-serves-storage-2026-10-16]]. No migration applied, no env change, no TikTok call, no deploy."
+method: "Founder decisions of §2 of the task prompt 'PR 4: TikTok inbox posting' (2026-10-16, docs/claude/prompts/2026-10-16-tiktok-inbox-posting.md), each 'Not up for relitigation', with his reasons; his approval of the plan the same day 'with these changes' (five) and his explicit OKs (docs/claude/plans/2026-10-16-tiktok-inbox-posting.md §The founder's approval). TikTok's pages read live on 2026-10-16 through WebFetch by four independent readers and re-checked by three critics and a verifier (developers.tiktok.com/doc/: login-kit-web, oauth-user-access-token-management, oauth-error-handling, tiktok-api-v2-get-user-info, content-posting-api-get-started-upload-content, content-posting-api-reference-upload-video, content-posting-api-reference-get-video-status, content-posting-api-media-transfer-guide, webhooks-overview, webhooks-events, webhooks-verification, content-sharing-guidelines, add-a-sandbox, content-posting-api-reference-direct-post, tiktok-api-scopes, embed-player, getting-started-design-guidelines). MEASURED in the tree at feat/tiktok-inbox-posting: packages/core/src/providers/tiktok.ts, packages/core/src/pipelines/social.ts (the TikTok section, getPlatformAccess, assertAccountCaps, schedulePosts), packages/core/src/pipelines/social-failure-email.ts, supabase/migrations/0064, 0065; packages/core/test/tiktok.test.ts (17), social-tiktok.test.ts (27), social-failure-email.test.ts (24), migrations.test.ts (31); apps/web/test/social-connect.test.ts (36), social-schedule.test.ts (43), social-tiktok-webhook.test.ts (7) — passing 2026-10-16 on the branch after the diff review's fixes, each file in its own vitest run. The custom-domain probe: [[custom-domain-serves-storage-2026-10-16]]. No migration applied, no env change, no TikTok call, no deploy."
 source: founder
 ---
 
@@ -136,6 +136,14 @@ brand kit.
   and Instagram's glyph (`Instagram_Glyph_Black.svg`, Meta's brand pack), unaltered files under
   `apps/web/public/brand/` — TikTok's design guidelines forbid using its logos otherwise.
 - `named` stays by Tavnit user id.
+- From the adversarial review of the diff (2026-10-16; four lenses, a skeptic per lens; 15
+  findings survived, all fixed, none high): the publish id is written to the row again on a
+  resumed run; the one fresh upload drops the failed upload's id first; an authorization removal
+  is one transaction; a refresh refused for our configuration (`invalid_client`) fails the post as
+  `internal_error`, never as TikTok refusing it; acknowledging failures and the settings outcome
+  line follow the switches; each mark says its platform to screen readers where nothing visible
+  does; an expired account dims its picture and name, never the mark; a TikTok post on its way reads
+  «בשליחה לטיקטוק…» (DRAFT), not «מתפרסם…».
 
 ## Still open
 

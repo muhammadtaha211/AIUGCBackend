@@ -136,13 +136,16 @@ export function ScheduleFlow({
   // Above the buttons of whichever step submits.
   const inboxNote = mix.tiktok && <p className="mt-6 text-sm text-ink/60">{TIKTOK_INBOX_NOTE}</p>;
 
+  // A refusal is worded for the picks and the time it answered: either changing clears it.
   function toggle(id: string) {
+    setError(null);
     setPicked((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
   }
 
   function openWhen() {
+    setError(null);
     if (!when) {
       const suggested = defaultInstant(new Date());
       setWhen({ date: toDateInput(suggested), time: toTimeInput(suggested) });
@@ -222,7 +225,7 @@ export function ScheduleFlow({
                     disabled={expired}
                     aria-pressed={on}
                     onClick={() => toggle(account.id)}
-                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-start transition-colors duration-150 disabled:opacity-60 ${
+                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-start transition-colors duration-150 ${
                       on ? "border-ink bg-ink/[0.04]" : "border-ink/10 bg-white hover:bg-ink/[0.02]"
                     }`}
                   >
@@ -230,17 +233,20 @@ export function ScheduleFlow({
                       <img
                         src={account.pictureUrl}
                         alt=""
-                        className="size-10 shrink-0 rounded-full object-cover"
+                        className={`size-10 shrink-0 rounded-full object-cover ${expired ? "opacity-60" : ""}`}
                         data-ph-mask
                       />
                     ) : (
-                      <span className="size-10 shrink-0 rounded-full bg-ink/[0.08]" />
+                      <span
+                        className={`size-10 shrink-0 rounded-full bg-ink/[0.08] ${expired ? "opacity-60" : ""}`}
+                      />
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <PlatformMark platform={account.platform} className="size-3.5" />
+                        <PlatformMark platform={account.platform} className="size-3.5" labelled />
+                        {/* An expired account dims its picture and name, never the platform's mark. */}
                         <span
-                          className="block min-w-0 truncate text-sm font-medium text-ink"
+                          className={`block min-w-0 truncate text-sm font-medium text-ink ${expired ? "opacity-60" : ""}`}
                           data-ph-mask
                         >
                           <bdi>{account.displayName ?? account.username ?? ""}</bdi>
@@ -295,11 +301,13 @@ export function ScheduleFlow({
               max={new Date(horizon.maxScheduledAt)}
               isNow={isNow}
               onNow={() => {
+                setError(null);
                 const now = new Date();
                 setIsNow(true);
                 setWhen({ date: toDateInput(now), time: toTimeInput(now) });
               }}
               onChange={(next) => {
+                setError(null);
                 setIsNow(false);
                 setWhen(next);
               }}

@@ -218,7 +218,7 @@ export function PostDetail({
               className="size-6 shrink-0 rounded-full object-cover"
             />
           )}
-          <PlatformMark platform={post.account.platform} />
+          <PlatformMark platform={post.account.platform} labelled />
           <bdi className="truncate">{name}</bdi>
           {post.account.username && (
             <span dir="ltr" className="truncate text-xs text-ink/55">

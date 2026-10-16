@@ -1005,11 +1005,9 @@ describe("TikTok's connect (decision 0115)", () => {
       const found = await section(tiktoker, { social, p: "tiktok" });
       expect(found!.props.flash).toEqual({ kind: "error", text });
     }
-    // Without `p`, the same outcome is Instagram's line.
-    expect((await section(tiktoker, { social: "expired" }))!.props.flash).toEqual({
-      kind: "error",
-      text: ui.CONNECT_EXPIRED,
-    });
+    // Without `p` the outcome is Instagram's, and an account only TikTok's switch
+    // lets in gets no line for it — not even from a hand-made address.
+    expect((await section(tiktoker, { social: "expired" }))!.props.flash).toBeNull();
     // Every TikTok line is its own, and none sends the customer to Facebook.
     const texts = lines.map(([, text]) => text);
     expect(new Set(texts).size).toBe(texts.length);

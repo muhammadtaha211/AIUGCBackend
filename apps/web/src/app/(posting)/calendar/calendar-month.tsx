@@ -302,7 +302,11 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
-                        <PlatformMark platform={post.account.platform} className="size-3.5" />
+                        <PlatformMark
+                          platform={post.account.platform}
+                          className="size-3.5"
+                          labelled
+                        />
                         <span
                           className="block min-w-0 truncate text-sm font-medium text-ink"
                           data-ph-mask
@@ -348,7 +352,7 @@ function PostChip({ post }: { post: PostWire }) {
       ) : (
         <span className="size-4 shrink-0 rounded-full bg-ink/10" />
       )}
-      <PlatformMark platform={platform} className="size-3" />
+      <PlatformMark platform={platform} className="size-3" labelled />
       <span dir="ltr" className="tabular-nums">
         {formatTime(new Date(post.scheduledAt))}
       </span>
