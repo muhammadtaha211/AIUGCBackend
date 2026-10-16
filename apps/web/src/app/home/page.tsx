@@ -13,7 +13,7 @@ import {
   PERSONA_CARD_SIZES,
   pickSelectedBusiness,
 } from "@/lib/service-b-ui";
-import { postingAllowed } from "@/lib/social";
+import { userPlatforms } from "@/lib/social";
 import { PathwayCards } from "./pathway-cards";
 import { PostingNotice } from "./posting-notice";
 import { RendersStrip } from "./renders-strip";
@@ -110,9 +110,11 @@ async function HomeContent() {
   // Social posting's notice (PR 3): read only for an account the switch
   // allows — anyone else gets no query and no trace. Best-effort: a failed
   // read only hides the strip.
-  const notices = (await postingAllowed(user.id).catch(() => false))
-    ? await postingNotices(getDb(), user.id).catch(() => null)
-    : null;
+  const platforms = await userPlatforms(user.id).catch(() => []);
+  const notices =
+    platforms.length > 0
+      ? await postingNotices(getDb(), user.id, platforms).catch(() => null)
+      : null;
 
   // Best-effort: a failed catalog read only costs the warm cache.
   const catalog = await loadPersonaCatalog("b").catch(() => []);

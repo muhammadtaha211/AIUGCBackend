@@ -10,9 +10,11 @@
  * DRAFT are new in PR 3 — the singular and zero forms Appendix A left implicit,
  * the AI tick (0102 §1, 0107 §1), the גוש טקסט mix line (0102 §2), the refusals
  * Appendix A did not word — or a line of Appendix A with its TikTok half taken
- * out (no TikTok card until PR 4, 0102 §4). All wait for the founder's
- * approval at PR review. 0061's rules: no reach or results claim, the app's own
- * vocabulary (סרטון, פרסום, חשבון).
+ * out (no TikTok card until PR 4, 0102 §4). PR 4 (decision 0115) adds TikTok's
+ * lines, each marked DRAFT (PR 4); none names a Drafts folder — what the owner
+ * gets is TikTok's inbox notification (the founder's approval change 1). All
+ * wait for the founder's approval at PR review. 0061's rules: no reach or
+ * results claim, the app's own vocabulary (סרטון, פרסום, חשבון).
  */
 
 import type { SocialErrorCode } from "@aiugc/core";
@@ -26,18 +28,38 @@ export const SCHEDULE_BUTTON = "תזמון פרסום";
 export const TILE_TAG = "מתוזמן";
 /** FINAL (decision 0108 §1, the founder's word). */
 export const TILE_TAG_POSTED = "פורסם";
+/** FINAL (decision 0115 §3, the founder's word): TikTok's terminal word on inbox delivery. */
+export const TILE_TAG_DELIVERED = "נשלח לטיקטוק";
 
-export type PostTag = "scheduled" | "posted";
+export type SocialPlatformKey = "instagram" | "tiktok";
+export type PostTag = "scheduled" | "delivered" | "posted";
+export type PlatformTag = { platform: SocialPlatformKey; tag: PostTag };
+export type PlatformCounts = { waiting: number; delivered: number; posted: number };
 
 /**
- * The tile's tag (decision 0108 §1): "מתוזמן" while any post of the video
- * waits (scheduled, or publishing — a quota wait included), else "פורסם" once
- * at least one went out. A failed or cancelled post alone tags nothing.
+ * One platform's tag (decision 0108 §1, per platform since 0115 §3): "מתוזמן"
+ * while any of its posts waits (scheduled, or publishing — a quota or cap wait
+ * included); else TikTok's "נשלח לטיקטוק" while any draft sits delivered in the
+ * owner's TikTok (an unfinished draft outranks a posted one — it is the thing
+ * to act on), else "פורסם" once any went out. Instagram never has a delivered
+ * post, so its rule is unchanged. A failed or cancelled post alone tags nothing.
  */
-export function postTag(counts: { waiting: number; posted: number }): PostTag | null {
+export function postTag(counts: PlatformCounts): PostTag | null {
   if (counts.waiting > 0) return "scheduled";
+  if (counts.delivered > 0) return "delivered";
   if (counts.posted > 0) return "posted";
   return null;
+}
+
+/** The tile's tags: at most one per platform, Instagram first. */
+export function postTags(
+  byPlatform: Partial<Record<SocialPlatformKey, PlatformCounts>>,
+): PlatformTag[] {
+  return (["instagram", "tiktok"] as const).flatMap((platform) => {
+    const counts = byPlatform[platform];
+    const tag = counts ? postTag(counts) : null;
+    return tag ? [{ platform, tag }] : [];
+  });
 }
 
 /** Under the player while posts of this video wait. */
@@ -58,6 +80,17 @@ export const NO_ACCOUNT_TITLE = "עוד אין חשבון מחובר";
 // DRAFT: Appendix A's line without "או טיקטוק" (no TikTok card yet, 0102 §4) and
 // without "בהגדרות" (the button opens the Instagram pre-screen, not settings).
 export const NO_ACCOUNT_BODY = "מחברים חשבון אינסטגרם, וחוזרים לכאן לתזמן את הסרטון.";
+// DRAFT (PR 4): TikTok alone opens TikTok's connect; both open the חיבורים section.
+export const NO_ACCOUNT_BODY_TIKTOK = "מחברים חשבון טיקטוק, וחוזרים לכאן לתזמן את הסרטון.";
+// DRAFT (PR 4)
+export const NO_ACCOUNT_BODY_BOTH =
+  "מחברים חשבון אינסטגרם או טיקטוק בהגדרות, וחוזרים לכאן לתזמן את הסרטון.";
+
+/** The no-account card's body, by the platforms the account's switches open. */
+export function noAccountBody(platforms: readonly SocialPlatformKey[]): string {
+  if (platforms.includes("instagram") && platforms.includes("tiktok")) return NO_ACCOUNT_BODY_BOTH;
+  return platforms.includes("tiktok") ? NO_ACCOUNT_BODY_TIKTOK : NO_ACCOUNT_BODY;
+}
 export const NO_ACCOUNT_CTA = "לחיבור חשבון";
 // DRAFT: an expired account in the list, which cannot be picked.
 export const ACCOUNT_EXPIRED_HINT = "החיבור פג. מתחברים מחדש בהגדרות.";
@@ -79,6 +112,8 @@ export function retentionLine(date: string): string {
 
 export const STEP_CAPTION_TITLE = "כיתוב וסאונד";
 export const CAPTION_LABEL = "כיתוב";
+// DRAFT (PR 4): beside a TikTok account the caption is Instagram's alone.
+export const CAPTION_LABEL_INSTAGRAM = "כיתוב (אינסטגרם)";
 export const CAPTION_PLACEHOLDER = "מה כותבים ליד הסרטון? אפשר גם להשאיר ריק.";
 
 export function captionCounter(length: number, max: number): string {
@@ -136,6 +171,15 @@ export const AI_TICK_LABEL = "לסמן באינסטגרם שהסרטון נוצ�
 export const AI_TICK_HINT = "אינסטגרם דורשת לסמן סרטון מציאותי שנוצר או שונה ב־AI.";
 
 export const DAILY_CAP_LINE = "הגעתם למכסת הפרסומים היומית של אינסטגרם לחשבון הזה.";
+// DRAFT (PR 4, decision 0115): TikTok takes at most 5 videos a day that the owner has not finished.
+export const TIKTOK_PENDING_CAP_LINE =
+  "לחשבון הטיקטוק הזה כבר מתוזמנים 5 סרטונים ביממה שסביב המועד הזה, וטיקטוק לא מקבלת יותר. בחרו מועד אחר.";
+
+// DRAFT (PR 4, decision 0115 §2): above the submit whenever a TikTok account is
+// picked — TikTok takes only the file, and the owner finishes it from TikTok's
+// notification.
+export const TIKTOK_INBOX_NOTE =
+  "לטיקטוק נשלח רק הסרטון. כשמגיעה ההתראה מטיקטוק, פותחים אותה, מוסיפים סאונד וכיתוב ומפרסמים.";
 
 export const CONTINUE_BUTTON = "המשך";
 export const BACK_BUTTON = "חזרה";
@@ -145,6 +189,20 @@ export const DONE_TITLE = "תבנית ממשיכה מכאן";
 
 export function doneLine(date: string, time: string): string {
   return `הסרטון יפורסם ב־${date} בשעה ${time}. אפשר לשנות או לבטל בלוח הפרסומים עד שהפרסום מתחיל.`;
+}
+
+/** Which platforms the picked accounts are on. */
+export type PlatformMix = { instagram: boolean; tiktok: boolean };
+
+/** The done line by what was picked: Instagram's posts, TikTok's sends, or both. */
+export function doneLineFor(mix: PlatformMix, date: string, time: string): string {
+  if (!mix.tiktok) return doneLine(date, time);
+  if (!mix.instagram) {
+    // DRAFT (PR 4)
+    return `הסרטון יישלח לטיקטוק ב־${date} בשעה ${time}. אפשר לשנות או לבטל בלוח הפרסומים עד שהשליחה מתחילה.`;
+  }
+  // DRAFT (PR 4)
+  return `הסרטון יפורסם באינסטגרם ויישלח לטיקטוק ב־${date} בשעה ${time}. אפשר לשנות או לבטל בלוח הפרסומים עד שהפרסום מתחיל.`;
 }
 
 export const TO_CALENDAR = "ללוח הפרסומים";
@@ -161,9 +219,13 @@ export const TODAY_BUTTON = "היום";
 export const EMPTY_MONTH = "אין פרסומים בחודש הזה.";
 
 export type PostDisplayStatus =
-  "scheduled" | "publishing" | "deferred" | "posted" | "failed" | "cancelled";
+  "scheduled" | "publishing" | "deferred" | "delivered" | "posted" | "failed" | "cancelled";
 
-/** A post's chip, from its row: a quota wait is `publishing` with `deferredUntil` set. */
+/**
+ * A post's chip, from its row: a quota (or TikTok cap) wait is `publishing`
+ * with `deferredUntil` set; `delivered` is TikTok's file in the owner's TikTok,
+ * not yet posted (decision 0115) — never "פורסם".
+ */
 export function postDisplayStatus(post: {
   status: string;
   deferredUntil: string | Date | null;
@@ -172,6 +234,7 @@ export function postDisplayStatus(post: {
   if (
     post.status === "scheduled" ||
     post.status === "publishing" ||
+    post.status === "delivered" ||
     post.status === "posted" ||
     post.status === "failed" ||
     post.status === "cancelled"
@@ -185,10 +248,25 @@ export const POST_STATUS_LABELS: Record<PostDisplayStatus, string> = {
   scheduled: "מתוזמן",
   publishing: "מתפרסם…",
   deferred: "ממתין למכסת הפרסומים של אינסטגרם",
+  delivered: TILE_TAG_DELIVERED,
   posted: "פורסם",
   failed: "נכשל",
   cancelled: "בוטל",
 };
+
+// DRAFT (PR 4): a TikTok post waiting out TikTok's cap on unfinished videos.
+export const DEFERRED_LABEL_TIKTOK = "ממתין שטיקטוק תקבל עוד סרטונים לחשבון";
+
+/** The status's word for a post on this platform: the wait is worded per platform. */
+export function postStatusLabel(status: PostDisplayStatus, platform: SocialPlatformKey): string {
+  return status === "deferred" && platform === "tiktok"
+    ? DEFERRED_LABEL_TIKTOK
+    : POST_STATUS_LABELS[status];
+}
+
+// DRAFT (PR 4): the post page of a TikTok post that reached the owner's TikTok.
+export const TIKTOK_DELIVERED_LINE =
+  "הסרטון נשלח לטיקטוק. פותחים את ההתראה מטיקטוק באפליקציה, מוסיפים סאונד וכיתוב ומפרסמים.";
 
 export const POST_TITLE = "פרסום";
 export const FIELD_ACCOUNT = "חשבון";
@@ -265,5 +343,7 @@ export function socialErrorLine(code: SocialErrorCode, horizonDays: number): str
       return "סאונד אפשר לבחור רק לחשבון אינסטגרם."; // DRAFT
     case "instagram_daily_cap":
       return DAILY_CAP_LINE;
+    case "tiktok_pending_cap":
+      return TIKTOK_PENDING_CAP_LINE;
   }
 }

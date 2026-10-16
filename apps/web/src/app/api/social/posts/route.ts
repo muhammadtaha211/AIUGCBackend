@@ -28,7 +28,12 @@ export async function GET(request: Request) {
     return jsonError(400, INVALID_BODY);
   }
   try {
-    const items = await listScheduledPosts(getDb(), { userId: auth.userId, from, to });
+    const items = await listScheduledPosts(getDb(), {
+      userId: auth.userId,
+      from,
+      to,
+      platforms: auth.platforms,
+    });
     const posts = await Promise.all(
       items.filter((item) => item.post.status !== "cancelled").map(toPostWire),
     );
@@ -60,6 +65,7 @@ export async function POST(request: Request) {
       caption: body.caption,
       sound: body.sound ?? null,
       aiLabel: body.aiLabel === true,
+      platforms: auth.platforms,
     });
     return NextResponse.json({
       ok: true,

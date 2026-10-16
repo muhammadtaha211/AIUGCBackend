@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getDb, getMetaGraphProvider, upsertInstagramConnections } from "@aiugc/core";
-import { requirePostingUser } from "@/lib/social";
+import { requirePlatformUser } from "@/lib/social";
 import {
   checkOAuthReturn,
   decodeOAuthCookie,
@@ -25,7 +25,7 @@ import type { SocialOutcome } from "@/lib/social-ui";
  * and the wrapper already keeps the token out of every URL it logs.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requirePostingUser();
+  const auth = await requirePlatformUser("instagram");
   if ("response" in auth) return auth.response;
 
   const url = new URL(request.url);

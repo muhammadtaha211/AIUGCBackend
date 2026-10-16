@@ -1,16 +1,22 @@
 "use client";
 
+import { PLATFORM_LABELS } from "@aiugc/core/social-copy";
+import { PlatformMark } from "@/components/social/platform-mark";
 import { isActiveRenderStatus, renderStatusLabel, type RenderRow } from "@/lib/service-b-ui";
-import { TILE_TAG, TILE_TAG_POSTED } from "@/lib/social-posting-ui";
+import { TILE_TAG, TILE_TAG_DELIVERED, TILE_TAG_POSTED } from "@/lib/social-posting-ui";
 
 const CHIP_COLORS: Record<string, string> = {
   released: "bg-accent/30 text-ink",
   failed: "bg-red-100 text-red-700",
 };
 
-/** Grey while a post waits, green once one went out — the calendar's colours. */
+/**
+ * Grey while a post waits, sky once TikTok has the file in the owner's TikTok,
+ * green once one went out — the calendar's colours.
+ */
 const POST_TAG = {
   scheduled: { label: TILE_TAG, className: "bg-ink/[0.06] text-ink/70" },
+  delivered: { label: TILE_TAG_DELIVERED, className: "bg-sky-100 text-sky-800" },
   posted: { label: TILE_TAG_POSTED, className: "bg-emerald-100 text-emerald-800" },
 };
 
@@ -47,7 +53,7 @@ export function RenderTile({
   sweeping = false,
   onPlay,
 }: {
-  render: Pick<RenderRow, "id" | "status" | "thumbUrl" | "refunded" | "postTag">;
+  render: Pick<RenderRow, "id" | "status" | "thumbUrl" | "refunded" | "postTags">;
   /** The head render's frame fraction, whole percent. Strip only. */
   percent?: number;
   /** Shimmer the empty tile — only while something is actually claiming it. */
@@ -109,16 +115,22 @@ export function RenderTile({
       )}
       <div className="mt-1.5 flex flex-wrap justify-center gap-1">
         <StatusChip status={render.status} />
-        {/* Social posting's tag (decisions 0101 §10, 0108 §1): "מתוזמן" while a
-            post of this video waits, "פורסם" once one went out. The list route
-            sends it only to an account the switch allows. */}
-        {render.postTag && (
+        {/* Social posting's tags (decisions 0101 §10, 0108 §1, per platform
+            since 0115 §3): at most one per platform, Instagram first, each its
+            mark and its word. The list route sends them only for the platforms
+            the account's switches allow. A size down from the status chip, so
+            "נשלח לטיקטוק" stays on one line in the strip's 96px tile (measured
+            in Heebo at 94px); the 80px phone tile wraps it. */}
+        {render.postTags?.map(({ platform, tag }) => (
           <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${POST_TAG[render.postTag].className}`}
+            key={platform}
+            className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${POST_TAG[tag].className}`}
           >
-            {POST_TAG[render.postTag].label}
+            <PlatformMark platform={platform} className="size-3" />
+            <span className="sr-only">{`${PLATFORM_LABELS[platform]}: `}</span>
+            {POST_TAG[tag].label}
           </span>
-        )}
+        ))}
       </div>
       {/* Only when the refund really happened — never claim money
           moved when it didn't (same rule as failedRenderNotice). */}

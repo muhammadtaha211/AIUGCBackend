@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AiTick } from "@/components/social/ai-tick";
+import { PlatformMark } from "@/components/social/platform-mark";
 import { SoundPicker } from "@/components/social/sound-picker";
 import { WhenFields } from "@/components/social/when-fields";
 import { Button } from "@/components/ui/button";
@@ -36,12 +37,13 @@ import {
   NO_CAPTION,
   NO_SOUND,
   NOT_PENDING_LINE,
-  POST_STATUS_LABELS,
   POST_TITLE,
   postDisplayStatus,
+  postStatusLabel,
   RESCHEDULE_BUTTON,
   SAVE_BUTTON,
   SAVED_LINE,
+  TIKTOK_DELIVERED_LINE,
   TO_CALENDAR,
   VIEW_POST_BUTTON,
 } from "@/lib/social-posting-ui";
@@ -75,7 +77,9 @@ function formFrom(post: PostWire): Form {
  * with it. Edit while `scheduled` (core's guard); cancel while nothing reached
  * the platform — not started, or waiting out Instagram's quota; the 409 line
  * when the job got there first. Times render after mount, in the browser's
- * zone (0107 §4) — the server's would be wrong for the customer.
+ * zone (0107 §4) — the server's would be wrong for the customer. A TikTok post
+ * has no caption, sound or AI tick (decision 0115 §2) — the owner adds them in
+ * TikTok — so none is shown or edited; once delivered, the line says what next.
  */
 export function PostDetail({
   post: initialPost,
@@ -105,6 +109,7 @@ export function PostDetail({
   }, [initialPost]);
 
   const status = postDisplayStatus(post);
+  const instagram = post.account.platform === "instagram";
   const editable = post.status === "scheduled";
   const cancellable = editable || status === "deferred";
 
@@ -183,16 +188,23 @@ export function PostDetail({
               ? "bg-red-100 text-red-700"
               : status === "posted"
                 ? "bg-emerald-100 text-emerald-800"
-                : "bg-ink/[0.06] text-ink/75"
+                : status === "delivered"
+                  ? "bg-sky-100 text-sky-800"
+                  : "bg-ink/[0.06] text-ink/75"
           }`}
         >
-          {POST_STATUS_LABELS[status]}
+          {postStatusLabel(status, post.account.platform)}
         </span>
       </div>
 
       {post.failureLine && (
         <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {post.failureLine}
+        </p>
+      )}
+      {status === "delivered" && (
+        <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+          {TIKTOK_DELIVERED_LINE}
         </p>
       )}
 
@@ -206,6 +218,7 @@ export function PostDetail({
               className="size-6 shrink-0 rounded-full object-cover"
             />
           )}
+          <PlatformMark platform={post.account.platform} />
           <bdi className="truncate">{name}</bdi>
           {post.account.username && (
             <span dir="ltr" className="truncate text-xs text-ink/55">
@@ -226,7 +239,7 @@ export function PostDetail({
           )}
           {VIDEO_SERVICE_LABELS[post.render.service]}
         </dd>
-        {!editable && (
+        {!editable && instagram && (
           <>
             <dt className={field}>{FIELD_CAPTION}</dt>
             <dd className="whitespace-pre-wrap break-words text-sm text-ink">
@@ -264,33 +277,38 @@ export function PostDetail({
           />
           {problem && <p className="mt-3 text-sm text-red-700">{problem}</p>}
 
-          <label className="mt-5 block text-sm text-ink/70">
-            {FIELD_CAPTION}
-            <textarea
-              value={form.caption}
-              maxLength={CAPTION_MAX}
-              onChange={(event) => setForm({ ...form, caption: event.target.value })}
-              placeholder={CAPTION_PLACEHOLDER}
-              rows={4}
-              className="mt-1 w-full resize-y rounded-lg border border-ink/15 bg-white p-3 text-sm text-ink placeholder:text-ink/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            />
-          </label>
-          <p dir="ltr" className="mt-1 text-end text-xs tabular-nums text-ink/50">
-            {captionCounter(form.caption.length, CAPTION_MAX)}
-          </p>
+          {instagram && (
+            <>
+              <label className="mt-5 block text-sm text-ink/70">
+                {FIELD_CAPTION}
+                <textarea
+                  value={form.caption}
+                  maxLength={CAPTION_MAX}
+                  onChange={(event) => setForm({ ...form, caption: event.target.value })}
+                  placeholder={CAPTION_PLACEHOLDER}
+                  rows={4}
+                  className="mt-1 w-full resize-y rounded-lg border border-ink/15 bg-white p-3 text-sm text-ink placeholder:text-ink/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                />
+              </label>
+              <p dir="ltr" className="mt-1 text-end text-xs tabular-nums text-ink/50">
+                {captionCounter(form.caption.length, CAPTION_MAX)}
+              </p>
 
-          {post.account.platform === "instagram" && (
-            <SoundPicker
-              accountId={soundAccountId}
-              value={form.sound}
-              onChange={(sound) => setForm({ ...form, sound })}
-              downloadUrl={downloadUrl ?? undefined}
-              service={post.render.service}
-              voiced={voiced}
-            />
+              <SoundPicker
+                accountId={soundAccountId}
+                value={form.sound}
+                onChange={(sound) => setForm({ ...form, sound })}
+                downloadUrl={downloadUrl ?? undefined}
+                service={post.render.service}
+                voiced={voiced}
+              />
+
+              <AiTick
+                checked={form.aiLabel}
+                onChange={(aiLabel) => setForm({ ...form, aiLabel })}
+              />
+            </>
           )}
-
-          <AiTick checked={form.aiLabel} onChange={(aiLabel) => setForm({ ...form, aiLabel })} />
 
           <div className="mt-6">
             <Button

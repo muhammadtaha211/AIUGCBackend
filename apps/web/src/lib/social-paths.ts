@@ -14,6 +14,14 @@ export function startPath(opts: { returnTo: string | null; add: boolean }): stri
   return `/api/social/instagram/start${query(opts)}`;
 }
 
+/**
+ * TikTok's "חיבור חשבון" (decision 0115): straight to its start route — no
+ * pre-screen; the card's own lead says what happens. Carries the return address.
+ */
+export function tiktokStartPath(opts: { returnTo: string | null }): string {
+  return `/api/social/tiktok/start${query({ returnTo: opts.returnTo, add: false })}`;
+}
+
 /** The pre-screen's "ביטול": back where the customer came from. */
 export function preScreenCancelPath(returnTo: string | null): string {
   return returnTo ?? "/home/settings#connections";

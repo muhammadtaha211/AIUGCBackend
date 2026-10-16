@@ -10,7 +10,7 @@ import {
 } from "@aiugc/core";
 import { coreErrorResponse, requireRender, requireUser, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 import { renderDownloadFilename } from "@/lib/service-b-ui";
-import { postingAllowed } from "@/lib/social";
+import { userPlatforms } from "@/lib/social";
 
 /**
  * Poll a render. Status passes through core's states; the video (and thumb)
@@ -74,9 +74,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         body.thumbUrl = await storage.signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS);
       }
       // Best-effort: a failed switch read only hides the button.
-      if (render.filePath && (await postingAllowed(auth.userId).catch(() => false))) {
+      const platforms = render.filePath ? await userPlatforms(auth.userId).catch(() => []) : [];
+      if (platforms.length > 0) {
         body.scheduleHref = `/schedule/${id}`;
-        body.pendingPosts = (await pendingPostsByRender(db, [id])).get(id) ?? 0;
+        body.pendingPosts = (await pendingPostsByRender(db, [id], platforms)).get(id) ?? 0;
       }
     }
     if (render.status === "failed") {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb, searchInstagramSounds } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError } from "@/lib/api";
 import { isUuid } from "@/lib/service-b";
-import { requirePostingUser } from "@/lib/social";
+import { requirePlatformUser } from "@/lib/social";
 
 /**
  * GET /api/social/instagram/sounds?accountId=&kind=&q=&after= — the sound
@@ -13,7 +13,7 @@ import { requirePostingUser } from "@/lib/social";
  * User token is gone: the picker says so and the post goes on without a sound.
  */
 export async function GET(request: Request) {
-  const auth = await requirePostingUser();
+  const auth = await requirePlatformUser("instagram");
   if ("response" in auth) return auth.response;
   const params = new URL(request.url).searchParams;
   const accountId = params.get("accountId") ?? "";

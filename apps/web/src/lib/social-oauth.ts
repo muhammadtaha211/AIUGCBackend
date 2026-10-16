@@ -23,6 +23,17 @@ export const OAUTH_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60;
 export const OAUTH_WINDOW_MS = 30 * 60_000;
 export const INSTAGRAM_CALLBACK_PATH = "/api/social/instagram/callback";
 
+/**
+ * TikTok's round trip (decision 0115) uses the same cookie shape under its own
+ * name and path, so a TikTok connect and an Instagram one never spend each
+ * other's state. Its redirect URI is TikTok's console constant
+ * (TIKTOK_REDIRECT_URI in core), never the request's origin: TikTok matches it
+ * byte for byte, so only tavnit.ai completes a live connect.
+ */
+export const TIKTOK_OAUTH_COOKIE = "aiugc.tiktok_oauth";
+export const TIKTOK_OAUTH_COOKIE_PATH = "/api/social/tiktok";
+export const TIKTOK_CALLBACK_PATH = "/api/social/tiktok/callback";
+
 const cookieSchema = z.object({
   state: z.string().min(16),
   userId: z.string().uuid(),
@@ -164,12 +175,19 @@ export function instagramDialogUrl(opts: {
  */
 export function settingsOutcomePath(
   outcome: SocialOutcome,
-  opts: { returnTo: string | null; count?: number; accountId?: string },
+  opts: {
+    returnTo: string | null;
+    count?: number;
+    accountId?: string;
+    /** TikTok's round trip says so, so settings words its line for TikTok. */
+    platform?: "instagram" | "tiktok";
+  },
 ): string {
   if (outcome === "connected" && opts.returnTo) {
     return opts.returnTo.includes("#") ? opts.returnTo : `${opts.returnTo}#`;
   }
   const params = new URLSearchParams({ social: outcome });
+  if (opts.platform === "tiktok") params.set("p", "tiktok");
   if (outcome === "connected" && opts.count !== undefined) params.set("n", String(opts.count));
   if (outcome === "connected" && opts.accountId) params.set("id", opts.accountId);
   // A failed round trip keeps the return address, so the retry still lands there.

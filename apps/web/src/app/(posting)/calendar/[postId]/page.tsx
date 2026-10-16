@@ -13,7 +13,7 @@ import { SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 import { authedUser } from "@/lib/auth-user";
 import { isUuid } from "@/lib/service-b";
 import { renderDownloadFilename } from "@/lib/service-b-ui";
-import { postingAllowed } from "@/lib/social";
+import { userPlatforms } from "@/lib/social";
 import { toPostWire } from "@/lib/social-posting";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { PostDetail } from "./post-detail";
@@ -28,12 +28,15 @@ import { PostDetail } from "./post-detail";
 export default async function PostPage({ params }: { params: Promise<{ postId: string }> }) {
   const supabase = await createServerSupabase();
   const user = authedUser(await supabase.auth.getUser());
-  if (!user || !(await postingAllowed(user.id))) notFound();
+  if (!user) notFound();
+  // A post on a platform the account's switches hide reads as not found (0115).
+  const platforms = await userPlatforms(user.id);
+  if (platforms.length === 0) notFound();
 
   const { postId } = await params;
   if (!isUuid(postId)) notFound();
   const db = getDb();
-  const item = await getScheduledPostItem(db, { userId: user.id, postId });
+  const item = await getScheduledPostItem(db, { userId: user.id, postId, platforms });
   if (!item) notFound();
 
   const [render] = await db
@@ -47,7 +50,9 @@ export default async function PostPage({ params }: { params: Promise<{ postId: s
       })
     : null;
   const horizon = render ? await postingHorizon(db, render) : null;
-  const account = (await listSocialAccounts(db, user.id)).find((row) => row.id === item.account.id);
+  const account = (await listSocialAccounts(db, user.id, platforms)).find(
+    (row) => row.id === item.account.id,
+  );
   const format = (render?.params as { format?: string } | null)?.format;
 
   return (

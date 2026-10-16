@@ -189,13 +189,18 @@ export interface SoundChoice {
 /**
  * POST /api/social/posts's body. The AI label rides only when the customer
  * ticked it (0102 §1, 0107 §1): an unticked post sends no `aiLabel` at all, and
- * core then sends Instagram no label field either.
+ * core then sends Instagram no label field either. Caption, sound and the tick
+ * are Instagram's (decision 0115 §2): with no Instagram account picked they are
+ * not sent — an empty caption, no sound, no label — whatever the form still
+ * holds from an earlier pick.
  */
 export function scheduleRequestBody(input: {
   renderId: string;
   accountIds: string[];
   at: Date;
   timezone: string;
+  /** Whether an Instagram account is among the picked. */
+  instagram: boolean;
   caption: string;
   sound: SoundChoice | null;
   aiLabel: boolean;
@@ -205,8 +210,8 @@ export function scheduleRequestBody(input: {
     accountIds: input.accountIds,
     scheduledAt: input.at.toISOString(),
     timezone: input.timezone,
-    caption: input.caption,
-    sound: input.sound,
-    ...(input.aiLabel ? { aiLabel: true } : {}),
+    caption: input.instagram ? input.caption : "",
+    sound: input.instagram ? input.sound : null,
+    ...(input.instagram && input.aiLabel ? { aiLabel: true } : {}),
   };
 }

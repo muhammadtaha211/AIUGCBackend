@@ -100,7 +100,7 @@ export type RenderRow = {
   /** The tile's tag (decision 0108 §1): "scheduled" (מתוזמן) while a post of
    *  this video waits, "posted" (פורסם) once one went out and none waits, null
    *  for neither. Absent for an account the social-posting switch hides. */
-  postTag?: "scheduled" | "posted" | null;
+  postTags?: { platform: "instagram" | "tiktok"; tag: "scheduled" | "delivered" | "posted" }[];
 };
 
 /**

@@ -21,6 +21,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     const { cancelled } = await disconnectSocialAccount(getDb(), {
       userId: auth.userId,
       accountId: id,
+      platforms: auth.platforms,
     });
     return NextResponse.json({ ok: true, cancelled });
   } catch (err) {

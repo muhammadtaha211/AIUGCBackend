@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { PLATFORM_LABELS } from "@aiugc/core/social-copy";
+import { PlatformMark } from "@/components/social/platform-mark";
 import { Spinner } from "@/components/ui/icons";
 import { formatTime, toDateInput } from "@/lib/schedule-form";
 import {
   CALENDAR_TITLE,
   EMPTY_MONTH,
   NEXT_MONTH,
-  POST_STATUS_LABELS,
   postDisplayStatus,
   type PostDisplayStatus,
+  postStatusLabel,
   PREV_MONTH,
   TODAY_BUTTON,
 } from "@/lib/social-posting-ui";
@@ -19,11 +21,16 @@ import { apiFetch } from "@/lib/use-api";
 
 type Month = { year: number; month: number }; // month 0–11
 
-/** Grey while waiting, green once posted, red when it failed (0101 §8). */
+/**
+ * Grey while waiting, sky once TikTok has the file in the owner's TikTok
+ * (decision 0115 — the tile's colour), green once posted, red when it failed
+ * (0101 §8).
+ */
 const CHIP: Record<PostDisplayStatus, string> = {
   scheduled: "bg-ink/[0.06] text-ink/75",
   publishing: "bg-ink/[0.06] text-ink/75",
   deferred: "bg-ink/[0.06] text-ink/75",
+  delivered: "bg-sky-100 text-sky-800",
   posted: "bg-emerald-100 text-emerald-800",
   failed: "bg-red-100 text-red-700",
   cancelled: "bg-ink/[0.03] text-ink/40",
@@ -32,6 +39,7 @@ const DOT: Record<PostDisplayStatus, string> = {
   scheduled: "bg-ink/40",
   publishing: "bg-ink/40",
   deferred: "bg-ink/40",
+  delivered: "bg-sky-500",
   posted: "bg-emerald-500",
   failed: "bg-red-500",
   cancelled: "bg-ink/15",
@@ -73,8 +81,8 @@ function accountLabel(post: PostWire): string {
 
 /**
  * The month grid (Appendix A's calendar): Sunday first, right to left, each
- * day its posts as chips — the account's picture, the time, the colour of the
- * status; cancelled posts are not on the grid (0107 §4). Below md the cells
+ * day its posts as chips — the account's picture, the platform's mark, the
+ * time, the colour of the status; cancelled posts are not on the grid (0107 §4). Below md the cells
  * keep seven columns with dots, and the chosen day's list sits under the grid.
  * Days are the browser's own (0107 §4: the browser's zone), so the month is
  * fetched a day wider on each side and bucketed here.
@@ -293,15 +301,21 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                       <span className="aspect-[9/16] w-8 shrink-0 rounded bg-ink/[0.06]" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-ink" data-ph-mask>
-                        <bdi>{accountLabel(post)}</bdi>
+                      <span className="flex items-center gap-1.5">
+                        <PlatformMark platform={post.account.platform} className="size-3.5" />
+                        <span
+                          className="block min-w-0 truncate text-sm font-medium text-ink"
+                          data-ph-mask
+                        >
+                          <bdi>{accountLabel(post)}</bdi>
+                        </span>
                       </span>
                       <span dir="ltr" className="block text-end text-xs tabular-nums text-ink/55">
                         {formatTime(new Date(post.scheduledAt))}
                       </span>
                     </span>
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${CHIP[status]}`}>
-                      {POST_STATUS_LABELS[status]}
+                      {postStatusLabel(status, post.account.platform)}
                     </span>
                   </Link>
                 </li>
@@ -316,10 +330,11 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
 
 function PostChip({ post }: { post: PostWire }) {
   const status = postDisplayStatus(post);
+  const platform = post.account.platform;
   return (
     <Link
       href={`/calendar/${post.id}`}
-      title={`${accountLabel(post)} · ${POST_STATUS_LABELS[status]}`}
+      title={`${PLATFORM_LABELS[platform]} · ${accountLabel(post)} · ${postStatusLabel(status, platform)}`}
       className={`flex items-center gap-1 rounded-md px-1 py-0.5 text-[11px] transition-opacity duration-150 hover:opacity-80 ${CHIP[status]}`}
       // The title and the picture are the account's: the chip is hidden in a recording.
       data-ph-mask
@@ -333,6 +348,7 @@ function PostChip({ post }: { post: PostWire }) {
       ) : (
         <span className="size-4 shrink-0 rounded-full bg-ink/10" />
       )}
+      <PlatformMark platform={platform} className="size-3" />
       <span dir="ltr" className="tabular-nums">
         {formatTime(new Date(post.scheduledAt))}
       </span>

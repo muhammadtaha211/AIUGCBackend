@@ -1,7 +1,8 @@
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RenderRow } from "../src/lib/service-b-ui";
 
 /**
  * Social posting PR 3 — the schedule flow (decisions 0101, 0102, 0107, and
@@ -13,8 +14,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
  * - scheduling: a time past the horizon or past the file's life is refused in
  *   Hebrew; the AI label rides only when ticked;
  * - a pending post can be changed and cancelled; one being posted cannot;
- * - the tile's tag: "מתוזמן" while any post of the video waits, "פורסם" once
- *   one went out and none waits, nothing for failed posts alone;
+ * - the tile's tags, one per platform (0115 §3): "מתוזמן" while any post of
+ *   the video waits, TikTok's "נשלח לטיקטוק" while one sits delivered,
+ *   "פורסם" once one went out and none waits, nothing for failed posts alone,
+ *   nothing for a platform the account's switches hide;
+ * - TikTok in the flow (0115 §2): no caption step, no tick, the inbox note,
+ *   and TikTok's own cap answered in Hebrew;
  * - the date and time pickers: 24-hour, 5-minute steps, the range enforced;
  * - the sound picker's proxy, its Instagram-only rows, and the connect's way
  *   back to the video.
@@ -45,9 +50,10 @@ vi.mock("@aiugc/core", async (importOriginal) => {
   return {
     ...actual,
     getDb: () => fixture.db,
-    getPostingAccess: (...args: Parameters<typeof actual.getPostingAccess>) => {
+    // The web reads both switches through this one call (lib/social.ts).
+    getPlatformAccess: (...args: Parameters<typeof actual.getPlatformAccess>) => {
       if (fixture.switchFails) return Promise.reject(new Error("ECONNRESET"));
-      return actual.getPostingAccess(...args);
+      return actual.getPlatformAccess(...args);
     },
     postingNotices: (...args: Parameters<typeof actual.postingNotices>) => {
       fixture.noticeReads++;
@@ -72,6 +78,8 @@ vi.mock("next/navigation", async (importOriginal) => {
     redirect: (path: string) => {
       throw new Error(`NEXT_REDIRECT ${path}`);
     },
+    // The post page's refresh after a 409, rendered here outside an app router.
+    useRouter: () => ({ refresh: () => {} }),
   };
 });
 
@@ -80,6 +88,7 @@ const { createTestDb } = await import("../../../packages/core/test/helpers/pglit
 const { tempStorage } = await import("../../../packages/core/test/helpers/storage");
 const {
   connectInstagram,
+  connectTiktok,
   FakeMeta,
   samplePage,
   seedOwnerAndBusiness,
@@ -107,6 +116,7 @@ const { AiTick } = await import("../src/components/social/ai-tick");
 const { MonthCalendar, TimeList } = await import("../src/components/social/when-fields");
 const { SoundPreview } = await import("../src/components/social/sound-picker");
 const { RenderTile } = await import("../src/app/home/render-tile");
+const { PostDetail } = await import("../src/app/(posting)/calendar/[postId]/post-detail");
 const { socialReturnPath } = await import("../src/lib/social-oauth");
 const form = await import("../src/lib/schedule-form");
 const ui = await import("../src/lib/social-posting-ui");
@@ -228,7 +238,9 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.delete(schema.scheduledPosts);
   await db.delete(schema.jobs).where(eq(schema.jobs.type, "publish_post"));
-  await db.delete(schema.appConfig).where(eq(schema.appConfig.key, "social_posting"));
+  await db
+    .delete(schema.appConfig)
+    .where(inArray(schema.appConfig.key, ["social_posting", "tiktok_posting"]));
   fixture.noticeReads = 0;
   fixture.switchFails = false;
   as(null);
@@ -303,7 +315,7 @@ describe("the switch hides PR 3 from an account it does not allow", () => {
       )
     ).json();
     expect(list.renders).toHaveLength(1);
-    expect("postTag" in list.renders[0]).toBe(false);
+    expect("postTags" in list.renders[0]).toBe(false);
 
     fixture.businesses = [{ id: customerBusiness, name: "עסק", questionnaire: null }];
     const frame = await HomeLayout({ children: null });
@@ -357,7 +369,7 @@ describe("a failed switch read", () => {
       params({ businessId: customerBusiness }),
     );
     expect(list.status).toBe(200);
-    expect("postTag" in (await list.json()).renders[0]).toBe(false);
+    expect("postTags" in (await list.json()).renders[0]).toBe(false);
   });
 });
 
@@ -491,8 +503,11 @@ describe("scheduling", () => {
   });
 });
 
-describe("the tile's tag and the player's line", () => {
+describe("the tile's tags and the player's line", () => {
   beforeEach(() => as(admin));
+
+  const ig = (tag: string) => ({ platform: "instagram" as const, tag });
+  const tt = (tag: string) => ({ platform: "tiktok" as const, tag });
 
   async function tag(businessId = adminBusiness, renderId = adminRender) {
     const list = await (
@@ -504,7 +519,13 @@ describe("the tile's tag and the player's line", () => {
     >;
   }
 
-  async function setStatus(id: string, status: "publishing" | "posted" | "failed" | "cancelled") {
+  const tags = async (businessId?: string, renderId?: string) =>
+    (await tag(businessId, renderId)).postTags;
+
+  async function setStatus(
+    id: string,
+    status: "publishing" | "delivered" | "posted" | "failed" | "cancelled",
+  ) {
     await db
       .update(schema.scheduledPosts)
       .set({
@@ -514,24 +535,44 @@ describe("the tile's tag and the player's line", () => {
       .where(eq(schema.scheduledPosts.id, id));
   }
 
-  it("the rule (0108 §1): waiting → מתוזמן, posted → פורסם, both → מתוזמן, failed only → none", () => {
-    expect(ui.postTag({ waiting: 1, posted: 0 })).toBe("scheduled");
-    expect(ui.postTag({ waiting: 0, posted: 1 })).toBe("posted");
-    expect(ui.postTag({ waiting: 2, posted: 3 })).toBe("scheduled");
-    expect(ui.postTag({ waiting: 0, posted: 0 })).toBeNull();
+  it("the rule (0108 §1, per platform since 0115 §3): waiting → מתוזמן, delivered → נשלח לטיקטוק, posted → פורסם, failed only → none", () => {
+    const counts = (waiting: number, delivered: number, posted: number) => ({
+      waiting,
+      delivered,
+      posted,
+    });
+    expect(ui.postTag(counts(1, 0, 0))).toBe("scheduled");
+    expect(ui.postTag(counts(0, 0, 1))).toBe("posted");
+    expect(ui.postTag(counts(2, 0, 3))).toBe("scheduled");
+    expect(ui.postTag(counts(0, 1, 0))).toBe("delivered");
+    // An unfinished draft in TikTok outranks a posted one; a waiting post outranks both.
+    expect(ui.postTag(counts(0, 1, 4))).toBe("delivered");
+    expect(ui.postTag(counts(1, 1, 1))).toBe("scheduled");
+    expect(ui.postTag(counts(0, 0, 0))).toBeNull();
     expect(ui.TILE_TAG).toBe("מתוזמן");
     expect(ui.TILE_TAG_POSTED).toBe("פורסם");
+    expect(ui.TILE_TAG_DELIVERED).toBe("נשלח לטיקטוק");
+
+    // At most one per platform, Instagram first whatever order the counts came
+    // in, and no chip for a platform with nothing to tag.
+    expect(ui.postTags({ tiktok: counts(0, 1, 0), instagram: counts(0, 0, 1) })).toEqual([
+      ig("posted"),
+      tt("delivered"),
+    ]);
+    expect(ui.postTags({ tiktok: counts(1, 0, 0) })).toEqual([tt("scheduled")]);
+    expect(ui.postTags({ instagram: counts(0, 0, 0), tiktok: counts(0, 0, 0) })).toEqual([]);
+    expect(ui.postTags({})).toEqual([]);
   });
 
   it("the list route tags all four cases, from the posts themselves", async () => {
-    expect((await tag()).postTag).toBeNull();
+    expect(await tags()).toEqual([]);
     const first = (await (await schedule({})).json()).posts[0].id as string;
     const second = (await (await schedule({})).json()).posts[0].id as string;
 
     // Waiting: scheduled, and a post being published still waits.
-    expect((await tag()).postTag).toBe("scheduled");
+    expect(await tags()).toEqual([ig("scheduled")]);
     await setStatus(first, "publishing");
-    expect((await tag()).postTag).toBe("scheduled");
+    expect(await tags()).toEqual([ig("scheduled")]);
     const render = await (
       await getRender(new Request("http://localhost"), params({ id: adminRender }))
     ).json();
@@ -539,21 +580,42 @@ describe("the tile's tag and the player's line", () => {
 
     // Both: one went out, one still waits.
     await setStatus(second, "posted");
-    expect((await tag()).postTag).toBe("scheduled");
+    expect(await tags()).toEqual([ig("scheduled")]);
 
     // Posted: one went out and none waits — a failed one beside it changes nothing.
     await setStatus(first, "failed");
-    expect((await tag()).postTag).toBe("posted");
+    expect(await tags()).toEqual([ig("posted")]);
 
     // Failed only (a cancelled one beside it): no tag.
     await setStatus(second, "cancelled");
-    expect((await tag()).postTag).toBeNull();
+    expect(await tags()).toEqual([]);
     await setStatus(second, "failed");
-    expect((await tag()).postTag).toBeNull();
+    expect(await tags()).toEqual([]);
   });
 
-  it("an account the switch hides sees no tag, though its video was posted and has a post waiting", async () => {
+  it("a TikTok post has its own chip beside Instagram's, and delivered never reads as posted", async () => {
+    const tiktokAccount = await connectTiktok(db, admin, "tt_open_tags");
+    const igPost = (await (await schedule({})).json()).posts[0].id as string;
+    const ttPost = (await (await schedule({ accountIds: [tiktokAccount] })).json()).posts[0]
+      .id as string;
+    expect(await tags()).toEqual([ig("scheduled"), tt("scheduled")]);
+
+    await setStatus(igPost, "posted");
+    await setStatus(ttPost, "delivered");
+    expect(await tags()).toEqual([ig("posted"), tt("delivered")]);
+
+    // The owner finished it in TikTok.
+    await setStatus(ttPost, "posted");
+    expect(await tags()).toEqual([ig("posted"), tt("posted")]);
+
+    // A failed TikTok post alone: no TikTok chip; Instagram's stays.
+    await setStatus(ttPost, "failed");
+    expect(await tags()).toEqual([ig("posted")]);
+  });
+
+  it("an account the switches hide sees no tag, and each platform's chip follows its own switch", async () => {
     const [account] = await connectInstagram(db, customer, [samplePage("17841400000000077", "c")]);
+    const tiktokAccount = await connectTiktok(db, customer, "tt_open_hidden");
     const row = {
       userId: customer,
       businessId: customerBusiness,
@@ -563,32 +625,75 @@ describe("the tile's tag and the player's line", () => {
       scheduledAt: new Date(Date.now() + HOUR),
       timezone: "Asia/Jerusalem",
     };
-    await db.insert(schema.scheduledPosts).values([row, { ...row, status: "posted" }]);
+    await db
+      .insert(schema.scheduledPosts)
+      .values([
+        row,
+        { ...row, status: "posted" },
+        { ...row, socialAccountId: tiktokAccount, platform: "tiktok", status: "delivered" },
+      ]);
 
     as(customer);
     const hidden = await tag(customerBusiness, customerRender);
     expect(hidden.status).toBe("released");
-    expect("postTag" in hidden).toBe(false);
+    expect("postTags" in hidden).toBe(false);
 
+    // Instagram's switch alone: TikTok's delivered post leaves no trace.
     await db
       .insert(schema.appConfig)
       .values({ key: "social_posting", value: { access: "named", userIds: [customer] } });
-    expect((await tag(customerBusiness, customerRender)).postTag).toBe("scheduled");
+    expect(await tags(customerBusiness, customerRender)).toEqual([ig("scheduled")]);
+
+    // Both switches: both chips, Instagram first.
+    await db
+      .insert(schema.appConfig)
+      .values({ key: "tiktok_posting", value: { access: "named", userIds: [customer] } });
+    expect(await tags(customerBusiness, customerRender)).toEqual([
+      ig("scheduled"),
+      tt("delivered"),
+    ]);
+
+    // TikTok's switch alone.
+    await db.delete(schema.appConfig).where(eq(schema.appConfig.key, "social_posting"));
+    expect(await tags(customerBusiness, customerRender)).toEqual([tt("delivered")]);
   });
 
-  it("the tile draws each tag in its own colour, and nothing for none", () => {
-    const tile = (postTag: "scheduled" | "posted" | null | undefined) =>
+  it("the tile draws one chip per platform, each its mark, its name for a screen reader and its word", () => {
+    const tile = (postTags: { platform: "instagram" | "tiktok"; tag: string }[] | undefined) =>
       renderToStaticMarkup(
         createElement(RenderTile, {
-          render: { id: "r", status: "released", thumbUrl: "t", refunded: undefined, postTag },
+          render: {
+            id: "r",
+            status: "released",
+            thumbUrl: "t",
+            refunded: undefined,
+            postTags: postTags as RenderRow["postTags"],
+          },
           onPlay: () => {},
         }),
       );
-    expect(tile("scheduled")).toContain(`text-ink/70">${ui.TILE_TAG}<`);
-    expect(tile("posted")).toContain(`text-emerald-800">${ui.TILE_TAG_POSTED}<`);
-    for (const none of [null, undefined]) {
+    const IG_MARK = '<img src="/brand/instagram-glyph-black.svg"';
+    const TT_MARK = '<img src="/brand/tiktok-icon-black-circle.png"';
+
+    const both = tile([ig("scheduled"), tt("delivered")]);
+    expect(both).toContain(`text-ink/70">${IG_MARK}`);
+    expect(both).toContain(`<span class="sr-only">אינסטגרם: </span>${ui.TILE_TAG}</span>`);
+    expect(both).toContain(`text-sky-800">${TT_MARK}`);
+    expect(both).toContain(`<span class="sr-only">טיקטוק: </span>${ui.TILE_TAG_DELIVERED}</span>`);
+    expect(both.indexOf(IG_MARK)).toBeLessThan(both.indexOf(TT_MARK));
+    expect(both).not.toContain(ui.TILE_TAG_POSTED);
+
+    const posted = tile([ig("posted"), tt("posted")]);
+    expect(posted).toContain(`text-emerald-800">${IG_MARK}`);
+    expect(posted).toContain(`<span class="sr-only">אינסטגרם: </span>${ui.TILE_TAG_POSTED}</span>`);
+    expect(posted).toContain(`<span class="sr-only">טיקטוק: </span>${ui.TILE_TAG_POSTED}</span>`);
+
+    expect(tile([tt("scheduled")])).not.toContain(IG_MARK);
+    for (const none of [[], undefined]) {
       expect(tile(none)).not.toContain(ui.TILE_TAG);
       expect(tile(none)).not.toContain(ui.TILE_TAG_POSTED);
+      expect(tile(none)).not.toContain(ui.TILE_TAG_DELIVERED);
+      expect(tile(none)).not.toContain("/brand/");
     }
   });
 
@@ -635,6 +740,7 @@ describe("the AI tick", () => {
       accountIds: ["a"],
       at: new Date("2026-10-13T10:00:00Z"),
       timezone: "Asia/Jerusalem",
+      instagram: true,
       caption: "",
       sound: null,
     };
@@ -649,12 +755,250 @@ describe("the AI tick", () => {
         accounts: [],
         horizon: { maxScheduledAt: new Date().toISOString(), limitedBy: "policy", days: 30 },
         connectHref: "/connect/instagram?return=%2Fschedule%2Fr",
+        platforms: ["instagram"],
         prefill: null,
       }),
     );
     expect(markup).toContain(ui.STEP_ACCOUNTS_TITLE);
     expect(markup).toContain(ui.NO_ACCOUNT_TITLE);
     expect(markup).not.toContain(ui.AI_TICK_LABEL);
+  });
+});
+
+describe("TikTok in the schedule flow (0115 §2)", () => {
+  const instagramAccount = {
+    id: "ig-1",
+    platform: "instagram" as const,
+    username: "flowers.tlv",
+    displayName: "חנות הפרחים",
+    pictureUrl: null,
+    status: "connected" as const,
+    canSearchSounds: true,
+  };
+  const tiktokAccount = {
+    id: "tt-1",
+    platform: "tiktok" as const,
+    username: null,
+    displayName: "פרחים בטיקטוק",
+    pictureUrl: null,
+    status: "connected" as const,
+    canSearchSounds: false,
+  };
+  const sound = { audioId: "a1", kind: "music" as const, title: "Flowers" };
+
+  /** The flow as the page draws it, opened on a step with the given picks. */
+  function flow(opts: {
+    picked: string[];
+    openOn?: "when" | "caption";
+    accounts?: (typeof instagramAccount | typeof tiktokAccount)[];
+    platforms?: ("instagram" | "tiktok")[];
+    connectHref?: string;
+  }) {
+    return renderToStaticMarkup(
+      createElement(ScheduleFlow, {
+        render: { id: "r", service: "a", voiced: false, thumbUrl: null, downloadUrl: "d" },
+        accounts: opts.accounts ?? [instagramAccount, tiktokAccount],
+        horizon: {
+          maxScheduledAt: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+          limitedBy: "policy",
+          days: 30,
+        },
+        connectHref: opts.connectHref ?? "/home/settings#connections",
+        platforms: opts.platforms ?? ["instagram", "tiktok"],
+        // A caption, a sound and a tick left over from an earlier pick.
+        prefill: { accountIds: opts.picked, caption: "כיתוב שנשאר", sound, aiLabel: true },
+        openOn: opts.openOn,
+      }),
+    );
+  }
+
+  const SUBMIT = `>${ui.SUBMIT_BUTTON}</button>`;
+  const CONTINUE = `>${ui.CONTINUE_BUTTON}</button>`;
+
+  it("TikTok alone: no caption step — מתי? submits, with the inbox note above it and never the tick", () => {
+    const when = flow({ picked: ["tt-1"], openOn: "when" });
+    expect(when).toContain(ui.STEP_WHEN_TITLE);
+    expect(when).toContain(SUBMIT);
+    expect(when).not.toContain(CONTINUE);
+    expect(when).toContain(ui.TIKTOK_INBOX_NOTE);
+    expect(when.indexOf(ui.TIKTOK_INBOX_NOTE)).toBeLessThan(when.indexOf(SUBMIT));
+    expect(when).not.toContain(ui.AI_TICK_LABEL);
+    expect(when).not.toContain(ui.STEP_CAPTION_TITLE);
+    expect(when).not.toContain(ui.SOUND_LABEL);
+    expect(when).not.toContain("<textarea");
+  });
+
+  it("TikTok alone sends the file alone: an empty caption, no sound, no label, whatever the form held", async () => {
+    const at = new Date(Date.now() + HOUR);
+    const body = form.scheduleRequestBody({
+      renderId: adminRender,
+      accountIds: ["tt-1"],
+      at,
+      timezone: "Asia/Jerusalem",
+      instagram: false,
+      caption: "כיתוב שנשאר",
+      sound,
+      aiLabel: true,
+    });
+    expect(body.caption).toBe("");
+    expect(body.sound).toBeNull();
+    expect("aiLabel" in body).toBe(false);
+
+    // Through the route: core would refuse a sound with no Instagram account
+    // (sound_without_instagram), so the body's own rule is what lets it through.
+    as(admin);
+    const account = await connectTiktok(db, admin, "tt_open_flow");
+    const response = await postsRoute.POST(json({ ...body, accountIds: [account] }));
+    expect(response.status).toBe(200);
+    const { posts } = await response.json();
+    expect(await postRow(posts[0].id)).toMatchObject({
+      platform: "tiktok",
+      status: "scheduled",
+      caption: "",
+      sound: null,
+      aiLabel: false,
+    });
+  });
+
+  it("Instagram and TikTok together: מתי? continues; the caption step is Instagram's, named so, with the sound, the tick and then the note", () => {
+    const when = flow({ picked: ["ig-1", "tt-1"], openOn: "when" });
+    expect(when).toContain(CONTINUE);
+    expect(when).not.toContain(SUBMIT);
+    expect(when).not.toContain(ui.TIKTOK_INBOX_NOTE);
+
+    const caption = flow({ picked: ["ig-1", "tt-1"], openOn: "caption" });
+    expect(caption).toContain(`>${ui.CAPTION_LABEL_INSTAGRAM}<textarea`);
+    expect(caption).toContain(ui.SOUND_LABEL);
+    expect(caption).toContain(ui.AI_TICK_LABEL);
+    expect(caption).toContain(ui.TIKTOK_INBOX_NOTE);
+    expect(caption.indexOf(ui.AI_TICK_LABEL)).toBeLessThan(caption.indexOf(ui.TIKTOK_INBOX_NOTE));
+    expect(caption.indexOf(ui.TIKTOK_INBOX_NOTE)).toBeLessThan(caption.indexOf(SUBMIT));
+  });
+
+  it("Instagram alone is as before: the plain caption label, no note", () => {
+    const caption = flow({ picked: ["ig-1"], openOn: "caption" });
+    expect(caption).toContain(`>${ui.CAPTION_LABEL}<textarea`);
+    expect(caption).not.toContain(ui.CAPTION_LABEL_INSTAGRAM);
+    expect(caption).not.toContain(ui.TIKTOK_INBOX_NOTE);
+    expect(caption).toContain(ui.AI_TICK_LABEL);
+    expect(flow({ picked: ["ig-1"], openOn: "when" })).toContain(CONTINUE);
+  });
+
+  it("each account row carries its platform's mark; the no-account card offers what the switches open", () => {
+    const rows = flow({ picked: [] });
+    expect(rows).toContain('<img src="/brand/instagram-glyph-black.svg"');
+    expect(rows).toContain('<img src="/brand/tiktok-icon-black-circle.png"');
+    // TikTok's basic profile has no handle: no "@" line for it.
+    expect(rows.match(/>@/g)).toHaveLength(1);
+
+    const cases: [("instagram" | "tiktok")[], string][] = [
+      [["instagram"], ui.NO_ACCOUNT_BODY],
+      [["tiktok"], ui.NO_ACCOUNT_BODY_TIKTOK],
+      [["instagram", "tiktok"], ui.NO_ACCOUNT_BODY_BOTH],
+    ];
+    for (const [platforms, body] of cases) {
+      expect(ui.noAccountBody(platforms)).toBe(body);
+      expect(flow({ picked: [], accounts: [], platforms })).toContain(body);
+    }
+    // TikTok's connect is a route that redirects off-site: a plain link to it.
+    const start = "/api/social/tiktok/start?return=%2Fschedule%2Fr";
+    expect(flow({ picked: [], accounts: [], platforms: ["tiktok"], connectHref: start })).toContain(
+      `<a href="${start}"`,
+    );
+  });
+
+  it("the done line says what happens on each platform", () => {
+    const [date, time] = ["13 באוקטובר", "14:30"];
+    expect(ui.doneLineFor({ instagram: true, tiktok: false }, date, time)).toBe(
+      ui.doneLine(date, time),
+    );
+    expect(ui.doneLineFor({ instagram: false, tiktok: true }, date, time)).toBe(
+      "הסרטון יישלח לטיקטוק ב־13 באוקטובר בשעה 14:30. אפשר לשנות או לבטל בלוח הפרסומים עד שהשליחה מתחילה.",
+    );
+    expect(ui.doneLineFor({ instagram: true, tiktok: true }, date, time)).toBe(
+      "הסרטון יפורסם באינסטגרם ויישלח לטיקטוק ב־13 באוקטובר בשעה 14:30. אפשר לשנות או לבטל בלוח הפרסומים עד שהפרסום מתחיל.",
+    );
+  });
+
+  it("TikTok's cap on unfinished videos is a 429, in Hebrew", async () => {
+    as(admin);
+    const account = await connectTiktok(db, admin, "tt_open_cap");
+    for (let i = 0; i < 5; i++) {
+      expect((await schedule({ accountIds: [account] })).status).toBe(200);
+    }
+    const sixth = await schedule({ accountIds: [account] });
+    expect(sixth.status).toBe(429);
+    expect(await sixth.json()).toEqual({ ok: false, error: ui.TIKTOK_PENDING_CAP_LINE });
+  });
+
+  it("the calendar and the post page word TikTok's states as TikTok's, and never call delivered posted", () => {
+    expect(ui.postDisplayStatus({ status: "delivered", deferredUntil: null })).toBe("delivered");
+    expect(ui.postStatusLabel("delivered", "tiktok")).toBe(ui.TILE_TAG_DELIVERED);
+    expect(ui.postStatusLabel("delivered", "tiktok")).not.toBe(ui.POST_STATUS_LABELS.posted);
+    const deferred = ui.postDisplayStatus({ status: "publishing", deferredUntil: new Date() });
+    expect(ui.postStatusLabel(deferred, "instagram")).toBe("ממתין למכסת הפרסומים של אינסטגרם");
+    expect(ui.postStatusLabel(deferred, "tiktok")).toBe(ui.DEFERRED_LABEL_TIKTOK);
+  });
+
+  it("a TikTok post's page has no caption, sound or tick, and once delivered says what to do in TikTok", () => {
+    const page = (platform: "instagram" | "tiktok", status: string) =>
+      renderToStaticMarkup(
+        createElement(PostDetail, {
+          post: {
+            id: "p",
+            status,
+            scheduledAt: new Date().toISOString(),
+            timezone: "Asia/Jerusalem",
+            caption: "",
+            sound: null,
+            aiLabel: false,
+            deferredUntil: null,
+            permalink: null,
+            failureLine: null,
+            account: {
+              id: "a",
+              platform,
+              username: platform === "instagram" ? "flowers.tlv" : null,
+              displayName: "חנות הפרחים",
+              pictureUrl: null,
+            },
+            render: { id: "r", service: "a", thumbUrl: null },
+          },
+          downloadUrl: null,
+          horizon: null,
+          soundAccountId: null,
+          voiced: false,
+        }),
+      );
+    const delivered = page("tiktok", "delivered");
+    expect(delivered).toContain(`>${ui.TILE_TAG_DELIVERED}</span>`);
+    expect(delivered).toContain(ui.TIKTOK_DELIVERED_LINE);
+    expect(delivered).toContain('<img src="/brand/tiktok-icon-black-circle.png"');
+    expect(delivered).not.toContain(`>${ui.POST_STATUS_LABELS.posted}<`);
+    expect(delivered).not.toContain(`>${ui.FIELD_CAPTION}</dt>`);
+    expect(delivered).not.toContain(`>${ui.FIELD_SOUND}</dt>`);
+    expect(delivered).not.toContain(ui.AI_TICK_LABEL);
+    // Not yet delivered: still no caption or sound row, and no delivery line.
+    const waiting = page("tiktok", "publishing");
+    expect(waiting).not.toContain(`>${ui.FIELD_CAPTION}</dt>`);
+    expect(waiting).not.toContain(ui.TIKTOK_DELIVERED_LINE);
+    // Instagram's page keeps both rows.
+    const instagram = page("instagram", "posted");
+    expect(instagram).toContain(`>${ui.FIELD_CAPTION}</dt>`);
+    expect(instagram).toContain(`>${ui.FIELD_SOUND}</dt>`);
+    expect(instagram).toContain('<img src="/brand/instagram-glyph-black.svg"');
+    expect(instagram).not.toContain(ui.TIKTOK_DELIVERED_LINE);
+  });
+
+  it("no line names a Drafts folder: what the owner gets is TikTok's notification", () => {
+    const lines = Object.values(ui)
+      .flatMap((value) => (typeof value === "string" ? [value] : []))
+      .concat(
+        ui.doneLineFor({ instagram: false, tiktok: true }, "d", "t"),
+        ui.doneLineFor({ instagram: true, tiktok: true }, "d", "t"),
+      )
+      .join(" ");
+    expect(lines).not.toMatch(/טיוט|Drafts?/i);
   });
 });
 
@@ -894,5 +1238,28 @@ describe("the way back to the video", () => {
     expect(page.props.connectHref).toBe(
       `/connect/instagram?return=${encodeURIComponent(`/schedule/${render.id}`)}`,
     );
+
+    // Both switches: settings, where each platform has its card; TikTok's
+    // alone: TikTok's own connect (0115). Back to this video either way.
+    const back = encodeURIComponent(`/schedule/${render.id}`);
+    const pageProps = async () =>
+      (
+        (await SchedulePage({
+          ...params({ renderId: render.id }),
+          searchParams: Promise.resolve({}),
+        })) as ReactElement<{ connectHref: string; platforms: string[] }>
+      ).props;
+    await db
+      .insert(schema.appConfig)
+      .values({ key: "tiktok_posting", value: { access: "named", userIds: [userId] } });
+    expect(await pageProps()).toMatchObject({
+      connectHref: `/home/settings?return=${back}#connections`,
+      platforms: ["instagram", "tiktok"],
+    });
+    await db.delete(schema.appConfig).where(eq(schema.appConfig.key, "social_posting"));
+    expect(await pageProps()).toMatchObject({
+      connectHref: `/api/social/tiktok/start?return=${back}`,
+      platforms: ["tiktok"],
+    });
   });
 });

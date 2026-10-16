@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AiTick } from "@/components/social/ai-tick";
+import { PlatformMark } from "@/components/social/platform-mark";
 import { SoundPicker } from "@/components/social/sound-picker";
 import { WhenFields } from "@/components/social/when-fields";
-import { Button } from "@/components/ui/button";
+import { Button, PRIMARY_BUTTON_CLASS } from "@/components/ui/button";
 import { Check } from "@/components/ui/icons";
 import {
   browserTimeZone,
@@ -25,20 +26,23 @@ import {
   BACK_BUTTON,
   BACK_TO_VIDEO,
   CAPTION_LABEL,
+  CAPTION_LABEL_INSTAGRAM,
   CAPTION_PLACEHOLDER,
   captionCounter,
   CONTINUE_BUTTON,
   DONE_TITLE,
-  doneLine,
-  NO_ACCOUNT_BODY,
+  doneLineFor,
   NO_ACCOUNT_CTA,
   NO_ACCOUNT_TITLE,
+  noAccountBody,
+  type PlatformMix,
   SCHEDULE_TITLE,
   STEP_ACCOUNTS_LEAD,
   STEP_ACCOUNTS_TITLE,
   STEP_CAPTION_TITLE,
   STEP_WHEN_TITLE,
   SUBMIT_BUTTON,
+  TIKTOK_INBOX_NOTE,
   TO_CALENDAR,
 } from "@/lib/social-posting-ui";
 import { postJson } from "@/lib/use-api";
@@ -59,17 +63,22 @@ export type ScheduleAccount = {
 type Step = "accounts" | "when" | "caption" | "done";
 
 /**
- * The schedule flow's four steps (Appendix A): where → when → caption, sound
- * and the AI tick → "תבנית ממשיכה מכאן". One instant, one caption and one
- * sound for every account picked; the tick starts unticked and sits last
- * (0107 §1). The form checks the time the way core will, then core decides.
+ * The schedule flow's steps (Appendix A): where → when → caption, sound and
+ * the AI tick → "תבנית ממשיכה מכאן". One instant, one caption and one sound
+ * for every account picked; the tick starts unticked and sits last (0107 §1).
+ * Caption, sound and the tick are Instagram's (decision 0115 §2): with no
+ * Instagram account picked the caption step is skipped and "מתי?" submits;
+ * with a TikTok account picked, the step that submits says what TikTok gets.
+ * The form checks the time the way core will, then core decides.
  */
 export function ScheduleFlow({
   render,
   accounts,
   horizon,
   connectHref,
+  platforms,
   prefill,
+  openOn,
 }: {
   render: {
     id: string;
@@ -81,21 +90,33 @@ export function ScheduleFlow({
   accounts: ScheduleAccount[];
   horizon: Horizon;
   connectHref: string;
+  /** The platforms the account's switches open: what the no-account card offers. */
+  platforms: ("instagram" | "tiktok")[];
   prefill: {
     accountIds: string[];
     caption: string;
     sound: SoundChoice | null;
     aiLabel: boolean;
   } | null;
+  /**
+   * Tests only — the page never passes it: open on a later step, with the
+   * picks from `prefill` and the first suggested time, so a static render can
+   * show what that step draws.
+   */
+  openOn?: "when" | "caption";
 }) {
   const connected = accounts.filter((account) => account.status === "connected");
-  const [step, setStep] = useState<Step>("accounts");
+  const [step, setStep] = useState<Step>(openOn ?? "accounts");
   const [picked, setPicked] = useState<string[]>(
     (prefill?.accountIds ?? []).filter((id) => connected.some((account) => account.id === id)),
   );
   // Set when the time step opens, never during render: the server's clock and
   // zone are not the browser's, and the inputs must show the browser's.
-  const [when, setWhen] = useState<{ date: string; time: string } | null>(null);
+  const [when, setWhen] = useState<{ date: string; time: string } | null>(() => {
+    if (!openOn) return null;
+    const suggested = defaultInstant(new Date());
+    return { date: toDateInput(suggested), time: toTimeInput(suggested) };
+  });
   const [isNow, setIsNow] = useState(false);
   const [caption, setCaption] = useState(prefill?.caption ?? "");
   const [sound, setSound] = useState<SoundChoice | null>(prefill?.sound ?? null);
@@ -106,8 +127,14 @@ export function ScheduleFlow({
 
   const instant = isNow ? new Date() : when ? fromInputs(when.date, when.time) : null;
   const problem = instant ? instantProblem(instant, new Date(), horizon) : null;
-  const soundAccount =
-    connected.find((account) => picked.includes(account.id) && account.canSearchSounds) ?? null;
+  const chosen = connected.filter((account) => picked.includes(account.id));
+  const mix: PlatformMix = {
+    instagram: chosen.some((account) => account.platform === "instagram"),
+    tiktok: chosen.some((account) => account.platform === "tiktok"),
+  };
+  const soundAccount = chosen.find((account) => account.canSearchSounds) ?? null;
+  // Above the buttons of whichever step submits.
+  const inboxNote = mix.tiktok && <p className="mt-6 text-sm text-ink/60">{TIKTOK_INBOX_NOTE}</p>;
 
   function toggle(id: string) {
     setPicked((current) =>
@@ -140,6 +167,7 @@ export function ScheduleFlow({
         accountIds: picked,
         at,
         timezone: browserTimeZone(),
+        instagram: mix.instagram,
         caption,
         sound,
         aiLabel,
@@ -174,10 +202,11 @@ export function ScheduleFlow({
           {connected.length === 0 ? (
             <div className="mt-4 rounded-xl border border-ink/10 bg-white p-5">
               <p className="font-medium text-ink">{NO_ACCOUNT_TITLE}</p>
-              <p className="mt-1 text-sm text-ink/65">{NO_ACCOUNT_BODY}</p>
-              <Link href={connectHref} className="mt-4 inline-block">
-                <Button type="button">{NO_ACCOUNT_CTA}</Button>
-              </Link>
+              <p className="mt-1 text-sm text-ink/65">{noAccountBody(platforms)}</p>
+              {/* A plain link: TikTok's connect is a route that redirects off-site. */}
+              <a href={connectHref} className={`${PRIMARY_BUTTON_CLASS} mt-4`}>
+                {NO_ACCOUNT_CTA}
+              </a>
             </div>
           ) : (
             <p className="mt-1 text-sm text-ink/65">{STEP_ACCOUNTS_LEAD}</p>
@@ -208,8 +237,14 @@ export function ScheduleFlow({
                       <span className="size-10 shrink-0 rounded-full bg-ink/[0.08]" />
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-ink" data-ph-mask>
-                        <bdi>{account.displayName ?? account.username ?? ""}</bdi>
+                      <span className="flex items-center gap-1.5">
+                        <PlatformMark platform={account.platform} className="size-3.5" />
+                        <span
+                          className="block min-w-0 truncate text-sm font-medium text-ink"
+                          data-ph-mask
+                        >
+                          <bdi>{account.displayName ?? account.username ?? ""}</bdi>
+                        </span>
                       </span>
                       {account.username && (
                         <span
@@ -271,17 +306,31 @@ export function ScheduleFlow({
             />
           </div>
           {problem && <p className="mt-3 text-sm text-red-700">{problem}</p>}
+          {/* No Instagram account picked: nothing to caption, so this step submits. */}
+          {!mix.instagram && inboxNote}
+          {!mix.instagram && error && <p className="mt-4 text-sm text-red-700">{error}</p>}
           <div className="mt-6 flex gap-3">
             <Button type="button" variant="secondary" onClick={() => setStep("accounts")}>
               {BACK_BUTTON}
             </Button>
-            <Button
-              type="button"
-              disabled={!instant || problem !== null}
-              onClick={() => setStep("caption")}
-            >
-              {CONTINUE_BUTTON}
-            </Button>
+            {mix.instagram ? (
+              <Button
+                type="button"
+                disabled={!instant || problem !== null}
+                onClick={() => setStep("caption")}
+              >
+                {CONTINUE_BUTTON}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                loading={submitting}
+                disabled={!instant || problem !== null}
+                onClick={() => void submit()}
+              >
+                {SUBMIT_BUTTON}
+              </Button>
+            )}
           </div>
         </section>
       )}
@@ -290,7 +339,7 @@ export function ScheduleFlow({
         <section className="mt-6">
           <h2 className="text-lg font-semibold text-ink">{STEP_CAPTION_TITLE}</h2>
           <label className="mt-4 block text-sm text-ink/70">
-            {CAPTION_LABEL}
+            {mix.tiktok ? CAPTION_LABEL_INSTAGRAM : CAPTION_LABEL}
             <textarea
               value={caption}
               maxLength={CAPTION_MAX}
@@ -315,6 +364,7 @@ export function ScheduleFlow({
 
           <AiTick checked={aiLabel} onChange={setAiLabel} />
 
+          {inboxNote}
           {error && <p className="mt-4 text-sm text-red-700">{error}</p>}
           <div className="mt-6 flex gap-3">
             <Button type="button" variant="secondary" onClick={openWhen}>
@@ -331,7 +381,7 @@ export function ScheduleFlow({
         <section className="mt-6 rounded-xl border border-ink/10 bg-white p-5">
           <h2 className="text-lg font-semibold text-ink">{DONE_TITLE}</h2>
           <p className="mt-2 text-sm text-ink/70">
-            {doneLine(formatDay(scheduledAt), formatTime(scheduledAt))}
+            {doneLineFor(mix, formatDay(scheduledAt), formatTime(scheduledAt))}
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             {/* The month the post is in — next month's post is not on this one. */}

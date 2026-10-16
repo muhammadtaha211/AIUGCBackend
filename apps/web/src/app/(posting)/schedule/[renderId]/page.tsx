@@ -14,8 +14,8 @@ import { authedUser } from "@/lib/auth-user";
 import type { SoundChoice } from "@/lib/schedule-form";
 import { businessAccess, isUuid } from "@/lib/service-b";
 import { renderDownloadFilename } from "@/lib/service-b-ui";
-import { postingAllowed } from "@/lib/social";
-import { preScreenPath } from "@/lib/social-paths";
+import { userPlatforms } from "@/lib/social";
+import { preScreenPath, tiktokStartPath } from "@/lib/social-paths";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { ScheduleFlow } from "./schedule-flow";
 
@@ -38,7 +38,11 @@ export default async function SchedulePage({
 }) {
   const supabase = await createServerSupabase();
   const user = authedUser(await supabase.auth.getUser());
-  if (!user || !(await postingAllowed(user.id))) notFound();
+  if (!user) notFound();
+  // The accounts, the prefill and the connect link follow the account's
+  // switches (decision 0115): a platform it cannot see leaves no trace here.
+  const platforms = await userPlatforms(user.id);
+  if (platforms.length === 0) notFound();
 
   const { renderId } = await params;
   if (!isUuid(renderId)) notFound();
@@ -60,7 +64,7 @@ export default async function SchedulePage({
   if (businessAccess(business, requester) !== "ok") notFound();
   if (render.status !== "released" || !render.filePath) notFound();
 
-  const accounts = await listSocialAccounts(db, user.id);
+  const accounts = await listSocialAccounts(db, user.id, platforms);
   const storage = getStorage();
   const thumbUrl = render.thumbPath
     ? await storage.signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS)
@@ -73,7 +77,7 @@ export default async function SchedulePage({
   const query = await searchParams;
   const from =
     typeof query.from === "string" && isUuid(query.from)
-      ? await getScheduledPost(db, { userId: user.id, postId: query.from })
+      ? await getScheduledPost(db, { userId: user.id, postId: query.from, platforms })
       : undefined;
   const prefill =
     from && from.videoRenderId === renderId
@@ -110,8 +114,23 @@ export default async function SchedulePage({
         limitedBy: horizon.limitedBy,
         days: POSTING_HORIZON_DAYS,
       }}
-      connectHref={preScreenPath({ returnTo: `/schedule/${renderId}`, add: false })}
+      connectHref={connectHrefFor(platforms, `/schedule/${renderId}`)}
+      platforms={platforms}
       prefill={prefill}
     />
   );
+}
+
+/**
+ * Where the no-account card sends a first-time customer, back to this video
+ * afterwards: Instagram's pre-screen, TikTok's connect, or — both open —
+ * the חיבורים section, where each platform has its card.
+ */
+function connectHrefFor(platforms: ("instagram" | "tiktok")[], returnTo: string): string {
+  if (platforms.length > 1) {
+    return `/home/settings?${new URLSearchParams({ return: returnTo }).toString()}#connections`;
+  }
+  return platforms[0] === "tiktok"
+    ? tiktokStartPath({ returnTo })
+    : preScreenPath({ returnTo, add: false });
 }

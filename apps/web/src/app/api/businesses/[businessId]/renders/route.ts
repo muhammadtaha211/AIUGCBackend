@@ -30,8 +30,8 @@ import {
   RENDER_PAGE_SIZE,
   rendersPageParam,
 } from "@/lib/service-b-ui";
-import { postCountsByRender, postingAllowed } from "@/lib/social";
-import { postTag } from "@/lib/social-posting-ui";
+import { postCountsByRender, userPlatforms } from "@/lib/social";
+import { postTags } from "@/lib/social-posting-ui";
 
 /**
  * Create a Service B render. Core enforces the approved-audio gate and the
@@ -206,16 +206,19 @@ export async function GET(
     // queries, and every other active row is merely queued behind this one.
     const head = page === null ? pickActiveHead(rows) : undefined;
 
-    // The tile's tag, "מתוזמן" or "פורסם" (decision 0108 §1): one grouped
-    // query, only for an account the switch allows (the key is absent for
-    // everyone else), and only when a row is released. Started beside the
-    // signing below, and best-effort: a failed read drops the tag, never the list.
+    // The tile's tags, one per platform (decision 0108 §1, per platform since
+    // 0115 §3): one grouped query over the platforms the account's switches
+    // allow (the key is absent for an account no switch allows), and only when
+    // a row is released. Started beside the signing below, and best-effort: a
+    // failed read drops the tags, never the list.
     const released = rows.filter((row) => row.status === "released").map((row) => row.id);
     const countsRead =
       released.length === 0
         ? Promise.resolve(null)
-        : postingAllowed(auth.userId)
-            .then((allowed) => (allowed ? postCountsByRender(db, released) : null))
+        : userPlatforms(auth.userId)
+            .then((platforms) =>
+              platforms.length > 0 ? postCountsByRender(db, released, platforms) : null,
+            )
             .catch(() => null);
 
     // Concurrent, like the sibling demos route: signing is a network call per
@@ -239,7 +242,7 @@ export async function GET(
         // really landed (refunded_at set in the refund transaction).
         refunded: row.status === "failed" ? row.refundedAt !== null : undefined,
         job: row.id === head?.id ? await headProgress(db, row.id) : undefined,
-        postTag: counts ? postTag(counts.get(row.id) ?? { waiting: 0, posted: 0 }) : undefined,
+        postTags: counts ? postTags(counts.get(row.id) ?? {}) : undefined,
       })),
     );
     if (page === null) return NextResponse.json({ renders });

@@ -28,8 +28,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       caption: body.caption,
       sound: body.sound,
       aiLabel: body.aiLabel,
+      platforms: auth.platforms,
     });
-    const item = await getScheduledPostItem(db, { userId: auth.userId, postId: id });
+    const item = await getScheduledPostItem(db, {
+      userId: auth.userId,
+      postId: id,
+      platforms: auth.platforms,
+    });
     if (!item) return jsonError(404, NOT_FOUND);
     return NextResponse.json({ ok: true, post: await toPostWire(item) });
   } catch (err) {
