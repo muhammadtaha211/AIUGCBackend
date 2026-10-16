@@ -21,6 +21,7 @@ import {
 import { createTestDb } from "./helpers/pglite";
 import {
   connectInstagram,
+  connectTiktok,
   samplePage,
   seedOwnerAndBusiness,
   socialTestEnv,
@@ -71,6 +72,7 @@ describe("the post-failure email", () => {
     accountId?: string;
     renderId?: string;
     kind?: string;
+    platform?: "instagram" | "tiktok";
     failedAt: Date;
   }): Promise<string> {
     const [row] = await db
@@ -80,7 +82,7 @@ describe("the post-failure email", () => {
         businessId: opts.businessId ?? adminBusinessId,
         videoRenderId: opts.renderId ?? adminRenderId,
         socialAccountId: opts.accountId ?? adminAccountId,
-        platform: "instagram",
+        platform: opts.platform ?? "instagram",
         scheduledAt: new Date(opts.failedAt.getTime() - MIN),
         timezone: "Asia/Jerusalem",
         caption: "כיתוב פרטי של הלקוח",
@@ -384,6 +386,80 @@ describe("the post-failure email", () => {
     expect(fake.sent[0]!.to).toBe("customer@test.local");
     expect(fake.sent[0]!.text).toContain("סרטון גוש טקסט של");
     await db.delete(schema.appConfig).where(eq(schema.appConfig.key, "social_posting"));
+  });
+
+  it("a cause is per platform (0115): an Instagram email does not fold a TikTok failure of the same kind", async () => {
+    const tiktokAccount = await connectTiktok(db, adminId, "tt_email_fold");
+    const now = new Date();
+    await seedFailed({ failedAt: new Date(now.getTime() - 3 * HOUR) });
+    await sweepPostFailureEmails(db, {
+      ...WORKER,
+      now: new Date(now.getTime() - 3 * HOUR + 5 * MIN),
+    });
+    expect(fake.sent).toHaveLength(1);
+
+    await seedFailed({
+      accountId: tiktokAccount,
+      platform: "tiktok",
+      failedAt: new Date(now.getTime() - 10 * MIN),
+    });
+    await sweepPostFailureEmails(db, { ...WORKER, now });
+    expect(fake.sent).toHaveLength(2);
+    expect(fake.sent[1]!.text).toContain("בטיקטוק");
+    expect(fake.sent[1]!.text).not.toContain("באינסטגרם");
+    const logged = (await emailRows()).map(
+      (row) => (row.payload as { platform?: string }).platform,
+    );
+    expect(logged.sort()).toEqual(["instagram", "tiktok"]);
+  });
+
+  it("an email logged before PR 4 (no platform) cools Instagram's cause and not TikTok's", async () => {
+    const tiktokAccount = await connectTiktok(db, adminId, "tt_email_legacy");
+    const now = new Date();
+    await db.insert(schema.events).values({
+      kind: POST_FAILURE_EMAIL,
+      actorUserId: adminId,
+      payload: { failureKind: "connection_expired", postIds: [], outcome: "sent", resendId: "old" },
+      createdAt: new Date(now.getTime() - HOUR),
+    });
+    await seedFailed({ failedAt: new Date(now.getTime() - 10 * MIN) });
+    await seedFailed({
+      accountId: tiktokAccount,
+      platform: "tiktok",
+      failedAt: new Date(now.getTime() - 10 * MIN),
+    });
+    await sweepPostFailureEmails(db, { ...WORKER, now });
+    expect(fake.sent).toHaveLength(1);
+    expect(fake.sent[0]!.text).toContain("בטיקטוק");
+  });
+
+  it("a platform its own switch hides gets no email: a customer in Instagram's switch alone hears nothing of TikTok", async () => {
+    const { userId, businessId } = await seedOwnerAndBusiness(db, { email: "ig-only@test.local" });
+    const tiktokAccount = await connectTiktok(db, userId, "tt_email_hidden");
+    const renderId = await seedRender(businessId);
+    const now = new Date();
+    await seedFailed({
+      userId,
+      businessId,
+      accountId: tiktokAccount,
+      renderId,
+      platform: "tiktok",
+      failedAt: new Date(now.getTime() - 10 * MIN),
+    });
+    await db
+      .insert(schema.appConfig)
+      .values({ key: "social_posting", value: { access: "named", userIds: [userId] } });
+    await sweepPostFailureEmails(db, { ...WORKER, now });
+    expect(fake.sent).toHaveLength(0);
+
+    await db
+      .insert(schema.appConfig)
+      .values({ key: "tiktok_posting", value: { access: "named", userIds: [userId] } });
+    await sweepPostFailureEmails(db, { ...WORKER, now });
+    expect(fake.sent).toHaveLength(1);
+    expect(fake.sent[0]!.to).toBe("ig-only@test.local");
+    await db.delete(schema.appConfig).where(eq(schema.appConfig.key, "social_posting"));
+    await db.delete(schema.appConfig).where(eq(schema.appConfig.key, "tiktok_posting"));
   });
 
   it("escapes what the customer named in the HTML", async () => {

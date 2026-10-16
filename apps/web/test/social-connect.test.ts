@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
-import { isValidElement, type ReactElement, type ReactNode } from "react";
+import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { NextRequest } from "next/server";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +18,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
  *   a forged or replayed state refused;
  * - disconnect: tokens erased, pending posts cancelled, the count answered;
  * - Meta's deletion callback: refused without a valid signature, honoured with
- *   one, and its public status page.
+ *   one, and its public status page;
+ * - TikTok's connect (decision 0115): its own switch, its own cookie, the
+ *   console's exact redirect, every refusal its own outcome worded as TikTok's,
+ *   a grant without video.upload refused, tokens sealed, its card in settings.
  */
 
 const fixture = vi.hoisted(() => ({
@@ -65,15 +69,28 @@ vi.mock("next/navigation", async (importOriginal) => {
     redirect: (path: string) => {
       throw new Error(`NEXT_REDIRECT ${path}`);
     },
+    // The settings section's refresh after a ניתוק, rendered here outside an app router.
+    useRouter: () => ({ refresh: () => {} }),
   };
 });
 
 const core = await import("@aiugc/core");
 const { createTestDb } = await import("../../../packages/core/test/helpers/pglite");
-const { connectInstagram, FakeMeta, samplePage, seedOwnerAndBusiness, socialTestEnv } =
-  await import("../../../packages/core/test/helpers/social");
+const {
+  connectInstagram,
+  connectTiktok,
+  FakeMeta,
+  FakeTiktok,
+  samplePage,
+  sampleTiktokTokens,
+  seedOwnerAndBusiness,
+  socialTestEnv,
+} = await import("../../../packages/core/test/helpers/social");
 const { GET: start } = await import("../src/app/api/social/instagram/start/route");
 const { GET: callback } = await import("../src/app/api/social/instagram/callback/route");
+const { GET: sounds } = await import("../src/app/api/social/instagram/sounds/route");
+const { GET: tiktokStart } = await import("../src/app/api/social/tiktok/start/route");
+const { GET: tiktokCallback } = await import("../src/app/api/social/tiktok/callback/route");
 const { POST: disconnect } = await import("../src/app/api/social/accounts/[id]/disconnect/route");
 const { POST: dataDeletion } = await import("../src/app/api/social/meta/data-deletion/route");
 const { default: SettingsPage } = await import("../src/app/home/settings/page");
@@ -88,6 +105,7 @@ const {
   IG_ONBOARDING_EXTRAS,
   OAUTH_COOKIE,
   OAUTH_WINDOW_MS,
+  TIKTOK_OAUTH_COOKIE,
 } = await import("../src/lib/social-oauth");
 const ui = await import("../src/lib/social-ui");
 
@@ -708,6 +726,368 @@ describe("the Facebook round trip", () => {
     expect(new URL(response.headers.get("location")!).searchParams.get("social")).toBe("connected");
     const rows = await liveAccounts(admin);
     expect(rows.map((r) => r.displayName)).toEqual(["חשבון לדוגמה"]);
+  });
+});
+
+describe("TikTok's connect (decision 0115)", () => {
+  const CLIENT_KEY = "test_tiktok_client_key";
+  const someId = "99999999-9999-4999-8999-999999999999";
+  let tiktoker: string;
+
+  beforeAll(async () => {
+    // TikTok's switch alone: Instagram's stays shut for this account.
+    tiktoker = (await seedOwnerAndBusiness(db, { email: "tiktoker@social.test" })).userId;
+    await db.execute(
+      sql`insert into app_config (key, value) values ('tiktok_posting', ${JSON.stringify({
+        access: "named",
+        userIds: [tiktoker],
+      })}::jsonb)`,
+    );
+  });
+
+  beforeEach(() => {
+    core.setTiktokProvider(undefined);
+    setEnv({ TIKTOK_CLIENT_KEY: undefined });
+  });
+
+  afterAll(() => {
+    core.setTiktokProvider(undefined);
+  });
+
+  /** start → the cookie it wrote and where it sent the browser. */
+  async function tiktokStartFlow(query = "") {
+    const response = await tiktokStart(
+      new Request(`http://localhost/api/social/tiktok/start${query}`),
+    );
+    return {
+      response,
+      location: response.headers.get("location") ?? "",
+      cookie: response.cookies.get(TIKTOK_OAUTH_COOKIE)?.value ?? "",
+    };
+  }
+
+  function tiktokReturn(query: Record<string, string>, cookie?: string) {
+    return new NextRequest(
+      `http://localhost/api/social/tiktok/callback?${new URLSearchParams(query).toString()}`,
+      { headers: cookie ? { cookie: `${TIKTOK_OAUTH_COOKIE}=${cookie}` } : {} },
+    );
+  }
+
+  /** A full round trip under the current session, through the given fake TikTok. */
+  async function tiktokRoundTrip(tiktok: InstanceType<typeof FakeTiktok>, query = "") {
+    core.setTiktokProvider(tiktok);
+    const { location, cookie } = await tiktokStartFlow(query);
+    const state = new URL(location).searchParams.get("state")!;
+    const response = await tiktokCallback(tiktokReturn({ code: "the_code", state }, cookie));
+    return { response, location: response.headers.get("location") ?? "" };
+  }
+
+  async function tiktokRows(userId: string) {
+    return (await liveAccounts(userId)).filter((row) => row.platform === "tiktok");
+  }
+
+  async function section(userId: string, params: Record<string, string> = {}) {
+    as(userId);
+    const tree = await SettingsPage(settingsProps(params));
+    return elements(tree).find((el) => el.type === SocialAccountsSection) as
+      ReactElement<Parameters<typeof SocialAccountsSection>[0]> | undefined;
+  }
+
+  it("each platform's routes open under its own switch alone", async () => {
+    // Instagram's switch alone, no switch at all, signed out: TikTok's routes are a 404.
+    for (const who of [reviewer, customer, null]) {
+      as(who);
+      for (const response of [
+        await tiktokStart(new Request("http://localhost/api/social/tiktok/start")),
+        await tiktokCallback(tiktokReturn({ code: "x", state: "y" })),
+      ]) {
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual(NOT_FOUND);
+        expect(response.headers.get("set-cookie")).toBeNull();
+      }
+    }
+
+    // TikTok's switch alone: Instagram's connect, its sounds and its pre-screen are a 404…
+    as(tiktoker);
+    for (const response of [
+      await start(new Request("http://localhost/api/social/instagram/start")),
+      await callback(callbackRequest({ code: "x", state: "y" })),
+      await sounds(
+        new Request(`http://localhost/api/social/instagram/sounds?accountId=${someId}&kind=music`),
+      ),
+    ]) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual(NOT_FOUND);
+      expect(response.headers.get("set-cookie")).toBeNull();
+    }
+    await expect(PreScreenPage(settingsProps())).rejects.toThrow("NEXT_NOT_FOUND");
+
+    // …and TikTok's are open, as they are for an admin.
+    expect((await tiktokStartFlow()).response.status).toBe(307);
+    as(admin);
+    expect((await tiktokStartFlow()).response.status).toBe(307);
+  });
+
+  it("DRY_RUN lands on this origin's own callback with a stub code, under TikTok's own cookie", async () => {
+    as(tiktoker);
+    const { response, location, cookie } = await tiktokStartFlow("?return=%2Fhome%2Frenders");
+    expect(response.status).toBe(307);
+    const url = new URL(location);
+    // Never tavnit.ai: the console's redirect is production's, DRY_RUN walks locally.
+    expect(`${url.origin}${url.pathname}`).toBe("http://localhost/api/social/tiktok/callback");
+    expect(url.searchParams.get("code")).toBe("dry_run");
+    const saved = decodeOAuthCookie(cookie)!;
+    expect(url.searchParams.get("state")).toBe(saved.state);
+    expect(saved).toMatchObject({ userId: tiktoker, returnTo: "/home/renders" });
+
+    const setCookie = response.headers.get("set-cookie")!;
+    expect(setCookie).toContain(`${TIKTOK_OAUTH_COOKIE}=`);
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/SameSite=lax/i);
+    expect(setCookie).toContain("Path=/api/social/tiktok");
+    expect(setCookie).toMatch(/Max-Age=86400/i);
+    // Instagram's state is untouched: the two round trips never spend each other's.
+    expect(response.cookies.get(OAUTH_COOKIE)).toBeUndefined();
+
+    // The stub walks the rest: the sample account connects, and the return address is honoured.
+    const done = await tiktokCallback(
+      tiktokReturn({ code: "dry_run", state: saved.state }, cookie),
+    );
+    expect(done.headers.get("location")).toBe("http://localhost/home/renders#");
+    expect((await tiktokRows(tiktoker)).map((row) => row.displayName)).toContain(
+      "חשבון טיקטוק לדוגמה",
+    );
+  });
+
+  it("live, start sends TikTok's authorize page the console's exact redirect, both scopes and the cookie's state", async () => {
+    as(tiktoker);
+    setEnv({ DRY_RUN: "0", TIKTOK_CLIENT_KEY: CLIENT_KEY });
+    const { response, location, cookie } = await tiktokStartFlow();
+    expect(response.status).toBe(307);
+    const state = decodeOAuthCookie(cookie)!.state;
+    expect(state.length).toBeGreaterThanOrEqual(32);
+    expect(location).toBe(core.tiktokAuthorizeUrl({ clientKey: CLIENT_KEY, state }));
+    const url = new URL(location);
+    expect(`${url.origin}${url.pathname}`).toBe("https://www.tiktok.com/v2/auth/authorize/");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      client_key: CLIENT_KEY,
+      response_type: "code",
+      scope: "user.info.basic,video.upload",
+      redirect_uri: "https://tavnit.ai/api/social/tiktok/callback",
+      state,
+      disable_auto_auth: "1",
+    });
+  });
+
+  it("no client key is a configuration fault: settings says TikTok's connect did not happen", async () => {
+    as(tiktoker);
+    setEnv({ DRY_RUN: "0", TIKTOK_CLIENT_KEY: undefined });
+    const { response, location } = await tiktokStartFlow("?return=%2Fhome%2Frenders");
+    const landed = new URL(location);
+    expect(landed.pathname).toBe("/home/settings");
+    expect(landed.searchParams.get("social")).toBe("error");
+    expect(landed.searchParams.get("p")).toBe("tiktok");
+    expect(landed.searchParams.get("return")).toBe("/home/renders");
+    expect(response.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("a cancel, TikTok's error, a forged, missing or late state each land on their own outcome, TikTok's, with the cookie spent and no exchange", async () => {
+    as(tiktoker);
+    const tiktok = new FakeTiktok();
+    core.setTiktokProvider(tiktok);
+    const { cookie, location } = await tiktokStartFlow("?return=%2Fhome%2Frenders");
+    const state = new URL(location).searchParams.get("state")!;
+    const cases: [NextRequest, string][] = [
+      [
+        tiktokReturn({ error: "access_denied", error_description: "no", state }, cookie),
+        "cancelled",
+      ],
+      [tiktokReturn({ error: "server_error", state }, cookie), "error"],
+      [tiktokReturn({ code: "c", state: "forged" }, cookie), "mismatch"],
+      [tiktokReturn({ code: "c", state }), "mismatch"],
+      [tiktokReturn({ code: "c", state }, agedCookie(cookie, 31)), "expired"],
+      [tiktokReturn({}, cookie), "error"],
+    ];
+    for (const [request, outcome] of cases) {
+      const response = await tiktokCallback(request);
+      const landed = new URL(response.headers.get("location")!);
+      expect(landed.pathname).toBe("/home/settings");
+      expect(landed.hash).toBe("#connections");
+      expect(landed.searchParams.get("social")).toBe(outcome);
+      expect(landed.searchParams.get("p")).toBe("tiktok");
+      const setCookie = response.headers.get("set-cookie")!;
+      expect(setCookie).toMatch(new RegExp(`${TIKTOK_OAUTH_COOKIE}=;`));
+      expect(setCookie).toContain("Path=/api/social/tiktok");
+    }
+    expect(tiktok.calls.exchangeCode).toBe(0);
+
+    // The same cookie under another allowed session (the admin) is not theirs.
+    as(admin);
+    const crossed = await tiktokCallback(tiktokReturn({ code: "c", state }, cookie));
+    expect(new URL(crossed.headers.get("location")!).searchParams.get("social")).toBe("mismatch");
+    expect(tiktok.calls.exchangeCode).toBe(0);
+  });
+
+  it("a grant without video.upload is refused with its own outcome, and no account is written", async () => {
+    as(tiktoker);
+    const tiktok = new FakeTiktok();
+    tiktok.tokens = { ...sampleTiktokTokens("tt_open_scope"), scopes: ["user.info.basic"] };
+    const before = (await tiktokRows(tiktoker)).length;
+    const { location } = await tiktokRoundTrip(tiktok);
+    const landed = new URL(location);
+    expect(landed.searchParams.get("social")).toBe("scope");
+    expect(landed.searchParams.get("p")).toBe("tiktok");
+    expect(tiktok.calls).toMatchObject({ exchangeCode: 1, userInfo: 0 });
+    const rows = await tiktokRows(tiktoker);
+    expect(rows).toHaveLength(before);
+    expect(rows.some((row) => row.externalId === "tt_open_scope")).toBe(false);
+  });
+
+  it("a full grant connects the account, both tokens sealed and never in the redirect, and settings names it", async () => {
+    as(tiktoker);
+    const tiktok = new FakeTiktok();
+    tiktok.tokens = sampleTiktokTokens("tt_open_live", {
+      access: "ACCESS_SECRET_1",
+      refresh: "REFRESH_SECRET_1",
+    });
+    const { response, location } = await tiktokRoundTrip(tiktok);
+    expect(response.status).toBe(307);
+    expect(tiktok.calls).toMatchObject({ exchangeCode: 1, userInfo: 1 });
+    const landed = new URL(location);
+    expect(landed.pathname).toBe("/home/settings");
+    expect(landed.hash).toBe("#connections");
+    const [row] = (await tiktokRows(tiktoker)).filter((r) => r.externalId === "tt_open_live");
+    expect(Object.fromEntries(landed.searchParams)).toEqual({
+      social: "connected",
+      p: "tiktok",
+      n: "1",
+      id: row!.id,
+    });
+    expect(row).toMatchObject({
+      status: "connected",
+      displayName: "שם טיקטוק חדש",
+      username: null,
+    });
+    expect(row!.accessTokenEnc).toMatch(/^v1\./);
+    expect(row!.refreshTokenEnc).toMatch(/^v1\./);
+    expect(`${row!.accessTokenEnc}${row!.refreshTokenEnc}`).not.toContain("SECRET");
+    // Nothing the browser receives carries a token.
+    expect(location).not.toMatch(/SECRET|v1\./);
+    expect(response.headers.get("set-cookie")).toMatch(new RegExp(`${TIKTOK_OAUTH_COOKIE}=;`));
+    expect(response.headers.get("set-cookie")).not.toMatch(/SECRET|v1\./);
+    expect(await response.text()).not.toMatch(/SECRET|v1\./);
+
+    const found = await section(tiktoker, {
+      social: "connected",
+      n: "1",
+      id: row!.id,
+      p: "tiktok",
+    });
+    expect(found!.props.flash).toEqual({ kind: "ok", text: ui.connectedLine(1, "שם טיקטוק חדש") });
+    expect(found!.props.platforms).toEqual(["tiktok"]);
+    expect(JSON.stringify(found!.props)).not.toMatch(/token|SECRET|v1\./i);
+
+    // A return address is honoured after connecting.
+    as(tiktoker);
+    const back = await tiktokRoundTrip(new FakeTiktok(), "?return=%2Fhome%2Frenders");
+    expect(back.location).toBe("http://localhost/home/renders#");
+  });
+
+  it("settings words each failed round trip as TikTok's when it was TikTok's", async () => {
+    const lines: [string, string][] = [
+      ["expired", ui.TIKTOK_CONNECT_EXPIRED],
+      ["mismatch", ui.TIKTOK_CONNECT_MISMATCH],
+      ["cancelled", ui.TIKTOK_CONNECT_CANCELLED],
+      ["scope", ui.TIKTOK_CONNECT_SCOPE],
+      ["error", ui.TIKTOK_CONNECT_FAILED],
+    ];
+    for (const [social, text] of lines) {
+      const found = await section(tiktoker, { social, p: "tiktok" });
+      expect(found!.props.flash).toEqual({ kind: "error", text });
+    }
+    // Without `p` the outcome is Instagram's, and an account only TikTok's switch
+    // lets in gets no line for it — not even from a hand-made address.
+    expect((await section(tiktoker, { social: "expired" }))!.props.flash).toBeNull();
+    // Every TikTok line is its own, and none sends the customer to Facebook.
+    const texts = lines.map(([, text]) => text);
+    expect(new Set(texts).size).toBe(texts.length);
+    for (const text of texts) expect(text).not.toMatch(/פייסבוק|אינסטגרם/);
+  });
+
+  it("the TikTok card is there only under TikTok's switch, Instagram's only under Instagram's", async () => {
+    const markup = (props: Parameters<typeof SocialAccountsSection>[0]) =>
+      renderToStaticMarkup(createElement(SocialAccountsSection, props));
+    const TIKTOK_START = 'href="/api/social/tiktok/start"';
+    const IG_PRESCREEN = 'href="/connect/instagram';
+
+    const onlyTiktok = (await section(tiktoker))!;
+    expect(onlyTiktok.props.platforms).toEqual(["tiktok"]);
+    expect(onlyTiktok.props.accounts.every((account) => account.platform === "tiktok")).toBe(true);
+    const tiktokCard = markup(onlyTiktok.props);
+    expect(tiktokCard).toContain(ui.TIKTOK_LABEL);
+    expect(tiktokCard).toContain(ui.TIKTOK_CARD_LEAD);
+    expect(tiktokCard).toContain('<img src="/brand/tiktok-icon-black-circle.png"');
+    // Connected already: a plain link to TikTok's start route, "הוספת חשבון".
+    expect(tiktokCard).toMatch(
+      new RegExp(`<a ${TIKTOK_START} class="[^"]*">${ui.SOCIAL_ADD_ANOTHER}</a>`),
+    );
+    // TikTok's basic profile has no handle: the name alone, masked in a recording.
+    expect(tiktokCard).toContain("<bdi>שם טיקטוק חדש</bdi>");
+    expect(tiktokCard).not.toContain(">@");
+    expect(tiktokCard).not.toContain(IG_PRESCREEN);
+    expect(tiktokCard).not.toContain("/brand/instagram-glyph-black.svg");
+
+    // Nothing connected yet: the primary "חיבור חשבון", and the empty line.
+    const empty = markup({ ...onlyTiktok.props, accounts: [], flash: null });
+    expect(empty).toMatch(new RegExp(`<a ${TIKTOK_START} class="[^"]*">${ui.SOCIAL_CONNECT}</a>`));
+    expect(empty).toContain(ui.SOCIAL_EMPTY);
+
+    const onlyInstagram = (await section(reviewer))!;
+    expect(onlyInstagram.props.platforms).toEqual(["instagram"]);
+    const instagramCard = markup(onlyInstagram.props);
+    expect(instagramCard).toContain(IG_PRESCREEN);
+    expect(instagramCard).toContain('<img src="/brand/instagram-glyph-black.svg"');
+    expect(instagramCard).not.toContain(ui.TIKTOK_CARD_LEAD);
+    expect(instagramCard).not.toContain("/api/social/tiktok/start");
+
+    const both = markup((await section(admin))!.props);
+    expect(both.indexOf(IG_PRESCREEN)).toBeGreaterThan(-1);
+    expect(both.indexOf(IG_PRESCREEN)).toBeLessThan(both.indexOf(ui.TIKTOK_CARD_LEAD));
+  });
+
+  it("ניתוק takes a TikTok account like an Instagram one; an account on a hidden platform is a 404", async () => {
+    as(tiktoker);
+    const accountId = await connectTiktok(db, tiktoker, "tt_open_gone");
+    // An Instagram account from before the switches changed: hidden, so not found.
+    const [instagramId] = await connectInstagram(db, tiktoker, [
+      samplePage("17841400000000088", "-tt"),
+    ]);
+    const hidden = await disconnect(
+      new Request("http://localhost/x", { method: "POST" }),
+      forId(instagramId!),
+    );
+    expect(hidden.status).toBe(404);
+
+    const response = await disconnect(
+      new Request("http://localhost/x", { method: "POST" }),
+      forId(accountId),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, cancelled: 0 });
+    const [row] = await db
+      .select()
+      .from(schema.socialAccounts)
+      .where(eq(schema.socialAccounts.id, accountId));
+    expect(row).toMatchObject({
+      status: "disconnected",
+      accessTokenEnc: null,
+      refreshTokenEnc: null,
+    });
+    const [kept] = await db
+      .select()
+      .from(schema.socialAccounts)
+      .where(eq(schema.socialAccounts.id, instagramId!));
+    expect(kept!.status).toBe("connected");
   });
 });
 

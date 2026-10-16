@@ -27,13 +27,14 @@ import {
   trialLine,
 } from "@/lib/plans-ui";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
-import { postingAllowed } from "@/lib/social";
+import { userPlatforms } from "@/lib/social";
 import { socialReturnPath } from "@/lib/social-oauth";
 import {
   accountName,
   connectedLine,
   connectOutcomeLine,
   parseSocialOutcome,
+  parseSocialPlatform,
 } from "@/lib/social-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { BusinessCard } from "./business-card";
@@ -130,30 +131,38 @@ export default async function SettingsPage({
       )
     : null;
 
-  // חיבורים: nothing of it is read, let alone rendered, for an account the
-  // switch hides. `?social=` is the Facebook round trip's outcome, `?return=`
-  // the address a connect should land on (the schedule flow's, in PR 3).
-  const social = (await postingAllowed(user.id))
-    ? await (async () => {
-        const params = await searchParams;
-        const accounts = await listSocialAccounts(getDb(), user.id);
-        const outcome = parseSocialOutcome(params.social);
-        let flash: SocialFlash | null = null;
-        if (outcome && outcome !== "connected") {
-          // The "no account" line's advice follows the window the mode opens (0105).
-          const mode = outcome === "none" ? await getInstagramConnectMode(getDb()) : "standard";
-          flash = { kind: "error", text: connectOutcomeLine(outcome, mode) };
-        }
-        if (outcome === "connected") {
-          const count = Number(params.n);
-          const named = accounts.find((account) => account.id === params.id);
-          if (Number.isInteger(count) && count > 0) {
-            flash = { kind: "ok", text: connectedLine(count, named ? accountName(named) : null) };
+  // חיבורים: nothing of it is read, let alone rendered, for an account no
+  // switch allows; each platform's card and accounts only under its own switch
+  // (decision 0115). `?social=` is the round trip's outcome and `?p=tiktok`
+  // says it was TikTok's; `?return=` the address a connect should land on.
+  const platforms = await userPlatforms(user.id);
+  const social =
+    platforms.length > 0
+      ? await (async () => {
+          const params = await searchParams;
+          const accounts = await listSocialAccounts(getDb(), user.id, platforms);
+          const outcome = parseSocialOutcome(params.social);
+          const outcomePlatform = parseSocialPlatform(params.p);
+          let flash: SocialFlash | null = null;
+          // A platform the switches hide gets no line, even from a hand-made address.
+          if (outcome && outcome !== "connected" && platforms.includes(outcomePlatform)) {
+            // The "no account" line's advice follows the window the mode opens (0105).
+            const mode =
+              outcome === "none" && outcomePlatform === "instagram"
+                ? await getInstagramConnectMode(getDb())
+                : "standard";
+            flash = { kind: "error", text: connectOutcomeLine(outcome, mode, outcomePlatform) };
           }
-        }
-        return { accounts, flash, returnTo: socialReturnPath(params.return) };
-      })()
-    : null;
+          if (outcome === "connected") {
+            const count = Number(params.n);
+            const named = accounts.find((account) => account.id === params.id);
+            if (Number.isInteger(count) && count > 0) {
+              flash = { kind: "ok", text: connectedLine(count, named ? accountName(named) : null) };
+            }
+          }
+          return { accounts, flash, returnTo: socialReturnPath(params.return), platforms };
+        })()
+      : null;
 
   const cookieStore = await cookies();
   const selectedId = pickSelectedBusiness(rows, cookieStore.get(BUSINESS_COOKIE)?.value)?.id;
@@ -244,6 +253,7 @@ export default async function SettingsPage({
           accounts={social.accounts}
           flash={social.flash}
           returnTo={social.returnTo}
+          platforms={social.platforms}
         />
       )}
 

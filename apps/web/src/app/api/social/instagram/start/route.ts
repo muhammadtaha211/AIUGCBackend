@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getDb, getEnv, getInstagramConnectMode } from "@aiugc/core";
-import { requirePostingUser } from "@/lib/social";
+import { requirePlatformUser } from "@/lib/social";
 import {
   encodeOAuthCookie,
   instagramDialogUrl,
@@ -21,7 +21,7 @@ import {
  * lands on the callback with a stub code, so the whole flow walks without Meta.
  */
 export async function GET(request: Request) {
-  const auth = await requirePostingUser();
+  const auth = await requirePlatformUser("instagram");
   if ("response" in auth) return auth.response;
 
   const url = new URL(request.url);

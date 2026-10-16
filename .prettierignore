@@ -17,6 +17,10 @@ prompts/
 # against them, so a reformat would change what was asked for (docs/unattended/protocol.md).
 docs/unattended/runs/
 
+# Task prompts, saved byte for byte as the founder pasted them (the plans beside them are
+# formatted normally): a reformat would change what was asked for.
+docs/claude/prompts/
+
 # Obsidian editor state. Obsidian rewrites these without a final newline every
 # time the vault is opened, so formatting them just goes red again.
 docs/vault/.obsidian/

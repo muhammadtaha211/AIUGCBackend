@@ -16,6 +16,16 @@ import type { InstagramConnectMode } from "@aiugc/core";
 export const SOCIAL_SECTION_TITLE = "חיבורים";
 export const SOCIAL_SECTION_LEAD = "החשבונות שתבנית מפרסמת אליהם.";
 export const INSTAGRAM_LABEL = "אינסטגרם";
+// DRAFT (PR 4): the TikTok card's heading — PLATFORM_LABELS.tiktok's word.
+export const TIKTOK_LABEL = "טיקטוק";
+/**
+ * DRAFT (PR 4, decision 0115): the TikTok card's lead. TikTok asks apps to tell
+ * the owner the video waits for them behind TikTok's inbox notification
+ * (upload-video reference, read 2026-10-16). The founder's approval: no line
+ * names a Drafts folder; final wording after the live run shows where it lands.
+ */
+export const TIKTOK_CARD_LEAD =
+  "תבנית שולחת את הסרטון לטיקטוק, ובאפליקציה מגיעה התראה. פותחים אותה, מוסיפים סאונד וכיתוב ומפרסמים.";
 export const SOCIAL_CONNECTED = "מחובר";
 export const SOCIAL_EXPIRED = "פג תוקף — התחברו מחדש";
 export const SOCIAL_CONNECT = "חיבור חשבון";
@@ -96,15 +106,35 @@ export const CONNECT_CANCELLED =
 export const CONNECT_FAILED =
   "פייסבוק לא השלימה את החיבור, ולא חובר שום חשבון. נסו שוב בעוד כמה דקות.";
 
-export type SocialOutcome = "connected" | "none" | "expired" | "mismatch" | "cancelled" | "error";
+// DRAFT (PR 4): TikTok's round trip, the same outcomes in TikTok's name, plus
+// "scope" — the owner switched off the upload permission on TikTok's page.
+export const TIKTOK_CONNECT_EXPIRED =
+  "עברה יותר מחצי שעה מאז שנפתח החלון של טיקטוק, ולכן החיבור לא נשמר. התחילו את החיבור שוב מכאן.";
+export const TIKTOK_CONNECT_MISMATCH =
+  "החזרה מטיקטוק לא תאמה את החיבור שהתחיל כאן. התחילו את החיבור שוב מכאן, בחלון אחד.";
+export const TIKTOK_CONNECT_CANCELLED =
+  "החלון של טיקטוק נסגר בלי אישור, ולא חובר שום חשבון. אפשר להתחיל שוב בכל זמן.";
+export const TIKTOK_CONNECT_FAILED =
+  "טיקטוק לא השלימה את החיבור, ולא חובר שום חשבון. נסו שוב בעוד כמה דקות.";
+export const TIKTOK_CONNECT_SCOPE =
+  "כדי לשלוח סרטונים לטיקטוק צריך לאשר גם את ההרשאה להעלאת סרטונים. התחברו שוב ואשרו את שתיהן.";
+
+export type SocialOutcome =
+  "connected" | "none" | "expired" | "mismatch" | "cancelled" | "scope" | "error";
 const OUTCOMES: readonly SocialOutcome[] = [
   "connected",
   "none",
   "expired",
   "mismatch",
   "cancelled",
+  "scope",
   "error",
 ];
+
+/** `?p=` as TikTok's callback writes it; anything else is Instagram's round trip. */
+export function parseSocialPlatform(value: string | string[] | undefined): "instagram" | "tiktok" {
+  return value === "tiktok" ? "tiktok" : "instagram";
+}
 
 /** `?social=` as the callback writes it; anything else is no outcome at all. */
 export function parseSocialOutcome(value: string | string[] | undefined): SocialOutcome | null {
@@ -115,7 +145,15 @@ export function parseSocialOutcome(value: string | string[] | undefined): Social
 export function connectOutcomeLine(
   outcome: Exclude<SocialOutcome, "connected">,
   mode: InstagramConnectMode,
+  platform: "instagram" | "tiktok" = "instagram",
 ): string {
+  if (platform === "tiktok") {
+    if (outcome === "expired") return TIKTOK_CONNECT_EXPIRED;
+    if (outcome === "mismatch") return TIKTOK_CONNECT_MISMATCH;
+    if (outcome === "cancelled") return TIKTOK_CONNECT_CANCELLED;
+    if (outcome === "scope") return TIKTOK_CONNECT_SCOPE;
+    return TIKTOK_CONNECT_FAILED;
+  }
   if (outcome === "none") return connectNoAccountLine(mode);
   if (outcome === "expired") return CONNECT_EXPIRED;
   if (outcome === "mismatch") return CONNECT_MISMATCH;

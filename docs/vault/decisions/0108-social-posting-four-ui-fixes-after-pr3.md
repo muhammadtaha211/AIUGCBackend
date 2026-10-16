@@ -16,6 +16,10 @@ for relitigation. They change [[0101-tavnit-schedules-and-posts-to-instagram-and
 screens. **Nothing about how posts are scheduled or published changed**: no core function, no job,
 no limit, no email, no connect, no migration.
 
+> **2026-10-16 — §1 now applies per platform ([[0115-tiktok-inbox-posting-pr4]] §3):** one tag per
+> platform with its mark, Instagram first; TikTok's terminal words are "נשלח לטיקטוק" on inbox
+> delivery and "פורסם" on the published webhook. Instagram's rule is unchanged.
+
 ## 1. The "פורסם" tag
 
 A video's tile (the home strip and the all-videos page) shows **"פורסם"** once at least one of its

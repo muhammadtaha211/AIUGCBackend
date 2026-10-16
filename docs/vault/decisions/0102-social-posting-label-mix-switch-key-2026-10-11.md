@@ -14,6 +14,9 @@ the planning assistant, kept at his approval and not otherwise ruled). All five 
 FOUNDER-REPORTED, 2026-10-11, not up for relitigation. They change
 [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]], whose dated pointers lead here.
 
+> **2026-10-16 — §4 is done: PR 4 renders a TikTok card ([[0115-tiktok-inbox-posting-pr4]]),**
+> under TikTok's own switch; §3's `social_posting` is now Instagram's switch, the key unchanged.
+
 > **2026-10-12 — §1 stands, and the tick is quiet ([[0107-social-posting-pr3-tick-landing-line-failure-email]]):**
 > small, muted, unticked, last on the schedule step — his reason: it is the customer's decision and
 > should not be in their face.

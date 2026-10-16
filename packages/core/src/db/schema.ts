@@ -107,8 +107,8 @@ export const ledgerReason = pgEnum("ledger_reason", [
   "expire_trial",
 ]);
 
-// 0057: social posting (decision 0101). 'tiktok' exists from day one so the
-// schema never moves when it is built; nothing writes it yet.
+// 0057: social posting (decision 0101). 'tiktok' existed from day one so the
+// schema never moved when it was built (PR 4, decision 0115).
 export const socialPlatform = pgEnum("social_platform", ["instagram", "tiktok"]);
 export const socialAccountStatus = pgEnum("social_account_status", [
   "connected",
@@ -116,9 +116,11 @@ export const socialAccountStatus = pgEnum("social_account_status", [
   "disconnected",
   "deleted",
 ]);
+// 0064: 'delivered' — TikTok only: in the owner's inbox, not yet posted by them.
 export const scheduledPostStatus = pgEnum("scheduled_post_status", [
   "scheduled",
   "publishing",
+  "delivered",
   "posted",
   "failed",
   "cancelled",
@@ -924,6 +926,8 @@ export const socialAccounts = pgTable(
     fbUserId: text("fb_user_id"),
     // Instagram: the PAGE token (no expiry per Meta); TikTok: the access token.
     accessTokenEnc: text("access_token_enc"),
+    // TikTok only (0065): the access token's 24 h end — refreshed under a row lock.
+    accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
     // Instagram only: the ~60-day USER token the sound search needs.
     userTokenEnc: text("user_token_enc"),
     userTokenExpiresAt: timestamp("user_token_expires_at", { withTimezone: true }),
@@ -978,7 +982,8 @@ export const scheduledPosts = pgTable(
     aiLabel: boolean("ai_label").notNull().default(false),
     status: scheduledPostStatus("status").notNull().default("scheduled"),
     // Meta's creation id (TikTok: the publish id), then the media id and
-    // permalink the instant media_publish returns.
+    // permalink the instant media_publish returns (TikTok: the post id and the
+    // player link once TikTok says the post is public — kept as text, a 19-digit id).
     providerContainerId: text("provider_container_id"),
     providerMediaId: text("provider_media_id"),
     permalink: text("permalink"),
@@ -990,6 +995,8 @@ export const scheduledPosts = pgTable(
     // Set while the job waits out Instagram's daily publishing quota.
     deferredUntil: timestamp("deferred_until", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
+    // TikTok only (0065): reached the owner's inbox (status 'delivered').
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     postedAt: timestamp("posted_at", { withTimezone: true }),
     failedAt: timestamp("failed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),

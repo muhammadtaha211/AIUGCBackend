@@ -89,7 +89,7 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
         ? 404
         : err.code === "not_pending"
           ? 409
-          : err.code === "instagram_daily_cap"
+          : err.code === "instagram_daily_cap" || err.code === "tiktok_pending_cap"
             ? 429
             : 422;
     return hit(status, socialErrorLine(err.code, POSTING_HORIZON_DAYS));

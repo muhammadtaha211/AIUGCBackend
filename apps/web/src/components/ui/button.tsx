@@ -35,6 +35,8 @@ const BASE =
 export const PRIMARY_BUTTON_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.md}`;
 /** The lg size of the same, for the plan cards' public call-to-action links. */
 export const PRIMARY_BUTTON_LG_CLASS = `${BASE} ${VARIANT.primary} ${SIZE.lg}`;
+/** The secondary look for a link that must be a plain <a> (a route that redirects off-site). */
+export const SECONDARY_BUTTON_CLASS = `${BASE} ${VARIANT.secondary} ${SIZE.md}`;
 /**
  * The player's "תזמון פרסום" beside הורדה (decision 0108 §2): white at rest,
  * light grey on hover, ink text in both — solid colours, so it reads the same

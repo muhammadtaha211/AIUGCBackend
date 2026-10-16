@@ -1334,4 +1334,79 @@ describe("migrations", () => {
     ]);
     await pg.close();
   });
+
+  it("0064: scheduled_post_status gains delivered after publishing, idempotently, rows untouched", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0064")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const migration = readFileSync(
+      join(MIGRATIONS_DIR, "0064_scheduled_post_status_delivered.sql"),
+      "utf8",
+    );
+    await pg.exec(migration);
+    await pg.exec(migration);
+    const labels = await pg.query<{ enumlabel: string }>(
+      `SELECT enumlabel FROM pg_enum WHERE enumtypid = 'public.scheduled_post_status'::regtype ORDER BY enumsortorder`,
+    );
+    expect(labels.rows.map((r) => r.enumlabel)).toEqual([
+      "scheduled",
+      "publishing",
+      "delivered",
+      "posted",
+      "failed",
+      "cancelled",
+    ]);
+    await pg.close();
+  });
+
+  it("0065: social_accounts.access_token_expires_at and scheduled_posts.delivered_at — nullable timestamptz, rows kept, idempotent", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0065")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const user = "11111111-1111-4111-8111-111111111111";
+    const account = "33333333-3333-4333-8333-333333333333";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO social_accounts (id, user_id, platform, external_id)
+        VALUES ('${account}', '${user}', 'instagram', '17841400000000001');
+    `);
+    const migration = readFileSync(
+      join(MIGRATIONS_DIR, "0065_tiktok_token_expiry_and_delivery.sql"),
+      "utf8",
+    );
+    await pg.exec(migration);
+    await pg.exec(migration);
+    const columns = await pg.query<{
+      table_name: string;
+      column_name: string;
+      data_type: string;
+      is_nullable: string;
+    }>(
+      `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+        WHERE (table_name, column_name) IN (('social_accounts', 'access_token_expires_at'),
+                                            ('scheduled_posts', 'delivered_at'))
+        ORDER BY table_name`,
+    );
+    expect(columns.rows).toEqual([
+      {
+        table_name: "scheduled_posts",
+        column_name: "delivered_at",
+        data_type: "timestamp with time zone",
+        is_nullable: "YES",
+      },
+      {
+        table_name: "social_accounts",
+        column_name: "access_token_expires_at",
+        data_type: "timestamp with time zone",
+        is_nullable: "YES",
+      },
+    ]);
+    const kept = await pg.query<{ id: string; access_token_expires_at: Date | null }>(
+      "SELECT id, access_token_expires_at FROM social_accounts",
+    );
+    expect(kept.rows).toEqual([{ id: account, access_token_expires_at: null }]);
+    await pg.close();
+  });
 });

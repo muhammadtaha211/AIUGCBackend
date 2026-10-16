@@ -15,7 +15,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   if (!isUuid(id)) return jsonError(404, NOT_FOUND);
   try {
-    await cancelScheduledPost(getDb(), { userId: auth.userId, postId: id });
+    await cancelScheduledPost(getDb(), {
+      userId: auth.userId,
+      postId: id,
+      platforms: auth.platforms,
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     return coreErrorResponse(err);

@@ -14,6 +14,13 @@ DEFAULT** (assumed by the planning assistant or this plan, kept at his approval 
 ruled). The mechanics live in `docs/09-social-posting.md`; this note records what was decided and
 why.
 
+> **2026-10-16 — TikTok is built, inbox only ([[0115-tiktok-inbox-posting-pr4]]):** decision 4
+> now on evidence — TikTok offers no way to attach a sound by API, so direct post is rejected, not
+> deferred. TikTok has a switch of its own (`app_config.tiktok_posting`), so "behind one switch"
+> below is history; the file reaches TikTok by `PULL_FROM_URL` through `auth.tavnit.ai`, so the
+> `FILE_UPLOAD` line among the measured facts below no longer holds; a TikTok app exists
+> (FOUNDER-REPORTED, 2026-10-16).
+
 > **2026-10-13 — four UI fixes after PR 3 ([[0108-social-posting-four-ui-fixes-after-pr3]]):**
 > decision 10's grey tag gains a second one, "פורסם", once a post went out and none waits; the
 > schedule button is white with a light-grey hover; the date and time are Tavnit's own pickers,

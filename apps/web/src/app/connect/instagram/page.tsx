@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getDb, getInstagramConnectMode } from "@aiugc/core";
 import { authedUser } from "@/lib/auth-user";
-import { postingAllowed } from "@/lib/social";
+import { platformAccess } from "@/lib/social";
 import { socialReturnPath } from "@/lib/social-oauth";
 import { PRESCREEN_TITLE } from "@/lib/social-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -33,7 +33,7 @@ export default async function InstagramConnectPage({
 }) {
   const supabase = await createServerSupabase();
   const user = authedUser(await supabase.auth.getUser());
-  if (!user || !(await postingAllowed(user.id))) notFound();
+  if (!user || !(await platformAccess(user.id)).instagram) notFound();
 
   const params = await searchParams;
   return (

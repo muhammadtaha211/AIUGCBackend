@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { POST_FAILED } from "../alerts";
 import { getConfigValue } from "../appConfig";
@@ -26,13 +26,24 @@ import {
   type MetaAudioItem,
   type MetaPageWithInstagram,
 } from "../providers/meta-graph";
+import {
+  getTiktokProvider,
+  isTiktokPendingCap,
+  isTiktokTokenLapse,
+  rawIdField,
+  TIKTOK_PULL_ORIGIN,
+  TiktokApiError,
+  type TiktokProfile,
+  type TiktokTokens,
+} from "../providers/tiktok";
 import { openSecret, sealSecret, socialTokenAad } from "../secret-box";
 import { getStorage } from "../storage";
 
 /**
  * Social posting (decision 0101, docs/09-social-posting.md): a connected
  * platform account, a scheduled post per video × account, and the job that
- * publishes it exactly once.
+ * publishes it exactly once. TikTok (PR 4, decision 0115) is its own section
+ * near the end: an inbox delivery the owner finishes in the app, not a post.
  *
  * The invariants, each pinned by a test:
  * - A post is edited or cancelled only while `status = 'scheduled'`; the job's
@@ -106,7 +117,26 @@ export const SOCIAL_FAILURE_KINDS = [
 export const PUBLISH_MAX_TRIES = 5;
 export type SocialFailureKind = (typeof SOCIAL_FAILURE_KINDS)[number];
 
+/**
+ * TikTok's inbox cap: "at most 5 pending shares within any 24-hour period"
+ * (upload-video reference, read 2026-10-16) — drafts the owner has not finished.
+ */
+export const TIKTOK_PENDING_SHARE_CAP = 5;
+/**
+ * TikTok's PULL download "times out one hour after the download task is
+ * initiated" (media-transfer guide): 65 polls a minute apart cover it. Each poll
+ * is its own job run (a reschedule), so no lane is held between them.
+ */
+export const TIKTOK_MAX_POLLS = 65;
+/** TikTok pulls within the hour after init; the signed URL outlives that window. */
+const TIKTOK_PULL_URL_TTL_SECONDS = 7200;
+/** Refresh a TikTok access token (24 h) once less than this remains. */
+const TIKTOK_REFRESH_MARGIN_MS = 10 * 60_000;
+/** The daily poll reads TikTok posts delivered within this many days. */
+const TIKTOK_DELIVERED_POLL_DAYS = 7;
+
 export type SocialPlatform = "instagram" | "tiktok";
+export const SOCIAL_PLATFORMS: readonly SocialPlatform[] = ["instagram", "tiktok"];
 export type SoundSnapshot = MetaAudioItem;
 
 // ---------------------------------------------------------------------------
@@ -126,34 +156,71 @@ export const socialPostingSchema = z.discriminatedUnion("access", [
 ]);
 
 /**
- * Who sees the feature: admins always; a named account under `named`; everyone
- * once the founder inserts {"access":"everyone"} after Meta's approval. Checked
- * in every page and route. A row that does not parse hides the feature rather
- * than throwing: a throw would turn a customer's 404 into a 500, which is a
- * trace of the feature (0102).
+ * Each platform's own switch (decision 0115 §5): `social_posting` was the one
+ * switch and is now Instagram's; `tiktok_posting` is TikTok's, independent —
+ * Meta's review and TikTok's audit clear on different days. Same schema, same
+ * modes, an absent row is admins only for each.
  */
-export async function getPostingAccess(db: Db, userId: string): Promise<"allowed" | "hidden"> {
+export const PLATFORM_SWITCH_KEYS: Record<SocialPlatform, string> = {
+  instagram: "social_posting",
+  tiktok: "tiktok_posting",
+};
+
+/**
+ * Who sees each platform: admins always; a named account under `named`;
+ * everyone once the founder inserts {"access":"everyone"} after the platform's
+ * review. A row that does not parse hides that platform rather than throwing: a
+ * throw would turn a customer's 404 into a 500, which is a trace of the feature
+ * (0102).
+ */
+export async function getPlatformAccess(
+  db: Db,
+  userId: string,
+): Promise<Record<SocialPlatform, boolean>> {
   const user = (
     await db.select({ role: users.role }).from(users).where(eq(users.id, userId)).limit(1)
   )[0];
-  if (user?.role === "admin") return "allowed";
-  const row = (
-    await db
-      .select({ value: appConfig.value })
-      .from(appConfig)
-      .where(eq(appConfig.key, "social_posting"))
-      .limit(1)
-  )[0];
-  const parsed = socialPostingSchema.safeParse(row?.value ?? { access: "admins" });
-  if (!parsed.success) return "hidden";
-  const config = parsed.data;
-  if (config.access === "everyone") return "allowed";
-  if (
-    config.access === "named" &&
-    config.userIds.some((id) => id.toLowerCase() === userId.toLowerCase())
-  )
-    return "allowed";
-  return "hidden";
+  if (user?.role === "admin") return { instagram: true, tiktok: true };
+  const rows = await db
+    .select({ key: appConfig.key, value: appConfig.value })
+    .from(appConfig)
+    .where(inArray(appConfig.key, Object.values(PLATFORM_SWITCH_KEYS)));
+  const allowed = (platform: SocialPlatform): boolean => {
+    const row = rows.find((r) => r.key === PLATFORM_SWITCH_KEYS[platform]);
+    const parsed = socialPostingSchema.safeParse(row?.value ?? { access: "admins" });
+    if (!parsed.success) return false;
+    const config = parsed.data;
+    if (config.access === "everyone") return true;
+    return (
+      config.access === "named" &&
+      config.userIds.some((id) => id.toLowerCase() === userId.toLowerCase())
+    );
+  };
+  return { instagram: allowed("instagram"), tiktok: allowed("tiktok") };
+}
+
+/** The platforms a `getPlatformAccess` answer lets in, Instagram first. */
+export function allowedPlatforms(access: Record<SocialPlatform, boolean>): SocialPlatform[] {
+  return SOCIAL_PLATFORMS.filter((platform) => access[platform]);
+}
+
+/**
+ * Whether the account sees posting at all — any platform. The shared surfaces
+ * (the calendar, the schedule page, the notice, the nav, the shared post
+ * routes) open on this; what each shows is filtered by `getPlatformAccess`.
+ */
+export async function getPostingAccess(db: Db, userId: string): Promise<"allowed" | "hidden"> {
+  const access = await getPlatformAccess(db, userId);
+  return access.instagram || access.tiktok ? "allowed" : "hidden";
+}
+
+/** A `platform in (…)` predicate when a filter is given; none means every platform. */
+function platformIn(
+  column: typeof scheduledPosts.platform | typeof socialAccounts.platform,
+  platforms: readonly SocialPlatform[] | undefined,
+) {
+  if (platforms === undefined) return undefined;
+  return platforms.length === 0 ? sql`false` : inArray(column, [...platforms]);
 }
 
 /**
@@ -195,7 +262,8 @@ export type SocialErrorCode =
   | "bad_timezone"
   | "caption_too_long"
   | "sound_without_instagram"
-  | "instagram_daily_cap";
+  | "instagram_daily_cap"
+  | "tiktok_pending_cap";
 
 export class SocialSchedulingError extends Error {
   constructor(
@@ -247,7 +315,12 @@ export interface SocialAccountView {
 
 type AccountRow = typeof socialAccounts.$inferSelect;
 
-export async function listSocialAccounts(db: Db, userId: string): Promise<SocialAccountView[]> {
+/** `platforms`: the caller's switches (`allowedPlatforms`); absent = every platform. */
+export async function listSocialAccounts(
+  db: Db,
+  userId: string,
+  platforms?: readonly SocialPlatform[],
+): Promise<SocialAccountView[]> {
   const rows = await db
     .select()
     .from(socialAccounts)
@@ -255,6 +328,7 @@ export async function listSocialAccounts(db: Db, userId: string): Promise<Social
       and(
         eq(socialAccounts.userId, userId),
         inArray(socialAccounts.status, ["connected", "expired"]),
+        platformIn(socialAccounts.platform, platforms),
       ),
     )
     .orderBy(asc(socialAccounts.connectedAt));
@@ -379,7 +453,7 @@ export async function upsertInstagramConnections(
  */
 export async function disconnectSocialAccount(
   db: Db,
-  opts: { userId: string; accountId: string },
+  opts: { userId: string; accountId: string; platforms?: readonly SocialPlatform[] },
 ): Promise<{ cancelled: number }> {
   return db.transaction(async (tx) => {
     const updated = await tx
@@ -389,6 +463,7 @@ export async function disconnectSocialAccount(
         accessTokenEnc: null,
         userTokenEnc: null,
         refreshTokenEnc: null,
+        accessTokenExpiresAt: null,
         disconnectedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -397,6 +472,7 @@ export async function disconnectSocialAccount(
           eq(socialAccounts.id, opts.accountId),
           eq(socialAccounts.userId, opts.userId),
           inArray(socialAccounts.status, ["connected", "expired"]),
+          platformIn(socialAccounts.platform, opts.platforms),
         ),
       )
       .returning({ id: socialAccounts.id });
@@ -486,6 +562,8 @@ export interface SchedulePostsInput {
   sound?: SoundSnapshot | null;
   /** "Made with AI" — the customer's tick (0102); absent means unticked. */
   aiLabel?: boolean;
+  /** The caller's switches (`allowedPlatforms`); an account outside them is not_found. */
+  platforms?: readonly SocialPlatform[];
 }
 
 /**
@@ -537,10 +615,12 @@ async function assertInstant(
 }
 
 /**
- * Instagram only — TikTok's inbox cap arrives with its connect route (PR 4).
  * Counts Tavnit's own posts within a day either side of the instant, which can
- * only over-refuse against Meta's rolling day. `excludePostId` keeps a post
- * being moved from counting against itself.
+ * only over-refuse against the platform's rolling day. `excludePostId` keeps a
+ * post being moved from counting against itself. TikTok (decision 0115): the
+ * inbox's 5 pending shares — scheduled, publishing and delivered count; a
+ * posted draft is no longer pending at TikTok, and its 403 plus the hourly wait
+ * cover the rest.
  */
 async function assertAccountCaps(
   db: Db,
@@ -548,8 +628,25 @@ async function assertAccountCaps(
   scheduledAt: Date,
   excludePostId?: string,
 ): Promise<void> {
-  if (account.platform !== "instagram") return;
   const dayMs = 86_400_000;
+  if (account.platform === "tiktok") {
+    const [pending] = await db
+      .select({ n: sql<string>`count(*)` })
+      .from(scheduledPosts)
+      .where(
+        and(
+          eq(scheduledPosts.socialAccountId, account.id),
+          inArray(scheduledPosts.status, ["scheduled", "publishing", "delivered"]),
+          gte(scheduledPosts.scheduledAt, new Date(scheduledAt.getTime() - dayMs)),
+          lte(scheduledPosts.scheduledAt, new Date(scheduledAt.getTime() + dayMs)),
+          ...(excludePostId ? [sql`${scheduledPosts.id} <> ${excludePostId}`] : []),
+        ),
+      );
+    if (Number(pending?.n ?? 0) + 1 > TIKTOK_PENDING_SHARE_CAP) {
+      throw new SocialSchedulingError("tiktok_pending_cap");
+    }
+    return;
+  }
   const [row] = await db
     .select({ n: sql<string>`count(*)` })
     .from(scheduledPosts)
@@ -620,7 +717,13 @@ export async function schedulePosts(
     const accounts = await tx
       .select()
       .from(socialAccounts)
-      .where(and(inArray(socialAccounts.id, unique), eq(socialAccounts.userId, input.userId)))
+      .where(
+        and(
+          inArray(socialAccounts.id, unique),
+          eq(socialAccounts.userId, input.userId),
+          platformIn(socialAccounts.platform, input.platforms),
+        ),
+      )
       .for("update");
     if (accounts.length !== unique.length) throw new SocialSchedulingError("not_found");
     if (accounts.some((a) => a.status !== "connected"))
@@ -634,6 +737,9 @@ export async function schedulePosts(
 
     const rows: PostRow[] = [];
     for (const account of accounts) {
+      // Caption, sound and the AI tick are Instagram's (decision 0115 §2): the
+      // TikTok inbox takes only the file, and the owner adds the rest in TikTok.
+      const instagram = account.platform === "instagram";
       const [row] = await tx
         .insert(scheduledPosts)
         .values({
@@ -644,10 +750,9 @@ export async function schedulePosts(
           platform: account.platform,
           scheduledAt: input.scheduledAt,
           timezone: input.timezone,
-          caption: input.caption,
-          // The sound belongs to Instagram; a TikTok row of the same batch carries none.
-          sound: account.platform === "instagram" && input.sound ? input.sound : null,
-          aiLabel: input.aiLabel ?? false,
+          caption: instagram ? input.caption : "",
+          sound: instagram && input.sound ? input.sound : null,
+          aiLabel: instagram ? (input.aiLabel ?? false) : false,
         })
         .returning();
       await enqueue(tx as Db, {
@@ -679,6 +784,7 @@ export async function updateScheduledPost(
     caption?: string;
     sound?: SoundSnapshot | null;
     aiLabel?: boolean;
+    platforms?: readonly SocialPlatform[];
   },
   now: Date = new Date(),
 ): Promise<ScheduledPostView> {
@@ -691,6 +797,10 @@ export async function updateScheduledPost(
   if (opts.timezone !== undefined) assertTimezone(opts.timezone);
   if (opts.sound && existing.platform !== "instagram")
     throw new SocialSchedulingError("sound_without_instagram");
+  if (existing.platform === "tiktok") {
+    // Time only (decision 0115 §2): TikTok's row keeps no caption and no tick.
+    opts = { ...opts, caption: undefined, aiLabel: undefined };
+  }
   if (opts.scheduledAt !== undefined) {
     const render = (
       await db
@@ -746,7 +856,7 @@ export async function updateScheduledPost(
  */
 export async function cancelScheduledPost(
   db: Db,
-  opts: { userId: string; postId: string },
+  opts: { userId: string; postId: string; platforms?: readonly SocialPlatform[] },
 ): Promise<ScheduledPostView> {
   const existing = await getScheduledPost(db, opts);
   if (!existing) throw new SocialSchedulingError("not_found");
@@ -760,7 +870,11 @@ export async function cancelScheduledPost(
 }
 
 /** The /home notice's "הבנתי": every failed post of the account stops counting. */
-export async function acknowledgeFailedPosts(db: Db, userId: string): Promise<number> {
+export async function acknowledgeFailedPosts(
+  db: Db,
+  userId: string,
+  platforms?: readonly SocialPlatform[],
+): Promise<number> {
   const rows = await db
     .update(scheduledPosts)
     .set({ failureAcknowledgedAt: new Date() })
@@ -769,6 +883,7 @@ export async function acknowledgeFailedPosts(db: Db, userId: string): Promise<nu
         eq(scheduledPosts.userId, userId),
         eq(scheduledPosts.status, "failed"),
         isNull(scheduledPosts.failureAcknowledgedAt),
+        platformIn(scheduledPosts.platform, platforms),
       ),
     )
     .returning({ id: scheduledPosts.id });
@@ -794,13 +909,19 @@ export function toPostView(row: PostRow): ScheduledPostView {
 
 export async function getScheduledPost(
   db: Db,
-  opts: { userId: string; postId: string },
+  opts: { userId: string; postId: string; platforms?: readonly SocialPlatform[] },
 ): Promise<ScheduledPostView | undefined> {
   const row = (
     await db
       .select()
       .from(scheduledPosts)
-      .where(and(eq(scheduledPosts.id, opts.postId), eq(scheduledPosts.userId, opts.userId)))
+      .where(
+        and(
+          eq(scheduledPosts.id, opts.postId),
+          eq(scheduledPosts.userId, opts.userId),
+          platformIn(scheduledPosts.platform, opts.platforms),
+        ),
+      )
       .limit(1)
   )[0];
   return row ? toPostView(row) : undefined;
@@ -821,7 +942,7 @@ export interface ScheduledPostListItem {
 
 export async function listScheduledPosts(
   db: Db,
-  opts: { userId: string; from: Date; to: Date },
+  opts: { userId: string; from: Date; to: Date; platforms?: readonly SocialPlatform[] },
 ): Promise<ScheduledPostListItem[]> {
   return postItems(
     db,
@@ -829,6 +950,7 @@ export async function listScheduledPosts(
       eq(scheduledPosts.userId, opts.userId),
       gte(scheduledPosts.scheduledAt, opts.from),
       lt(scheduledPosts.scheduledAt, opts.to),
+      platformIn(scheduledPosts.platform, opts.platforms),
     ),
   );
 }
@@ -836,11 +958,15 @@ export async function listScheduledPosts(
 /** One calendar entry by id, its owner's only — the post page (PR 3). */
 export async function getScheduledPostItem(
   db: Db,
-  opts: { userId: string; postId: string },
+  opts: { userId: string; postId: string; platforms?: readonly SocialPlatform[] },
 ): Promise<ScheduledPostListItem | undefined> {
   const [item] = await postItems(
     db,
-    and(eq(scheduledPosts.id, opts.postId), eq(scheduledPosts.userId, opts.userId)),
+    and(
+      eq(scheduledPosts.id, opts.postId),
+      eq(scheduledPosts.userId, opts.userId),
+      platformIn(scheduledPosts.platform, opts.platforms),
+    ),
   );
   return item;
 }
@@ -880,6 +1006,7 @@ async function postItems(db: Db, where: ReturnType<typeof and>): Promise<Schedul
 export async function pendingPostsByRender(
   db: Db,
   renderIds: string[],
+  platforms?: readonly SocialPlatform[],
 ): Promise<Map<string, number>> {
   if (renderIds.length === 0) return new Map();
   const rows = await db
@@ -889,6 +1016,7 @@ export async function pendingPostsByRender(
       and(
         inArray(scheduledPosts.videoRenderId, renderIds),
         inArray(scheduledPosts.status, ["scheduled", "publishing"]),
+        platformIn(scheduledPosts.platform, platforms),
       ),
     )
     .groupBy(scheduledPosts.videoRenderId);
@@ -899,6 +1027,7 @@ export async function pendingPostsByRender(
 export async function postingNotices(
   db: Db,
   userId: string,
+  platforms?: readonly SocialPlatform[],
 ): Promise<{
   unacknowledgedFailures: number;
   expiredAccounts: { id: string; name: string; pendingPosts: number }[];
@@ -912,6 +1041,7 @@ export async function postingNotices(
         eq(scheduledPosts.status, "failed"),
         isNull(scheduledPosts.failureAcknowledgedAt),
         gte(scheduledPosts.failedAt, new Date(Date.now() - 7 * 86_400_000)),
+        platformIn(scheduledPosts.platform, platforms),
       ),
     );
   const expired = await db
@@ -921,7 +1051,13 @@ export async function postingNotices(
       displayName: socialAccounts.displayName,
     })
     .from(socialAccounts)
-    .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.status, "expired")));
+    .where(
+      and(
+        eq(socialAccounts.userId, userId),
+        eq(socialAccounts.status, "expired"),
+        platformIn(socialAccounts.platform, platforms),
+      ),
+    );
   const pending =
     expired.length === 0
       ? []
@@ -975,6 +1111,11 @@ interface PublishState {
   deferredSince?: number;
   /** An EXPIRED container (never published) was replaced once already. */
   recreated?: boolean;
+  // TikTok's run (decision 0115) keeps its own three beside `polls` and `deferredSince`:
+  /** The inbox upload TikTok accepted — never re-initiated once checkpointed. */
+  publishId?: string;
+  /** A FAILED internal/video_pull_failed upload was initiated afresh once already. */
+  reinitiated?: boolean;
 }
 
 /** Container ERROR subcodes that name the audio — the sound was withdrawn. */
@@ -1066,6 +1207,8 @@ async function failPostOnTerminal(db: Db, postId: string, err: unknown, job: Job
   if (err instanceof PostFailure) kind = err.kind;
   else if (err instanceof MetaGraphError)
     kind = isTokenLapse(err) ? "connection_expired" : "platform_refused";
+  else if (err instanceof TiktokApiError)
+    kind = isTiktokTokenLapse(err) ? "connection_expired" : "platform_refused";
   else if (err instanceof PermanentError && "storagePath" in err) kind = "file_missing";
   else if (err instanceof PermanentError) kind = "internal_error";
   else if (isLastAttempt(job)) {
@@ -1073,6 +1216,8 @@ async function failPostOnTerminal(db: Db, postId: string, err: unknown, job: Job
     // the checkpoints and the row): ask Meta before calling a live Reel failed.
     const state = (job.state ?? {}) as PublishState;
     if (state.publishAttemptedAt && (await confirmPublishedByContainer(db, postId, state))) return;
+    // TikTok: an upload TikTok accepted may already sit in the inbox.
+    if (state.publishId && (await confirmTiktokByStatus(db, postId, state.publishId))) return;
     kind = "platform_timeout";
   }
   if (!kind) return;
@@ -1182,11 +1327,8 @@ export async function handlePublishPost(job: Job, ctx: JobContext): Promise<JobR
         `account ${post.socialAccountId} is ${account?.status ?? "missing"}`,
       );
     }
-    if (account.platform !== "instagram") {
-      // TikTok is the next task (0101): no connect route exists, so no row can
-      // reach here; the refusal is a guard, not a path.
-      throw new PostFailure("platform_refused", `publishing to ${account.platform} is not built`);
-    }
+    // TikTok's inbox delivery is its own run (decision 0115); everything below is Instagram's.
+    if (account.platform === "tiktok") return await publishTiktok(ctx, job, post, account);
     const { accessToken } = openAccountTokens(account);
     if (!accessToken) throw new PostFailure("connection_expired", "no page token on the account");
 
@@ -1375,6 +1517,8 @@ export async function failOrphanedPosts(db: Db): Promise<number> {
       (await confirmPublishedByContainer(db, row.postId, state))
     ) {
       ended++;
+    } else if (state.publishId && (await confirmTiktokByStatus(db, row.postId, state.publishId))) {
+      ended++;
     } else if (
       await failPost(
         db,
@@ -1398,7 +1542,8 @@ export async function failOrphanedPosts(db: Db): Promise<number> {
  * the account `expired` (and the /home notice tells the customer while their
  * posts are still pending); a good one refreshes the name and picture, whose
  * CDN link expires. Errors are per account and swallowed — a daily sweep must
- * not die on one bad row.
+ * not die on one bad row. TikTok's half follows (decision 0115): its accounts'
+ * tokens and profiles, then the delivered posts the webhook may have missed.
  */
 export async function handleCheckSocialTokens(_job: Job, ctx: JobContext): Promise<JobResult> {
   const { db, log } = ctx;
@@ -1437,8 +1582,13 @@ export async function handleCheckSocialTokens(_job: Job, ctx: JobContext): Promi
       }
     }
   }
+  const tiktok = await checkTiktokAccounts(db, log);
+  const tiktokPosted = await pollDeliveredTiktokPosts(db, log);
   const orphaned = await failOrphanedPosts(db);
-  log.info({ checked: accounts.length, refreshed, expired, orphaned }, "social token check digest");
+  log.info(
+    { checked: accounts.length, refreshed, expired, tiktok, tiktokPosted, orphaned },
+    "social token check digest",
+  );
   return { kind: "done" };
 }
 
@@ -1530,4 +1680,633 @@ export async function getMetaDataDeletionStatus(
   if (!row) return undefined;
   const payload = row.payload as { accounts?: number; cancelled?: number };
   return { accounts: payload.accounts ?? 0, cancelled: payload.cancelled ?? 0, at: row.createdAt };
+}
+
+// ---------------------------------------------------------------------------
+// TikTok (PR 4, decision 0115): the connection, its tokens, the inbox delivery,
+// the webhook, and the daily half of the token check
+// ---------------------------------------------------------------------------
+
+/**
+ * Login Kit's result, upserted in place like Instagram's: a reconnect of the
+ * same open_id restores its live row (new tokens, status connected). Unlike
+ * Instagram's, every connect moves `connected_at` to now: the webhook's
+ * authorization.removed guard compares against it, so a removal TikTok retries
+ * after the owner reconnected never undoes the reconnect. user.info.basic
+ * carries no username; the display name and avatar are what the screens show.
+ */
+export async function upsertTiktokConnection(
+  db: Db,
+  opts: { userId: string; tokens: TiktokTokens; profile: TiktokProfile },
+): Promise<SocialAccountView> {
+  const identity = {
+    userId: opts.userId,
+    platform: "tiktok" as const,
+    externalId: opts.tokens.openId,
+  };
+  const aad = socialTokenAad(identity);
+  const values = {
+    displayName: opts.profile.displayName ?? null,
+    pictureUrl: opts.profile.avatarUrl ?? null,
+    accessTokenEnc: sealSecret(opts.tokens.accessToken, aad),
+    accessTokenExpiresAt: opts.tokens.accessExpiresAt,
+    refreshTokenEnc: sealSecret(opts.tokens.refreshToken, aad),
+    refreshExpiresAt: opts.tokens.refreshExpiresAt,
+  };
+  const live = (
+    await db
+      .select({ id: socialAccounts.id })
+      .from(socialAccounts)
+      .where(
+        and(
+          eq(socialAccounts.userId, identity.userId),
+          eq(socialAccounts.platform, identity.platform),
+          eq(socialAccounts.externalId, identity.externalId),
+          inArray(socialAccounts.status, ["connected", "expired"]),
+        ),
+      )
+      .limit(1)
+  )[0];
+  const now = new Date();
+  const row = live
+    ? (
+        await db
+          .update(socialAccounts)
+          .set({
+            ...values,
+            status: "connected",
+            lastError: null,
+            disconnectedAt: null,
+            connectedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(socialAccounts.id, live.id))
+          .returning()
+      )[0]!
+    : (
+        await db
+          .insert(socialAccounts)
+          .values({ ...identity, ...values, connectedAt: now })
+          .returning()
+      )[0]!;
+  return toView(row, 0, now.getTime());
+}
+
+type TiktokTokenOutcome = { token: string } | { lapsed: string };
+
+/**
+ * A TikTok access token good for ten more minutes, refreshed under a row lock
+ * when it is not. TikTok may hand back a different refresh token on every
+ * refresh ("must use the newly-returned token"), so two refreshes racing on one
+ * row would leave one of them holding a dead token: the lock serialises them,
+ * and the second re-reads after the first committed and finds a fresh token.
+ * A lapse — `invalid_grant` (expired, revoked, or issued to another client: the
+ * sandbox → production swap), a missing token, a row no longer connected —
+ * marks the account expired and says why; any other failure throws (transient
+ * for the queue, which retries the run).
+ */
+async function tiktokToken(db: Db, accountId: string): Promise<TiktokTokenOutcome> {
+  const outcome = await db.transaction(async (tx): Promise<TiktokTokenOutcome> => {
+    const [account] = await tx
+      .select()
+      .from(socialAccounts)
+      .where(eq(socialAccounts.id, accountId))
+      .for("update");
+    if (!account || account.status !== "connected") {
+      return { lapsed: `account ${accountId} is ${account?.status ?? "missing"}` };
+    }
+    const aad = socialTokenAad(account);
+    if (
+      account.accessTokenEnc &&
+      account.accessTokenExpiresAt &&
+      account.accessTokenExpiresAt.getTime() - Date.now() > TIKTOK_REFRESH_MARGIN_MS
+    ) {
+      return { token: openSecret(account.accessTokenEnc, aad) };
+    }
+    if (!account.refreshTokenEnc) return { lapsed: "no refresh token on the account" };
+    let tokens: TiktokTokens;
+    try {
+      tokens = await getTiktokProvider().refresh(openSecret(account.refreshTokenEnc, aad));
+    } catch (err) {
+      if (isTiktokTokenLapse(err)) return { lapsed: (err as Error).message };
+      // Any other refusal of the token endpoint (invalid_client, a key and secret
+      // that do not match) is our configuration, not TikTok refusing a video:
+      // internal_error, never platform_refused.
+      if (err instanceof TiktokApiError) {
+        throw new PermanentError(`tiktok token refresh refused: ${err.message}`);
+      }
+      throw err;
+    }
+    await tx
+      .update(socialAccounts)
+      .set({
+        accessTokenEnc: sealSecret(tokens.accessToken, aad),
+        accessTokenExpiresAt: tokens.accessExpiresAt,
+        refreshTokenEnc: sealSecret(tokens.refreshToken, aad),
+        refreshExpiresAt: tokens.refreshExpiresAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(socialAccounts.id, account.id));
+    return { token: tokens.accessToken };
+  });
+  if ("lapsed" in outcome) await markAccountExpired(db, accountId, outcome.lapsed);
+  return outcome;
+}
+
+/**
+ * The address TikTok pulls from: the signed render URL with its host swapped
+ * for the verified custom domain (TIKTOK_PULL_ORIGIN) — the signature is
+ * host-independent. A file:// URL (tests, a local storage) is left as it is.
+ */
+export function tiktokPullUrl(signedUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(signedUrl);
+  } catch {
+    return signedUrl;
+  }
+  if (url.protocol !== "https:") return signedUrl;
+  return new URL(`${url.pathname}${url.search}`, TIKTOK_PULL_ORIGIN).toString();
+}
+
+/**
+ * TikTok's documented embed-player address for a post id — the post page's
+ * "צפייה בפוסט" (a stopgap the founder approved, checked after TikTok's audit:
+ * a sandbox post cannot be public, so no sandbox run yields a post id).
+ */
+export function tiktokPermalink(platformPostId: string): string {
+  return `https://www.tiktok.com/player/v1/${platformPostId}`;
+}
+
+/** publishing → delivered: TikTok put the video in the owner's inbox. */
+async function markTiktokDelivered(db: Db, postId: string): Promise<boolean> {
+  const rows = await db
+    .update(scheduledPosts)
+    .set({
+      status: "delivered",
+      deliveredAt: new Date(),
+      deferredUntil: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "publishing")))
+    .returning({ id: scheduledPosts.id });
+  return rows.length > 0;
+}
+
+/**
+ * publishing | delivered → posted: TikTok said the owner posted it. The one
+ * writer the job, the webhook, the daily poll and the nets share — Instagram's
+ * markPosted is guarded on publishing alone, which a delivered row never is.
+ */
+async function markTiktokPosted(db: Db, postId: string, platformPostId?: string): Promise<boolean> {
+  const rows = await db
+    .update(scheduledPosts)
+    .set({
+      status: "posted",
+      postedAt: new Date(),
+      deferredUntil: null,
+      updatedAt: new Date(),
+      ...(platformPostId
+        ? { providerMediaId: platformPostId, permalink: tiktokPermalink(platformPostId) }
+        : {}),
+    })
+    .where(
+      and(
+        eq(scheduledPosts.id, postId),
+        inArray(scheduledPosts.status, ["publishing", "delivered"]),
+      ),
+    )
+    .returning({ id: scheduledPosts.id });
+  return rows.length > 0;
+}
+
+/**
+ * The TikTok half of publish_post: one inbox upload by PULL_FROM_URL, then
+ * status reads a minute apart, each its own run (a reschedule), so the lane is
+ * free between them. The publish id is checkpointed BEFORE anything else, and a
+ * run that finds one never initiates again: every init is a video in the
+ * owner's inbox and a pending share. A webhook may move the row first
+ * (delivered, posted); every run re-reads it and ends quietly when it has.
+ */
+async function publishTiktok(
+  ctx: JobContext,
+  job: Job,
+  post: PostRow,
+  account: AccountRow,
+): Promise<JobResult> {
+  const { db } = ctx;
+  const postId = post.id;
+  const state = { ...(job.state as PublishState) };
+  const auth = await tiktokToken(db, account.id);
+  if ("lapsed" in auth) throw new PostFailure("connection_expired", auth.lapsed);
+  const tiktok = getTiktokProvider();
+
+  if (!state.publishId) {
+    if (post.deferredUntil) {
+      // Waiting out TikTok's cap left the post cancellable; take it back before
+      // the init, so a cancel that landed in the wait wins and nothing reaches TikTok.
+      const [claimed] = await db
+        .update(scheduledPosts)
+        .set({ deferredUntil: null, updatedAt: new Date() })
+        .where(and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "publishing")))
+        .returning({ id: scheduledPosts.id });
+      if (!claimed) return { kind: "done" };
+    }
+    const render = (
+      await db.select().from(videoRenders).where(eq(videoRenders.id, post.videoRenderId)).limit(1)
+    )[0];
+    if (!render?.filePath)
+      throw new PostFailure("file_missing", `render ${post.videoRenderId} has no file`);
+    const videoUrl = tiktokPullUrl(
+      await getStorage().signedUrl(render.filePath, TIKTOK_PULL_URL_TTL_SECONDS),
+    );
+    let publishId: string;
+    try {
+      ({ publishId } = await tiktok.initInboxPull(auth.token, videoUrl));
+    } catch (err) {
+      if (!isTiktokPendingCap(err)) throw err;
+      // Five videos already wait in the owner's TikTok: wait hourly, up to a day.
+      const since = state.deferredSince ?? Date.now();
+      if (Date.now() - since >= QUOTA_DEFER_MAX_MS) {
+        throw new PostFailure("quota_exhausted", "tiktok pending shares full for a day");
+      }
+      await db
+        .update(scheduledPosts)
+        .set({ deferredUntil: new Date(Date.now() + QUOTA_DEFER_DELAY_MS), updatedAt: new Date() })
+        .where(and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "publishing")));
+      ctx.log.info({ postId }, "publish deferred: tiktok pending shares full");
+      return {
+        kind: "reschedule",
+        delayMs: QUOTA_DEFER_DELAY_MS,
+        state: { ...state, deferredSince: since },
+      };
+    }
+    // BEFORE anything else: a retry polls this upload instead of making another.
+    state.publishId = publishId;
+    state.polls = 0;
+    delete state.deferredSince;
+    await ctx.checkpoint({ ...state });
+  }
+  // The row learns the upload's id — again on a resumed run when the write after
+  // the checkpoint was lost: the webhook, the daily poll and the removal find the
+  // post by it.
+  if (post.providerContainerId !== state.publishId) {
+    await db
+      .update(scheduledPosts)
+      .set({ providerContainerId: state.publishId, deferredUntil: null, updatedAt: new Date() })
+      .where(and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "publishing")));
+  }
+
+  const [current] = await db
+    .select({ status: scheduledPosts.status })
+    .from(scheduledPosts)
+    .where(eq(scheduledPosts.id, postId))
+    .limit(1);
+  if (current?.status !== "publishing") return { kind: "done" };
+
+  const status = await tiktok.publishStatus(auth.token, state.publishId);
+  switch (status.code) {
+    case "PROCESSING_UPLOAD":
+    case "PROCESSING_DOWNLOAD": {
+      const polls = (state.polls ?? 0) + 1;
+      if (polls >= TIKTOK_MAX_POLLS) {
+        throw new PostFailure(
+          "platform_timeout",
+          `tiktok upload ${state.publishId} still processing after ${polls} polls`,
+        );
+      }
+      return { kind: "reschedule", delayMs: CONTAINER_POLL_DELAY_MS, state: { ...state, polls } };
+    }
+    case "SEND_TO_USER_INBOX":
+      if (await markTiktokDelivered(db, postId)) {
+        ctx.log.info({ postId, source: "poll" }, "tiktok post delivered to the inbox");
+      }
+      return { kind: "done" };
+    case "PUBLISH_COMPLETE":
+      if (await markTiktokPosted(db, postId, status.postId)) {
+        ctx.log.info({ postId, source: "poll" }, "tiktok post posted by its owner");
+      }
+      return { kind: "done" };
+    case "FAILED": {
+      const reason = status.failReason ?? "unknown";
+      const detail = `tiktok upload ${state.publishId} FAILED: ${reason}`;
+      if (reason === "auth_removed") throw new PostFailure("connection_expired", detail);
+      if ((reason === "internal" || reason === "video_pull_failed") && !state.reinitiated) {
+        // TikTok marks `internal` retryable, and a pull can fail on a blip:
+        // one fresh upload, never two.
+        const fresh: PublishState = { reinitiated: true };
+        await ctx.checkpoint({ ...fresh });
+        // The failed upload's id goes: until the fresh one lands the post holds
+        // nothing at TikTok, so a cap wait stays cancellable and a removal fails it.
+        await db
+          .update(scheduledPosts)
+          .set({ providerContainerId: null, updatedAt: new Date() })
+          .where(and(eq(scheduledPosts.id, postId), eq(scheduledPosts.status, "publishing")));
+        ctx.log.warn({ postId, reason }, "tiktok upload failed; initiating once more");
+        return { kind: "reschedule", delayMs: 0, state: { ...fresh } };
+      }
+      throw new PostFailure(
+        reason === "internal" ? "platform_timeout" : "platform_refused",
+        detail,
+      );
+    }
+  }
+}
+
+/**
+ * A net's question to TikTok about an upload it accepted: in the inbox or
+ * posted → the row follows and true; anything else, or no way to ask → false,
+ * and the caller decides. Never throws.
+ */
+async function confirmTiktokByStatus(db: Db, postId: string, publishId: string): Promise<boolean> {
+  try {
+    const [post] = await db
+      .select({ accountId: scheduledPosts.socialAccountId })
+      .from(scheduledPosts)
+      .where(eq(scheduledPosts.id, postId))
+      .limit(1);
+    if (!post) return false;
+    const auth = await tiktokToken(db, post.accountId);
+    if ("lapsed" in auth) return false;
+    const status = await getTiktokProvider().publishStatus(auth.token, publishId);
+    if (status.code === "SEND_TO_USER_INBOX") return await markTiktokDelivered(db, postId);
+    if (status.code === "PUBLISH_COMPLETE")
+      return await markTiktokPosted(db, postId, status.postId);
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export interface TiktokEventResult {
+  event: string;
+  outcome: "applied" | "ignored";
+  accounts?: number;
+  failed?: number;
+}
+
+/**
+ * One webhook delivery, its signature already verified by the route. TikTok
+ * delivers at least once and retries for 72 h, so every write is guarded and
+ * monotonic: a second delivery changes nothing. `content` is a JSON string
+ * inside the JSON; a post id is read from the raw text (19 digits overflow a JS
+ * number). Handled: post.publish.inbox_delivered, post.publish.complete,
+ * post.publish.publicly_available and its reverse, authorization.removed.
+ * Everything else is ignored — post.publish.failed too: the job's own poll owns
+ * failure (it would otherwise race the job's one fresh upload), and the nets
+ * cover a dead job.
+ */
+export async function processTiktokEvent(db: Db, rawBody: string): Promise<TiktokEventResult> {
+  let envelope: {
+    event?: unknown;
+    create_time?: unknown;
+    user_openid?: unknown;
+    content?: unknown;
+  };
+  try {
+    envelope = JSON.parse(rawBody);
+  } catch {
+    return { event: "?", outcome: "ignored" };
+  }
+  const event = typeof envelope.event === "string" ? envelope.event : "?";
+  const contentText =
+    typeof envelope.content === "string"
+      ? envelope.content
+      : JSON.stringify(envelope.content ?? {});
+  let content: { publish_id?: unknown; reason?: unknown } = {};
+  try {
+    content = JSON.parse(contentText) ?? {};
+  } catch {
+    content = {};
+  }
+  const publishId = typeof content.publish_id === "string" ? content.publish_id : undefined;
+  const platformPostId = rawIdField(rawBody, "post_id");
+  const ignored = { event, outcome: "ignored" as const };
+  const applied = { event, outcome: "applied" as const };
+
+  const post = async () =>
+    publishId
+      ? (
+          await db
+            .select({ id: scheduledPosts.id })
+            .from(scheduledPosts)
+            .where(
+              and(
+                eq(scheduledPosts.platform, "tiktok"),
+                eq(scheduledPosts.providerContainerId, publishId),
+              ),
+            )
+            .limit(1)
+        )[0]
+      : undefined;
+
+  switch (event) {
+    case "post.publish.inbox_delivered": {
+      const row = await post();
+      return row && (await markTiktokDelivered(db, row.id)) ? applied : ignored;
+    }
+    case "post.publish.complete": {
+      const row = await post();
+      return row && (await markTiktokPosted(db, row.id)) ? applied : ignored;
+    }
+    case "post.publish.publicly_available": {
+      const row = await post();
+      if (!row || !platformPostId) return ignored;
+      if (await markTiktokPosted(db, row.id, platformPostId)) return applied;
+      // `complete` came first: the row is posted, and the link joins it now.
+      const linked = await db
+        .update(scheduledPosts)
+        .set({
+          providerMediaId: platformPostId,
+          permalink: tiktokPermalink(platformPostId),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(scheduledPosts.id, row.id), eq(scheduledPosts.status, "posted")))
+        .returning({ id: scheduledPosts.id });
+      return linked.length > 0 ? applied : ignored;
+    }
+    case "post.publish.no_longer_publicaly_available": {
+      // TikTok's own spelling. The link would open nothing, so it goes.
+      const row = await post();
+      if (!row || !platformPostId) return ignored;
+      const cleared = await db
+        .update(scheduledPosts)
+        .set({ permalink: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(scheduledPosts.id, row.id),
+            eq(scheduledPosts.providerMediaId, platformPostId),
+            isNotNull(scheduledPosts.permalink),
+          ),
+        )
+        .returning({ id: scheduledPosts.id });
+      return cleared.length > 0 ? applied : ignored;
+    }
+    case "authorization.removed": {
+      const openId = typeof envelope.user_openid === "string" ? envelope.user_openid : undefined;
+      if (!openId) return ignored;
+      const at =
+        typeof envelope.create_time === "number"
+          ? new Date(envelope.create_time * 1000)
+          : new Date();
+      const result = await removeTiktokAuthorization(db, { openId, at, reason: content.reason });
+      return { event, outcome: result.accounts > 0 ? "applied" : "ignored", ...result };
+    }
+    default:
+      return ignored;
+  }
+}
+
+/**
+ * The owner removed Tavnit in TikTok (the token is already revoked when the
+ * event arrives): every live row of that open_id connected before the event —
+ * under any Tavnit account — becomes `disconnected` with its tokens erased, and
+ * its posts still waiting fail now as connection_expired, so the notice and the
+ * failure email reach the owner at once instead of on the day (decision 0115).
+ * A row reconnected after the event keeps its connection.
+ */
+async function removeTiktokAuthorization(
+  db: Db,
+  opts: { openId: string; at: Date; reason: unknown },
+): Promise<{ accounts: number; failed: number }> {
+  const why = `authorization removed in TikTok (reason ${String(opts.reason ?? "?")})`;
+  // One transaction: a fault failing a post rolls the disconnect back too, so
+  // TikTok's retry replays both halves (failPost nests as a savepoint).
+  return db.transaction(async (tx) => {
+    const accounts = await tx
+      .update(socialAccounts)
+      .set({
+        status: "disconnected",
+        accessTokenEnc: null,
+        refreshTokenEnc: null,
+        userTokenEnc: null,
+        accessTokenExpiresAt: null,
+        lastError: why,
+        disconnectedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(socialAccounts.platform, "tiktok"),
+          eq(socialAccounts.externalId, opts.openId),
+          inArray(socialAccounts.status, ["connected", "expired"]),
+          lte(socialAccounts.connectedAt, opts.at),
+        ),
+      )
+      .returning({ id: socialAccounts.id });
+    let failed = 0;
+    if (accounts.length > 0) {
+      // Waiting = nothing at TikTok yet: scheduled, or publishing with no upload.
+      const waiting = await tx
+        .select({ id: scheduledPosts.id })
+        .from(scheduledPosts)
+        .where(
+          and(
+            inArray(
+              scheduledPosts.socialAccountId,
+              accounts.map((a) => a.id),
+            ),
+            or(
+              eq(scheduledPosts.status, "scheduled"),
+              and(
+                eq(scheduledPosts.status, "publishing"),
+                isNull(scheduledPosts.providerContainerId),
+              ),
+            ),
+          ),
+        );
+      for (const row of waiting) {
+        if (await failPost(tx as Db, row.id, "connection_expired", why)) failed++;
+      }
+    }
+    return { accounts: accounts.length, failed };
+  });
+}
+
+/**
+ * The daily check's TikTok half: per connected account, a fresh token (a
+ * refresh keeps TikTok's rotation alive; a lapse marks it expired) and the
+ * profile, whose avatar link expires. Errors are per account and swallowed.
+ */
+async function checkTiktokAccounts(
+  db: Db,
+  log: JobContext["log"],
+): Promise<{ checked: number; refreshed: number; expired: number }> {
+  const accounts = await db
+    .select({ id: socialAccounts.id })
+    .from(socialAccounts)
+    .where(and(eq(socialAccounts.status, "connected"), eq(socialAccounts.platform, "tiktok")));
+  let refreshed = 0;
+  let expired = 0;
+  for (const account of accounts) {
+    try {
+      const auth = await tiktokToken(db, account.id);
+      if ("lapsed" in auth) {
+        expired++;
+        continue;
+      }
+      const profile = await getTiktokProvider().userInfo(auth.token);
+      await db
+        .update(socialAccounts)
+        .set({
+          ...(profile.displayName ? { displayName: profile.displayName } : {}),
+          ...(profile.avatarUrl ? { pictureUrl: profile.avatarUrl } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(socialAccounts.id, account.id));
+      refreshed++;
+    } catch (err) {
+      if (isTiktokTokenLapse(err)) {
+        await markAccountExpired(db, account.id, err instanceof Error ? err.message : String(err));
+        expired++;
+      } else {
+        log.warn({ err, accountId: account.id }, "tiktok token check: call failed, left as is");
+      }
+    }
+  }
+  return { checked: accounts.length, refreshed, expired };
+}
+
+/**
+ * The webhook's net: TikTok posts delivered within a week get one status read
+ * each, and PUBLISH_COMPLETE moves the row to posted — logged `source: poll`, so
+ * a live run can tell which path fired. Errors are per post and swallowed.
+ */
+async function pollDeliveredTiktokPosts(db: Db, log: JobContext["log"]): Promise<number> {
+  const rows = await db
+    .select({
+      id: scheduledPosts.id,
+      accountId: scheduledPosts.socialAccountId,
+      publishId: scheduledPosts.providerContainerId,
+    })
+    .from(scheduledPosts)
+    .where(
+      and(
+        eq(scheduledPosts.platform, "tiktok"),
+        eq(scheduledPosts.status, "delivered"),
+        gte(
+          scheduledPosts.deliveredAt,
+          new Date(Date.now() - TIKTOK_DELIVERED_POLL_DAYS * 86_400_000),
+        ),
+        isNotNull(scheduledPosts.providerContainerId),
+      ),
+    );
+  let posted = 0;
+  for (const row of rows) {
+    try {
+      const auth = await tiktokToken(db, row.accountId);
+      if ("lapsed" in auth) continue;
+      const status = await getTiktokProvider().publishStatus(auth.token, row.publishId!);
+      if (
+        status.code === "PUBLISH_COMPLETE" &&
+        (await markTiktokPosted(db, row.id, status.postId))
+      ) {
+        posted++;
+        log.info({ postId: row.id, source: "poll" }, "tiktok post posted by its owner");
+      }
+    } catch (err) {
+      log.warn({ err, postId: row.id }, "tiktok delivered poll: call failed, left as is");
+    }
+  }
+  return posted;
 }
