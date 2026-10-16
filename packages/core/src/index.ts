@@ -52,6 +52,7 @@ export * from "./providers/elevenlabs";
 export * from "./providers/imagegen";
 export * from "./providers/lipsync";
 export * from "./providers/meta-graph";
+export * from "./providers/tiktok";
 export * from "./providers/remotion";
 export * from "./providers/resend";
 export * from "./providers/whisperx";

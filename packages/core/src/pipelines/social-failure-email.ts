@@ -13,7 +13,7 @@ import { isLocalWorkerId, isProductionDatabaseUrl } from "../jobs/queue";
 import { logger } from "../logger";
 import { EmailSendError, getEmailProvider } from "../providers/resend";
 import { failureEmail, type FailureEmailPost } from "../social-copy";
-import { getPostingAccess } from "./social";
+import { getPlatformAccess } from "./social";
 
 /**
  * The failure email (decision 0107): a scheduled post that failed for good is
@@ -25,9 +25,12 @@ import { getPostingAccess } from "./social";
  * row, so it is the same whether or not an email went out.
  *
  * The rules, each a constant below and each pinned by a test:
- * - A **cause** is (Tavnit account, failure kind). A cause sends at most one
- *   email per 24 h; a failure of the same cause inside the 24 h after an email
- *   is folded — never emailed, on the calendar and in the notice instead.
+ * - A **cause** is (Tavnit account, platform, failure kind) — the platform
+ *   since PR 4 (decision 0115, amending 0107 §3), so one email never names
+ *   Instagram for a TikTok failure. A cause sends at most one email per 24 h; a
+ *   failure of the same cause inside the 24 h after an email is folded — never
+ *   emailed, on the calendar and in the notice instead.
+ * - A platform hidden by its own switch gets no email.
  * - A cause goes out once its newest failure is 2 minutes old, so posts that
  *   fail together share one email.
  * - Only failures from the last 24 h are emailed: a key placed later, or a
@@ -36,7 +39,8 @@ import { getPostingAccess } from "./social";
  *   100 a day, shared with the sign-up and password mail Supabase sends).
  *
  * The log is `events` rows of kind `post_failure_email` (actor = the account;
- * payload: the failure kind, the post ids, the outcome) — no migration, and no
+ * payload: the failure kind, the platform, the post ids, the outcome; a row
+ * without a platform predates PR 4 and was Instagram's) — no migration, and no
  * address or customer text in it. The kind is not an ALERT_EVENT_KINDS kind, so
  * it never reaches Sentry.
  */
@@ -188,6 +192,8 @@ export async function sweepPostFailureEmails(
       userId: events.actorUserId,
       createdAt: events.createdAt,
       kind: sql<string>`${events.payload}->>'failureKind'`,
+      // Absent on the emails before PR 4, every one of which was Instagram's.
+      platform: sql<string | null>`${events.payload}->>'platform'`,
     })
     .from(events)
     .where(
@@ -217,14 +223,20 @@ export async function sweepPostFailureEmails(
     (a, b) => a.failedAt.getTime() - b.failedAt.getTime() || a.id.localeCompare(b.id),
   );
   for (const post of ordered) {
-    const key = `${post.userId}:${post.failureKind}`;
+    // A cause is (account, platform, kind) since PR 4 (decision 0115 amends 0107 §3).
+    const key = `${post.userId}:${post.platform}:${post.failureKind}`;
     causes.set(key, [...(causes.get(key) ?? []), post]);
   }
 
   for (const posts of causes.values()) {
-    const { userId, failureKind, email } = posts[0]!;
+    const { userId, failureKind, email, platform } = posts[0]!;
     const emails = sentRows
-      .filter((row) => row.userId === userId && row.kind === failureKind)
+      .filter(
+        (row) =>
+          row.userId === userId &&
+          row.kind === failureKind &&
+          (row.platform ?? "instagram") === platform,
+      )
       .map((row) => row.createdAt.getTime());
     // The cooldown: this cause already emailed in the last 24 h.
     if (emails.some((at) => now.getTime() - at < FAILURE_EMAIL_COOLDOWN_MS)) continue;
@@ -240,7 +252,7 @@ export async function sweepPostFailureEmails(
     // Wait for the burst to settle.
     if (now.getTime() - due[due.length - 1]!.failedAt.getTime() < FAILURE_EMAIL_QUIET_MS) continue;
     // A switch narrowed since the post was scheduled leaves no trace either.
-    if ((await getPostingAccess(db, userId)) === "hidden") continue;
+    if (!(await getPlatformAccess(db, userId))[platform]) continue;
     if (remaining <= 0) {
       result.heldByCeiling += 1;
       continue;
@@ -268,7 +280,10 @@ export async function sweepPostFailureEmails(
         // is deduplicated by Resend (24 h) instead of sent again.
         idempotencyKey: `post-failure/${userId}/${failureKind}/${postIds[0]}`,
       });
-      await logEmail(db, now, userId, failureKind, postIds, { outcome: "sent", resendId: sent.id });
+      await logEmail(db, now, userId, platform, failureKind, postIds, {
+        outcome: "sent",
+        resendId: sent.id,
+      });
       result.sent += 1;
       remaining -= 1;
     } catch (err) {
@@ -276,7 +291,7 @@ export async function sweepPostFailureEmails(
       // Resend saw this key with a different body: the first send went out
       // (an earlier tick's, before the burst grew). It counts as sent.
       if (err.status === 409 && err.errorName === "invalid_idempotent_request") {
-        await logEmail(db, now, userId, failureKind, postIds, {
+        await logEmail(db, now, userId, platform, failureKind, postIds, {
           outcome: "sent",
           resendId: "idempotent-replay",
         });
@@ -312,7 +327,7 @@ export async function sweepPostFailureEmails(
       }
       // A refusal that will never succeed: logged, so the cause cools down and
       // nothing retries it.
-      await logEmail(db, now, userId, failureKind, postIds, {
+      await logEmail(db, now, userId, platform, failureKind, postIds, {
         outcome: "refused",
         error: err.errorName ?? String(err.status),
       });
@@ -328,6 +343,7 @@ async function logEmail(
   db: Db,
   now: Date,
   userId: string,
+  platform: "instagram" | "tiktok",
   failureKind: string,
   postIds: string[],
   outcome: { outcome: "sent"; resendId: string } | { outcome: "refused"; error: string },
@@ -335,7 +351,7 @@ async function logEmail(
   await db.insert(events).values({
     kind: POST_FAILURE_EMAIL,
     actorUserId: userId,
-    payload: { failureKind, postIds, ...outcome },
+    payload: { failureKind, platform, postIds, ...outcome },
     createdAt: now,
   });
 }

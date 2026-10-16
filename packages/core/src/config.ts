@@ -33,6 +33,14 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_LOGIN_CONFIG_ID: z.string().optional(),
   SOCIAL_TOKEN_KEY: z.string().optional(),
+  // TikTok inbox posting (PR 4, decision 0115): the TikTok app's client key and
+  // secret — the sandbox pair until TikTok's review passes, the production pair
+  // after (docs/09 has the swap). The web needs both (the authorize link, the
+  // code exchange, the webhook signature — TikTok signs with the client secret);
+  // the box needs both (refresh, inbox upload, status). Optional like Meta's:
+  // a provider throws at use, never at boot.
+  TIKTOK_CLIENT_KEY: z.string().optional(),
+  TIKTOK_CLIENT_SECRET: z.string().optional(),
   // The failure email (decision 0107): a sending-only Resend key, set on the
   // box alone. Absent or empty means no email is sent and nothing breaks, the
   // way an unset SENTRY_DSN means no report (pipelines/social-failure-email.ts).

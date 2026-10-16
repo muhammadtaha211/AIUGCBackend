@@ -5,7 +5,8 @@
  * `@aiugc/core/social-copy` without pulling the server graph in.
  *
  * The failure lines are docs/09's table. Every string marked DRAFT is new in
- * PR 3 and waits for the founder's approval at PR review.
+ * PR 3 or PR 4 (TikTok, decision 0115) and waits for the founder's approval at
+ * PR review.
  */
 
 export type SocialFailureKindKey =
@@ -43,7 +44,10 @@ export function failureLine(kind: string, platform: "instagram" | "tiktok"): str
     case "platform_timeout":
       return `${name} לא סיימה לעבד את הסרטון בזמן. נסו לתזמן שוב.`;
     case "quota_exhausted":
-      return "החשבון עבר את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב.";
+      return platform === "tiktok"
+        ? // DRAFT (PR 4): TikTok's cap counts the videos still waiting for the owner.
+          "טיקטוק לא קיבלה את הסרטון במשך יממה, כי סרטונים קודמים שנשלחו עוד מחכים שתסיימו אותם. מסיימים אותם בטיקטוק ומתזמנים שוב."
+        : "החשבון עבר את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב.";
     case "removed_on_platform":
       return "הסרטון הוסר בטיקטוק לפני שפורסם.";
     case "file_missing":
@@ -121,9 +125,11 @@ export function failureEmailReason(
         ? "החיבור לחשבונות פג. התחברו מחדש בהגדרות ותזמנו שוב."
         : failureLine(kind, platform);
     case "quota_exhausted":
-      return manyAccounts
-        ? "החשבונות עברו את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב."
-        : failureLine(kind, platform);
+      if (!manyAccounts) return failureLine(kind, platform);
+      return platform === "tiktok"
+        ? // DRAFT (PR 4).
+          "טיקטוק לא קיבלה סרטונים לחשבונות במשך יממה, כי סרטונים קודמים שנשלחו עוד מחכים שתסיימו אותם. מסיימים אותם בטיקטוק ומתזמנים שוב."
+        : "החשבונות עברו את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב.";
     case "platform_refused":
       return manyVideos
         ? `${name} לא קיבלה את הסרטונים. אפשר להוריד אותם ולפרסם ידנית.`

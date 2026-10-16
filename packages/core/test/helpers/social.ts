@@ -6,7 +6,7 @@ import { resetEnvCache } from "../../src/config";
 import type { Db } from "../../src/db";
 import * as schema from "../../src/db/schema";
 import { createBusiness } from "../../src/pipelines/businesses";
-import { upsertInstagramConnections } from "../../src/pipelines/social";
+import { upsertInstagramConnections, upsertTiktokConnection } from "../../src/pipelines/social";
 import {
   MetaGraphError,
   type AudioKind,
@@ -15,6 +15,12 @@ import {
   type MetaPageWithInstagram,
   type ReelContainerInput,
 } from "../../src/providers/meta-graph";
+import {
+  TiktokApiError,
+  type TiktokProvider,
+  type TiktokPublishStatus,
+  type TiktokTokens,
+} from "../../src/providers/tiktok";
 import type { Storage } from "../../src/storage";
 
 /** The env the social pipeline needs in a test: a 32-byte key, dry run. */
@@ -214,5 +220,99 @@ export class FakeMeta implements MetaGraphProvider {
   async mediaPermalink(mediaId: string) {
     this.hit("mediaPermalink");
     return `https://www.instagram.com/reel/${mediaId}/`;
+  }
+}
+
+/** A TikTok token pair as Login Kit returns it (decision 0115). */
+export function sampleTiktokTokens(
+  openId = "tt_open_1",
+  opts: { access?: string; refresh?: string; accessExpiresAt?: Date } = {},
+): TiktokTokens {
+  return {
+    openId,
+    scopes: ["user.info.basic", "video.upload"],
+    accessToken: opts.access ?? `ACCESS_${openId}`,
+    accessExpiresAt: opts.accessExpiresAt ?? new Date(Date.now() + 86_400_000),
+    refreshToken: opts.refresh ?? `REFRESH_${openId}`,
+    refreshExpiresAt: new Date(Date.now() + 365 * 86_400_000),
+  };
+}
+
+export async function connectTiktok(
+  db: Db,
+  userId: string,
+  openId = "tt_open_1",
+  opts: { access?: string; refresh?: string; accessExpiresAt?: Date } = {},
+): Promise<string> {
+  const view = await upsertTiktokConnection(db, {
+    userId,
+    tokens: sampleTiktokTokens(openId, opts),
+    profile: { openId, displayName: "חשבון טיקטוק", avatarUrl: "https://cdn/tt.jpg" },
+  });
+  return view.id;
+}
+
+export function tiktokRefusal(code: string, status = 400): TiktokApiError {
+  return new TiktokApiError(status, { code, message: code });
+}
+
+/**
+ * A scripted TikTok: every call counted, the publish statuses fed in order, any
+ * method made to throw once or always. `initInboxPull` counts and records
+ * BEFORE a scripted throw — "the upload reached TikTok and the worker died".
+ */
+export class FakeTiktok implements TiktokProvider {
+  private static instances = 0;
+  /** Unique per fake, as TikTok's publish ids are unique: a later test never matches an earlier post. */
+  readonly idPrefix = `v_inbox_file~v2.${++FakeTiktok.instances}_`;
+  calls = { exchangeCode: 0, refresh: 0, userInfo: 0, initInboxPull: 0, publishStatus: 0 };
+  pulls: { accessToken: string; videoUrl: string }[] = [];
+  refreshedWith: string[] = [];
+  statusTokens: string[] = [];
+  statuses: TiktokPublishStatus[] = [{ code: "SEND_TO_USER_INBOX" }];
+  throwOn: Partial<Record<keyof FakeTiktok["calls"], Error>> = {};
+  throwOnceOn: Partial<Record<keyof FakeTiktok["calls"], Error>> = {};
+  tokens: TiktokTokens = sampleTiktokTokens("tt_open_1");
+  profile = { displayName: "שם טיקטוק חדש", avatarUrl: "https://cdn/tt-new.jpg" };
+
+  private hit(name: keyof FakeTiktok["calls"]): void {
+    this.calls[name]++;
+    const once = this.throwOnceOn[name];
+    if (once) {
+      delete this.throwOnceOn[name];
+      throw once;
+    }
+    const always = this.throwOn[name];
+    if (always) throw always;
+  }
+
+  async exchangeCode() {
+    this.hit("exchangeCode");
+    return { ...this.tokens };
+  }
+  async refresh(refreshToken: string) {
+    this.refreshedWith.push(refreshToken);
+    this.hit("refresh");
+    const n = this.calls.refresh;
+    return {
+      ...this.tokens,
+      accessToken: `ACCESS_R${n}`,
+      accessExpiresAt: new Date(Date.now() + 86_400_000),
+      refreshToken: `REFRESH_R${n}`,
+    };
+  }
+  async userInfo() {
+    this.hit("userInfo");
+    return { openId: this.tokens.openId, ...this.profile };
+  }
+  async initInboxPull(accessToken: string, videoUrl: string) {
+    this.pulls.push({ accessToken, videoUrl });
+    this.hit("initInboxPull");
+    return { publishId: `${this.idPrefix}${this.calls.initInboxPull}` };
+  }
+  async publishStatus(accessToken: string) {
+    this.statusTokens.push(accessToken);
+    this.hit("publishStatus");
+    return this.statuses.length > 1 ? this.statuses.shift()! : this.statuses[0]!;
   }
 }
