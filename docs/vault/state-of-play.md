@@ -874,7 +874,7 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, PR OPEN (not merged); 0064/0065 NOT pushed
+## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, PR #107 OPEN (not merged); 0064/0065 NOT pushed
 
 [[0115-tiktok-inbox-posting-pr4]] (his seven decisions, his five approval changes, the planning
 defaults he approved); facts [[tiktok-api-attaches-no-sound-2026-10-16]] and
@@ -900,6 +900,12 @@ no redirect.
 **What the founder reported (FOUNDER-REPORTED, 2026-10-14…16):** the Meta business portfolio, the
 Meta business verification filed, the TikTok developer app with its production draft and one
 sandbox, the tavnit.ai domain verified at TikTok by DNS — all in "External state" below.
+
+**Checked (MEASURED, 2026-10-16):** the test gate all green on `6c33a2f` — 2,234 tests (core 1216,
+web 843, remotion 97, admin 71, worker 7), lint and typecheck clean; an adversarial review of the
+diff (four lenses, a skeptic per lens) — 15 findings survived, all fixed in `6c33a2f`, none high;
+screenshots from a throwaway harness page behind a fetch mock (no production row), deleted after;
+`db push --dry-run` would push exactly 0064 and 0065 (ledger 0000–0063 applied).
 
 **Not run:** nothing live — no TikTok call, no connect, no upload, no webhook delivery, no push, no
 env change, no deploy. Whether TikTok's inbox accepts a הוק + דמו file (no audio stream) is the
@@ -1577,7 +1583,7 @@ button, the tag, the flow, the sound picker, the calendar, the notice, the failu
 [[0108-social-posting-four-ui-fixes-after-pr3]]; this line said "BUILT … next: his review and merge"
 until 2026-10-16). PR 3's live checks in 0107's order are still unreported (docs/09 §Live-test
 checklist, PR 3). **PR 4 — TikTok inbox posting — BUILT 2026-10-16** on `feat/tiktok-inbox-posting`,
-PR open ([[0115-tiktok-inbox-posting-pr4]]; the "What landed" entry above); next, each his OK: the
+PR #107 open ([[0115-tiktok-inbox-posting-pr4]]; the "What landed" entry above); next, each his OK: the
 push of 0064/0065 with read-backs, the merge, the sandbox pair on Vercel and the box, the box pull,
 the sandbox live checks (docs/09 checklist PR 4). The env names and the live-test steps are under
 "Owed founder actions".
@@ -1998,7 +2004,7 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
-- **Social posting — PR 4, TikTok (2026-10-16, `feat/tiktok-inbox-posting`, PR open).** In order,
+- **Social posting — PR 4, TikTok (2026-10-16, `feat/tiktok-inbox-posting`, PR #107 open).** In order,
   each its own OK: 1. the DRAFT strings at PR review — `apps/web/src/lib/social-ui.ts` (the TikTok
   card and its outcome lines), `apps/web/src/lib/social-posting-ui.ts` (the inbox note, the done
   lines, the no-account lines, the pending-cap refusal, the delivered and deferred labels),
