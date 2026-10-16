@@ -15,6 +15,10 @@ FOUNDER-REPORTED, 2026-10-12, not up for relitigation. They change 0101,
 [[0102-social-posting-label-mix-switch-key-2026-10-11]] and
 [[0061-landing-positioning-two-services-no-results-claims]], whose dated pointers lead here.
 
+> **2026-10-16 — §3's cause gains the platform ([[0115-tiktok-inbox-posting-pr4]] §9, his OK):**
+> a cause is (Tavnit account, platform, failure kind), so an email never names Instagram for a
+> TikTok failure; the hide check asks the post's own platform's switch. The rest of §3 stands.
+
 ## 1. The AI tick is small, muted and unticked, last on the schedule step
 
 **His reason:** it is the customer's decision and should not be in their face. 0102 §1 stands: the

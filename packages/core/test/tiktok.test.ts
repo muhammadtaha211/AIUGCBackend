@@ -351,3 +351,15 @@ describe("parseTiktokSignature", () => {
     expect(at(now + 301)).toThrow(TiktokSignatureError);
   });
 });
+
+describe("TiktokApiError", () => {
+  it("keeps a signed URL's path and drops its token when TikTok echoes it", () => {
+    const err = new TiktokApiError(403, {
+      code: "url_ownership_unverified",
+      message:
+        "cannot pull https://auth.tavnit.ai/storage/v1/object/sign/renders/x/final.mp4?token=SIGNED_SECRET",
+    });
+    expect(err.message).toContain("final.mp4?<signed>");
+    expect(err.message).not.toContain("SIGNED_SECRET");
+  });
+});

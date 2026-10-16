@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-15
+updated: 2026-10-16
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -874,6 +874,37 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
+## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, PR OPEN (not merged); 0064/0065 NOT pushed
+
+[[0115-tiktok-inbox-posting-pr4]] (his seven decisions, his five approval changes, the planning
+defaults he approved); facts [[tiktok-api-attaches-no-sound-2026-10-16]] and
+[[custom-domain-serves-storage-2026-10-16]]; dated pointers on 0101, 0102, 0107, 0108 and 0063. The
+prompt and the approved plan are in the repo (`docs/claude/prompts/`, `docs/claude/plans/`, both
+2026-10-16). Mechanics: docs/09 §TikTok, §Runbook: the TikTok app, §Live-test checklist PR 4.
+
+**What exists (MEASURED, on the branch):** migrations **0064** (`scheduled_post_status` +
+`delivered`, alone) and **0065** (`social_accounts.access_token_expires_at`,
+`scheduled_posts.delivered_at`) — written, pinned in `migrations.test.ts`, **not pushed**; the push
+goes before the merge (the 0060 rule), on his OK (granted in the plan approval). `providers/tiktok.ts`
+(Login Kit web, flat OAuth errors, the PULL inbox init, status, the webhook signature, a DRY_RUN
+stub); the TikTok section of `pipelines/social.ts` (connect upsert, tokens refreshed under a row
+lock, the inbox delivery through `auth.tavnit.ai`, the webhook's events, the daily half);
+`app_config.tiktok_posting` beside `social_posting` (now Instagram's) with every read filtered by
+platform; the failure email's cause per platform; the routes `/api/social/tiktok/{start,callback,webhook}`;
+the TikTok card, the schedule flow without caption/sound/tick for TikTok, the tile's tags per platform
+with each platform's official mark (`apps/web/public/brand/`, files unaltered), the calendar's
+`delivered` chip. Env names `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` (both, on Vercel **and** the
+box). Probe (read-only, 2026-10-16): a signed render URL through `auth.tavnit.ai` → 200 `video/mp4`,
+no redirect.
+
+**What the founder reported (FOUNDER-REPORTED, 2026-10-14…16):** the Meta business portfolio, the
+Meta business verification filed, the TikTok developer app with its production draft and one
+sandbox, the tavnit.ai domain verified at TikTok by DNS — all in "External state" below.
+
+**Not run:** nothing live — no TikTok call, no connect, no upload, no webhook delivery, no push, no
+env change, no deploy. Whether TikTok's inbox accepts a הוק + דמו file (no audio stream) is the
+sandbox run's first question; a refusal stops the work (his approval §5).
+
 ## What landed (2026-10-15, last) — `/home/plan`'s cards in one row of four, `feat/plan-row-of-four`
 
 [[0114-plan-page-cards-in-one-row-of-four]]; dated pointer on 0113 §1. Merged at his instruction in
@@ -1542,10 +1573,13 @@ MERGED as #93 (`fc8a03d`), run live and RULED OFF 2026-10-12**
 (2026-10-11). The Page-first pre-screen MERGED as #94. **PR 3 MERGED as #95** (`acb245f`; the
 button, the tag, the flow, the sound picker, the calendar, the notice, the failure email —
 [[0107-social-posting-pr3-tick-landing-line-failure-email]]), live and working for him
-(FOUNDER-REPORTED 2026-10-13). **Four UI fixes BUILT 2026-10-13** on `fix/social-posting-ui`
-([[0108-social-posting-four-ui-fixes-after-pr3]]: the "פורסם" tag, the button's colours, the
-pickers, the Instagram-only sounds); next: his review and merge, then the live checks in 0107's
-order (docs/09 §Live-test checklist, PR 3). PR 4 (TikTok, once his sandbox app exists). The env names and the live-test steps are under
+(FOUNDER-REPORTED 2026-10-13). **Four UI fixes MERGED as #96** (`9e7000b`,
+[[0108-social-posting-four-ui-fixes-after-pr3]]; this line said "BUILT … next: his review and merge"
+until 2026-10-16). PR 3's live checks in 0107's order are still unreported (docs/09 §Live-test
+checklist, PR 3). **PR 4 — TikTok inbox posting — BUILT 2026-10-16** on `feat/tiktok-inbox-posting`,
+PR open ([[0115-tiktok-inbox-posting-pr4]]; the "What landed" entry above); next, each his OK: the
+push of 0064/0065 with read-backs, the merge, the sandbox pair on Vercel and the box, the box pull,
+the sandbox live checks (docs/09 checklist PR 4). The env names and the live-test steps are under
 "Owed founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
@@ -1831,6 +1865,27 @@ Founder-reported from a dashboard unless a line says otherwise. **This section c
 2026-09-21**: the Sumit variables now exist in two places, the box was deployed, and the first
 subscription row was written.
 
+**Meta (FOUNDER-REPORTED, 2026-10-14…16, from the PR 4 prompt).** Business portfolio "Tavnit" (ID
+1147255727975713); legal name טאהא מוחמד, address ת"ד 929, כאבול 2496300, website tavnit.ai.
+Business verification filed 2026-10-14 on the אישור עוסק פטור, confirmed by an email code to
+muhammad@tavnit.ai (a Namecheap forward to his Gmail); status "In review". App 1728633468194967
+declared Tech Provider; the portfolio is connected under Review → Verification; access verification
+is locked until business verification completes. Still owed on Meta: the Website platform on Basic
+(unverified whether added), the reviewer account, the recording, App Review, and the privacy page's
+address and connected-accounts text.
+
+**TikTok (FOUNDER-REPORTED, 2026-10-16).** Developer app "Tavnit": a production draft saved
+2026-10-16 with a placeholder demo video, **not submitted**. Domain property tavnit.ai verified by
+DNS TXT at Namecheap. Platform Web https://tavnit.ai; Terms /terms; Privacy /privacy. Products: Login
+Kit (Web, redirect https://tavnit.ai/api/social/tiktok/callback), Content Posting API with Upload on
+and Direct Post off, Webhooks (callback https://tavnit.ai/api/social/tiktok/webhook). Scopes
+user.info.basic, video.upload. One sandbox cloned from the draft, with one target user. **Not
+confirmed:** that the sandbox's webhook field holds the callback (he was told to set it). No TikTok
+env value is placed anywhere yet.
+
+**tavnit.ai DNS (FOUNDER-REPORTED, 2026-10-16)** is at Namecheap; mail forwarding
+muhammad@tavnit.ai → his Gmail; Resend's records untouched.
+
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
 **Migrations 0000–0062 applied, ledger clean at 63 rows, no gaps, nothing pending** — MEASURED
 2026-10-14 right after the founder-authorized 0061/0062 push, read-only against
@@ -1942,6 +1997,27 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **Social posting — PR 4, TikTok (2026-10-16, `feat/tiktok-inbox-posting`, PR open).** In order,
+  each its own OK: 1. the DRAFT strings at PR review — `apps/web/src/lib/social-ui.ts` (the TikTok
+  card and its outcome lines), `apps/web/src/lib/social-posting-ui.ts` (the inbox note, the done
+  lines, the no-account lines, the pending-cap refusal, the delivered and deferred labels),
+  `packages/core/src/social-copy.ts` (TikTok's `quota_exhausted` lines) — final wording of the
+  inbox lines after the live run shows where the video lands (his approval §1); 2. the push of
+  **0064 and 0065** BEFORE the merge, with their read-backs (granted in the approval; the dry-run is
+  in the task report); 3. the merge (Vercel deploys); 4. the **sandbox** pair as
+  `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` on Vercel Production (redeploy) and in the box's
+  `apps/worker/.env` (docs/09 §Runbook: the TikTok app — the no-print proof), then the box pull and
+  restart; 5. confirm in TikTok's console: the sandbox's webhook field holds
+  `https://tavnit.ai/api/social/tiktok/webhook`, the sandbox shows the tavnit.ai URL property, and
+  whether the sandbox has its own key and secret; 6. `RESEND_API_KEY` on the box (still not
+  reported) before check (t5); 7. the switch: you are admin, so no SQL is needed for you; name another
+  account with docs/09 §The switches; 8. the sandbox live checks (docs/09 checklist PR 4, t1–t6); 9. the review demo recorded in the sandbox (docs/09 §Runbook, the step list); "Submit for review"
+  is yours; 10. after the audit: the production pair (docs/09 §Runbook: sandbox → production), then
+  `tiktok_posting` to `everyone`; 11. owed while the legal pages are held, not edited: `/privacy`
+  on TikTok — what Tavnit receives (open_id, display name, avatar, the tokens), why, how to
+  disconnect or remove Tavnit in TikTok, and deletion; `/privacy` §9 should also name the cookie
+  `aiugc.tiktok_oauth` beside `aiugc.social_oauth`.
 
 - **Delete the old A example pair from storage, when nothing serves it** (0111 §4). Once the
   `-v2` constants are live on Vercel and an hour has passed (the signed links' lifetime), the old
@@ -2055,8 +2131,8 @@ the 2026-09-26 custom domain (founder-reported):**
   Deletion URL, the icon, the roles; 5. Facebook Pages for your other two Instagram accounts; 6. ~~the live-test checklist once PR 3 exists (box on the branch, `DRY_RUN=0` locally)~~
   superseded 2026-10-12: the box on `origin/main` after the merge, on tavnit.ai (0102 planning
   default), in 0107's order — the PR 3 entry above; 7. Meta's App Review and Business Verification after the web PRs are
-  live, then the app to Live and `social_posting` to `everyone`; 8. the TikTok developer app and
-  sandbox, when you want PR 4.
+  live, then the app to Live and `social_posting` to `everyone`; 8. ~~the TikTok developer app and
+  sandbox, when you want PR 4~~ DONE 2026-10-16 (FOUNDER-REPORTED; External state) — PR 4 is the entry above.
 
 - **Service C phase 2 (2026-10-09, `feat/service-c-phase-2`).** In order:
   1. ~~The ONE push of 0053–0056~~ DONE 2026-10-09 on his approval ("push 0053–0056, I approve

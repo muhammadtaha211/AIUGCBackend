@@ -127,6 +127,11 @@ of the work:
 
 ## Rollback
 
+> **2026-10-16 — the custom domain now carries TikTok delivery ([[0115-tiktok-inbox-posting-pr4]] §1,
+> [[custom-domain-serves-storage-2026-10-16]]):** the worker hands TikTok signed render URLs on
+> `auth.tavnit.ai` (`PULL_FROM_URL`). Before any `domains delete`, move TikTok to `FILE_UPLOAD`,
+> or every TikTok upload fails its pull.
+
 Supabase documents `supabase domains delete` (its CLI) as the way to deactivate a custom domain.
 **Not exercised on this project.** It works precisely because the `supabase.co` redirect URI was
 kept registered in Google rather than removed: deleting the custom domain hands the callback back

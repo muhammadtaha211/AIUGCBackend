@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { getEnv } from "../config";
 import { PermanentError, TransientError } from "../jobs/errors";
 import { logger } from "../logger";
+import { scrubSignedUrls } from "./meta-graph";
 
 /**
  * TikTok for Developers (PR 4, decision 0115): Login Kit for Web, the token
@@ -100,7 +101,11 @@ export class TiktokApiError extends PermanentError {
   readonly logId?: string;
 
   constructor(httpStatus: number, tiktok: { code: string; message?: string; logId?: string }) {
-    super(`tiktok ${httpStatus} ${tiktok.code}: ${(tiktok.message ?? "").slice(0, 300)}`);
+    // TikTok's text may echo the signed pull URL it refused (Meta's does): the path
+    // stays, the token goes, before the message reaches a row, a log or an alert.
+    super(
+      `tiktok ${httpStatus} ${tiktok.code}: ${scrubSignedUrls(tiktok.message ?? "").slice(0, 300)}`,
+    );
     this.httpStatus = httpStatus;
     this.code = tiktok.code;
     this.logId = tiktok.logId;
