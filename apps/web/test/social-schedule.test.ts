@@ -120,6 +120,7 @@ const { PostDetail } = await import("../src/app/(posting)/calendar/[postId]/post
 const { socialReturnPath } = await import("../src/lib/social-oauth");
 const form = await import("../src/lib/schedule-form");
 const ui = await import("../src/lib/social-posting-ui");
+const connectUi = await import("../src/lib/social-ui");
 
 const schema = core.schema;
 type Db = ReturnType<typeof core.getDb>;
@@ -822,6 +823,10 @@ describe("TikTok in the schedule flow (0115 §2)", () => {
     expect(when).not.toContain(CONTINUE);
     expect(when).toContain(ui.TIKTOK_INBOX_NOTE);
     expect(when.indexOf(ui.TIKTOK_INBOX_NOTE)).toBeLessThan(when.indexOf(SUBMIT));
+    // What the time is for (0116): after the fields, ahead of the inbox note.
+    expect(when).toContain(ui.TIKTOK_WHEN_NOTE);
+    expect(when.indexOf(ui.TIKTOK_WHEN_NOTE)).toBeLessThan(when.indexOf(ui.TIKTOK_INBOX_NOTE));
+    expect(when.indexOf(ui.NOW_BUTTON)).toBeLessThan(when.indexOf(ui.TIKTOK_WHEN_NOTE));
     expect(when).not.toContain(ui.AI_TICK_LABEL);
     expect(when).not.toContain(ui.STEP_CAPTION_TITLE);
     expect(when).not.toContain(ui.SOUND_LABEL);
@@ -865,12 +870,14 @@ describe("TikTok in the schedule flow (0115 §2)", () => {
     expect(when).toContain(CONTINUE);
     expect(when).not.toContain(SUBMIT);
     expect(when).not.toContain(ui.TIKTOK_INBOX_NOTE);
+    expect(when).not.toContain(ui.TIKTOK_WHEN_NOTE);
 
     const caption = flow({ picked: ["ig-1", "tt-1"], openOn: "caption" });
     expect(caption).toContain(`>${ui.CAPTION_LABEL_INSTAGRAM}<textarea`);
     expect(caption).toContain(ui.SOUND_LABEL);
     expect(caption).toContain(ui.AI_TICK_LABEL);
     expect(caption).toContain(ui.TIKTOK_INBOX_NOTE);
+    expect(caption).not.toContain(ui.TIKTOK_WHEN_NOTE);
     expect(caption.indexOf(ui.AI_TICK_LABEL)).toBeLessThan(caption.indexOf(ui.TIKTOK_INBOX_NOTE));
     expect(caption.indexOf(ui.TIKTOK_INBOX_NOTE)).toBeLessThan(caption.indexOf(SUBMIT));
   });
@@ -881,7 +888,10 @@ describe("TikTok in the schedule flow (0115 §2)", () => {
     expect(caption).not.toContain(ui.CAPTION_LABEL_INSTAGRAM);
     expect(caption).not.toContain(ui.TIKTOK_INBOX_NOTE);
     expect(caption).toContain(ui.AI_TICK_LABEL);
-    expect(flow({ picked: ["ig-1"], openOn: "when" })).toContain(CONTINUE);
+    const igWhen = flow({ picked: ["ig-1"], openOn: "when" });
+    expect(igWhen).toContain(CONTINUE);
+    expect(igWhen).not.toContain(ui.TIKTOK_WHEN_NOTE);
+    expect(igWhen).not.toContain(ui.TIKTOK_INBOX_NOTE);
   });
 
   it("each account row carries its platform's mark; the no-account card offers what the switches open", () => {
@@ -990,12 +1000,114 @@ describe("TikTok in the schedule flow (0115 §2)", () => {
     expect(instagram).not.toContain(ui.TIKTOK_DELIVERED_LINE);
   });
 
+  it("the TikTok-only time step says what the time is for, and that עכשיו sends it right away", () => {
+    const note = ui.TIKTOK_WHEN_NOTE;
+    expect(note).toContain("במועד שבחרתם");
+    expect(note).toContain("מייל תזכורת");
+    expect(note).toContain("הסאונד, הכיתוב והפרסום נעשים בטיקטוק");
+    expect(note).toContain(`״${ui.NOW_BUTTON}״ שולח`);
+    expect(note).toContain("מיד");
+  });
+
+  it("the card, the schedule note, the post page and the email print one inbox path, the same words", () => {
+    const phrases = [
+      core.TIKTOK_PATH_INBOX,
+      core.TIKTOK_PATH_SYSTEM,
+      core.TIKTOK_PATH_NOTIFICATION,
+    ];
+    for (const line of [
+      connectUi.TIKTOK_CARD_LEAD,
+      ui.TIKTOK_INBOX_NOTE,
+      ui.TIKTOK_DELIVERED_LINE,
+    ]) {
+      expect(line).toContain(core.TIKTOK_FINISH_LINE);
+      for (const phrase of phrases) expect(line).toContain(phrase);
+      // Each tab in Hebrew with its English name beside it; the notification's English title quoted.
+      expect(line).toContain("תיבת דואר נכנס");
+      expect(line).toContain("Inbox");
+      expect(line).toContain("התראות מערכת");
+      expect(line).toContain("System Notifications");
+      expect(line).toContain("Your content from Tavnit is ready");
+    }
+    const email = core.deliveryEmail({
+      posts: [
+        {
+          postId: "00000000-0000-4000-8000-000000000001",
+          renderId: "r",
+          accountId: "a",
+          service: "a",
+          businessName: "חנות הפרחים",
+          accountName: "פרחים בטיקטוק",
+          platform: "tiktok",
+          when: "יום שישי, 17 באוקטובר, 10:00",
+        },
+      ],
+    });
+    for (const body of [email.text, email.html]) {
+      for (const phrase of phrases) expect(body).toContain(phrase);
+    }
+    // On the screens as rendered: the settings card's lead and the post page's line.
+    expect(renderToStaticMarkup(createElement("p", null, connectUi.TIKTOK_CARD_LEAD))).toContain(
+      core.TIKTOK_INBOX_PATH,
+    );
+  });
+
+  it("the delivery email's link is a page that exists: it opens for its owner, and is a 404 for anyone else", async () => {
+    as(admin);
+    const account = await connectTiktok(db, admin, "tt_open_email_link");
+    const [post] = await db
+      .insert(schema.scheduledPosts)
+      .values({
+        userId: admin,
+        businessId: adminBusiness,
+        videoRenderId: adminRender,
+        socialAccountId: account,
+        platform: "tiktok",
+        scheduledAt: new Date(Date.now() - 600_000),
+        timezone: "Asia/Jerusalem",
+        caption: "",
+        status: "delivered",
+        deliveredAt: new Date(Date.now() - 590_000),
+      })
+      .returning();
+    const email = core.deliveryEmail({
+      posts: [
+        {
+          postId: post!.id,
+          renderId: adminRender,
+          accountId: account,
+          service: "a",
+          businessName: "עסק",
+          accountName: "פרחים בטיקטוק",
+          platform: "tiktok",
+          when: "עכשיו",
+        },
+      ],
+    });
+    const origin = "https://tavnit.ai";
+    const url = email.text.split("\n").find((line) => line.startsWith(`${origin}/calendar/`));
+    const link = url?.slice(origin.length);
+    expect(link).toBe(`/calendar/${post!.id}`);
+
+    const postId = link!.split("/").pop()!;
+    const opened = renderToStaticMarkup((await PostPage(params({ postId }))) as ReactElement);
+    expect(opened).toContain(ui.TIKTOK_DELIVERED_LINE);
+    expect(opened).toContain(`>${ui.TILE_TAG_DELIVERED}</span>`);
+
+    // The page is the owner's alone: signed out, or another account, is the 404 the calendar gives.
+    as(null);
+    expect(await thrown(PostPage(params({ postId })))).toBe("NEXT_NOT_FOUND");
+    as(customer);
+    expect(await thrown(PostPage(params({ postId })))).toBe("NEXT_NOT_FOUND");
+  });
+
   it("no line names a Drafts folder: what the owner gets is TikTok's notification", () => {
     const lines = Object.values(ui)
       .flatMap((value) => (typeof value === "string" ? [value] : []))
       .concat(
         ui.doneLineFor({ instagram: false, tiktok: true }, "d", "t"),
         ui.doneLineFor({ instagram: true, tiktok: true }, "d", "t"),
+        connectUi.TIKTOK_CARD_LEAD,
       )
       .join(" ");
     expect(lines).not.toMatch(/טיוט|Drafts?/i);

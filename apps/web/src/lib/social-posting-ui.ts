@@ -3,8 +3,8 @@
  * 0107): the player's button and the tile's tag, the schedule flow and its
  * sound picker, the calendar and the post page, the /home notice, and the
  * Hebrew a scheduling refusal answers with. Pure — no `@/` imports and no
- * runtime import of @aiugc/core — so client components and the string tests
- * reach it directly.
+ * runtime import of @aiugc/core beyond the pure `@aiugc/core/social-copy` —
+ * so client components and the string tests reach it directly.
  *
  * The lines are the approved plan's Appendix A (2026-10-10). Those marked
  * DRAFT are new in PR 3 — the singular and zero forms Appendix A left implicit,
@@ -19,6 +19,7 @@
  * the app's own vocabulary (סרטון, פרסום, חשבון).
  */
 
+import { TIKTOK_FINISH_LINE } from "@aiugc/core/social-copy";
 import type { SocialErrorCode } from "@aiugc/core";
 import { isolated } from "./social-ui";
 
@@ -177,11 +178,18 @@ export const DAILY_CAP_LINE = "הגעתם למכסת הפרסומים היומי
 export const TIKTOK_PENDING_CAP_LINE =
   "לחשבון הטיקטוק הזה כבר מתוזמנים 5 סרטונים ביממה שסביב המועד הזה, וטיקטוק לא מקבלת יותר. בחרו מועד אחר.";
 
-// DRAFT (PR 4, decision 0115 §2): above the submit whenever a TikTok account is
-// picked — TikTok takes only the file, and the owner finishes it from TikTok's
-// notification.
-export const TIKTOK_INBOX_NOTE =
-  "לטיקטוק נשלח רק הסרטון. כשמגיעה ההתראה מטיקטוק, פותחים אותה, מוסיפים סאונד וכיתוב ומפרסמים.";
+// DRAFT (PR 4.1, decision 0116): above the submit whenever a TikTok account is
+// picked — TikTok takes only the file, and the owner finishes it in TikTok by
+// the path the live run showed (the same words as the card, the post page and
+// the delivery email).
+export const TIKTOK_INBOX_NOTE = `לטיקטוק נשלח רק הסרטון. ${TIKTOK_FINISH_LINE}`;
+
+// DRAFT (PR 4.1, decision 0116): the TikTok-only time step says what the time
+// is for. Scheduling stays; `עכשיו` is the way to send right away. Shown only
+// when TikTok is picked and no Instagram account is (a mixed schedule goes on to
+// the caption step, and its draft lands when the Reel goes live).
+export const TIKTOK_WHEN_NOTE =
+  "במועד שבחרתם הסרטון מגיע לטיקטוק, ואליכם מגיע מייל תזכורת. הסאונד, הכיתוב והפרסום נעשים בטיקטוק. ״עכשיו״ שולח את הסרטון מיד.";
 
 export const CONTINUE_BUTTON = "המשך";
 export const BACK_BUTTON = "חזרה";
@@ -269,9 +277,8 @@ export function postStatusLabel(status: PostDisplayStatus, platform: SocialPlatf
   return POST_STATUS_LABELS[status];
 }
 
-// DRAFT (PR 4): the post page of a TikTok post that reached the owner's TikTok.
-export const TIKTOK_DELIVERED_LINE =
-  "הסרטון נשלח לטיקטוק. פותחים את ההתראה מטיקטוק באפליקציה, מוסיפים סאונד וכיתוב ומפרסמים.";
+// DRAFT (PR 4.1, decision 0116): the post page of a TikTok post that reached the owner's TikTok.
+export const TIKTOK_DELIVERED_LINE = `הסרטון נשלח לטיקטוק. ${TIKTOK_FINISH_LINE}`;
 
 export const POST_TITLE = "פרסום";
 export const FIELD_ACCOUNT = "חשבון";
