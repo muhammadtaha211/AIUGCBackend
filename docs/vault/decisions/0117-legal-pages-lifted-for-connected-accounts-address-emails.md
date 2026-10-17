@@ -122,6 +122,7 @@ reverts any sentence.
 
 ## Related
 
+- [[privacy-connected-accounts-claims-and-their-code-2026-10-17]] — each claim and the code line behind it.
 - [[0058-the-operator-address-is-a-tel-aviv-street-address]] — superseded on the address.
 - [[0116-tiktok-delivery-email-and-the-door]] — the delivery email §5 names; its owed `/privacy` sentence is now in the page.
 - [[0115-tiktok-inbox-posting-pr4]] — the build; its "owed while the legal pages are held" item is closed here.
