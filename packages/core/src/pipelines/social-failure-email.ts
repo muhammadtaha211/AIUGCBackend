@@ -11,7 +11,7 @@ import {
 } from "../db/schema";
 import { isLocalWorkerId, isProductionDatabaseUrl } from "../jobs/queue";
 import { logger } from "../logger";
-import { EmailSendError, getEmailProvider } from "../providers/resend";
+import { EmailSendError, getEmailProvider, type EmailProvider } from "../providers/resend";
 import { failureEmail, type FailureEmailPost } from "../social-copy";
 import { getPlatformAccess } from "./social";
 
@@ -38,6 +38,11 @@ import { getPlatformAccess } from "./social";
  * - At most 20 failure emails per UTC day, Resend's own day (its free plan:
  *   100 a day, shared with the sign-up and password mail Supabase sends).
  *
+ * The same file holds what the delivery email shares with this one (PR 4.1,
+ * decision 0116): the on/off gate, the Resend pause, the day's ceiling — counted
+ * over both kinds of email — and the Resend error ladder (`sendPostEmail`). The
+ * delivery sweep itself is pipelines/social-delivery-email.ts.
+ *
  * The log is `events` rows of kind `post_failure_email` (actor = the account;
  * payload: the failure kind, the platform, the post ids, the outcome; a row
  * without a platform predates PR 4 and was Instagram's) — no migration, and no
@@ -55,6 +60,9 @@ export const FAILURE_EMAIL_RETRY_PAUSE_MS = 5 * 60 * 1000;
 /** After a 401/403: the key or the domain is wrong, and only the founder can fix it. */
 export const FAILURE_EMAIL_ACCOUNT_PAUSE_MS = 60 * 60 * 1000;
 
+/** The delivery email's log kind (social-delivery-email.ts); named here so the day's count can sum both. */
+export const POST_DELIVERY_EMAIL = "post_delivery_email";
+
 export type FailureEmailOff = "no_provider" | "local_worker" | "paused";
 
 /**
@@ -69,6 +77,108 @@ export function failureEmailState(workerId: string): "on" | "no_provider" | "loc
     return "local_worker";
   }
   return "on";
+}
+
+/**
+ * The start of every email sweep: whether this process sends at all, and the
+ * provider if so. Clears a pause that has run out.
+ */
+export function emailSweepGate(
+  workerId: string,
+  now: Date,
+): { off: FailureEmailOff } | { provider: EmailProvider } {
+  const state = failureEmailState(workerId);
+  if (state !== "on") return { off: state };
+  const provider = getEmailProvider()!;
+  if (pausedUntil && now < pausedUntil) return { off: "paused" };
+  pausedUntil = undefined;
+  return { provider };
+}
+
+/** Emails the sweeps sent so far this UTC day, of either kind: the one daily ceiling. */
+export async function emailsSentToday(db: Db, now: Date): Promise<number> {
+  const [today] = await db
+    .select({ n: sql<string>`count(*)` })
+    .from(events)
+    .where(
+      and(
+        inArray(events.kind, [POST_FAILURE_EMAIL, POST_DELIVERY_EMAIL]),
+        gte(events.createdAt, utcMidnight(now)),
+        sql`${events.payload}->>'outcome' = 'sent'`,
+      ),
+    );
+  return Number(today?.n ?? 0);
+}
+
+export type PostEmailOutcome = "sent" | "refused" | "stop";
+
+/**
+ * One send and what Resend's answer means for the sweep, shared by both emails:
+ * "sent" (the 409 `invalid_idempotent_request` too — the first send went out),
+ * "refused" (a message Resend will never take: logged, not retried), or "stop"
+ * (the account, the day's quota or a transient fault: the sweep pauses and ends
+ * its tick, and nothing is logged for the cause). `log` writes the cause's row.
+ */
+export async function sendPostEmail(args: {
+  provider: EmailProvider;
+  now: Date;
+  to: string;
+  message: { subject: string; text: string; html: string };
+  idempotencyKey: string;
+  /** Names the email in the log lines: "failure email", "delivery email". */
+  label: string;
+  log: (
+    outcome: { outcome: "sent"; resendId: string } | { outcome: "refused"; error: string },
+  ) => Promise<void>;
+}): Promise<PostEmailOutcome> {
+  const { provider, now, label } = args;
+  try {
+    const sent = await provider.send({
+      to: args.to,
+      ...args.message,
+      idempotencyKey: args.idempotencyKey,
+    });
+    await args.log({ outcome: "sent", resendId: sent.id });
+    return "sent";
+  } catch (err) {
+    if (!(err instanceof EmailSendError)) throw err;
+    // Resend saw this key with a different body: the first send went out
+    // (an earlier tick's, before the burst grew). It counts as sent.
+    if (err.status === 409 && err.errorName === "invalid_idempotent_request") {
+      await args.log({ outcome: "sent", resendId: "idempotent-replay" });
+      return "sent";
+    }
+    if (err.accountFault) {
+      // Not this cause's fault: no row, so nothing is blamed and the emails
+      // go out once the key or the domain is fixed (while under 24 h old).
+      pausedUntil = new Date(now.getTime() + FAILURE_EMAIL_ACCOUNT_PAUSE_MS);
+      logger.warn(
+        { status: err.status, error: err.errorName },
+        `${label}: Resend refused the account (key or domain) — paused an hour`,
+      );
+      return "stop";
+    }
+    if (err.dailyQuota) {
+      pausedUntil = nextUtcMidnight(now);
+      logger.warn(
+        { status: err.status, error: err.errorName },
+        `${label}: Resend quota spent — paused until 00:00 UTC`,
+      );
+      return "stop";
+    }
+    if (err.retryable) {
+      pausedUntil = new Date(now.getTime() + FAILURE_EMAIL_RETRY_PAUSE_MS);
+      logger.warn(
+        { status: err.status, error: err.errorName },
+        `${label}: send failed — retrying later`,
+      );
+      return "stop";
+    }
+    // A refusal that will never succeed: logged, so nothing retries it.
+    await args.log({ outcome: "refused", error: err.errorName ?? String(err.status) });
+    logger.warn({ status: err.status, error: err.errorName }, `${label}: refused by Resend`);
+    return "refused";
+  }
 }
 
 export interface FailureEmailSweepResult {
@@ -143,11 +253,9 @@ export async function sweepPostFailureEmails(
   const now = opts.now ?? new Date();
   const result: FailureEmailSweepResult = { sent: 0, refused: 0, heldByCeiling: 0 };
 
-  const state = failureEmailState(opts.workerId);
-  if (state !== "on") return { ...result, off: state };
-  const provider = getEmailProvider()!;
-  if (pausedUntil && now < pausedUntil) return { ...result, off: "paused" };
-  pausedUntil = undefined;
+  const gate = emailSweepGate(opts.workerId, now);
+  if ("off" in gate) return { ...result, off: gate.off };
+  const { provider } = gate;
 
   const rows = await db
     .select({
@@ -204,17 +312,7 @@ export async function sweepPostFailureEmails(
       ),
     );
 
-  const [today] = await db
-    .select({ n: sql<string>`count(*)` })
-    .from(events)
-    .where(
-      and(
-        eq(events.kind, POST_FAILURE_EMAIL),
-        gte(events.createdAt, utcMidnight(now)),
-        sql`${events.payload}->>'outcome' = 'sent'`,
-      ),
-    );
-  let remaining = FAILURE_EMAIL_DAILY_CEILING - Number(today?.n ?? 0);
+  let remaining = FAILURE_EMAIL_DAILY_CEILING - (await emailsSentToday(db, now));
 
   // Group by cause, oldest cause first; inside a cause, oldest failure first
   // (the id breaks a tie, so the order — and the key below — never wobbles).
@@ -271,67 +369,23 @@ export async function sweepPostFailureEmails(
       })),
     });
     const postIds = due.map((p) => p.id);
-    try {
-      const sent = await provider.send({
-        to: email,
-        ...message,
-        // The cause and its OLDEST due post: a key that does not change while the
-        // burst grows, so a retry after an ambiguous send or a failed log write
-        // is deduplicated by Resend (24 h) instead of sent again.
-        idempotencyKey: `post-failure/${userId}/${failureKind}/${postIds[0]}`,
-      });
-      await logEmail(db, now, userId, platform, failureKind, postIds, {
-        outcome: "sent",
-        resendId: sent.id,
-      });
+    const outcome = await sendPostEmail({
+      provider,
+      now,
+      to: email,
+      message,
+      // The cause and its OLDEST due post: a key that does not change while the
+      // burst grows, so a retry after an ambiguous send or a failed log write
+      // is deduplicated by Resend (24 h) instead of sent again.
+      idempotencyKey: `post-failure/${userId}/${failureKind}/${postIds[0]}`,
+      label: "failure email",
+      log: (logged) => logEmail(db, now, userId, platform, failureKind, postIds, logged),
+    });
+    if (outcome === "stop") return result;
+    if (outcome === "sent") {
       result.sent += 1;
       remaining -= 1;
-    } catch (err) {
-      if (!(err instanceof EmailSendError)) throw err;
-      // Resend saw this key with a different body: the first send went out
-      // (an earlier tick's, before the burst grew). It counts as sent.
-      if (err.status === 409 && err.errorName === "invalid_idempotent_request") {
-        await logEmail(db, now, userId, platform, failureKind, postIds, {
-          outcome: "sent",
-          resendId: "idempotent-replay",
-        });
-        result.sent += 1;
-        remaining -= 1;
-        continue;
-      }
-      if (err.accountFault) {
-        // Not this cause's fault: no row, so nothing is blamed and the failures
-        // go out once the key or the domain is fixed (while under 24 h old).
-        pausedUntil = new Date(now.getTime() + FAILURE_EMAIL_ACCOUNT_PAUSE_MS);
-        logger.warn(
-          { status: err.status, error: err.errorName },
-          "failure email: Resend refused the account (key or domain) — paused an hour",
-        );
-        return result;
-      }
-      if (err.dailyQuota) {
-        pausedUntil = nextUtcMidnight(now);
-        logger.warn(
-          { status: err.status, error: err.errorName },
-          "failure email: Resend quota spent — paused until 00:00 UTC",
-        );
-        return result;
-      }
-      if (err.retryable) {
-        pausedUntil = new Date(now.getTime() + FAILURE_EMAIL_RETRY_PAUSE_MS);
-        logger.warn(
-          { status: err.status, error: err.errorName },
-          "failure email: send failed — retrying later",
-        );
-        return result;
-      }
-      // A refusal that will never succeed: logged, so the cause cools down and
-      // nothing retries it.
-      await logEmail(db, now, userId, platform, failureKind, postIds, {
-        outcome: "refused",
-        error: err.errorName ?? String(err.status),
-      });
-      logger.warn({ status: err.status, error: err.errorName }, "failure email: refused by Resend");
+    } else {
       result.refused += 1;
     }
   }

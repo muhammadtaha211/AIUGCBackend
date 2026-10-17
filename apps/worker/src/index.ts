@@ -10,6 +10,7 @@ import {
   logger,
   markEventsNotified,
   pendingAlertEvents,
+  sweepPostDeliveryEmails,
   sweepPostFailureEmails,
 } from "@aiugc/core";
 import { superviseLane } from "./lanes";
@@ -75,9 +76,11 @@ async function sweepAlerts(db: ReturnType<typeof getDb>): Promise<void> {
 }
 
 /**
- * The failure email (decision 0107): a minute's cadence, like the alert sweep.
- * The rules — the cause, the 24 h, the 2-minute quiet, the 20-a-day ceiling —
- * are core's (pipelines/social-failure-email.ts); this only drives the clock.
+ * The failure email (decision 0107) and the delivery email (decision 0116): a
+ * minute's cadence, like the alert sweep. The rules — the cause, the 24 h, the
+ * 2-minute quiet, the 20-a-day ceiling — are core's
+ * (pipelines/social-failure-email.ts, social-delivery-email.ts); this only
+ * drives the clock.
  * One tick at a time: a tick that finds the last one still sending skips, so
  * the ceiling's count cannot race on this one box. Swallows everything, the way
  * sweepAlerts does — an email fault must never become a worker fault, and it
@@ -90,12 +93,29 @@ async function sweepFailureEmails(db: ReturnType<typeof getDb>): Promise<void> {
   if (failureEmailSweepRunning) return;
   failureEmailSweepRunning = true;
   try {
-    const result = await sweepPostFailureEmails(db, { workerId: getEnv().WORKER_ID });
-    if (result.sent + result.refused + result.heldByCeiling > 0) {
-      logger.info(result, "failure email sweep");
+    const workerId = getEnv().WORKER_ID;
+    try {
+      const failures = await sweepPostFailureEmails(db, { workerId });
+      if (failures.sent + failures.refused + failures.heldByCeiling > 0) {
+        logger.info(failures, "failure email sweep");
+      }
+    } catch (err) {
+      logger.warn({ err }, "failure email sweep failed — retrying next interval");
+    }
+    // After the failures: they spend the day's shared ceiling first, and a
+    // pause the failure sweep just set holds this one back too. Its own try, so
+    // a fault in one sweep never stops the other.
+    try {
+      const deliveries = await sweepPostDeliveryEmails(db, { workerId });
+      if (deliveries.sent + deliveries.refused + deliveries.heldByCeiling > 0) {
+        logger.info(deliveries, "delivery email sweep");
+      }
+    } catch (err) {
+      logger.warn({ err }, "delivery email sweep failed — retrying next interval");
     }
   } catch (err) {
-    logger.warn({ err }, "failure email sweep failed — retrying next interval");
+    // Only reading the worker's own environment can land here.
+    logger.warn({ err }, "email sweep failed — retrying next interval");
   } finally {
     failureEmailSweepRunning = false;
   }
