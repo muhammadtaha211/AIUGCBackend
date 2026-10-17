@@ -45,7 +45,7 @@ export function failureLine(kind: string, platform: "instagram" | "tiktok"): str
       return `${name} לא סיימה לעבד את הסרטון בזמן. נסו לתזמן שוב.`;
     case "quota_exhausted":
       return platform === "tiktok"
-        ? // DRAFT (PR 4): TikTok's cap counts the videos still waiting for the owner.
+        ? // FINAL (PR 4, approved by merge 2026-10-17): TikTok's cap counts the videos still waiting for the owner.
           "טיקטוק לא קיבלה את הסרטון במשך יממה, כי סרטונים קודמים שנשלחו עוד מחכים שתסיימו אותם. מסיימים אותם בטיקטוק ומתזמנים שוב."
         : "החשבון עבר את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב.";
     case "removed_on_platform":
@@ -127,7 +127,7 @@ export function failureEmailReason(
     case "quota_exhausted":
       if (!manyAccounts) return failureLine(kind, platform);
       return platform === "tiktok"
-        ? // DRAFT (PR 4).
+        ? // FINAL (PR 4, approved by merge 2026-10-17).
           "טיקטוק לא קיבלה סרטונים לחשבונות במשך יממה, כי סרטונים קודמים שנשלחו עוד מחכים שתסיימו אותם. מסיימים אותם בטיקטוק ומתזמנים שוב."
         : "החשבונות עברו את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב.";
     case "platform_refused":

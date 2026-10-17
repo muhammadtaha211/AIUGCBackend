@@ -1831,8 +1831,8 @@ export function tiktokPullUrl(signedUrl: string): string {
 
 /**
  * TikTok's documented embed-player address for a post id — the post page's
- * "צפייה בפוסט" (a stopgap the founder approved, checked after TikTok's audit:
- * a sandbox post cannot be public, so no sandbox run yields a post id).
+ * "צפייה בפוסט" (a stopgap the founder approved; the sandbox's public post of
+ * 2026-10-17 has one, so whether the player opens it is his look, docs/09 t7).
  */
 export function tiktokPermalink(platformPostId: string): string {
   return `https://www.tiktok.com/player/v1/${platformPostId}`;

@@ -173,7 +173,7 @@ fields erased, rows kept as `deleted`, pending posts cancelled, an `events` row 
 | `sound_unavailable`   | הסאונד שנבחר כבר לא זמין באינסטגרם. תזמנו שוב עם סאונד אחר.                                                                                                                                                         |
 | `platform_refused`    | {platform} לא קיבלה את הסרטון. אפשר להוריד אותו ולפרסם ידנית.                                                                                                                                                       |
 | `platform_timeout`    | {platform} לא סיימה לעבד את הסרטון בזמן. נסו לתזמן שוב.                                                                                                                                                             |
-| `quota_exhausted`     | החשבון עבר את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב. TikTok (DRAFT, PR 4): טיקטוק לא קיבלה את הסרטון במשך יממה, כי סרטונים קודמים שנשלחו עוד מחכים שתסיימו אותם. מסיימים אותם בטיקטוק ומתזמנים שוב. |
+| `quota_exhausted`     | החשבון עבר את מכסת הפרסומים היומית של אינסטגרם במשך יממה. תזמנו שוב. TikTok (FINAL, PR 4): טיקטוק לא קיבלה את הסרטון במשך יממה, כי סרטונים קודמים שנשלחו עוד מחכים שתסיימו אותם. מסיימים אותם בטיקטוק ומתזמנים שוב. |
 | `removed_on_platform` | הסרטון הוסר בטיקטוק לפני שפורסם.                                                                                                                                                                                    |
 | `file_missing`        | קובץ הסרטון כבר לא שמור אצלנו.                                                                                                                                                                                      |
 | `internal_error`      | תקלה אצלנו מנעה את הפרסום. נסו לתזמן שוב.                                                                                                                                                                           |
@@ -875,8 +875,9 @@ text (a 19-digit id overflows a JS number). Handled (`processTiktokEvent`):
 - `post.publish.inbox_delivered` → `publishing → delivered`;
 - `post.publish.complete` → `publishing | delivered → posted` — the tile's **פורסם**;
 - `post.publish.publicly_available` → the post id and `https://www.tiktok.com/player/v1/<id>`
-  (TikTok's documented player address — a stopgap the founder approved, checked after the audit: a
-  sandbox post cannot be public) → "צפייה בפוסט"; `no_longer_publicaly_available` clears that link;
+  (TikTok's documented player address — a stopgap the founder approved; the sandbox's public post of
+  2026-10-17 has one, so whether it opens is his look now, t7) → "צפייה בפוסט";
+  `no_longer_publicaly_available` clears that link;
 - `authorization.removed` → every live row of that open_id connected before the event (under any
   Tavnit account) becomes `disconnected` — it leaves חיבורים, like ניתוק — with its tokens erased,
   and its posts still waiting (`scheduled`, or `publishing` with no upload) **fail now as
@@ -902,9 +903,19 @@ Domain property `tavnit.ai` verified by DNS TXT at Namecheap. Platform Web `http
 Terms `/terms`; Privacy `/privacy`. Products: **Login Kit** (Web, redirect
 `https://tavnit.ai/api/social/tiktok/callback`), **Content Posting API** with Upload on and Direct
 Post off, **Webhooks** (callback `https://tavnit.ai/api/social/tiktok/webhook`). Scopes
-`user.info.basic`, `video.upload`. One sandbox cloned from the draft, with one target user. Not
-confirmed: that the sandbox's webhook field carries the callback, that the sandbox shows the URL
-property, and whether the sandbox has its own client key and secret (TikTok's pages do not say).
+`user.info.basic`, `video.upload`. One sandbox cloned from the draft, with one target user.
+
+**What the live run showed (2026-10-17; vault
+[`tiktok-inbox-live-run-2026-10-17`](vault/facts/tiktok-inbox-live-run-2026-10-17.md)).** The three
+questions TikTok's pages left open, answered by the founder (FOUNDER-REPORTED): the sandbox has its
+own client key and secret (the sandbox pair is on Vercel Production and on the box); the sandbox
+keeps **its own URL-properties list** and needed **its own domain verification**; and checks t1–t6
+passed, the box running the PR 4 code with the failure email on. The database agrees (MEASURED): the
+first TikTok post, at 23:10 UTC on the 16th (02:10 on the 17th in Israel), `failed` as
+`platform_refused` with TikTok's `403 url_ownership_unverified` — the refusal the plan named as the
+live risk — and its failure email went at 23:12; the next two reached the inbox (23:25 and 23:30,
+`delivered_at` seconds after). The post finished in TikTok's editor was public (MEASURED: its row
+holds the post id and the player link, which TikTok gives only for a public post).
 
 **Placing the pair (each its own OK; values never in a chat, a commit or a report).**
 
@@ -977,7 +988,8 @@ social_accounts where platform = 'tiktok';` → `tiktok | connected | t | t`.
   email «פרסום שתוזמן בתבנית נכשל» (needs `RESEND_API_KEY` on the box). Then reconnect.
 - (t6) _insurance:_ `select count(*) from video_renders where watermarked;` → `0` (TikTok forbids a
   mark on shared content).
-- (t7) _after the audit, with a public post:_ "צפייה בפוסט" opens TikTok's player for the post.
+- (t7) _with a public post:_ "צפייה בפוסט" opens TikTok's player for the post. The sandbox's public
+  post of 2026-10-17 has its link (MEASURED); that it opens is **not yet reported** (his look).
 - Leave the sandbox connected for the review demo (§Runbook).
 
 **PR 2 — connecting.** The box is not involved.

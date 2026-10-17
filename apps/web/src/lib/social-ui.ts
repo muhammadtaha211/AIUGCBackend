@@ -16,7 +16,7 @@ import type { InstagramConnectMode } from "@aiugc/core";
 export const SOCIAL_SECTION_TITLE = "חיבורים";
 export const SOCIAL_SECTION_LEAD = "החשבונות שתבנית מפרסמת אליהם.";
 export const INSTAGRAM_LABEL = "אינסטגרם";
-// DRAFT (PR 4): the TikTok card's heading — PLATFORM_LABELS.tiktok's word.
+// FINAL (PR 4, approved by merge 2026-10-17): the TikTok card's heading — PLATFORM_LABELS.tiktok's word.
 export const TIKTOK_LABEL = "טיקטוק";
 /**
  * DRAFT (PR 4, decision 0115): the TikTok card's lead. TikTok asks apps to tell
@@ -106,7 +106,7 @@ export const CONNECT_CANCELLED =
 export const CONNECT_FAILED =
   "פייסבוק לא השלימה את החיבור, ולא חובר שום חשבון. נסו שוב בעוד כמה דקות.";
 
-// DRAFT (PR 4): TikTok's round trip, the same outcomes in TikTok's name, plus
+// FINAL (PR 4, approved by merge 2026-10-17): TikTok's round trip, the same outcomes in TikTok's name, plus
 // "scope" — the owner switched off the upload permission on TikTok's page.
 export const TIKTOK_CONNECT_EXPIRED =
   "עברה יותר מחצי שעה מאז שנפתח החלון של טיקטוק, ולכן החיבור לא נשמר. התחילו את החיבור שוב מכאן.";

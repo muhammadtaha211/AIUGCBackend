@@ -874,7 +874,7 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, PR #107 OPEN (not merged); 0064/0065 PUSHED 2026-10-17
+## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, MERGED as PR #107 (`f11ff04`, 2026-10-17); 0064/0065 PUSHED 2026-10-17; run live in the sandbox the same night
 
 [[0115-tiktok-inbox-posting-pr4]] (his seven decisions, his five approval changes, the planning
 defaults he approved); facts [[tiktok-api-attaches-no-sound-2026-10-16]] and
@@ -909,9 +909,17 @@ diff (four lenses, a skeptic per lens) — 15 findings survived, all fixed in `6
 screenshots from a throwaway harness page behind a fetch mock (no production row), deleted after;
 `db push --dry-run` would push exactly 0064 and 0065 (ledger 0000–0063 applied).
 
-**Not run:** nothing live — no TikTok call, no connect, no upload, no webhook delivery, no push, no
-env change, no deploy. Whether TikTok's inbox accepts a הוק + דמו file (no audio stream) is the
-sandbox run's first question; a refusal stops the work (his approval §5).
+**Run live (2026-10-17, FOUNDER-REPORTED t1–t6 passed; the rows MEASURED —
+[[tiktok-inbox-live-run-2026-10-17]]):** the first post was refused by TikTok with
+`url_ownership_unverified` (the sandbox keeps its own URL-properties list and needed its own domain
+verification) and its failure email went; the next two reached the inbox — a **silent הוק + דמו was
+accepted**, so approval §5's stop did not fire — and the גוש טקסט one was posted from TikTok's editor,
+**public**, with a post id and the player link (so the repo's "a sandbox post cannot be public" was
+wrong: [[the-sandbox-cannot-post-publicly-2026-10-16]], falsified; whether the link opens is his look,
+t7). The rows show no Service B post and no `connection_expired` post or email, so t3 as worded and
+the waiting-post half of t5 left no trace. One draft (the הוק + דמו, 23:25 UTC on the 16th) is still
+unfinished in his TikTok — the case PR 4.1's delivery email is for. The sandbox pair is on Vercel
+Production and on the box; the box runs the PR 4 build with the failure email on.
 
 ## What landed (2026-10-15, last) — `/home/plan`'s cards in one row of four, `feat/plan-row-of-four`
 
@@ -1584,11 +1592,13 @@ button, the tag, the flow, the sound picker, the calendar, the notice, the failu
 (FOUNDER-REPORTED 2026-10-13). **Four UI fixes MERGED as #96** (`9e7000b`,
 [[0108-social-posting-four-ui-fixes-after-pr3]]; this line said "BUILT … next: his review and merge"
 until 2026-10-16). PR 3's live checks in 0107's order are still unreported (docs/09 §Live-test
-checklist, PR 3). **PR 4 — TikTok inbox posting — BUILT 2026-10-16** on `feat/tiktok-inbox-posting`,
-PR #107 open ([[0115-tiktok-inbox-posting-pr4]]; the "What landed" entry above); 0064/0065 PUSHED 2026-10-17; next, each
-his OK: the merge, the sandbox pair on Vercel and the box, the box pull,
-the sandbox live checks (docs/09 checklist PR 4). The env names and the live-test steps are under
-"Owed founder actions".
+checklist, PR 3). **PR 4 — TikTok inbox posting — MERGED as #107** (`f11ff04`, 2026-10-17;
+[[0115-tiktok-inbox-posting-pr4]], the "What landed" entry above); 0064/0065 PUSHED 2026-10-17; run
+live in the sandbox that night, t1–t6 passed by his report
+([[tiktok-inbox-live-run-2026-10-17]]). Next: the delivery email and the door (PR 4.1), his look at
+t7 (does «צפייה בפוסט» open the player), the recorded review demo and "Submit for review" (yours),
+then the production pair after the audit. The env names and the live-test steps are under "Owed
+founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
 ([[0099-service-c-phase-2-opens-to-customers]]); its push, merge and go-live are under "Owed
@@ -1887,9 +1897,11 @@ address and connected-accounts text.
 DNS TXT at Namecheap. Platform Web https://tavnit.ai; Terms /terms; Privacy /privacy. Products: Login
 Kit (Web, redirect https://tavnit.ai/api/social/tiktok/callback), Content Posting API with Upload on
 and Direct Post off, Webhooks (callback https://tavnit.ai/api/social/tiktok/webhook). Scopes
-user.info.basic, video.upload. One sandbox cloned from the draft, with one target user. **Not
-confirmed:** that the sandbox's webhook field holds the callback (he was told to set it). No TikTok
-env value is placed anywhere yet.
+user.info.basic, video.upload. One sandbox cloned from the draft, with one target user. **Since the
+live run (2026-10-17, FOUNDER-REPORTED):** the sandbox has its own client key and secret, both placed
+on Vercel Production and on the box; it keeps its own URL-properties list and needed its own domain
+verification (the first live post failed with `url_ownership_unverified` until then); t1–t6 passed.
+Still not submitted for review.
 
 **tavnit.ai DNS (FOUNDER-REPORTED, 2026-10-16)** is at Namecheap; mail forwarding
 muhammad@tavnit.ai → his Gmail; Resend's records untouched.
@@ -1897,7 +1909,7 @@ muhammad@tavnit.ai → his Gmail; Resend's records untouched.
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
 **Migrations 0000–0065 applied, ledger clean at 66 rows, no gaps, nothing pending** — MEASURED
 2026-10-17 right after the founder-authorized 0064/0065 push (TikTok, PR #107 — pushed before its
-merge, so `origin/main` holds 0000–0063 until #107 merges), read-only against
+merge, so `origin/main` held 0000–0063 until #107 merged the same day), read-only against
 `supabase_migrations.schema_migrations` (count 66, first `0000`, last `0065`)
 ([[production-migration-push-log]]). _(This line said 0000–0062 / 63 rows until 2026-10-17 and
 missed the 0063 push of 2026-10-15.)_ _(This line said
@@ -2008,8 +2020,12 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
-- **Social posting — PR 4, TikTok (2026-10-16, `feat/tiktok-inbox-posting`, PR #107 open).** In order,
-  each its own OK: 1. the DRAFT strings at PR review — `apps/web/src/lib/social-ui.ts` (the TikTok
+- **Social posting — PR 4, TikTok (2026-10-16, `feat/tiktok-inbox-posting`, MERGED as PR #107,
+  2026-10-17; items 1–8 below are done by his report and the rows — the merge, the pair on Vercel and
+  the box, the box restart, the Resend key (a TikTok failure email went from the box), the switch
+  (he is admin), the sandbox checks t1–t6 — kept for the record; 9–11 are still his).** In order,
+  each its own OK: 1. ~~the DRAFT strings at PR review~~ approved by his merge (marked FINAL in the
+  code 2026-10-17; the three inbox lines PR 4.1 rewrites are DRAFT again) — `apps/web/src/lib/social-ui.ts` (the TikTok
   card and its outcome lines), `apps/web/src/lib/social-posting-ui.ts` (the inbox note, the done
   lines, the no-account lines, the pending-cap refusal, the delivered and deferred labels),
   `packages/core/src/social-copy.ts` (TikTok's `quota_exhausted` lines) — final wording of the

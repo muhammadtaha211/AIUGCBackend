@@ -10,11 +10,13 @@
  * DRAFT are new in PR 3 — the singular and zero forms Appendix A left implicit,
  * the AI tick (0102 §1, 0107 §1), the גוש טקסט mix line (0102 §2), the refusals
  * Appendix A did not word — or a line of Appendix A with its TikTok half taken
- * out (no TikTok card until PR 4, 0102 §4). PR 4 (decision 0115) adds TikTok's
- * lines, each marked DRAFT (PR 4); none names a Drafts folder — what the owner
- * gets is TikTok's inbox notification (the founder's approval change 1). All
- * wait for the founder's approval at PR review. 0061's rules: no reach or
- * results claim, the app's own vocabulary (סרטון, פרסום, חשבון).
+ * out (no TikTok card until PR 4, 0102 §4). PR 4 (decision 0115) added TikTok's
+ * lines; the founder merged PR #107 on 2026-10-17 and they read FINAL (PR 4,
+ * approved by merge), except the ones PR 4.1 rewrites, which are DRAFT again.
+ * None names a Drafts folder — what the owner gets is TikTok's inbox
+ * notification (the founder's approval change 1). The other DRAFTs wait for the
+ * founder's approval at PR review. 0061's rules: no reach or results claim,
+ * the app's own vocabulary (סרטון, פרסום, חשבון).
  */
 
 import type { SocialErrorCode } from "@aiugc/core";
@@ -80,9 +82,9 @@ export const NO_ACCOUNT_TITLE = "עוד אין חשבון מחובר";
 // DRAFT: Appendix A's line without "או טיקטוק" (no TikTok card yet, 0102 §4) and
 // without "בהגדרות" (the button opens the Instagram pre-screen, not settings).
 export const NO_ACCOUNT_BODY = "מחברים חשבון אינסטגרם, וחוזרים לכאן לתזמן את הסרטון.";
-// DRAFT (PR 4): TikTok alone opens TikTok's connect; both open the חיבורים section.
+// FINAL (PR 4, approved by merge 2026-10-17): TikTok alone opens TikTok's connect; both open the חיבורים section.
 export const NO_ACCOUNT_BODY_TIKTOK = "מחברים חשבון טיקטוק, וחוזרים לכאן לתזמן את הסרטון.";
-// DRAFT (PR 4)
+// FINAL (PR 4, approved by merge 2026-10-17)
 export const NO_ACCOUNT_BODY_BOTH =
   "מחברים חשבון אינסטגרם או טיקטוק בהגדרות, וחוזרים לכאן לתזמן את הסרטון.";
 
@@ -112,7 +114,7 @@ export function retentionLine(date: string): string {
 
 export const STEP_CAPTION_TITLE = "כיתוב וסאונד";
 export const CAPTION_LABEL = "כיתוב";
-// DRAFT (PR 4): beside a TikTok account the caption is Instagram's alone.
+// FINAL (PR 4, approved by merge 2026-10-17): beside a TikTok account the caption is Instagram's alone.
 export const CAPTION_LABEL_INSTAGRAM = "כיתוב (אינסטגרם)";
 export const CAPTION_PLACEHOLDER = "מה כותבים ליד הסרטון? אפשר גם להשאיר ריק.";
 
@@ -171,7 +173,7 @@ export const AI_TICK_LABEL = "לסמן באינסטגרם שהסרטון נוצ�
 export const AI_TICK_HINT = "אינסטגרם דורשת לסמן סרטון מציאותי שנוצר או שונה ב־AI.";
 
 export const DAILY_CAP_LINE = "הגעתם למכסת הפרסומים היומית של אינסטגרם לחשבון הזה.";
-// DRAFT (PR 4, decision 0115): TikTok takes at most 5 videos a day that the owner has not finished.
+// FINAL (PR 4, approved by merge 2026-10-17, decision 0115): TikTok takes at most 5 videos a day that the owner has not finished.
 export const TIKTOK_PENDING_CAP_LINE =
   "לחשבון הטיקטוק הזה כבר מתוזמנים 5 סרטונים ביממה שסביב המועד הזה, וטיקטוק לא מקבלת יותר. בחרו מועד אחר.";
 
@@ -198,10 +200,10 @@ export type PlatformMix = { instagram: boolean; tiktok: boolean };
 export function doneLineFor(mix: PlatformMix, date: string, time: string): string {
   if (!mix.tiktok) return doneLine(date, time);
   if (!mix.instagram) {
-    // DRAFT (PR 4)
+    // FINAL (PR 4, approved by merge 2026-10-17)
     return `הסרטון יישלח לטיקטוק ב־${date} בשעה ${time}. אפשר לשנות או לבטל בלוח הפרסומים עד שהשליחה מתחילה.`;
   }
-  // DRAFT (PR 4)
+  // FINAL (PR 4, approved by merge 2026-10-17)
   return `הסרטון יפורסם באינסטגרם ויישלח לטיקטוק ב־${date} בשעה ${time}. אפשר לשנות או לבטל בלוח הפרסומים עד שהפרסום מתחיל.`;
 }
 
@@ -254,11 +256,11 @@ export const POST_STATUS_LABELS: Record<PostDisplayStatus, string> = {
   cancelled: "בוטל",
 };
 
-// DRAFT (PR 4): a TikTok post waiting out TikTok's cap on unfinished videos.
+// FINAL (PR 4, approved by merge 2026-10-17): a TikTok post waiting out TikTok's cap on unfinished videos.
 export const DEFERRED_LABEL_TIKTOK = "ממתין שטיקטוק תקבל עוד סרטונים לחשבון";
 
 /** The status's word for a post on this platform: the wait is worded per platform. */
-// DRAFT (PR 4): TikTok while the file is on its way — Tavnit sends to TikTok, it never publishes there.
+// FINAL (PR 4, approved by merge 2026-10-17): TikTok while the file is on its way — Tavnit sends to TikTok, it never publishes there.
 export const PUBLISHING_LABEL_TIKTOK = "בשליחה לטיקטוק…";
 
 export function postStatusLabel(status: PostDisplayStatus, platform: SocialPlatformKey): string {
