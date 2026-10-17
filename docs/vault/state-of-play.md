@@ -874,7 +874,7 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-17) — social posting PR 4.1: the TikTok delivery email and the door, `feat/tiktok-delivery-email`, PR OPEN (not merged)
+## What landed (2026-10-17) — social posting PR 4.1: the TikTok delivery email and the door, `feat/tiktok-delivery-email`, PR #108 OPEN (not merged)
 
 [[0116-tiktok-delivery-email-and-the-door]] (his five decisions, the planning defaults he approved);
 the plan and prompt in `docs/claude/`; mechanics in docs/09 §The delivery email, §TikTok, checklist
@@ -896,6 +896,8 @@ t8. No migration, no env change.
 - **One inbox path in four places** (`TIKTOK_INBOX_PATH`, `social-copy.ts`): the TikTok card's lead,
   the schedule note, the post page's delivered line, the email. The TikTok-only time step says what
   the time is for.
+
+**Checked (MEASURED, 2026-10-17):** the test gate all green on the head — 2,263 tests (core 1242, web 846, remotion 97, admin 71, worker 7), lint and typecheck clean; an adversarial review of the diff (four lenses, a skeptic per finding) — one real defect, reported twice (Resend's 409 on a reused key logged the whole grown batch as told), fixed and mutation-checked; screenshots from a throwaway harness page with made-up data, deleted after.
 
 **Not run:** nothing live. The box does not run it until his pull and restart; no email has been sent.
 
@@ -1628,7 +1630,7 @@ checklist, PR 3). **PR 4 — TikTok inbox posting — MERGED as #107** (`f11ff04
 live in the sandbox that night, t1–t6 passed by his report
 ([[tiktok-inbox-live-run-2026-10-17]]). **PR 4.1 — the delivery email and the door — BUILT
 2026-10-17** on `feat/tiktok-delivery-email` ([[0116-tiktok-delivery-email-and-the-door]]; its
-"What landed" entry above), awaiting his merge. Next: his look at t7 (does «צפייה בפוסט» open the
+"What landed" entry above), awaiting his merge (PR #108). Next: his look at t7 (does «צפייה בפוסט» open the
 player), the recorded review demo and "Submit for review" (yours), then the production pair after the
 audit. The env names and the live-test steps are under "Owed
 founder actions".
