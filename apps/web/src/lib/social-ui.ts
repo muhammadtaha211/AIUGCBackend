@@ -9,23 +9,29 @@
  * task (the outcome lines, the pre-screen by connect mode) and wait for the
  * founder's approval at PR review with the rest. 0061's rules: no reach or
  * results claim, the app's own vocabulary (חשבון, פרסום).
+ *
+ * The one import is the pure `@aiugc/core/social-copy`: the TikTok inbox path
+ * (decision 0116) has a single source, shared with the worker's email.
  */
+
+import { TIKTOK_FINISH_LINE } from "@aiugc/core/social-copy";
 
 import type { InstagramConnectMode } from "@aiugc/core";
 
 export const SOCIAL_SECTION_TITLE = "חיבורים";
 export const SOCIAL_SECTION_LEAD = "החשבונות שתבנית מפרסמת אליהם.";
 export const INSTAGRAM_LABEL = "אינסטגרם";
-// DRAFT (PR 4): the TikTok card's heading — PLATFORM_LABELS.tiktok's word.
+// FINAL (PR 4, approved by merge 2026-10-17): the TikTok card's heading — PLATFORM_LABELS.tiktok's word.
 export const TIKTOK_LABEL = "טיקטוק";
 /**
- * DRAFT (PR 4, decision 0115): the TikTok card's lead. TikTok asks apps to tell
- * the owner the video waits for them behind TikTok's inbox notification
- * (upload-video reference, read 2026-10-16). The founder's approval: no line
- * names a Drafts folder; final wording after the live run shows where it lands.
+ * DRAFT (PR 4.1, decision 0116): the TikTok card's lead. TikTok asks apps to
+ * tell the owner the video waits for them behind TikTok's inbox notification
+ * (upload-video reference, read 2026-10-16). No line names a Drafts folder (the
+ * founder's PR 4 approval); the live run of 2026-10-17 showed where it lands, so
+ * the lead names that path, the same words as the schedule note, the post page
+ * and the delivery email.
  */
-export const TIKTOK_CARD_LEAD =
-  "תבנית שולחת את הסרטון לטיקטוק, ובאפליקציה מגיעה התראה. פותחים אותה, מוסיפים סאונד וכיתוב ומפרסמים.";
+export const TIKTOK_CARD_LEAD = `תבנית שולחת את הסרטון לטיקטוק. ${TIKTOK_FINISH_LINE}`;
 export const SOCIAL_CONNECTED = "מחובר";
 export const SOCIAL_EXPIRED = "פג תוקף — התחברו מחדש";
 export const SOCIAL_CONNECT = "חיבור חשבון";
@@ -106,7 +112,7 @@ export const CONNECT_CANCELLED =
 export const CONNECT_FAILED =
   "פייסבוק לא השלימה את החיבור, ולא חובר שום חשבון. נסו שוב בעוד כמה דקות.";
 
-// DRAFT (PR 4): TikTok's round trip, the same outcomes in TikTok's name, plus
+// FINAL (PR 4, approved by merge 2026-10-17): TikTok's round trip, the same outcomes in TikTok's name, plus
 // "scope" — the owner switched off the upload permission on TikTok's page.
 export const TIKTOK_CONNECT_EXPIRED =
   "עברה יותר מחצי שעה מאז שנפתח החלון של טיקטוק, ולכן החיבור לא נשמר. התחילו את החיבור שוב מכאן.";

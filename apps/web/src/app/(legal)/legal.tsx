@@ -56,8 +56,12 @@ export const CONTACT_EMAIL = "tavnit.support@gmail.com";
  * The operator's public postal address, in one place because four public
  * surfaces state it — terms §1, privacy §1, /about and /contact — and an
  * address that disagrees with itself across them is the defect.
+ *
+ * Since 2026-10-17 it is the address on the עוסק פטור registration, a P.O. box
+ * in Kabul (vault 0117, which supersedes 0058's Tel Aviv street address): Meta's
+ * business verification compares the public pages with that record.
  */
-export const OPERATOR_ADDRESS = "ברזיל 14, תל אביב, ישראל";
+export const OPERATOR_ADDRESS = 'ת"ד 929, כאבול 2496300, ישראל';
 
 /**
  * The dated version of the terms text. It is shown at the head of the page
@@ -74,7 +78,10 @@ export const OPERATOR_ADDRESS = "ברזיל 14, תל אביב, ישראל";
  * it though its text did not change — the 11.10 move set that precedent the
  * other way round. Moved 14.10.2026 → 15.10.2026 for /privacy §3 and §6 when
  * every page began recording and only the sensitive stayed hidden (vault 0110);
- * the terms text did not change. If the merge lands on a later day, move it to
- * that day.
+ * the terms text did not change. Moved 15.10.2026 → 17.10.2026 for the legal
+ * pass on connected accounts (vault 0117): /privacy gains §13 and the changes
+ * in §3–§9 and §12, the operator address changes (one constant, four surfaces),
+ * and /terms §4 gains a connected-accounts subsection. If the merge lands on a
+ * later day, move it to that day.
  */
-export const UPDATED = "15.10.2026";
+export const UPDATED = "17.10.2026";

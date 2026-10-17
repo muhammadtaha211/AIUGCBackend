@@ -38,6 +38,7 @@ export * from "./pipelines/qc";
 export * from "./pipelines/renders";
 export * from "./pipelines/sets";
 export * from "./pipelines/social";
+export * from "./pipelines/social-delivery-email";
 export * from "./pipelines/social-failure-email";
 export * from "./pipelines/text-blocks";
 export * from "./pipelines/tts";

@@ -20,6 +20,9 @@ export const metadata: Metadata = {
 /**
  * Every factual statement here was checked against the repo on 2026-09-02
  * (fact sheet in the session that wrote it). Change the code, change the text.
+ * §4's connected-accounts subsection was added on 2026-10-17 (vault 0117) against the
+ * social-posting code: what the connect lets Tavnit do (pipelines/social.ts: a post exists only
+ * through schedulePosts), what disconnect does, and what TikTok's inbox delivery sends.
  * Open legal questions, the positions this text takes and their legal basis are in
  * docs/legal-review.md.
  */
@@ -129,6 +132,26 @@ export default function TermsPage() {
           <li>
             תימנעו ככל האפשר מצילום מסכים שמופיעים בהם פרטים אישיים של אנשים אחרים; אם הם מופיעים,
             אתם אחראים לכך שמותר לכם להשתמש בהם בפרסום.
+          </li>
+        </Bullets>
+
+        <SubTitle>חשבונות רשתות חברתיות מחוברים</SubTitle>
+        <Bullets>
+          <li>
+            בחיבור חשבון אינסטגרם או טיקטוק אתם מאשרים לנו לפרסם בו, או לשלוח אליו, את הסרטונים
+            שתזמנתם, במועד שבחרתם, ורק אותם. אתם מצהירים שמותר לכם לחבר את החשבון ולהשתמש בו לכך
+            (למשל שאתם הבעלים שלו או מוסמכים לפעול בשמו). אפשר לנתק חשבון בכל עת (ראו מדיניות
+            הפרטיות, סעיף 13); ניתוק מבטל פרסומים שעוד לא התחילו.
+          </li>
+          <li>
+            מה שמפורסם או נשלח לחשבון שלכם באחריותכם: הסרטון, הכיתוב, הסאונד והסימונים שבחרתם,
+            והעמידה בתנאי הפלטפורמה ובכללי הקהילה שלה, כמפורט לעיל. בטיקטוק אנחנו שולחים את הסרטון
+            בלבד לתיבת הדואר של האפליקציה; הסאונד, הכיתוב והפרסום נעשים על ידכם בתוך טיקטוק.
+          </li>
+          <li>
+            פלטפורמה רשאית לדחות, לעכב, להסיר או להגביל תוכן, חשבון או מספר פרסומים. אנחנו לא
+            מבטיחים שפרסום או שליחה יתקבלו בפלטפורמה, יתבצעו במועד שנקבע או יישארו זמינים. אם פרסום
+            שתזמנתם נכשל, נודיע לכם על כך באפליקציה, ובדרך כלל גם באימייל.
           </li>
         </Bullets>
       </Section>

@@ -57,6 +57,10 @@ the registration moves. Nothing breaks; it is a thing a customer could notice.
   is exactly how a third gets missed.
 - **One exported constant, and the mismatch written down as owed.** Chosen.
 
+## Superseded 2026-10-17
+
+The founder decided on 2026-10-17 that every public page prints the address on the business registration, **ת"ד 929, כאבול 2496300**, because Meta's business verification compares the public pages with that record ([[0117-legal-pages-lifted-for-connected-accounts-address-emails]]). `OPERATOR_ADDRESS` changed; the "one constant, four surfaces" design below stands and is what made it a one-line change. The Tel Aviv street address is no longer printed anywhere.
+
 ## Related
 
 - [[0014-legal-page-positions]] — where כאבול became public text

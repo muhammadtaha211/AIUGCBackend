@@ -43,6 +43,7 @@ import {
   STEP_WHEN_TITLE,
   SUBMIT_BUTTON,
   TIKTOK_INBOX_NOTE,
+  TIKTOK_WHEN_NOTE,
   TO_CALENDAR,
 } from "@/lib/social-posting-ui";
 import { postJson } from "@/lib/use-api";
@@ -313,6 +314,10 @@ export function ScheduleFlow({
               }}
             />
           </div>
+          {/* TikTok alone: this step submits, so it says what the time is for (0116). */}
+          {mix.tiktok && !mix.instagram && (
+            <p className="mt-4 text-sm text-ink/70">{TIKTOK_WHEN_NOTE}</p>
+          )}
           {problem && <p className="mt-3 text-sm text-red-700">{problem}</p>}
           {/* No Instagram account picked: nothing to caption, so this step submits. */}
           {!mix.instagram && inboxNote}

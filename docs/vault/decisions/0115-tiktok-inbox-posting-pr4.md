@@ -36,7 +36,9 @@ console (FOUNDER-REPORTED, 2026-10-16), and MEASURED the same day, the Supabase 
 on their servers to pull ("do not use FILE_UPLOAD"); it mirrors Instagram's URL hand-off; no video
 bytes cross the worker's lane or a Vercel function. REASONED risk, a console fix if it bites: whether
 the **sandbox** honours the URL property (`url_ownership_unverified` → `platform_refused`, the code in
-the detail). A new dependency: the custom-domain add-on ([[0063-auth-custom-domain]]) is now
+the detail) — _[2026-10-17: it bit, exactly so: the first live post failed with that code, and the
+fix was the sandbox's own domain verification in the console, [[tiktok-inbox-live-run-2026-10-17]]]_.
+A new dependency: the custom-domain add-on ([[0063-auth-custom-domain]]) is now
 load-bearing for TikTok delivery.
 
 ## 2. No caption, no sound, no AI tick for TikTok
@@ -69,7 +71,9 @@ drafts the owner never finished.
 As built (planning defaults, approved): `post.publish.complete` is "published"; a
 `publicly_available` post id gives "צפייה בפוסט" through TikTok's documented player address — **a
 stopgap he approved, checked after the audit** (a sandbox post cannot be public, MEASURED on
-add-a-sandbox); `post.publish.failed` is **received and ignored** (his OK) — the job's own poll owns
+add-a-sandbox) _[Corrected 2026-10-17: the sandbox's post was public and its row holds the post id
+and the link, so the check is his look now; the claim is in
+[[the-sandbox-cannot-post-publicly-2026-10-16]], falsified]_; `post.publish.failed` is **received and ignored** (his OK) — the job's own poll owns
 failure, which keeps the job's one fresh upload after a retryable failure reachable; an
 `authorization.removed` marks every live row of that open_id `disconnected` (it leaves חיבורים, like
 ניתוק) and **fails its waiting posts at once as `connection_expired`**, so the existing notice and
@@ -145,13 +149,21 @@ brand kit.
   does; an expired account dims its picture and name, never the mark; a TikTok post on its way reads
   «בשליחה לטיקטוק…» (DRAFT), not «מתפרסם…».
 
+## Answered by the live run (2026-10-17, [[tiktok-inbox-live-run-2026-10-17]])
+
+- TikTok's inbox **accepts a הוק + דמו file** with no audio stream (MEASURED: a `steps` post
+  `delivered`); §8.5's stop did not fire.
+- The sandbox **has its own client key and secret** and **its own URL-properties list**, which needed
+  its own domain verification (FOUNDER-REPORTED; the first post failed with `url_ownership_unverified`,
+  MEASURED).
+- The webhook field: t4 passed by the founder's report; the rows cannot tell the webhook from the poll.
+- Checks t1 to t6 passed (FOUNDER-REPORTED). The rows show no Service B post and no
+  `connection_expired` post or email, so check t3 as worded and the waiting-post half of t5 left no row.
+
 ## Still open
 
-- Whether TikTok's inbox accepts a הוק + דמו file, which has **no audio stream** (NOT STATED) — the
-  sandbox run decides; a refusal stops the work (§8.5).
-- Whether the sandbox's webhook field carries the callback, whether the sandbox shows the URL
-  property, and whether it has its own key and secret (FOUNDER, unconfirmed).
-- Whether the player URL opens a post standalone (after the audit).
+- Whether the player URL opens the sandbox's public post (t7) — his look; the link exists.
+- The audit itself, and the sandbox → production swap (docs/09 §Runbook).
 
 ## Related
 
@@ -159,3 +171,6 @@ brand kit.
 - [[0063-auth-custom-domain]] — the host TikTok pulls from.
 - [[0107-social-posting-pr3-tick-landing-line-failure-email]] — the failure email, §3 amended.
 - [[0108-social-posting-four-ui-fixes-after-pr3]] — the tag, §1 now per platform.
+- [[0116-tiktok-delivery-email-and-the-door]] — 2026-10-17: the email when a video reaches the inbox,
+  the inbox path fixed after the live run (replacing the interim notification wording of §8.1), and
+  every env string trimmed.
