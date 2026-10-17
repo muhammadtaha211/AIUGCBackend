@@ -171,3 +171,6 @@ brand kit.
 - [[0063-auth-custom-domain]] — the host TikTok pulls from.
 - [[0107-social-posting-pr3-tick-landing-line-failure-email]] — the failure email, §3 amended.
 - [[0108-social-posting-four-ui-fixes-after-pr3]] — the tag, §1 now per platform.
+- [[0116-tiktok-delivery-email-and-the-door]] — 2026-10-17: the email when a video reaches the inbox,
+  the inbox path fixed after the live run (replacing the interim notification wording of §8.1), and
+  every env string trimmed.

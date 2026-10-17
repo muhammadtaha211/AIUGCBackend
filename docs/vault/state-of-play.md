@@ -874,6 +874,37 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
+## What landed (2026-10-17) — social posting PR 4.1: the TikTok delivery email and the door, `feat/tiktok-delivery-email`, PR OPEN (not merged)
+
+[[0116-tiktok-delivery-email-and-the-door]] (his five decisions, the planning defaults he approved);
+the plan and prompt in `docs/claude/`; mechanics in docs/09 §The delivery email, §TikTok, checklist
+t8. No migration, no env change.
+
+**What exists (MEASURED, on the branch):**
+
+- **The close-out of PR 4 first, as its own commit** — the live run of the night of 2026-10-16/17
+  ([[tiktok-inbox-live-run-2026-10-17]]), the PR 4 TikTok strings FINAL (approved by his merge), and
+  "a sandbox post cannot be public" moved to `falsified/`
+  ([[the-sandbox-cannot-post-publicly-2026-10-16]]).
+- **The trim.** Every string in `packages/core/src/config.ts` goes through one `envString`; a test
+  walks the schema's keys so a new one cannot skip it.
+- **The delivery email.** `pipelines/social-delivery-email.ts`, a worker sweep beside the failure
+  email: one email per Tavnit account per sweep for TikTok videos still `delivered`, 2 minutes
+  settled, never twice per post, the TikTok switch asked at send time, the failure email's 20-a-day
+  ceiling counted over both kinds. The failure email's gate, day count and Resend error ladder are
+  shared exports now (its 24 tests unchanged and green). Log kind `post_delivery_email`.
+- **One inbox path in four places** (`TIKTOK_INBOX_PATH`, `social-copy.ts`): the TikTok card's lead,
+  the schedule note, the post page's delivered line, the email. The TikTok-only time step says what
+  the time is for.
+
+**Not run:** nothing live. The box does not run it until his pull and restart; no email has been sent.
+
+**Named next steps, not built (his §2):** a reminder when a video is still unfinished after a day;
+per-user email preferences; Instagram's deauthorize callback.
+
+**Owed outside the code:** the `/privacy` sentence on this email (docs/09 and the PR report have it in
+full; the legal pages stay held). His look at t7 (does «צפייה בפוסט» open the player).
+
 ## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, MERGED as PR #107 (`f11ff04`, 2026-10-17); 0064/0065 PUSHED 2026-10-17; run live in the sandbox the same night
 
 [[0115-tiktok-inbox-posting-pr4]] (his seven decisions, his five approval changes, the planning
@@ -1595,9 +1626,11 @@ until 2026-10-16). PR 3's live checks in 0107's order are still unreported (docs
 checklist, PR 3). **PR 4 — TikTok inbox posting — MERGED as #107** (`f11ff04`, 2026-10-17;
 [[0115-tiktok-inbox-posting-pr4]], the "What landed" entry above); 0064/0065 PUSHED 2026-10-17; run
 live in the sandbox that night, t1–t6 passed by his report
-([[tiktok-inbox-live-run-2026-10-17]]). Next: the delivery email and the door (PR 4.1), his look at
-t7 (does «צפייה בפוסט» open the player), the recorded review demo and "Submit for review" (yours),
-then the production pair after the audit. The env names and the live-test steps are under "Owed
+([[tiktok-inbox-live-run-2026-10-17]]). **PR 4.1 — the delivery email and the door — BUILT
+2026-10-17** on `feat/tiktok-delivery-email` ([[0116-tiktok-delivery-email-and-the-door]]; its
+"What landed" entry above), awaiting his merge. Next: his look at t7 (does «צפייה בפוסט» open the
+player), the recorded review demo and "Submit for review" (yours), then the production pair after the
+audit. The env names and the live-test steps are under "Owed
 founder actions".
 
 **Service C phase 2 — BUILT 2026-10-09** on `feat/service-c-phase-2`
@@ -2019,6 +2052,18 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **Social posting — PR 4.1, the delivery email (2026-10-17, `feat/tiktok-delivery-email`).** In order,
+  each its own OK: 1. the DRAFT strings at PR review — the four inbox places and the time-step
+  sentence (`social-copy.ts`, `social-ui.ts`, `social-posting-ui.ts`) and the email's subject and
+  body (`deliveryEmail`); 2. the merge (Vercel deploys the copy); 3. **the box:** `cd ~/AIUGCBackend
+&& git pull && pnpm install && sudo systemctl restart aiugc-worker` — the sweep runs there; no
+  env change, no migration; 4. docs/09 t8 — one TikTok video scheduled a few minutes ahead gives one
+  email with the path and a working link, two at once give one (an unfinished video from before the
+  deploy, delivered in the last 24 h, rides in the first email); 5. t7 — «צפייה בפוסט» on the
+  sandbox's public post; 6. owed while the legal pages are held, not edited: `/privacy`'s «שליחת
+  מיילים» names Resend for the sign-up and password mail only — the sentence for this email is in the
+  PR 4.1 report.
 
 - **Social posting — PR 4, TikTok (2026-10-16, `feat/tiktok-inbox-posting`, MERGED as PR #107,
   2026-10-17; items 1–8 below are done by his report and the rows — the merge, the pair on Vercel and

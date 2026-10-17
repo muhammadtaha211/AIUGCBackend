@@ -117,5 +117,7 @@ it, the session stops and reports; a silent audio track is its own task (0101).
 - [[auth-email-runs-through-resend]] — the auth mail's path and the 100-a-day ceiling this shares.
 - [[0044-the-auth-email-alert-fires-on-hit-never-on-a-threshold]] — the auth mail's own alert.
 - [[0037-the-worker-reports-to-sentry-the-web-apps-do-not]] — why the sweep lives on the worker only.
+- [[0116-tiktok-delivery-email-and-the-door]] — 2026-10-17: the delivery email, a sibling built on
+  this one's gate, pause, error ladder and daily ceiling (now shared, counted over both kinds).
 - [[resend-is-an-undisclosed-processor]] — the privacy page names Resend for the two auth emails
   only; the sentence on which emails Tavnit sends is owed, not edited (the legal pages stay held).
