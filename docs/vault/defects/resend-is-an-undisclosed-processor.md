@@ -8,6 +8,8 @@ source: code
 
 # Resend holds customer email addresses and is named in no privacy disclosure
 
+> **Update 2026-10-17 ([[0117-legal-pages-lifted-for-connected-accounts-address-emails]]):** Resend also carries the worker's failure and TikTok-delivery emails (business name, the connected account's name, platform, planned time, a sign-in-gated link; the Tavnit user id in a technical header). `/privacy` §5 and §6 now name both and say Resend carries every email, and that the receipt is Sumit's. §7 still asserts no transfer basis for Resend; counsel's question stands.
+
 ## FIXED 2026-09-11 — the disclosure only; the transfer basis is still counsel's
 
 **Fixed.** `/privacy` §6 now carries a `שליחת מיילים` sub-section —

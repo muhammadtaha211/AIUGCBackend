@@ -591,8 +591,7 @@ dashboard refuses, leave `META_LOGIN_CONFIG_ID` unset; the scope list is used.
 3. **Privacy policy** `https://tavnit.ai/privacy` and **Terms** `https://tavnit.ai/terms` in **App
    settings → Basic**. MEASURED: the privacy URL is required to publish, public and crawlable
    (Platform Terms, `pages-api/create-an-app`), and the privacy policy must explain how to request
-   deletion (`data-deletion-callback`) — today's `/privacy` does not mention connected accounts; the
-   legal pages are held, so that text is owed.
+   deletion (`data-deletion-callback`) — `/privacy` §13 now says how (2026-10-17, vault 0117): remove Tavnit in Facebook's settings and send the request, or write to the privacy address.
 4. **App ID and App Secret**: App settings → Basic → `META_APP_ID`, `META_APP_SECRET`. Settings →
    Advanced → **Require App Secret** may stay on: every call sends `appsecret_proof`.
 

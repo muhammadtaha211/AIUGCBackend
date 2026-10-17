@@ -904,8 +904,7 @@ t8. No migration, no env change.
 **Named next steps, not built (his §2):** a reminder when a video is still unfinished after a day;
 per-user email preferences; Instagram's deauthorize callback.
 
-**Owed outside the code:** the `/privacy` sentence on this email (docs/09 and the PR report have it in
-full; the legal pages stay held). His look at t7 (does «צפייה בפוסט» open the player).
+**The legal pass, same PR ([[0117-legal-pages-lifted-for-connected-accounts-address-emails]]):** `/privacy` gains §13 on connected Instagram and TikTok accounts and the matching sentences in §3–§9 and §12 (the failure and TikTok-delivery emails, Resend for all of them, the two OAuth cookies by name); `/terms` §4 gains a connected-accounts subsection; the operator address becomes the registration's P.O. box (one constant, four surfaces; supersedes [[0058-the-operator-address-is-a-tel-aviv-street-address]]); the date is 17.10.2026. Every claim was checked against the code (114 supported, 26 corrections applied), and `apps/web/test/legal-pages.test.ts` ties the names and numbers to the code. Merged on his instruction in chat, so he reads it after, not before. **Open, his:** whether the name line (מוחמד טאהא) must match the Meta record's order (טאהא מוחמד); the Meta Data Deletion Request URL entered in the Meta app; whether the terms subsection is a material change under terms §14; the acquirer and the P.O. box. His look at t7 (does «צפייה בפוסט» open the player).
 
 ## What landed (2026-10-16) — social posting PR 4: TikTok inbox posting, `feat/tiktok-inbox-posting`, MERGED as PR #107 (`f11ff04`, 2026-10-17); 0064/0065 PUSHED 2026-10-17; run live in the sandbox the same night
 
@@ -2063,9 +2062,7 @@ the 2026-09-26 custom domain (founder-reported):**
   env change, no migration; 4. docs/09 t8 — one TikTok video scheduled a few minutes ahead gives one
   email with the path and a working link, two at once give one (an unfinished video from before the
   deploy, delivered in the last 24 h, rides in the first email); 5. t7 — «צפייה בפוסט» on the
-  sandbox's public post; 6. owed while the legal pages are held, not edited: `/privacy`'s «שליחת
-  מיילים» names Resend for the sign-up and password mail only — the sentence for this email is in the
-  PR 4.1 report.
+  sandbox's public post; 6. ~~owed while the legal pages are held~~ DONE in the same PR ([[0117-legal-pages-lifted-for-connected-accounts-address-emails]]): `/privacy` names every email and Resend for all of them; read the new text on tavnit.ai/privacy and /terms and change any sentence you do not want.
 
 - **Social posting — PR 4, TikTok (2026-10-16, `feat/tiktok-inbox-posting`, MERGED as PR #107,
   2026-10-17; items 1–8 below are done by his report and the rows — the merge, the pair on Vercel and
@@ -2087,8 +2084,7 @@ the 2026-09-26 custom domain (founder-reported):**
   reported) before check (t5); 7. the switch: you are admin, so no SQL is needed for you; name another
   account with docs/09 §The switches; 8. the sandbox live checks (docs/09 checklist PR 4, t1–t6); 9. the review demo recorded in the sandbox (docs/09 §Runbook, the step list); "Submit for review"
   is yours; 10. after the audit: the production pair (docs/09 §Runbook: sandbox → production), then
-  `tiktok_posting` to `everyone`; 11. owed while the legal pages are held, not edited: `/privacy`
-  on TikTok — what Tavnit receives (open_id, display name, avatar, the tokens), why, how to
+  `tiktok_posting` to `everyone`; 11. ~~owed while the legal pages are held~~ DONE 2026-10-17 (0117, in PR #108): `/privacy` on TikTok — what Tavnit receives (open_id, display name, avatar, the tokens), why, how to
   disconnect or remove Tavnit in TikTok, and deletion; `/privacy` §9 should also name the cookie
   `aiugc.tiktok_oauth` beside `aiugc.social_oauth`.
 
@@ -2190,7 +2186,7 @@ the 2026-09-26 custom domain (founder-reported):**
   connect, add another, disconnect, a return address) — connect and add another RUN 2026-10-12
   (FOUNDER-REPORTED, the one-window entry above), disconnect and the return address moved to
   checklist (u), (v); 6. later, for review: a portfolio, Business
-  Verification, access verification, a non-admin reviewer account named in the switch (runbook E–I); 7. the privacy text on connected accounts and deletion is owed while the legal pages are held.
+  Verification, access verification, a non-admin reviewer account named in the switch (runbook E–I); 7. ~~the privacy text on connected accounts and deletion~~ written 2026-10-17 ([[0117-legal-pages-lifted-for-connected-accounts-address-emails]]); entering the Data Deletion Request URL in the Meta app (docs/09 runbook B) is still yours, and the page's sentence on it is conditional until you do.
 
 - **Social posting (2026-10-11, `feat/social-posting-core` and the PRs after it).** In order, each
   its own OK (his §4): 1. the Hebrew strings of the plan's Appendix A — approve or change before PR 3
@@ -2375,9 +2371,7 @@ the 2026-09-26 custom domain (founder-reported):**
   `null`, which hides the link. The name is set: `presenterName` is `"נועה"` (founder, 2026-09-25),
   and the `#proof` copy is written feminine, which fits her.
   [[0061-landing-positioning-two-services-no-results-claims]].
-- **Update the address on the עוסק פטור registration** — still כאבול while every public page says
-  ברזיל 14, תל אביב. **UNVERIFIED**: he said he is doing it; nobody has seen the file
-  ([[0058-the-operator-address-is-a-tel-aviv-street-address]]).
+- ~~**Update the address on the עוסק פטור registration**~~ — superseded 2026-10-17 ([[0117-legal-pages-lifted-for-connected-accounts-address-emails]]): the pages now print the address he says is on the registration (ת"ד 929, כאבול 2496300), so nothing is owed on the registration by that count (UNVERIFIED: nobody has seen the file). Open instead: whether a P.O. box meets the acquirer's reachable-operator requirement ([[0057-the-upay-site-requirements-are-met-by-reorganising-not-re-deciding]]), and that receipts print the same address.
 - **Send the reply email to UPay** confirming each site requirement and where it is satisfied. The
   Hebrew draft was handed over with the change that implemented them.
 - ~~**Restart the worker box**~~ — done 2026-09-21 with the Sumit env; the box reports `4100cc7`,

@@ -100,7 +100,7 @@ deauthorize callback. Named next steps in state-of-play, not built.
   merge (docs/09 t8).
 - The owed `/privacy` sentence: the page's «שליחת מיילים» names Resend for the two sign-up emails only
   ([[resend-is-an-undisclosed-processor]]); it also lacks the failure email, and now this one.
-  Reported, not edited (the legal pages stay held).
+  Reported, not edited (the legal pages stay held). _[2026-10-17: written into `/privacy` §5 and §6 the same day under [[0117-legal-pages-lifted-for-connected-accounts-address-emails]].]_
 
 ## Related
 
