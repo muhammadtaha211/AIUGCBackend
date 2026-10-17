@@ -110,6 +110,9 @@ export async function emailsSentToday(db: Db, now: Date): Promise<number> {
   return Number(today?.n ?? 0);
 }
 
+/** The `resendId` logged when Resend answers 409 `invalid_idempotent_request`: the first send under the key went out. */
+export const IDEMPOTENT_REPLAY = "idempotent-replay";
+
 export type PostEmailOutcome = "sent" | "refused" | "stop";
 
 /**
@@ -145,7 +148,7 @@ export async function sendPostEmail(args: {
     // Resend saw this key with a different body: the first send went out
     // (an earlier tick's, before the burst grew). It counts as sent.
     if (err.status === 409 && err.errorName === "invalid_idempotent_request") {
-      await args.log({ outcome: "sent", resendId: "idempotent-replay" });
+      await args.log({ outcome: "sent", resendId: IDEMPOTENT_REPLAY });
       return "sent";
     }
     if (err.accountFault) {

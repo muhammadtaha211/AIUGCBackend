@@ -55,7 +55,14 @@ import { setMetaGraphProvider } from "../src/providers/meta-graph";
 class FakeEmail implements EmailProvider {
   sent: EmailMessage[] = [];
   failWith: EmailSendError | Error | undefined;
+  /** Fails the next send only. */
+  failOnce: EmailSendError | Error | undefined;
   async send(message: EmailMessage): Promise<{ id: string }> {
+    if (this.failOnce) {
+      const err = this.failOnce;
+      this.failOnce = undefined;
+      throw err;
+    }
     if (this.failWith) throw this.failWith;
     this.sent.push(message);
     return { id: `email_${this.sent.length}` };
@@ -351,6 +358,26 @@ describe("the TikTok delivery email", () => {
     await sweepPostDeliveryEmails(db, { ...WORKER, now });
     // The founder's settled; the other account's newest is 30 s old, so it waits.
     expect(fake.sent.map((e) => e.to)).toEqual(["founder@test.local"]);
+    // Two minutes on (its newest was 30 s old), the other account's batch has settled: its own email, and the founder's is not repeated.
+    await sweepPostDeliveryEmails(db, { ...WORKER, now: new Date(now.getTime() + 2 * MIN) });
+    expect(fake.sent.map((e) => e.to)).toEqual(["founder@test.local", "other@test.local"]);
+    expect(fake.sent[1]!.subject).toBe("2 סרטונים מחכים לכם בטיקטוק");
+  });
+
+  it("two accounts settled in the same tick each get their own email, with their own key", async () => {
+    const now = new Date();
+    const other = await seedOwnerAndBusiness(db, { email: "other2@test.local", role: "admin" });
+    const mine = await seedDelivered({ deliveredAt: new Date(now.getTime() - 10 * MIN) });
+    const theirs = await seedDelivered({
+      deliveredAt: new Date(now.getTime() - 10 * MIN),
+      userId: other.userId,
+      businessId: other.businessId,
+    });
+    expect(await sweepPostDeliveryEmails(db, { ...WORKER, now })).toMatchObject({ sent: 2 });
+    expect(fake.sent.map((e) => e.to).sort()).toEqual(["founder@test.local", "other2@test.local"]);
+    expect(fake.sent.map((e) => e.idempotencyKey).sort()).toEqual(
+      [`post-delivery/${adminId}/${mine}`, `post-delivery/${other.userId}/${theirs}`].sort(),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -515,6 +542,42 @@ describe("the TikTok delivery email", () => {
     });
   });
 
+  it("a 409 on the key counts only the oldest video as told; a video that joined the batch since is emailed next tick, never dropped", async () => {
+    const t0 = new Date();
+    const a = await seedDelivered({ deliveredAt: new Date(t0.getTime() - 10 * MIN) });
+    // The first send for [A] reaches Resend, but the answer is lost: a retryable fault, no row.
+    fake.failWith = new EmailSendError("resend request failed: timeout", null, null, true, false);
+    await sweepPostDeliveryEmails(db, { ...WORKER, now: t0 });
+    expect(await deliveryRows()).toHaveLength(0);
+    fake.failWith = undefined;
+
+    // Video B lands while the sweep is paused; the retry is [A, B] under the same key, and Resend says 409.
+    const b = await seedDelivered({ deliveredAt: new Date(t0.getTime() + MIN) });
+    fake.failOnce = new EmailSendError(
+      "resend 409 invalid_idempotent_request",
+      409,
+      "invalid_idempotent_request",
+      false,
+      false,
+    );
+    const retry = await sweepPostDeliveryEmails(db, {
+      ...WORKER,
+      now: new Date(t0.getTime() + 6 * MIN),
+    });
+    expect(retry).toMatchObject({ sent: 1 });
+    const rows = await deliveryRows();
+    expect(rows).toHaveLength(1);
+    expect((rows[0]!.payload as { postIds: string[] }).postIds).toEqual([a]);
+    expect(fake.sent).toHaveLength(0);
+
+    // B was never in an email: the next tick sends it, alone.
+    await sweepPostDeliveryEmails(db, { ...WORKER, now: new Date(t0.getTime() + 7 * MIN) });
+    expect(fake.sent).toHaveLength(1);
+    expect(fake.sent[0]!.text).toContain(`/calendar/${b}`);
+    expect(fake.sent[0]!.text).not.toContain(a);
+    expect(fake.sent[0]!.idempotencyKey).toBe(`post-delivery/${adminId}/${b}`);
+  });
+
   it("a 401 or 403 pauses the sweep an hour and writes no row; the video goes out once fixed", async () => {
     const now = new Date();
     await seedDelivered({ deliveredAt: new Date(now.getTime() - 10 * MIN) });
@@ -590,7 +653,8 @@ describe("the TikTok delivery email", () => {
     expect(email!.text).toMatch(/^1\. /m);
     expect(email!.text).toMatch(/^3\. /m);
     expect(email!.html).toContain("<ol");
-    // The key moves with the account and the oldest video, never with the burst.
+    // The key is the account and its oldest video — it does not move while a batch grows.
+    expect(email!.idempotencyKey).toBe(`post-delivery/${adminId}/${postId}`);
     expect(await deliveryRows()).toHaveLength(1);
   });
 

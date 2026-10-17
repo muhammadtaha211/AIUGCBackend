@@ -79,6 +79,12 @@ deauthorize callback. Named next steps in state-of-play, not built.
 - **The ceiling is shared:** the failure email's 20 a UTC day, counted over both kinds. Failure emails
   are swept first each tick; **no reserve is built** — a day of deliveries can use the slots a late
   failure would need.
+- **A replayed key:** the key is the account and its oldest due video, so Resend's 409 on a key reused
+  with a longer batch proves only that video went out. The log lists it alone and the rest stay due —
+  found by the adversarial review of the diff (two lenses, a skeptic each), where copying the failure
+  email's "409 counts the whole batch" would have dropped a video that landed during an ambiguous send.
+  The cost, accepted: after an ambiguous send of a batch of several, a video can be told twice, never
+  zero times.
 - **The video's name:** a render has no title, so it is the failure email's line — service, business,
   account, planned time.
 - **The link:** one video → its page, `https://tavnit.ai/calendar/<postId>`; several → the calendar.

@@ -1046,7 +1046,7 @@ describe("TikTok in the schedule flow (0115 §2)", () => {
     for (const body of [email.text, email.html]) {
       for (const phrase of phrases) expect(body).toContain(phrase);
     }
-    // On the screens as rendered: the settings card's lead and the post page's line.
+    // The path survives React's HTML escaping (no ASCII quote in it).
     expect(renderToStaticMarkup(createElement("p", null, connectUi.TIKTOK_CARD_LEAD))).toContain(
       core.TIKTOK_INBOX_PATH,
     );
@@ -1097,6 +1097,10 @@ describe("TikTok in the schedule flow (0115 §2)", () => {
     // The page is the owner's alone: signed out, or another account, is the 404 the calendar gives.
     as(null);
     expect(await thrown(PostPage(params({ postId })))).toBe("NEXT_NOT_FOUND");
+    // TikTok open to everyone: the customer passes the switch, so the 404 is ownership's.
+    await db
+      .insert(schema.appConfig)
+      .values({ key: "tiktok_posting", value: { access: "everyone" } });
     as(customer);
     expect(await thrown(PostPage(params({ postId })))).toBe("NEXT_NOT_FOUND");
   });

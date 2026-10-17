@@ -16,6 +16,7 @@ import {
   FAILURE_EMAIL_DAILY_CEILING,
   FAILURE_EMAIL_QUIET_MS,
   formatPostTime,
+  IDEMPOTENT_REPLAY,
   POST_DELIVERY_EMAIL,
   sendPostEmail,
   type FailureEmailSweepResult,
@@ -46,6 +47,9 @@ import {
  *   ago.
  * - **Switch:** a TikTok switch that no longer includes the account leaves no
  *   trace — no email, no row.
+ * - **Replay:** Resend's 409 on a key reused with a longer batch counts the OLDEST
+ *   video as told (the key's own) and leaves the rest due — a video that joined
+ *   after an ambiguous first send is emailed next tick, never silently dropped.
  * - **Ceiling:** the failure email's 20 a UTC day, counted over both kinds.
  *   Failure emails are swept first each tick; a held video goes out after
  *   midnight UTC while it is still unfinished and under 24 h old.
@@ -196,7 +200,19 @@ export async function sweepPostDeliveryEmails(
       // deduplicated by Resend (24 h) instead of sent again.
       idempotencyKey: `post-delivery/${userId}/${postIds[0]}`,
       label: "delivery email",
-      log: (logged) => logDelivery(db, now, userId, postIds, logged),
+      // A 409 says the first send under this key went out — and the key names the
+      // oldest video alone. A video that joined the batch since was never in that
+      // email, so it is not logged as told: it stays due and goes out next tick.
+      log: (logged) =>
+        logDelivery(
+          db,
+          now,
+          userId,
+          logged.outcome === "sent" && logged.resendId === IDEMPOTENT_REPLAY
+            ? postIds.slice(0, 1)
+            : postIds,
+          logged,
+        ),
     });
     if (outcome === "stop") return result;
     if (outcome === "sent") {

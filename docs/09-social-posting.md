@@ -259,8 +259,9 @@ first, then this one, each in its own try.
   minutes after the video lands and videos that land together share it.
 - **Never twice:** a post is told once — the log below is what is read (a `refused` row counts too);
   the send carries `Idempotency-Key: post-delivery/<user>/<oldest due post id>`, so a crash between
-  the send and the log write is deduplicated by Resend (24 h), and a 409 `invalid_idempotent_request`
-  counts as sent.
+  the send and the log write is deduplicated by Resend (24 h). A 409 `invalid_idempotent_request`
+  (the key reused with a longer batch) counts as sent **for the oldest video only** — the one the key
+  names; a video that joined since was never in that email, so it stays due and goes out next tick.
 - **The switch:** the TikTok switch is asked at send time (`getPlatformAccess`); an account it no
   longer includes gets no email and no row. Instagram's switch is irrelevant.
 - **The ceiling:** the failure email's **20 a UTC day, counted over both kinds**. Failure emails are
