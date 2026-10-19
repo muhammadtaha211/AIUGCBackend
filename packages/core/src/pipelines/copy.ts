@@ -835,7 +835,7 @@ export async function deriveHookText(
  * recorded on scripts.params when generateBScript falls back to it, so the
  * version is the one actually used rather than one re-resolved afterwards.
  */
-async function deriveHookTextWithVersion(
+export async function deriveHookTextWithVersion(
   db: Db,
   opts: { businessId: string; text: string },
 ): Promise<{ hookText: string; promptVersion: string }> {

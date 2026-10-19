@@ -8,7 +8,9 @@ import {
   PlanChangeError,
   POSTING_HORIZON_DAYS,
   SocialSchedulingError,
+  TranscriptCorrectionError,
 } from "@aiugc/core";
+import { RECORDING_DAILY_CAP } from "@aiugc/core/own-voice";
 import {
   ATTEMPT_PENDING_LINE,
   CONTINUE_CONVERTED,
@@ -95,6 +97,11 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
     return hit(status, socialErrorLine(err.code, POSTING_HORIZON_DAYS));
   }
 
+  // The own-voice transcript (decision 0118): a correction that does not fit
+  // the recording. Typed, and its message is already the Hebrew line the
+  // customer reads (own-voice.ts), shared with the browser's own check.
+  if (err instanceof TranscriptCorrectionError) return hit(400, err.message);
+
   // The runaway-cost guards phrase their own refusal in Hebrew, in the
   // "system limit, contact support" register — pass it through rather than
   // re-writing it here. It is NOT a product duration limit and must not be
@@ -158,6 +165,9 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
   if (/demo notes limit reached/.test(message)) {
     return hit(400, "הגעתם למגבלת ההערות על הסרטון.");
   }
+  // The same daily pool as the line below, reached from a recording: the
+  // customer was recording, not listening to a preview.
+  if (/daily recording limit reached/.test(message)) return hit(429, RECORDING_DAILY_CAP);
   if (/daily audio preview limit/.test(message)) {
     return hit(429, "הגעתם למכסת ההשמעות היומית — נסו שוב מחר.");
   }

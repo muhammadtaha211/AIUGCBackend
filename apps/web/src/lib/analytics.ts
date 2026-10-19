@@ -577,6 +577,9 @@ export const STEP_EVENTS = {
       "effect",
       "clip",
       "studio",
+      // Service B's own-voice branch (decision 0118).
+      "record",
+      "transcript",
     ],
   },
   render_requested: { service: SERVICES, result: ["ok", "no_credits", "refused", "error"] },

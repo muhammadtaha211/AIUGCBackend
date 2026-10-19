@@ -270,6 +270,20 @@ export async function assertContentPolicy(
 }
 
 /** The text behind a set of script ids, in the order the ids were given. */
+/** An own-voice script's heard text (scripts.params.heardText), if it is one. */
+async function heardText(db: Db, scriptId: string | null): Promise<string | undefined> {
+  if (!scriptId) return undefined;
+  const row = (
+    await db
+      .select({ params: scripts.params })
+      .from(scripts)
+      .where(eq(scripts.id, scriptId))
+      .limit(1)
+  )[0];
+  const heard = (row?.params as { heardText?: unknown } | undefined)?.heardText;
+  return typeof heard === "string" ? heard : undefined;
+}
+
 async function scriptTexts(db: Db, ids: string[]): Promise<string[]> {
   const wanted = ids.filter(Boolean);
   if (wanted.length === 0) return [];
@@ -776,6 +790,11 @@ export async function createBRender(
       label: "תסריט הדמות",
       text: (await scriptTexts(db, audio[0].scriptId ? [audio[0].scriptId] : []))[0],
     },
+    // An own-voice recording (decision 0118): what was HEARD, dropped words
+    // included. The script above is the corrected transcript the captions
+    // show, and a word dropped there still plays. Absent on an AI-voice
+    // script, so that blob is unchanged (assertContentPolicy drops empties).
+    { label: "מה שנאמר בהקלטה", text: await heardText(db, audio[0].scriptId) },
   ]);
 
   // Same all-or-nothing envelope as createSet: render, debit and job together.
@@ -954,12 +973,24 @@ export async function quoteBRender(
   db: Db,
   opts: { businessId: string; audioRenderId: string },
 ): Promise<RenderQuote> {
-  const { chargeable, costs, balance } = await quoteContext(db, opts.businessId);
   const audio = (
     await db.select().from(audioRenders).where(eq(audioRenders.id, opts.audioRenderId)).limit(1)
   )[0];
   if (!audio) throw new Error(`audio render ${opts.audioRenderId} not found`);
-  const quote = quoteServiceB({ durationMs: audio.durationMs ?? 0, costs });
+  return quoteBForDuration(db, { businessId: opts.businessId, durationMs: audio.durationMs ?? 0 });
+}
+
+/**
+ * The Service B price for a voice of this length — the same quote whether the
+ * audio is TTS or the customer's own recording (decision 0118, item 8). The
+ * transcript step quotes a recording through this before its audio row exists.
+ */
+export async function quoteBForDuration(
+  db: Db,
+  opts: { businessId: string; durationMs: number },
+): Promise<RenderQuote> {
+  const { chargeable, costs, balance } = await quoteContext(db, opts.businessId);
+  const quote = quoteServiceB({ durationMs: opts.durationMs, costs });
   return {
     creditsPerRender: quote.credits,
     analysisCreditsOncePerSet: 0,

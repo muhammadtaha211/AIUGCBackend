@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { getConfigValue } from "../appConfig";
 import { retentionDaysSchema } from "../config";
 import type { Db } from "../db";
@@ -10,6 +10,7 @@ import {
   demoStepPlans,
   jobs,
   videoRenders,
+  voiceRecordings,
 } from "../db/schema";
 import type { Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -299,7 +300,7 @@ export async function handleReapDeadRenders(_job: Job, ctx: JobContext): Promise
  */
 export async function handleJanitor(_job: Job, ctx: JobContext): Promise<JobResult> {
   const { db, log } = ctx;
-  const counts = { rawDeleted: 0, rendersDeleted: 0, audioDeleted: 0 };
+  const counts = { rawDeleted: 0, rendersDeleted: 0, audioDeleted: 0, recordingsDeleted: 0 };
 
   // Retention.
   const retention = await getConfigValue(db, "retention_days", retentionDaysSchema);
@@ -379,6 +380,44 @@ export async function handleJanitor(_job: Job, ctx: JobContext): Promise<JobResu
       counts.audioDeleted++;
     } catch (err) {
       log.warn({ err, audioRenderId: audio.id }, "janitor: audio delete failed");
+    }
+  }
+
+  // Own-voice recordings (0118): the upload on the raw window, the processed
+  // file on the preview window, both counted from the recording. An approved
+  // recording's audio row has its OWN copy of the mp3, so neither delete can
+  // reach a file a render still reads.
+  const recordingsExpired = await db
+    .select()
+    .from(voiceRecordings)
+    .where(
+      or(
+        and(
+          isNotNull(voiceRecordings.rawPath),
+          lt(voiceRecordings.createdAt, cutoff(retention.raw_after_normalize)),
+        ),
+        and(
+          isNotNull(voiceRecordings.filePath),
+          lt(voiceRecordings.createdAt, cutoff(retention.audio_previews)),
+        ),
+      ),
+    );
+  for (const rec of recordingsExpired) {
+    const rawDue = rec.rawPath !== null && rec.createdAt < cutoff(retention.raw_after_normalize);
+    const fileDue = rec.filePath !== null && rec.createdAt < cutoff(retention.audio_previews);
+    try {
+      if (rawDue) await storage.remove(rec.rawPath!);
+      if (fileDue) await storage.remove(rec.filePath!);
+      await db
+        .update(voiceRecordings)
+        .set({
+          ...(rawDue ? { rawPath: null } : {}),
+          ...(fileDue ? { filePath: null } : {}),
+        })
+        .where(eq(voiceRecordings.id, rec.id));
+      counts.recordingsDeleted++;
+    } catch (err) {
+      log.warn({ err, recordingId: rec.id }, "janitor: recording delete failed");
     }
   }
 

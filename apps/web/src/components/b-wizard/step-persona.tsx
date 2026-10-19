@@ -35,6 +35,13 @@ type StepPersonaProps = {
    * come back empty.
    */
   catalogUrl?: string;
+  /**
+   * Service B's two doors (decision 0118): one button per voice in place of
+   * the single המשך, each choosing its branch and continuing. They sit here
+   * because the founder put the door at the character step. Absent (A, C) =
+   * the single המשך, unchanged.
+   */
+  doors?: { id: string; title: string; hint: string; onChoose: () => void }[];
 };
 
 const B_COPY = {
@@ -52,6 +59,7 @@ export function StepPersona({
   onFatal,
   copy = B_COPY,
   catalogUrl = "/api/personas?withSelfie=1",
+  doors,
 }: StepPersonaProps) {
   const [error, setError] = useState<string | null>(null);
 
@@ -139,15 +147,38 @@ export function StepPersona({
             ))}
           </div>
 
-          <Button
-            type="button"
-            size="lg"
-            className="mt-7 w-full"
-            disabled={!selected}
-            onClick={onContinue}
-          >
-            המשך
-          </Button>
+          {doors ? (
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              {doors.map((door, index) => (
+                <button
+                  key={door.id}
+                  type="button"
+                  disabled={!selected}
+                  onClick={door.onChoose}
+                  className={`w-full rounded-xl border px-5 py-4 text-start transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:pointer-events-none disabled:opacity-50 ${
+                    index === 0
+                      ? "border-accent bg-accent text-ink hover:bg-accent-deep"
+                      : "border-ink/15 bg-white text-ink hover:border-accent hover:bg-accent/10"
+                  }`}
+                >
+                  <span className="block text-base font-semibold">{door.title}</span>
+                  <span className="mt-1 block text-[13px] leading-snug text-ink/70">
+                    {door.hint}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <Button
+              type="button"
+              size="lg"
+              className="mt-7 w-full"
+              disabled={!selected}
+              onClick={onContinue}
+            >
+              המשך
+            </Button>
+          )}
         </>
       )}
     </div>

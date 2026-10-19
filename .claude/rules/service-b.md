@@ -22,6 +22,10 @@ paths:
   - "packages/core/src/pipelines/bank.ts"
   - "packages/core/src/pipelines/copy.ts"
   - "packages/core/src/pipelines/renders.ts"
+  - "packages/core/src/pipelines/recordings.ts"
+  - "packages/core/src/own-voice.ts"
+  - "apps/web/src/app/api/recordings/**"
+  - "apps/web/src/app/api/businesses/*/recordings/**"
   - "packages/core/src/pipelines/sets.ts"
   - "packages/core/test/service-b-timeline.test.ts"
   - "packages/core/test/hook-effect.test.ts"
@@ -89,6 +93,12 @@ travels).
 ## The web wizard (`apps/web/src/components/b-wizard`)
 
 - The steps are persona → pointers → script → audio → effect → render.
+- The character step has two doors (vault 0118). "קול AI" is the flow above, unchanged. "הקול
+  שלכם" is persona → pointers → script → record → transcript → effect → render: the script is a
+  teleprompter (skippable from pointers), the customer records in the browser or uploads, Scribe
+  transcribes the processed file, and the customer respells or drops words (never adds) and
+  approves. Approval makes an ordinary `b_script` + already-approved `audio_renders` pair (no
+  voice, its own mp3 copy), so everything from the effect step on reads what it reads today.
 - The effect step places the animation and its hook text over the persona's selfie. It PLAYS the
   real animation once and then offers a replay button (`hook-effect-preview.tsx`, vault 0026).
 - There is no image step, no product step: the persona card shows its selfie via `personaSelfie` in

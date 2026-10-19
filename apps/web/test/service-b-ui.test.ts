@@ -25,6 +25,14 @@ import {
   scriptCeilingWarning,
   SERVICE_LABELS,
   wizardSteps,
+  VOICE_DOORS,
+  pickRecorderMime,
+  recordedFileName,
+  RECORDER_MAX_MS,
+  recorderClockLine,
+  micErrorLine,
+  RECORD_COPY,
+  keptWords,
   withEditedText,
   type AudioPollResult,
   type AudioState,
@@ -199,6 +207,93 @@ describe("wizardSteps (one flow, vault 0017)", () => {
   it("has no image step and no composite step", () => {
     expect(wizardSteps()).not.toContain("image");
     expect(wizardSteps()).not.toContain("composite");
+  });
+
+  it("the AI door is today's list, byte for byte (decision 0118, item 1)", () => {
+    expect(wizardSteps("ai")).toEqual(wizardSteps());
+    expect(wizardSteps("ai")).toEqual([
+      "persona",
+      "pointers",
+      "script",
+      "audio",
+      "effect",
+      "render",
+    ]);
+  });
+
+  it("the own-voice door records and checks the transcript instead of the AI audio, then rejoins", () => {
+    expect(wizardSteps("own")).toEqual([
+      "persona",
+      "pointers",
+      "script",
+      "record",
+      "transcript",
+      "effect",
+      "render",
+    ]);
+  });
+});
+
+describe("the own-voice helpers (decision 0118)", () => {
+  it("offers the two doors, AI first", () => {
+    expect(VOICE_DOORS.map((d) => d.id)).toEqual(["ai", "own"]);
+    expect(VOICE_DOORS.map((d) => d.title)).toEqual(["קול AI", "הקול שלכם"]);
+  });
+
+  it("picks the first recorder format the browser supports, and survives a throwing probe", () => {
+    expect(pickRecorderMime((t) => t === "audio/mp4")).toBe("audio/mp4");
+    expect(pickRecorderMime((t) => t.startsWith("audio/webm"))).toBe("audio/webm;codecs=opus");
+    expect(pickRecorderMime(() => false)).toBeUndefined();
+    expect(
+      pickRecorderMime(() => {
+        throw new Error("no");
+      }),
+    ).toBeUndefined();
+  });
+
+  it("names a recorded take by its format, so a generic type still maps", () => {
+    expect(recordedFileName("audio/webm;codecs=opus")).toBe("recording.webm");
+    expect(recordedFileName("audio/mp4")).toBe("recording.m4a");
+    expect(recordedFileName("audio/ogg;codecs=opus")).toBe("recording.ogg");
+  });
+
+  it("shows the recorder clock against the 90 s cap", () => {
+    expect(RECORDER_MAX_MS).toBe(90_000);
+    expect(recorderClockLine(0)).toBe("0:00 מתוך 1:30");
+    expect(recorderClockLine(12_400)).toBe("0:12 מתוך 1:30");
+    expect(recorderClockLine(90_000)).toBe("1:30 מתוך 1:30");
+  });
+
+  it("says which microphone refusal it was", () => {
+    expect(micErrorLine("NotAllowedError")).toBe(RECORD_COPY.micDenied);
+    expect(micErrorLine("NotFoundError")).toBe(RECORD_COPY.micMissing);
+    expect(micErrorLine("NotReadableError")).toBe(RECORD_COPY.micBusy);
+    expect(micErrorLine(undefined)).toBe(RECORD_COPY.unsupported);
+  });
+
+  it("names the size caps in the upload hint", () => {
+    expect(RECORD_COPY.uploadHint).toBe(
+      "MP3, M4A, AAC, OGG, OPUS, WAV או WEBM עד 25MB, או סרטון MP4 או MOV עד 300MB",
+    );
+  });
+
+  it("keeps every word but the dropped ones, respelled where the customer respelled — and cannot add", () => {
+    const words = [
+      { text: "שלום,", startMs: 100, endMs: 400 },
+      { text: "אממ", startMs: 500, endMs: 700 },
+      { text: "דנה", startMs: 800, endMs: 1100 },
+    ];
+    expect(keptWords(words, {})).toEqual([
+      { i: 0, text: "שלום," },
+      { i: 1, text: "אממ" },
+      { i: 2, text: "דנה" },
+    ]);
+    expect(keptWords(words, { 1: { dropped: true }, 2: { text: "דנה!" } })).toEqual([
+      { i: 0, text: "שלום," },
+      { i: 2, text: "דנה!" },
+    ]);
+    // An edit at an index no word has adds nothing: the kept list is the words'.
+    expect(keptWords(words, { 7: { text: "עוד" } })).toHaveLength(3);
   });
 });
 

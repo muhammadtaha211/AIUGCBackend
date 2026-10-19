@@ -51,6 +51,61 @@ export const renderRequestSchema = z
       : body.hookText !== undefined,
   );
 
+// The customer's own voice (decision 0118). The file checks themselves
+// (type, size, length) are @aiugc/core/own-voice's, shared with the browser.
+
+/** Step 1 of a recording upload: what the browser is about to PUT. `name`
+ *  carries the extension for a file whose type the browser left empty. */
+export const recordingUploadUrlSchema = z.object({
+  type: z.string().max(200),
+  size: z.number().int().positive(),
+  name: z.string().max(255).optional(),
+});
+
+/** Step 2: register the object the browser finished uploading. */
+export const recordingRegisterSchema = z.object({ uploadPath: z.string().max(300) });
+
+/** The transcript approval: the persona it will play under, and every kept
+ *  word as the index of a heard word plus its (maybe respelled) text. A word
+ *  the customer dropped is simply absent. Bounded so a hand-built body cannot
+ *  be large — 90 s of speech is a few hundred words. */
+export const recordingApproveSchema = z.object({
+  personaId: z.string().uuid(),
+  kept: z
+    .array(z.object({ i: z.number().int().min(0), text: z.string().max(100) }))
+    .min(1)
+    .max(1000),
+});
+
+export type RecordingUploadUrlResponse = {
+  uploadUrl: string;
+  uploadPath: string;
+  /** The type the browser must PUT with — the raw bucket's allow-list holds it. */
+  contentType: string;
+};
+
+/** GET /api/recordings/[id]: the poll the transcript step runs. */
+export type RecordingPollResponse = {
+  status: "queued" | "generating" | "ready" | "failed";
+  /** Failed only: the Hebrew line the customer reads. */
+  error?: string;
+  /** Ready only. */
+  durationMs?: number;
+  audioUrl?: string;
+  words?: { text: string; startMs: number; endMs: number }[];
+  /** null = admin bypass (nothing is charged), as the render preview answers. */
+  quote?: { credits: number; balance: number; shortfall: number } | null;
+};
+
+export type RecordingApproveResponse = {
+  scriptId: string;
+  audioId: string;
+  text: string;
+  /** The derived hook line; null = the effect step opens empty. */
+  hookText: string | null;
+  durationMs: number;
+};
+
 /** Pre-confirm quote lookup — the render's price comes from the approved audio. */
 export const renderPreviewRequestSchema = z.object({ audioId: z.string().uuid() });
 

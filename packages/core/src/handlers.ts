@@ -17,6 +17,7 @@ import { handleJanitor, handleReapDeadRenders } from "./pipelines/janitor";
 import { handleLipsync, handleRenderVideo } from "./pipelines/renders";
 import { handleCheckSocialTokens, handlePublishPost } from "./pipelines/social";
 import { handleSynthTts } from "./pipelines/tts";
+import { handleTranscribeRecording } from "./pipelines/recordings";
 
 /** Async copy generation for the self-serve layer (the CLI calls the functions directly). */
 async function handleGenerateCopy(job: Job, ctx: JobContext): Promise<JobResult> {
@@ -74,6 +75,8 @@ export function buildHandlers(): HandlerRegistry {
     plan_demo_steps: handlePlanDemoSteps,
     generate_copy: handleGenerateCopy,
     synth_tts: handleSynthTts,
+    // The customer's own voice (0118): upload -> stored file + Scribe words.
+    transcribe_recording: handleTranscribeRecording,
     generate_composite: handleGenerateComposite,
     lipsync: handleLipsync,
     render_video: handleRenderVideo,

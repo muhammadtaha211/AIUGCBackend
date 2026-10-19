@@ -12,6 +12,11 @@ supersedes: "[[0004-service-b-config-is-provisional]]"
 > **Amended 2026-09-06 by [[0023-hook-is-a-remotion-animation-opener-clips-retired]]** — the opener clip is retired. A Service B ad is one HeyGen
 > clip; the hook is a Remotion animation over it. Everything else here stands; sections marked retired
 > are kept for the record.
+>
+> **Amended 2026-10-19 by [[0118-service-b-own-voice]]** — a second door at the persona step: the
+> customer's own recording in place of the ElevenLabs voice, through record → transcript instead of
+> the audio step. The single image, the lead-in, the one HeyGen clip and the rule that the final hook
+> text is copied into render params all stand on both doors.
 
 This is the shape of the Service B revamp that [[0004-service-b-config-is-provisional]] parked
 until Service A was finished. It settles the **format**. The engine, schema and wizard were built to it on 2026-09-05 and rendered end to end; on 2026-09-06 its opener half was retired, and the effects step now builds to [[0023-hook-is-a-remotion-animation-opener-clips-retired]].

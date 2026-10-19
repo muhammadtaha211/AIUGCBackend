@@ -36,6 +36,7 @@ const fixture = vi.hoisted(() => ({
   generateVoScript: vi.fn(),
   deriveHookText: vi.fn(),
   generateTextBlocks: vi.fn(),
+  deriveHookTextWithVersion: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -62,6 +63,9 @@ vi.mock("@aiugc/core", async (importOriginal) => {
 vi.mock("../../../packages/core/src/pipelines/copy", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../packages/core/src/pipelines/copy")>()),
   generateTextBlocks: fixture.generateTextBlocks,
+  // The own-voice approval (decision 0118) derives the hook line inside core,
+  // through its own import — the serveNextTextBlock trap above.
+  deriveHookTextWithVersion: fixture.deriveHookTextWithVersion,
 }));
 
 const core = await import("@aiugc/core");
@@ -74,6 +78,8 @@ const { POST: voScript } = await import("../src/app/api/businesses/[businessId]/
 const { POST: editText } = await import("../src/app/api/scripts/[id]/text/route");
 const { POST: nextTextBlock } =
   await import("../src/app/api/businesses/[businessId]/text-blocks/next/route");
+const { POST: approveRecording } = await import("../src/app/api/recordings/[id]/approve/route");
+const { tempStorage } = await import("../../../packages/core/test/helpers/storage");
 
 function post(path: string, body: unknown) {
   return new Request(`http://localhost${path}`, {
@@ -400,6 +406,80 @@ describe("AUTHZ-12: per-account and platform LLM caps on the synchronous copy ro
   // Declared LAST on purpose: this trips the shared 24h platform window for
   // every business (usage_events rows persist for the rest of the file), so
   // nothing after it can expect a 200 from any of the five routes above.
+  describe("POST /api/recordings/[id]/approve (deriveHookTextWithVersion) — the caps run in core", () => {
+    let cleanup: () => void;
+
+    /** A transcribed recording of this business, as transcribe_recording leaves one. */
+    async function readyRecording(businessId: string) {
+      const filePath = await core
+        .getStorage()
+        .put(
+          "renders",
+          `${businessId}/recording/${crypto.randomUUID()}/audio.mp3`,
+          Buffer.from("mp3"),
+        );
+      const [rec] = await db
+        .insert(schema.voiceRecordings)
+        .values({
+          businessId,
+          status: "ready",
+          rawPath: `raw/${businessId}/recording/${crypto.randomUUID()}/upload.webm`,
+          filePath,
+          sourceMs: 6000,
+          durationMs: 5000,
+          words: [
+            { text: "שלום", startMs: 100, endMs: 400 },
+            { text: "לכם", startMs: 400, endMs: 700 },
+          ],
+        })
+        .returning();
+      return rec!.id;
+    }
+
+    beforeAll(() => {
+      const ts = tempStorage();
+      core.setStorage(ts.storage);
+      cleanup = ts.cleanup;
+      fixture.deriveHookTextWithVersion.mockResolvedValue({
+        hookText: "שלום לכם",
+        promptVersion: "hook_text@v3",
+      });
+    });
+
+    afterAll(() => cleanup());
+
+    const kept = [
+      { i: 0, text: "שלום" },
+      { i: 1, text: "לכם" },
+    ];
+
+    it("at the per-account ceiling: approves, the hook line is empty, the stub is never called", async () => {
+      fixture.user = { id: loudBiz.ownerUserId, email: "loud@authz12.test" };
+      fixture.deriveHookTextWithVersion.mockClear();
+      const id = await readyRecording(loudBiz.id);
+      const res = await approveRecording(
+        post(`/api/recordings/${id}/approve`, { personaId, kept }),
+        { params: Promise.resolve({ id }) },
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()).hookText).toBeNull();
+      expect(fixture.deriveHookTextWithVersion).not.toHaveBeenCalled();
+    });
+
+    it("under it: the hook line is derived, one call", async () => {
+      fixture.user = { id: quietBiz.ownerUserId, email: "quiet@authz12.test" };
+      fixture.deriveHookTextWithVersion.mockClear();
+      const id = await readyRecording(quietBiz.id);
+      const res = await approveRecording(
+        post(`/api/recordings/${id}/approve`, { personaId, kept }),
+        { params: Promise.resolve({ id }) },
+      );
+      expect(res.status).toBe(200);
+      expect((await res.json()).hookText).toBe("שלום לכם");
+      expect(fixture.deriveHookTextWithVersion).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("platform cap (decision 2) — run last, trips the shared window for everyone", () => {
     it("503 in Hebrew, generateHookLines NOT called, no job row changes", async () => {
       const jobsBefore = (await db.select().from(schema.jobs)).length;

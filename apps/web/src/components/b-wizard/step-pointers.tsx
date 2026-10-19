@@ -9,6 +9,10 @@ type StepPointersProps = {
   setPointers: (value: string) => void;
   onBack: () => void;
   onContinue: () => void;
+  /** The own-voice branch's one tap straight to the recorder, past pointers
+   *  and script (decision 0118). Absent = no skip, the AI branch unchanged. */
+  onSkip?: () => void;
+  skipLabel?: string;
 };
 
 /**
@@ -16,7 +20,14 @@ type StepPointersProps = {
  * call. Optional; the questionnaire alone is enough to write from. The
  * script itself is generated on the next step, so nothing is spent here.
  */
-export function StepPointers({ pointers, setPointers, onBack, onContinue }: StepPointersProps) {
+export function StepPointers({
+  pointers,
+  setPointers,
+  onBack,
+  onContinue,
+  onSkip,
+  skipLabel,
+}: StepPointersProps) {
   return (
     <div>
       <StepHeader
@@ -51,6 +62,17 @@ export function StepPointers({ pointers, setPointers, onBack, onContinue }: Step
       <Button type="button" size="lg" className="mt-7 w-full" onClick={onContinue}>
         המשך
       </Button>
+      {onSkip && (
+        <Button
+          type="button"
+          variant="secondary"
+          size="lg"
+          className="mt-3 w-full"
+          onClick={onSkip}
+        >
+          {skipLabel}
+        </Button>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
 import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -7,7 +7,7 @@ import { assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import { chunkWords, stripTagWords, wordsFromCharAlignment, type CaptionChunk } from "../captions";
 import { getEnv } from "../config";
 import type { Db } from "../db";
-import { audioRenders, businesses, demos, personas, scripts } from "../db/schema";
+import { audioRenders, businesses, demos, personas, scripts, voiceRecordings } from "../db/schema";
 import { PermanentError } from "../jobs/errors";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
@@ -31,6 +31,42 @@ const MAX_STRETCH = 1.05;
  * understated every `usage_events.cost_estimate_agorot` row by 1.5x.
  */
 const TTS_COST_AGOROT_PER_1K_CHARS = 30;
+
+/**
+ * The account's free audio previews in the last 24h, against
+ * audio_preview_daily_limit. One pool for both voices (decision 0118): a TTS
+ * attempt is an audio row with a voice — every row before 0067 — and an
+ * own-voice attempt is a voice_recordings row. The audio row an approved
+ * recording becomes has no voice and made no paid call, so it is not counted.
+ */
+export async function audioPreviewsToday(
+  db: Db,
+  ownerUserId: string,
+): Promise<{ used: number; limit: number }> {
+  const limit = await getConfigValue(db, "audio_preview_daily_limit", z.number().int());
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const tts = await db
+    .select({ count: sql<string>`count(*)` })
+    .from(audioRenders)
+    .innerJoin(scripts, eq(audioRenders.scriptId, scripts.id))
+    .innerJoin(businesses, eq(scripts.businessId, businesses.id))
+    .where(
+      and(
+        eq(businesses.ownerUserId, ownerUserId),
+        gt(audioRenders.createdAt, since),
+        isNotNull(audioRenders.voiceId),
+      ),
+    );
+  const recorded = await db
+    .select({ count: sql<string>`count(*)` })
+    .from(voiceRecordings)
+    .innerJoin(businesses, eq(voiceRecordings.businessId, businesses.id))
+    .where(and(eq(businesses.ownerUserId, ownerUserId), gt(voiceRecordings.createdAt, since)));
+  return {
+    used: Number(tts[0]?.count ?? 0) + Number(recorded[0]?.count ?? 0),
+    limit,
+  };
+}
 
 /**
  * Create the audio-only preview (cheap, seconds). This is the hard gate:
@@ -74,19 +110,8 @@ export async function requestAudio(
   if (!owner) throw new Error(`business ${script.businessId} not found`);
 
   // 1. Previews are free but rate-capped: a count of attempts.
-  const limit = await getConfigValue(db, "audio_preview_daily_limit", z.number().int());
-  const countRows = await db
-    .select({ count: sql<string>`count(*)` })
-    .from(audioRenders)
-    .innerJoin(scripts, eq(audioRenders.scriptId, scripts.id))
-    .innerJoin(businesses, eq(scripts.businessId, businesses.id))
-    .where(
-      and(
-        eq(businesses.ownerUserId, owner.userId),
-        gt(audioRenders.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)),
-      ),
-    );
-  if (Number(countRows[0]?.count ?? 0) >= limit) {
+  const { used, limit } = await audioPreviewsToday(db, owner.userId);
+  if (used >= limit) {
     throw new Error(`daily audio preview limit reached (${limit}/24h for this account)`);
   }
 
@@ -213,6 +238,11 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
     .limit(1);
   const audioRender = arRows[0];
   if (!audioRender) throw new PermanentError(`audio render ${audioRenderId} not found`);
+  // An approved own-voice recording (0067) has no voice and is born ready;
+  // nothing enqueues synth_tts for one. Refuse rather than synthesize.
+  const voiceId = audioRender.voiceId;
+  if (!voiceId)
+    throw new PermanentError(`audio render ${audioRenderId} has no voice to synthesize`);
 
   try {
     await ctx.db
@@ -236,7 +266,7 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
         })
       : script.text;
     const { rendered } = await applyPronunciationMap(ctx.db, script.businessId, tagged);
-    const tts = await synthesize({ text: rendered, voiceId: audioRender.voiceId, stability });
+    const tts = await synthesize({ text: rendered, voiceId, stability });
     await recordUsage(ctx.db, {
       provider: "elevenlabs",
       kind: "tts_chars",

@@ -36,6 +36,7 @@ export * from "./pipelines/janitor";
 export * from "./pipelines/pronunciation";
 export * from "./pipelines/qc";
 export * from "./pipelines/renders";
+export * from "./pipelines/recordings";
 export * from "./pipelines/sets";
 export * from "./pipelines/social";
 export * from "./pipelines/social-delivery-email";

@@ -27,7 +27,15 @@ export async function observedWordsPerSecond(db: Db): Promise<VoiceWps[]> {
     })
     .from(audioRenders)
     .innerJoin(scripts, eq(audioRenders.scriptId, scripts.id))
-    .where(and(eq(audioRenders.status, "ready"), isNotNull(audioRenders.durationMs)));
+    .where(
+      and(
+        eq(audioRenders.status, "ready"),
+        isNotNull(audioRenders.durationMs),
+        // An approved own-voice recording has no voice (0067): it says
+        // nothing about how fast an ElevenLabs voice speaks.
+        isNotNull(audioRenders.voiceId),
+      ),
+    );
 
   const byVoice = new Map<string, { words: number; seconds: number; samples: number }>();
   for (const row of rows) {
@@ -35,6 +43,7 @@ export async function observedWordsPerSecond(db: Db): Promise<VoiceWps[]> {
     const seconds = ((row.durationMs ?? 0) * row.stretchRatio) / 1000;
     const words = row.text.trim().split(/\s+/).filter(Boolean).length;
     if (seconds <= 0 || words === 0) continue;
+    if (!row.voiceId) continue;
     const acc = byVoice.get(row.voiceId) ?? { words: 0, seconds: 0, samples: 0 };
     acc.words += words;
     acc.seconds += seconds;

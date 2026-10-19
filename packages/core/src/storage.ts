@@ -100,6 +100,7 @@ export function storageKey(parts: {
     | "text_block_clip"
     | "persona_image"
     | "audio"
+    | "recording"
     | "video"
     | "thumb"
     | "composite";

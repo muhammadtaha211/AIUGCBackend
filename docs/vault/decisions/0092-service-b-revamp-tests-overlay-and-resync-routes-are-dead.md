@@ -44,6 +44,10 @@ in-scene still, Gemini Omni Flash 1.1, HeyGen's Video Agent with its Seedance to
 
 ## Open, not ruled
 
+> **2026-10-19:** the founder ruled one part. Service B gains the customer's own voice as an
+> addition, a second door at the character step; the AI-voice flow stays exactly as it is
+> ([[0118-service-b-own-voice]]). The rest of this question stays open.
+
 What happens to Service B itself: park the revamp, add backgrounds, or leave it as it is. The
 founder's own verdict on today's Service B, as reported the same day: it "comes out ok but not
 amazing"; he can tell it is AI by the repeated motion and is embarrassed to use it for Tavnit.

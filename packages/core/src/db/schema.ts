@@ -61,7 +61,9 @@ export const compositeStatus = pgEnum("composite_status", [
   "failed",
 ]);
 
-export const alignmentSource = pgEnum("alignment_source", ["elevenlabs", "whisperx"]);
+// 0066 added "scribe": an approved own-voice recording's word times came from
+// ElevenLabs speech-to-text (decision 0118). Nothing reads the column.
+export const alignmentSource = pgEnum("alignment_source", ["elevenlabs", "whisperx", "scribe"]);
 
 // 0051 added "c": Service C, גוש טקסט — a bank clip under one text block,
 // admin-only in phase 1 (decision 0089).
@@ -87,7 +89,13 @@ export const usageProvider = pgEnum("usage_provider", [
   "heygen", // 0019
 ]);
 
-export const usageKind = pgEnum("usage_kind", ["llm_tokens", "tts_chars", "gpu_seconds", "images"]);
+export const usageKind = pgEnum("usage_kind", [
+  "llm_tokens",
+  "tts_chars",
+  "gpu_seconds",
+  "images",
+  "stt_seconds", // 0066: seconds of audio transcribed by ElevenLabs Scribe
+]);
 
 export const subscriptionStatus = pgEnum("subscription_status", [
   "active",
@@ -525,7 +533,9 @@ export const audioRenders = pgTable(
     scriptId: uuid("script_id")
       .notNull()
       .references(() => scripts.id),
-    voiceId: text("voice_id").notNull(),
+    // Nullable since 0067: an approved own-voice recording has no ElevenLabs
+    // voice (decision 0118). Every TTS row has one.
+    voiceId: text("voice_id"),
     status: audioStatus("status").notNull().default("queued"),
     filePath: text("file_path"),
     durationMs: integer("duration_ms"),
@@ -541,6 +551,40 @@ export const audioRenders = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("audio_renders_script_idx").on(t.scriptId)],
+);
+
+// 0067: a customer's own recording (Service B, decision 0118), from the upload
+// until its transcript is approved. Approval never touches this row again: it
+// inserts an ordinary scripts row and an already-approved audio_renders row
+// with its own copy of the mp3 (pipelines/recordings.ts).
+export const voiceRecordings = pgTable(
+  "voice_recordings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    status: audioStatus("status").notNull().default("queued"),
+    // The upload as received; unique, so a repeated register is one row.
+    // The janitor nulls it once the upload is deleted (like demos.raw_path).
+    rawPath: text("raw_path"),
+    // The processed mp3 the transcript step plays and approval copies.
+    filePath: text("file_path"),
+    // Decoded length of the upload, and length of the processed file (priced).
+    sourceMs: integer("source_ms"),
+    durationMs: integer("duration_ms"),
+    // Scribe's words on the processed file: [{text, startMs, endMs}], cleaned.
+    words: jsonb("words"),
+    // Everything Scribe heard, uncleaned — what the content gate classifies.
+    heardText: text("heard_text"),
+    // Customer-facing Hebrew only — a PermanentError's customerMessage.
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("voice_recordings_business_created_idx").on(t.businessId, t.createdAt),
+    uniqueIndex("voice_recordings_raw_path_idx").on(t.rawPath),
+  ],
 );
 
 // ---------------------------------------------------------------------------

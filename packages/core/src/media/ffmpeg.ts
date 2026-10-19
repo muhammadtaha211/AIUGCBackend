@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { PermanentError } from "../jobs/errors";
+import { RECORDING_UNSUPPORTED } from "../own-voice";
 import type { Rgb } from "./grade";
 
 /**
@@ -57,7 +58,7 @@ function runStream(
   bin: "ffmpeg" | "ffprobe",
   args: string[],
   onChunk: (chunk: Buffer) => void,
-): Promise<void> {
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn(bin, withProtocolWhitelist(args), { windowsHide: true });
     let stderr = "";
@@ -71,7 +72,7 @@ function runStream(
       }
     });
     proc.on("close", (code) => {
-      if (code === 0) resolve();
+      if (code === 0) resolve(stderr);
       else reject(new Error(`${bin} exited ${code}: ${stderr.slice(-800)}`));
     });
   });
@@ -86,6 +87,12 @@ async function runRaw(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<Buffer
 
 async function run(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<string> {
   return (await runRaw(bin, args)).toString("utf8");
+}
+
+/** Runs to completion and hands back stderr — where a filter such as
+ *  loudnorm's print_format=json writes its measurement. */
+function runForStderr(bin: "ffmpeg" | "ffprobe", args: string[]): Promise<string> {
+  return runStream(bin, args, () => {});
 }
 
 /**
@@ -475,6 +482,193 @@ export async function sliceAudioFrom(
 ): Promise<void> {
   mkdirSync(path.dirname(output), { recursive: true });
   await run("ffmpeg", ["-y", "-i", input, "-ss", (startMs / 1000).toFixed(3), output]);
+}
+
+// --- the customer's own voice (Service B, decision 0118) ---------------------
+
+/**
+ * The demuxer families a customer recording may open: the ingest list (a phone
+ * video, or a recorder's mp4/webm) plus the plain audio containers a phone or
+ * WhatsApp hands over. Applied at probe AND at decode — the same
+ * check-then-use rule normalizeVideo follows for demos.
+ */
+export const RECORDING_CONTAINER_WHITELIST = `${INGEST_CONTAINER_WHITELIST},mp3,ogg,wav,aac`;
+
+export const RECORDING_NO_AUDIO = "בקובץ אין ערוץ קול.";
+
+/**
+ * ffmpeg/ffprobe's own words for a file it cannot use. Only these become the
+ * permanent "not supported" refusal; anything else (ffmpeg missing, a full
+ * disk, a killed process) stays transient and retries, and on the last attempt
+ * the job writes the generic line — never "not supported" for a valid file.
+ */
+const UNREADABLE_FILE =
+  /not on whitelist|Invalid data found|could not find codec parameters|moov atom not found|End of file|does not contain any stream/i;
+
+function recordingFileFailure(err: unknown): PermanentError | undefined {
+  if (err instanceof Error && UNREADABLE_FILE.test(err.message)) {
+    return new PermanentError(`recording unreadable: ${err.message.slice(-200)}`, {
+      customerMessage: RECORDING_UNSUPPORTED,
+    });
+  }
+  return undefined;
+}
+
+/**
+ * A recording (or a video taken for its sound) must carry an audio stream.
+ * Returns the container's stated length, when it states one — the caller
+ * refuses an over-long file from it before anything is decoded (a 25 MB file
+ * at a few kb/s is hours of audio, gigabytes as PCM).
+ */
+export async function assertRecordingHasAudio(file: string): Promise<{ statedMs?: number }> {
+  let out: string;
+  try {
+    out = await run("ffprobe", [
+      "-v",
+      "error",
+      "-format_whitelist",
+      RECORDING_CONTAINER_WHITELIST,
+      "-print_format",
+      "json",
+      "-show_streams",
+      "-show_format",
+      file,
+    ]);
+  } catch (err) {
+    throw recordingFileFailure(err) ?? err;
+  }
+  const json = JSON.parse(out) as {
+    streams: { codec_type: string }[];
+    format?: { duration?: string };
+  };
+  if (!json.streams.some((s) => s.codec_type === "audio")) {
+    throw new PermanentError("recording has no audio stream", {
+      customerMessage: RECORDING_NO_AUDIO,
+    });
+  }
+  const seconds = Number(json.format?.duration);
+  return Number.isFinite(seconds) && seconds > 0 ? { statedMs: Math.round(seconds * 1000) } : {};
+}
+
+/**
+ * Decode to mono 44.1 kHz 16-bit WAV — the stored TTS mp3s are mono 44.1 kHz
+ * (facts/tts-mp3-format-and-loudness-2026-10-19). A video's picture is dropped
+ * here. The output stops at `maxMs` whatever the container claims, so a file
+ * whose header lies about its length still cannot fill the disk; a recording
+ * that long is then refused on the decoded length.
+ */
+export async function decodeRecording(input: string, output: string, maxMs: number): Promise<void> {
+  mkdirSync(path.dirname(output), { recursive: true });
+  try {
+    await run("ffmpeg", [
+      "-y",
+      "-format_whitelist",
+      RECORDING_CONTAINER_WHITELIST,
+      "-i",
+      input,
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "44100",
+      "-c:a",
+      "pcm_s16le",
+      "-t",
+      (maxMs / 1000).toFixed(3),
+      output,
+    ]);
+  } catch (err) {
+    throw recordingFileFailure(err) ?? err;
+  }
+}
+
+/** Integrated loudness (LUFS) of a decoded recording; -70 for digital silence. */
+export async function integratedLoudness(file: string): Promise<number> {
+  const stderr = await runForStderr("ffmpeg", [
+    "-hide_banner",
+    "-nostats",
+    "-i",
+    file,
+    "-af",
+    "loudnorm=print_format=json",
+    "-f",
+    "null",
+    "-",
+  ]);
+  const open = stderr.lastIndexOf("{");
+  const measured = JSON.parse(stderr.slice(open, stderr.indexOf("}", open) + 1)) as {
+    input_i: string;
+  };
+  const value = Number(measured.input_i);
+  return Number.isFinite(value) ? value : -70;
+}
+
+/** The gain a recording may get at most, either way: a near-silent file is not
+ *  boosted into a wall of hiss, and a clipped one is not crushed. */
+const MAX_GAIN_DB = 30;
+
+/**
+ * Bring a decoded recording to `targetLufs` with ONE linear gain, then a
+ * sample-peak limiter at `peakDb` for the transients the gain pushed over.
+ * Not loudnorm's dynamic mode: that is an automatic gain control, which lifts
+ * room noise in every pause — noise cleanup in reverse, and the founder ruled
+ * no cleanup either way. The limiter's lookahead delay is compensated
+ * (`latency=1`), so a word stays exactly where Scribe will hear it.
+ */
+export async function normalizeRecordingLoudness(
+  input: string,
+  output: string,
+  opts: { targetLufs: number; peakDb: number },
+): Promise<{ inputLufs: number; gainDb: number }> {
+  const inputLufs = await integratedLoudness(input);
+  const gainDb = Math.max(-MAX_GAIN_DB, Math.min(MAX_GAIN_DB, opts.targetLufs - inputLufs));
+  const limit = Math.pow(10, opts.peakDb / 20).toFixed(4);
+  mkdirSync(path.dirname(output), { recursive: true });
+  await run("ffmpeg", [
+    "-y",
+    "-i",
+    input,
+    "-af",
+    `volume=${gainDb.toFixed(2)}dB,alimiter=limit=${limit}:level=0:latency=1`,
+    "-ac",
+    "1",
+    "-ar",
+    "44100",
+    "-c:a",
+    "pcm_s16le",
+    output,
+  ]);
+  return { inputLufs, gainDb };
+}
+
+/**
+ * Cut [fromMs, toMs) sample-accurately (atrim, not -ss on a stream copy) and
+ * encode the stored format: mp3, 44.1 kHz, mono, 128 kb/s — what ElevenLabs'
+ * mp3_44100_128 TTS files are, so both branches hand lipsync the same thing.
+ */
+export async function cutAndEncodeRecording(
+  input: string,
+  output: string,
+  fromMs: number,
+  toMs: number,
+): Promise<void> {
+  mkdirSync(path.dirname(output), { recursive: true });
+  await run("ffmpeg", [
+    "-y",
+    "-i",
+    input,
+    "-af",
+    `atrim=start=${(fromMs / 1000).toFixed(3)}:end=${(toMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`,
+    "-ac",
+    "1",
+    "-ar",
+    "44100",
+    "-c:a",
+    "libmp3lame",
+    "-b:a",
+    "128k",
+    output,
+  ]);
 }
 
 // --- step-plan analysis samplers ---------------------------------------------

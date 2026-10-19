@@ -270,6 +270,30 @@ keyless (the e2e test relies on this).
   rate-capped per business/day (config).
 - DRY_RUN: fabricated audio + uniform 2.2 w/s alignment so length-fit and chunking run for real.
 
+### Speech to text (Scribe v2) — the customer's own voice ([vault 0118](vault/decisions/0118-service-b-own-voice.md))
+
+`transcribe()` in the same module, on the same `ELEVENLABS_API_KEY`:
+`POST /v1/speech-to-text`, multipart, `model_id=scribe_v2`, `language_code=heb`,
+`timestamps_granularity=word`, `tag_audio_events=false`, `no_verbatim=false` (fillers stay — the
+customer drops them on the transcript step), `diarize=false`, a 120 s timeout. Only `type=word`
+entries are kept, seconds become ms, an untimed word borrows its neighbours' times. 401 carries
+`detail.status` (`missing_permissions`, `quota_exceeded`); every 4xx is permanent and the customer
+reads only the generic Hebrew line; 429/5xx/network are transient. One `stt_seconds` usage row per
+call at `STT_COST_AGOROT_PER_HOUR = 66` ($0.22/hour list, at USD/ILS 3.00). No platform cap: the
+shared 20-a-day preview count is its cap. DRY_RUN returns a fixed Hebrew sentence at 2.2 words/s
+with a 1.2 s pause and a filler.
+
+The job (`transcribe_recording`, light lane, `pipelines/recordings.ts`): download → type and size
+caps → audio stream required → decode to mono 44.1 kHz PCM (format-whitelisted) → 3–90 s on the
+decoded length → one linear gain to −20 LUFS plus a −2 dBFS limiter (the stored TTS level,
+`facts/tts-mp3-format-and-loudness-2026-10-19`) → Scribe on that normalised file → the stored mp3 is
+that file cut from 100 ms before the first word to 150 ms after the last, the word times shifted by
+the cut → ≥3 s → `ready`. Real ffmpeg runs under DRY_RUN too.
+
+**First live call, 2026-10-19: HTTP 401 `missing_permissions`** — the key in use has no Speech to
+Text access (`facts/scribe-key-has-no-speech-to-text-permission-2026-10-19`). The dashboard is the
+founder's.
+
 ## HeyGen avatar lip-sync — `providers/lipsync.ts`
 
 - **Image+audio is the only mode** (locked decision — no video-to-video): one reference image +

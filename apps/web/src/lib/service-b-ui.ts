@@ -2,6 +2,7 @@ import { countScriptWords, MAX_B_SCRIPT_WORDS } from "@aiugc/core/b-script-words
 import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/core/hook-text";
+import { RECORDING_MAX_AUDIO_BYTES, RECORDING_MAX_VIDEO_BYTES } from "@aiugc/core/own-voice";
 
 /**
  * Pure, client-safe helpers for the homepage and the Service B wizard.
@@ -171,7 +172,12 @@ export function renderStageIndex(status: string): number {
 // Wizard steps
 // ---------------------------------------------------------------------------
 
-export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" | "render";
+export type WizardStep =
+  "persona" | "pointers" | "script" | "audio" | "record" | "transcript" | "effect" | "render";
+
+/** Whose voice speaks the ad: the persona's ElevenLabs voice, or the
+ *  customer's own recording (decision 0118). Chosen at the character step. */
+export type VoiceSource = "ai" | "own";
 
 /**
  * One flow for every business: the persona is one look in one setting, so
@@ -179,10 +185,189 @@ export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" 
  * there is no composite step (vault 0017). The effect step is where the
  * customer picks a hook animation — or none — and edits the on-screen hook
  * text it burns (vault 0024; it offered opener clips until 2026-09-06).
+ *
+ * The own-voice door (decision 0118) swaps the AI audio step for the
+ * customer's recording and its transcript check, and rejoins at the effect
+ * step. The AI list is today's, unchanged.
  */
-export function wizardSteps(): WizardStep[] {
-  return ["persona", "pointers", "script", "audio", "effect", "render"];
+export function wizardSteps(voice: VoiceSource = "ai"): WizardStep[] {
+  return voice === "own"
+    ? ["persona", "pointers", "script", "record", "transcript", "effect", "render"]
+    : ["persona", "pointers", "script", "audio", "effect", "render"];
 }
+
+// ---------------------------------------------------------------------------
+// The customer's own voice (decision 0118). Every new Hebrew string of the
+// branch lives here or in @aiugc/core/own-voice (the ones the server shares).
+// ---------------------------------------------------------------------------
+
+/** The two doors at the character step, in the order shown. */
+export const VOICE_DOORS: { id: VoiceSource; title: string; hint: string }[] = [
+  { id: "ai", title: "קול AI", hint: "אנחנו כותבים תסריט, והדמות מקריינת אותו בקול שלה." },
+  {
+    id: "own",
+    title: "הקול שלכם",
+    hint: "אתם מקליטים או מעלים הקלטה, והדמות מדברת בקול שלכם.",
+  },
+];
+
+export const OWN_VOICE_STEP_TITLES = { record: "ההקלטה שלכם", transcript: "בדיקת הטקסט" };
+
+/** The pointers step's one-tap skip, own-voice branch only: no gendered verb,
+ *  and it covers both "I have a recording" and "I know what to say". */
+export const POINTERS_SKIP_LABEL = "יש לי כבר מה להגיד";
+
+/** The script step's header on the own-voice branch: there the script is a
+ *  teleprompter, not what the persona will say word for word. */
+export const OWN_VOICE_SCRIPT_COPY = {
+  before: {
+    title: "תסריט להקראה",
+    sub: "נכתוב לכם טקסט קצר לקרוא ממנו בזמן ההקלטה. אפשר לערוך אותו, ולא חייבים לדבוק בו.",
+  },
+  after: {
+    title: "התסריט מוכן",
+    sub: "תוכלו לקרוא ממנו בשלב הבא. אפשר לערוך, או ליצור תסריט חדש.",
+  },
+};
+
+const MB = 1024 * 1024;
+
+export const RECORD_COPY = {
+  title: "מקליטים",
+  subWithScript: "התסריט מתחת, כדי שיהיה קל לקרוא ממנו. לא חייבים לדבוק בו.",
+  subFree: "מדברים בחופשיות, עד 90 שניות.",
+  start: "התחלת הקלטה",
+  stop: "סיום הקלטה",
+  use: "שימוש בהקלטה",
+  again: "הקלטה מחדש",
+  upload: "העלאת קובץ שמע או וידאו",
+  uploadHint: `MP3, M4A, AAC, OGG, OPUS, WAV או WEBM עד ${RECORDING_MAX_AUDIO_BYTES / MB}MB, או סרטון MP4 או MOV עד ${RECORDING_MAX_VIDEO_BYTES / MB}MB`,
+  uploading: "מעלים את ההקלטה…",
+  scriptLabel: "התסריט",
+  micDenied: "אין גישה למיקרופון. אפשר לאשר גישה בהגדרות הדפדפן, או להעלות קובץ.",
+  micMissing: "לא נמצא מיקרופון במכשיר. אפשר להעלות קובץ.",
+  micBusy: "המיקרופון תפוס כרגע, אולי בשיחה. נסו שוב או העלו קובץ.",
+  unsupported: "הדפדפן הזה לא תומך בהקלטה. אפשר להעלות קובץ.",
+  interrupted: "ההקלטה נעצרה כי יצאתם מהדף. אפשר להשתמש במה שהוקלט או להקליט מחדש.",
+  capped: "ההקלטה נעצרה ב־90 שניות.",
+  uploadFailed: "ההעלאה נכשלה, נסו שוב.",
+  /** Back on the record step with a recording already made (a persona change,
+   *  or Back from the transcript): go on with it, no new slot spent. */
+  continueExisting: "המשך עם ההקלטה הקיימת",
+  cancelUpload: "ביטול",
+};
+
+export const TRANSCRIPT_COPY = {
+  title: "ככה שמענו אתכם",
+  sub: "מאזינים ובודקים: אפשר לתקן מילה או למחוק מילה. הכתוביות בסרטון יהיו בדיוק הטקסט הזה.",
+  processing: "מעבדים את ההקלטה…",
+  stuck: "העיבוד לוקח יותר מהרגיל. אפשר להקליט או להעלות שוב.",
+  fixLabel: "תיקון המילה",
+  save: "שמירה",
+  drop: "מחיקת המילה",
+  cancel: "ביטול",
+  restore: "החזרת המילה",
+  /** Read to a screen reader after a dropped word; the eye sees it struck. */
+  droppedSr: "(נמחקה)",
+  approve: "אישור והמשך",
+  again: "הקלטה מחדש",
+};
+
+/** After this long still queued or generating, the transcript step offers a
+ *  way out instead of spinning (step-demo's stuck-state precedent). */
+export const RECORDING_STUCK_AFTER_MS = 3 * 60 * 1000;
+
+/** The recorder's own clock is the length — a recorded file's header often
+ *  says 0 or Infinity. It stops itself at the cap. */
+export const RECORDER_MAX_MS = 90_000;
+
+/** MediaRecorder formats, best first. Every one decodes on the worker; Safari
+ *  answers audio/mp4, Chrome and Firefox opus. */
+export const RECORDER_MIME_PREFERENCE = [
+  "audio/webm;codecs=opus",
+  "audio/mp4",
+  "audio/ogg;codecs=opus",
+  "audio/webm",
+];
+
+/** The first format this browser can record, or undefined = its default. */
+export function pickRecorderMime(isTypeSupported: (type: string) => boolean): string | undefined {
+  return RECORDER_MIME_PREFERENCE.find((type) => {
+    try {
+      return isTypeSupported(type);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** The file name a recorded take uploads under — its extension is what the
+ *  upload route reads when the type is generic. */
+export function recordedFileName(mimeType: string): string {
+  const mime = mimeType.split(";")[0]!.trim();
+  if (mime === "audio/mp4") return "recording.m4a";
+  if (mime === "audio/ogg") return "recording.ogg";
+  return "recording.webm";
+}
+
+/** m:ss. */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+export function recorderClockLine(elapsedMs: number): string {
+  return `${formatClock(elapsedMs)} מתוך ${formatClock(RECORDER_MAX_MS)}`;
+}
+
+/** getUserMedia's refusal, in words the customer can act on. */
+export function micErrorLine(name: string | undefined): string {
+  if (name === "NotAllowedError" || name === "SecurityError") return RECORD_COPY.micDenied;
+  if (name === "NotFoundError" || name === "OverconstrainedError") return RECORD_COPY.micMissing;
+  if (name === "NotReadableError" || name === "AbortError") return RECORD_COPY.micBusy;
+  return RECORD_COPY.unsupported;
+}
+
+/** A heard word on the transcript step. */
+export type TranscriptWord = { text: string; startMs: number; endMs: number };
+
+/** The customer's corrections, by heard-word index: a respelling, or a drop.
+ *  There is no way to express an added word — by construction. */
+export type TranscriptEdits = Record<number, { text?: string; dropped?: boolean }>;
+
+/** What the approval posts: every kept word as its index and current text. */
+export function keptWords(
+  words: readonly TranscriptWord[],
+  edits: TranscriptEdits,
+): { i: number; text: string }[] {
+  return words.flatMap((word, i) =>
+    edits[i]?.dropped ? [] : [{ i, text: edits[i]?.text ?? word.text }],
+  );
+}
+
+export type RecordingState = {
+  id: string;
+  status: "queued" | "generating" | "ready" | "failed";
+  error?: string;
+  durationMs?: number;
+  audioUrl?: string;
+  words?: TranscriptWord[];
+  quote?: { credits: number; balance: number; shortfall: number } | null;
+  /** When the wizard registered it — the stuck clock starts here. */
+  startedAt: number;
+};
+
+/** An approved transcript: the ordinary script + audio pair the render reads. */
+export type OwnVoiceApproval = {
+  recordingId: string;
+  scriptId: string;
+  audioId: string;
+  text: string;
+  hookText: string | null;
+  durationMs: number;
+  /** The kept words it was made from — an unchanged re-approval reuses it. */
+  keptKey: string;
+};
 
 // ---------------------------------------------------------------------------
 // Wizard state carried across steps (owned by BWizard, edited by the steps)

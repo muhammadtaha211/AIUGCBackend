@@ -58,6 +58,15 @@ const ILLEGAL_CHAR = new RegExp(
   "u",
 );
 
+/**
+ * The first character of `text` a burned line cannot carry — an emoji, a
+ * character outside the burnable set, or niqqud — or undefined. Shared with the
+ * own-voice transcript (own-voice.ts), whose words are burned as captions.
+ */
+export function unburnableChar(text: string): string | undefined {
+  return EMOJI.exec(text)?.[0] ?? ILLEGAL_CHAR.exec(text)?.[0] ?? NIQQUD.exec(text)?.[0];
+}
+
 /** Tokens carrying a letter or digit — the same rule plan-format's readTimeMs
  *  counts by, so a spaced dash is not a word. */
 export function hookTextWordCount(text: string): number {

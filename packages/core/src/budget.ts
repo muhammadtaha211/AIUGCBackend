@@ -4,7 +4,15 @@ import type { Db } from "./db";
 import { appConfig, businesses, events, usageEvents, users } from "./db/schema";
 import { BudgetError } from "./jobs/errors";
 
-export type UsageKind = "llm_tokens" | "tts_chars" | "gpu_seconds" | "images";
+export type UsageKind = "llm_tokens" | "tts_chars" | "gpu_seconds" | "images" | "stt_seconds";
+/**
+ * The kinds with a platform-wide cap in daily_caps. stt_seconds (ElevenLabs
+ * Scribe, the customer's own voice) has none: the founder's answer of
+ * 2026-10-19 caps it per account only, by the shared 20-a-day preview count —
+ * at most 30 minutes of audio, about NIS 0.33 a day per account (decision
+ * 0118). Adding daily_caps.stt_seconds later closes that exception.
+ */
+export type CappedUsageKind = Exclude<UsageKind, "stt_seconds">;
 export type UsageProvider = "anthropic" | "elevenlabs" | "fal" | "heygen";
 
 /**
@@ -22,7 +30,7 @@ export const PLATFORM_BUDGET_TRIPPED = "platform_budget_tripped";
  * this immediately before any paid external call; BudgetError parks the job
  * without consuming an attempt.
  */
-export async function assertBudget(db: Db, kind: UsageKind): Promise<void> {
+export async function assertBudget(db: Db, kind: CappedUsageKind): Promise<void> {
   const caps = await getDailyCaps(db);
   const cap = caps[kind];
 

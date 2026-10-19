@@ -12,6 +12,7 @@
     "./hook-geometry": "./src/hook-geometry.ts",
     "./hook-text": "./src/hook-text.ts",
     "./hook-text-color": "./src/hook-text-color.ts",
+    "./own-voice": "./src/own-voice.ts",
     "./plan-change": "./src/plan-change.ts",
     "./plan-format": "./src/plan-format.ts",
     "./pricing": "./src/pricing.ts",

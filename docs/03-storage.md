@@ -12,12 +12,12 @@ through `storageKey()`, which is the single place to change when migrating provi
 
 Path convention: `<bucket>/<business_id|bank>/<entity>/<id>/<filename>`
 
-| Bucket    | Contents                                                                                                                                                                                          | Written by                                        |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `raw`     | user uploads exactly as received                                                                                                                                                                  | `createDemo`                                      |
-| `assets`  | normalized demos, thumbnails, hook bank, persona reference images                                                                                                                                 | ingest handler, `bank add-*`, `persona add-image` |
-| `renders` | audio previews (`audio/<id>/audio.mp3`), Service B lip-sync plates + upscaled clips (`video/<id>/lipsync-plate.mp4`, `lipsync-upscaled.mp4`), final videos (`video/<id>/final.mp4`), video thumbs | tts, lipsync/upscale + render handlers            |
-| `catalog` | **public** — content-addressed copies of persona reference images (`bank/persona_image/<id>/<hash>.<ext>`, year-long cache-control), served to the pickers via `publicUrl()`                      | `addPersonaImage`, `persona sync-catalog`         |
+| Bucket    | Contents                                                                                                                                                                                                                                                                                              | Written by                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `raw`     | user uploads exactly as received — demos, and own-voice recordings at `<biz>/recording/<id>/upload.<ext>` (vault 0118)                                                                                                                                                                                | `createDemo`, the recording upload-url route                 |
+| `assets`  | normalized demos, thumbnails, hook bank, persona reference images                                                                                                                                                                                                                                     | ingest handler, `bank add-*`, `persona add-image`            |
+| `renders` | audio previews (`audio/<id>/audio.mp3`, also an approved recording's own copy), processed own-voice recordings (`recording/<id>/audio.mp3`), Service B lip-sync plates + upscaled clips (`video/<id>/lipsync-plate.mp4`, `lipsync-upscaled.mp4`), final videos (`video/<id>/final.mp4`), video thumbs | tts, transcribe_recording, lipsync/upscale + render handlers |
+| `catalog` | **public** — content-addressed copies of persona reference images (`bank/persona_image/<id>/<hash>.<ext>`, year-long cache-control), served to the pickers via `publicUrl()`                                                                                                                          | `addPersonaImage`, `persona sync-catalog`                    |
 
 Founder bank assets use the `bank/` prefix (no business): `bank/hook_clip/<id>/clip.mp4`,
 `bank/text_block_clip/<uuid>/clip.mp4` (Service C, 0052 — the one bank clip whose audio track is
@@ -30,13 +30,14 @@ Supabase Storage has **no native lifecycle rules**, so retention is enforced by 
 `janitor` job from DB timestamps (`pipelines/janitor.ts`): delete the object, null the path
 column, **keep the row** (metadata, stars, ledger references survive).
 
-| Class                     | Window (app_config `retention_days`) | Clock starts                                                      |
-| ------------------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| Raw uploads               | 30 days                              | after successful normalization (`demos.updated_at`, status ready) |
-| Normalized demos + thumbs | kept while the business is active    | —                                                                 |
-| Released renders          | 90 days                              | `released_at`                                                     |
-| Watermarked samples       | 14 days                              | `released_at`                                                     |
-| Unapproved audio previews | 30 days                              | `created_at` (approved audio is referenced by renders — kept)     |
+| Class                     | Window (app_config `retention_days`) | Clock starts                                                                                                                                                                     |
+| ------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Raw uploads               | 30 days                              | after successful normalization (`demos.updated_at`, status ready)                                                                                                                |
+| Normalized demos + thumbs | kept while the business is active    | —                                                                                                                                                                                |
+| Released renders          | 90 days                              | `released_at`                                                                                                                                                                    |
+| Watermarked samples       | 14 days                              | `released_at`                                                                                                                                                                    |
+| Unapproved audio previews | 30 days                              | `created_at` (approved audio is referenced by renders — kept)                                                                                                                    |
+| Own-voice recordings      | the raw and preview windows above    | `voice_recordings.created_at`: the upload on `raw_after_normalize`, the processed file on `audio_previews`, approved or not (an approved recording's audio row has its own copy) |
 
 All windows are config rows — tightening/loosening retention is an UPDATE. The janitor logs a
 digest line (counts per class) daily.

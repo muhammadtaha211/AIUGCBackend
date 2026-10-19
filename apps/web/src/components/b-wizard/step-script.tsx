@@ -8,9 +8,11 @@ import {
   countWords,
   estimateSpokenSeconds,
   needsTextSave,
+  OWN_VOICE_SCRIPT_COPY,
   scriptCeilingWarning,
   withEditedText,
   type ScriptState,
+  type VoiceSource,
 } from "@/lib/service-b-ui";
 import { postJson } from "@/lib/use-api";
 
@@ -29,6 +31,14 @@ type StepScriptProps = {
   /** Receives the LATEST script — a saved edit creates a new immutable row. */
   onContinue: (latest: ScriptState) => void;
   onFatal: (message: string) => void;
+  /**
+   * "own" (decision 0118): the script is a teleprompter the customer reads
+   * from, not what the persona will say. So the header says so, nothing is
+   * saved (an edit lives in wizard state, with no hook-line call for a line
+   * nobody burns), and the length and ceiling lines — both about the
+   * persona's voice — are not shown. Absent = "ai", today's step.
+   */
+  voice?: VoiceSource;
 };
 
 /**
@@ -51,7 +61,9 @@ export function StepScript({
   onBack,
   onContinue,
   onFatal,
+  voice = "ai",
 }: StepScriptProps) {
+  const own = voice === "own";
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"generate" | "save" | null>(null);
 
@@ -70,10 +82,10 @@ export function StepScript({
     script?.wordBudget !== undefined
       ? Math.round(estimateSpokenSeconds(words, duration, script.wordBudget))
       : 0;
-  const projectedSeconds = rounded >= 2 ? rounded : null;
+  const projectedSeconds = !own && rounded >= 2 ? rounded : null;
   // The runaway-cost ceiling, named before the save fails rather than after.
   // Soft: it warns, it does not disable — the server is what refuses.
-  const ceilingWarning = scriptCeilingWarning(editedText);
+  const ceilingWarning = own ? undefined : scriptCeilingWarning(editedText);
 
   async function generate() {
     setError(null);
@@ -106,7 +118,7 @@ export function StepScript({
 
   async function saveAndContinue() {
     if (!script) return;
-    if (!needsTextSave(script.text, editedText)) return onContinue(script);
+    if (own || !needsTextSave(script.text, editedText)) return onContinue(script);
 
     setError(null);
     setBusy("save");
@@ -133,8 +145,12 @@ export function StepScript({
     return (
       <div>
         <StepHeader
-          title="התסריט"
-          sub="נכתוב תסריט בעברית לפי שאלון העסק וההנחיות שלכם. אפשר לערוך אותו אחר כך."
+          title={own ? OWN_VOICE_SCRIPT_COPY.before.title : "התסריט"}
+          sub={
+            own
+              ? OWN_VOICE_SCRIPT_COPY.before.sub
+              : "נכתוב תסריט בעברית לפי שאלון העסק וההנחיות שלכם. אפשר לערוך אותו אחר כך."
+          }
           onBack={onBack}
         />
 
@@ -170,8 +186,12 @@ export function StepScript({
   return (
     <div>
       <StepHeader
-        title="התסריט מוכן, אפשר לערוך"
-        sub="זה מה שהדמות תגיד, מילה במילה. שינוי גדול? אפשר גם ליצור תסריט חדש."
+        title={own ? OWN_VOICE_SCRIPT_COPY.after.title : "התסריט מוכן, אפשר לערוך"}
+        sub={
+          own
+            ? OWN_VOICE_SCRIPT_COPY.after.sub
+            : "זה מה שהדמות תגיד, מילה במילה. שינוי גדול? אפשר גם ליצור תסריט חדש."
+        }
         onBack={onBack}
       />
 

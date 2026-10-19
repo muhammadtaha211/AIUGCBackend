@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-17
+updated: 2026-10-19
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -39,6 +39,32 @@ so the attribution is his, not measured. This is the event 0041/0042 named, so
 identifying about the signup is written anywhere in the repo, by instruction. The same day's
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
+
+**Service B — the customer's own voice: BUILT 2026-10-19 on `feat/b-own-voice`, NOT merged; its
+migrations 0066/0067 NOT pushed.** A second door at the character step ("הקול שלכם"): the customer
+records in the browser or uploads, ElevenLabs Scribe transcribes, they respell or drop words (never
+add) and approve, and the effect and render steps run on the approval's ordinary script + audio
+pair. The AI door is unchanged. Decisions, his three plan-mode answers and his six amendments:
+[[0118-service-b-own-voice]]; the build is the "What landed (2026-10-19)" section below.
+
+- **FOUNDER-REPORTED, not repo-verified (2026-10-19):** Scribe transcribed a recording of his own
+  Hebrew accurately on elevenlabs.io (one sample, judged by eye). The HeyGen tuning session has not
+  happened, and it does not block this.
+- **MEASURED (2026-10-19):** the ElevenLabs key in use answers Scribe with HTTP 401
+  `missing_permissions` ([[scribe-key-has-no-speech-to-text-permission-2026-10-19]]). Until it has
+  Speech to Text access, every live transcription fails with the generic line. The live `raw` bucket
+  refuses audio ([[raw-bucket-allows-video-and-images-only-2026-10-19]]).
+- **Owed, in order:**
+  1. Speech to Text on the key (his dashboard).
+  2. The `db push` of 0066, then 0067, and the read-backs.
+  3. The `raw` bucket SQL in the raw-bucket note.
+  4. The box on the branch for one walk at an hour he picks, and back to main before anything else
+     runs.
+  5. His ~30 s recording with a pause and a filler, for the one paid render.
+  6. Approval of every new Hebrew string and of the `/privacy` and `/terms` sentences.
+  7. The merge, with `UPDATED` moved to the merge day.
+  8. The box on main again.
+- **Open, his or counsel's:** whether the legal change is material under terms §14.
 
 **The ₪5 intro offer: MERGED 2026-10-14 as PR #97 (`d41eae6`); migrations 0061/0062 PUSHED the
 same day, before the merge. LIVE since: MEASURED 2026-10-15, `https://tavnit.ai/pricing` shows the
@@ -873,6 +899,72 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-19) — Service B, the customer's own voice, `feat/b-own-voice`, NOT merged
+
+Cut from `origin/main` 2817133. Decision [[0118-service-b-own-voice]].
+
+- **Schema (not pushed):**
+  - 0066 adds `alignment_source 'scribe'` and `usage_kind 'stt_seconds'`, alone and first.
+  - 0067 adds `voice_recordings` (server-only RLS, a unique nullable `raw_path`) and makes
+    `audio_renders.voice_id` nullable.
+- **Core:**
+  - `own-voice.ts`: the caps, the type map, and the correction rules, shared with the browser.
+  - `providers/elevenlabs.ts` `transcribe()`.
+  - Four `media/ffmpeg.ts` recording helpers: probe, decode, a linear gain plus a limiter, and a
+    sample-accurate cut.
+  - `pipelines/recordings.ts`: register, the `transcribe_recording` job (light lane), approve.
+  - The shared preview pool (`audioPreviewsToday`, `tts.ts`).
+  - `quoteBForDuration`.
+  - The content gate's heard-text line.
+  - A janitor class.
+  - Calibration skips voiceless rows.
+- **Web:**
+  - Four routes: `recordings/upload-url`, `recordings`, `recordings/[id]`,
+    `recordings/[id]/approve`.
+  - The door in `StepPersona`.
+  - The skip in `StepPointers`.
+  - `StepScript`'s teleprompter copy.
+  - `step-record.tsx`: the stop control and the timer pinned while the script scrolls.
+  - `step-transcript.tsx`.
+  - `wizardSteps(voice)`.
+  - `/privacy` §3, §7 and §8 and `/terms` §3 and §4, with `UPDATED` 19.10.2026.
+- **Proven:**
+  - The core chain test runs under DRY_RUN on real ffmpeg, from upload to a released render. It
+    covers a respell and a drop, the shared pool, a dropped word still reaching the classifier,
+    and retention never touching an approved copy.
+  - Route tests and AUTHZ-12 cover the approve route.
+  - A fetch-mocked harness walk ran in headless Chrome with a fake microphone at 375×667, 717×621
+    and 1280×800: record, local playback, upload, transcript, drop, respell, approve. The stop
+    button stayed on screen with the script scrolled to its end at both phone sizes. That was a
+    harness, not a wizard walk.
+- **Not proven:**
+  - The real phone and desktop walk, which waits on the owed items above.
+  - A live Scribe call.
+  - The paid render and what `chunkWords` does at a real pause and a dropped filler. The prediction
+    from the code is in 0118 ("What the captions will do"): a chunk holds through a pause and the
+    highlight stays on the word before it.
+- **The adversarial review of the diff** (four lenses, each list refuted by a skeptic): 18 findings
+  confirmed, all fixed in the branch, with 6 refuted. The fixes:
+  - the decode bound;
+  - the pool taken at upload-url, so abandoned uploads are swept;
+  - idempotent, bounded approval;
+  - the checkpointed Scribe call;
+  - the uncleaned heard text for the gate;
+  - narrower permanent ffmpeg errors;
+  - only changed words re-checked;
+  - `/privacy` §7 reworded: ElevenLabs gets the whole recording before the cut, and logs it;
+  - the recorder's start, mounted and mute guards;
+  - a cancellable upload;
+  - "continue with the existing recording";
+  - the editor's focus;
+  - screen-reader text for a dropped word.
+
+  The gate after the fixes: 2,363 tests green; lint and typecheck clean.
+
+- **Noticed, not fixed:** [[b-audio-step-offers-try-again-on-a-quota-429]],
+  [[synth-tts-row-stays-generating-when-retries-run-out]],
+  [[a-wizard-steps-comment-cites-a-gone-b-signature]].
 
 ## What landed (2026-10-17) — social posting PR 4.1: the TikTok delivery email and the door, `feat/tiktok-delivery-email`, PR #108 OPEN (not merged)
 

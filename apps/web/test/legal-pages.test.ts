@@ -5,6 +5,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { TIKTOK_SCOPES } from "@aiugc/core";
+import {
+  RECORDING_MAX_AUDIO_BYTES,
+  RECORDING_MAX_SECONDS,
+  RECORDING_MAX_VIDEO_BYTES,
+  RECORDING_MIN_SECONDS,
+} from "@aiugc/core/own-voice";
 import PrivacyPage from "../src/app/(legal)/privacy/page";
 import TermsPage from "../src/app/(legal)/terms/page";
 import { OPERATOR_ADDRESS, UPDATED } from "../src/app/(legal)/legal";
@@ -83,9 +89,61 @@ describe("the operator's address", () => {
   });
 
   it("the date at the head of both pages is today's pass", () => {
-    expect(UPDATED).toBe("17.10.2026");
+    expect(UPDATED).toBe("19.10.2026");
     expect(privacy).toContain(`עודכן לאחרונה: ${UPDATED}`);
     expect(terms).toContain(`עודכן לאחרונה: ${UPDATED}`);
+  });
+});
+
+describe("the customer's own voice (vault 0118)", () => {
+  const MB = 1024 * 1024;
+
+  it("/privacy names the recording's caps as the code has them", () => {
+    expect(privacy).toContain(
+      `באורך ${RECORDING_MIN_SECONDS} עד ${RECORDING_MAX_SECONDS} שניות (קובץ שמע עד ${RECORDING_MAX_AUDIO_BYTES / MB}MB, או סרטון עד ${RECORDING_MAX_VIDEO_BYTES / MB}MB שממנו נלקח ערוץ הקול בלבד)`,
+    );
+  });
+
+  it("ElevenLabs is no longer said to get text only: it gets the processed recording, to transcribe it", () => {
+    expect(privacy).not.toContain("נשלח טקסט בלבד");
+    // The whole recording, before the cut: the cut is made from Scribe's own words.
+    expect(privacy).toContain(
+      "היא מקבלת את ההקלטה כולה, לאחר התאמת עוצמת הקול ולפני החיתוך לקטע הדיבור, כדי לתמלל אותה",
+    );
+    expect(privacy).toContain("ושומרת רישום של הבקשה לפי מדיניותה");
+    expect(privacy).toContain("אין שיבוט של הקול שלכם");
+    const elevenlabs = source("packages/core/src/providers/elevenlabs.ts");
+    expect(elevenlabs).toContain("https://api.elevenlabs.io/v1/speech-to-text");
+    // The file Scribe gets is the normalised recording, uncut: the cut follows its words.
+    const recordings = source("packages/core/src/pipelines/recordings.ts");
+    expect(recordings).toMatch(/transcribe\(\{ file: normalized,/);
+    expect(recordings.indexOf("transcribe({ file: normalized")).toBeLessThan(
+      recordings.indexOf("cutAndEncodeRecording(normalized"),
+    );
+  });
+
+  it("HeyGen and Anthropic are said to receive what they receive", () => {
+    expect(privacy).toContain("או את הקלטת הקול שלכם כשבחרתם בה");
+    expect(privacy).toContain("התמלול של ההקלטה, כדי לכתוב ממנו את משפט הפתיחה ולבדוק את התוכן");
+  });
+
+  it("the deletion /privacy §8 promises is the janitor's: both files, both windows, from the upload", () => {
+    expect(privacy).toContain("נמחקות אוטומטית כ־30 ימים מההעלאה, בין אם אישרתם אותן ובין אם לא");
+    const janitor = source("packages/core/src/pipelines/janitor.ts");
+    expect(janitor).toMatch(
+      /isNotNull\(voiceRecordings\.rawPath\),\s*lt\(voiceRecordings\.createdAt, cutoff\(retention\.raw_after_normalize\)\)/,
+    );
+    expect(janitor).toMatch(
+      /isNotNull\(voiceRecordings\.filePath\),\s*lt\(voiceRecordings\.createdAt, cutoff\(retention\.audio_previews\)\)/,
+    );
+  });
+
+  it("/terms names the recording as the customer's content, and the ad as carrying it", () => {
+    expect(terms).toContain("בקול מסונתז, או בקול שלכם מהקלטה שאתם מקליטים או מעלים");
+    expect(terms).toContain(
+      "הסרטונים, התמונות, הקלטות הקול והטקסטים שאתם מעלים, מקליטים או מזינים",
+    );
+    expect(terms).toContain("הקלטת קול שבחרתם להשתמש בה נכללת במודעה כפי שהיא נשמעת");
   });
 });
 

@@ -148,9 +148,24 @@ questionnaireUpdatedAt}` — the last, since phase 2, the questionnaire stamp th
   longest-match-first, business entries shadow globals (`applyPronunciationMap`).
 - **audio_renders** — the audio preview + hard gate. Holds `rendered_text` (exact
   post-pronunciation-map text sent to TTS — reproducibility), `word_timestamps jsonb`
-  (2–4-word karaoke chunks, ready for Remotion), `alignment_source` (`elevenlabs|whisperx` —
-  `elevenlabs` in practice; whisperx is a dormant fallback, see 04),
-  `stretch_ratio` (≤1.05), and **`approved_at`** — every render path checks it.
+  (2–4-word karaoke chunks, ready for Remotion), `alignment_source` (`elevenlabs|whisperx|scribe` —
+  `elevenlabs` in practice; whisperx is a dormant fallback, see 04; `scribe` since 0066 marks an
+  approved own-voice recording, and nothing reads the column),
+  `stretch_ratio` (≤1.05), and **`approved_at`** — every render path checks it. `voice_id` is
+  nullable since 0067: an approved own-voice recording has no ElevenLabs voice. Such a row is born
+  `ready` and approved, with its own copy of the recording's mp3, and points at a `b_script` row
+  holding the corrected transcript (`params.source = "recording"`, `prompt_version` NULL).
+- **voice_recordings** (0067) — the customer's own voice ([vault 0118](vault/decisions/0118-service-b-own-voice.md)),
+  from the upload until its transcript is approved. `status` (`audio_status`), `raw_path` (the
+  upload as received, unique, nulled when the janitor deletes it), `file_path` (the processed mp3:
+  mono 44.1 kHz at the TTS loudness, cut to the speech), `source_ms` (the decoded upload's
+  length), `duration_ms` (the processed file's — what the quote prices), `words jsonb` (Scribe's
+  words on the processed file, cleaned of what a caption cannot burn), `heard_text` (everything
+  Scribe heard, uncleaned — what the content gate classifies), `error` (Hebrew only). The row is
+  created when the upload URL is minted (`reserveRecording`), which is when the daily pool counts
+  it. Server-only: RLS on, no policy. Approval
+  never touches the row again; it inserts the ordinary script + audio pair above
+  (`pipelines/recordings.ts`).
 
 ### Variants & renders
 
@@ -172,7 +187,9 @@ questionnaireUpdatedAt}` — the last, since phase 2, the questionnaire stamp th
 - **jobs** — see [02-jobs.md](02-jobs.md). `idempotency_key` UNIQUE; `state jsonb` checkpoints
   external side effects (e.g. the fal request id); `(status, run_at)` index drives the claim.
 - **usage_events** — one row per external call: provider, kind (`llm_tokens|tts_chars|
-gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feeds the
+gpu_seconds|images|stt_seconds`), quantity, cost estimate in agorot, job/business refs.
+  `stt_seconds` (0066) is ElevenLabs Scribe on a customer recording; it has no platform cap in
+  `daily_caps` (the founder's per-account-only answer, vault 0118). Feeds the
   rolling-24h spend caps and any future per-business analytics. The four values cover every call made today — the Topaz upscale that had no `usage_kind` left with InfiniteTalk in 2026-08 (HeyGen has no upscale stage; [04-integrations.md](04-integrations.md) §HeyGen).
 
 ### Billing (details in [05-billing.md](05-billing.md))

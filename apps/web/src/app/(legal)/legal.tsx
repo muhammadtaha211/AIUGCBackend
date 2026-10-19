@@ -81,7 +81,10 @@ export const OPERATOR_ADDRESS = 'ת"ד 929, כאבול 2496300, ישראל';
  * the terms text did not change. Moved 15.10.2026 → 17.10.2026 for the legal
  * pass on connected accounts (vault 0117): /privacy gains §13 and the changes
  * in §3–§9 and §12, the operator address changes (one constant, four surfaces),
- * and /terms §4 gains a connected-accounts subsection. If the merge lands on a
- * later day, move it to that day.
+ * and /terms §4 gains a connected-accounts subsection. Moved 17.10.2026 →
+ * 19.10.2026 for the customer's own voice (vault 0118): /privacy §3, §7 and §8
+ * name the recording, who receives it and when it is deleted, and /terms §3
+ * and §4 name it as the customer's content. If the merge lands on a later day,
+ * move it to that day.
  */
-export const UPDATED = "17.10.2026";
+export const UPDATED = "19.10.2026";

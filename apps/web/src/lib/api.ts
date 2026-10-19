@@ -128,6 +128,24 @@ export async function requireAudio(
   return found;
 }
 
+/** A customer recording (decision 0118), gated on the business it was uploaded under. */
+export async function requireRecording(
+  db: Db,
+  recordingId: string,
+  userId: string,
+): Promise<{ recording: typeof schema.voiceRecordings.$inferSelect } | { response: NextResponse }> {
+  if (!isUuid(recordingId)) return { response: jsonError(404, NOT_FOUND) };
+  const rows = await db
+    .select()
+    .from(schema.voiceRecordings)
+    .where(eq(schema.voiceRecordings.id, recordingId))
+    .limit(1);
+  if (!rows[0]) return { response: jsonError(404, NOT_FOUND) };
+  const owned = await requireBusiness(db, rows[0].businessId, userId);
+  if ("response" in owned) return owned;
+  return { recording: rows[0] };
+}
+
 export async function requireDemo(
   db: Db,
   demoId: string,

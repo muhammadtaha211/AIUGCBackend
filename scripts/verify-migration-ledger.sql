@@ -817,6 +817,31 @@ WITH checks(migration, layer, applied, note) AS (VALUES
   AND EXISTS (SELECT 1 FROM app_config WHERE key = 'intro_offer')),
   'checkout_intents.kind + its CHECKs, plan_code nullable; intro_trials 17 columns, RLS on, no policy; intro_offer row'),
 
+-- 0066: the customer's own voice (decision 0118) -- alignment_source 'scribe' and
+-- usage_kind 'stt_seconds', each last. Written 2026-10-19 with the feature, before any push.
+('0066', 'structural', (SELECT
+  EXISTS (SELECT 1 FROM pg_enum
+    WHERE enumtypid = 'public.alignment_source'::regtype AND enumlabel = 'scribe')
+  AND EXISTS (SELECT 1 FROM pg_enum
+    WHERE enumtypid = 'public.usage_kind'::regtype AND enumlabel = 'stt_seconds')),
+  'alignment_source has scribe; usage_kind has stt_seconds'),
+
+-- 0067: voice_recordings (11 columns, RLS on, no policy, the unique raw_path) and
+-- audio_renders.voice_id nullable.
+('0067', 'structural', (SELECT
+  to_regclass('public.voice_recordings') IS NOT NULL
+  AND (SELECT count(*) FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'voice_recordings') = 11
+  AND COALESCE((SELECT relrowsecurity FROM pg_class
+       WHERE oid = to_regclass('public.voice_recordings')), false)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'voice_recordings')
+  AND to_regclass('public.voice_recordings_raw_path_idx') IS NOT NULL
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'audio_renders'
+      AND column_name = 'voice_id' AND is_nullable = 'YES')),
+  'voice_recordings 11 columns, RLS on, no policy, unique raw_path; audio_renders.voice_id nullable'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
