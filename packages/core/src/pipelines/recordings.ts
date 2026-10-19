@@ -60,9 +60,12 @@ import { audioPreviewsToday } from "./tts";
  * noise, no trailing silence billed, and the hook animation's clock (the
  * mp3's t=0) sits LEAD before the first word. Amendment 4: step 0's
  * Scribe-against-ElevenLabs word-start number decides whether LEAD is wide
- * enough — it rides in this one constant.
+ * enough — it rides in this one constant. Measured 2026-10-19 on 140 Hebrew
+ * words: Scribe's starts run late by p95 140 ms (median 60, max 320), past the
+ * founder's 100 ms line, so LEAD is the p95 plus 50 ms, as he ruled
+ * (facts/scribe-hebrew-word-times-against-elevenlabs-2026-10-19).
  */
-export const RECORDING_LEAD_MS = 100;
+export const RECORDING_LEAD_MS = 190;
 export const RECORDING_TAIL_MS = 150;
 /**
  * The stored TTS level, measured on three b_script renders on 2026-10-19

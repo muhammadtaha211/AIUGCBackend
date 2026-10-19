@@ -353,11 +353,11 @@ describe("the own-voice chain", () => {
     );
     const done = await recording(recordingId);
     expect(done.status).toBe("ready");
-    // The saved words, on the cut file's clock (cut from 500 ms).
+    // The saved words, on the cut file's clock: cut from 600 - 190 = 410 ms.
     expect((done.words as HeardWord[]).map((w) => [w.text, w.startMs])).toEqual([
-      ["אחת", 100],
-      ["שתיים", 800],
-      ["שלוש", 1700],
+      ["אחת", 190],
+      ["שתיים", 890],
+      ["שלוש", 1790],
     ]);
     expect(done.heardText).toBe("אחת שתיים שלוש");
     expect(checkpoints).toEqual([]);

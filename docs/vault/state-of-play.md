@@ -50,12 +50,15 @@ pair. The AI door is unchanged. Decisions, his three plan-mode answers and his s
 - **FOUNDER-REPORTED, not repo-verified (2026-10-19):** Scribe transcribed a recording of his own
   Hebrew accurately on elevenlabs.io (one sample, judged by eye). The HeyGen tuning session has not
   happened, and it does not block this.
-- **MEASURED (2026-10-19):** the ElevenLabs key in use answers Scribe with HTTP 401
-  `missing_permissions` ([[scribe-key-has-no-speech-to-text-permission-2026-10-19]]). Until it has
-  Speech to Text access, every live transcription fails with the generic line. The live `raw` bucket
-  refuses audio ([[raw-bucket-allows-video-and-images-only-2026-10-19]]).
+- **MEASURED (2026-10-19):** the ElevenLabs key first answered Scribe with HTTP 401
+  `missing_permissions` ([[scribe-key-has-no-speech-to-text-permission-2026-10-19]]). He granted
+  Speech to Text the same day, and three live calls then answered 200. Hebrew was detected at
+  probability 1, and on clean TTS speech every word's letters were right. Word starts ran late
+  against the ElevenLabs alignment by p95 140 ms, so the cut's lead is now 190 ms
+  ([[scribe-hebrew-word-times-against-elevenlabs-2026-10-19]]). The live `raw` bucket refuses audio
+  ([[raw-bucket-allows-video-and-images-only-2026-10-19]]).
 - **Owed, in order:**
-  1. Speech to Text on the key (his dashboard).
+  1. ~~Speech to Text on the key~~ done 2026-10-19.
   2. The `db push` of 0066, then 0067, and the read-backs.
   3. The `raw` bucket SQL in the raw-bucket note.
   4. The box on the branch for one walk at an hour he picks, and back to main before anything else
@@ -940,7 +943,7 @@ Cut from `origin/main` 2817133. Decision [[0118-service-b-own-voice]].
     harness, not a wizard walk.
 - **Not proven:**
   - The real phone and desktop walk, which waits on the owed items above.
-  - A live Scribe call.
+  - A live Scribe call: done 2026-10-19 on three TTS files, not yet on a human recording.
   - The paid render and what `chunkWords` does at a real pause and a dropped filler. The prediction
     from the code is in 0118 ("What the captions will do"): a chunk holds through a pause and the
     highlight stays on the word before it.

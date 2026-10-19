@@ -24,3 +24,10 @@ Not measured because of this, and owed once the key works:
 - Scribe's word starts against our stored ElevenLabs word times on the same Hebrew (the founder's
   amendment 4: it decides `RECORDING_LEAD_MS`).
 - The response shape on real Hebrew, including how punctuation attaches to words.
+
+## Resolved the same day
+
+The founder granted Speech to Text on the key on 2026-10-19 (FOUNDER-REPORTED, in chat), and the
+next three calls answered HTTP 200. The two "owed" measurements above are in
+[[scribe-hebrew-word-times-against-elevenlabs-2026-10-19]]. Kept, not moved to `falsified/`: the 401
+was true when measured. The key's state changed after it.

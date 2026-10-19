@@ -287,12 +287,14 @@ The job (`transcribe_recording`, light lane, `pipelines/recordings.ts`): downloa
 caps → audio stream required → decode to mono 44.1 kHz PCM (format-whitelisted) → 3–90 s on the
 decoded length → one linear gain to −20 LUFS plus a −2 dBFS limiter (the stored TTS level,
 `facts/tts-mp3-format-and-loudness-2026-10-19`) → Scribe on that normalised file → the stored mp3 is
-that file cut from 100 ms before the first word to 150 ms after the last, the word times shifted by
+that file cut from 190 ms before the first word (100 ms widened by amendment 4's measurement) to 150 ms after the last, the word times shifted by
 the cut → ≥3 s → `ready`. Real ffmpeg runs under DRY_RUN too.
 
-**First live call, 2026-10-19: HTTP 401 `missing_permissions`** — the key in use has no Speech to
-Text access (`facts/scribe-key-has-no-speech-to-text-permission-2026-10-19`). The dashboard is the
-founder's.
+**First live call, 2026-10-19: HTTP 401 `missing_permissions`** — the key had no Speech to Text
+access (`facts/scribe-key-has-no-speech-to-text-permission-2026-10-19`). The founder granted it the
+same day; three calls then answered 200, with Hebrew detected at probability 1, every word's letters
+right on clean TTS speech, and word starts late against the ElevenLabs alignment by median 60 ms,
+p95 140 ms (`facts/scribe-hebrew-word-times-against-elevenlabs-2026-10-19`).
 
 ## HeyGen avatar lip-sync — `providers/lipsync.ts`
 

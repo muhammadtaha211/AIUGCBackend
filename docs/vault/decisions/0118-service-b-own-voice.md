@@ -69,13 +69,16 @@ chat; record all of it in 0118 as mine."
    `dry_run`), with `structure_id` NULL and `user_edited` false.
 4. **The cut margin:** step 0's Scribe-against-ElevenLabs word-start number decides whether 100 ms
    is enough; widen it before the paid render if Scribe's starts run late by more. Report the
-   number either way. (Not measured yet: the key refused — see Open.)
+   number either way. **Measured 2026-10-19, after he granted Speech to Text on the key:** Scribe's
+   word starts against the stored ElevenLabs alignment, on 140 Hebrew words, ran late by median
+   60 ms, p95 **140 ms**, max 320 ms. That is past 100, so the lead is 140 + 50 = **190 ms**
+   (`RECORDING_LEAD_MS`) ([[scribe-hebrew-word-times-against-elevenlabs-2026-10-19]]).
 5. **CLAUDE.md:** the Service B description line only; the locked list untouched.
 6. **The box window:** he picks the hour, the walk is one sitting, and the box goes back to main
    before anything else runs.
 
 **The cut, his:** the stored file is the normalised recording cut sample-accurately from 100 ms
-before the first word Scribe heard to 150 ms after the last, with the word times shifted by the
+(190 ms since amendment 4's measurement) before the first word Scribe heard to 150 ms after the last, with the word times shifted by the
 cut — in place of a silence threshold. Reasons given in the plan: a threshold keeps the
 record-button click and room noise; the AI branch bills to the last spoken character, so billing a
 recording's trailing noise would break "the same per-second price"; the hook animation's clock
@@ -143,9 +146,10 @@ the last word that started):
 ## Open, not ruled
 
 - Whether the legal change is material under terms §14 — his, or counsel's.
-- Speech to Text access on the ElevenLabs key: the first call answered 401 `missing_permissions`
-  (`facts/scribe-key-has-no-speech-to-text-permission-2026-10-19`). The dashboard is his.
-- Amendment 4's number, and the paid render's pause and filler observations — owed after the key.
+- The tail margin: 150 ms was his figure and is unchanged. The measured word-end p5 is −160 ms
+  against ElevenLabs, and the observed last-word ends ran 40–100 ms early.
+- The paid render's pause and filler observations — owed after the migrations, the bucket and the
+  box.
 
 ## Related
 

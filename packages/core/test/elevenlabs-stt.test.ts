@@ -114,6 +114,22 @@ describe("transcribe (live path)", () => {
 });
 
 describe("scribeWords", () => {
+  it("maps a real Scribe v2 response on Hebrew (2026-10-19): punctuation rides on the word, the pause is a spacing entry", () => {
+    // Five consecutive entries of a live response, verbatim but for logprob.
+    const live = [
+      { text: "שיווקי", start: 3.26, end: 3.6, type: "word" as const },
+      { text: " ", start: 3.6, end: 3.64, type: "spacing" as const },
+      { text: "לבד,", start: 3.64, end: 4.04, type: "word" as const },
+      { text: " ", start: 4.04, end: 4.48, type: "spacing" as const },
+      { text: "אני", start: 4.48, end: 4.6, type: "word" as const },
+    ];
+    expect(scribeWords(live)).toEqual([
+      { text: "שיווקי", startMs: 3260, endMs: 3600 },
+      { text: "לבד,", startMs: 3640, endMs: 4040 },
+      { text: "אני", startMs: 4480, endMs: 4600 },
+    ]);
+  });
+
   it("gives an untimed word its neighbours' times", () => {
     expect(
       scribeWords([
