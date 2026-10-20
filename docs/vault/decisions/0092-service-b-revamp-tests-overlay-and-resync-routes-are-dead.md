@@ -44,6 +44,9 @@ in-scene still, Gemini Omni Flash 1.1, HeyGen's Video Agent with its Seedance to
 
 ## Open, not ruled
 
+> _(Ruled 2026-10-20 by the founder, [[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]]:
+> Service B stays, revamped by a propped-phone look and opt-in demo cutaways. Decided, not yet built.)_
+
 What happens to Service B itself: park the revamp, add backgrounds, or leave it as it is. The
 founder's own verdict on today's Service B, as reported the same day: it "comes out ok but not
 amazing"; he can tell it is AI by the repeated motion and is embarrassed to use it for Tavnit.

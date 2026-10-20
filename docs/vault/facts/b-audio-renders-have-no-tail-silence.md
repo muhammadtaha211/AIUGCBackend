@@ -64,5 +64,12 @@ to cut on these files.
 
 ## Related
 
+- [[eleven-v4-paid-check-2026-10-20]] — these are **v3** files. On v4 (2026-10-20) the same
+  method finds no leading or trailing silence ≥ 0.3 s either. Internal pauses ≥ 0.3 s do occur:
+  8 / 9 / 10 at −45 / −35 / −30 dB on `8e252ccc`'s v4 file and 0 / 1 / 4 on `997a5ec7`. The v3 twin
+  `87a39c86` has 9 / 10 / 10, so the cause is the script, not the model. `duration_ms` runs 80 ms
+  past the file ([[eleven-v4-alignment-ends-80ms-past-its-audio]]). Whole-file RMS is 1.9–2.1 dB
+  under the same-script v3 files, and 3.1–4.2 dB under this note's −19.5 dB.
+
 - [[0028-scripts-end-on-a-closer-from-a-curated-bank]] — the closers these files end on.
 - [[heygen-avatar-iv-idles-on-leading-silence]] — the _leading_ silence, which is real and by design.

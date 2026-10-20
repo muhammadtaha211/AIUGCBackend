@@ -40,6 +40,13 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**TTS moves to Eleven v4, as plain text: BUILT 2026-10-20 on `feat/tts-eleven-v4`, NOT merged. The
+box restart is owed.** [[0119-tts-is-eleven-v4-plain-text]]; the paid checks pass
+([[eleven-v4-paid-check-2026-10-20]]); the details are under "What landed (2026-10-20, later)".
+Until the box restarts on the merge, previews still speak v3. The same planning chat ruled Service
+B's look and cutaways, and none of it is built
+([[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]]).
+
 **The ₪5 intro offer: MERGED 2026-10-14 as PR #97 (`d41eae6`); migrations 0061/0062 PUSHED the
 same day, before the merge. LIVE since: MEASURED 2026-10-15, `https://tavnit.ai/pricing` shows the
 offer to a signed-out visitor and `app_config.intro_offer` reads enabled, so `SUMIT_INTRO_PAGE` is
@@ -270,7 +277,8 @@ and the planning defaults: cap 400, since v2 asked of the model with 450 as the 
 [[0091-text-block-texts-ten-skeletons-truth-rules-free-edit]] (the ten skeletons, what the
 generator may write, the free edit) and
 [[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]] (Appendix C: the seven
-Service B tests and his rulings; what happens to Service B itself is OPEN).
+Service B tests and his rulings; what happens to Service B itself was OPEN, ruled 2026-10-20 by
+[[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]]).
 
 - **What exists (MEASURED in the tree):** `text_block_clips` (0052) and the `c` / `text_block`
   enum values (0051); `prompts/text_block/v1.md` (frozen) and `v2.md` with the ten skeletons and the founder's
@@ -874,7 +882,105 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-20) — the `hook_text` extractor gets one corrective call, `fix/hook-text-corrective-retry`, BUILT (not merged)
+## What landed (2026-10-20, later) — TTS on Eleven v4, plain text, `feat/tts-eleven-v4`, BUILT (not merged)
+
+**Decided (FOUNDER-REPORTED, planning chat 2026-10-20):**
+
+- [[0119-tts-is-eleven-v4-plain-text]]:
+  - `eleven_v4`, not Turbo (his ear, on elevenlabs.io);
+  - plain text, with no audio tags and no enhancement call;
+  - stability 1.0 and similarity 1.0;
+  - voice ids stay his in admin.
+- [[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]], **DECIDED, NOT YET BUILT:**
+  - the single talking head stays, on a propped-phone workspace image per character;
+  - the handheld sway goes off for every B render;
+  - "selfie" is retired for numbered settings;
+  - opt-in demo cutaways (never the default);
+  - not doing: Hyperframes, generated B-roll, short non-software uploads.
+
+  0092's "Open, not ruled" is ruled (dated pointer there).
+
+**What changed in code (`packages/core` only):**
+
+- `ELEVENLABS_MODEL = "eleven_v4"` and
+  `ELEVENLABS_VOICE_SETTINGS = {stability: 1, similarity_boost: 1}` sit beside the call;
+  `synthesize` lost its `stability` argument.
+- `handleSynthTts` reads neither `tts_enhance` nor `tts_stability`. It removes any `[...]` span after
+  the pronunciation map, so `rendered_text` is exactly what was sent. A script left empty by that
+  fails its preview with a plain `PermanentError`.
+- Removed: `enhanceWithAudioTags`, `sameWordSequence`, the DRY_RUN `[excited]` prefix and
+  `captions.ts`' `stripTagWords`. Two stale `copy.ts` comments were fixed.
+- `tts-enhance.test.ts` became `tts-plain-text.test.ts`, with 9 tests:
+  - the exact request body;
+  - the alignment in ms;
+  - no tag reaches the provider, from a script or from a map entry;
+  - DRY_RUN sends plain text byte for byte;
+  - a tag-only script fails plainly;
+  - a leftover `tts_enhance = true` adds nothing.
+- **Checked (MEASURED, 2026-10-20):**
+  - **The gate:** all green on the tree before the review's fixes — lint and typecheck clean,
+    2,279 tests (remotion 97, core 1,237, worker 7, web 867, admin 71). Re-run on the final tree
+    after the fixes: all green again, 2,280 (core 1,238).
+  - **An adversarial review of the diff** (four lenses, a skeptic per finding): 13 findings, 8
+    survived and 5 were refuted. Fixed from it:
+    - the tag-only script;
+    - 0119's caption sentence, overstated: a tag glued to a word or to punctuation now captions
+      differently;
+    - the defect note's credit rule, which missed whole-number subtotals;
+    - the HeyGen-row wording;
+    - an over-claimed "no silence" pointer;
+    - an untested claim tagged MEASURED;
+    - **the owed order:** the 80 ms ruling now comes before the merge.
+- No migration, no `app_config` write, no credit or price change, no web, admin, remotion or worker
+  code, no prompt file.
+
+**MEASURED, paid, 2026-10-20** ([[eleven-v4-paid-check-2026-10-20]]):
+
+- TTS `with-timestamps` accepts `eleven_v4`: 200, with the alignment. The chunker is unchanged:
+  11 × 3, and 16 × 3 + 2.
+- **The preview:** `audio_renders` `997a5ec7` on Tavnit (script `af00027b`, voice שירה), run through
+  `handleSynthTts`. It is `ready`, not approved, and **his to listen to**.
+- 2.10 words/s pooled, against the live 2.1.
+- v4 is 1.2–2.2 LU quieter than v3 on the same script and voice: −21.65 and −23.05 LUFS, where own
+  voice targets −20.
+- `duration_ms` runs **80 ms past the file** on both calls:
+  [[eleven-v4-alignment-ends-80ms-past-its-audio]], **NOT FIXED**. REASONED: it can add one credit
+  to about two B quotes in five. His call, and it comes **before the merge**, because merging as it
+  is changes those quotes.
+- Price: $0.08 per 1k for v4 and v3 alike on the live page, and `character-cost` 17 = 17 on one line.
+- Spend: 541 characters, ≈ 16 agorot of the ₪10 cap.
+
+**FOUNDER-REPORTED, not repo-verified (2026-10-20):**
+
+- v4 was tested on elevenlabs.io by ear, with the settings above and no enhancement.
+- `app_config.lipsync_resolution` reads 1080p in production (his read).
+- `app_config.lipsync_motion_prompt` was changed in production; the value is not recorded yet.
+  [[app-config-live-state]] still shows the 2026-09-07 value.
+- HeyGen's "more expressive" switch was off in his UI tests.
+- What he judged was HeyGen's own output, not a Tavnit render.
+- The example videos `a` and `b` are stale against the new look and the UI change; they are his to
+  redo.
+
+**Going live:** listen to the preview, rule on the 80 ms overshoot, merge, then the box pull and
+restart ("Owed founder actions").
+`synth_tts` runs only on the box, so until the restart previews still speak v3 (plain, since
+`tts_enhance` is `false`).
+
+**Found and not fixed (reported):**
+
+- The root `README.md` still says "ElevenLabs V3". It is outside this task's scope and already stale
+  on openers and QC.
+- `prompts/vo_script/v9.md` line 340 says emotion is "added automatically at a later stage". That is
+  the retired format, and prompt files are out of scope.
+- `prompts/tts_enhance/v1–v4` and `hook-templates.test.ts`' render test for them are dead.
+- `TTS_COST_AGOROT_PER_1K_CHARS` prices $0.10 where the live rate is $0.08 (his call).
+- The ElevenLabs key cannot read the account's character counter (401).
+- docs/04 says previews are capped per business per day; the code caps them per owner account. This
+  was already so before this task.
+- **`feat/b-own-voice` edits the same `tts.ts` and `elevenlabs.ts`.** Expect conflicts at the
+  `synthesize(...)` call, the `../captions` import and the provider's header, whichever merges second.
+
+## What landed (2026-10-20) — the `hook_text` extractor gets one corrective call, `fix/hook-text-corrective-retry`, MERGED as PR #110 (`033a420`, MEASURED by `git log` 2026-10-20; this heading said "not merged")
 
 **The failure (FOUNDER-REPORTED, from the Vercel log):** Service B's script step failed twice in a
 row with `hook_text is 44 characters — the cap is 40`, then 41 — `assertHookText` thrown from
@@ -915,7 +1021,7 @@ base 92 → floor 40; two lines fit at ≤74px), so a 44-character line would ha
 wrapped. 0030 calls 40 "the physical limit — what fits on one centred burned row"; the row is the
 design intent, the renderer does not enforce it. Raising the cap is his decision, not taken here.
 
-## What landed (2026-10-17) — social posting PR 4.1: the TikTok delivery email and the door, `feat/tiktok-delivery-email`, PR #108 OPEN (not merged)
+## What landed (2026-10-17) — social posting PR 4.1: the TikTok delivery email and the door, `feat/tiktok-delivery-email`, MERGED as PR #108 (`2817133`, MEASURED by `git log` 2026-10-20; this heading said "OPEN")
 
 [[0116-tiktok-delivery-email-and-the-door]] (his five decisions, the planning defaults he approved);
 the plan and prompt in `docs/claude/`; mechanics in docs/09 §The delivery email, §TikTok, checklist
@@ -1887,7 +1993,8 @@ founder's copy review of `plans-ui.ts`** — still ⚠️ COPY PENDING FOUNDER R
 wording a first draft.
 
 **11. `generateObject` shares the whole-object rejection unit — a decision, not a fix.** Its three
-callers (`plan_demo_steps`, `group_analysis_states`, `copy.ts`/`tts.ts`) still go through
+callers (`plan_demo_steps`, `group_analysis_states`, `copy.ts`; `tts.ts`'s call left with the
+retired `tts_enhance` pass, 2026-10-20, [[0119-tts-is-eleven-v4-plain-text]]) still go through
 `messages.parse`: a parse failure throws whole-object, records NO usage (the ledger hole commit 1
 closed for the vision call), and a `max_tokens` truncation surfaces with no stop_reason at all.
 `group_analysis_states`' `.min(1)` / `.int().nonnegative()` are description-only on the wire
@@ -2094,6 +2201,26 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **TTS on Eleven v4 (2026-10-20, `feat/tts-eleven-v4`, [[0119-tts-is-eleven-v4-plain-text]]).** In
+  order, each its own OK:
+  1. Listen to the preview, `audio_renders` `997a5ec7`, at
+     `packages/core/.work/eleven-v4/preview-997a5ec7-v4.mp3` on his machine. Its v3 twin, the same
+     script, is `stored/014e98dc.mp3`.
+  2. **Rule on the 80 ms `duration_ms` overshoot BEFORE the merge**
+     ([[eleven-v4-alignment-ends-80ms-past-its-audio]]). Merged as it is, about two B quotes in five
+     go up one credit (REASONED). The clamp the note names (the shorter of the alignment end and
+     the probed file) would keep v3's `duration_ms`; it is not built. Rule also on the 30-agorot TTS
+     estimate (the live rate is $0.08 per 1k).
+  3. The merge. Vercel redeploys, but nothing that speaks changes there.
+  4. **The box, straight after.** Gate:
+     `select id, type, status, locked_by, locked_at from jobs where status = 'running';` must
+     return no rows. Then
+     `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`.
+     `git log -1 --oneline` must show the merge, and `systemctl is-active aiugc-worker` must print
+     `active`. No env change, no migration.
+  5. The first preview after it: its `synth_tts` job's `locked_by` reads `hetzner:light` (no local
+     worker running), and it sounds like v4.
 
 - **Social posting — PR 4.1, the delivery email (2026-10-17, `feat/tiktok-delivery-email`).** In order,
   each its own OK: 1. the DRAFT strings at PR review — the four inbox places and the time-step
@@ -2448,9 +2575,11 @@ and he asked for the examples verbatim; and a clip registers at **3–60 s, ≤1
 marked PLANNING DEFAULT in [[0090-text-block-format-clip-once-with-its-own-sound]]; a ruling
 changes one constant each (`TEXT_BLOCK_MAX_CHARS`, `TEXT_BLOCK_DURATION`).
 
-**What happens to Service B itself (2026-10-07): park the revamp, add backgrounds, or leave it
-as it is.** Open in [[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]]; the
-overlay and re-sync routes are dead by his ruling, locked #12 stays locked.
+~~**What happens to Service B itself (2026-10-07): park the revamp, add backgrounds, or leave it
+as it is.**~~ **RULED 2026-10-20** ([[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]]):
+B stays, revamped by a propped-phone look and opt-in demo cutaways. Decided, not yet built. The
+overlay and re-sync routes stay dead ([[0092-service-b-revamp-tests-overlay-and-resync-routes-are-dead]]),
+and locked #12 stays locked.
 
 **~~What the next task does with the instants~~ RULED 2026-10-02:** clips are placed from them,
 calm preferred, the best-fitting one otherwise ([[0084-clips-are-placed-from-the-footage-instants]]).
@@ -2514,7 +2643,8 @@ published note breaks the links pointing at it. Renumber or leave it — a found
 - **The `users`/`auth.users` casing gap.** `ensureUser` is guarded; confirm the fix closed the silent
   variant for every writer, not just the CLI.
 - **`lipsync_resolution`** is the only `app_config` key still genuinely provisional
-  ([[0004-service-b-config-is-provisional]]).
+  ([[0004-service-b-config-is-provisional]]). FOUNDER-REPORTED 2026-10-20: he read it as `1080p` in
+  production.
 
 ## Unfinished measurement
 

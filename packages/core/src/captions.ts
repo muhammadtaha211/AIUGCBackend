@@ -48,34 +48,6 @@ export function wordsFromCharAlignment(alignment: CharAlignment): WordTiming[] {
 }
 
 /**
- * Drop ElevenLabs v3 audio tags ("[sighs]") from word timings before chunking:
- * alignment is computed over the SENT text, but tags are not spoken words and
- * must never reach a caption. `wordsFromCharAlignment` splits on whitespace, so
- * a multi-word tag arrives as "[short" + "pause]" — whole SPANS are dropped,
- * from the token opening the bracket through the token closing it, ignoring
- * punctuation stuck to either end ("…[sighs]", "[excited]!").
- * An unclosed "[" is not a tag: those words are kept.
- */
-export function stripTagWords(words: WordTiming[]): WordTiming[] {
-  const kept: WordTiming[] = [];
-  let open: WordTiming[] | undefined;
-
-  for (const w of words) {
-    const token = w.word.replace(/^[^\p{L}\p{N}[\]]+|[^\p{L}\p{N}[\]]+$/gu, "");
-    if (open) {
-      open.push(w);
-      if (token.endsWith("]")) open = undefined; // span closed -> whole span dropped
-    } else if (token.startsWith("[")) {
-      if (!token.endsWith("]")) open = [w];
-    } else {
-      kept.push(w);
-    }
-  }
-  if (open) kept.push(...open);
-  return kept;
-}
-
-/**
  * Group words into karaoke chunks of 2–4 words (spec: locked decision).
  * Base size 3; the remainder is absorbed so no chunk has a single orphan word
  * (a 1-word input is the only case that yields a 1-word chunk).

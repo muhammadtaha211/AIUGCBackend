@@ -276,7 +276,9 @@ founder flip is not clobbered:
 
 `tts_stability` is deliberately **not** seeded: the old project held `0.5`, and the decision on
 2026-08-26 was to let ElevenLabs' own default stand. The absence of that row is the setting, and
-`0031` says so in a comment so "no row" never again reads as "nobody thought about it".
+`0031` says so in a comment so "no row" never again reads as "nobody thought about it". _(Since
+2026-10-20 no code reads `tts_stability`: every call sends stability 1.0 and similarity 1.0 on
+Eleven v4, vault 0119.)_
 
 Everything else the migrations produce already matched the old project — `daily_caps.gpu_seconds`
 7200 from `0022`, `per_account.llm_tokens` 1500000 from `0027`, `credit_costs` from

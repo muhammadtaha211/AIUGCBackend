@@ -249,9 +249,7 @@ gpu_seconds|images`), quantity, cost estimate in agorot, job/business refs. Feed
   unparseable reads as off, [vault 0109](vault/decisions/0109-a-five-shekel-intro-offer.md)).
   Several knobs are **opt-in and unseeded** — read with `getConfigValueOr`, so a missing row is
   the code default and toggling them is an INSERT/DELETE, never a migration:
-  `tts_enhance` (boolean; absent = `false` = no v3 audio-tag pass), `tts_stability` (number;
-  absent = `voice_settings` omitted from the ElevenLabs body — v3 takes 0.0 / 0.5 / 1.0 =
-  creative / natural / robust), and the HeyGen knobs (`pipelines/renders.ts`): `lipsync_resolution` (default `1080p`), `lipsync_lead_in_ms` (default 800), `lipsync_motion_prompt` and `lipsync_expressiveness` — the last two seeded by 0034 at the generic hand-free prompt and `"medium"` ([vault 0022](vault/decisions/0022-heygen-expressiveness-medium-generic-motion-prompt.md)); `lipsync_resolution`, `lipsync_motion_prompt` and `tts_enhance` are seeded by 0031, so the genuinely unseeded rows are `tts_stability` and `lipsync_lead_in_ms`. `personas.identity.motionPrompt` is unread.
+  the HeyGen knobs (`pipelines/renders.ts`): `lipsync_resolution` (default `1080p`), `lipsync_lead_in_ms` (default 800), `lipsync_motion_prompt` and `lipsync_expressiveness` — the last two seeded by 0034 at the generic hand-free prompt and `"medium"` ([vault 0022](vault/decisions/0022-heygen-expressiveness-medium-generic-motion-prompt.md)); `lipsync_resolution`, `lipsync_motion_prompt` and `tts_enhance` are seeded by 0031, so the genuinely unseeded row is `lipsync_lead_in_ms`. `personas.identity.motionPrompt` is unread. **Read by no code since 2026-10-20** (vault 0119, TTS on Eleven v4, plain text, fixed voice settings): `tts_enhance` (the row 0031 seeded `false` stays) and `tts_stability` (never seeded, absent).
 
 ## Row-level security (0002, Supabase only)
 

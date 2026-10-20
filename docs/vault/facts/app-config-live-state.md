@@ -28,6 +28,28 @@ reads through `getConfigValueOr` falls back to its code constant — see
 | `tts_enhance`               | `false` — was `true` at this note's own measurement; see the correction below                                        |
 | `words_per_second`          | `{"default":2.1}`                                                                                                    |
 
+## 2026-10-20 — four rows re-read; `tts_enhance` and `tts_stability` are read by no code
+
+Re-measured read-only on **2026-10-20** (`packages/core/.work/v4-pick-script.ts`, gitignored) with
+
+```
+select key, value from app_config
+where key in ('tts_enhance','tts_stability','words_per_second','audio_preview_daily_limit')
+```
+
+and got:
+
+- `tts_enhance` `false`;
+- `tts_stability` absent;
+- `words_per_second` `{"default":2.1}`;
+- `audio_preview_daily_limit` `20`.
+
+Since [[0119-tts-is-eleven-v4-plain-text]], `handleSynthTts` reads neither `tts_enhance` nor
+`tts_stability`. The enhancement pass is gone, and the voice settings (stability 1.0, similarity
+1.0) are a code constant beside the provider call. The `tts_enhance` row stays as it is: every
+row is the founder's write. The `pipelines/tts.ts` line numbers below are pre-0119. The other ten
+rows were not re-read.
+
 ## Correction — `tts_enhance` is `false` again (2026-09-08)
 
 Re-measured **2026-09-08** with

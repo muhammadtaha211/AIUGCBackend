@@ -35,6 +35,8 @@ every prompt directory is box-side.
 The split that does exist runs the **other way** from the claim: `hook_lines` / `vo_script` /
 `b_script` are read in Vercel functions **as well as** on the box, while `analyze_demo`,
 `group_analysis_states`, `plan_demo_steps` and `tts_enhance` are read on the box **only**.
+_(2026-10-20: `tts_enhance` is read by no code at all since [[0119-tts-is-eleven-v4-plain-text]];
+the point stands for the rest.)_
 
 ## Why it mattered enough to record
 

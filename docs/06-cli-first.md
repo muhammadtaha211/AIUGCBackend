@@ -89,8 +89,8 @@ No pipeline code moves. The worker deploys unchanged.
    composition (`renderVideo()` throws for `kind: "service_a"`), B-roll cutaway logic
    (`brollPaths` is accepted and ignored), and calibrating `words_per_second` per voice with test
    renders.
-3. ~~**WhisperX fallback**~~ — **not needed**: eleven_v3 returns character alignment in
-   production (`alignment_source = "elevenlabs"`). `forcedAlign()` stays in the tree as a
+3. ~~**WhisperX fallback**~~ — **not needed**: eleven_v3 returned character alignment in
+   production (`alignment_source = "elevenlabs"`), and eleven_v4 does too (2026-10-20, vault 0119). `forcedAlign()` stays in the tree as a
    dormant, unwired fallback; wire the python CLI only if alignment ever comes back absent.
 4. **Outreach loop starts here** — everything above is enough to ship samples from the CLI.
 5. **Web app** (during outreach): auth + upload + the flows above as thin routes; merchant
