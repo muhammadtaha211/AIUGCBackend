@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-17
+updated: 2026-10-20
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -873,6 +873,47 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-20) — the `hook_text` extractor gets one corrective call, `fix/hook-text-corrective-retry`, BUILT (not merged)
+
+**The failure (FOUNDER-REPORTED, from the Vercel log):** Service B's script step failed twice in a
+row with `hook_text is 44 characters — the cap is 40`, then 41 — `assertHookText` thrown from
+`deriveHookTextWithVersion`, i.e. the generation path's extractor fallback
+([[0030-hook-text-falls-back-to-the-extractor-never-trims]]) had ALSO missed the 40-character cap.
+**MEASURED (read-only, `packages/core/.work/hook-text-char-cap-forensics.ts`, gitignored,
+2026-10-20):** four generations in a row with no script row on the founder's business between
+01:56 and 02:00 UTC — each a ~7.1k-token `b_script` call followed by a ~1k `hook_text` call — and,
+on a customer's business, three ~1k-token calls with no row the same night (00:04, 00:22, 01:19
+UTC), each seconds after a successful one: the edit save (`POST /api/scripts/[id]/text`), the path
+0030 said had nothing left to fall back to. Over 60 days, 86 `b_script` rows: on v17 (n=20) the
+hook text is p50 29 / p90 39 / max 39 characters, none re-derived — but the rows are survivors, so
+the misses are invisible there.
+
+**What exists (on the branch):** `deriveHookTextWithVersion` makes exactly ONE corrective call when
+the extractor's line misses a cap — the same rendered prompt with the rejected line and the exact
+`hookTextError` problem appended in code (`correctivePrompt`'s shape; `callClaude` gained
+`{maxTokens?, appendix?}` in place of its positional `maxTokens`), asking for a shorter verbatim
+prefix. A second miss throws as before; nothing is trimmed anywhere; the worst case is three paid
+calls per generation (b_script, extractor, corrective) and two per edit save. One place covers the
+generation fallback, the edit save and `aiugc script edit`. Tests: four cases in
+`packages/core/test/hook-text.test.ts` (19 pass). Docs: `docs/04-integrations.md`. Vault 0030's "a
+second failure throws, as before" and its "Not fixed here" section describe the pre-fix code and are
+NOT amended — an amendment is his to ask for.
+
+**Checked (MEASURED, 2026-10-20):** the test gate all green on the final head — 2,286 tests (core
+1244, web 867, remotion 97, admin 71, worker 7), lint and typecheck clean; an adversarial review of
+the diff (four lenses, three refuters per finding) confirmed no defect; five of its refuted items
+were taken anyway as hardenings (the appendix asks for as many words as the overshoot needs, not
+"at least one"; `assertBudget` again before the corrective call; the rejected line quoted with
+`JSON.stringify`; the two route comments' call counts; three test pins). **Not run:** nothing live —
+no paid call was made; the first real corrective call will show in the Vercel log as
+`hook_text rejected — one corrective call`.
+
+**The cap is not physical (MEASURED, code, 2026-10-20):** `HookLine` in
+`packages/remotion/src/ServiceA.tsx` shrinks the line to fit the 1009×179 safe area (`fitFontSize`,
+base 92 → floor 40; two lines fit at ≤74px), so a 44-character line would have rendered, smaller or
+wrapped. 0030 calls 40 "the physical limit — what fits on one centred burned row"; the row is the
+design intent, the renderer does not enforce it. Raising the cap is his decision, not taken here.
 
 ## What landed (2026-10-17) — social posting PR 4.1: the TikTok delivery email and the door, `feat/tiktok-delivery-email`, PR #108 OPEN (not merged)
 

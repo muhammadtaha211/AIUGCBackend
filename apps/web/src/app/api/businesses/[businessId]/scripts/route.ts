@@ -37,8 +37,9 @@ export async function POST(
     const owned = await requireBusiness(db, businessId, auth.userId);
     if ("response" in owned) return owned.response;
 
-    // Synchronous Anthropic call below (plus a possible second one if the
-    // model's hook_text misses a cap, hookTextOrDerived) — no queue to absorb
+    // Synchronous Anthropic call below (plus up to two more if the model's
+    // hook_text misses a cap: the extractor and its one corrective call,
+    // hookTextOrDerived → deriveHookTextWithVersion) — no queue to absorb
     // abuse. Per-account ceiling first, then the platform ceiling (AUTHZ-12:
     // this route had neither).
     await assertAccountBudget(db, "llm_tokens", businessId);
