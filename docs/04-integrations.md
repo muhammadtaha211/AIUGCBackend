@@ -9,7 +9,8 @@ keyless (the e2e test relies on this).
 
 - **Every Claude call runs on `claude-sonnet-5-5`** (`CLAUDE_MODEL`, a constant, not env): copy,
   the demo analysis (vision batches and sections), the steps planner, the content-policy
-  classifier, the TTS tags and גוש טקסט (vault 0093). It ended the `claude-sonnet-4-6` lock.
+  classifier and גוש טקסט (vault 0093). It ended the `claude-sonnet-4-6` lock. (The TTS-tag call
+  was retired 2026-10-20 with v3, vault 0119.)
 - Both wrappers send `thinking: {type: "between_tools"}` (vault 0095). That is 5.5's lowest
   setting: no extended thinking, as on 4.6. On 5.5 an omitted `thinking` runs adaptive thinking,
   and `disabled` is a 400.
@@ -55,15 +56,15 @@ keyless (the e2e test relies on this).
   KIND before the name lands, banning `משהו` / `הדבר הזה` / `מוצר אחד`
   ([vault 0027](vault/decisions/0027-product-kind-is-an-optional-questionnaire-field.md))),
   `hook_text` (v1: script in, `hook_text` out under the same caps — `deriveHookText`, one
-  `llm_tokens` row behind `assertBudget` like `tts_enhance`; `aiugc script edit` runs it for a
+  `llm_tokens` row behind `assertBudget`; `aiugc script edit` runs it for a
   `b_script` and `updateScriptText` merges the result into the one new immutable row; since
   2026-10-20 an answer that misses a cap buys exactly one corrective call — the same prompt with
   the rejected line and the rule it missed appended in code, `correctivePrompt`'s shape — so a
   six-word opening of long words, over 40 characters, is cut a word earlier instead of failing
   the generation or the edit save; a second miss throws as before, and the two calls are two
   `llm_tokens` rows),
-  `content_policy`, `tts_enhance` (ElevenLabs v3 audio tags — see §ElevenLabs;
-  v4 bans `[sighs]` and supersedes the accidental v3 regression that re-allowed ellipses),
+  `content_policy`, `tts_enhance` (**read by no code since 2026-10-20**, vault 0119 — the files
+  v1–v4 stay on disk; it inserted ElevenLabs v3 audio tags, and its v4 banned `[sighs]`),
   `text_block` (v3, Service C — [vault 0091](vault/decisions/0091-text-block-texts-ten-skeletons-truth-rules-free-edit.md),
   [0099](vault/decisions/0099-service-c-phase-2-opens-to-customers.md):
   the ten skeletons with the founder's examples verbatim as a frame library, one text per
@@ -137,9 +138,8 @@ keyless (the e2e test relies on this).
   `serveNextTextBlock` asserts the same two caps itself, only when it is about to buy a batch. `AccountBudgetError` rejects with a 429, exactly
   the split this paragraph used to ask for; a platform-wide trip now answers 503
   ("המערכת עמוסה כרגע. נסו שוב מאוחר יותר.") instead of parking anything or falling through to the
-  generic 500 `scripts/[id]/text` used to give it. `enhanceWithAudioTags` (`tts.ts`) is unchanged —
-  it still calls `assertBudget` directly because it runs inside the `synth_tts` job, where parking
-  is the correct behaviour. Defect note:
+  generic 500 `scripts/[id]/text` used to give it. (`enhanceWithAudioTags`, the one call that
+  checked `assertBudget` inside the `synth_tts` job, was retired 2026-10-20, vault 0119.) Defect note:
   [defects/authz-12-synchronous-copy-routes-uncapped.md](vault/defects/authz-12-synchronous-copy-routes-uncapped.md).
 - **Content policy (every service)**: `contentPolicyCheck()` runs at the three functions that create
   renders — `createSet` (Service A), `createBRender` (Service B) and `createTextBlockRender`
@@ -188,8 +188,7 @@ keyless (the e2e test relies on this).
   re-checked in `generateHookLines` by `findIllegalHookLineChar`. A violation re-requests the
   batch **once**, then fails. Never silent sanitisation: the hook line is the primary artifact,
   the customer approves that exact string, and a stray glyph is unfixable once burned. (A v6 run
-  emitted U+0640 ARABIC TATWEEL inside `לـAI`.) `tts_enhance` fails open because it guards an
-  enhancement; this guards the artifact.
+  emitted U+0640 ARABIC TATWEEL inside `לـAI`.) This guards the artifact, so it never fails open.
 - **`DEFAULT_SAFE_AREA` is now `DEFAULT_HOOK_TEXT_RECT`** (`@aiugc/core/hook-geometry`), value
   `{x: 25, y: 1062, w: 1009, h: 179}` — moved off the bottom band where TikTok and Instagram draw
   their own caption text and action rail, and sized as the measured two-line envelope. It is a
@@ -225,15 +224,27 @@ keyless (the e2e test relies on this).
   themselves, the peer role works; where the audience is a temporary situation (`מחפש דירות`),
   the domain professional (`מתווך`) is the credible source.
 
-## ElevenLabs V3 (Hebrew TTS) — `providers/elevenlabs.ts`
+## ElevenLabs Eleven v4 (Hebrew TTS) — `providers/elevenlabs.ts`
 
-- `synthesize({text, voiceId, stability?}) → {audio, charAlignment?}` against
-  `POST /v1/text-to-speech/{voice}/with-timestamps` with `model_id: "eleven_v3"`.
-  `stability` comes from `app_config.tts_stability`; absent → `voice_settings` is omitted from the
-  body entirely and the provider default applies (v3 accepts 0.0 / 0.5 / 1.0 =
-  creative / natural / robust).
-- **Timestamp verification result — resolved**: `eleven_v3` does return **character-level**
-  alignment from the with-timestamps endpoint. Words are derived by grouping characters
+- `synthesize({text, voiceId}) → {audio, charAlignment?}` against
+  `POST /v1/text-to-speech/{voice}/with-timestamps?output_format=mp3_44100_128`. The body is
+  exactly `{text, model_id: "eleven_v4", voice_settings: {stability: 1, similarity_boost: 1}}`
+  (`ELEVENLABS_MODEL`, `ELEVENLABS_VOICE_SETTINGS`: what the founder tested by ear, vault 0119).
+  No `language_code`, `style`, `speed` or `use_speaker_boost` is sent. `app_config.tts_stability`
+  is read by nothing since 2026-10-20 (it was absent in production; on v3 that meant no
+  `voice_settings` at all).
+- **The text is plain Hebrew, never an audio tag** (vault 0119). v4 reads `[bracketed]` text as a
+  delivery direction, as v3 did, so `handleSynthTts` removes every `[...]` span after the
+  pronunciation map (`stripAudioTags`). A span can come from a typed script edit or a map entry.
+  Text without one is sent byte for byte, and an unclosed `[` is kept. A text left empty by the
+  strip fails the preview with a `PermanentError` instead of reaching ElevenLabs.
+  `script.text → pronunciation map → tag strip → synthesize`.
+- **Timestamp verification result — resolved**: `eleven_v3` returned **character-level** alignment
+  from the with-timestamps endpoint, and **`eleven_v4` does too** (paid check 2026-10-20,
+  `vault/facts/eleven-v4-paid-check-2026-10-20.md`). On v4 the last character ends **80 ms after
+  the audio file**, so `duration_ms` is the shorter of the alignment end and the probed file
+  (`measureDurationMs`; DRY_RUN keeps the alignment end), which keeps it the file's length as on v3
+  (`vault/defects/eleven-v4-alignment-ends-80ms-past-its-audio.md`, vault 0119 §5). Words are derived by grouping characters
   (`captions.ts: wordsFromCharAlignment`) and real renders record
   `audio_renders.alignment_source = "elevenlabs"`. **WhisperX forced alignment is therefore a
   dormant fallback, not a requirement**: the interface is fixed
@@ -243,38 +254,25 @@ keyless (the e2e test relies on this).
 - The pronunciation map is applied **before** the call; the exact sent text is stored as
   `rendered_text`.
 - Word timings → 2–4-word karaoke chunks (`chunkWords`, locked decision, property-tested).
-
-### Optional v3 audio-tag enhancement (`app_config.tts_enhance`, absent = off)
-
-- **What it is**: one Anthropic call (`prompts/tts_enhance/v<N>.md`, latest wins) that inserts
-  bracketed English v3 audio tags (`[excited]`, `[confident]`, `[laughs]`…) into a finished
-  Hebrew script, so the voice reads it with emotion. The prompt caps density at ~2–4 tags per
-  15-second script — this is one person talking to a phone camera, not theatre — forbids
-  touching the Hebrew words, and (v4) bans every silence-producing tag plus `[sighs]`.
-- **Where it sits**: inside `handleSynthTts`, **before** the pronunciation map:
-  `script.text → enhance (if on) → pronunciation map → synthesize`. Structurally it is the same
-  kind of transform as the pronunciation map: a TTS-time rewrite of the sent text only.
-- **Fails open to the original text, always.** `enhanceWithAudioTags` never throws: an API error,
-  a tripped `llm_tokens` budget cap, or a model that touched the Hebrew all return `script.text`
-  unchanged, with a warn line. The guard is `sameWordSequence()` — strip bracket spans and
-  punctuation from both sides and compare the word arrays; any word edited, dropped, added or
-  reordered discards the enhancement. Enhancement can therefore never block or fail a render.
-- **Tags never reach a caption.** Alignment is computed over the SENT text, so tag tokens must be
-  removed before chunking. ElevenLabs path: `stripTagWords()` drops whole bracket **spans** from
-  the word timings — `wordsFromCharAlignment` splits on whitespace, so `[short pause]` arrives as
-  `[short` + `pause]`, and the span is dropped from the token that opens the bracket through the
-  one that closes it, ignoring punctuation stuck to either end (`…[sighs]`, `[excited]!`). An
-  unclosed `[` is not a tag and its words are kept. WhisperX path (dormant fallback): forced
-  alignment would be handed `stripAudioTags(rendered)`, the spoken text only.
-- **Storage**: the `scripts` row stays clean plain Hebrew — tags exist only in what was sent, and
-  therefore in `audio_renders.rendered_text`. Regenerating or re-reading a script is unaffected.
-- Costs: one extra `llm_tokens` usage row per enhance call, under the same daily cap as
-  copywriting.
-- DRY_RUN: no API call; the text is prefixed with a real `[excited]` tag so tag-stripping and
-  caption chunking run for real.
 - Costs: `tts_chars` usage row per call; capped per rolling 24h; previews additionally
-  rate-capped per business/day (config).
-- DRY_RUN: fabricated audio + uniform 2.2 w/s alignment so length-fit and chunking run for real.
+  rate-capped per business/day (config). The estimate is 30 agorot per 1k characters
+  (`TTS_COST_AGOROT_PER_1K_CHARS`, $0.10 at USD/ILS 3.00); the live API rate is $0.08 for v4 and
+  v3 alike (2026-10-20), so it overstates both, and changing it is the founder's call.
+- DRY_RUN: fabricated audio + uniform 2.2 w/s alignment so length-fit and chunking run for real,
+  on the same plain text a live call would send.
+
+### Retired 2026-10-20: the v3 audio-tag enhancement (`app_config.tts_enhance`)
+
+It was one optional Anthropic call (`prompts/tts_enhance/v<N>.md`) that inserted bracketed English
+v3 tags into the script before the pronunciation map. It failed open, guarded by
+`sameWordSequence`, and `stripTagWords` dropped the tags from the caption words. The founder ruled
+v4 plain, with no enhancement (vault 0119), and all of it is removed from the code:
+
+- the call and its guard;
+- the DRY_RUN `[excited]` prefix;
+- the caption-side tag drop.
+
+The `tts_enhance` row (`false`) and the four prompt files stay, read by nothing.
 
 ## HeyGen avatar lip-sync — `providers/lipsync.ts`
 

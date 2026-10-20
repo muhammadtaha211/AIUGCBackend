@@ -240,7 +240,7 @@ officer" בכל `docs/` ו־`apps/` אינו מחזיר מינוי.
 **הבחנה חשובה:** ההתחייבות שלא לאמן מודלים היא התחייבות של המפעיל בלבד. **תנאי הספקים עצמם אינם
 ידועים.** מה שנמדד הוא שגוף הבקשה של אף אחד מארבעת הספקים אינו כולל דגל של אי־שימוש לאימון או של
 אי־שמירה. `[נמדד]` — מקורות: `packages/core/src/providers/anthropic.ts:41-46` ו־`:89`,
-`elevenlabs.ts:41-46`, `imagegen.ts:36-40`, `lipsync.ts:74-84`. **אין להסיק מכך דבר על מה שהספקים
+`elevenlabs.ts:38-42`, `imagegen.ts:36-40`, `lipsync.ts:74-84`. **אין להסיק מכך דבר על מה שהספקים
 עושים בפועל** — ראו פרק 6.
 
 ### רישום המאגר
@@ -590,9 +590,10 @@ RLS — קריאת שורת לקוח מצומת הקצה, לא קריאת עוג
 ### ElevenLabs
 
 מקבל **טקסט בלבד**, בגוף הבקשה: נוסח התסריט לאחר מפת ההגייה. אין קישורים, אין קול, אין תמונה ואין
-מזהה לקוח. גוף הבקשה כולל בדיוק `text`, `model_id` ולעיתים `voice_settings.stability`. הקולות הם
+מזהה לקוח. גוף הבקשה כולל בדיוק `text`, `model_id` ו־`voice_settings` (שני ערכים קבועים: `stability`
+ו־`similarity_boost`, מאז 20.10.2026). הקולות הם
 קולות קבועים שאנחנו מנהלים; אין שיבוט של קול הלקוח. `[נמדד]` —
-מקור: `packages/core/src/providers/elevenlabs.ts:41-46`
+מקור: `packages/core/src/providers/elevenlabs.ts:38-42`
 
 ### HeyGen
 
@@ -629,7 +630,7 @@ not verified", ושום דבר במאגר לא צפה בפרויקט Sentry אמ
 
 - מקורות: `docs/vault/decisions/0037-the-worker-reports-to-sentry-the-web-apps-do-not.md`,
   `docs/vault/facts/worker-sentry-reporting.md`, `docs/vault/state-of-play.md:313-318`,
-  `packages/core/src/providers/elevenlabs.ts:53`, `imagegen.ts:78`, `lipsync.ts:140`
+  `packages/core/src/providers/elevenlabs.ts:50`, `imagegen.ts:78`, `lipsync.ts:140`
 
 **[חסר: אימות שהדיווח פעיל בשרת החי (`SENTRY_DSN` מוגדר), ואזור העיבוד של Sentry — מדידה]**
 

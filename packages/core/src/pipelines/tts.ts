@@ -2,23 +2,19 @@ import { and, eq, gt, sql } from "drizzle-orm";
 import { writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { getConfigValue, getConfigValueOr } from "../appConfig";
+import { getConfigValue } from "../appConfig";
 import { assertAccountBudget, assertBudget, recordUsage } from "../budget";
-import { chunkWords, stripTagWords, wordsFromCharAlignment, type CaptionChunk } from "../captions";
+import { chunkWords, wordsFromCharAlignment, type CaptionChunk } from "../captions";
 import { getEnv } from "../config";
 import type { Db } from "../db";
 import { audioRenders, businesses, demos, personas, scripts } from "../db/schema";
 import { PermanentError } from "../jobs/errors";
 import { enqueue, type Job } from "../jobs/queue";
 import type { JobContext, JobResult } from "../jobs/worker";
-import type { Logger } from "../logger";
 import { atempoStretch, measureDurationMs } from "../media/ffmpeg";
 import { WORK_DIR } from "../paths";
-import { llmCostAgorot } from "../pricing";
-import { generateObject } from "../providers/anthropic";
 import { synthesize } from "../providers/elevenlabs";
 import { forcedAlign } from "../providers/whisperx";
-import { renderPrompt } from "../prompts";
 import { getStorage, storageKey } from "../storage";
 import { applyPronunciationMap } from "./pronunciation";
 
@@ -126,79 +122,22 @@ export async function approveAudio(db: Db, audioRenderId: string): Promise<void>
     .where(eq(audioRenders.id, audioRenderId));
 }
 
-// ---------------------------------------------------------------------------
-// ElevenLabs v3 audio tags — a TTS-time transform, exactly like the
-// pronunciation map: the stored script row stays clean plain Hebrew, tags live
-// only in the text we send (and therefore in rendered_text).
-// Off unless app_config.tts_enhance is true.
-// ---------------------------------------------------------------------------
-
-const enhanceOutput = z.object({ enhanced: z.string() });
-
-/** The text minus bracketed tags — what the voice actually says. */
+/**
+ * Eleven v4 is sent plain Hebrew, never an audio tag (vault 0119). A bracketed
+ * span still in the text — typed into a script, or left by a pronunciation-map
+ * entry — is removed before the call, so no tag can reach ElevenLabs and none
+ * can reach a caption. Text without one passes through byte for byte.
+ */
 export function stripAudioTags(text: string): string {
+  if (!/\[[^\]]*\]/.test(text)) return text;
   return text
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-/** The spoken words alone: tags and punctuation dropped. */
-function wordSequence(text: string): string[] {
-  return stripAudioTags(text)
-    .replace(/[.,!?…:;"'׳״()\-–—]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
 /**
- * The fail-open check: enhancement may only introduce tags and punctuation.
- * Any change to the Hebrew words themselves (edited, dropped, reordered) means
- * the enhancement is discarded and the original is synthesized.
- */
-export function sameWordSequence(original: string, enhanced: string): boolean {
-  const before = wordSequence(original);
-  const after = wordSequence(enhanced);
-  return before.length === after.length && before.every((w, i) => w === after[i]);
-}
-
-/**
- * Add v3 audio tags to a script before synthesis. Never throws and never blocks
- * a render: on any failure — API error, budget cap, or a model that rewrote the
- * Hebrew — the original text comes back unchanged.
- */
-async function enhanceWithAudioTags(
-  db: Db,
-  opts: { businessId: string; text: string; log: Logger },
-): Promise<string> {
-  // DRY_RUN: no API call, but a real tag so tag-stripping and caption logic run.
-  if (getEnv().DRY_RUN) return `[excited] ${opts.text}`;
-
-  try {
-    await assertBudget(db, "llm_tokens");
-    const { text: prompt } = renderPrompt("tts_enhance", { script: opts.text });
-    const { object, usage } = await generateObject({ prompt, schema: enhanceOutput });
-    await recordUsage(db, {
-      provider: "anthropic",
-      kind: "llm_tokens",
-      quantity: usage.inputTokens + usage.outputTokens,
-      costEstimateAgorot: llmCostAgorot(usage.inputTokens, usage.outputTokens),
-      businessId: opts.businessId,
-    });
-
-    if (!sameWordSequence(opts.text, object.enhanced)) {
-      opts.log.warn("tts enhance changed the Hebrew words — synthesizing the original");
-      return opts.text;
-    }
-    return object.enhanced;
-  } catch (err) {
-    opts.log.warn({ err }, "tts enhance failed — synthesizing the original");
-    return opts.text;
-  }
-}
-
-/**
- * Job handler: audio tags -> pronunciation map -> TTS -> length fit
+ * Job handler: pronunciation map -> tag strip -> TTS -> length fit
  * (atempo <=5%) -> word alignment -> karaoke chunks.
  *
  * The script this synthesizes is the script the customer approved: nothing here
@@ -221,22 +160,17 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
       .where(eq(audioRenders.id, audioRenderId));
 
     const scriptId = audioRender.scriptId;
-    const enhance = await getConfigValueOr(ctx.db, "tts_enhance", z.boolean(), false);
-    const stability = await getConfigValueOr(ctx.db, "tts_stability", z.number(), undefined);
 
     const scriptRows = await ctx.db.select().from(scripts).where(eq(scripts.id, scriptId)).limit(1);
     const script = scriptRows[0]!;
 
     await assertBudget(ctx.db, "tts_chars");
-    const tagged = enhance
-      ? await enhanceWithAudioTags(ctx.db, {
-          businessId: script.businessId,
-          text: script.text,
-          log: ctx.log,
-        })
-      : script.text;
-    const { rendered } = await applyPronunciationMap(ctx.db, script.businessId, tagged);
-    const tts = await synthesize({ text: rendered, voiceId: audioRender.voiceId, stability });
+    const mapped = await applyPronunciationMap(ctx.db, script.businessId, script.text);
+    const rendered = stripAudioTags(mapped.rendered);
+    if (!rendered.trim()) {
+      throw new PermanentError("script has no speakable text once bracketed spans are removed");
+    }
+    const tts = await synthesize({ text: rendered, voiceId: audioRender.voiceId });
     await recordUsage(ctx.db, {
       provider: "elevenlabs",
       kind: "tts_chars",
@@ -251,9 +185,17 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
     mkdirSync(localDir, { recursive: true });
     let localAudio = path.join(localDir, "audio.mp3");
     writeFileSync(localAudio, tts.audio);
-    let durationMs = tts.charAlignment
-      ? tts.charAlignment.endTimesMs[tts.charAlignment.endTimesMs.length - 1]!
-      : await measureDurationMs(localAudio);
+    // Eleven v4's alignment ends 80 ms past its audio (vault defect
+    // eleven-v4-alignment-ends-80ms-past-its-audio), so the probed file bounds
+    // it: duration_ms stays the audio's own length, as it was on v3, and so do
+    // the B quote and timeline built on it. DRY_RUN's fake buffer is no mp3.
+    const alignedEndMs = tts.charAlignment?.endTimesMs[tts.charAlignment.endTimesMs.length - 1];
+    let durationMs =
+      alignedEndMs === undefined
+        ? await measureDurationMs(localAudio)
+        : getEnv().DRY_RUN
+          ? alignedEndMs
+          : Math.min(alignedEndMs, await measureDurationMs(localAudio));
 
     // Length fit against the linked demo (voiced Service A only).
     let stretchRatio = 1.0;
@@ -292,13 +234,11 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
     // Word timestamps: ElevenLabs alignment, else WhisperX forced alignment.
     let chunks: CaptionChunk[];
     let alignmentSource: "elevenlabs" | "whisperx";
-    // Alignment covers the SENT text, so tag tokens are dropped before
-    // chunking; forced alignment is given the spoken text for the same reason.
     if (tts.charAlignment) {
-      chunks = chunkWords(stripTagWords(wordsFromCharAlignment(tts.charAlignment)));
+      chunks = chunkWords(wordsFromCharAlignment(tts.charAlignment));
       alignmentSource = "elevenlabs";
     } else {
-      chunks = chunkWords(await forcedAlign(localAudio, stripAudioTags(rendered)));
+      chunks = chunkWords(await forcedAlign(localAudio, rendered));
       alignmentSource = "whisperx";
     }
 

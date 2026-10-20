@@ -42,7 +42,8 @@ This is the part that gets assumed wrong. `generate_copy` is a **worker job type
 directly. So `b_script`, `vo_script`, `hook_lines` and `benefit_captions` are read **on the box**,
 not only in the three web routes [[computed-path-reads-are-invisible-to-vercel-tracing]] names. Add
 `plan_demo_steps`, both demo-analysis prompts and `tts_enhance`, and effectively **every prompt
-directory is box-side**.
+directory is box-side**. _(2026-10-20: `tts_enhance` is read by no code since
+[[0119-tts-is-eleven-v4-plain-text]].)_
 
 The mechanism is not subtle: `PROMPTS_DIR` is `REPO_ROOT/prompts` (`paths.ts:25`), `REPO_ROOT`
 resolves from `import.meta.url` (`paths.ts:10`), and all 58 prompt files are git-tracked. A prompt

@@ -17,7 +17,7 @@ group_analysis_states v1 v2                                 (latest v2, new 2026
 hook_lines            v1..v7                                (latest v7)
 hook_text             v1 v2 v3                              (latest v3, new 2026-09-08)
 plan_demo_steps       v1..v16                               (latest v16, new 2026-10-02)
-tts_enhance           v1..v4                                (latest v4)
+tts_enhance           v1..v4                                (latest v4; read by no code since 2026-10-20, 0119)
 vo_script             v1..v9                                (latest v9, new 2026-09-11)
 ```
 
@@ -118,7 +118,8 @@ version and **no caller in the repo passes it** — all eight call sites (re-gre
 `copy.ts:31` the shared `callClaude`, `copy.ts:161` hook_lines dry-run, `copy.ts:469` b_script
 dry-run, `copy.ts:528` hook_text dry-run; `demo-analysis.ts:496` and `:880` — the vision batch
 and the 0030 sections grouping; `demo-step-plans.ts:1084`; `tts.ts:183`) omit it. Every prompt in production
-is whatever the highest-numbered file happens to be.
+is whatever the highest-numbered file happens to be. _(The `tts.ts` call site, `tts_enhance`, was
+removed 2026-10-20, [[0119-tts-is-eleven-v4-plain-text]]; the other seven were not re-grepped.)_
 
 As of the 2026-08-23 DB check, `plan_demo_steps@v12` was both the newest file and the version on
 the newest production plan row (`0d1b5f41`, 2026-08-22 10:29). **v13 has not run in production

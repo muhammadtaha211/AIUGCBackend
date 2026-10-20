@@ -16,7 +16,8 @@ The rate change this note warned about arrived: every call moved to `claude-sonn
 `llmCostAgorot` in `packages/core/src/pricing.ts`, all four private copies deleted along with their
 comments (the miscounting one included). The five call sites are `copy.ts` (`callClaude`),
 `tts.ts`, two in `demo-analysis.ts`, and `demo-step-plans.ts`. `pricing.test.ts` pins the rate,
-which nothing did before.
+which nothing did before. _(2026-10-20: `tts.ts`'s call was the `tts_enhance` pass, retired by
+[[0119-tts-is-eleven-v4-plain-text]], so four call sites remain.)_
 
 What follows is the defect as it stood, with its 2026-08-23 line numbers.
 

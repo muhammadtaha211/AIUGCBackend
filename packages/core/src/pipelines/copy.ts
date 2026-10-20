@@ -186,8 +186,7 @@ export async function generateHookLines(
     // Reject-and-retry, never sanitise. A hook line is the artifact the
     // customer approves and we burn into the frame, so dropping a character
     // silently would ship text nobody signed off on — and a stray glyph is
-    // unfixable once rendered. (tts_enhance fails open because it guards an
-    // enhancement; this guards the artifact itself.)
+    // unfixable once rendered.
     let batch = await generate();
     let bad = findIllegalHookLineChar(batch.options);
     if (bad) {
@@ -827,7 +826,7 @@ const hookTextOutput = z.object({ hook_text: z.string() });
 /**
  * Re-derive the on-screen hook text from an edited script: the script goes
  * in, hook_text comes out, under the caps generateBScript enforces. One
- * llm_tokens usage row, gated by the platform cap the way tts_enhance is.
+ * llm_tokens usage row, gated by the platform cap (assertBudget).
  * Kind-agnostic on purpose — the caller decides which scripts carry one.
  */
 export async function deriveHookText(

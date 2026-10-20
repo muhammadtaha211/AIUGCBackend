@@ -47,7 +47,7 @@ travels).
 - 5–10 consistent generated personas. Each has a pinned ElevenLabs voice and one default **selfie**
   reference image (`persona_images.kind='selfie'`). A render resolved from a persona's default
   refuses any other kind; an explicit image or an approved composite bypasses that.
-- A render is that single image plus ElevenLabs V3 audio with ~800ms of leading silence prepended
+- A render is that single image plus ElevenLabs Eleven v4 audio (vault 0119) with ~800ms of leading silence prepended
   (`lipsync_lead_in_ms`, pinned on `params.leadInMs`). It goes through HeyGen lip-sync at
   `expressiveness` **medium** with a generic, hand-free motion prompt (`app_config` rows, migration
   0034; vault 0022). HeyGen ignores staged actions in the prompt, and `high` read as fake and

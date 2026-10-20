@@ -46,6 +46,12 @@ in it, and `synthesize` (`packages/core/src/providers/elevenlabs.ts:38-46`) post
 `{text, model_id: "eleven_v3"}` with **no `language_code`** — nothing pins the request to Hebrew and
 nothing strips or transliterates non-Hebrew characters anywhere on the path.
 
+_(2026-10-20, [[0119-tts-is-eleven-v4-plain-text]]: the body is now
+`{text, model_id: "eleven_v4", voice_settings: {stability: 1, similarity_boost: 1}}`, still with no
+`language_code`. The one thing
+stripped is a `[...]` span, after the map. Latin still goes through raw. The line numbers in this
+note are pre-0119.)_
+
 ## The catch, if an entry is ever added
 
 The captions are built from the **post-map** string, not from `scripts.text`:
@@ -70,7 +76,9 @@ this note answers is not hypothetical and not new; v15 only makes it routine.
 
 `tts_enhance` is **`false`** in production as of 2026-09-08 (a correction to
 [[app-config-live-state]], which caught it `true` a day earlier), so the string the map and
-ElevenLabs receive is `scripts.text` verbatim, with no injected bracketed audio tags.
+ElevenLabs receive is `scripts.text` verbatim, with no injected bracketed audio tags. _(Since
+2026-10-20 the enhancement pass is gone from the code and the flag is read by nothing,
+[[0119-tts-is-eleven-v4-plain-text]].)_
 
 ## A second rewriter nobody chose
 

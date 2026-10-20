@@ -3,12 +3,14 @@ import { getEnv } from "../config";
 import { PermanentError, TransientError } from "../jobs/errors";
 
 /**
- * Hebrew TTS via ElevenLabs V3 (locked decision). We request the
- * with-timestamps endpoint; official docs don't confirm eleven_v3 supports it,
- * so `charAlignment` is optional — when absent, the caller falls back to
- * WhisperX forced alignment (docs/04-integrations.md).
+ * Hebrew TTS via ElevenLabs Eleven v4 (vault 0119). We request the
+ * with-timestamps endpoint; `charAlignment` stays optional — when absent, the
+ * caller falls back to WhisperX forced alignment (docs/04-integrations.md).
  */
-export const ELEVENLABS_MODEL = "eleven_v3";
+export const ELEVENLABS_MODEL = "eleven_v4";
+
+/** What the founder tested by ear on elevenlabs.io, sent on every call (vault 0119). */
+export const ELEVENLABS_VOICE_SETTINGS = { stability: 1.0, similarity_boost: 1.0 } as const;
 
 export interface TtsResult {
   audio: Buffer;
@@ -22,12 +24,7 @@ interface ElevenLabsAlignment {
   character_end_times_seconds: number[];
 }
 
-export async function synthesize(opts: {
-  text: string;
-  voiceId: string;
-  /** v3 accepts 0.0 / 0.5 / 1.0 = creative / natural / robust. Omitted = provider default. */
-  stability?: number;
-}): Promise<TtsResult> {
+export async function synthesize(opts: { text: string; voiceId: string }): Promise<TtsResult> {
   const env = getEnv();
   if (env.DRY_RUN) return dryRunSynthesize(opts.text);
   if (!env.ELEVENLABS_API_KEY) throw new Error("ELEVENLABS_API_KEY is not set");
@@ -41,7 +38,7 @@ export async function synthesize(opts: {
       body: JSON.stringify({
         text: opts.text,
         model_id: ELEVENLABS_MODEL,
-        ...(opts.stability === undefined ? {} : { voice_settings: { stability: opts.stability } }),
+        voice_settings: ELEVENLABS_VOICE_SETTINGS,
       }),
     });
   } catch (err) {
