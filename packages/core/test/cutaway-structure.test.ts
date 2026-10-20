@@ -232,6 +232,20 @@ describe("cutawayLayout's refusals and the demo's capacity", () => {
     expect(spent).toBeLessThanOrEqual(11_000);
   });
 
+  it("the capacity tier stays on chunk starts whenever a chunk-start prefix fits", () => {
+    for (const audio of FIXTURES) {
+      for (const capacityMs of [7266, 11_266]) {
+        const layout = layoutOf(audio, { capacityMs });
+        if (!("tier" in layout) || layout.tier !== "capacity") continue;
+        const chunkStarts = audio.chunks.map((c) => c.startMs);
+        for (const slot of layout.slots) {
+          expect(chunkStarts).toContain(slot.fromMs);
+          expect(chunkStarts).toContain(slot.toMs);
+        }
+      }
+    }
+  });
+
   it("the capacity tier ends on a head of any length, after the most cutaway time that fits", () => {
     const layout = layoutOf(f, { capacityMs: 6100 });
     expect("tier" in layout && layout.tier).toBe("capacity");
@@ -285,6 +299,16 @@ describe("cutawayLayoutError", () => {
     expect(cutawayLayoutError([{ fromMs: 14_500, toMs: 19_500 }], opts)).toMatch(
       /end on the character/,
     );
+    // A head between cutaways past the soft max: a slot lost mid-layout.
+    expect(
+      cutawayLayoutError(
+        [
+          { fromMs: 3000, toMs: 7000 },
+          { fromMs: 13_000, toMs: 17_000 },
+        ],
+        opts,
+      ),
+    ).toMatch(/too long/);
   });
 });
 

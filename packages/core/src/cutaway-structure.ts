@@ -206,7 +206,10 @@ export function cutawayLayout(input: CutawayLayoutInput): CutawayLayout {
     // Is the demo the reason? Only then may a head run long at the end.
     const unbounded = cutawayLayout({ ...input, capacityMs: Number.POSITIVE_INFINITY });
     if (unbounded.slots.length > 0) {
-      const prefixes = searchLongestPrefix(wordStarts, end, input.capacityMs);
+      // Chunk starts first here too: a word start only when no chunk-start prefix fits.
+      const prefixes =
+        searchLongestPrefix(chunkPoints, end, input.capacityMs) ??
+        searchLongestPrefix(wordStarts, end, input.capacityMs);
       if (prefixes) {
         found = prefixes;
         tier = "capacity";
@@ -321,7 +324,8 @@ export function cutawayWindowsError(
 /**
  * The layout's own invariants, for a slot list read back from storage (a row
  * written by an older build, or edited by hand): lengths inside the structure,
- * in order, after the first-cut floor, ending on a head. Null = valid.
+ * in order, after the first-cut floor, no head between cutaways past the soft
+ * max, ending on a head. Null = valid.
  */
 export function cutawayLayoutError(
   slots: { fromMs: number; toMs: number }[],
@@ -337,6 +341,11 @@ export function cutawayLayoutError(
     if (len < S.cut.minMs || len > S.cut.maxMs) return `cutaway ${i + 1} is ${len} ms long`;
     if (slot.fromMs - prevEnd < S.head.minMs && i > 0) {
       return `the head between cutaways ${i} and ${i + 1} is too short`;
+    }
+    // Every tier keeps the heads BETWEEN cutaways within the soft max; only
+    // the last head may run long (the capacity tier).
+    if (slot.fromMs - prevEnd > S.head.softMaxMs && i > 0) {
+      return `the head between cutaways ${i} and ${i + 1} is too long`;
     }
     prevEnd = slot.toMs;
   }

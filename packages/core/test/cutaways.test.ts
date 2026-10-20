@@ -22,6 +22,8 @@ import { addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
 import {
   CutawayPlanError,
+  cutawayPlacement,
+  demoOrderPicks,
   draftCutawayPlan,
   resolveCutawaysForRender,
   updateCutawayPlan,
@@ -204,6 +206,74 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
       expect(row.hookText).toBe("");
     }
   });
+  it("the demo's opening screen is a window start too, clamped to the edge", () => {
+    const tl = timeline();
+    const p = cutawayPlacement({
+      timeline: tl,
+      moments: tl.map((s, i) => ({
+        t: s.timestampMs,
+        startMs: i === 0 ? 0 : s.timestampMs - 200,
+        endMs: 0,
+        read: true,
+      })),
+      durationMs: 62_000,
+      sampleMs: 200,
+    });
+    expect(p.anchors[0]).toEqual({ startMs: CUTAWAY_EDGE_MS, stateIndex: 0 });
+    expect(new Set(p.anchors.map((a) => a.startMs)).size).toBe(p.anchors.length);
+  });
+
+  it("a demo too tight for every slot keeps a leading run — never a slot lost from the middle", () => {
+    const tl = timeline().slice(0, 3);
+    // Three screens: 0, 7000 and 9000 ms in a 12 s recording.
+    const p = cutawayPlacement({
+      timeline: tl.map((s, i) => ({
+        ...s,
+        timestampMs: [400, 7000, 9000][i]!,
+        screenKind: "product" as const,
+      })),
+      moments: null,
+      durationMs: 12_000,
+      sampleMs: 200,
+    });
+    // 5.24 s then 4 s: the first fits only from the opening screen (clamped to
+    // 400), and then the second still fits after it at 7000.
+    const picks = demoOrderPicks(p, [5240, 4000]);
+    expect(picks.map((a) => a.startMs)).toEqual([400, 7000]);
+    // Too long to hold both: the first is kept, the second dropped off the end.
+    expect(demoOrderPicks(p, [5240, 6000]).map((a) => a.startMs)).toEqual([400]);
+    // Windows follow the demo and never overlap.
+    for (const lengths of [
+      [4000, 4000],
+      [5000, 4000],
+      [6000, 4000],
+    ]) {
+      const run = demoOrderPicks(p, lengths);
+      for (let i = 1; i < run.length; i++) {
+        expect(run[i]!.startMs).toBeGreaterThanOrEqual(run[i - 1]!.startMs + lengths[i - 1]! + 34);
+      }
+    }
+  });
+
+  it("a stored plan that no longer passes the layout rules is drafted again in place", async () => {
+    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    // A row an older build might have stored: a 3 s cutaway.
+    await db
+      .update(dbSchema.cutawayPlans)
+      .set({
+        slots: [{ ...plan.slots[0]!, toMs: plan.slots[0]!.fromMs + 3000 }],
+        editedAt: new Date(),
+      })
+      .where(eq(dbSchema.cutawayPlans.id, plan.planId));
+    const again = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    expect(again.planId).toBe(plan.planId);
+    expect(again.slots.map(({ lengthMs: _l, ...s }) => s)).toEqual(
+      plan.slots.map(({ lengthMs: _l, ...s }) => s),
+    );
+    const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
+    expect(row.editedAt).toBeNull();
+  });
+
   it("is idempotent per (audio, analysis, structure, hook text); a new hook text is a fresh draft", async () => {
     const a = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
     const again = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
@@ -289,6 +359,34 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     );
     expect(await code(starts.map((s) => s + 1))).toBe("invalid_windows");
     expect(await code(starts, otherBusinessId)).toBe("not_found");
+
+    // The anchors move when a footage row's spans change: a slot the customer
+    // did not touch keeps its stored pick, and the save still goes through.
+    const stored = (await db.select().from(dbSchema.cutawayPlans))[0]!;
+    const kept = (stored.slots as { demoStartMs: number }[]).map((s) => s.demoStartMs);
+    await db
+      .update(dbSchema.demoAnalysisFootage)
+      .set({
+        moments: timeline().map((t) => ({
+          t: t.timestampMs,
+          startMs: t.timestampMs - 100,
+          endMs: t.timestampMs + 900,
+          read: true,
+        })),
+      })
+      .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysisId));
+    expect(await code(kept)).toBe("ok");
+    await db
+      .update(dbSchema.demoAnalysisFootage)
+      .set({
+        moments: timeline().map((t) => ({
+          t: t.timestampMs,
+          startMs: t.timestampMs - 200,
+          endMs: t.timestampMs + 1000,
+          read: true,
+        })),
+      })
+      .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysisId));
   });
 
   it("enqueue copies the windows only for the same audio and hook text it was laid out from", async () => {

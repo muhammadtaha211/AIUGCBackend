@@ -789,15 +789,23 @@ export async function buildServiceBProps(
   let talkingHeadPath = path.join(localDir, "talking-head.mp4");
   let openerPath = opener ? path.join(localDir, "opener.mp4") : undefined;
   const demoPath = cutawayDemo ? path.join(localDir, "demo.mp4") : undefined;
-  // A storage error retries, like the clip's and the VO's.
   await Promise.all([
     getStorage().download(audio.filePath, voiceoverPath),
     getStorage().download(params.lipsyncPath, talkingHeadPath),
     opener && openerPath ? getStorage().download(opener.filePath, openerPath) : undefined,
-    cutawayDemo && demoPath
-      ? getStorage().download(cutawayDemo.normalizedPath, demoPath)
-      : undefined,
   ]);
+  // The demo on its own: a transient storage error retries like the clip's and
+  // the VO's, but a file that is gone drops the cutaways — the head-only ad
+  // still ships.
+  if (cutawayDemo && demoPath) {
+    try {
+      await getStorage().download(cutawayDemo.normalizedPath, demoPath);
+    } catch (err) {
+      if (!(err instanceof PermanentError)) throw err;
+      await cutawaysDegraded(db, render, { why: "the demo file is missing from storage" });
+      cutawayDemo = undefined;
+    }
+  }
   // HeyGen generated to the PADDED audio; the layout needs the clip's real
   // length (probed before the stream-copy retag, which does not change it).
   const clip = getEnv().DRY_RUN ? DRY_RUN_PROBE : await probe(talkingHeadPath);

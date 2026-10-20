@@ -188,7 +188,10 @@ async function loadInventory(db: Db, businessId: string, demoId: string): Promis
  * moment's first held frame is the k-th state's anchor (decision 0080), else
  * the state's own timestamp when the spans do not line up (or there is no
  * footage row); the recording's end is the demo's length floored to the
- * analysis grid (recordingEndMs), less the unexamined edge.
+ * analysis grid (recordingEndMs), less the unexamined edge. A moment that
+ * began inside the opening edge (the first screen, from 0 ms) starts its
+ * window AT the edge rather than being lost; when several land there, the
+ * last — the one on screen at the edge — keeps the start.
  */
 export function cutawayPlacement(opts: {
   timeline: AnalysisState[];
@@ -204,12 +207,11 @@ export function cutawayPlacement(opts: {
   const recordingEnd = recordingEndMs(opts.durationMs, opts.timeline, opts.sampleMs);
   const minStartMs = CUTAWAY_EDGE_MS;
   const maxEndMs = recordingEnd - CUTAWAY_EDGE_MS;
-  const anchors = opts.timeline
-    .map((state, stateIndex) => ({
-      startMs: spansLineUp ? read[stateIndex]!.startMs : state.timestampMs,
-      stateIndex,
-    }))
-    .filter((a) => a.startMs >= minStartMs && a.startMs < maxEndMs);
+  const raw = opts.timeline.map((state, stateIndex) => ({
+    startMs: Math.max(minStartMs, spansLineUp ? read[stateIndex]!.startMs : state.timestampMs),
+    stateIndex,
+  }));
+  const anchors = raw.filter((a, i) => a.startMs < maxEndMs && raw[i + 1]?.startMs !== a.startMs);
   return { anchors, timeline: opts.timeline, minStartMs, maxEndMs };
 }
 
@@ -295,43 +297,58 @@ function isClean(p: Placement, anchor: CutawayAnchor, lengthMs: number): boolean
     .every((a) => !isSkipState(p.timeline[a.stateIndex]!));
 }
 
-/** The anchor nearest `targetMs` whose window fits and overlaps nothing taken —
- *  a clean one when one is within reach. */
-function nearestFree(
-  p: Placement,
-  targetMs: number,
-  lengthMs: number,
-  taken: { start: number; end: number }[],
-): CutawayAnchor | undefined {
-  let best: { anchor: CutawayAnchor; score: number } | undefined;
-  for (const anchor of p.anchors) {
-    const span = footprint(anchor.startMs, lengthMs);
-    if (span.start < p.minStartMs || span.end > p.maxEndMs) continue;
-    if (taken.some((t) => span.start < t.end && t.start < span.end)) continue;
-    const score = Math.abs(anchor.startMs - targetMs) + (isClean(p, anchor, lengthMs) ? 0 : 3000);
-    if (!best || score < best.score) best = { anchor, score };
+/** The earliest anchor at or after `fromMs` whose window of `lengthMs` fits the recording. */
+function earliestFit(p: Placement, fromMs: number, lengthMs: number): CutawayAnchor | undefined {
+  return p.anchors.find(
+    (a) => a.startMs >= fromMs && footprint(a.startMs, lengthMs).end <= p.maxEndMs,
+  );
+}
+
+/** Whether `lengths` still fit after `fromMs`, in order, each at the earliest anchor that fits. */
+function canPack(p: Placement, fromMs: number, lengths: number[]): boolean {
+  let end = fromMs;
+  for (const length of lengths) {
+    const next = earliestFit(p, end, length);
+    if (!next) return false;
+    end = footprint(next.startMs, length).end;
   }
-  return best?.anchor;
+  return true;
 }
 
 /**
- * The demo in order: the slots spread evenly through the usable recording,
- * each snapped to the nearest free anchor (clean first). Fewer windows than
- * slots only when the demo cannot hold them — never repeated footage.
+ * The demo in order: the windows follow the recording, spread evenly through
+ * it, each snapped to the anchor nearest its share (a clean one when one is
+ * within reach) among those that start after the previous window ends and
+ * still leave room for every later slot. When the demo cannot hold them all,
+ * the run stops — a leading run of slots, so the only head that grows is the
+ * last one, never one between cutaways (the capacity tier's rule) — and never
+ * repeated footage.
  */
-export function demoOrderPicks(p: Placement, lengths: number[]): (CutawayAnchor | undefined)[] {
+export function demoOrderPicks(p: Placement, lengths: number[]): CutawayAnchor[] {
   const total = lengths.reduce((sum, len) => sum + len + CUTAWAY_FRAME_SLACK_MS, 0);
-  const free = Math.max(0, p.maxEndMs - p.minStartMs - total);
-  const gap = free / (lengths.length + 1);
-  const taken: { start: number; end: number }[] = [];
-  let cursor = p.minStartMs;
-  return lengths.map((len) => {
-    cursor += gap;
-    const pick = nearestFree(p, cursor, len, taken);
-    if (pick) taken.push(footprint(pick.startMs, len));
-    cursor += len + CUTAWAY_FRAME_SLACK_MS;
-    return pick;
-  });
+  const gap = Math.max(0, p.maxEndMs - p.minStartMs - total) / (lengths.length + 1);
+  const picks: CutawayAnchor[] = [];
+  let end = p.minStartMs;
+  let target = p.minStartMs;
+  for (const [i, length] of lengths.entries()) {
+    target += gap;
+    const fits = p.anchors.filter(
+      (a) => a.startMs >= end && footprint(a.startMs, length).end <= p.maxEndMs,
+    );
+    const rest = lengths.slice(i + 1);
+    const roomy = fits.filter((a) => canPack(p, footprint(a.startMs, length).end, rest));
+    const pool = roomy.length > 0 ? roomy : fits;
+    let best: { anchor: CutawayAnchor; score: number } | undefined;
+    for (const anchor of pool) {
+      const score = Math.abs(anchor.startMs - target) + (isClean(p, anchor, length) ? 0 : 3000);
+      if (!best || score < best.score) best = { anchor, score };
+    }
+    if (!best) break;
+    picks.push(best.anchor);
+    end = footprint(best.anchor.startMs, length).end;
+    target = Math.max(target + length + CUTAWAY_FRAME_SLACK_MS, end);
+  }
+  return picks;
 }
 
 // ---------------------------------------------------------------------------
@@ -362,7 +379,12 @@ export async function draftCutawayPlan(
     eq(cutawayPlans.hookText, hookText),
   );
   const existing = (await db.select().from(cutawayPlans).where(key).limit(1))[0];
-  if (existing) return planView(existing, words, inventory);
+  const layoutInputs = { voDurationMs: audio.durationMs!, captionOffsetMs, hookTextMs };
+  // A row stored under rules that have since changed is drafted again in
+  // place: its slot times are fixed, so no edit could make it render.
+  if (existing && !cutawayLayoutError(cutawaySlotsSchema.parse(existing.slots), layoutInputs)) {
+    return planView(existing, words, inventory);
+  }
 
   const layout = cutawayLayout({
     captions,
@@ -374,23 +396,26 @@ export async function draftCutawayPlan(
   if (!("tier" in layout)) throw new CutawayPlanError(layout.reason);
   const lengths = layout.slots.map((s) => s.toMs - s.fromMs);
 
+  // A leading run: slots the demo has no room for drop off the END, so only
+  // the last head grows — fewer cutaways, never repeated footage.
   const picks = demoOrderPicks(inventory, lengths);
-  // A slot the demo has no free room for is dropped with its layout neighbour
-  // left as a longer head — fewer cutaways, never repeated footage.
-  const slots: CutawaySlot[] = [];
-  for (const [i, slot] of layout.slots.entries()) {
-    const anchor = picks[i];
-    if (!anchor) continue;
-    slots.push({
-      ...slot,
-      demoStartMs: anchor.startMs,
-      stateIndex: anchor.stateIndex,
-      draftDemoStartMs: anchor.startMs,
-      draftStateIndex: anchor.stateIndex,
-    });
-  }
+  const slots: CutawaySlot[] = picks.map((anchor, i) => ({
+    ...layout.slots[i]!,
+    demoStartMs: anchor.startMs,
+    stateIndex: anchor.stateIndex,
+    draftDemoStartMs: anchor.startMs,
+    draftStateIndex: anchor.stateIndex,
+  }));
   if (slots.length === 0) throw new CutawayPlanError("demo_too_short");
 
+  if (existing) {
+    const [redrafted] = await db
+      .update(cutawayPlans)
+      .set({ slots, editedAt: null, updatedAt: new Date() })
+      .where(eq(cutawayPlans.id, existing.id))
+      .returning();
+    return planView(redrafted!, words, inventory);
+  }
   await db
     .insert(cutawayPlans)
     .values({
@@ -433,27 +458,13 @@ async function loadPlan(db: Db, businessId: string, planId: string) {
   return row;
 }
 
-/** The plan as the wizard shows it, for a business that owns it. */
-export async function getCutawayPlan(
-  db: Db,
-  opts: { businessId: string; planId: string },
-): Promise<CutawayPlanView> {
-  const row = await loadPlan(db, opts.businessId, opts.planId);
-  const audio = await loadAudio(db, opts.businessId, row.audioRenderId);
-  const inventory = await loadInventory(db, opts.businessId, row.demoId);
-  const captions = (audio.wordTimestamps ?? []) as CaptionChunk[];
-  return planView(
-    row,
-    captions.flatMap((c) => (c.words ?? []).map((w) => w.word)),
-    inventory,
-  );
-}
-
 /**
- * The customer's window picker: every slot's start at once. Each must be an
- * anchor of the plan's analysis, inside the recording, and no two windows may
- * overlap. The slots' times are the layout's and never move; the draft's
- * picks are kept beside the new ones.
+ * The customer's window picker: every slot's start at once. A start the
+ * customer changed must be an anchor of the plan's analysis (an untouched one
+ * keeps its stored pick — the anchors move if a footage row lands later), and
+ * every window must stay inside the recording with no two overlapping. The
+ * slots' times are the layout's and never move; the draft's picks are kept
+ * beside the new ones.
  */
 export async function updateCutawayPlan(
   db: Db,
@@ -469,6 +480,7 @@ export async function updateCutawayPlan(
   if (inventory.analysisId !== row.analysisId) throw new CutawayPlanError("stale");
   const byStart = new Map(inventory.anchors.map((a) => [a.startMs, a]));
   const next = slots.map((slot, i) => {
+    if (opts.starts[i] === slot.demoStartMs) return slot;
     const anchor = byStart.get(opts.starts[i]!);
     if (!anchor)
       throw new CutawayPlanError("invalid_windows", "a start is not a moment of the demo");

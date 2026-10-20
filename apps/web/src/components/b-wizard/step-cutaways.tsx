@@ -127,6 +127,8 @@ export function StepCutaways({
   }, [demoReady, plan, analysis?.status, draftKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function changeDemo() {
+    // Picking the same demo again must draft again.
+    requested.current = null;
     setPlan(null);
     setDemo(null);
   }

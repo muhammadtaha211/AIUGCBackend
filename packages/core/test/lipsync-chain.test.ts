@@ -912,6 +912,30 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(props).not.toContain("cameraSeed");
   });
 
+  it("a demo file gone from storage drops the cutaways and still ships the head-only ad", async () => {
+    const { render } = await cutawayRender();
+    const { getStorage } = await import("../src/storage");
+    const demo = (
+      await db
+        .select()
+        .from(dbSchema.demos)
+        .where(sql`${dbSchema.demos.id} = ${(await paramsOf(render.id)).cutaways!.demoId}`)
+    )[0]!;
+    await getStorage().remove(demo.normalizedPath!);
+    await drainAll();
+    const row = await renderRow(render.id);
+    expect(row.status).toBe("qc_pending");
+    const props = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+    expect(props).not.toContain('"cutaways"');
+    const degraded = await db
+      .select()
+      .from(dbSchema.events)
+      .where(
+        sql`${dbSchema.events.kind} = 'cutaway_render_degraded' and ${dbSchema.events.subjectId} = ${render.id}`,
+      );
+    expect(degraded).toHaveLength(1);
+  });
+
   it("a cutaway render is quoted and debited exactly like the head-only one, and a QC re-roll keeps its cutaways", async () => {
     const { render, base, audioId } = await cutawayRender();
     const quote = await quoteBRender(db, { businessId, audioRenderId: audioId });
