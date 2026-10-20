@@ -931,6 +931,18 @@ ORDER BY migration, layer DESC;
 -- RESULTS
 --
 -- 2026-10-20, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0068** (cutaway_plans, decision 0121) on the founder's instruction in session
+-- ("when you're done go ahead and apply the migrations and merge yourself"),
+-- from feat/b-demo-cutaways, which also carries the already-applied 0066/0067
+-- files so `migration list` reads 0000-0067 local == remote. Pre-flight: `db
+-- push --dry-run` named 0068_cutaway_plans.sql alone. The apply printed
+-- "Applying migration 0068_cutaway_plans.sql..." and exited 0; the same Docker
+-- catalog-cache warning, not a failure. Read BEFORE and AFTER in a READ ONLY
+-- transaction (packages/core/.work/readback-0068.ts): before, no table and the
+-- ledger 68 rows to 0067; after, cutaway_plans with relrowsecurity true, 0
+-- policies, its three indexes, 11 columns, 0 rows, and the ledger 69 rows to 0068.
+--
+-- 2026-10-20, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0066 + 0067** (own voice: alignment_source 'scribe' and usage_kind
 -- 'stt_seconds' alone in 0066; voice_recordings with RLS on and no policy, and
 -- audio_renders.voice_id nullable in 0067; decision 0118) together, on the
