@@ -48,8 +48,9 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 - **demo_analysis_footage** (0050) — what `analyze_demo` knows about the recording itself, one row
   per analysis (`analysis_id` is the primary key and the FK), written right before the analysis
   lands. **Its instants are read** by the plan job, the plan save path and the analysis route,
-  to place every moment's 2 s clip (`analysisInstants`, vault 0084); the moments' spans are read
-  by nothing yet. `demo_analyses.timeline` is unchanged. `fps` (the sampling
+  to place every moment's 2 s clip (`analysisInstants`, vault 0084); **the moments' spans are read**
+  by Service B's demo cutaways since 2026-10-20 — a cutaway window starts on a moment's first held
+  frame (vault 0121). `demo_analyses.timeline` is unchanged. `fps` (the sampling
   rate the moments were found at), `file_sha` (sha256 of the normalized file), `moments jsonb`
   (`{ t, startMs, endMs, read }[]`: every kept moment with the first and last sample its picture
   held on; `read: false` is a moment whose vision read failed, which the timeline drops and this
@@ -59,6 +60,14 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   ([vault 0077](vault/decisions/0077-moments-keep-their-real-start-and-end.md),
   [0080](vault/decisions/0080-a-moment-is-never-dropped-for-a-failed-read.md),
   [0083](vault/decisions/0083-no-model-names-the-instants-for-now.md)).
+- **cutaway_plans** (0068) — Service B demo cutaways (vault 0121): the customer's picks, on their
+  own rows and never on `demo_step_plans`. One row per (approved audio, analysis, structure, hook
+  text) — the slots are laid out from the audio's chunks and when the hook text leaves, so a new
+  hook text is a new row and a fresh draft. `structure` (a name from `cutaway-structure.ts`, no
+  CHECK), `hook_text` ('' = none), `slots jsonb` (`{ fromMs, toMs, wordFrom, wordTo, demoStartMs,
+stateIndex, draftDemoStartMs, draftStateIndex }[]`, VO time, CHECK array), `edited_at`. Enqueue
+  COPIES the windows onto `video_renders.params.cutaways`; nothing points here after. Server-only
+  (RLS on, no policy).
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
   `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips run **3–4 seconds**; the
   live bank holds 28 active clips across 7 personas, 4 each, plus 1 generic (`persona_id` NULL)

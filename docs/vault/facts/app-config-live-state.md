@@ -12,21 +12,43 @@ Every operational knob is a DB row, but only these 13 exist in production. Anyth
 reads through `getConfigValueOr` falls back to its code constant — see
 [[steps-format-defaults-are-code-constants]].
 
-| key                         | value                                                                                                                |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `audio_preview_daily_limit` | `20`                                                                                                                 |
-| `auto_release_b`            | `true`                                                                                                               |
-| `credit_costs`              | see [[credit-costs-row]]                                                                                             |
-| `daily_caps`                | see [[token-and-money-budgets]]                                                                                      |
-| `dunning`                   | `{"retry_days":[2,5],"suspend_after_days":7}`                                                                        |
-| `imagegen_cost_agorot`      | `15`                                                                                                                 |
-| `lipsync_expressiveness`    | `"medium"`                                                                                                           |
-| `lipsync_motion_prompt`     | `"Speaks naturally to the camera with a warm, relaxed expression, small natural head movements, steady eye contact"` |
-| `lipsync_resolution`        | `"1080p"`                                                                                                            |
-| `poll_deadline_seconds`     | `900`                                                                                                                |
-| `retention_days`            | `{"audio_previews":30,"released_renders":90,"raw_after_normalize":30,"watermarked_samples":14}`                      |
-| `tts_enhance`               | `false` — was `true` at this note's own measurement; see the correction below                                        |
-| `words_per_second`          | `{"default":2.1}`                                                                                                    |
+| key                         | value                                                                                                    |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `audio_preview_daily_limit` | `20`                                                                                                     |
+| `auto_release_b`            | `true`                                                                                                   |
+| `credit_costs`              | see [[credit-costs-row]]                                                                                 |
+| `daily_caps`                | see [[token-and-money-budgets]]                                                                          |
+| `dunning`                   | `{"retry_days":[2,5],"suspend_after_days":7}`                                                            |
+| `imagegen_cost_agorot`      | `15`                                                                                                     |
+| `lipsync_expressiveness`    | `"low"` since at least 2026-10-20 — was `"medium"` at this note's own measurement; see the section below |
+| `lipsync_motion_prompt`     | a long stillness-first prompt since 2026-10-20 — see the section below                                   |
+| `lipsync_resolution`        | `"1080p"`                                                                                                |
+| `poll_deadline_seconds`     | `900`                                                                                                    |
+| `retention_days`            | `{"audio_previews":30,"released_renders":90,"raw_after_normalize":30,"watermarked_samples":14}`          |
+| `tts_enhance`               | `false` — was `true` at this note's own measurement; see the correction below                            |
+| `words_per_second`          | `{"default":2.1}`                                                                                        |
+
+## 2026-10-20 — the HeyGen rows: `lipsync_expressiveness` is `low`
+
+Re-measured read-only on **2026-10-20**, twice (`packages/core/.work/b-config-peek.ts`, gitignored)
+with
+
+```
+select key, value, updated_at from app_config
+where key in ('lipsync_motion_prompt','lipsync_expressiveness','lipsync_lead_in_ms','lipsync_resolution')
+```
+
+- `lipsync_expressiveness` **`"low"`** on both reads. The founder confirms it (FOUNDER-REPORTED,
+  2026-10-20).
+- `lipsync_motion_prompt` **changed between the two reads**. The morning's began "The subject
+  maintains a warm and welcoming presence…". The afternoon's, ~2 600 characters, begins "The subject
+  maintains a calm, approachable, and confident presence…" and asks for stillness, no teeth-showing
+  smiles and sparse, slow gestures. He reports he changed it that day and it is now good
+  (FOUNDER-REPORTED).
+- `lipsync_lead_in_ms` absent (the code's 800 stands).
+- `lipsync_resolution` `"1080p"`.
+- `updated_at` reads 2026-09-06 on both changed rows: the column has no update trigger, so it
+  dates nothing (memory: prod rows are hand-edited).
 
 ## 2026-10-20 — four rows re-read; `tts_enhance` and `tts_stability` are read by no code
 

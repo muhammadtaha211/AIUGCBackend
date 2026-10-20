@@ -8,6 +8,13 @@ source: code
 
 # The Service B handheld camera — nine chosen numbers, one measured baseline
 
+**No longer in the code since 2026-10-20:** `handheld`, `SWAY` and `cameraSeed` were removed by
+[[0121-service-b-demo-cutaways-and-no-sway]] (founder, [[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]]
+§2: "it wasn't good on the selfie either, and a propped phone doesn't sway"). The numbers below
+describe the deleted code and stay true of it. `OVERSCAN = 1.06` remains, as a **static** scale:
+the framing and the wizard preview are unchanged, and the hook blur's spare cover is now the whole
+32.4 px a side.
+
 `packages/remotion/src/timing.ts` `handheld(frame, seed)` moves the whole picture (the one HeyGen clip — and the opener, until that path was retired on 2026-09-06, [[0023-hook-is-a-remotion-animation-opener-clips-retired]]; never the burned text, captions or watermark) along three octaves of smooth
 seeded noise per axis — a Catmull-Rom curve through random knots, so it has no period. (The
 first version, three summed sines at ±10px, the founder judged "doesn't come off natural … a

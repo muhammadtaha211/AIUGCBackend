@@ -8,6 +8,11 @@ source: founder
 
 # 0120 — Service B keeps the talking head, moves to a propped-phone look, and gains opt-in demo cutaways — DECIDED, NOT YET BUILT
 
+**2026-10-20, built: §2 (no sway) and §4 (opt-in demo cutaways)** — [[0121-service-b-demo-cutaways-and-no-sway]],
+on `feat/b-demo-cutaways`, with his amendments (the cutaway step after the effect step, the slots
+laid out from the actual hook text). §1 and §3 (the propped-phone look as numbered settings) are
+not built. The CLAUDE.md Service B line was amended in his approved wording.
+
 Every ruling here is **FOUNDER-REPORTED** (planning chat, 2026-10-20). **Nothing in it is built.**
 The look task and the cutaway task will point at this note. Until they land, the tree still renders
 the selfie with the handheld sway, and CLAUDE.md and `.claude/rules/service-b.md` describe that
