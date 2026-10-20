@@ -841,7 +841,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     await drainAll();
     await approveAudio(db, audio.id);
 
-    const demoKey = await setStorageFile("assets", `${businessId}/demo/cutaway/normalized.mp4`);
+    const demoKey = await setStorageFile(`${businessId}/demo/cutaway/normalized.mp4`);
     const demo = (
       await db
         .insert(dbSchema.demos)
@@ -880,9 +880,9 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     return { render, plan, demoId: demo.id, base, audioId: audio.id };
   }
 
-  async function setStorageFile(bucket: string, key: string): Promise<string> {
+  async function setStorageFile(key: string): Promise<string> {
     const { getStorage } = await import("../src/storage");
-    return getStorage().put(bucket, key, tempFile("normalized.mp4"));
+    return getStorage().put("assets", key, tempFile("normalized.mp4"));
   }
 
   it("cutaways ride the whole chain keyless: copied onto params, echoed to the composition before the captions", async () => {

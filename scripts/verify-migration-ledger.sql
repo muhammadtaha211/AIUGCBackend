@@ -842,21 +842,20 @@ WITH checks(migration, layer, applied, note) AS (VALUES
       AND column_name = 'voice_id' AND is_nullable = 'YES')),
   'voice_recordings 11 columns, RLS on, no policy, unique raw_path; audio_renders.voice_id nullable'),
 
--- 0068: cutaway_plans (decision 0121) -- the Service B demo cutaway picks, 13
+-- 0068: cutaway_plans (decision 0121) -- the Service B demo cutaway picks, 11
 -- columns, RLS on and no policy, the unique (audio, analysis, structure, hook
--- text) key and the two CHECKs.
+-- text) key and the slots CHECK.
 ('0068', 'structural', (SELECT
   to_regclass('public.cutaway_plans') IS NOT NULL
   AND (SELECT count(*) FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = 'cutaway_plans') = 13
+       WHERE table_schema = 'public' AND table_name = 'cutaway_plans') = 11
   AND COALESCE((SELECT relrowsecurity FROM pg_class
        WHERE oid = to_regclass('public.cutaway_plans')), false)
   AND NOT EXISTS (SELECT 1 FROM pg_policies
     WHERE schemaname = 'public' AND tablename = 'cutaway_plans')
   AND to_regclass('public.cutaway_plans_audio_analysis_structure_hook_idx') IS NOT NULL
-  AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cutaway_plans_draft_source')
   AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cutaway_plans_slots_array')),
-  'cutaway_plans 13 columns, RLS on, no policy, unique audio+analysis+structure+hook key, both CHECKs'),
+  'cutaway_plans 11 columns, RLS on, no policy, unique audio+analysis+structure+hook key, slots CHECK'),
 
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or

@@ -1,8 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { AccountBudgetError, assertAccountBudget, assertBudget, recordUsage } from "../budget";
 import type { CaptionChunk } from "../captions";
-import { getEnv } from "../config";
 import {
   CUTAWAY_EDGE_MS,
   CUTAWAY_FRAME_SLACK_MS,
@@ -11,7 +9,6 @@ import {
   cutawayLayoutError,
   cutawayWindowsError,
   type CutawayWindow,
-  type CutawayLayoutSlot,
 } from "../cutaway-structure";
 import type { Db } from "../db";
 import {
@@ -20,23 +17,12 @@ import {
   demoAnalyses,
   demoAnalysisFootage,
   demos,
-  events,
   scripts,
 } from "../db/schema";
 import { hookTextError } from "../hook-text";
-import { BudgetError } from "../jobs/errors";
-import { logger } from "../logger";
 import { isInventoryState, PLAN_SKIP_SCREEN_KINDS } from "../plan-format";
-import { llmCostAgorot } from "../pricing";
-import { renderPrompt } from "../prompts";
-import { generateObject } from "../providers/anthropic";
 import { serviceBTimeline } from "../service-b-timeline";
-import {
-  analysisSectionsSchema,
-  analysisTimelineSchema,
-  type AnalysisSection,
-  type AnalysisState,
-} from "./demo-analysis";
+import { analysisTimelineSchema, type AnalysisState } from "./demo-analysis";
 import { analysisSampleMs, recordingEndMs } from "./demo-step-plans";
 import { lipsyncLeadInMs } from "./renders";
 
@@ -51,11 +37,15 @@ import { lipsyncLeadInMs } from "./renders";
  * k-th timeline state), else the state's timestamp when the footage row is
  * missing or does not line up.
  *
- * The draft is one text-only Claude call per (audio, analysis, structure, hook
- * text) — the row is the idempotency key, so a re-read is free. It is a nicety,
- * never a gate (vault 0003's rule): a refused budget, a failed call or output
- * that cannot be repaired all fall back to the demo in order, and the customer
- * corrects either in the window picker.
+ * The draft is the demo in order: the slots spread evenly through the usable
+ * recording, clean of login, system and unreadable screens where it can be. A
+ * text-only Claude match of each slot's words against the analysed screens was
+ * built and tested on the founder's own demos first (vault 0082's rule) and did
+ * not clear the bar fixed before the run — 63% against demo order's 43%, 80%
+ * run-to-run (vault 0121, facts/cutaway-matcher-hit-rate-2026-10-20) — so the
+ * draft costs nothing and the customer corrects it in the window picker. The
+ * row is still keyed per (audio, analysis, structure, hook text), so a
+ * customer's edits survive going back and forth.
  */
 
 /** One stored slot (cutaway_plans.slots), VO time. */
@@ -121,7 +111,6 @@ export interface CutawayPlanView {
   demoId: string;
   structure: string;
   hookText: string;
-  draftSource: "model" | "demo_order";
   /** The caption words, in order — what the slots' wordFrom/wordTo index. */
   words: string[];
   slots: (CutawaySlot & { lengthMs: number })[];
@@ -131,11 +120,6 @@ export interface CutawayPlanView {
   maxEndMs: number;
 }
 
-const CUTAWAY_MATCH_PROMPT = "cutaway_match";
-
-/** events.kind: a draft fell back to demo order, with why. */
-export const CUTAWAY_DRAFT_FALLBACK = "cutaway_draft_fallback";
-
 // ---------------------------------------------------------------------------
 // The inventory a window is placed in
 // ---------------------------------------------------------------------------
@@ -144,7 +128,6 @@ interface Inventory {
   demo: typeof demos.$inferSelect;
   analysisId: string;
   timeline: AnalysisState[];
-  sections: AnalysisSection[] | null;
   anchors: CutawayAnchor[];
   minStartMs: number;
   maxEndMs: number;
@@ -179,7 +162,6 @@ async function loadInventory(db: Db, businessId: string, demoId: string): Promis
     );
   }
   const timeline = analysisTimelineSchema.parse(analysis.timeline);
-  const sections = analysisSectionsSchema.safeParse(analysis.sections);
 
   const footage = (
     await db
@@ -188,35 +170,47 @@ async function loadInventory(db: Db, businessId: string, demoId: string): Promis
       .where(eq(demoAnalysisFootage.analysisId, analysis.id))
       .limit(1)
   )[0];
-  const moments = z
-    .array(z.object({ startMs: z.number(), read: z.boolean() }))
-    .safeParse(footage?.moments);
-  const read = moments.success ? moments.data.filter((m) => m.read) : [];
-  // The k-th read moment is the k-th state (decision 0080); anything else and
-  // the spans are not trusted — the state's own timestamp stands in.
-  const spansLineUp = read.length === timeline.length && timeline.length > 0;
   const sampleMs =
     footage && footage.fps > 0
       ? Math.max(1, Math.floor(1000 / footage.fps))
       : await analysisSampleMs(db);
-  const recordingEnd = recordingEndMs(demo.durationMs, timeline, sampleMs);
+  const placement = cutawayPlacement({
+    timeline,
+    moments: footage?.moments,
+    durationMs: demo.durationMs,
+    sampleMs,
+  });
+  return { ...placement, demo, analysisId: analysis.id };
+}
+
+/**
+ * Where windows may start in one analysed recording, pure: the k-th read
+ * moment's first held frame is the k-th state's anchor (decision 0080), else
+ * the state's own timestamp when the spans do not line up (or there is no
+ * footage row); the recording's end is the demo's length floored to the
+ * analysis grid (recordingEndMs), less the unexamined edge.
+ */
+function cutawayPlacement(opts: {
+  timeline: AnalysisState[];
+  moments: unknown;
+  durationMs: number | null;
+  sampleMs: number;
+}): Placement {
+  const parsed = z
+    .array(z.object({ startMs: z.number(), read: z.boolean() }))
+    .safeParse(opts.moments);
+  const read = parsed.success ? parsed.data.filter((m) => m.read) : [];
+  const spansLineUp = read.length === opts.timeline.length && opts.timeline.length > 0;
+  const recordingEnd = recordingEndMs(opts.durationMs, opts.timeline, opts.sampleMs);
   const minStartMs = CUTAWAY_EDGE_MS;
   const maxEndMs = recordingEnd - CUTAWAY_EDGE_MS;
-  const anchors = timeline
+  const anchors = opts.timeline
     .map((state, stateIndex) => ({
       startMs: spansLineUp ? read[stateIndex]!.startMs : state.timestampMs,
       stateIndex,
     }))
     .filter((a) => a.startMs >= minStartMs && a.startMs < maxEndMs);
-  return {
-    demo,
-    analysisId: analysis.id,
-    timeline,
-    sections: sections.success ? sections.data : null,
-    anchors,
-    minStartMs,
-    maxEndMs,
-  };
+  return { anchors, timeline: opts.timeline, minStartMs, maxEndMs };
 }
 
 /**
@@ -325,7 +319,7 @@ function nearestFree(
  * each snapped to the nearest free anchor (clean first). Fewer windows than
  * slots only when the demo cannot hold them — never repeated footage.
  */
-export function demoOrderPicks(p: Placement, lengths: number[]): (CutawayAnchor | undefined)[] {
+function demoOrderPicks(p: Placement, lengths: number[]): (CutawayAnchor | undefined)[] {
   const total = lengths.reduce((sum, len) => sum + len + CUTAWAY_FRAME_SLACK_MS, 0);
   const free = Math.max(0, p.maxEndMs - p.minStartMs - total);
   const gap = free / (lengths.length + 1);
@@ -338,144 +332,6 @@ export function demoOrderPicks(p: Placement, lengths: number[]): (CutawayAnchor 
     cursor += len + CUTAWAY_FRAME_SLACK_MS;
     return pick;
   });
-}
-
-/**
- * The model's picks, kept where valid in slot order; a pick that is not a
- * candidate, does not fit or overlaps a kept one is moved to the nearest free
- * anchor to where it pointed (or to its demo-order place when it pointed
- * nowhere). Returns how many had to move.
- */
-export function repairPicks(
-  p: Placement,
-  lengths: number[],
-  picks: (number | null)[],
-  candidates: ReadonlySet<number>,
-): { anchors: (CutawayAnchor | undefined)[]; repaired: number } {
-  const byState = new Map(p.anchors.map((a) => [a.stateIndex, a]));
-  const order = demoOrderPicks(p, lengths);
-  const taken: { start: number; end: number }[] = [];
-  const anchors: (CutawayAnchor | undefined)[] = [];
-  let repaired = 0;
-  for (const [i, len] of lengths.entries()) {
-    const stateIndex = picks[i];
-    const wanted =
-      stateIndex !== null && stateIndex !== undefined && candidates.has(stateIndex)
-        ? byState.get(stateIndex)
-        : undefined;
-    const span = wanted ? footprint(wanted.startMs, len) : undefined;
-    const fits =
-      span &&
-      span.start >= p.minStartMs &&
-      span.end <= p.maxEndMs &&
-      !taken.some((t) => span.start < t.end && t.start < span.end);
-    let anchor = fits ? wanted : undefined;
-    if (!anchor) {
-      repaired++;
-      anchor = nearestFree(p, wanted?.startMs ?? order[i]?.startMs ?? p.minStartMs, len, taken);
-    }
-    if (anchor) taken.push(footprint(anchor.startMs, len));
-    anchors.push(anchor);
-  }
-  return { anchors, repaired };
-}
-
-// ---------------------------------------------------------------------------
-// The match
-// ---------------------------------------------------------------------------
-
-const matchOutput = z.object({
-  picks: z.array(z.object({ slot: z.number().int(), state: z.number().int().nullable() })),
-});
-
-/** Screen text sent to the model: a few short lines, with what could identify a person cut out. */
-export function scrubVisibleText(lines: string[]): string[] {
-  return lines
-    .map((line) =>
-      line
-        .replace(/\S+@\S+\.\S+/g, "…")
-        .replace(/(https?:\/\/|www\.)\S+/gi, "…")
-        .replace(/\+?\d[\d\s-]{6,}\d/g, "…")
-        .replace(/\d{6,}/g, "…")
-        .trim()
-        .slice(0, 60),
-    )
-    .filter((line) => line !== "" && line !== "…")
-    .slice(0, 4);
-}
-
-export interface MatchInput {
-  words: string[];
-  slots: CutawayLayoutSlot[];
-  timeline: AnalysisState[];
-  sections: AnalysisSection[] | null;
-  /** Timeline indexes the model may choose from. */
-  candidates: number[];
-}
-
-/** The prompt variables: the script with each slot marked, the slots, the candidate screens. */
-export function matchPromptVars(input: MatchInput): Record<string, string | number> {
-  const marked: string[] = [];
-  let w = 0;
-  for (const [k, slot] of input.slots.entries()) {
-    marked.push(...input.words.slice(w, slot.wordFrom));
-    marked.push(`[${k + 1}: ${input.words.slice(slot.wordFrom, slot.wordTo).join(" ")}]`);
-    w = slot.wordTo;
-  }
-  marked.push(...input.words.slice(w));
-  const sectionOf = new Map<number, string>();
-  for (const section of input.sections ?? []) {
-    for (const index of section.stateIndexes) sectionOf.set(index, section.title);
-  }
-  const states = input.candidates.map((index) => {
-    const s = input.timeline[index]!;
-    return JSON.stringify({
-      index,
-      screen: s.screenName.slice(0, 80),
-      action: s.action.slice(0, 160),
-      ...(s.salienceNote ? { note: s.salienceNote.slice(0, 120) } : {}),
-      ...(sectionOf.has(index) ? { task: sectionOf.get(index) } : {}),
-      // Analyses from before screenKind existed cannot tell a browser's history
-      // dropdown from a product screen, so their screen text stays home.
-      ...(s.screenKind !== undefined ? { text: scrubVisibleText(s.visibleText) } : {}),
-    });
-  });
-  return {
-    script: marked.join(" "),
-    slot_count: input.slots.length,
-    slots: input.slots
-      .map((slot, k) =>
-        JSON.stringify({
-          slot: k + 1,
-          words: input.words.slice(slot.wordFrom, slot.wordTo).join(" "),
-          seconds: Math.round((slot.toMs - slot.fromMs) / 100) / 10,
-        }),
-      )
-      .join("\n"),
-    states: states.join("\n"),
-  };
-}
-
-/**
- * One text-only call: each slot's words against the candidate screens. Pure of
- * the database — the caller checks the caps and records the usage — so the
- * real-demo hit-rate test can run it without writing anything.
- */
-export async function matchCutaways(input: MatchInput): Promise<{
-  picks: (number | null)[];
-  promptVersion: string;
-  usage: { inputTokens: number; outputTokens: number };
-}> {
-  const { text, promptVersion } = renderPrompt(CUTAWAY_MATCH_PROMPT, matchPromptVars(input));
-  const { object, usage } = await generateObject({
-    prompt: text,
-    schema: matchOutput,
-    maxTokens: 1024,
-  });
-  const picks = input.slots.map(
-    (_, k) => object.picks.find((p) => p.slot === k + 1)?.state ?? null,
-  );
-  return { picks, promptVersion, usage };
 }
 
 // ---------------------------------------------------------------------------
@@ -518,77 +374,12 @@ export async function draftCutawayPlan(
   if (!("tier" in layout)) throw new CutawayPlanError(layout.reason);
   const lengths = layout.slots.map((s) => s.toMs - s.fromMs);
 
-  const placement: Placement = inventory;
-  const candidates = inventory.anchors
-    .map((a) => a.stateIndex)
-    .filter((i) => !isSkipState(inventory.timeline[i]!));
-  const fallback = async (reason: string, extra: Record<string, unknown> = {}) => {
-    await db.insert(events).values({
-      kind: CUTAWAY_DRAFT_FALLBACK,
-      businessId: opts.businessId,
-      subjectType: "audio_render",
-      subjectId: opts.audioRenderId,
-      payload: { reason, demoId: opts.demoId, ...extra },
-    });
-    return { anchors: demoOrderPicks(placement, lengths), source: "demo_order" as const };
-  };
-
-  let picked: { anchors: (CutawayAnchor | undefined)[]; source: "model" | "demo_order" };
-  let promptVersion: string | null = null;
-  const input: MatchInput = {
-    words,
-    slots: layout.slots,
-    timeline: inventory.timeline,
-    sections: inventory.sections,
-    candidates,
-  };
-  if (candidates.length === 0) {
-    picked = await fallback("no_candidates");
-  } else if (getEnv().DRY_RUN) {
-    // Render the prompt anyway so a variable mismatch surfaces keyless; the
-    // picks are the demo order's, through the same repair the model's take.
-    renderPrompt(CUTAWAY_MATCH_PROMPT, matchPromptVars(input));
-    const order = demoOrderPicks(placement, lengths).map((a) => a?.stateIndex ?? null);
-    const repaired = repairPicks(placement, lengths, order, new Set(candidates));
-    picked = { anchors: repaired.anchors, source: "model" };
-    promptVersion = `${CUTAWAY_MATCH_PROMPT}@dry-run`;
-  } else {
-    try {
-      await assertAccountBudget(db, "llm_tokens", opts.businessId);
-      await assertBudget(db, "llm_tokens");
-      const result = await matchCutaways(input);
-      await recordUsage(db, {
-        provider: "anthropic",
-        kind: "llm_tokens",
-        quantity: result.usage.inputTokens + result.usage.outputTokens,
-        costEstimateAgorot: llmCostAgorot(result.usage.inputTokens, result.usage.outputTokens),
-        businessId: opts.businessId,
-      });
-      const repaired = repairPicks(placement, lengths, result.picks, new Set(candidates));
-      if (repaired.repaired * 2 > lengths.length) {
-        picked = await fallback("unrepairable", { picks: result.picks });
-      } else {
-        picked = { anchors: repaired.anchors, source: "model" };
-        promptVersion =
-          repaired.repaired > 0 ? `${result.promptVersion}+repaired` : result.promptVersion;
-      }
-    } catch (err) {
-      if (err instanceof AccountBudgetError || err instanceof BudgetError) {
-        picked = await fallback("budget");
-      } else {
-        logger.warn({ err, audioRenderId: opts.audioRenderId }, "cutaways: match call failed");
-        picked = await fallback("model_error", {
-          message: err instanceof Error ? err.message.slice(0, 200) : String(err),
-        });
-      }
-    }
-  }
-
+  const picks = demoOrderPicks(inventory, lengths);
   // A slot the demo has no free room for is dropped with its layout neighbour
   // left as a longer head — fewer cutaways, never repeated footage.
   const slots: CutawaySlot[] = [];
   for (const [i, slot] of layout.slots.entries()) {
-    const anchor = picked.anchors[i];
+    const anchor = picks[i];
     if (!anchor) continue;
     slots.push({
       ...slot,
@@ -610,8 +401,6 @@ export async function draftCutawayPlan(
       structure,
       hookText,
       slots,
-      draftSource: picked.source,
-      promptVersion,
     })
     .onConflictDoNothing();
   const row = (await db.select().from(cutawayPlans).where(key).limit(1))[0]!;
@@ -630,7 +419,6 @@ function planView(
     demoId: row.demoId,
     structure: row.structure,
     hookText: row.hookText,
-    draftSource: row.draftSource === "model" ? "model" : "demo_order",
     words,
     slots: slots.map((s) => ({ ...s, lengthMs: s.toMs - s.fromMs })),
     anchors: inventory.anchors,

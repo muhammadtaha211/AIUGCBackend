@@ -20,10 +20,9 @@
 --                 hook text (the "none" effect). Part of the key.
 --   slots         CutawaySlot[]: { fromMs, toMs, wordFrom, wordTo,
 --                 demoStartMs, stateIndex, draftDemoStartMs, draftStateIndex }
---                 in VO time; the draft's pick is kept beside the customer's,
---                 so how often a draft is corrected is a query.
---   draft_source  model | demo_order — what filled the draft.
---   prompt_version  cutaway_match@vN[+repaired] | ...@dry-run | NULL (no call).
+--                 in VO time; the draft's pick (the demo in order) is kept
+--                 beside the customer's, so how often a draft is corrected is
+--                 a query.
 --   edited_at     the customer's last change; NULL = the draft as made.
 --
 -- Server-only, 0035's shape: RLS on, no policy, so it is deny-all for anon and
@@ -39,13 +38,10 @@ CREATE TABLE IF NOT EXISTS "public"."cutaway_plans" (
 	"structure" text NOT NULL,
 	"hook_text" text DEFAULT '' NOT NULL,
 	"slots" jsonb NOT NULL,
-	"draft_source" text NOT NULL,
-	"prompt_version" text,
 	"edited_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "cutaway_plans_slots_array" CHECK (jsonb_typeof("slots") = 'array'),
-	CONSTRAINT "cutaway_plans_draft_source" CHECK ("draft_source" IN ('model', 'demo_order'))
+	CONSTRAINT "cutaway_plans_slots_array" CHECK (jsonb_typeof("slots") = 'array')
 );
 --> statement-breakpoint
 DO $$ BEGIN

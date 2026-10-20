@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Hoisted so the factory can close over it: the draft reaches the real call
-// only off the DRY_RUN path, and what the model answers is what is tested.
+// Hoisted so the factory can close over it: the draft makes no model call at
+// all, and the content-policy classifier is what createBRender must never reach
+// with a bad plan.
 const generateObject = vi.hoisted(() => vi.fn());
 vi.mock("../src/providers/anthropic", () => ({
   generateObject,
@@ -20,12 +21,9 @@ import * as dbSchema from "../src/db/schema";
 import { addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
 import {
-  CUTAWAY_DRAFT_FALLBACK,
   CutawayPlanError,
   draftCutawayPlan,
-  matchPromptVars,
   resolveCutawaysForRender,
-  scrubVisibleText,
   updateCutawayPlan,
 } from "../src/pipelines/cutaways";
 import type { AnalysisState } from "../src/pipelines/demo-analysis";
@@ -177,29 +175,35 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     cleanupStorage();
   });
 
-  it("DRY_RUN drafts keyless: slots on the layout, windows on moments, never the login screens, no call", async () => {
-    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(generateObject).not.toHaveBeenCalled();
-    expect(plan.draftSource).toBe("model");
-    expect(plan.slots.length).toBeGreaterThanOrEqual(1);
-    expect(plan.words).toHaveLength(45);
-    const anchorStarts = new Set(plan.anchors.map((a) => a.startMs));
-    for (const slot of plan.slots) {
-      expect(slot.lengthMs).toBeGreaterThanOrEqual(4000);
-      expect(slot.lengthMs).toBeLessThanOrEqual(6000);
-      expect(anchorStarts).toContain(slot.demoStartMs);
-      expect(slot.stateIndex).toBeGreaterThanOrEqual(2);
-      expect(slot.draftDemoStartMs).toBe(slot.demoStartMs);
+  it("drafts free and keyless: the demo in order, slots on the layout, windows on moments, never a login screen", async () => {
+    for (const dryRun of [true, false]) {
+      setDryRun(dryRun);
+      await db.delete(dbSchema.cutawayPlans);
+      const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+      expect(generateObject).not.toHaveBeenCalled();
+      expect(plan.slots.length).toBeGreaterThanOrEqual(1);
+      expect(plan.words).toHaveLength(45);
+      const anchorStarts = new Set(plan.anchors.map((a) => a.startMs));
+      let previous = -1;
+      for (const slot of plan.slots) {
+        expect(slot.lengthMs).toBeGreaterThanOrEqual(4000);
+        expect(slot.lengthMs).toBeLessThanOrEqual(6000);
+        expect(anchorStarts).toContain(slot.demoStartMs);
+        expect(slot.stateIndex).toBeGreaterThanOrEqual(2);
+        expect(slot.draftDemoStartMs).toBe(slot.demoStartMs);
+        // In demo order, spread through the recording.
+        expect(slot.demoStartMs).toBeGreaterThan(previous);
+        previous = slot.demoStartMs;
+      }
+      // Windows start on the moment's first held frame, not its sample.
+      expect(plan.anchors[0]).toEqual({ startMs: 400, stateIndex: 0 });
+      expect(plan.minStartMs).toBe(CUTAWAY_EDGE_MS);
+      expect(cutawayWindowsError(plan.slots, plan.maxEndMs + CUTAWAY_EDGE_MS)).toBeNull();
+      expect(await db.select().from(dbSchema.usageEvents)).toHaveLength(0);
+      const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
+      expect(row.hookText).toBe("");
     }
-    // Windows start on the moment's first held frame, not its sample.
-    expect(plan.anchors[0]).toEqual({ startMs: 400, stateIndex: 0 });
-    expect(plan.minStartMs).toBe(CUTAWAY_EDGE_MS);
-    expect(cutawayWindowsError(plan.slots, plan.maxEndMs + CUTAWAY_EDGE_MS)).toBeNull();
-    const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
-    expect(row.promptVersion).toBe("cutaway_match@dry-run");
-    expect(row.hookText).toBe("");
   });
-
   it("is idempotent per (audio, analysis, structure, hook text); a new hook text is a fresh draft", async () => {
     const a = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
     const again = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
@@ -215,104 +219,6 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     const back = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
     expect(back.planId).toBe(a.planId);
     expect(await db.select().from(dbSchema.cutawayPlans)).toHaveLength(2);
-  });
-
-  it("the model's picks are stored as its draft, with the usage charged to the business", async () => {
-    setDryRun(false);
-    generateObject.mockImplementation(async ({ prompt }: { prompt: string }) => {
-      // The login screens and the PII on screen 5 never reach the prompt.
-      expect(prompt).not.toContain("מסך התחברות");
-      expect(prompt).not.toContain("dana@example.com");
-      expect(prompt).not.toContain("054-1234567");
-      expect(prompt).toContain("בחירת דמות");
-      return {
-        object: {
-          picks: [
-            { slot: 1, state: 10 },
-            { slot: 2, state: 20 },
-          ],
-        },
-        usage: { inputTokens: 9000, outputTokens: 60 },
-      };
-    });
-    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(generateObject).toHaveBeenCalledTimes(1);
-    expect(plan.draftSource).toBe("model");
-    expect(plan.slots.map((s) => s.stateIndex)).toEqual([10, 20]);
-    const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
-    expect(row.promptVersion).toBe("cutaway_match@v1");
-    const usage = await db.select().from(dbSchema.usageEvents);
-    expect(usage).toEqual([
-      expect.objectContaining({ businessId, kind: "llm_tokens", quantity: 9060 }),
-    ]);
-    // A second visit is free.
-    await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(generateObject).toHaveBeenCalledTimes(1);
-  });
-
-  it("an overlapping pick is moved to the nearest free moment and marked repaired", async () => {
-    setDryRun(false);
-    generateObject.mockResolvedValue({
-      object: {
-        picks: [
-          { slot: 1, state: 10 },
-          { slot: 2, state: 11 },
-        ],
-      },
-      usage: { inputTokens: 100, outputTokens: 10 },
-    });
-    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(plan.slots[0]!.stateIndex).toBe(10);
-    expect(plan.slots[1]!.stateIndex).not.toBe(11);
-    expect(cutawayWindowsError(plan.slots, plan.maxEndMs + CUTAWAY_EDGE_MS)).toBeNull();
-    const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
-    expect(row.promptVersion).toBe("cutaway_match@v1+repaired");
-  });
-
-  it("output it cannot repair, a failed call and a tripped cap all fall back to the demo in order", async () => {
-    setDryRun(false);
-    const fallbacks = async () =>
-      db.select().from(dbSchema.events).where(eq(dbSchema.events.kind, CUTAWAY_DRAFT_FALLBACK));
-
-    generateObject.mockResolvedValue({
-      object: {
-        picks: [
-          { slot: 1, state: 0 },
-          { slot: 2, state: 99 },
-        ],
-      },
-      usage: { inputTokens: 100, outputTokens: 10 },
-    });
-    const unrepairable = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(unrepairable.draftSource).toBe("demo_order");
-    await db.delete(dbSchema.cutawayPlans);
-
-    generateObject.mockRejectedValue(new Error("overloaded"));
-    const failed = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(failed.draftSource).toBe("demo_order");
-    await db.delete(dbSchema.cutawayPlans);
-
-    generateObject.mockReset();
-    await db.insert(dbSchema.usageEvents).values({
-      provider: "anthropic",
-      kind: "llm_tokens",
-      quantity: 10_000_000,
-      businessId,
-    });
-    const capped = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(capped.draftSource).toBe("demo_order");
-    expect(generateObject).not.toHaveBeenCalled();
-
-    expect((await fallbacks()).map((e) => (e.payload as { reason: string }).reason)).toEqual([
-      "unrepairable",
-      "model_error",
-      "budget",
-    ]);
-    // The demo in order still never repeats footage or opens on a login screen.
-    for (const plan of [unrepairable, failed, capped]) {
-      expect(cutawayWindowsError(plan.slots, plan.maxEndMs + CUTAWAY_EDGE_MS)).toBeNull();
-      for (const slot of plan.slots) expect(slot.stateIndex).toBeGreaterThanOrEqual(2);
-    }
   });
 
   it("refuses what is not this business's, not approved, or not analysed", async () => {
@@ -463,27 +369,5 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
       .from(dbSchema.creditLedger)
       .where(eq(dbSchema.creditLedger.businessId, businessId));
     expect(debits).toHaveLength(0);
-  });
-
-  it("the prompt marks each slot's words in the script and scrubs what could identify a person", () => {
-    expect(
-      scrubVisibleText([
-        "dana@example.com",
-        "054-1234567",
-        "קוד 1234567",
-        "www.x.co/a",
-        "בחירת דמות",
-      ]),
-    ).toEqual(["קוד …", "בחירת דמות"]);
-    const vars = matchPromptVars({
-      words: ["א", "ב", "ג", "ד", "ה"],
-      slots: [{ fromMs: 0, toMs: 4000, wordFrom: 1, wordTo: 3 }],
-      timeline: timeline(),
-      sections: null,
-      candidates: [2, 3],
-    });
-    expect(vars.script).toBe("א [1: ב ג] ד ה");
-    expect(vars.slot_count).toBe(1);
-    expect(String(vars.states).split("\n")).toHaveLength(2);
   });
 });

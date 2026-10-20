@@ -1491,7 +1491,7 @@ describe("migrations", () => {
     await pg.close();
   });
 
-  it("0068: cutaway_plans is server-only, keyed on audio + analysis + structure + hook text, its CHECKs and FKs, idempotent", async () => {
+  it("0068: cutaway_plans is server-only, keyed on audio + analysis + structure + hook text, its CHECK and FKs, idempotent", async () => {
     const pg = new PGlite();
     for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0068")) {
       await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
@@ -1541,19 +1541,16 @@ describe("migrations", () => {
       INSERT INTO demos (id, business_id) VALUES ('${demo}', '${biz}');
       INSERT INTO demo_analyses (id, demo_id) VALUES ('${analysis}', '${demo}');
     `);
-    const insert = (hook: string, draftSource = "model", slots = "'[]'") =>
-      `INSERT INTO cutaway_plans (business_id, audio_render_id, demo_id, analysis_id, structure, hook_text, slots, draft_source)
-       VALUES ('${biz}', '${audio}', '${demo}', '${analysis}', 'alternate', '${hook}', ${slots}, '${draftSource}')`;
+    const insert = (hook: string, slots = "'[]'") =>
+      `INSERT INTO cutaway_plans (business_id, audio_render_id, demo_id, analysis_id, structure, hook_text, slots)
+       VALUES ('${biz}', '${audio}', '${demo}', '${analysis}', 'alternate', '${hook}', ${slots})`;
     await pg.exec(insert(""));
     // The same layout twice is refused; a different hook text is a new row.
     await expect(pg.query(insert(""))).rejects.toThrow(
       /cutaway_plans_audio_analysis_structure_hook_idx/,
     );
     await pg.exec(insert("שורת פתיחה"));
-    await expect(pg.query(insert("אחרת", "nonsense"))).rejects.toThrow(
-      /cutaway_plans_draft_source/,
-    );
-    await expect(pg.query(insert("אחרת", "model", `'{"a":1}'`))).rejects.toThrow(
+    await expect(pg.query(insert("אחרת", `'{"a":1}'`))).rejects.toThrow(
       /cutaway_plans_slots_array/,
     );
     const row = await pg.query<{ hook_text: string; edited_at: string | null }>(

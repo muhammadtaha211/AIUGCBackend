@@ -571,9 +571,9 @@ export const sets = pgTable(
 // analysis, structure, hook text): the slots are laid out from the audio's
 // chunks and the moment the hook text leaves, so a new hook text is a new row
 // and a fresh draft. Enqueue COPIES the slots onto video_renders.params, never
-// points here. Server-only (RLS on, no policy). CHECKs in SQL: slots is an
-// array; draft_source in (model, demo_order). structure has none — it is a
-// name from cutaway-structure.ts, data in code like the hook effects.
+// points here. Server-only (RLS on, no policy). CHECK in SQL: slots is an
+// array. structure has none — it is a name from cutaway-structure.ts, data in
+// code like the hook effects.
 export const cutawayPlans = pgTable(
   "cutaway_plans",
   {
@@ -595,8 +595,6 @@ export const cutawayPlans = pgTable(
     hookText: text("hook_text").notNull().default(""),
     // CutawaySlot[] (pipelines/cutaways.ts), VO time, the draft beside the pick.
     slots: jsonb("slots").notNull(),
-    draftSource: text("draft_source").notNull(),
-    promptVersion: text("prompt_version"),
     editedAt: timestamp("edited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
