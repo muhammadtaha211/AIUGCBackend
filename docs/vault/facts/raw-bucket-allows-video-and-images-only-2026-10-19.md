@@ -1,12 +1,15 @@
 ---
 type: fact
-status: verified
+status: superseded
 verified: 2026-10-19
 method: "packages/core/.work/own-voice-step0.ts (read-only): `select id, public, file_size_limit, allowed_mime_types from storage.buckets order by id` against production hyaqydcmwbnbaiqqufow over DATABASE_URL."
 source: db
 ---
 
 # The live `raw` bucket allows video and images only
+
+> **Superseded 2026-10-20:** the founder had the guarded update below run, and `raw` now lists the
+> eleven types: [[raw-bucket-allows-audio-2026-10-20]]. This note is the before-state.
 
 | bucket  | public | file_size_limit | allowed_mime_types                                              |
 | ------- | ------ | --------------- | --------------------------------------------------------------- |

@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-19
+updated: 2026-10-20
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -40,8 +40,34 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**Service B — the customer's own voice: BUILT 2026-10-19 on `feat/b-own-voice`, NOT merged; its
-migrations 0066/0067 NOT pushed.** A second door at the character step ("הקול שלכם"): the customer
+**Service B — the customer's own voice: PARKED 2026-10-20 by the founder, unmerged on
+`feat/b-own-voice`; its migrations 0066/0067 ARE applied in production; main lacks their files.**
+He walked the branch's preview and made two renders from his own recordings. The lip sync looked
+off to him, and he ruled to park it until he has tuned the avatar renders, then run one more
+own-voice test and decide ([[0118-service-b-own-voice]], "Parked").
+
+- **MEASURED (2026-10-20):**
+  - The chain ran end to end on the box twice: Scribe, the cut (first word at 190 ms), approval
+    debiting nothing, and renders debiting 168 and 75 credits. The walk spent ₪12.99
+    ([[own-voice-first-production-runs-2026-10-20]]).
+  - The captions did at pauses and at the dropped filler what 0118 predicted. The hook handoff
+    swallowed a negation (`לא`) ([[own-voice-captions-at-pauses-2026-10-20]]).
+  - The voice sits 59.5 ms late on both doors, an AI render included, so our timing does not
+    explain the difference he saw
+    ([[service-b-render-audio-sits-60ms-after-its-timeline-2026-10-20]]).
+  - The `raw` bucket takes audio ([[raw-bucket-allows-audio-2026-10-20]]).
+- **Hazard while parked: the next `db push` from main is refused** (`--dry-run` exits 1 on main's
+  files). Do NOT run the CLI's suggested `migration repair --status reverted 0066 0067`. The fix is
+  the two migration files, without the feature, on main: his call, not done
+  ([[migrations-0066-0067-applied-but-only-on-a-parked-branch]]).
+- **Owed now:** the box back on main
+  (`cd ~/AIUGCBackend && git checkout main && git pull && pnpm install && sudo systemctl restart aiugc-worker && git log -1 --oneline`
+  should end on `2817133`). The founder put it on the branch at about 23:58 UTC on 2026-10-19.
+- **Next, his:** tune the avatar renders (HeyGen,
+  [[0022-heygen-expressiveness-medium-generic-motion-prompt]]). Then one more own-voice test from a
+  deliberate take, then the final decision.
+
+The build, as it was on 2026-10-19: a second door at the character step ("הקול שלכם"): the customer
 records in the browser or uploads, ElevenLabs Scribe transcribes, they respell or drop words (never
 add) and approve, and the effect and render steps run on the approval's ordinary script + audio
 pair. The AI door is unchanged. Decisions, his three plan-mode answers and his six amendments:
@@ -55,19 +81,19 @@ pair. The AI door is unchanged. Decisions, his three plan-mode answers and his s
   Speech to Text the same day, and three live calls then answered 200. Hebrew was detected at
   probability 1, and on clean TTS speech every word's letters were right. Word starts ran late
   against the ElevenLabs alignment by p95 140 ms, so the cut's lead is now 190 ms
-  ([[scribe-hebrew-word-times-against-elevenlabs-2026-10-19]]). The live `raw` bucket refuses audio
+  ([[scribe-hebrew-word-times-against-elevenlabs-2026-10-19]]). The live `raw` bucket refused audio until 2026-10-20
   ([[raw-bucket-allows-video-and-images-only-2026-10-19]]).
-- **Owed, in order:**
+- **Owed, in order (as of 2026-10-20):**
   1. ~~Speech to Text on the key~~ done 2026-10-19.
-  2. The `db push` of 0066, then 0067, and the read-backs.
-  3. The `raw` bucket SQL in the raw-bucket note.
-  4. The box on the branch for one walk at an hour he picks, and back to main before anything else
-     runs.
-  5. His ~30 s recording with a pause and a filler, for the one paid render.
-  6. Approval of every new Hebrew string and of the `/privacy` and `/terms` sentences.
-  7. The merge, with `UPDATED` moved to the merge day.
-  8. The box on main again.
-- **Open, his or counsel's:** whether the legal change is material under terms §14.
+  2. ~~The `db push` of 0066 and 0067 and the read-backs~~ done 2026-10-20.
+  3. ~~The `raw` bucket SQL~~ done 2026-10-20.
+  4. ~~The box on the branch for the walk~~ done 2026-10-20. **Back to main: still owed** (above).
+  5. ~~His recording for the paid render~~ done 2026-10-20: two takes, two renders.
+  6. Approval of every new Hebrew string and of the `/privacy` and `/terms` sentences: moot while
+     parked.
+  7. The merge, with `UPDATED` moved to the merge day: parked.
+- **Open, his or counsel's (moot while parked):** whether the legal change is material under terms
+  §14.
 
 **The ₪5 intro offer: MERGED 2026-10-14 as PR #97 (`d41eae6`); migrations 0061/0062 PUSHED the
 same day, before the merge. LIVE since: MEASURED 2026-10-15, `https://tavnit.ai/pricing` shows the
@@ -903,11 +929,11 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-19) — Service B, the customer's own voice, `feat/b-own-voice`, NOT merged
+## What landed (2026-10-19) — Service B, the customer's own voice, `feat/b-own-voice`, NOT merged (PARKED 2026-10-20)
 
 Cut from `origin/main` 2817133. Decision [[0118-service-b-own-voice]].
 
-- **Schema (not pushed):**
+- **Schema (pushed to production 2026-10-20; on this branch only):**
   - 0066 adds `alignment_source 'scribe'` and `usage_kind 'stt_seconds'`, alone and first.
   - 0067 adds `voice_recordings` (server-only RLS, a unique nullable `raw_path`) and makes
     `audio_renders.voice_id` nullable.
@@ -941,12 +967,17 @@ Cut from `origin/main` 2817133. Decision [[0118-service-b-own-voice]].
     and 1280×800: record, local playback, upload, transcript, drop, respell, approve. The stop
     button stayed on screen with the script scrolled to its end at both phone sizes. That was a
     harness, not a wizard walk.
-- **Not proven:**
-  - The real phone and desktop walk, which waits on the owed items above.
-  - A live Scribe call: done 2026-10-19 on three TTS files, not yet on a human recording.
-  - The paid render and what `chunkWords` does at a real pause and a dropped filler. The prediction
-    from the code is in 0118 ("What the captions will do"): a chunk holds through a pause and the
-    highlight stays on the word before it.
+- **Not proven on 2026-10-19; the walk of 2026-10-20 settled most of it:**
+  - The real desktop walk: done in the branch's preview.
+    - The founder made two browser recordings → transcript → approval → render.
+    - The assistant drove the pane through: both doors, the AI door to an unapproved preview, the
+      skip, the teleprompter script, and the mic-denied line.
+    - Not walked: a phone, a file upload (a WhatsApp note, an mp3), the 2 s and 91 s refusals, a
+      respell, and the no-space rule in the browser.
+  - A live Scribe call on a human recording: done, twice
+    ([[own-voice-first-production-runs-2026-10-20]]).
+  - The paid render at a real pause and a dropped filler: done, as predicted
+    ([[own-voice-captions-at-pauses-2026-10-20]]).
 - **The adversarial review of the diff** (four lenses, each list refuted by a skeptic): 18 findings
   confirmed, all fixed in the branch, with 6 refuted. The fixes:
   - the decode bound;

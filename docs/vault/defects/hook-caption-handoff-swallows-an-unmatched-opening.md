@@ -65,6 +65,26 @@ cases. Not verified against a live generation (no model call was made implementi
 DRY_RUN and the unit tests only confirm the prompt text renders and states the rule) — the
 founder asked to see the prompt text and flagged that a live check is still open.
 
+## Update 2026-10-20 — the accepted tail loss dropped a negation
+
+The verbatim-prefix rule above turns the no-match hole into the tail loss the code comment accepts
+("any word spoken between the hook's last word and the next chunk boundary is never captioned",
+`service-b-timeline.ts:48-51`). The first own-voice render (video_renders 7681c44c) measured that
+tail loss on a real ad:
+
+- The hook line was the derived prefix `אני רוצה להגיד שדברים כאלה`.
+- Chunk 1 is `שדברים | כאלה | לא` (2,010–2,970 ms audio).
+- The line stayed centred through 3.2 s and the captions took over at chunk 2 (`קורים בדרך כלל,`,
+  3.26 s). `לא`, spoken at 3.10–3.22 s, was never on screen.
+- So the burned text read "I want to say that things like these … usually happen" over speech
+  that said they usually **don't**.
+
+The derived hook on the own-voice door (`hook_text@v3` on the transcript) and the verbatim prefix on
+the AI door both end wherever their word count ends. A chunk of 3 holds the line's last word and
+up to two more, so the loss is up to two words, and nothing keeps a negation out of them. The rule
+stays the founder's. This is the measured cost, for his next look at the hook. Frames:
+[[own-voice-captions-at-pauses-2026-10-20]].
+
 ## Related
 
 - [[0023-hook-is-a-remotion-animation-opener-clips-retired]]

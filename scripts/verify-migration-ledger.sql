@@ -915,6 +915,34 @@ ORDER BY migration, layer DESC;
 -- ---------------------------------------------------------------------------
 -- RESULTS
 --
+-- 2026-10-20, production (hyaqydcmwbnbaiqqufow), after `db push` applied
+-- **0066 + 0067** (own voice: alignment_source 'scribe' and usage_kind
+-- 'stt_seconds' alone in 0066; voice_recordings with RLS on and no policy, and
+-- audio_renders.voice_id nullable in 0067; decision 0118) together, on the
+-- founder's instruction in session ("go ahead and do the necessary actions to
+-- test this flow, apply migrations and push and merge if needed"), for a walk
+-- of the UNMERGED branch feat/b-own-voice (9ef1547). Pre-flight: `db push
+-- --dry-run` (2026-10-19) named exactly those two files. The apply printed
+-- "Applying migration 0066_own_voice_enum_values.sql..." and
+-- "...0067_voice_recordings.sql..." and exited 0; the same Docker
+-- catalog-cache warning, not a failure. `db push` recorded both itself.
+--
+-- Read AFTER (packages/core/.work/own-voice-readback.ts; no before-read is
+-- recorded): alignment_source elevenlabs, whisperx, scribe; usage_kind ending
+-- stt_seconds; voice_recordings relrowsecurity true, 11 columns, 0 policies,
+-- 0 rows; audio_renders.voice_id is_nullable YES; ledger 68 rows 0000-0067.
+-- This file, run inside a READ ONLY transaction
+-- (packages/core/.work/run-ledger-0066-0067.ts): 54 rows, 51 true, 0066 and
+-- 0067 true; not true only 0020 (NULL by design), 0022 (the expected false)
+-- and the data row 0028.
+--
+-- The founder PARKED the feature the same day, unmerged. So main lacks both
+-- files: from main's supabase/ folder, `migration list` shows 0066 and 0067
+-- remote-only and `db push --dry-run` exits 1, suggesting `migration repair
+-- --status reverted 0066 0067`. Do not run that: the objects are in the
+-- database. Land the two files on main instead
+-- (docs/vault/defects/migrations-0066-0067-applied-but-only-on-a-parked-branch.md).
+--
 -- 2026-10-14, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0061 + 0062** (the ₪5 intro offer: the two ledger reasons, checkout_intents.kind
 -- with plan_code nullable, intro_trials, the intro_offer switch seeded off;

@@ -1,8 +1,8 @@
 ---
 type: decision
 status: verified
-verified: 2026-10-19
-method: "Founder, three sources on 2026-10-19: (1) §2 of the task prompt 'Service B — the customer's own voice' (his planning chat), (2) his answers to three plan-mode questions and two build questions in the session that built it, (3) his six amendments on approving the plan (~/.claude/plans/nested-pondering-sun.md). Items marked PLANNING DEFAULT are the planning assistant's and he has not ruled on them; items marked REASONED are this build's reading of the code."
+verified: 2026-10-20
+method: "Founder, four sources: on 2026-10-19 (1) §2 of the task prompt 'Service B — the customer's own voice' (his planning chat), (2) his answers to three plan-mode questions and two build questions in the session that built it, (3) his six amendments on approving the plan (~/.claude/plans/nested-pondering-sun.md); and on 2026-10-20 (4) his ruling in the same session after the two production renders, in his words. Items marked PLANNING DEFAULT are the planning assistant's and he has not ruled on them; items marked REASONED are this build's reading of the code."
 source: founder
 ---
 
@@ -12,6 +12,49 @@ A customer making a סרטון עם דמות AI can speak the ad themselves inst
 ElevenLabs voice. From the recording on, everything works as it does today: the persona's selfie
 lip-synced by HeyGen to the recording, the hook animation and hook text, the karaoke captions on
 the recording's words, the same per-second price.
+
+## Parked (the founder, 2026-10-20)
+
+**Not merged. `feat/b-own-voice` stays pushed and unmerged until he decides.** He walked the
+branch's preview on 2026-10-20 and made two renders from his own recordings
+([[own-voice-first-production-runs-2026-10-20]]).
+
+- **What he saw:** "the lip syncing was just a little bit off … I'm not talking about the facial
+  expressions … I'm just talking about the pronunciation and the lip syncing that comes with it."
+  Then: "The agent render doesn't capture the emotion in the voice note. But I think that's also a
+  problem for the synthetic ones."
+- **The options put to him:**
+  - merge it;
+  - one more render from a deliberate take (phone close, quiet room, energetic), dropping the
+    feature if that also looks off;
+  - park it.
+
+  The assistant recommended parking, with the extra take if he wanted a firmer answer.
+
+- **His ruling:** "I'm just gonna park this until I tweak the agent renders, because I think we have
+  a bigger problem at hand here … once I'm happy with the results, then I will do one more test for
+  this and then take a final decision." "Agent renders" is his word for the Service B avatar
+  renders (HeyGen, [[0022-heygen-expressiveness-medium-generic-motion-prompt]]).
+- **What was measured before he ruled (MEASURED):** the render's timing is the same on both doors.
+  HeyGen returned the audio with no shift, and the render places the voice 59.5 ms late on an
+  AI-voice render as on his
+  ([[service-b-render-audio-sits-60ms-after-its-timeline-2026-10-20]]). So the difference he saw
+  is in how HeyGen shaped the mouth to his recording, not in our timing. Why it shaped it worse is
+  REASONED only: a low-energy laptop take gives the model less to read than ElevenLabs' studio-clean
+  speech.
+- **What parking leaves live in production:**
+  - migrations 0066/0067, applied on 2026-10-20 before any merge (an empty table, a nullable
+    column, two enum values);
+  - the widened `raw` bucket ([[raw-bucket-allows-audio-2026-10-20]]).
+
+  Both are inert without the branch's code. But main lacks the two migration files, so the next
+  push from main is refused: [[migrations-0066-0067-applied-but-only-on-a-parked-branch]].
+
+- **Moot until he unparks it:**
+  - his approval of the new Hebrew strings and the `/privacy` and `/terms` sentences;
+  - the terms §14 question;
+  - `UPDATED` on the merge day;
+  - the tail-margin question.
 
 ## The ten decisions (the founder's, planning chat 2026-10-19)
 
@@ -130,7 +173,7 @@ hookText?}`) and an `audio_renders` row born approved, with no voice (`voice_id`
 - The quote is shown on the transcript step (the AI audio step shows none before approval; the
   founder asked for it at approval) and again at the render step, as today.
 
-## What the captions will do at a pause and a dropped word (REASONED; the paid render confirms)
+## What the captions will do at a pause and a dropped word (REASONED; confirmed by the render of 2026-10-20)
 
 From `captions.ts` `chunkWords` (groups of 3 by count, 2 or 4 to avoid an orphan, never by time)
 and `packages/remotion/src/timing.ts` (a chunk holds until the next one starts; the highlight is
@@ -143,13 +186,16 @@ the last word that started):
   every later group boundary moves by one word. A dropped _first_ word leaves the captions blank
   until the second word, under the hook line. So decision 6's "gap" is not a blank caption.
 
+Confirmed on the first production render, frame by frame, with one addition: the hook handoff
+dropped a negation from the captions ([[own-voice-captions-at-pauses-2026-10-20]]).
+
 ## Open, not ruled
 
 - Whether the legal change is material under terms §14 — his, or counsel's.
 - The tail margin: 150 ms was his figure and is unchanged. The measured word-end p5 is −160 ms
   against ElevenLabs, and the observed last-word ends ran 40–100 ms early.
-- The paid render's pause and filler observations — owed after the migrations, the bucket and the
-  box.
+- ~~The paid render's pause and filler observations~~ done 2026-10-20:
+  [[own-voice-captions-at-pauses-2026-10-20]].
 
 ## Related
 
