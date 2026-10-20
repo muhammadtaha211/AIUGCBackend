@@ -122,7 +122,6 @@ describe("hook text ink (0073)", () => {
         <ServiceB
           talkingHeadSrc="http://127.0.0.1/head.mp4"
           voiceoverSrc="http://127.0.0.1/vo.mp3"
-          brollSrcs={[]}
           captions={sampleCaptions}
           hookText={sampleHookText}
           hookTextSafeArea={RECT}

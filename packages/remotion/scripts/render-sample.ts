@@ -35,8 +35,10 @@ import {
  * visible hard cuts (the demo fixture's clock jumps at each one). `--opener`
  * renders ServiceB with the synthetic opener clip in front: the clip from its
  * first frame under the hook text, the hard cut at the reveal (the text
- * outliving it), the handheld sway over the whole picture, and the VO
- * starting 250ms after the cut. `--text-block` renders the ServiceC
+ * outliving it), and the VO starting 250ms after the cut. `--cutaways`
+ * renders ServiceB with one demo cutaway (vault 0121): the steps demo fixture,
+ * whose clock shows which stretch plays, laid over the head from the second
+ * caption chunk to the fourth, muted, under the captions. `--text-block` renders the ServiceC
  * composition: the tone-carrying lavfi clip (or `--clip <file>`, e.g. the
  * founder's real clip) once, with its sound, under the sample block —
  * `--quiz` for the line-broken quiz shape, `--text "<text>"` (`\n` for a
@@ -48,6 +50,7 @@ const watermark = process.argv.includes("--watermark");
 const serviceA = process.argv.includes("--service-a");
 const steps = process.argv.includes("--steps");
 const opener = process.argv.includes("--opener");
+const cutaways = process.argv.includes("--cutaways");
 const textBlock = process.argv.includes("--text-block");
 const quiz = process.argv.includes("--quiz");
 
@@ -65,9 +68,11 @@ const name = textBlock
       ? "sample-a"
       : opener
         ? "sample-b-opener"
-        : watermark
-          ? "sample-watermarked"
-          : "sample";
+        : cutaways
+          ? "sample-b-cutaways"
+          : watermark
+            ? "sample-watermarked"
+            : "sample";
 const outPath = fileURLToPath(new URL(`../out/${name}.mp4`, import.meta.url));
 
 await ensureFixtures();
@@ -130,7 +135,6 @@ if (textBlock) {
     {
       talkingHeadPath: TALKING_HEAD_FIXTURE,
       voiceoverPath: VOICEOVER_FIXTURE,
-      brollPaths: [],
       captions: sampleCaptions,
       openerPath: argValue("--opener-file") ?? OPENER_FIXTURE,
       hookText: argValue("--hook-line") ?? sampleHookText,
@@ -145,9 +149,20 @@ if (textBlock) {
     {
       talkingHeadPath: TALKING_HEAD_FIXTURE,
       voiceoverPath: VOICEOVER_FIXTURE,
-      brollPaths: [],
       captions: sampleCaptions,
       timeline: sampleTimeline,
+      cutaways: cutaways
+        ? {
+            demoPath: STEPS_DEMO_FIXTURE,
+            slots: [
+              {
+                fromMs: sampleCaptions[1]!.startMs,
+                toMs: sampleCaptions[3]!.startMs,
+                demoStartMs: 1000,
+              },
+            ],
+          }
+        : undefined,
       watermark,
     },
     outPath,

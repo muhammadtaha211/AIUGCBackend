@@ -160,6 +160,37 @@ export async function probe(
   };
 }
 
+/**
+ * The VIDEO stream's length in ms — not the container's, which `probe` reports
+ * and which an AAC track running past the last picture lengthens (the raw-length
+ * defect: docs/vault/defects/the-recording-end-is-the-raw-uploads-length.md).
+ * The stream's own duration, else its frame count over its rate; 0 = unknown.
+ * Service B's demo cutaways clamp their windows against it (decision 0121).
+ */
+export async function probeVideoStreamMs(file: string): Promise<number> {
+  const out = await run("ffprobe", [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=duration,nb_frames,avg_frame_rate",
+    "-print_format",
+    "json",
+    file,
+  ]);
+  const stream = (
+    JSON.parse(out) as {
+      streams?: { duration?: string; nb_frames?: string; avg_frame_rate?: string }[];
+    }
+  ).streams?.[0];
+  const seconds = Number(stream?.duration);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds * 1000);
+  const frames = Number(stream?.nb_frames);
+  const rate = parseRate(stream?.avg_frame_rate);
+  return frames > 0 && rate > 0 ? Math.round((frames / rate) * 1000) : 0;
+}
+
 /** ffprobe reports rates as "30/1" or "30000/1001", and "0/0" or "N/A" when it
  *  has none. 0 means unknown — callers must not read it as a real rate. */
 export function parseRate(rate: string | undefined): number {

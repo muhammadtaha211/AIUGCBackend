@@ -13,9 +13,9 @@ import { HookLine } from "./ServiceA";
 import { Captions, Watermark } from "./overlays";
 import { FPS, type GradeCurve, type ServiceBProps } from "./schema";
 import {
+  cutawayFrames,
   frameToMs,
   gradeAt,
-  handheld,
   hookBeatsScale,
   hookFocusState,
   hookTextRevealState,
@@ -38,11 +38,14 @@ import {
  * approved file directly also guarantees caption sync — it is the exact file
  * the timestamps were computed against. No music, ever (locked).
  *
- * The whole picture — opener and talking head alike — sits under one
- * handheld camera path (timing.ts `handheld`) that runs continuously through
- * the cut; the burned text, the captions and the watermark stay fixed to the
- * frame, as burned-in-post overlays do. The talking head carries a measured
- * brightness gain so the cut lands at the opener's exposure.
+ * The whole picture — opener and talking head alike — holds still under one
+ * static scale (timing.ts `OVERSCAN`): no camera motion on any B render (vault
+ * 0120 §2). Opt-in demo cutaways (vault 0121) lay stretches of the customer's
+ * own demo, muted, over the head on caption-chunk boundaries, while the head,
+ * the VO and the captions run on underneath; the burned text, the captions and
+ * the watermark stay on top of both, as burned-in-post overlays do. The
+ * talking head carries a measured brightness gain so the cut lands at the
+ * opener's exposure.
  *
  * Every millisecond here comes from @aiugc/core's serviceBTimeline via the
  * `timeline` prop; this file converts to frames and lays out. It does no
@@ -64,15 +67,13 @@ export const ServiceB: React.FC<ServiceBProps> = ({
   openerDurationInFrames,
   talkingHeadGrade,
   talkingHeadAlign,
-  cameraSeed,
+  cutaways,
   hookZoom,
   hookFocus,
   hookWhip,
   hookTextReveal,
   hookBeats,
 }) => {
-  // TODO: brollSrcs is accepted and ignored — cutaway logic (when to cut away,
-  // for how long, how to hide the lip-sync) is its own task.
   const frame = useCurrentFrame();
 
   const hasOpener =
@@ -85,7 +86,6 @@ export const ServiceB: React.FC<ServiceBProps> = ({
   const revealFrames = msToFrame(timeline.revealAbsMs);
   const trimBeforeFrames = msToFrame(timeline.lipsyncStartFromMs);
   const voFromFrames = msToFrame(timeline.captionOffsetMs);
-  const cam = handheld(frame, cameraSeed ?? "preview");
 
   // The hook animations (timing.ts). All optional and inert when absent; the
   // scales multiply into the ONE transform on the head, so two of them
@@ -112,7 +112,7 @@ export const ServiceB: React.FC<ServiceBProps> = ({
     <AbsoluteFill style={{ backgroundColor: "black" }}>
       <AbsoluteFill
         style={{
-          transform: `translate(${cam.x}px, ${cam.y}px) rotate(${cam.rot}deg) scale(${OVERSCAN})`,
+          transform: `scale(${OVERSCAN})`,
         }}
       >
         {hasOpener ? (
@@ -138,6 +138,20 @@ export const ServiceB: React.FC<ServiceBProps> = ({
           />
         </Sequence>
       </AbsoluteFill>
+
+      {/* Outside the overscan: the demo shows 1:1, as Service A shows it. The
+          head underneath keeps playing, so it returns in sync. */}
+      {cutaways
+        ? cutawayFrames(cutaways.slots, timeline.captionOffsetMs, hookTextFrames).map((c) => (
+            <Sequence key={c.fromFrame} from={c.fromFrame} durationInFrames={c.durationInFrames}>
+              <Cutaway
+                src={cutaways.src}
+                trimBeforeFrames={c.trimBeforeFrames}
+                clipFrames={cutaways.demoDurationInFrames}
+              />
+            </Sequence>
+          ))
+        : null}
 
       {hookText !== undefined && hookTextSafeArea !== undefined && hookTextFrames > 0 ? (
         /* From frame 0 for its life: its read time with an opener, never
@@ -193,6 +207,28 @@ const OpenerSegment: React.FC<{ src: string; clipFrames?: number }> = ({ src, cl
     <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
       <OffthreadVideo src={src} muted style={COVER} />
     </Freeze>
+  );
+};
+
+/**
+ * One stretch of the customer's demo: muted — the approved mp3 is the only
+ * track (locked #7) — and cover-fit like Service A's steps (the normalized
+ * demo is already 1080×1920, so cover is identity), holding its last frame if
+ * the window runs to the very end of the file.
+ */
+const Cutaway: React.FC<{ src: string; trimBeforeFrames: number; clipFrames?: number }> = ({
+  src,
+  trimBeforeFrames,
+  clipFrames,
+}) => {
+  const frame = useCurrentFrame(); // local to the sequence
+  const lastClipFrame = Math.max(0, (clipFrames ?? Number.MAX_SAFE_INTEGER) - 1 - trimBeforeFrames);
+  return (
+    <AbsoluteFill style={{ backgroundColor: "black" }}>
+      <Freeze frame={lastClipFrame} active={frame > lastClipFrame}>
+        <OffthreadVideo src={src} muted trimBefore={trimBeforeFrames} style={COVER} />
+      </Freeze>
+    </AbsoluteFill>
   );
 };
 
@@ -296,9 +332,10 @@ const TalkingHead: React.FC<{
 export const calculateServiceBMetadata: CalculateMetadataFunction<ServiceBProps> = async ({
   props,
 }) => {
-  const [clip, opener] = await Promise.all([
+  const [clip, opener, demo] = await Promise.all([
     getVideoMetadata(props.talkingHeadSrc),
     props.openerSrc ? getVideoMetadata(props.openerSrc) : undefined,
+    props.cutaways ? getVideoMetadata(props.cutaways.src) : undefined,
   ]);
   const toFrames = (seconds: number) => Math.max(1, msToFrame(seconds * 1000));
   return {
@@ -307,6 +344,10 @@ export const calculateServiceBMetadata: CalculateMetadataFunction<ServiceBProps>
       ...props,
       talkingHeadDurationInFrames: toFrames(clip.durationInSeconds),
       openerDurationInFrames: opener ? toFrames(opener.durationInSeconds) : undefined,
+      cutaways:
+        props.cutaways && demo
+          ? { ...props.cutaways, demoDurationInFrames: toFrames(demo.durationInSeconds) }
+          : props.cutaways,
     },
   };
 };

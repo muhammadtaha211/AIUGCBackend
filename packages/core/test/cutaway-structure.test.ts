@@ -3,13 +3,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CaptionChunk } from "../src/captions";
 import {
-  ALTERNATE,
+  CUTAWAY_ALTERNATE,
   CUTAWAY_EDGE_MS,
   CUTAWAY_FRAME_SLACK_MS,
   clampCutawaysForRender,
   cutawayLayout,
-  layoutError,
-  windowsError,
+  cutawayLayoutError,
+  cutawayWindowsError,
   type CutawayLayout,
 } from "../src/cutaway-structure";
 import { DETECTOR_REACH_FRAMES } from "../src/pipelines/analysis-screens";
@@ -53,7 +53,7 @@ function expectRuleFour(f: Fixture, layout: CutawayLayout, hookTextMs = f.hookTe
   if (!("tier" in layout)) throw new Error(`no layout: ${layout.reason}`);
   const chunkStarts = f.chunks.map((c) => c.startMs);
   const wordStarts = f.chunks.flatMap((c) => c.words.map(([s]) => s));
-  const floor = Math.max(ALTERNATE.firstCutMinMs, hookTextMs) - f.captionOffsetMs;
+  const floor = Math.max(CUTAWAY_ALTERNATE.firstCutMinMs, hookTextMs) - f.captionOffsetMs;
   // The first cut: the FIRST chunk start at or after both 3 s and the hook text.
   expect(layout.slots[0]!.fromMs).toBe(chunkStarts.find((s) => s >= floor));
   let prevEnd = -1;
@@ -61,14 +61,14 @@ function expectRuleFour(f: Fixture, layout: CutawayLayout, hookTextMs = f.hookTe
     const points = layout.tier === "strict" || layout.tier === "soft" ? chunkStarts : wordStarts;
     expect(points).toContain(slot.fromMs);
     expect(points).toContain(slot.toMs);
-    expect(slot.toMs - slot.fromMs).toBeGreaterThanOrEqual(ALTERNATE.cut.minMs);
-    expect(slot.toMs - slot.fromMs).toBeLessThanOrEqual(ALTERNATE.cut.maxMs);
+    expect(slot.toMs - slot.fromMs).toBeGreaterThanOrEqual(CUTAWAY_ALTERNATE.cut.minMs);
+    expect(slot.toMs - slot.fromMs).toBeLessThanOrEqual(CUTAWAY_ALTERNATE.cut.maxMs);
     if (i > 0) {
       const head = slot.fromMs - prevEnd;
-      expect(head).toBeGreaterThanOrEqual(ALTERNATE.head.minMs);
-      expect(head).toBeLessThanOrEqual(ALTERNATE.head.softMaxMs);
+      expect(head).toBeGreaterThanOrEqual(CUTAWAY_ALTERNATE.head.minMs);
+      expect(head).toBeLessThanOrEqual(CUTAWAY_ALTERNATE.head.softMaxMs);
       if (layout.tier === "strict" || layout.tier === "words") {
-        expect(head).toBeLessThanOrEqual(ALTERNATE.head.maxMs);
+        expect(head).toBeLessThanOrEqual(CUTAWAY_ALTERNATE.head.maxMs);
       }
     }
     prevEnd = slot.toMs;
@@ -76,10 +76,11 @@ function expectRuleFour(f: Fixture, layout: CutawayLayout, hookTextMs = f.hookTe
   // Ends on the character, inside the approved audio — the last caption's
   // up-to-80 ms residue past duration_ms lands inside this final head.
   const finalHead = f.voDurationMs - prevEnd;
-  expect(finalHead).toBeGreaterThanOrEqual(ALTERNATE.head.minMs);
-  if (layout.tier !== "capacity") expect(finalHead).toBeLessThanOrEqual(ALTERNATE.head.softMaxMs);
+  expect(finalHead).toBeGreaterThanOrEqual(CUTAWAY_ALTERNATE.head.minMs);
+  if (layout.tier !== "capacity")
+    expect(finalHead).toBeLessThanOrEqual(CUTAWAY_ALTERNATE.head.softMaxMs);
   expect(
-    layoutError(layout.slots, {
+    cutawayLayoutError(layout.slots, {
       voDurationMs: f.voDurationMs,
       captionOffsetMs: f.captionOffsetMs,
       hookTextMs,
@@ -201,7 +202,7 @@ describe("cutawayLayout's first cut follows the hook text", () => {
         if (!("tier" in layout)) continue;
         expect(layout.firstCutMs + t.captionOffsetMs).toBeGreaterThanOrEqual(t.hookTextMs);
         expect(layout.firstCutMs + t.captionOffsetMs).toBeGreaterThanOrEqual(
-          ALTERNATE.firstCutMinMs,
+          CUTAWAY_ALTERNATE.firstCutMinMs,
         );
       }
     }
@@ -238,7 +239,7 @@ describe("cutawayLayout's refusals and the demo's capacity", () => {
   });
 });
 
-describe("windowsError", () => {
+describe("cutawayWindowsError", () => {
   const slot = (demoStartMs: number, len = 5000) => ({
     fromMs: 4000,
     toMs: 4000 + len,
@@ -247,33 +248,33 @@ describe("windowsError", () => {
 
   it("keeps clear of the recording's unexamined edges", () => {
     expect(CUTAWAY_EDGE_MS).toBe(Math.ceil((DETECTOR_REACH_FRAMES * 1000) / 30));
-    expect(windowsError([slot(CUTAWAY_EDGE_MS)], 60_000)).toBeNull();
-    expect(windowsError([slot(CUTAWAY_EDGE_MS - 1)], 60_000)).toMatch(/before/);
+    expect(cutawayWindowsError([slot(CUTAWAY_EDGE_MS)], 60_000)).toBeNull();
+    expect(cutawayWindowsError([slot(CUTAWAY_EDGE_MS - 1)], 60_000)).toMatch(/before/);
     const latest = 60_000 - CUTAWAY_EDGE_MS - 5000 - CUTAWAY_FRAME_SLACK_MS;
-    expect(windowsError([slot(latest)], 60_000)).toBeNull();
-    expect(windowsError([slot(latest + 1)], 60_000)).toMatch(/past the recording's end/);
+    expect(cutawayWindowsError([slot(latest)], 60_000)).toBeNull();
+    expect(cutawayWindowsError([slot(latest + 1)], 60_000)).toMatch(/past the recording's end/);
   });
 
   it("never lets two cutaways show the same footage", () => {
-    expect(windowsError([slot(1000), slot(6100)], 60_000)).toBeNull();
-    expect(windowsError([slot(1000), slot(6000)], 60_000)).toMatch(/same footage/);
-    expect(windowsError([slot(6000), slot(1000)], 60_000)).toMatch(/same footage/);
+    expect(cutawayWindowsError([slot(1000), slot(6100)], 60_000)).toBeNull();
+    expect(cutawayWindowsError([slot(1000), slot(6000)], 60_000)).toMatch(/same footage/);
+    expect(cutawayWindowsError([slot(6000), slot(1000)], 60_000)).toMatch(/same footage/);
   });
 });
 
-describe("layoutError", () => {
+describe("cutawayLayoutError", () => {
   const opts = { voDurationMs: 20_000, captionOffsetMs: 250, hookTextMs: 2400 };
   it("accepts a layout and refuses each broken invariant", () => {
     const good = [
       { fromMs: 3000, toMs: 8000 },
       { fromMs: 10_000, toMs: 15_000 },
     ];
-    expect(layoutError(good, opts)).toBeNull();
-    expect(layoutError([], opts)).toMatch(/no cutaways/);
-    expect(layoutError([{ fromMs: 2000, toMs: 7000 }], opts)).toMatch(/hook text/);
-    expect(layoutError([{ fromMs: 3000, toMs: 6000 }], opts)).toMatch(/3000 ms long/);
+    expect(cutawayLayoutError(good, opts)).toBeNull();
+    expect(cutawayLayoutError([], opts)).toMatch(/no cutaways/);
+    expect(cutawayLayoutError([{ fromMs: 2000, toMs: 7000 }], opts)).toMatch(/hook text/);
+    expect(cutawayLayoutError([{ fromMs: 3000, toMs: 6000 }], opts)).toMatch(/3000 ms long/);
     expect(
-      layoutError(
+      cutawayLayoutError(
         [
           { fromMs: 3000, toMs: 8000 },
           { fromMs: 8500, toMs: 13_000 },
@@ -281,7 +282,9 @@ describe("layoutError", () => {
         opts,
       ),
     ).toMatch(/too short/);
-    expect(layoutError([{ fromMs: 14_500, toMs: 19_500 }], opts)).toMatch(/end on the character/);
+    expect(cutawayLayoutError([{ fromMs: 14_500, toMs: 19_500 }], opts)).toMatch(
+      /end on the character/,
+    );
   });
 });
 

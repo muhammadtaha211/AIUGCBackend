@@ -5,14 +5,13 @@ import { serviceAStepsSchema, serviceBSchema } from "../src/schema";
 const valid = {
   talkingHeadSrc: "http://127.0.0.1:1234/0.mp4",
   voiceoverSrc: "http://127.0.0.1:1234/1.mp3",
-  brollSrcs: [],
   captions: sampleCaptions,
   timeline: sampleTimeline,
   watermark: false,
 };
 
 describe("serviceBSchema", () => {
-  it("accepts a render with no b-roll", () => {
+  it("accepts a head-only render — no cutaways", () => {
     expect(serviceBSchema.safeParse(valid).success).toBe(true);
   });
 
@@ -33,9 +32,15 @@ describe("serviceBSchema", () => {
     expect(serviceBSchema.safeParse({ ...valid, timeline: { hookTextMs: 0 } }).success).toBe(false);
   });
 
-  it("accepts b-roll paths when they are present", () => {
-    const result = serviceBSchema.safeParse({ ...valid, brollSrcs: ["http://x/1.mp4"] });
-    expect(result.success).toBe(true);
+  it("accepts demo cutaways: the demo's src and at least one window", () => {
+    const cutaways = {
+      src: "http://127.0.0.1:1234/3.mp4",
+      slots: [{ fromMs: 4080, toMs: 9440, demoStartMs: 12_000 }],
+    };
+    expect(serviceBSchema.safeParse({ ...valid, cutaways }).success).toBe(true);
+    expect(
+      serviceBSchema.safeParse({ ...valid, cutaways: { ...cutaways, slots: [] } }).success,
+    ).toBe(false);
   });
 
   it("accepts the zoom hook with or without a whoosh, and rejects a scale under 1", () => {
@@ -96,8 +101,12 @@ describe("serviceBSchema", () => {
     expect(serviceBSchema.safeParse(rest).success).toBe(false);
   });
 
-  it("rejects b-roll given as a bare string instead of a list", () => {
-    expect(serviceBSchema.safeParse({ ...valid, brollSrcs: "http://x/1.mp4" }).success).toBe(false);
+  it("rejects a cutaway window that starts before the demo does", () => {
+    const cutaways = {
+      src: "http://127.0.0.1:1234/3.mp4",
+      slots: [{ fromMs: 4080, toMs: 9440, demoStartMs: -1 }],
+    };
+    expect(serviceBSchema.safeParse({ ...valid, cutaways }).success).toBe(false);
   });
 
   it("rejects caption chunks missing word timings", () => {

@@ -60,7 +60,6 @@ export interface RenderServiceBInput {
   talkingHeadPath: string;
   /** The approved mp3 — the render's audio track (the clip's own is muted). */
   voiceoverPath: string;
-  brollPaths: string[];
   captions: CaptionChunk[];
   /** The opener effect — all three together, or none (core validates). Exclusive with hookZoom. */
   openerPath?: string;
@@ -72,8 +71,11 @@ export interface RenderServiceBInput {
   talkingHeadGrade?: GradeCurve;
   /** Measured in core: the slide that puts the head's idle frame on the opener's reveal frame. */
   talkingHeadAlign?: { dx: number; dy: number };
-  /** Seeds the handheld camera path; absent = the fixed preview path. */
-  cameraSeed?: string;
+  /**
+   * Demo cutaways (core: RenderServiceBProps.cutaways, vault 0121): the local
+   * demo, served like the clips, and its windows in VO time. Absent = head only.
+   */
+  cutaways?: { demoPath: string; slots: { fromMs: number; toMs: number; demoStartMs: number }[] };
   /** The zoom hook (schema `hookZoomSchema`); `sfxPath` is served like the clips. */
   hookZoom?: { from: number; to: number; atMs: number; durationMs: number; sfxPath?: string };
   /** The other hook animations (schema.ts) — mocks, all exclusive with an opener. */
@@ -364,8 +366,7 @@ export async function renderServiceB(
   }
   const files = [input.talkingHeadPath, input.voiceoverPath];
   if (input.openerPath) files.push(input.openerPath);
-  const brollStart = files.length;
-  files.push(...input.brollPaths);
+  const demoIndex = input.cutaways ? files.push(input.cutaways.demoPath) - 1 : undefined;
   const sfxIndex = input.hookZoom?.sfxPath ? files.push(input.hookZoom.sfxPath) - 1 : undefined;
   const whipSfxIndex = input.hookWhip?.sfxPath ? files.push(input.hookWhip.sfxPath) - 1 : undefined;
   assertFilesExist(files);
@@ -375,7 +376,6 @@ export async function renderServiceB(
     const props = serviceBSchema.safeParse({
       talkingHeadSrc: served.urls[0]!,
       voiceoverSrc: served.urls[1]!,
-      brollSrcs: served.urls.slice(brollStart, brollStart + input.brollPaths.length),
       captions: input.captions,
       openerSrc: input.openerPath ? served.urls[2] : undefined,
       hookText: input.hookText,
@@ -383,7 +383,10 @@ export async function renderServiceB(
       timeline: input.timeline,
       talkingHeadGrade: input.talkingHeadGrade,
       talkingHeadAlign: input.talkingHeadAlign,
-      cameraSeed: input.cameraSeed,
+      cutaways:
+        input.cutaways && demoIndex !== undefined
+          ? { src: served.urls[demoIndex]!, slots: input.cutaways.slots }
+          : undefined,
       hookZoom: input.hookZoom
         ? {
             from: input.hookZoom.from,

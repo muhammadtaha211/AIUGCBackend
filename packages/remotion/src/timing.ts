@@ -1,4 +1,4 @@
-import { interpolate, random } from "remotion/no-react";
+import { interpolate } from "remotion/no-react";
 import {
   FPS,
   WIDTH,
@@ -45,28 +45,47 @@ export function frameToMs(frame: number): number {
 }
 
 /**
- * Handheld camera: a phone held at arm's length never sits still, and a
- * perfectly static picture is the strongest "this is AI" tell (both source
- * clips — the Seedance opener and the HeyGen talking head — have locked-off
- * cameras). Three octaves of smooth seeded noise per axis — a slow wander
- * with a little jitter on top — rather than sines: a hand has no period, and
- * the first sine version read as a pattern (founder, 2026-09-05). A pure
- * function of the ABSOLUTE frame, so the path runs continuously through the
- * reveal cut instead of restarting on it, and of the seed (the render id), so
- * a retry re-renders identical frames. The picture underneath is scaled by
- * OVERSCAN so no edge shows; timing.test.ts pins that every frame of three
- * seeds — two renders' ids and the tightest of 300 random ones — stays
- * covered with room for the alignment offset. Not a proof for every seed.
- *
- * Every amplitude (px at 1080×1920, degrees) and knot rate (Hz) here was
- * chosen by eye on 2026-09-05, none measured — the dial is these nine numbers.
+ * The first frame on which `activeChunkIndex` shows a chunk starting at `voMs`
+ * (VO time): the captions' own rule, `frameToMs(f) − captionOffsetMs ≥ voMs`,
+ * in the same floating point — so a demo cutaway's cut and its caption change
+ * land on the same frame (vault 0121). Neither msToFrame (it rounds) nor a bare
+ * ceil of the sum (float drift puts some boundaries one frame off) does that.
  */
-const SWAY = {
-  x: { amp: [8, 3, 1], hz: [0.35, 1.1, 3.3] },
-  y: { amp: [6.5, 2.5, 0.8], hz: [0.4, 1.3, 3.7] },
-  rot: { amp: [0.3, 0.12, 0.04], hz: [0.3, 0.9, 2.9] },
-} as const;
+export function voBoundaryFrame(voMs: number, captionOffsetMs: number): number {
+  let f = Math.max(0, Math.ceil(((voMs + captionOffsetMs) * FPS) / 1000));
+  while (f > 0 && frameToMs(f - 1) - captionOffsetMs >= voMs) f--;
+  while (frameToMs(f) - captionOffsetMs < voMs) f++;
+  return f;
+}
 
+/**
+ * Each demo cutaway as frames: where it covers the head, for how long, and
+ * where in the demo it plays from. Never before `hookTextFrames` — a fully
+ * spoken hook can leave on the very chunk the first cut lands on, and the
+ * hook's own ceil could otherwise leave its line over the demo for a frame. A
+ * window that rounds to nothing is skipped.
+ */
+export function cutawayFrames(
+  slots: { fromMs: number; toMs: number; demoStartMs: number }[],
+  captionOffsetMs: number,
+  hookTextFrames: number,
+): { fromFrame: number; durationInFrames: number; trimBeforeFrames: number }[] {
+  return slots.flatMap((slot) => {
+    const fromFrame = Math.max(voBoundaryFrame(slot.fromMs, captionOffsetMs), hookTextFrames);
+    const durationInFrames = voBoundaryFrame(slot.toMs, captionOffsetMs) - fromFrame;
+    return durationInFrames >= 1
+      ? [{ fromFrame, durationInFrames, trimBeforeFrames: msToFrame(slot.demoStartMs) }]
+      : [];
+  });
+}
+
+/**
+ * The picture's static scale. It was the cover the handheld sway moved inside;
+ * the sway is gone from every Service B render (vault 0120 §2, 0121) and the
+ * scale stays, so the framing — and the wizard preview, which mirrors it — is
+ * exactly what it was, and the hook animations keep their margin past the
+ * blur's 2σ cut (below): 32.4 px a side horizontally, 57.6 px vertically.
+ */
 export const OVERSCAN = 1.06;
 
 /**
@@ -76,40 +95,10 @@ export const OVERSCAN = 1.06;
  * the alignment offset (2026-09-06) read to the founder as "a weird
  * transition animation" on top of the jump they were meant to hide, and a
  * 5-frame dissolve before that (2026-09-05) ghosted a moving hand. Nothing
- * moves at the seam now except the shared camera path. Frames of opacity
+ * moves at the seam now. Frames of opacity
  * ramp on the head while the opener holds underneath; 0 = hard cut.
  */
 export const SEAM_DISSOLVE_FRAMES = 0;
-
-/**
- * Smooth noise within ±1.25 (the curve's overshoot past its knots): a Catmull-Rom curve through random
- * knots `hz` per second. Continuous velocity — no stall at the knots — and
- * no period.
- */
-function smoothNoise(seed: string, t: number, hz: number): number {
-  const x = t * hz;
-  const i = Math.floor(x);
-  const f = x - i;
-  const knot = (k: number) => random(`${seed}:${k}`) * 2 - 1;
-  const [p0, p1, p2, p3] = [knot(i - 1), knot(i), knot(i + 1), knot(i + 2)];
-  return (
-    0.5 *
-    (2 * p1 +
-      (-p0 + p2) * f +
-      (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f +
-      (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f)
-  );
-}
-
-export function handheld(frame: number, seed: string): { x: number; y: number; rot: number } {
-  const t = frame / FPS;
-  const axis = (name: keyof typeof SWAY) =>
-    SWAY[name].amp.reduce(
-      (sum, amp, i) => sum + amp * smoothNoise(`${seed}:${name}:${i}`, t, SWAY[name].hz[i]!),
-      0,
-    );
-  return { x: axis("x"), y: axis("y"), rot: axis("rot") };
-}
 
 /**
  * The zoom hook's scale at `ms` of composition time: the tight opening creeps
@@ -141,8 +130,8 @@ export function hookZoomScale(zoom: HookZoom, ms: number): number {
  * talking-head layer.
  *
  * THE INVARIANT they all have to keep: the picture sits inside the outer
- * handheld container's OVERSCAN, and timing.test.ts pins that the sway leaves
- * at least 12px horizontally and 32px vertically of it unused. So a transform
+ * container's static OVERSCAN, which leaves 32.4px horizontally and 57.6px
+ * vertically of spare cover (timing.test.ts pins it). So a transform
  * that only scales UP is safe by construction (a bigger picture cannot expose
  * an edge); anything that translates or blurs has to buy its own cover, which
  * is why `hookFocusState` and `hookWhipState` return a scale rather than
@@ -155,7 +144,7 @@ const HALF_W = WIDTH / 2;
  * Cover for a blur: a Gaussian of stdDeviation `blurPx` (what CSS
  * `blur(Npx)` sets) has ~2.3% of its mass past 2σ, so a frame edge cut there
  * is at worst ~2% dark — invisible in an ad, where 3σ would cost a third
- * more zoom. The sway's pinned 12px of spare cover is the margin on top; the
+ * more zoom. The overscan's 32px of spare cover is the margin on top; the
  * scale below buys exactly the bleed and nothing more, so it lands on 1 the
  * instant the blur does instead of stepping.
  */
@@ -203,7 +192,7 @@ export function hookWhipState(
  * alpha ramp is inset 2 sigma * s on screen, not 2 sigma — the compensating
  * scale magnifies the very bleed it buys. Solving `s(HALF_W - 2 sigma) =
  * HALF_W + |dx|` lands the near edge on exactly -HALF_W at every sigma, so
- * the sway's spare cover is never spent. (The additive form this replaced
+ * the overscan's spare cover is never spent. (The additive form this replaced
  * under-bought by 2 sigma (s-1): 3px at blur 20, 23px at blur 56 — measured
  * 2026-09-06, packages/core/.work/hook-probe.ts.) The clamp is what stops a
  * large blur turning a division into a NEGATIVE scale, i.e. a mirrored picture.

@@ -33,7 +33,6 @@ import {
 const previewProps = {
   talkingHeadSrc: staticFile("fixtures/talking-head.mp4"),
   voiceoverSrc: staticFile("fixtures/voiceover.wav"),
-  brollSrcs: [],
   captions: sampleCaptions,
   timeline: sampleTimeline,
   watermark: false,

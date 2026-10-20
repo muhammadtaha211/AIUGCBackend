@@ -38,7 +38,7 @@ export const DEFAULT_CUTAWAY_STRUCTURE = "alternate" satisfies CutawayStructure;
  *   1500 one of his real audios had no layout on chunk starts at all.
  * - head softMax 5500: "about 5 s" — used only when no layout fits under 5000.
  */
-export const ALTERNATE = {
+export const CUTAWAY_ALTERNATE = {
   firstCutMinMs: 3000,
   cut: { minMs: 4000, targetMs: 5000, maxMs: 6000 },
   head: { minMs: 1000, targetMs: 2500, maxMs: 5000, softMaxMs: 5500 },
@@ -57,7 +57,7 @@ export const CUTAWAY_EDGE_MS = 367;
 export const CUTAWAY_FRAME_SLACK_MS = 34;
 
 /** One laid-out slot: when the demo covers the head, and the words it covers. */
-export interface LayoutSlot {
+export interface CutawayLayoutSlot {
   fromMs: number;
   toMs: number;
   /** Index into captions.flatMap(c => c.words), inclusive. */
@@ -74,10 +74,10 @@ export interface LayoutSlot {
  * line exactly where a cut had to land, so chunk starts alone gave them no
  * cutaways at all; then the capacity tier.
  */
-export type LayoutTier = "strict" | "soft" | "words" | "words_soft" | "capacity";
+export type CutawayLayoutTier = "strict" | "soft" | "words" | "words_soft" | "capacity";
 
 export type CutawayLayout =
-  | { slots: LayoutSlot[]; tier: LayoutTier; firstCutMs: number }
+  | { slots: CutawayLayoutSlot[]; tier: CutawayLayoutTier; firstCutMs: number }
   | { slots: []; reason: "vo_too_short" | "demo_too_short" | "no_layout" };
 
 export interface CutawayLayoutInput {
@@ -103,7 +103,7 @@ export interface CutawayLayoutInput {
  * footage"). Nothing fits: no slots, and the reason why.
  */
 export function cutawayLayout(input: CutawayLayoutInput): CutawayLayout {
-  const S = ALTERNATE;
+  const S = CUTAWAY_ALTERNATE;
   const end = input.voDurationMs;
   const firstFromVo = Math.max(S.firstCutMinMs, input.hookTextMs) - input.captionOffsetMs;
   const chunkStarts = [...new Set(input.captions.map((c) => c.startMs))]
@@ -189,7 +189,7 @@ export function cutawayLayout(input: CutawayLayoutInput): CutawayLayout {
   };
 
   let found: Best = null;
-  let tier: LayoutTier = "strict";
+  let tier: CutawayLayoutTier = "strict";
   for (const [points, headMax, name] of [
     [chunkPoints, S.head.maxMs, "strict"],
     [chunkPoints, S.head.softMaxMs, "soft"],
@@ -242,7 +242,7 @@ function searchLongestPrefix(
   end: number,
   capacityMs: number,
 ): { cost: number; cuts: number[][]; cutMs: number } | null {
-  const S = ALTERNATE;
+  const S = CUTAWAY_ALTERNATE;
   type Best = { cost: number; cuts: number[][]; cutMs: number } | null;
   const better = (a: Best, b: Best): Best =>
     !a ? b : !b ? a : b.cutMs !== a.cutMs ? (b.cutMs > a.cutMs ? b : a) : b.cost < a.cost ? b : a;
@@ -293,9 +293,12 @@ export interface CutawayWindow {
  * The invariants every stored window keeps, checked where a window is written
  * (draft, the customer's edit) and again at enqueue: inside the recording's
  * examined span, and no two overlapping — so no footage ever repeats. Lengths
- * and order are the layout's and are checked by `layoutError`. Null = valid.
+ * and order are the layout's and are checked by `cutawayLayoutError`. Null = valid.
  */
-export function windowsError(windows: CutawayWindow[], recordingEndMs: number): string | null {
+export function cutawayWindowsError(
+  windows: CutawayWindow[],
+  recordingEndMs: number,
+): string | null {
   const spans = windows.map((w) => ({
     start: w.demoStartMs,
     end: w.demoStartMs + (w.toMs - w.fromMs) + CUTAWAY_FRAME_SLACK_MS,
@@ -320,11 +323,11 @@ export function windowsError(windows: CutawayWindow[], recordingEndMs: number): 
  * written by an older build, or edited by hand): lengths inside the structure,
  * in order, after the first-cut floor, ending on a head. Null = valid.
  */
-export function layoutError(
+export function cutawayLayoutError(
   slots: { fromMs: number; toMs: number }[],
   opts: { voDurationMs: number; captionOffsetMs: number; hookTextMs: number },
 ): string | null {
-  const S = ALTERNATE;
+  const S = CUTAWAY_ALTERNATE;
   if (slots.length === 0) return "no cutaways";
   const firstFloor = Math.max(S.firstCutMinMs, opts.hookTextMs) - opts.captionOffsetMs;
   if (slots[0]!.fromMs < firstFloor) return "the first cutaway starts before the hook text leaves";
