@@ -1409,4 +1409,85 @@ describe("migrations", () => {
     expect(kept.rows).toEqual([{ id: account, access_token_expires_at: null }]);
     await pg.close();
   });
+
+  it("0066: alignment_source gains scribe and usage_kind gains stt_seconds, idempotently", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0066")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0066_own_voice_enum_values.sql"), "utf8");
+    await pg.exec(migration);
+    await pg.exec(migration);
+    const labels = async (type: string) =>
+      (
+        await pg.query<{ enumlabel: string }>(
+          `SELECT enumlabel FROM pg_enum WHERE enumtypid = '${type}'::regtype ORDER BY enumsortorder`,
+        )
+      ).rows.map((r) => r.enumlabel);
+    expect(await labels("public.alignment_source")).toEqual(["elevenlabs", "whisperx", "scribe"]);
+    expect(await labels("public.usage_kind")).toEqual([
+      "llm_tokens",
+      "tts_chars",
+      "gpu_seconds",
+      "images",
+      "stt_seconds",
+    ]);
+    await pg.close();
+  });
+
+  it("0067: voice_recordings is server-only and audio_renders.voice_id goes nullable, rows kept, idempotent", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0067")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const user = "11111111-1111-4111-8111-111111111111";
+    const biz = "22222222-2222-4222-8222-222222222222";
+    const script = "44444444-4444-4444-8444-444444444444";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES ('${biz}', '${user}', 'B');
+      INSERT INTO scripts (id, business_id, kind, text) VALUES ('${script}', '${biz}', 'b_script', 'שלום');
+      INSERT INTO audio_renders (script_id, voice_id) VALUES ('${script}', 'voice-1');
+    `);
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0067_voice_recordings.sql"), "utf8");
+    await pg.exec(migration);
+    await pg.exec(migration);
+
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.voice_recordings'::regclass",
+    );
+    expect(rls.rows).toEqual([{ relrowsecurity: true }]);
+    const policies = await pg.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM pg_policies WHERE tablename = 'voice_recordings'",
+    );
+    expect(policies.rows).toEqual([{ count: 0 }]);
+
+    const nullable = await pg.query<{ is_nullable: string }>(
+      `SELECT is_nullable FROM information_schema.columns
+        WHERE table_name = 'audio_renders' AND column_name = 'voice_id'`,
+    );
+    expect(nullable.rows).toEqual([{ is_nullable: "YES" }]);
+    const kept = await pg.query<{ voice_id: string }>("SELECT voice_id FROM audio_renders");
+    expect(kept.rows).toEqual([{ voice_id: "voice-1" }]);
+
+    // The row shape the pipeline writes, its defaults, and the unique upload.
+    await pg.exec(
+      `INSERT INTO voice_recordings (business_id, raw_path) VALUES ('${biz}', 'raw/${biz}/recording/a/upload.webm')`,
+    );
+    const row = await pg.query<{ status: string; file_path: string | null }>(
+      "SELECT status, file_path FROM voice_recordings",
+    );
+    expect(row.rows).toEqual([{ status: "queued", file_path: null }]);
+    await expect(
+      pg.exec(
+        `INSERT INTO voice_recordings (business_id, raw_path) VALUES ('${biz}', 'raw/${biz}/recording/a/upload.webm')`,
+      ),
+    ).rejects.toThrow(/duplicate key/);
+    await expect(
+      pg.exec(
+        `INSERT INTO voice_recordings (business_id, raw_path) VALUES ('99999999-9999-4999-8999-999999999999', 'raw/x')`,
+      ),
+    ).rejects.toThrow(/foreign key/);
+    await pg.close();
+  });
 });
