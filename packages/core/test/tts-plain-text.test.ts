@@ -1,3 +1,8 @@
+import { execFile } from "node:child_process";
+import { mkdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CaptionChunk } from "../src/captions";
@@ -6,6 +11,7 @@ import type { Db } from "../src/db";
 import * as dbSchema from "../src/db/schema";
 import { buildHandlers } from "../src/handlers";
 import { runLane } from "../src/jobs/worker";
+import { measureDurationMs } from "../src/media/ffmpeg";
 import { createBusiness } from "../src/pipelines/businesses";
 import { requestAudio, stripAudioTags } from "../src/pipelines/tts";
 import { synthesize } from "../src/providers/elevenlabs";
@@ -22,6 +28,8 @@ import { tempStorage } from "./helpers/storage";
 
 const SCRIPT = "ניסיתי מיליון דברים ושום דבר לא עבד עד שגיליתי את זה";
 
+const exec = promisify(execFile);
+
 function response(status: number, body: unknown) {
   return {
     ok: status >= 200 && status < 300,
@@ -31,16 +39,20 @@ function response(status: number, body: unknown) {
   };
 }
 
-/** What with-timestamps answers: audio plus a per-character alignment in seconds. */
-function withTimestamps(text: string) {
+/**
+ * What with-timestamps answers: audio plus a per-character alignment in
+ * seconds, 50 ms a character unless `endMs` sets where the last one ends.
+ */
+function withTimestamps(text: string, opts: { audio?: Buffer; endMs?: number } = {}) {
   const characters = [...text];
+  const step = opts.endMs === undefined ? 0.05 : opts.endMs / 1000 / characters.length;
   const alignment = {
     characters,
-    character_start_times_seconds: characters.map((_, i) => i * 0.05),
-    character_end_times_seconds: characters.map((_, i) => (i + 1) * 0.05),
+    character_start_times_seconds: characters.map((_, i) => i * step),
+    character_end_times_seconds: characters.map((_, i) => (i + 1) * step),
   };
   return {
-    audio_base64: Buffer.from("fake mp3").toString("base64"),
+    audio_base64: (opts.audio ?? Buffer.from("fake mp3")).toString("base64"),
     alignment,
     normalized_alignment: alignment,
   };
@@ -195,12 +207,28 @@ describe("synth_tts sends plain text (real DB + jobs)", () => {
 
   describe("against the real provider code (fetch mocked)", () => {
     const fetchMock = vi.fn();
+    // A real one-second mp3: off DRY_RUN, handleSynthTts probes the file.
+    const dir = path.join(tmpdir(), "aiugc-tts-plain-text");
+    const toneFile = path.join(dir, "tone-1s.mp3");
+    let tone: Buffer;
+    let toneMs: number;
 
-    beforeAll(() => {
+    beforeAll(async () => {
       process.env.DRY_RUN = "0";
       process.env.ELEVENLABS_API_KEY = "test_elevenlabs_key";
       resetEnvCache();
       vi.stubGlobal("fetch", fetchMock);
+      mkdirSync(dir, { recursive: true });
+      await exec("ffmpeg", [
+        ...["-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1"],
+        ...["-ar", "44100", "-ac", "1", toneFile],
+      ]);
+      tone = readFileSync(toneFile);
+      toneMs = await measureDurationMs(toneFile);
+    }, 60_000);
+
+    afterEach(() => {
+      fetchMock.mockReset();
     });
 
     afterAll(() => {
@@ -218,7 +246,10 @@ describe("synth_tts sends plain text (real DB + jobs)", () => {
         active: true,
       });
       fetchMock.mockImplementation(async (_url: string, init: { body: string }) =>
-        response(200, withTimestamps((JSON.parse(init.body) as { text: string }).text)),
+        response(
+          200,
+          withTimestamps((JSON.parse(init.body) as { text: string }).text, { audio: tone }),
+        ),
       );
 
       const row = await synth("[excited] ניסיתי את ה-AI הזה [laughs] ושום דבר לא עבד");
@@ -234,6 +265,30 @@ describe("synth_tts sends plain text (real DB + jobs)", () => {
       expect(row.status).toBe("ready");
       expect(row.renderedText).toBe(body.text);
       expect(captionText(row)).toBe(body.text);
+    });
+
+    it("duration_ms is the file's length when the alignment runs past it (v4's 80 ms)", async () => {
+      fetchMock.mockResolvedValueOnce(
+        response(200, withTimestamps(SCRIPT, { audio: tone, endMs: toneMs + 80 })),
+      );
+
+      const row = await synth(SCRIPT);
+
+      expect(row.status).toBe("ready");
+      expect(row.durationMs).toBe(toneMs);
+      // The caption times are ElevenLabs' own and are left alone.
+      expect((row.wordTimestamps as CaptionChunk[]).at(-1)!.endMs).toBe(toneMs + 80);
+    });
+
+    it("duration_ms is the alignment's end when that stops inside the file", async () => {
+      fetchMock.mockResolvedValueOnce(
+        response(200, withTimestamps(SCRIPT, { audio: tone, endMs: toneMs - 200 })),
+      );
+
+      const row = await synth(SCRIPT);
+
+      expect(row.status).toBe("ready");
+      expect(row.durationMs).toBe(toneMs - 200);
     });
   });
 });

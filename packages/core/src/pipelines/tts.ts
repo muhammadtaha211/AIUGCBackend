@@ -185,9 +185,17 @@ export async function handleSynthTts(job: Job, ctx: JobContext): Promise<JobResu
     mkdirSync(localDir, { recursive: true });
     let localAudio = path.join(localDir, "audio.mp3");
     writeFileSync(localAudio, tts.audio);
-    let durationMs = tts.charAlignment
-      ? tts.charAlignment.endTimesMs[tts.charAlignment.endTimesMs.length - 1]!
-      : await measureDurationMs(localAudio);
+    // Eleven v4's alignment ends 80 ms past its audio (vault defect
+    // eleven-v4-alignment-ends-80ms-past-its-audio), so the probed file bounds
+    // it: duration_ms stays the audio's own length, as it was on v3, and so do
+    // the B quote and timeline built on it. DRY_RUN's fake buffer is no mp3.
+    const alignedEndMs = tts.charAlignment?.endTimesMs[tts.charAlignment.endTimesMs.length - 1];
+    let durationMs =
+      alignedEndMs === undefined
+        ? await measureDurationMs(localAudio)
+        : getEnv().DRY_RUN
+          ? alignedEndMs
+          : Math.min(alignedEndMs, await measureDurationMs(localAudio));
 
     // Length fit against the linked demo (voiced Service A only).
     let stretchRatio = 1.0;

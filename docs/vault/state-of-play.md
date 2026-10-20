@@ -908,19 +908,23 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
 - `handleSynthTts` reads neither `tts_enhance` nor `tts_stability`. It removes any `[...]` span after
   the pronunciation map, so `rendered_text` is exactly what was sent. A script left empty by that
   fails its preview with a plain `PermanentError`.
+- **`duration_ms` is clamped to the audio file** (his ruling, same day, 0119 §5): the shorter of
+  the alignment end and `measureDurationMs`. DRY_RUN keeps the alignment end.
 - Removed: `enhanceWithAudioTags`, `sameWordSequence`, the DRY_RUN `[excited]` prefix and
   `captions.ts`' `stripTagWords`. Two stale `copy.ts` comments were fixed.
-- `tts-enhance.test.ts` became `tts-plain-text.test.ts`, with 9 tests:
+- `tts-enhance.test.ts` became `tts-plain-text.test.ts`, with 11 tests:
   - the exact request body;
   - the alignment in ms;
   - no tag reaches the provider, from a script or from a map entry;
   - DRY_RUN sends plain text byte for byte;
   - a tag-only script fails plainly;
-  - a leftover `tts_enhance = true` adds nothing.
+  - a leftover `tts_enhance = true` adds nothing;
+  - the clamp, on a real one-second mp3, both ways.
 - **Checked (MEASURED, 2026-10-20):**
   - **The gate:** all green on the tree before the review's fixes — lint and typecheck clean,
-    2,279 tests (remotion 97, core 1,237, worker 7, web 867, admin 71). Re-run on the final tree
-    after the fixes: all green again, 2,280 (core 1,238).
+    2,279 tests (remotion 97, core 1,237, worker 7, web 867, admin 71). Re-run after the review's
+    fixes, before the clamp: all green again, 2,280 (core 1,238). Re-run with the clamp: all
+    green, 2,282 (core 1,240).
   - **An adversarial review of the diff** (four lenses, a skeptic per finding): 13 findings, 8
     survived and 5 were refuted. Fixed from it:
     - the tag-only script;
@@ -930,7 +934,14 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
     - the HeyGen-row wording;
     - an over-claimed "no silence" pointer;
     - an untested claim tagged MEASURED;
-    - **the owed order:** the 80 ms ruling now comes before the merge.
+    - **the owed order:** the 80 ms ruling now comes before the merge. He made it the same day,
+      and the clamp is built.
+  - **The clamp diff was reviewed separately** (two lenses, a skeptic per finding): no code
+    defect. Five record fixes were applied:
+    - the three readers of the last-word ordering;
+    - 0119 §5's claim about the quote;
+    - two stale lines on what `duration_ms` stores;
+    - this gate line.
 - No migration, no `app_config` write, no credit or price change, no web, admin, remotion or worker
   code, no prompt file.
 
@@ -943,10 +954,11 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
 - 2.10 words/s pooled, against the live 2.1.
 - v4 is 1.2–2.2 LU quieter than v3 on the same script and voice: −21.65 and −23.05 LUFS, where own
   voice targets −20.
-- `duration_ms` runs **80 ms past the file** on both calls:
-  [[eleven-v4-alignment-ends-80ms-past-its-audio]], **NOT FIXED**. REASONED: it can add one credit
-  to about two B quotes in five. His call, and it comes **before the merge**, because merging as it
-  is changes those quotes.
+- v4's alignment runs **80 ms past the file** on both calls
+  ([[eleven-v4-alignment-ends-80ms-past-its-audio]]). REASONED: left alone, it could add one credit
+  to about two B quotes in five. **FIXED on his ruling**: the clamp stores 18,240 and 21,040, the
+  decoded lengths (free replay). The preview row `997a5ec7`, written before the fix, keeps 21,120.
+  Its quote is the same 106 credits.
 - Price: $0.08 per 1k for v4 and v3 alike on the live page, and `character-cost` 17 = 17 on one line.
 - Spend: 541 characters, ≈ 16 agorot of the ₪10 cap.
 
@@ -961,8 +973,8 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
 - The example videos `a` and `b` are stale against the new look and the UI change; they are his to
   redo.
 
-**Going live:** listen to the preview, rule on the 80 ms overshoot, merge, then the box pull and
-restart ("Owed founder actions").
+**Going live:** listen to the preview, merge, then the box pull and restart ("Owed founder
+actions"). The 80 ms ruling is made and built.
 `synth_tts` runs only on the box, so until the restart previews still speak v3 (plain, since
 `tts_enhance` is `false`).
 
@@ -2207,10 +2219,9 @@ the 2026-09-26 custom domain (founder-reported):**
   1. Listen to the preview, `audio_renders` `997a5ec7`, at
      `packages/core/.work/eleven-v4/preview-997a5ec7-v4.mp3` on his machine. Its v3 twin, the same
      script, is `stored/014e98dc.mp3`.
-  2. **Rule on the 80 ms `duration_ms` overshoot BEFORE the merge**
-     ([[eleven-v4-alignment-ends-80ms-past-its-audio]]). Merged as it is, about two B quotes in five
-     go up one credit (REASONED). The clamp the note names (the shorter of the alignment end and
-     the probed file) would keep v3's `duration_ms`; it is not built. Rule also on the 30-agorot TTS
+  2. ~~Rule on the 80 ms `duration_ms` overshoot before the merge~~ **DONE 2026-10-20**: he chose the
+     clamp, and it is built on the branch (0119 §5,
+     [[eleven-v4-alignment-ends-80ms-past-its-audio]]). Still his, not blocking: the 30-agorot TTS
      estimate (the live rate is $0.08 per 1k).
   3. The merge. Vercel redeploys, but nothing that speaks changes there.
   4. **The box, straight after.** Gate:

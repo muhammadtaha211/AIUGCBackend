@@ -242,8 +242,9 @@ keyless (the e2e test relies on this).
 - **Timestamp verification result — resolved**: `eleven_v3` returned **character-level** alignment
   from the with-timestamps endpoint, and **`eleven_v4` does too** (paid check 2026-10-20,
   `vault/facts/eleven-v4-paid-check-2026-10-20.md`). On v4 the last character ends **80 ms after
-  the audio file**, so `duration_ms` overshoots the file; not fixed
-  (`vault/defects/eleven-v4-alignment-ends-80ms-past-its-audio.md`). Words are derived by grouping characters
+  the audio file**, so `duration_ms` is the shorter of the alignment end and the probed file
+  (`measureDurationMs`; DRY_RUN keeps the alignment end), which keeps it the file's length as on v3
+  (`vault/defects/eleven-v4-alignment-ends-80ms-past-its-audio.md`, vault 0119 §5). Words are derived by grouping characters
   (`captions.ts: wordsFromCharAlignment`) and real renders record
   `audio_renders.alignment_source = "elevenlabs"`. **WhisperX forced alignment is therefore a
   dormant fallback, not a requirement**: the interface is fixed

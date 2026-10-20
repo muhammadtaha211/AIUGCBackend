@@ -2,7 +2,7 @@
 type: decision
 status: verified
 verified: 2026-10-20
-method: 'Founder decisions in §2 of the 2026-10-20 task prompt ''Every voiced Tavnit render speaks on Eleven v4'', from the planning chat the same day. MEASURED in the tree at feat/tts-eleven-v4: packages/core/src/providers/elevenlabs.ts (ELEVENLABS_MODEL, ELEVENLABS_VOICE_SETTINGS, synthesize), packages/core/src/pipelines/tts.ts (handleSynthTts, stripAudioTags), packages/core/test/tts-plain-text.test.ts. Production read-only 2026-10-20 (packages/core/.work/v4-pick-script.ts, gitignored): app_config has tts_enhance false, no tts_stability row, words_per_second {"default":2.1}. The paid checks are in [[eleven-v4-paid-check-2026-10-20]].'
+method: 'Founder decisions in §2 of the 2026-10-20 task prompt ''Every voiced Tavnit render speaks on Eleven v4'', from the planning chat the same day; §5 is his chat instruction after the first report, the same day. MEASURED in the tree at feat/tts-eleven-v4: packages/core/src/providers/elevenlabs.ts (ELEVENLABS_MODEL, ELEVENLABS_VOICE_SETTINGS, synthesize), packages/core/src/pipelines/tts.ts (handleSynthTts, stripAudioTags), packages/core/test/tts-plain-text.test.ts. Production read-only 2026-10-20 (packages/core/.work/v4-pick-script.ts, gitignored): app_config has tts_enhance false, no tts_stability row, words_per_second {"default":2.1}. The paid checks are in [[eleven-v4-paid-check-2026-10-20]].'
 source: founder
 ---
 
@@ -82,6 +82,24 @@ and lists Hebrew. Adding it would change the audio path, so it is not done.
 
 The persona voice picker is untouched.
 
+## 5. `duration_ms` is clamped to the audio file (ruled later the same day)
+
+**FOUNDER-REPORTED, in chat on 2026-10-20, after the first report:** "Do this task here: 'Clamp v4
+duration_ms to the audio file'".
+
+**Options offered:**
+
+- leave `duration_ms` at the alignment end, so about two B quotes in five gain a credit (REASONED);
+- **the clamp**: the shorter of the alignment end and the probed file.
+
+**Chosen: the clamp.** No reason was given beyond the choice.
+
+REASONED: it keeps `duration_ms` = the file's length, as on v3, so the 80 ms alignment overrun
+reaches neither the quote nor `totalMs`. v4's own speech length still moves both. MEASURED:
+`af00027b` quotes 104 credits on its v3 file and 106 on v4. The last caption may end up to 80 ms
+past `totalMs`. Built on the same branch:
+[[eleven-v4-alignment-ends-80ms-past-its-audio]] §FIXED.
+
 ## What did not change (MEASURED in the diff)
 
 - The audio preview, the hard audio gate (locked #5) and the preview caps (`audio_preview_daily_limit`,
@@ -95,9 +113,9 @@ The persona voice picker is untouched.
 
 ## Found while building — MEASURED unless tagged, not decided
 
-- [[eleven-v4-alignment-ends-80ms-past-its-audio]]: `duration_ms` now runs 80 ms past the file. That
-  can add one credit to about two B quotes in five (REASONED, from `quoteServiceB`'s rounding). Not
-  fixed; his call, **before the merge**: merging as it is changes those quotes.
+- [[eleven-v4-alignment-ends-80ms-past-its-audio]]: v4's alignment ends 80 ms past the file. Left
+  alone, that could add one credit to about two B quotes in five (REASONED, from `quoteServiceB`'s
+  rounding). **Clamped on his ruling, §5.**
 - v4 files are 1.2–2.2 LU quieter than v3 on the same script and voice (−21.65 and −23.05 LUFS).
   Own voice's −20 LUFS target was taken from the v3 files.
 - Words per second on v4: 2.10 pooled over two scripts, against the live 2.1. The key was not
@@ -109,8 +127,8 @@ The persona voice picker is untouched.
 
 `synth_tts` runs only on the box's light lane. The merge changes nothing that speaks: Vercel's
 `requestAudio` only enqueues. **v4 starts when the box pulls and restarts.** Until then the box
-synthesizes on v3, as plain text, because `tts_enhance` is `false`. The ruling on the 80 ms
-overshoot comes before the merge (above).
+synthesizes on v3, as plain text, because `tts_enhance` is `false`. The 80 ms ruling is made and
+built (§5), so nothing about it holds the merge.
 
 ## Related
 

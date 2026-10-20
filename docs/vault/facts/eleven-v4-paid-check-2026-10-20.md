@@ -79,10 +79,12 @@ What follows:
   ([[heygen-avatar-iv-idles-on-leading-silence]]).
 - **Tail:** v4 ends on 154–251 ms of near-silence (under −30 dB), where v3 ends on speech. None of
   it reaches 0.3 s.
-- **`duration_ms` overshoots the file by exactly 80 ms on both v4 calls.** The last character's
-  alignment end time (which `handleSynthTts` stores as `duration_ms`) is 18,320 and 21,120, while
-  the files decode to 18,240 and 21,040. On v3 the two are equal. The consequences are in
-  [[eleven-v4-alignment-ends-80ms-past-its-audio]].
+- **The alignment ends exactly 80 ms past the file on both v4 calls.** The last character's
+  alignment end time is 18,320 and 21,120, while the files decode to 18,240 and 21,040.
+  `handleSynthTts` stored that end time as `duration_ms` until the clamp; it now stores the shorter
+  of it and the probed file, 18,240 and 21,040 here. The table's `duration_ms` column is the
+  alignment end: check 1 wrote no row, and `997a5ec7` was stored before the clamp. On v3 the two are equal. The consequences, and the clamp
+  built on the founder's ruling the same day, are in [[eleven-v4-alignment-ends-80ms-past-its-audio]].
 
 ## Price
 

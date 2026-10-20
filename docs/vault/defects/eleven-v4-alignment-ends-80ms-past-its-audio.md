@@ -6,7 +6,46 @@ method: "Two eleven_v4 with-timestamps calls ([[eleven-v4-paid-check-2026-10-20]
 source: code
 ---
 
-# On eleven_v4, `audio_renders.duration_ms` is 80 ms longer than the audio file — NOT FIXED
+# On eleven_v4, `audio_renders.duration_ms` is 80 ms longer than the audio file — FIXED 2026-10-20 on `feat/tts-eleven-v4` (not merged)
+
+## FIXED 2026-10-20, on the founder's ruling
+
+He chose the clamp in chat: "Do this task here: 'Clamp v4 duration_ms to the audio file'"
+([[0119-tts-is-eleven-v4-plain-text]] §5).
+
+**What changed in code (MEASURED in the diff):**
+
+- `handleSynthTts` stores `duration_ms` as the shorter of the alignment's last end time and the
+  probed file (`measureDurationMs`, ffprobe's format duration).
+- DRY_RUN keeps the alignment end, because its fake buffer is not an mp3.
+- The karaoke chunks keep ElevenLabs' times, so the last word may end up to 80 ms past
+  `duration_ms`. Three readers see that ordering. They are MEASURED in code; the effects below are
+  REASONED, and none breaks:
+  - **`service-b-timeline.ts` `hookHandoffMs`.** When the hook covers the whole script, or its read
+    time outlasts the speech, `hookTextMs` can exceed `totalMs` by up to 80 ms (check 1: 250 +
+    18,320 against a VO end of 18,490). Remotion clips the longer Sequence, and no caption shows,
+    as before. The "never outlives the ad" assertion in `service-b-timeline.test.ts` covers only a
+    partial hook, so it stays green.
+  - **remotion `timing.ts` `activeChunkIndex`.** The last caption may hold into the ad's last ~2
+    frames. This is cosmetic.
+  - **`captions.ts` `snapToWordGap`,** read only by the retired avatar-outro path. The slice comes
+    out negative instead of 0, which is the same "VO slice is empty" `PermanentError`.
+
+  Clamping the caption times too would restore the ordering. That goes past his ruling, so it is
+  not done.
+
+- Tests in `packages/core/test/tts-plain-text.test.ts` use a real one-second mp3:
+  - the alignment runs 80 ms past the file → `duration_ms` is the file's length;
+  - the alignment stops 200 ms inside it → `duration_ms` is the alignment's end.
+
+**MEASURED on the two real v4 files** (free, `packages/core/.work/eleven-v4/clamp-replay.ts`,
+gitignored): `measureDurationMs` gives 18,240 and 21,040, so the clamp stores exactly the decoded
+lengths below. Their quotes are 92 and 106 credits either way: neither crossed a boundary.
+
+The production preview row `997a5ec7` was written before the fix and keeps 21,120. That is the same
+106 credits, and it is left alone.
+
+The text below is the defect as it stood.
 
 ## The defect (MEASURED)
 
@@ -45,12 +84,13 @@ recorded on v3. Two samples; whether it is always 80 ms is not known.
   with the 800 ms lead-in). HeyGen itself bills the file it is sent.
 - The karaoke chunks: the last word ends at 18,320 / 21,120, inside the timeline either way.
 
-## The fix, not built
+## The fix, as it stood before his ruling
 
 Take `durationMs` as the smaller of the alignment end and the probed file length
 (`measureDurationMs`, which the WhisperX branch already calls). That would restore v3's equality.
 It was not built in the v4 task: the goal there was "nothing else about the audio path changes",
-and the quote is a credit question. **His call.**
+and the quote is a credit question. **His call.** He made it the same day (the FIXED section
+above).
 
 ## Related
 
