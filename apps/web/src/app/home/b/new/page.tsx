@@ -52,7 +52,10 @@ export default async function NewBRenderPage() {
   return (
     <div className="flex flex-col items-center px-6 pb-16">
       {gate.allowed ? (
+        // Keyed by business, like A's: a sidebar switch must not carry one
+        // business's demo and cutaway plan into another's wizard.
         <BWizard
+          key={selected.id}
           businessId={selected.id}
           businessName={selected.name}
           initialCatalog={personaCatalog}

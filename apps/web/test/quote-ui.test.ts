@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { newDemoNudge, stepsPriceBreakdown, type StepsQuoteView } from "@/lib/quote-ui";
+import {
+  bShapeSummary,
+  newDemoNudge,
+  stepsPriceBreakdown,
+  type StepsQuoteView,
+} from "@/lib/quote-ui";
 
 /**
  * The two sentences that carry `a_demo_analysis_credits` (migration 0039) to
@@ -68,5 +73,13 @@ describe("newDemoNudge", () => {
       "כל סרטון חדש עובר ניתוח מלא שלוקח כמה דקות — אם כבר העליתם את הסרטון, בחרו אותו מהרשימה למעלה.";
     expect(newDemoNudge(null)).toBe(timeOnly);
     expect(newDemoNudge(0)).toBe(timeOnly);
+  });
+});
+
+describe("bShapeSummary with demo cutaways (vault 0121)", () => {
+  it("is unchanged without cutaways and names how many with them", () => {
+    expect(bShapeSummary(16.3)).toBe(bShapeSummary(16.3, 0));
+    expect(bShapeSummary(16.3, 1)).toContain("עם קטע אחד מסרטון המוצר");
+    expect(bShapeSummary(16.3, 2)).toContain("עם 2 קטעים מסרטון המוצר");
   });
 });

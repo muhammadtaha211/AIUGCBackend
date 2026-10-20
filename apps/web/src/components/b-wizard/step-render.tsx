@@ -41,6 +41,9 @@ type StepRenderProps = {
   hookEffect: HookEffect;
   hookText?: string;
   hookTextSafeArea?: SafeRect;
+  /** The live demo cutaway plan and how many cutaways it holds (vault 0121); absent = head only. */
+  cutawayPlanId?: string;
+  cutawayCount?: number;
   render: RenderState | null;
   setRender: (render: RenderState | null) => void;
   onBack: () => void;
@@ -66,6 +69,8 @@ export function StepRender({
   hookEffect,
   hookText,
   hookTextSafeArea,
+  cutawayPlanId,
+  cutawayCount = 0,
   render,
   setRender,
   onBack,
@@ -108,6 +113,7 @@ export function StepRender({
         hookEffect,
         hookText,
         hookTextSafeArea,
+        cutawayPlanId,
       }),
     );
     setStarting(false);
@@ -207,7 +213,7 @@ export function StepRender({
         {shape !== null && (
           <>
             <p className="mt-6 rounded-xl border border-ink/[0.08] bg-white px-5 py-4 text-sm leading-relaxed text-ink/80">
-              {bShapeSummary(shape.voSeconds)}
+              {bShapeSummary(shape.voSeconds, cutawayCount)}
             </p>
 
             {quote && !hasShortfall(quote) && (

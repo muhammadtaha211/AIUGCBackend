@@ -41,6 +41,8 @@ export const renderRequestSchema = z
     hookEffect: hookEffectSchema.optional(),
     hookText: z.string().trim().min(1).optional(),
     hookTextSafeArea: textSafeAreaSchema.optional(),
+    /** Demo cutaways (vault 0121): the plan whose windows the render copies. Absent = head only. */
+    cutawayPlanId: z.string().uuid().optional(),
   })
   // The line and the animation that carries it come together or not at all,
   // and a rect with no line has nothing to sit in — the same rule
@@ -50,6 +52,22 @@ export const renderRequestSchema = z
       ? body.hookText === undefined && body.hookTextSafeArea === undefined
       : body.hookText !== undefined,
   );
+
+/** The cutaway draft: the approved audio, the demo, and the final hook text the
+ *  slots are laid out from ('' or absent = no hook text). Strict: nothing else. */
+export const cutawayPlanRequestSchema = z
+  .object({
+    audioId: z.string().uuid(),
+    demoId: z.string().uuid(),
+    hookText: z.string().max(200).optional(),
+  })
+  .strict();
+
+/** The window picker's save: every slot's start, in slot order. The slots'
+ *  times are the server's and are never sent. */
+export const cutawayPlanUpdateSchema = z
+  .object({ starts: z.array(z.number().int().nonnegative()).min(1).max(12) })
+  .strict();
 
 /** Pre-confirm quote lookup — the render's price comes from the approved audio. */
 export const renderPreviewRequestSchema = z.object({ audioId: z.string().uuid() });

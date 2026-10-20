@@ -107,6 +107,9 @@ export async function POST(
       hookEffect,
       hookText,
       hookTextSafeArea: body.data.hookTextSafeArea,
+      // Demo cutaways (vault 0121): core re-checks the plan belongs to this
+      // business, this audio and this hook text, and copies its windows.
+      cutawayPlanId: body.data.cutawayPlanId,
     });
     // The post-debit balance, re-queried after the commit — the wizard pushes
     // it into the sidebar's BalanceProvider, mirroring the A steps route.

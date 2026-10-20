@@ -190,7 +190,7 @@ async function loadInventory(db: Db, businessId: string, demoId: string): Promis
  * footage row); the recording's end is the demo's length floored to the
  * analysis grid (recordingEndMs), less the unexamined edge.
  */
-function cutawayPlacement(opts: {
+export function cutawayPlacement(opts: {
   timeline: AnalysisState[];
   moments: unknown;
   durationMs: number | null;
@@ -274,7 +274,7 @@ function isSkipState(state: AnalysisState): boolean {
   );
 }
 
-interface Placement {
+export interface Placement {
   anchors: CutawayAnchor[];
   timeline: AnalysisState[];
   minStartMs: number;
@@ -319,7 +319,7 @@ function nearestFree(
  * each snapped to the nearest free anchor (clean first). Fewer windows than
  * slots only when the demo cannot hold them — never repeated footage.
  */
-function demoOrderPicks(p: Placement, lengths: number[]): (CutawayAnchor | undefined)[] {
+export function demoOrderPicks(p: Placement, lengths: number[]): (CutawayAnchor | undefined)[] {
   const total = lengths.reduce((sum, len) => sum + len + CUTAWAY_FRAME_SLACK_MS, 0);
   const free = Math.max(0, p.maxEndMs - p.minStartMs - total);
   const gap = free / (lengths.length + 1);

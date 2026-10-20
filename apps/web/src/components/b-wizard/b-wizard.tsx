@@ -7,16 +7,22 @@ import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { useStepViewed } from "@/components/analytics";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
+import type { DemoState } from "@/lib/service-a-ui";
 import {
+  CUTAWAY_COPY,
+  cutawayHookText,
+  liveCutawayPlan,
   pointersChanged,
   wizardSteps,
   type AudioState,
+  type CutawayPlanWire,
   type Persona,
   type RenderState,
   type ScriptState,
   type WizardStep,
 } from "@/lib/service-b-ui";
 import { StepAudio } from "./step-audio";
+import { StepCutaways } from "./step-cutaways";
 import { StepEffect } from "./step-effect";
 import { StepPersona } from "./step-persona";
 import { StepPointers } from "./step-pointers";
@@ -29,6 +35,7 @@ const STEP_TITLES: Record<WizardStep, string> = {
   script: "תסריט",
   audio: "הקלטה",
   effect: "אפקט פתיחה",
+  demo: CUTAWAY_COPY.stepTitle,
   render: "יצירת הסרטון",
 };
 
@@ -42,14 +49,18 @@ type BWizardProps = {
 
 /**
  * The Service B wizard: persona -> pointers -> script -> audio -> opening
- * animation -> render (vault 0017, 0023). Single setting: the persona's selfie
+ * animation -> (demo cutaways, when ticked, vault 0121) -> render (vault 0017,
+ * 0023). Single setting: the persona's selfie
  * is the render source, so there is no image step and no product step, and the
  * ad is one HeyGen clip with the hook performed on it rather than stitched in
  * front. State is client-side only — a refresh restarts the wizard. Back
  * navigation is allowed until the render is enqueued.
  */
 export function BWizard({ businessId, businessName, initialCatalog }: BWizardProps) {
-  const steps = wizardSteps();
+  /** Demo cutaways (vault 0121): ticked on the audio card, off by default. Off
+   *  = exactly today's six steps and today's request body. */
+  const [cutaways, setCutaways] = useState(false);
+  const steps = wizardSteps({ cutaways });
   const [stepIndex, setStepIndex] = useState(0);
   /** 403/404 from any call: the business/resource is gone for this session. */
   const [fatal, setFatal] = useState<string | null>(null);
@@ -75,14 +86,35 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   /** Customer-placed hook-text rect; null = the centred default. */
   const [rect, setRect] = useState<SafeRect | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
+  /** The cutaways' demo and plan. Kept when the option is unticked, so ticking
+   *  it again costs nothing; a plan counts only while it is live. */
+  const [cutawayDemo, setCutawayDemo] = useState<DemoState | null>(null);
+  const [cutawayPlan, setCutawayPlan] = useState<CutawayPlanWire | null>(null);
 
   const step = steps[stepIndex]!;
   useStepViewed("b", step);
   /** The on-screen line the effect step shows and the render burns: the
    *  customer's edit, else the script call's draft. */
   const effectText = hookText ?? script?.hookText ?? "";
+  /** The plan, if it still belongs to this audio, this demo and this hook
+   *  text — a new hook text on the effect step makes it stale, and the
+   *  cutaway step drafts again (founder, 2026-10-20). */
+  const livePlan = liveCutawayPlan(
+    cutawayPlan,
+    audio?.id,
+    cutawayDemo?.id,
+    cutawayHookText(hookEffect, effectText),
+  );
+  /** What the render sends: the live plan, only with the option on. */
+  const renderPlan = cutaways && livePlan && livePlan.slots.length > 0 ? livePlan : null;
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
   const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
+  /** "Continue without cutaways": the option goes off, and the step that
+   *  followed it — the render — slides into this index. */
+  function skipCutaways() {
+    setCutaways(false);
+  }
+
   /** Rail jump — backwards only. */
   const jumpTo = (index: number) => {
     if (index < stepIndex) setStepIndex(index);
@@ -167,7 +199,7 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
           locked={render !== null}
         />
 
-        <div key={stepIndex} className="step-in mt-5 lg:mt-0">
+        <div key={step} className="step-in mt-5 lg:mt-0">
           <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-10">
             {step === "persona" && (
               <StepPersona
@@ -214,6 +246,24 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
                 onBack={goBack}
                 onContinue={goNext}
                 onFatal={setFatal}
+                extra={
+                  <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-ink/[0.08] bg-white p-4">
+                    <input
+                      type="checkbox"
+                      checked={cutaways}
+                      onChange={(event) => setCutaways(event.target.checked)}
+                      className="mt-0.5 size-4 shrink-0 accent-accent"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-ink">
+                        {CUTAWAY_COPY.optIn}
+                      </span>
+                      <span className="mt-1 block text-[13px] text-ink/60">
+                        {CUTAWAY_COPY.optInHint}
+                      </span>
+                    </span>
+                  </label>
+                }
               />
             )}
 
@@ -231,6 +281,22 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
               />
             )}
 
+            {step === "demo" && audio?.approved && (
+              <StepCutaways
+                businessId={businessId}
+                audioId={audio.id}
+                hookText={cutawayHookText(hookEffect, effectText)}
+                demo={cutawayDemo}
+                setDemo={setCutawayDemo}
+                plan={livePlan}
+                setPlan={setCutawayPlan}
+                onBack={goBack}
+                onContinue={goNext}
+                onSkip={skipCutaways}
+                onFatal={setFatal}
+              />
+            )}
+
             {/* persona.personaImageId is always set on the B catalog (a persona
                 without a selfie is not listed); the check narrows the type. */}
             {step === "render" && persona?.personaImageId && script && audio && (
@@ -243,6 +309,8 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
                 hookEffect={hookEffect}
                 hookText={effectText}
                 hookTextSafeArea={rect ?? undefined}
+                cutawayPlanId={renderPlan?.planId}
+                cutawayCount={renderPlan?.slots.length ?? 0}
                 render={render}
                 setRender={setRender}
                 onBack={goBack}

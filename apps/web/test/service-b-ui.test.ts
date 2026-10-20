@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { assertBScriptWordCeiling, MAX_B_SCRIPT_WORDS } from "@aiugc/core/b-script-words";
+import { CUTAWAY_FRAME_SLACK_MS as CORE_SLACK } from "../../../packages/core/src/cutaway-structure";
 import {
+  anchorStateAt,
   applyAudioPoll,
+  CUTAWAY_COPY,
+  CUTAWAY_FRAME_SLACK_MS,
+  cutawayHookText,
+  cutawayScriptRuns,
+  cutawaySeconds,
+  cutawayStarts,
+  cutawayTrackBox,
+  filmstripStates,
+  liveCutawayPlan,
+  nudgeCutawayStart,
+  snapCutawayStart,
+  type CutawayPlanWire,
   countWords,
   estimateSpokenSeconds,
   failedRenderNotice,
@@ -200,6 +214,19 @@ describe("wizardSteps (one flow, vault 0017)", () => {
     expect(wizardSteps()).not.toContain("image");
     expect(wizardSteps()).not.toContain("composite");
   });
+
+  it("demo cutaways add one step, after the effect step, only when ticked (vault 0121)", () => {
+    expect(wizardSteps({ cutaways: false })).toEqual(wizardSteps());
+    expect(wizardSteps({ cutaways: true })).toEqual([
+      "persona",
+      "pointers",
+      "script",
+      "audio",
+      "effect",
+      "demo",
+      "render",
+    ]);
+  });
 });
 
 describe("hook effects offered by the wizard", () => {
@@ -257,6 +284,18 @@ describe("renderRequestBody (wizard state -> enqueue request)", () => {
     expect(renderRequestBody({ ...base, hookEffect: "focus", hookText: "היי" })).not.toHaveProperty(
       "hookTextSafeArea",
     );
+  });
+
+  it("carries the cutaway plan only when there is one — the head-only body is unchanged", () => {
+    expect(renderRequestBody({ ...base, hookEffect: "none", cutawayPlanId: "plan-1" })).toEqual({
+      ...base,
+      hookEffect: "none",
+      cutawayPlanId: "plan-1",
+    });
+    expect(renderRequestBody({ ...base, hookEffect: "none", cutawayPlanId: undefined })).toEqual({
+      ...base,
+      hookEffect: "none",
+    });
   });
 
   it("drops a stale hook text and rect when the customer backs out to 'none'", () => {
@@ -539,5 +578,115 @@ describe("failedRenderNotice", () => {
     // Admin renders, pre-ledger rows, and old rows without the flag: no claim.
     expect(failedRenderNotice({ refunded: false }).showRefund).toBe(false);
     expect(failedRenderNotice({}).showRefund).toBe(false);
+  });
+});
+
+describe("demo cutaways in the wizard (vault 0121)", () => {
+  // A 60 s demo with a moment every 2 s from 400 ms; two slots, 5 s and 4 s.
+  const plan: CutawayPlanWire = {
+    planId: "plan-1",
+    audioId: "audio-1",
+    demoId: "demo-1",
+    structure: "alternate",
+    hookText: "",
+    words: ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח"],
+    slots: [
+      {
+        fromMs: 3600,
+        toMs: 8600,
+        lengthMs: 5000,
+        wordFrom: 2,
+        wordTo: 4,
+        demoStartMs: 10_400,
+        stateIndex: 5,
+        draftDemoStartMs: 10_400,
+        draftStateIndex: 5,
+      },
+      {
+        fromMs: 10_000,
+        toMs: 14_000,
+        lengthMs: 4000,
+        wordFrom: 5,
+        wordTo: 7,
+        demoStartMs: 30_400,
+        stateIndex: 15,
+        draftDemoStartMs: 30_400,
+        draftStateIndex: 15,
+      },
+    ],
+    anchors: Array.from({ length: 30 }, (_, i) => ({ startMs: 400 + i * 2000, stateIndex: i })),
+    minStartMs: 367,
+    maxEndMs: 60_000 - 367,
+  };
+  const starts = plan.slots.map((s) => s.demoStartMs);
+
+  it("mirrors core's frame slack", () => {
+    expect(CUTAWAY_FRAME_SLACK_MS).toBe(CORE_SLACK);
+  });
+
+  it("offers only starts whose window stays inside and shows no other slot's footage", () => {
+    const valid = cutawayStarts(plan, 0, starts);
+    expect(valid).toContain(10_400);
+    expect(valid[0]).toBe(400);
+    // Slot 2 holds 30400..34434: a 5 s window may not start in 25400..34433.
+    for (const s of valid)
+      expect(s + 5000 + CUTAWAY_FRAME_SLACK_MS <= 30_400 || s >= 34_434).toBe(true);
+    expect(valid).not.toContain(28_400);
+    expect(valid).toContain(34_400 + 2000);
+    // Nothing runs past the recording.
+    for (const s of valid)
+      expect(s + 5000 + CUTAWAY_FRAME_SLACK_MS).toBeLessThanOrEqual(plan.maxEndMs);
+  });
+
+  it("snaps to the nearest start and nudges to the neighbour, staying put at the ends", () => {
+    const valid = [400, 2400, 4400];
+    expect(snapCutawayStart(valid, 3000)).toBe(2400);
+    expect(snapCutawayStart(valid, 3500)).toBe(4400);
+    expect(snapCutawayStart([], 3000)).toBeUndefined();
+    expect(nudgeCutawayStart(valid, 2400, 1)).toBe(4400);
+    expect(nudgeCutawayStart(valid, 2400, -1)).toBe(400);
+    expect(nudgeCutawayStart(valid, 400, -1)).toBe(400);
+    expect(nudgeCutawayStart(valid, 4400, 1)).toBe(4400);
+  });
+
+  it("marks each slot's words in the script, and none when there are no slots", () => {
+    expect(cutawayScriptRuns(plan.words, plan.slots)).toEqual([
+      { text: "א ב", slot: null },
+      { text: "ג ד", slot: 0 },
+      { text: "ה", slot: null },
+      { text: "ו ז", slot: 1 },
+      { text: "ח", slot: null },
+    ]);
+    expect(cutawayScriptRuns(["א", "ב"], [])).toEqual([{ text: "א ב", slot: null }]);
+  });
+
+  it("a plan stops being live when the audio, the demo or the hook text moves on", () => {
+    expect(liveCutawayPlan(plan, "audio-1", "demo-1", "")).toBe(plan);
+    expect(liveCutawayPlan(plan, "audio-2", "demo-1", "")).toBeNull();
+    expect(liveCutawayPlan(plan, "audio-1", "demo-2", "")).toBeNull();
+    expect(liveCutawayPlan(plan, "audio-1", "demo-1", "שורת פתיחה")).toBeNull();
+    expect(liveCutawayPlan(null, "audio-1", "demo-1", "")).toBeNull();
+  });
+
+  it("lays out from the effect step's line, or none with 'none'", () => {
+    expect(cutawayHookText("none", "משהו")).toBe("");
+    expect(cutawayHookText("zoom", "  משלוח חינם  ")).toBe("משלוח חינם");
+  });
+
+  it("places windows on the track and spreads the filmstrip through the recording", () => {
+    expect(cutawayTrackBox(plan, 30_000, 6000)).toEqual({ left: 50, width: 10 });
+    const strip = filmstripStates(plan, 8);
+    expect(strip).toHaveLength(8);
+    expect([...strip].sort((a, b) => a - b)).toEqual(strip);
+    expect(anchorStateAt(plan, 10_400)).toBe(5);
+    expect(anchorStateAt(plan, 10_401)).toBeUndefined();
+    expect(cutawaySeconds(5360)).toBe("5.4");
+  });
+
+  it("every string the customer reads is Hebrew", () => {
+    for (const value of Object.values(CUTAWAY_COPY)) {
+      const text = typeof value === "function" ? value(1, "5.0" as never) : value;
+      expect(String(text)).toMatch(/[\u0590-\u05FF]/);
+    }
   });
 });
