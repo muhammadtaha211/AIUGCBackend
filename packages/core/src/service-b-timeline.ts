@@ -50,7 +50,7 @@ export const HOOK_TEXT_MAX_MS = 2500;
  * not a defect — the alternative is his "same line in the centre and at the
  * bottom".
  */
-function hookHandoffMs(
+export function hookHandoffMs(
   hookText: string,
   captions: CaptionChunk[],
   captionOffsetMs: number,

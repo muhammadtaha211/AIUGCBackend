@@ -1490,4 +1490,79 @@ describe("migrations", () => {
     ).rejects.toThrow(/foreign key/);
     await pg.close();
   });
+
+  it("0068: cutaway_plans is server-only, keyed on audio + analysis + structure + hook text, its CHECKs and FKs, idempotent", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0068")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0068_cutaway_plans.sql"), "utf8");
+    await pg.exec(migration);
+    await pg.exec(migration);
+
+    const rls = await pg.query<{ relrowsecurity: boolean }>(
+      "SELECT relrowsecurity FROM pg_class WHERE oid = 'public.cutaway_plans'::regclass",
+    );
+    expect(rls.rows).toEqual([{ relrowsecurity: true }]);
+    const policies = await pg.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM pg_policies WHERE tablename = 'cutaway_plans'",
+    );
+    expect(policies.rows).toEqual([{ n: "0" }]);
+    const indexes = await pg.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'cutaway_plans' ORDER BY indexname",
+    );
+    expect(indexes.rows.map((r) => r.indexname)).toEqual([
+      "cutaway_plans_audio_analysis_structure_hook_idx",
+      "cutaway_plans_business_idx",
+      "cutaway_plans_pkey",
+    ]);
+    const fks = await pg.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint
+        WHERE conrelid = 'public.cutaway_plans'::regclass AND contype = 'f' ORDER BY conname`,
+    );
+    expect(fks.rows.map((r) => r.conname)).toEqual([
+      "cutaway_plans_analysis_id_demo_analyses_id_fk",
+      "cutaway_plans_audio_render_id_audio_renders_id_fk",
+      "cutaway_plans_business_id_businesses_id_fk",
+      "cutaway_plans_demo_id_demos_id_fk",
+    ]);
+
+    const user = "11111111-1111-4111-8111-111111111111";
+    const biz = "22222222-2222-4222-8222-222222222222";
+    const script = "44444444-4444-4444-8444-444444444444";
+    const audio = "55555555-5555-4555-8555-555555555555";
+    const demo = "66666666-6666-4666-8666-666666666666";
+    const analysis = "77777777-7777-4777-8777-777777777777";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES ('${biz}', '${user}', 'B');
+      INSERT INTO scripts (id, business_id, kind, text) VALUES ('${script}', '${biz}', 'b_script', 'שלום');
+      INSERT INTO audio_renders (id, script_id, voice_id) VALUES ('${audio}', '${script}', 'voice-1');
+      INSERT INTO demos (id, business_id) VALUES ('${demo}', '${biz}');
+      INSERT INTO demo_analyses (id, demo_id) VALUES ('${analysis}', '${demo}');
+    `);
+    const insert = (hook: string, draftSource = "model", slots = "'[]'") =>
+      `INSERT INTO cutaway_plans (business_id, audio_render_id, demo_id, analysis_id, structure, hook_text, slots, draft_source)
+       VALUES ('${biz}', '${audio}', '${demo}', '${analysis}', 'alternate', '${hook}', ${slots}, '${draftSource}')`;
+    await pg.exec(insert(""));
+    // The same layout twice is refused; a different hook text is a new row.
+    await expect(pg.query(insert(""))).rejects.toThrow(
+      /cutaway_plans_audio_analysis_structure_hook_idx/,
+    );
+    await pg.exec(insert("שורת פתיחה"));
+    await expect(pg.query(insert("אחרת", "nonsense"))).rejects.toThrow(
+      /cutaway_plans_draft_source/,
+    );
+    await expect(pg.query(insert("אחרת", "model", `'{"a":1}'`))).rejects.toThrow(
+      /cutaway_plans_slots_array/,
+    );
+    const row = await pg.query<{ hook_text: string; edited_at: string | null }>(
+      "SELECT hook_text, edited_at FROM cutaway_plans ORDER BY hook_text",
+    );
+    expect(row.rows).toEqual([
+      { hook_text: "", edited_at: null },
+      { hook_text: "שורת פתיחה", edited_at: null },
+    ]);
+    await pg.close();
+  });
 });
