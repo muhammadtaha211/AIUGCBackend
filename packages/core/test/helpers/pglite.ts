@@ -78,6 +78,9 @@ export const PORTABLE_MIGRATIONS = [
   "0063_plan_prices_minus_one_shekel.sql",
   "0064_scheduled_post_status_delivered.sql",
   "0065_tiktok_token_expiry_and_delivery.sql",
+  "0066_own_voice_enum_values.sql",
+  "0067_voice_recordings.sql",
+  "0068_cutaway_plans.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

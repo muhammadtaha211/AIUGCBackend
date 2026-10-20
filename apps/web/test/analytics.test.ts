@@ -662,7 +662,13 @@ describe("a named step cannot carry free text", () => {
     expect(STEP_EVENTS.start_step_viewed.step).toEqual([...STEPS]);
     expect(STEP_EVENTS.payment_returned.outcome).toEqual([...CHECKOUT_STATES]);
     expect([...STEP_EVENTS.wizard_step_viewed.step].sort()).toEqual(
-      [...new Set([...aWizardSteps("steps"), ...wizardSteps(), ...C_WIZARD_STEPS])].sort(),
+      [
+        ...new Set([
+          ...aWizardSteps("steps"),
+          ...wizardSteps({ cutaways: true }),
+          ...C_WIZARD_STEPS,
+        ]),
+      ].sort(),
     );
   });
 });

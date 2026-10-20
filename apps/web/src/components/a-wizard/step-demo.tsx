@@ -33,6 +33,16 @@ type StepDemoProps = {
   setDescription: (value: string) => void;
   onContinue: () => void;
   onFatal: (message: string) => void;
+  /**
+   * "b": Service B's demo cutaways reuse the list, the upload and the ingest
+   * cards (vault 0121) — without A's recording rules and example pair, A's
+   * analysis-price nudge (a B render never charges it, decision 0048) and the
+   * footage note, whose PATCH would clear a note saved for A. Default "a".
+   */
+  variant?: "a" | "b";
+  /** Variant "b": its own header. */
+  copy?: { title: string; sub: string };
+  onBack?: () => void;
 };
 
 const UPLOAD_FAILED = "ההעלאה נכשלה, בדקו את החיבור ונסו שוב.";
@@ -177,7 +187,11 @@ export function StepDemo({
   setDescription,
   onContinue,
   onFatal,
+  variant = "a",
+  copy,
+  onBack,
 }: StepDemoProps) {
+  const forB = variant === "b";
   const [error, setError] = useState<string | null>(null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -257,7 +271,7 @@ export function StepDemo({
    */
   const [newDemoCredits, setNewDemoCredits] = useState<number | null>(null);
   useEffect(() => {
-    if (!pickerShowing) return;
+    if (!pickerShowing || forB) return;
     let cancelled = false;
     void (async () => {
       const result = await apiFetch<{ quote: StepsQuoteView }>(
@@ -477,26 +491,27 @@ export function StepDemo({
    * `waiting` = upload/ingest still running: the lead line invites filling
    * the dead time; once the demo is ready the same line drops the clause.
    */
-  const descriptionField = (waiting: boolean) => (
-    <div className="mt-5">
-      <p className="text-[13px] font-medium text-ink/70">
-        {waiting
-          ? "בזמן שהסרטון עולה, ספרו לנו מה רואים בו — זה עוזר לנו לבנות תוכנית צעדים וכיתובים מדויקים יותר."
-          : "ספרו לנו מה רואים בסרטון — זה עוזר לנו לבנות תוכנית צעדים וכיתובים מדויקים יותר."}
-      </p>
-      <TextAreaField
-        label="מה רואים בסרטון? (לא חובה)"
-        rows={3}
-        maxLength={500}
-        value={description}
-        onChange={(event) => setDescription(event.target.value)}
-        placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
-      />
-      <p className="mt-1.5 text-[13px] text-ink/55">
-        כותבים פעם אחת לכל סרטון — ההערה נשמרת יחד איתו. אפשר לדלג.
-      </p>
-    </div>
-  );
+  const descriptionField = (waiting: boolean) =>
+    forB ? null : (
+      <div className="mt-5">
+        <p className="text-[13px] font-medium text-ink/70">
+          {waiting
+            ? "בזמן שהסרטון עולה, ספרו לנו מה רואים בו — זה עוזר לנו לבנות תוכנית צעדים וכיתובים מדויקים יותר."
+            : "ספרו לנו מה רואים בסרטון — זה עוזר לנו לבנות תוכנית צעדים וכיתובים מדויקים יותר."}
+        </p>
+        <TextAreaField
+          label="מה רואים בסרטון? (לא חובה)"
+          rows={3}
+          maxLength={500}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          placeholder="לדוגמה: מצלמים את האפליקציה, גלילה בתפריט, הוספה לעגלה, מסך תשלום"
+        />
+        <p className="mt-1.5 text-[13px] text-ink/55">
+          כותבים פעם אחת לכל סרטון — ההערה נשמרת יחד איתו. אפשר לדלג.
+        </p>
+      </div>
+    );
 
   const totalPages = readyTotal === null ? 1 : Math.ceil(readyTotal / DEMO_PAGE_SIZE);
 
@@ -666,7 +681,7 @@ export function StepDemo({
           וידאו אנכי (9:16), באורך 8 שניות עד 90 שניות, MP4 או MOV עד 1GB
         </span>
       </button>
-      {readyTotal !== null && readyTotal > 0 && (
+      {!forB && readyTotal !== null && readyTotal > 0 && (
         <p className="mt-2 text-[13px] text-ink/55">{newDemoNudge(newDemoCredits)}</p>
       )}
     </>
@@ -675,8 +690,9 @@ export function StepDemo({
   return (
     <div>
       <StepHeader
-        title="מעלים את סרטון המוצר"
-        sub="סרטון שצילמתם בטלפון של המוצר או השירות, עליו נרכיב את המודעה."
+        title={copy?.title ?? "מעלים את סרטון המוצר"}
+        sub={copy?.sub ?? "סרטון שצילמתם בטלפון של המוצר או השירות, עליו נרכיב את המודעה."}
+        onBack={onBack}
       />
 
       {error && (
@@ -767,7 +783,7 @@ export function StepDemo({
       {demo === null && uploadPercent === null && pendingDuplicate === null && (
         <>
           {previousSection}
-          {guidanceSection}
+          {!forB && guidanceSection}
           {picker}
         </>
       )}
@@ -880,7 +896,7 @@ export function StepDemo({
             size="lg"
             className="mt-6 w-full"
             loading={saving}
-            onClick={() => void saveDescriptionAndContinue()}
+            onClick={() => (forB ? onContinue() : void saveDescriptionAndContinue())}
           >
             המשך
           </Button>

@@ -4,8 +4,8 @@ import type { CaptionChunk } from "../src/schema";
 import {
   activeChunkIndex,
   activeWordIndex,
+  cutawayFrames,
   frameToMs,
-  handheld,
   hookBeatsScale,
   hookFocusState,
   hookTextRevealState,
@@ -15,6 +15,7 @@ import {
   OVERSCAN,
   serviceAStepsTimeline,
   serviceATimeline,
+  voBoundaryFrame,
 } from "../src/timing";
 import { fitFontSize } from "../src/text-fit";
 
@@ -316,64 +317,81 @@ describe("hookZoomScale", () => {
   });
 });
 
-describe("handheld camera", () => {
-  const W = 1080;
-  const H = 1920;
-  const seeds = [
-    "preview",
-    "1397ffcd-4c2c-4cc0-9afd-692c23f5f772",
-    // The tightest of 300 random render ids scanned on 2026-09-06 (13.5px of
-    // horizontal headroom): the seed that decided ALIGN_MAX_PX.dx = 12.
-    "c1b200d8-0e30-430c-ada0-638284e61b56",
-  ];
+describe("the static overscan (no sway, vault 0120 §2)", () => {
+  it("leaves 32px a side horizontally and 57px vertically of spare cover — room for the opener's alignment offset", () => {
+    const spareX = (1080 * (OVERSCAN - 1)) / 2;
+    const spareY = (1920 * (OVERSCAN - 1)) / 2;
+    expect(spareX).toBeGreaterThanOrEqual(32);
+    expect(spareY).toBeGreaterThanOrEqual(57);
+    // core's ALIGN_MAX_PX (12px x, 32px y), the retired opener path's slide.
+    expect(spareX).toBeGreaterThanOrEqual(12);
+    expect(spareY).toBeGreaterThanOrEqual(32);
+  });
+});
 
-  it("never exposes an edge: every corner stays inside the overscan, with room for the alignment offset", () => {
-    for (const seed of seeds) {
-      for (let frame = 0; frame < 3600; frame++) {
-        const { x, y, rot } = handheld(frame, seed);
-        const r = (rot * Math.PI) / 180;
-        const corners: [number, number][] = [
-          [W / 2, H / 2],
-          [-W / 2, H / 2],
-          [W / 2, -H / 2],
-          [-W / 2, -H / 2],
-        ];
-        for (const [cx, cy] of corners) {
-          // Inverse of translate → rotate → scale: where this viewport corner
-          // lands on the untransformed picture.
-          const px = cx - x;
-          const py = cy - y;
-          const u = (px * Math.cos(r) + py * Math.sin(r)) / OVERSCAN;
-          const v = (-px * Math.sin(r) + py * Math.cos(r)) / OVERSCAN;
-          // The talking head's alignment offset (core's ALIGN_MAX_PX: 12px x,
-          // 32px y) holds for the head's whole length since 2026-09-06, so
-          // every frame must leave that much of the overscan unused by the
-          // sway and its rotation. Over 300 random seeds the tightest frame
-          // left 13.5px x / 42.3px y; 65 of them dipped under 16, none under 12.
-          expect(W / 2 - Math.abs(u)).toBeGreaterThanOrEqual(12);
-          expect(H / 2 - Math.abs(v)).toBeGreaterThanOrEqual(32);
-        }
+describe("voBoundaryFrame", () => {
+  it("is exactly the frame the captions change on, for every 10 ms of a minute, at both offsets", () => {
+    for (const offset of [0, 250]) {
+      for (let voMs = 0; voMs <= 60_000; voMs += 10) {
+        const f = voBoundaryFrame(voMs, offset);
+        expect(frameToMs(f) - offset).toBeGreaterThanOrEqual(voMs);
+        if (f > 0) expect(frameToMs(f - 1) - offset).toBeLessThan(voMs);
       }
     }
   });
 
-  it("moves like a held phone: fractional, under 1.2px per frame, and never still", () => {
-    let prev = handheld(0, seeds[0]!);
-    let moved = 0;
-    for (let frame = 1; frame < 900; frame++) {
-      const cur = handheld(frame, seeds[0]!);
-      const step = Math.hypot(cur.x - prev.x, cur.y - prev.y);
-      expect(step).toBeLessThanOrEqual(1.2);
-      if (step > 0.02) moved++;
-      prev = cur;
+  it("agrees with activeChunkIndex: the new chunk on that frame, the previous one a frame before", () => {
+    const offset = 250;
+    for (const startMs of [880, 1720, 3280, 4080, 9440, 10_960, 15_080]) {
+      const chunks: CaptionChunk[] = [
+        { text: "a", startMs: 0, endMs: startMs - 10, words: [] },
+        { text: "b", startMs, endMs: startMs + 900, words: [] },
+      ];
+      const f = voBoundaryFrame(startMs, offset);
+      expect(activeChunkIndex(chunks, frameToMs(f) - offset)).toBe(1);
+      expect(activeChunkIndex(chunks, frameToMs(f - 1) - offset)).toBe(0);
     }
-    expect(moved).toBeGreaterThan(800);
+  });
+});
+
+describe("cutawayFrames", () => {
+  it("covers the head from boundary to boundary and plays the demo from its window", () => {
+    const frames = cutawayFrames(
+      [
+        { fromMs: 4080, toMs: 9440, demoStartMs: 12_000 },
+        { fromMs: 10_960, toMs: 15_080, demoStartMs: 30_000 },
+      ],
+      250,
+      0,
+    );
+    expect(frames).toEqual([
+      {
+        fromFrame: voBoundaryFrame(4080, 250),
+        durationInFrames: voBoundaryFrame(9440, 250) - voBoundaryFrame(4080, 250),
+        trimBeforeFrames: 360,
+      },
+      {
+        fromFrame: voBoundaryFrame(10_960, 250),
+        durationInFrames: voBoundaryFrame(15_080, 250) - voBoundaryFrame(10_960, 250),
+        trimBeforeFrames: 900,
+      },
+    ]);
   });
 
-  it("is a pure function of frame and seed", () => {
-    expect(handheld(17, "a")).toEqual(handheld(17, "a"));
-    expect(handheld(17, "a")).not.toEqual(handheld(17, "b"));
-    expect(handheld(17, "a")).not.toEqual(handheld(18, "a"));
+  it("a 4–6 s window stays 120–180 frames, whatever its boundaries' rounding", () => {
+    for (let fromMs = 2000; fromMs < 4000; fromMs += 7) {
+      for (const len of [4000, 5000, 6000]) {
+        const [c] = cutawayFrames([{ fromMs, toMs: fromMs + len, demoStartMs: 0 }], 250, 0);
+        expect(c!.durationInFrames).toBeGreaterThanOrEqual(120);
+        expect(c!.durationInFrames).toBeLessThanOrEqual(180);
+      }
+    }
+  });
+
+  it("never starts under the hook text, and skips a window that rounds to nothing", () => {
+    const [c] = cutawayFrames([{ fromMs: 3000, toMs: 8000, demoStartMs: 0 }], 250, 200);
+    expect(c!.fromFrame).toBe(200);
+    expect(cutawayFrames([{ fromMs: 3000, toMs: 3010, demoStartMs: 0 }], 250, 0)).toEqual([]);
   });
 });
 

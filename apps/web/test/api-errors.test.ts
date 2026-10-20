@@ -3,6 +3,7 @@ import {
   AccountBudgetError,
   BudgetError,
   ContentPolicyError,
+  CutawayPlanError,
   InsufficientCreditsError,
   NotConfiguredGateway,
   PLAN_STEPS_OVERLAP_MESSAGE,
@@ -302,5 +303,29 @@ describe("coreErrorMapping — plan changes and the unconfigured gateway", () =>
   it("maps NotConfiguredGateway's throw to the 503 'coming soon' line", async () => {
     const err = await new NotConfiguredGateway().chargeRecurring().catch((e: unknown) => e);
     expect(coreErrorMapping(err)).toEqual({ status: 503, error: PAYMENTS_SOON, mapped: true });
+  });
+});
+
+describe("coreErrorMapping — demo cutaways (vault 0121)", () => {
+  it("gives every refusal its status and a Hebrew line, never the generic 500", () => {
+    const statuses: Record<string, number> = {
+      not_found: 404,
+      audio_not_approved: 409,
+      demo_not_ready: 409,
+      analysis_pending: 409,
+      analysis_failed: 422,
+      vo_too_short: 422,
+      no_layout: 422,
+      demo_too_short: 422,
+      invalid_windows: 422,
+      invalid_hook_text: 400,
+      stale: 409,
+    };
+    for (const [code, status] of Object.entries(statuses)) {
+      const mapping = coreErrorMapping(new CutawayPlanError(code as never, "not found anywhere"));
+      expect(mapping).toMatchObject({ status, mapped: true });
+      expect(mapping.error).toMatch(/[\u0590-\u05FF]/);
+    }
+    expect(coreErrorMapping(new CutawayPlanError("not_found")).error).toBe(NOT_FOUND);
   });
 });

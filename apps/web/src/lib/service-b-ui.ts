@@ -171,7 +171,7 @@ export function renderStageIndex(status: string): number {
 // Wizard steps
 // ---------------------------------------------------------------------------
 
-export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" | "render";
+export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" | "demo" | "render";
 
 /**
  * One flow for every business: the persona is one look in one setting, so
@@ -179,9 +179,22 @@ export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" 
  * there is no composite step (vault 0017). The effect step is where the
  * customer picks a hook animation — or none — and edits the on-screen hook
  * text it burns (vault 0024; it offered opener clips until 2026-09-06).
+ *
+ * Demo cutaways (vault 0121) add one step, "demo", after the effect step —
+ * the slots are laid out from when the hook text leaves (founder,
+ * 2026-10-20) — and only when the customer ticked them on the audio card.
+ * With the option off the flow is exactly the six steps it always was.
  */
-export function wizardSteps(): WizardStep[] {
-  return ["persona", "pointers", "script", "audio", "effect", "render"];
+export function wizardSteps(opts: { cutaways?: boolean } = {}): WizardStep[] {
+  return [
+    "persona",
+    "pointers",
+    "script",
+    "audio",
+    "effect",
+    ...(opts.cutaways ? (["demo"] as const) : []),
+    "render",
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +537,8 @@ export function renderRequestBody(opts: {
   hookEffect: HookEffect;
   hookText?: string;
   hookTextSafeArea?: SafeRect;
+  /** The live cutaway plan, only with the option on (vault 0121); absent = the head-only ad. */
+  cutawayPlanId?: string;
 }): Record<string, unknown> {
   return {
     scriptId: opts.scriptId,
@@ -537,5 +552,198 @@ export function renderRequestBody(opts: {
           ...(opts.hookTextSafeArea ? { hookTextSafeArea: opts.hookTextSafeArea } : {}),
         }
       : {}),
+    ...(opts.cutawayPlanId ? { cutawayPlanId: opts.cutawayPlanId } : {}),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Demo cutaways (vault 0121) — the "demo" step, after the effect step
+// ---------------------------------------------------------------------------
+
+/** One slot as the wizard gets it (VO-time ms): when the demo covers the
+ *  character, the words it covers, and where in the demo it plays from. */
+export type CutawaySlotWire = {
+  fromMs: number;
+  toMs: number;
+  lengthMs: number;
+  wordFrom: number;
+  wordTo: number;
+  demoStartMs: number;
+  stateIndex: number | null;
+  draftDemoStartMs: number;
+  draftStateIndex: number | null;
+};
+
+/** A place a window may start — a moment of the analysed demo. */
+export type CutawayAnchorWire = { startMs: number; stateIndex: number };
+
+/** core's CutawayPlanView, mirrored (this file never imports core's main entry). */
+export type CutawayPlanWire = {
+  planId: string;
+  audioId: string;
+  demoId: string;
+  structure: string;
+  hookText: string;
+  /** The caption words, in order — what each slot's wordFrom/wordTo index. */
+  words: string[];
+  slots: CutawaySlotWire[];
+  anchors: CutawayAnchorWire[];
+  /** A window starts at or after minStartMs and ends (with the frame slack) by maxEndMs. */
+  minStartMs: number;
+  maxEndMs: number;
+};
+
+/** Mirrors core's CUTAWAY_FRAME_SLACK_MS (service-b-ui.test.ts pins the two). */
+export const CUTAWAY_FRAME_SLACK_MS = 34;
+
+/** The hook text a plan is laid out from: the effect step's line, or none with "none". */
+export function cutawayHookText(hookEffect: HookEffect, hookText: string): string {
+  return hookEffect === "none" ? "" : hookText.trim();
+}
+
+/**
+ * The plan, if it still belongs to what the wizard holds — the same approved
+ * audio, the same demo and the same hook text it was laid out from. Anything
+ * else is stale: the step drafts again (a new hook text is a new draft,
+ * founder 2026-10-20), and the render never sends it.
+ */
+export function liveCutawayPlan(
+  plan: CutawayPlanWire | null,
+  audioId: string | undefined,
+  demoId: string | undefined,
+  hookText: string,
+): CutawayPlanWire | null {
+  if (!plan || plan.audioId !== audioId || plan.demoId !== demoId) return null;
+  return plan.hookText === hookText ? plan : null;
+}
+
+const footprintEnd = (startMs: number, lengthMs: number) =>
+  startMs + lengthMs + CUTAWAY_FRAME_SLACK_MS;
+
+/**
+ * Where slot `index` may start, sorted: a moment whose window stays inside
+ * the recording and shows none of the footage another slot shows (the others
+ * at `starts`). The window picker snaps to these and nothing else, so what the
+ * customer can drag to is exactly what the server accepts.
+ */
+export function cutawayStarts(plan: CutawayPlanWire, index: number, starts: number[]): number[] {
+  const length = plan.slots[index]!.lengthMs;
+  const valid = new Set<number>();
+  for (const { startMs } of plan.anchors) {
+    if (startMs < plan.minStartMs || footprintEnd(startMs, length) > plan.maxEndMs) continue;
+    const clear = plan.slots.every(
+      (other, j) =>
+        j === index ||
+        footprintEnd(startMs, length) <= starts[j]! ||
+        footprintEnd(starts[j]!, other.lengthMs) <= startMs,
+    );
+    if (clear) valid.add(startMs);
+  }
+  return [...valid].sort((a, b) => a - b);
+}
+
+/** The valid start nearest `targetMs` (the earlier on a tie). */
+export function snapCutawayStart(valid: number[], targetMs: number): number | undefined {
+  let best: number | undefined;
+  for (const start of valid) {
+    if (best === undefined || Math.abs(start - targetMs) < Math.abs(best - targetMs)) best = start;
+  }
+  return best;
+}
+
+/** The next valid start before (-1) or after (+1) `current`; stays put at either end. */
+export function nudgeCutawayStart(valid: number[], current: number, direction: -1 | 1): number {
+  const next =
+    direction === 1
+      ? valid.find((s) => s > current)
+      : [...valid].reverse().find((s) => s < current);
+  return next ?? current;
+}
+
+/** The script as runs for highlighting: consecutive words grouped by the slot
+ *  they fall in (null = spoken over the character). */
+export function cutawayScriptRuns(
+  words: string[],
+  slots: { wordFrom: number; wordTo: number }[],
+): { text: string; slot: number | null }[] {
+  const runs: { text: string; slot: number | null }[] = [];
+  for (const [i, word] of words.entries()) {
+    const k = slots.findIndex((s) => i >= s.wordFrom && i < s.wordTo);
+    const slot = k === -1 ? null : k;
+    const last = runs[runs.length - 1];
+    if (last && last.slot === slot) last.text += ` ${word}`;
+    else runs.push({ text: word, slot });
+  }
+  return runs;
+}
+
+/** The state a window opens on — its thumbnail. */
+export function anchorStateAt(plan: CutawayPlanWire, startMs: number): number | undefined {
+  return plan.anchors.find((a) => a.startMs === startMs)?.stateIndex;
+}
+
+/** A window on the picker's track, in percent of the whole recording (LTR). */
+export function cutawayTrackBox(
+  plan: CutawayPlanWire,
+  startMs: number,
+  lengthMs: number,
+): { left: number; width: number } {
+  const recordingMs = plan.maxEndMs + plan.minStartMs;
+  return { left: (100 * startMs) / recordingMs, width: (100 * lengthMs) / recordingMs };
+}
+
+/** `count` moments spread evenly through the recording, by time — the picker
+ *  track's filmstrip. Fewer when the demo has fewer moments. */
+export function filmstripStates(plan: CutawayPlanWire, count: number): number[] {
+  const recordingMs = plan.maxEndMs + plan.minStartMs;
+  const picked: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const target = ((i + 0.5) * recordingMs) / count;
+    let best: CutawayAnchorWire | undefined;
+    for (const anchor of plan.anchors) {
+      if (!best || Math.abs(anchor.startMs - target) < Math.abs(best.startMs - target))
+        best = anchor;
+    }
+    if (best && !picked.includes(best.stateIndex)) picked.push(best.stateIndex);
+  }
+  return picked;
+}
+
+/** Seconds with one decimal, for a slot's length ("5.4"). */
+export function cutawaySeconds(lengthMs: number): string {
+  return (Math.round(lengthMs / 100) / 10).toFixed(1);
+}
+
+/**
+ * COPY PENDING FOUNDER REVIEW — every customer-facing string of the cutaway
+ * option (vault 0121), in one place, so the step components stay dumb
+ * renderers and the founder approves one block.
+ */
+export const CUTAWAY_COPY = {
+  optIn: "לשלב קטעים מסרטון המוצר",
+  optInHint:
+    "באמצע הסרטון עוברים לכמה שניות לקטעים מסרטון המוצר שלכם. הקול והכתוביות ממשיכים כרגיל, בלי הסאונד של סרטון המוצר.",
+  stepTitle: "קטעים מהמוצר",
+  pickTitle: "מאיזה סרטון לקחת את הקטעים?",
+  pickSub: "בוחרים סרטון מוצר שכבר העליתם, או מעלים חדש.",
+  analysingSub: "סרטון חדש עובר ניתוח פעם אחת, ואחר כך נשבץ ממנו קטעים.",
+  drafting: "משבצים קטעים מסרטון המוצר…",
+  slotsTitle: "קטעים מסרטון המוצר",
+  slotsSub:
+    "בזמן המילים המסומנות רואים קטע מסרטון המוצר. שיבצנו קטעים לפי סדר הסרטון, ואפשר להחליף כל אחד.",
+  slotLabel: (n: number, seconds: string) => `קטע ${n} · ${seconds} שנ׳`,
+  change: "שינוי",
+  play: "צפייה בקטע",
+  pickerTitle: (n: number, total: number) => `קטע ${n} מתוך ${total}`,
+  pickerSub: "מזיזים את המסגרת לאורך סרטון המוצר. מה שבתוכה יופיע בזמן המילים המסומנות.",
+  slider: "מיקום הקטע בסרטון המוצר",
+  earlier: "קצת קודם",
+  later: "קצת אחר כך",
+  save: "שמירה",
+  cancel: "ביטול",
+  continue: "המשך",
+  skip: "המשך בלי קטעים",
+  changeDemo: "החלפת הסרטון",
+  saveFailed: "לא הצלחנו לשמור את הקטע — נסו שוב.",
+  analysisFailed: "ניתוח הסרטון נכשל — נסו סרטון אחר.",
+} as const;

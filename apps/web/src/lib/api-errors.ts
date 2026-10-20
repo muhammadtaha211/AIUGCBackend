@@ -2,6 +2,7 @@ import {
   AccountBudgetError,
   BudgetError,
   ContentPolicyError,
+  CutawayPlanError,
   InsufficientCreditsError,
   IntroOfferError,
   PLAN_STEPS_OVERLAP_MESSAGE,
@@ -76,6 +77,36 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
       422,
       "התוכן לא עבר את בדיקת התוכן שלנו. עדכנו את השאלון או את הטקסט שנבחר ונסו שוב.",
     );
+  }
+
+  // Demo cutaways (vault 0121): typed, so a code can never be shadowed by a
+  // substring test below. 409 when something has to happen first (the audio,
+  // the demo, the analysis) or moved on under the plan; 422 for a request the
+  // footage or the voice cannot take. COPY PENDING FOUNDER REVIEW.
+  if (err instanceof CutawayPlanError) {
+    switch (err.code) {
+      case "not_found":
+        return hit(404, NOT_FOUND);
+      case "audio_not_approved":
+        return hit(409, "צריך לאשר את ההקלטה לפני שמשבצים קטעים.");
+      case "demo_not_ready":
+        return hit(409, "סרטון המוצר עדיין בעיבוד — נסו שוב בעוד רגע.");
+      case "analysis_pending":
+        return hit(409, "סרטון המוצר עדיין בניתוח — זה לוקח כמה דקות.");
+      case "analysis_failed":
+        return hit(422, "לא הצלחנו לנתח את סרטון המוצר הזה — בחרו סרטון אחר.");
+      case "vo_too_short":
+      case "no_layout":
+        return hit(422, "אין בהקלטה הזאת מקום לקטעים מסרטון המוצר — אפשר להמשיך בלי קטעים.");
+      case "demo_too_short":
+        return hit(422, "סרטון המוצר קצר מדי בשביל קטעים — בחרו סרטון ארוך יותר.");
+      case "invalid_windows":
+        return hit(422, "הקטע לא נכנס במקום שבחרתם — בחרו מקום אחר בסרטון.");
+      case "invalid_hook_text":
+        return hit(400, INVALID_BODY);
+      case "stale":
+        return hit(409, "ההקלטה או משפט הפתיחה השתנו — צריך לשבץ את הקטעים מחדש.");
+    }
   }
 
   // Social posting's refusals (PR 3): typed, like the one above, so a code can

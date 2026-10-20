@@ -86,8 +86,7 @@ No pipeline code moves. The worker deploys unchanged.
 2. ~~**Remotion compositions**~~ — **done for Service B**: `@aiugc/remotion` renders the
    `ServiceB` composition against the props contract in `providers/remotion.ts`, wired into
    `renderVideo()` ([04-integrations.md](04-integrations.md)). Still open: the `ServiceA`
-   composition (`renderVideo()` throws for `kind: "service_a"`), B-roll cutaway logic
-   (`brollPaths` is accepted and ignored), and calibrating `words_per_second` per voice with test
+   composition (`renderVideo()` throws for `kind: "service_a"`) and calibrating `words_per_second` per voice with test
    renders.
 3. ~~**WhisperX fallback**~~ — **not needed**: eleven_v3 returned character alignment in
    production (`alignment_source = "elevenlabs"`), and eleven_v4 does too (2026-10-20, vault 0119). `forcedAlign()` stays in the tree as a

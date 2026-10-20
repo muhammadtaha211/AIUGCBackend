@@ -135,6 +135,26 @@ export const hookBeatsSchema = z.object({
 });
 export type HookBeats = z.infer<typeof hookBeatsSchema>;
 
+/**
+ * Demo cutaways (vault 0121): stretches of the customer's own demo laid over
+ * the still-running talking head. Times are VO time (ms into the approved
+ * mp3, the captions' axis); the composition puts every boundary on the frame
+ * the captions change on (timing.ts `voBoundaryFrame`). `demoDurationInFrames`
+ * is filled by calculateServiceBMetadata, like the head's, for the last-frame
+ * hold.
+ */
+export const cutawayWindowSchema = z.object({
+  fromMs: z.number().nonnegative(),
+  toMs: z.number().positive(),
+  demoStartMs: z.number().nonnegative(),
+});
+export const cutawaysSchema = z.object({
+  src: z.string(),
+  slots: z.array(cutawayWindowSchema).min(1),
+  demoDurationInFrames: z.number().optional(),
+});
+export type Cutaways = z.infer<typeof cutawaysSchema>;
+
 export const serviceBSchema = z.object({
   talkingHeadSrc: z.string(),
   /**
@@ -145,8 +165,6 @@ export const serviceBSchema = z.object({
    * clip.
    */
   voiceoverSrc: z.string(),
-  /** B-roll cutaways. Empty is normal and must render cleanly. */
-  brollSrcs: z.array(z.string()),
   captions: z.array(captionChunkSchema),
   watermark: z.boolean(),
   /**
@@ -181,11 +199,10 @@ export const serviceBSchema = z.object({
   hookTextReveal: hookTextRevealSchema.optional(),
   hookBeats: hookBeatsSchema.optional(),
   /**
-   * Seeds the handheld camera path (timing.ts `handheld`). The worker passes
-   * the render id; absent = the fixed "preview" path Studio and the sample
-   * renders show.
+   * The customer's demo cutaways (vault 0121), the demo always muted: the
+   * approved mp3 stays the only track. Absent = the head-only ad.
    */
-  cameraSeed: z.string().optional(),
+  cutaways: cutawaysSchema.optional(),
   /**
    * Filled in by `calculateServiceBMetadata` (which probes the clips), not by
    * the caller — they mark where each clip runs out and its final frame has

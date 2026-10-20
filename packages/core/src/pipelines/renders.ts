@@ -22,6 +22,7 @@ import {
   textBlockClips,
   videoRenders,
 } from "../db/schema";
+import { clampCutawaysForRender } from "../cutaway-structure";
 import { hookAnimation, isHookAnimation } from "../hook-effect";
 import { resolveHookTextSafeArea } from "../hook-geometry";
 import { HOOK_TEXT_INK, type HookTextColor } from "../hook-text-color";
@@ -34,6 +35,7 @@ import {
   padAudioStart,
   probe,
   probeColorTags,
+  probeVideoStreamMs,
   alignmentOffset,
   meanRgb,
   rgbSeries,
@@ -717,11 +719,15 @@ async function buildServiceCProps(
   };
 }
 
-async function buildServiceBProps(
+/**
+ * Exported so a local check can render a stored B take through the shipped
+ * path (packages/core/.work, decision 0121) — the worker is its only caller.
+ */
+export async function buildServiceBProps(
   db: Db,
   render: typeof videoRenders.$inferSelect,
   localDir: string,
-): Promise<RenderVideoProps> {
+): Promise<RenderServiceBProps> {
   const params = render.params as VariantParams;
   // Written by handleLipsync: the stored HeyGen clip. Remotion reads the frame
   // count off this file.
@@ -760,17 +766,46 @@ async function buildServiceBProps(
     throw new PermanentError("opener render has no hook text on its params");
   }
 
+  // Demo cutaways (vault 0121): the windows were copied onto params at
+  // enqueue; the demo they cut to is the one thing read here. A demo that is
+  // gone or not this business's drops the cutaways and renders the head-only
+  // ad — HeyGen has been paid, so nothing here may fail the render.
+  let cutawayDemo: { normalizedPath: string; durationMs: number | null } | undefined;
+  if (params.cutaways) {
+    const demo = (
+      await db.select().from(demos).where(eq(demos.id, params.cutaways.demoId)).limit(1)
+    )[0];
+    if (demo?.normalizedPath && demo.businessId === render.businessId) {
+      cutawayDemo = { normalizedPath: demo.normalizedPath, durationMs: demo.durationMs };
+    } else {
+      await cutawaysDegraded(db, render, { why: "the demo is missing or not this business's" });
+    }
+  }
+
   // The approved mp3 becomes the render's audio track — the same bytes the
   // customer approved and the same file these timestamps were computed against.
   // The lip-sync clip's own audio (HeyGen's re-encode of this mp3) is muted.
   const voiceoverPath = path.join(localDir, "vo.mp3");
   let talkingHeadPath = path.join(localDir, "talking-head.mp4");
   let openerPath = opener ? path.join(localDir, "opener.mp4") : undefined;
+  const demoPath = cutawayDemo ? path.join(localDir, "demo.mp4") : undefined;
   await Promise.all([
     getStorage().download(audio.filePath, voiceoverPath),
     getStorage().download(params.lipsyncPath, talkingHeadPath),
     opener && openerPath ? getStorage().download(opener.filePath, openerPath) : undefined,
   ]);
+  // The demo on its own: a transient storage error retries like the clip's and
+  // the VO's, but a file that is gone drops the cutaways — the head-only ad
+  // still ships.
+  if (cutawayDemo && demoPath) {
+    try {
+      await getStorage().download(cutawayDemo.normalizedPath, demoPath);
+    } catch (err) {
+      if (!(err instanceof PermanentError)) throw err;
+      await cutawaysDegraded(db, render, { why: "the demo file is missing from storage" });
+      cutawayDemo = undefined;
+    }
+  }
   // HeyGen generated to the PADDED audio; the layout needs the clip's real
   // length (probed before the stream-copy retag, which does not change it).
   const clip = getEnv().DRY_RUN ? DRY_RUN_PROBE : await probe(talkingHeadPath);
@@ -796,6 +831,34 @@ async function buildServiceBProps(
     lipsyncDurationMs: clip.durationMs,
     voDurationMs: audio.durationMs,
   });
+
+  // The windows as the probed demo can still play them: a window past the
+  // VIDEO stream's end (the raw-length defect) shifts earlier, keeping its
+  // length; one that cannot fit, overlaps, or would sit under the hook text at
+  // this render's real lead-in is dropped. Never throws.
+  let cutaways: RenderServiceBProps["cutaways"];
+  if (params.cutaways && cutawayDemo && demoPath) {
+    const parsed = z
+      .array(z.object({ fromMs: z.number(), toMs: z.number(), demoStartMs: z.number() }))
+      .safeParse(params.cutaways.slots);
+    const videoEndMs = getEnv().DRY_RUN
+      ? (cutawayDemo.durationMs ?? 20_000)
+      : await probeVideoStreamMs(demoPath).catch(() => 0);
+    const { kept, dropped, shifted } = clampCutawaysForRender(parsed.success ? parsed.data : [], {
+      videoEndMs,
+      captionOffsetMs: timeline.captionOffsetMs,
+      hookTextMs: timeline.hookTextMs,
+    });
+    if (!parsed.success || dropped.length > 0 || shifted.length > 0) {
+      await cutawaysDegraded(db, render, {
+        why: parsed.success ? "windows clamped" : "malformed windows",
+        videoEndMs,
+        dropped,
+        shifted,
+      });
+    }
+    if (kept.length > 0) cutaways = { demoPath, slots: kept };
+  }
 
   // Colour: the cut leaves the opener's reveal frame and lands on the talking
   // head — two generations of one selfie that never come back at the same
@@ -852,12 +915,8 @@ async function buildServiceBProps(
 
   return {
     kind: "service_b",
-    // The handheld camera path is seeded by the row, so a retry — or a
-    // resumed chunk — re-renders the very same frames.
-    cameraSeed: render.id,
     talkingHeadPath,
     voiceoverPath,
-    brollPaths: [], // product B-roll cutaways: wired when the composition lands
     openerPath,
     hookText: params.hookText,
     hookTextSafeArea: params.hookTextSafeArea,
@@ -866,10 +925,31 @@ async function buildServiceBProps(
     talkingHeadAlign,
     ...hookAnimationProps(params.hookEffect, timeline.captionOffsetMs, opener !== undefined),
     watermark: render.watermarked,
+    // After the fixed fields and before captions: the DRY_RUN echo keeps a
+    // 2000-char prefix, and a head-only render has no key at all.
+    ...(cutaways ? { cutaways } : {}),
     // Last on purpose: the DRY_RUN render echoes a prefix of these props, and
     // captions are the one unbounded field.
     captions,
   };
+}
+
+/** events.kind: a render played fewer cutaways than its params carried, with why. */
+export const CUTAWAY_RENDER_DEGRADED = "cutaway_render_degraded";
+
+async function cutawaysDegraded(
+  db: Db,
+  render: typeof videoRenders.$inferSelect,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  logger.warn({ videoRenderId: render.id, ...payload }, "render: demo cutaways degraded");
+  await db.insert(events).values({
+    kind: CUTAWAY_RENDER_DEGRADED,
+    businessId: render.businessId,
+    subjectType: "video_render",
+    subjectId: render.id,
+    payload,
+  });
 }
 
 /**

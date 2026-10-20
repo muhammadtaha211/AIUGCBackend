@@ -566,6 +566,50 @@ export const sets = pgTable(
   (t) => [index("sets_business_idx").on(t.businessId)],
 );
 
+// 0068: Service B demo cutaways (decision 0121) — the customer's picks, on
+// their own rows and never on demo_step_plans. One row per (approved audio,
+// analysis, structure, hook text): the slots are laid out from the audio's
+// chunks and the moment the hook text leaves, so a new hook text is a new row
+// and a fresh draft. Enqueue COPIES the slots onto video_renders.params, never
+// points here. Server-only (RLS on, no policy). CHECK in SQL: slots is an
+// array. structure has none — it is a name from cutaway-structure.ts, data in
+// code like the hook effects.
+export const cutawayPlans = pgTable(
+  "cutaway_plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id),
+    audioRenderId: uuid("audio_render_id")
+      .notNull()
+      .references(() => audioRenders.id),
+    demoId: uuid("demo_id")
+      .notNull()
+      .references(() => demos.id),
+    analysisId: uuid("analysis_id")
+      .notNull()
+      .references(() => demoAnalyses.id),
+    structure: text("structure").notNull(),
+    // The final hook text the slots were laid out from; '' = no hook text.
+    hookText: text("hook_text").notNull().default(""),
+    // CutawaySlot[] (pipelines/cutaways.ts), VO time, the draft beside the pick.
+    slots: jsonb("slots").notNull(),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("cutaway_plans_audio_analysis_structure_hook_idx").on(
+      t.audioRenderId,
+      t.analysisId,
+      t.structure,
+      t.hookText,
+    ),
+    index("cutaway_plans_business_idx").on(t.businessId),
+  ],
+);
+
 export const videoRenders = pgTable(
   "video_renders",
   {

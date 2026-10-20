@@ -8,6 +8,12 @@ source: founder
 
 # 0022 — HeyGen renders at expressiveness `medium` with a generic motion prompt
 
+**2026-10-20, measured:** production's `lipsync_expressiveness` reads **`"low"`**, not `"medium"`,
+and `lipsync_motion_prompt` is a long stillness-first prompt, not this note's generic one
+([[app-config-live-state]]). Both are the founder's hand edits. He confirms `low` and reports the
+prompt was changed again on 2026-10-20 and is now good (FOUNDER-REPORTED). Who set what when is not
+recorded. Not re-ruled here: the rows are his.
+
 **Founder-decided.** Every Service B HeyGen submit sends `expressiveness: "medium"` and a
 generic motion prompt that asks for nothing staged and names no hands. Both live in
 `app_config` (`lipsync_expressiveness`, `lipsync_motion_prompt`), read by `handleLipsync`

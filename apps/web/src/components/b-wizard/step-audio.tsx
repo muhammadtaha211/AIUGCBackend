@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
@@ -41,6 +41,13 @@ type StepAudioProps = {
    * approval, while regenerating is still one click away.
    */
   demoDurationMs?: number;
+  /**
+   * Service B only: rendered in the ready card under the script, above the
+   * button — the demo cutaway option (vault 0121). From "ready", not after
+   * approval, so the approve -> continue swap can never land a second click
+   * on a row that just appeared under the cursor.
+   */
+  extra?: ReactNode;
 };
 
 /**
@@ -62,6 +69,7 @@ export function StepAudio({
   onFatal,
   approveContinueLabel,
   demoDurationMs,
+  extra,
 }: StepAudioProps) {
   const [error, setError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
@@ -262,6 +270,8 @@ export function StepAudio({
               {script.text}
             </p>
           </div>
+
+          {!approveContinueLabel && extra}
 
           {/* Service A: the exact ending from the measured recording — the
               last moment a regenerate is one click away, which is exactly why

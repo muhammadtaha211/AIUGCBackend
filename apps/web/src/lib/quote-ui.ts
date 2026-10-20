@@ -73,9 +73,16 @@ export function shortfallLine(quote: NonNullable<QuoteView>): string {
   return `אין מספיק קרדיטים ליצירה הזאת — צריך ${quote.credits}, יש ${quote.balance}. חסרים ${quote.shortfall}.`;
 }
 
-/** Service B's one-line shape summary (A has its own, richer, in service-a-ui). */
-export function bShapeSummary(voSeconds: number): string {
-  return `סרטון דמות באורך ${formatSeconds(voSeconds)} שנ׳, לפי ההקלטה שאישרתם.`;
+/** Service B's one-line shape summary (A has its own, richer, in service-a-ui).
+ *  With demo cutaways (vault 0121) it names how many; with none it is unchanged. */
+export function bShapeSummary(voSeconds: number, cutawayCount = 0): string {
+  const cutaways =
+    cutawayCount === 0
+      ? ""
+      : cutawayCount === 1
+        ? " עם קטע אחד מסרטון המוצר"
+        : ` עם ${cutawayCount} קטעים מסרטון המוצר`;
+  return `סרטון דמות באורך ${formatSeconds(voSeconds)} שנ׳${cutaways}, לפי ההקלטה שאישרתם.`;
 }
 
 export function hasShortfall(quote: QuoteView): boolean {

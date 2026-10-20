@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { renderServiceASteps } from "../src/render";
+import { renderServiceASteps, renderServiceB } from "../src/render";
+import { voBoundaryFrame } from "../src/timing";
 
 /**
  * Frame delivery: the rendered file must actually contain a new source frame
@@ -50,6 +51,11 @@ const STEPS = [
 ];
 const HOOK_FRAMES = 15;
 const STEP_FRAMES = 30;
+/** Service B: HeyGen's clips are 25 fps in a 30 fps composition. */
+const HEAD_SOURCE = "testsrc2=size=1080x1920:rate=25:duration=6";
+const VO_SOURCE = "sine=frequency=440:sample_rate=44100:duration=5";
+/** One cutaway, 2 s, seeking deep into the demo (vault 0121). */
+const CUTAWAY = { fromMs: 1000, toMs: 3000, demoStartMs: 6000 };
 
 let hook: string | null = null;
 let demo: string | null = null;
@@ -58,8 +64,10 @@ describe("ServiceASteps frame delivery", () => {
   beforeAll(() => {
     hook = ensureFixture(HOOK_SOURCE);
     demo = ensureFixture(DEMO_SOURCE);
-    // The names are spec hashes, so editing a spec orphans the old file.
-    const keep = new Set([hook, demo].filter(Boolean).map((f) => path.basename(f!)));
+    // The names are spec hashes, so editing a spec orphans the old file. The
+    // ServiceB case's fixtures are made here too, so this sweep keeps them.
+    const serviceB = [ensureFixture(HEAD_SOURCE), ensureAudioFixture(VO_SOURCE)];
+    const keep = new Set([hook, demo, ...serviceB].filter(Boolean).map((f) => path.basename(f!)));
     for (const stale of readdirSync(FIXTURE_DIR).filter((f) => !keep.has(f))) {
       rmSync(path.join(FIXTURE_DIR, stale), { force: true });
     }
@@ -126,15 +134,18 @@ describe("ServiceASteps frame delivery", () => {
 });
 
 /** Downscaled luma, top 1000px only so the burned hook line and step label
- *  (y >= 1062) cannot influence which source frame a match lands on. */
+ *  (y >= 1062) cannot influence which source frame a match lands on. `pre`
+ *  runs first — ServiceB's head sits under a static 1.06 scale, so its
+ *  reference frames are scaled the same way before they are compared. */
 const W = 60;
 const H = 56;
 
-function grayFrames(file: string): Uint8Array[] {
+function grayFrames(file: string, pre?: string): Uint8Array[] {
+  const vf = [pre, `crop=1080:1000:0:0,scale=${W}:${H}`].filter(Boolean).join(",");
   const result = spawnSync(
     "ffmpeg",
     // prettier-ignore
-    ["-v", "error", "-i", file, "-an", "-vf", `crop=1080:1000:0:0,scale=${W}:${H}`,
+    ["-v", "error", "-i", file, "-an", "-vf", vf,
      "-pix_fmt", "gray", "-f", "rawvideo", "-"],
     { maxBuffer: 1 << 30 },
   );
@@ -146,6 +157,75 @@ function grayFrames(file: string): Uint8Array[] {
   for (let i = 0; i + W * H <= raw.length; i += W * H) frames.push(raw.subarray(i, i + W * H));
   return frames;
 }
+
+describe("ServiceB cutaway frame delivery", () => {
+  let head: string | null = null;
+  let demoFile: string | null = null;
+  let vo: string | null = null;
+  beforeAll(() => {
+    head = ensureFixture(HEAD_SOURCE);
+    demoFile = ensureFixture(DEMO_SOURCE);
+    vo = ensureAudioFixture(VO_SOURCE);
+  }, 600_000);
+
+  it("the cut lands on its frame, every demo frame is new, and the head keeps its clock under the demo", async (ctx) => {
+    if (!head || !demoFile || !vo) {
+      ctx.skip();
+      return;
+    }
+    const out = path.join(tmpdir(), `aiugc-frame-delivery-b-${process.pid}.mp4`);
+    try {
+      await renderServiceB(
+        {
+          talkingHeadPath: head,
+          voiceoverPath: vo,
+          captions: [],
+          timeline: {
+            hookTextMs: 0,
+            revealAbsMs: 0,
+            lipsyncStartFromMs: 0,
+            captionOffsetMs: 0,
+            totalMs: 5000,
+          },
+          cutaways: { demoPath: demoFile, slots: [CUTAWAY] },
+          watermark: false,
+        },
+        out,
+      );
+      const rendered = grayFrames(out);
+      const headSource = grayFrames(head, "scale=iw*1.06:ih*1.06,crop=1080:1920");
+      const demoSource = grayFrames(demoFile);
+      expect(rendered.length).toBe(150);
+
+      const from = voBoundaryFrame(CUTAWAY.fromMs, 0);
+      const to = voBoundaryFrame(CUTAWAY.toMs, 0);
+      const trim = Math.round((CUTAWAY.demoStartMs / 1000) * 30);
+      const window = demoSource.slice(trim, trim + (to - from));
+      expect(window.length).toBe(to - from);
+
+      // Every frame of the cutaway is a new frame of its demo window, in order.
+      const shown = new Set<number>();
+      for (let f = from; f < to; f++) shown.add(nearest(window, rendered[f]!));
+      expect(
+        shown.size,
+        `${shown.size} distinct demo frames over ${to - from}`,
+      ).toBeGreaterThanOrEqual(to - from - 1);
+      // The first cutaway frame is the window's first frame, not a frame late.
+      expect(nearest(window, rendered[from]!)).toBe(0);
+
+      // Either side of the cutaway the head plays at the global clock: what the
+      // frame before shows, and what the frame after shows, are 25 fps head
+      // frames at those times — the head ran on underneath, it did not pause.
+      const headAt = (f: number) => Math.floor((f / 30) * 25);
+      const near = (f: number) => nearest(headSource, rendered[f]!);
+      expect(Math.abs(near(from - 1) - headAt(from - 1))).toBeLessThanOrEqual(1);
+      expect(Math.abs(near(to) - headAt(to))).toBeLessThanOrEqual(1);
+      expect(Math.abs(near(to + 15) - headAt(to + 15))).toBeLessThanOrEqual(1);
+    } finally {
+      rmSync(out, { force: true });
+    }
+  }, 900_000);
+});
 
 /** Index of the eligible source frame closest to `frame`, mean-centred so the
  *  burned overlays (a constant brightness offset) do not skew the distance. */
@@ -180,6 +260,23 @@ function mean(frame: Uint8Array): number {
  * hold for. Encode to a temp name and rename on success: ffmpeg creates the
  * output before encoding, and a truncated file must not be trusted forever.
  */
+function ensureAudioFixture(source: string): string | null {
+  const stamp = createHash("sha256").update(source).digest("hex").slice(0, 8);
+  const file = path.join(FIXTURE_DIR, `${stamp}.wav`);
+  if (existsSync(file)) return file;
+  mkdirSync(FIXTURE_DIR, { recursive: true });
+  const tmp = `${file}.tmp.wav`;
+  const result = spawnSync("ffmpeg", ["-y", "-f", "lavfi", "-i", source, tmp], {
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  if (result.error || result.status !== 0) {
+    rmSync(tmp, { force: true });
+    return null;
+  }
+  renameSync(tmp, file);
+  return file;
+}
+
 function ensureFixture(source: string): string | null {
   const spec = [source, SPIN, ...ENCODE].join(" ");
   const stamp = createHash("sha256").update(spec).digest("hex").slice(0, 8);

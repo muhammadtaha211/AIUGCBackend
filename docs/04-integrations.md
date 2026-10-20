@@ -481,7 +481,7 @@ this reasoning behind them.
   format, CLI-only since 2026-09-05: demo + karaoke/even captions + optional approved VO track +
   the conditional ending `outroMode` freeze/avatar with `voSliceMs`/`avatarPath`) and
   `RenderServiceBProps` (lip-synced talking head + **required `voiceoverPath`** —
-  the approved mp3, which IS the final audio track while the talking head is muted — + `hookText` + `hookTextSafeArea` (burned from frame 0) + the optional hook animation `hookZoom` (`from`/`to`/`atMs`/`durationMs` + a whoosh `sfxPath`; the pipeline does not set it yet — [vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) + the `timeline` from `serviceBTimeline` + `cameraSeed` + B-roll paths; `openerPath`, `talkingHeadGrade` and `talkingHeadAlign` are still accepted but retired 2026-09-06), both with a
+  the approved mp3, which IS the final audio track while the talking head is muted — + `hookText` + `hookTextSafeArea` (burned from frame 0) + the optional hook animation `hookZoom` (`from`/`to`/`atMs`/`durationMs` + a whoosh `sfxPath`; the pipeline does not set it yet — [vault 0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) + the `timeline` from `serviceBTimeline` + the optional demo `cutaways` (the local demo and its windows in VO time, [vault 0121](vault/decisions/0121-service-b-demo-cutaways-and-no-sway.md)); `openerPath`, `talkingHeadGrade` and `talkingHeadAlign` are still accepted but retired 2026-09-06), both with a
   props-driven `watermark` layer. All media are
   **local paths** — the render handler downloads from storage first. Output
   1080×1920/30fps/H.264; **no music track exists in the contract at all** (locked decision).
@@ -527,11 +527,10 @@ this reasoning behind them.
   begins in the clip. The lip-sync clip's embedded audio is the
   provider's re-encode of that same mp3, and would get encoded a third time here; playing the
   approved file directly also guarantees caption sync —
-  it is the exact file the timestamps were computed against. No music, ever (locked). Plus: a
-  handheld camera path over the whole picture (`timing.ts` `handheld` — three octaves of smooth
-  seeded noise, seeded by
-  the render id, continuous through any cut; text, captions and watermark stay fixed to the
-  frame; [vault fact](vault/facts/handheld-sway-constants.md)), burned RTL captions, and the props-driven
+  it is the exact file the timestamps were computed against. No music, ever (locked). Plus: the picture holds still under a
+  static `scale(OVERSCAN)` — the handheld sway is gone from every B render since 2026-10-20
+  ([vault 0121](vault/decisions/0121-service-b-demo-cutaways-and-no-sway.md); the deleted
+  numbers: [vault fact](vault/facts/handheld-sway-constants.md)), burned RTL captions, and the props-driven
   watermark (tiled, rotated, 12% opacity). Chunks with word timings render karaoke-style (active word
   `#FFE04A`, 1.06 scale); chunks with an empty `words` array — the even-spaced captions — render
   as a plain line. Each word sits in its own `unicodeBidi: isolate` span so numbers and Latin
@@ -556,9 +555,12 @@ this reasoning behind them.
   composition converts to frames and does no timeline arithmetic of its own; the constants
   (`GAP_MS`, `HOOK_TEXT_MIN/MAX_MS`) are chosen, not measured
   ([vault fact](vault/facts/service-b-timeline-constants.md)). Without an animation ("none" in the effects step) the clip plays from `lipsyncStartFromMs` under the hook text alone; a pre-lead-in render (`leadInMs` absent → 0) lays out exactly as before.
-- **`brollSrcs` is accepted and ignored.** The prop is validated and passed through, but cutaway
-  logic (when to cut away, for how long, how to hide the lip-sync) is unbuilt. Empty is the
-  normal case and renders cleanly.
+- **Demo cutaways** ([vault 0121](vault/decisions/0121-service-b-demo-cutaways-and-no-sway.md)):
+  `cutaways: { src, slots: [{ fromMs, toMs, demoStartMs }] }`, VO time, replaced the never-read
+  `brollSrcs` on 2026-10-20. Each window is a muted `OffthreadVideo` of the customer's normalized
+  demo over the still-running head, outside the overscan, under the text, captions and
+  watermark; every boundary on the frame the captions change on (`voBoundaryFrame`). Absent is the
+  normal case and renders the head-only ad.
 - **Font**: Heebo 800, and 600 for the Service C text block (`hebrew` + `latin` subsets, one
   `loadFont` call) via `@remotion/google-fonts/Heebo` — never a system font, since the render box
   is headless Chrome. **`loadFont` fetches from Google at

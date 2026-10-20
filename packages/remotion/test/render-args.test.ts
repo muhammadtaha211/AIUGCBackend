@@ -68,21 +68,12 @@ async function capturedRenderArgs(): Promise<RenderMediaArgs> {
 
 /** A ServiceB input over stub files; the mock never decodes them. */
 function serviceBInput() {
-  for (const name of [
-    "head.mp4",
-    "vo.mp3",
-    "b1.mp4",
-    "b2.mp4",
-    "whoosh.wav",
-    "whip.wav",
-    "opener.mp4",
-  ]) {
+  for (const name of ["head.mp4", "vo.mp3", "demo.mp4", "whoosh.wav", "whip.wav", "opener.mp4"]) {
     writeFileSync(path.join(dir, name), "stub");
   }
   return {
     talkingHeadPath: path.join(dir, "head.mp4"),
     voiceoverPath: path.join(dir, "vo.mp3"),
-    brollPaths: [] as string[],
     captions: sampleCaptions,
     timeline: sampleTimeline,
     watermark: false,
@@ -107,26 +98,30 @@ describe("renderServiceB props", () => {
     ).rejects.toThrow(RenderPropsError);
   });
 
-  it("serves b-roll and the whoosh as their own URLs — the sfx never leaks into brollSrcs", async () => {
+  it("serves the cutaway demo and the whoosh as their own URLs, the windows passed through", async () => {
+    const slots = [
+      { fromMs: 4080, toMs: 9440, demoStartMs: 12_000 },
+      { fromMs: 10_960, toMs: 15_080, demoStartMs: 30_000 },
+    ];
     await renderServiceB(
       {
         ...serviceBInput(),
-        brollPaths: [path.join(dir, "b1.mp4"), path.join(dir, "b2.mp4")],
+        cutaways: { demoPath: path.join(dir, "demo.mp4"), slots },
         hookZoom: { ...zoom, sfxPath: path.join(dir, "whoosh.wav") },
       },
       path.join(dir, "out.mp4"),
     );
     const props = selectComposition.mock.calls.at(-1)![0].inputProps as ServiceBProps;
-    expect(props.brollSrcs).toHaveLength(2);
+    expect(props.cutaways?.slots).toEqual(slots);
     expect(props.hookZoom).toMatchObject(zoom);
     expect(typeof props.hookZoom?.sfxSrc).toBe("string");
     const urls = [
       props.talkingHeadSrc,
       props.voiceoverSrc,
-      ...props.brollSrcs,
+      props.cutaways!.src,
       props.hookZoom!.sfxSrc,
     ];
-    expect(new Set(urls).size).toBe(5);
+    expect(new Set(urls).size).toBe(4);
   });
 
   it("serves the whip's own whoosh as a separate URL from the zoom's", async () => {
@@ -203,10 +198,10 @@ describe("renderServiceB props", () => {
     }
   });
 
-  it("without b-roll or a whoosh the lists stay empty and the sfx stays absent", async () => {
+  it("without cutaways or a whoosh, both stay absent", async () => {
     await renderServiceB({ ...serviceBInput(), hookZoom: zoom }, path.join(dir, "out.mp4"));
     const props = selectComposition.mock.calls.at(-1)![0].inputProps as ServiceBProps;
-    expect(props.brollSrcs).toEqual([]);
+    expect(props.cutaways).toBeUndefined();
     expect(props.hookZoom?.sfxSrc).toBeUndefined();
   });
 });

@@ -5,6 +5,8 @@ import {
   personaSelfie,
   personaThumbnail,
   renderOpenerError,
+  cutawayPlanRequestSchema,
+  cutawayPlanUpdateSchema,
   renderRequestSchema,
   renderSourceError,
   scriptRequestSchema,
@@ -328,5 +330,40 @@ describe("businessAccess (ownership gate)", () => {
 
   it("missing business -> missing", () => {
     expect(businessAccess(undefined, { id: UUID_A, role: "customer" })).toBe("missing");
+  });
+});
+
+describe("demo cutaway bodies (vault 0121)", () => {
+  const body = {
+    scriptId: "11111111-1111-4111-8111-111111111111",
+    audioId: "22222222-2222-4222-8222-222222222222",
+    personaId: "33333333-3333-4333-8333-333333333333",
+    personaImageId: "44444444-4444-4444-8444-444444444444",
+  };
+
+  it("the render takes an optional plan id, a uuid", () => {
+    expect(renderRequestSchema.safeParse(body).success).toBe(true);
+    const planId = "55555555-5555-4555-8555-555555555555";
+    expect(renderRequestSchema.parse({ ...body, cutawayPlanId: planId }).cutawayPlanId).toBe(
+      planId,
+    );
+    expect(renderRequestSchema.safeParse({ ...body, cutawayPlanId: "plan-1" }).success).toBe(false);
+  });
+
+  it("the draft takes the audio, the demo and the hook text — nothing else", () => {
+    const draft = { audioId: body.audioId, demoId: body.personaId };
+    expect(cutawayPlanRequestSchema.safeParse(draft).success).toBe(true);
+    expect(cutawayPlanRequestSchema.safeParse({ ...draft, hookText: "שורה" }).success).toBe(true);
+    expect(cutawayPlanRequestSchema.safeParse({ ...draft, slots: [] }).success).toBe(false);
+    expect(
+      cutawayPlanRequestSchema.safeParse({ audioId: "x", demoId: body.personaId }).success,
+    ).toBe(false);
+  });
+
+  it("the picker's save sends starts only — never the slots' times", () => {
+    expect(cutawayPlanUpdateSchema.safeParse({ starts: [400, 10_400] }).success).toBe(true);
+    expect(cutawayPlanUpdateSchema.safeParse({ starts: [] }).success).toBe(false);
+    expect(cutawayPlanUpdateSchema.safeParse({ starts: [400.5] }).success).toBe(false);
+    expect(cutawayPlanUpdateSchema.safeParse({ starts: [400], fromMs: [0] }).success).toBe(false);
   });
 });

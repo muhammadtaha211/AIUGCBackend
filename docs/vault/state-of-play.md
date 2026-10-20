@@ -40,14 +40,19 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**TTS moves to Eleven v4, as plain text: BUILT 2026-10-20 on `feat/tts-eleven-v4`, PR #111. He
-asked the session to merge it ("when you're done, push and merge the branch and then ill restart the
-box"), but the session's permission check refused the merge, so the merge is his, on GitHub. The
-box restart after it is his too.** [[0119-tts-is-eleven-v4-plain-text]]; the paid checks pass
-([[eleven-v4-paid-check-2026-10-20]]); the details are under "What landed (2026-10-20, later)".
-Until the box restarts on the merge, previews still speak v3. The same planning chat ruled Service
-B's look and cutaways, and none of it is built
-([[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]]).
+**Service B demo cutaways and no sway: BUILT 2026-10-20 on `feat/b-demo-cutaways`; 0068 PUSHED
+the same day on his instruction ("when you're done go ahead and apply the migrations and merge
+yourself").** [[0121-service-b-demo-cutaways-and-no-sway]]. A customer can tick "לשלב קטעים מסרטון
+המוצר" on the audio card and cut away to 4–6 s stretches of their own analysed demo; off, the ad is
+today's minus the sway, which is gone from every B render. **The box must pull and restart after the
+merge** — until then the box renders a cutaway render without its cutaways. Details under "What
+landed (2026-10-20, last)"; the merge and box steps under "Owed founder actions".
+
+**TTS moves to Eleven v4, as plain text: MERGED as PR #111 (`cc46f64`, MEASURED by `git log`
+2026-10-20; this paragraph said the merge was his and pending).** The box runs it: he ran the B flow
+on the box with v4 the same day (FOUNDER-REPORTED). [[0119-tts-is-eleven-v4-plain-text]]; the paid
+checks pass ([[eleven-v4-paid-check-2026-10-20]]); the details are under "What landed (2026-10-20,
+later)".
 
 **The ₪5 intro offer: MERGED 2026-10-14 as PR #97 (`d41eae6`); migrations 0061/0062 PUSHED the
 same day, before the merge. LIVE since: MEASURED 2026-10-15, `https://tavnit.ai/pricing` shows the
@@ -884,7 +889,87 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-20, later) — TTS on Eleven v4, plain text, `feat/tts-eleven-v4`, PR #111 (the merge is his)
+## What landed (2026-10-20, last) — Service B demo cutaways and no sway, `feat/b-demo-cutaways`
+
+[[0121-service-b-demo-cutaways-and-no-sway]] builds 0120 §2 and §4; the task prompt and his
+amendments are recorded there.
+
+**Built.**
+
+- **Core.** `cutaway-structure.ts` holds the "alternate" structure as data. The draft, the edit and
+  the enqueue copy are in `pipelines/cutaways.ts`. Migration 0068 adds `cutaway_plans`.
+  `createBRender` takes `cutawayPlanId` and resolves it before any paid call. `buildServiceBProps`
+  downloads the demo and clamps against the probed video stream.
+- **Remotion.** A cutaway layer outside the static overscan, on `voBoundaryFrame`. `handheld`,
+  `SWAY`, `cameraSeed` and the dead `brollPaths`/`brollSrcs` are removed.
+- **Web.**
+  - The opt-in checkbox on B's ready-audio card, and the "demo" step after the effect step.
+  - The demo picker is A's `StepDemo` in a narrow "b" variant.
+  - The slot strip, and the window picker (touch drag, ‹ › nudges, the slider keys).
+  - POST and PATCH `/api/businesses/[businessId]/cutaway-plans`, and `cutawayPlanId` on the render
+    body.
+  - The wizard is keyed by business.
+- **0066/0067.** This branch carries the two own-voice migration files production already had, so
+  main can push migrations again (his option (a′)).
+
+**Checks.**
+
+- The full gate (see the report).
+- An adversarial review of the diff: 10 confirmed findings (7 distinct), all fixed in `6a7eff4`; 5
+  refuted.
+- The local render of his stored take `ab7e3837` with his demo `3915c8e2`
+  ([[cutaway-local-render-check-2026-10-20]]):
+  - first cut at 4.33 s, after the hook text (2.21 s);
+  - cutaways 5.37 s and 4.10 s, heads 1.53 s and 1.20 s, ending on the head;
+  - cuts exactly on caption-chunk boundaries;
+  - audio sample-identical to the head-only render (the demo muted);
+  - every head frame identical to the head-only render;
+  - no sway (best shift (0,0); the control finds a planted 8×6 px move).
+- The matcher test ([[cutaway-matcher-hit-rate-2026-10-20]]): 63.3% against demo order 43.3%, 79.5%
+  agreement, under the bar fixed before the run. **The draft ships as demo order.**
+- The real walk, on local `pnpm dev` (DRY_RUN web, production DB), signed in to his account through a
+  minted session, in headless Chrome at 1280×900, 375×812 with touch, and 717×621. Screenshots are in
+  `packages/core/.work/cutaways/walk-shots/` (gitignored).
+  - The option shows off, then ticked; the rail grows from 6 steps to 7.
+  - Effect "none"; his newest demo `84889b25` picked.
+  - One slot drafted (VO 3.52–9.04 s): demo order gave state 23 at 21.4 s.
+  - In the phone picker, a touch drag (21.4 → 32.6 s), a nudge (→ 34.2 s) and the save moved it to
+    state 34.
+  - The render step read "…עם קטע אחד מסרטון המוצר…". It stopped there: **no render was created**.
+  - Rows the walk left in production: 1 script, 1 audio render (its `synth_tts` ran on the box), 1
+    `cutaway_plans` row. Ordinary wizard leftovers, not deleted (no SQL writes without his
+    instruction).
+
+**Spend.** Matcher test 256 agorot. The walk's one TTS on the box: a few agorot (~250 characters of
+the canned DRY_RUN script). Local renders, HeyGen and the draft: ₪0. **Total ≈ ₪2.6 of the ₪25.**
+
+**FOUNDER-REPORTED, not repo-verified (2026-10-20):**
+
+- `app_config.lipsync_expressiveness` reads `low` in production: his read against the vault's
+  `medium`. MEASURED since: `"low"` ([[app-config-live-state]]).
+- He ran the B flow on the box with the new propped-phone image registered as a persona's live
+  selfie, and v4: "much better, still a bit uncanny; a seasoned eye can tell after about five
+  seconds".
+- The HeyGen motion prompt was changed again on 2026-10-20 and is now good. MEASURED since: the row
+  changed between two reads that day ([[app-config-live-state]]).
+- Expressiveness `low` is confirmed.
+- Own voice is parked (`feat/b-own-voice`, done and unmerged; he changed his mind about the addition).
+
+**Found and not fixed (reported):**
+
+- 3 of his 15 distinct real audios lay out only with a cut on a word start inside a caption line.
+  CLAUDE.md's wording says "caption-line boundaries". The alternative is no cutaways for those
+  audios: his call (Open decisions).
+- `ALIGN_MAX_PX`'s comment in `pipelines/renders.ts` still reasons about the sway. The retired
+  opener path only, left as it is.
+- docs/04's lines on the hook handoff "not yet in `serviceBTimeline`" are stale; it has been there
+  since 0024.
+- The defect note for 0066/0067 lives on `feat/b-own-voice` only. Its fix (the files on main) lands
+  with this branch.
+- `observedWordsPerSecond` still groups the two voiceless own-voice `audio_renders` rows under a null
+  voice. The own-voice branch's filter is not here.
+
+## What landed (2026-10-20, later) — TTS on Eleven v4, plain text, `feat/tts-eleven-v4`, MERGED as PR #111 (`cc46f64`, MEASURED by `git log` 2026-10-20; this heading said the merge was his)
 
 **Decided (FOUNDER-REPORTED, planning chat 2026-10-20):**
 
@@ -893,7 +978,9 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   - plain text, with no audio tags and no enhancement call;
   - stability 1.0 and similarity 1.0;
   - voice ids stay his in admin.
-- [[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]], **DECIDED, NOT YET BUILT:**
+- [[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]], **DECIDED** (the sway and the
+  cutaways BUILT later the same day, [[0121-service-b-demo-cutaways-and-no-sway]]; the look and the
+  numbered settings not built):
   - the single talking head stays, on a propped-phone workspace image per character;
   - the handheld sway goes off for every B render;
   - "selfie" is retired for numbered settings;
@@ -2216,6 +2303,24 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Service B demo cutaways (2026-10-20, `feat/b-demo-cutaways`, [[0121-service-b-demo-cutaways-and-no-sway]]).**
+  0068 is pushed (read back: `cutaway_plans` present, RLS on, 0 policies, ledger 69 rows to 0068).
+  In order:
+  1. Approve the new Hebrew strings: `CUTAWAY_COPY` in `apps/web/src/lib/service-b-ui.ts`, the
+     `CutawayPlanError` lines in `apps/web/src/lib/api-errors.ts`, and `bShapeSummary`'s cutaway
+     clause in `apps/web/src/lib/quote-ui.ts`. COPY PENDING FOUNDER REVIEW.
+  2. The merge (he told the session to merge; if its permission check refuses, it is his on
+     GitHub). Vercel deploys the wizard.
+  3. **The box, straight after.** Until it restarts, it renders a cutaway render WITHOUT its
+     cutaways, at full HeyGen price.
+     - Gate: `select id, type, status, locked_by, locked_at from jobs where status = 'running';`
+       must return no rows.
+     - Then `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`.
+       No env change; the migration is already in.
+  4. The end-to-end render on the box: tick the option, pick a demo, change one slot, render. Watch
+     for a head-only ad with no sway, and a `cutaway_render_degraded` event if a window was clamped.
+  5. A tap-through of the window picker on his real phone (the walk emulated touch).
+
 - **TTS on Eleven v4 (2026-10-20, `feat/tts-eleven-v4`, [[0119-tts-is-eleven-v4-plain-text]]).** In
   order, each its own OK:
   1. Listen to the preview, `audio_renders` `997a5ec7`, at
@@ -2471,9 +2576,10 @@ the 2026-09-26 custom domain (founder-reported):**
   ([[the-inventory-first-load-failure-has-no-retry-button]]). He also said to leave both copy
   points alone: the error line's «…רעננו את העמוד ונסו שוב.» above the new in-place retry, and
   step-plan's «נסה שוב» (singular) beside the other retries' «נסו שוב».
-- **Run the footage backfill on the box, report first** (`docs/07-worker-box.md` §15, 2026-10-02).
-  Free; `--write` inserts at most one row per ready analysis without one (15 today). Until then
-  those analyses have no calm clip.
+- ~~**Run the footage backfill on the box, report first**~~ **NOT NEEDED — MEASURED 2026-10-20:**
+  every ready analysis in production has its `demo_analysis_footage` row: the founder's 16 and the
+  4 of customer-owned businesses (read-only join of `demo_analyses` ready ⟕ `demo_analysis_footage`).
+  Who wrote the rows for the older analyses is not recorded here.
 - **~~Put the worker box on the merge of PR #78~~ DONE 2026-10-02** (founder-reported; the first
   footage row was read back the same day). **Still owed from it:** the `waitedMs` of that analysis,
   which is only in the box log ("analysis: footage instants").
@@ -2582,6 +2688,17 @@ the 2026-09-26 custom domain (founder-reported):**
   the closing section of `docs/legal-review.md`.
 
 ## Open decisions
+
+**Demo cutaways: a cut on a word start, or no cutaways (2026-10-20, his call).** 3 of his 15
+distinct real B audios have a 2.5–2.8 s caption line exactly where a cut has to land, so no
+chunk-start layout exists. The build cuts on a word start inside the line for those, keeping the
+first cut on his chunk rule ([[0121-service-b-demo-cutaways-and-no-sway]]). The alternative is no
+cutaways for those ads. CLAUDE.md's approved line says "caption-line boundaries". Settling it
+changes one tier list in `cutaway-structure.ts`.
+
+**Demo cutaways: the draft by words (open, not urgent).** The matcher scored 63% against demo order's
+43% on his demos, under the bar ([[cutaway-matcher-hit-rate-2026-10-20]]). The code is at `aff4abd`
+if scripts that name screens (or a v2 prompt) make it worth a second test.
 
 **Service C's two planning defaults (2026-10-07, his call):** the hard cap on a text block is
 **400** code points, not the prompt's proposed 300, because his own `instead` example is 396

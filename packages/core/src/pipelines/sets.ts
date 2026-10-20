@@ -41,6 +41,7 @@ import { lipsyncExpressivenessSchema, type LipsyncExpressiveness } from "../prov
 import { businessOwnerId, creditBalance, debitRender, InsufficientCreditsError } from "./credits";
 import { getBusiness, isAdminOwned } from "./businesses";
 import { CONTENT_POLICY_CHECK_FAILED, contentPolicyCheck, ContentPolicyError } from "./copy";
+import { resolveCutawaysForRender, type BCutaways } from "./cutaways";
 import { getStepPlan } from "./demo-step-plans";
 
 /**
@@ -125,6 +126,15 @@ export interface VariantParams {
   hookText?: string;
   /** Service B: where hookText burns — the customer's rect, else the opener's or CENTRED_HOOK_TEXT_RECT. */
   hookTextSafeArea?: SafeRect;
+  /**
+   * Service B demo cutaways (vault 0121): the plan's windows, COPIED here at
+   * enqueue — never a pointer (vault 0017), so an edit after the confirm cannot
+   * change a paid render, and QC regeneration replays them with the rest. VO
+   * time; the render adds captionOffsetMs. Absent = the head-only ad. The demo
+   * is linked here and nowhere else: a B render never gets a set_id, which
+   * would mark the demo paid and waive Service A's analysis charge (0048).
+   */
+  cutaways?: BCutaways;
 }
 
 export interface AOutroPlan {
@@ -621,6 +631,8 @@ export async function createBRender(
     hookText?: string;
     /** Customer-placed rect for hookText; absent = the opener's, else CENTRED_HOOK_TEXT_RECT. */
     hookTextSafeArea?: SafeRect;
+    /** Demo cutaways (vault 0121): the cutaway_plans row whose windows this render copies. */
+    cutawayPlanId?: string;
   },
 ) {
   const audio = await db
@@ -752,6 +764,23 @@ export async function createBRender(
     hookTextSafeArea = resolveHookTextSafeArea(placedRect, opener.textSafeArea as SafeRect);
   }
 
+  // Cutaways: cheap reads, so before the GPU budget, the quote and the paid
+  // content-policy call — a stale or foreign plan costs nothing to refuse. The
+  // opener (retired, CLI-only) is a clip in front of the head; cutaways cut
+  // away from it mid-ad, and the two were never designed together.
+  let cutaways: BCutaways | undefined;
+  if (opts.cutawayPlanId !== undefined) {
+    if (opts.openerClipId !== undefined) {
+      throw new Error("demo cutaways and an opener clip are exclusive");
+    }
+    cutaways = await resolveCutawaysForRender(db, {
+      businessId: opts.businessId,
+      planId: opts.cutawayPlanId,
+      audioRenderId: opts.audioRenderId,
+      hookText,
+    });
+  }
+
   // Fail a typo'd tier here, not as a HeyGen 400 after the render is queued.
   const expressiveness =
     opts.expressiveness === undefined
@@ -801,6 +830,9 @@ export async function createBRender(
           hookEffect: animation,
           hookText,
           hookTextSafeArea,
+          // Only with the option on, so a head-only render's params stay
+          // exactly what they were before cutaways existed.
+          ...(cutaways ? { cutaways } : {}),
         },
       })
       .returning();

@@ -13,6 +13,11 @@ paths:
   - "apps/admin/src/lib/admin.ts"
   - "apps/cli/src/index.ts"
   - "packages/core/src/hook-effect.ts"
+  - "packages/core/src/cutaway-structure.ts"
+  - "packages/core/src/pipelines/cutaways.ts"
+  - "packages/core/test/cutaway*.test.ts"
+  - "apps/web/src/app/api/businesses/*/cutaway-plans/**"
+  - "apps/web/test/cutaway*.test.ts"
   - "packages/core/src/hook-text.ts"
   - "packages/core/src/service-b-timeline.ts"
   - "packages/core/src/db/schema.ts"
@@ -38,9 +43,9 @@ Moved out of CLAUDE.md's "What we're building" on 2026-09-29. It loads when you 
 pipeline, `packages/remotion` or the B wizard. The format decisions are in `docs/vault/decisions/`:
 `0017-service-b-single-setting-selfie-talking-head.md` (the selfie talking head),
 `0022-heygen-expressiveness-medium-generic-motion-prompt.md` (the engine settings),
-`0023-hook-is-a-remotion-animation-opener-clips-retired.md` (the hook) and
+`0023-hook-is-a-remotion-animation-opener-clips-retired.md` (the hook),
 `0024-hook-effect-is-a-render-param-the-customer-picks.md` (the three animations and how the name
-travels).
+travels) and `0121-service-b-demo-cutaways-and-no-sway.md` (the opt-in demo cutaways, no sway).
 
 ## Personas and the render
 
@@ -48,11 +53,13 @@ travels).
   reference image (`persona_images.kind='selfie'`). A render resolved from a persona's default
   refuses any other kind; an explicit image or an approved composite bypasses that.
 - A render is that single image plus ElevenLabs Eleven v4 audio (vault 0119) with ~800ms of leading silence prepended
-  (`lipsync_lead_in_ms`, pinned on `params.leadInMs`). It goes through HeyGen lip-sync at
-  `expressiveness` **medium** with a generic, hand-free motion prompt (`app_config` rows, migration
-  0034; vault 0022). HeyGen ignores staged actions in the prompt, and `high` read as fake and
-  hallucinated a prop.
-- **One clip, start to finish; nothing is ever stitched in front of it.**
+  (`lipsync_lead_in_ms`, pinned on `params.leadInMs`). It goes through HeyGen lip-sync at the
+  `expressiveness` and motion prompt in `app_config` (migration 0034 seeded **medium** and a generic,
+  hand-free prompt, vault 0022; production reads **low** and a long stillness-first prompt since at
+  least 2026-10-20, the founder's edits — `docs/vault/facts/app-config-live-state.md`). HeyGen
+  ignores staged actions in the prompt, and `high` read as fake and hallucinated a prop.
+- **One clip, start to finish; nothing is ever stitched in front of it.** Opt-in demo cutaways
+  (below) cut away from the running clip and back; they never stop, restart or replace it.
 
 ## The hook animation (vault 0023, 0024)
 
@@ -79,7 +86,9 @@ travels).
 - Two more animations were built and NOT picked: emphasis punches (`hookBeats`, rejected) and
   kinetic hook text (`hookTextReveal`, no verdict). Their props exist in `packages/remotion` with no
   name in `hook-effect.ts`, so nothing can reach them.
-- The whole picture rides a seeded handheld camera path.
+- The picture holds still: no camera motion on any B render (vault 0120 §2, removed by 0121).
+  `OVERSCAN` (1.06) stays a static scale, so the framing — and the wizard preview, which never
+  simulated the sway — is unchanged.
 - `b_script` (v9+) emits the draft `hook_text` with the script. The FINAL string is copied into the
   render params at enqueue, never pointed at (vault 0017).
 - The layout is `serviceBTimeline` in core. The composition converts it to frames and drives the
@@ -88,13 +97,44 @@ travels).
 
 ## The web wizard (`apps/web/src/components/b-wizard`)
 
-- The steps are persona → pointers → script → audio → effect → render.
+- The steps are persona → pointers → script → audio → effect → render, plus a **demo** step between
+  effect and render only when the customer ticks the cutaway option on the audio card (vault 0121).
 - The effect step places the animation and its hook text over the persona's selfie. It PLAYS the
   real animation once and then offers a replay button (`hook-effect-preview.tsx`, vault 0026).
-- There is no image step, no product step: the persona card shows its selfie via `personaSelfie` in
+- There is no image step, and the only product input is the optional cutaway step: the persona
+  card shows its selfie via `personaSelfie` in
   `apps/web/src/lib/service-b.ts`, the one resolver for both the card and the render source.
 - The wizard sends that image's id with the render, and the render route refuses anything that is
   not that persona's live selfie. Nothing on the customer path depends on `is_default`.
+
+## Demo cutaways (vault 0120 §4, 0121)
+
+- **Opt-in, never the default.** An unticked checkbox on B's ready-audio card; off = today's six
+  steps and today's request body, byte for byte.
+- **Source:** the customer's analysed demo (Service A's inventory), reused free. The upload is A's
+  own; B never charges `a_demo_analysis_credits` (0048) and the quote is unchanged.
+- **Structure as data:** `none | alternate` in `packages/core/src/cutaway-structure.ts`, never in
+  the DB (not the `structures` table).
+  - The first cut is the first caption-chunk start ≥ 3000 ms into the ad and at or after the hook
+    text leaves.
+  - Cutaways are 4–6 s; head runs 1–5 s (5.5 s only when nothing fits under 5).
+  - The ad ends on the head.
+  - Cuts sit on chunk starts. A word start inside a line is used only when no chunk-start layout
+    exists: 3 of the founder's 15 real audios.
+- **Picks live on `cutaway_plans`** (0068), one row per (audio, analysis, structure, hook text). A
+  new hook text is a new draft.
+- **Copied at enqueue:** `createBRender` copies the windows onto `params.cutaways` and never points
+  at the row.
+- **The draft is the demo in order.** A Claude matcher was tested and not adopted
+  (`facts/cutaway-matcher-hit-rate-2026-10-20.md`).
+- **The window picker** snaps to the analysis moments and never lets two windows share footage.
+- **The composition:**
+  - each window is a muted `OffthreadVideo` over the still-running head;
+  - outside the static overscan;
+  - under the hook text, captions and watermark;
+  - every boundary on the frame the captions change on (`voBoundaryFrame` in `timing.ts`).
+- **`buildServiceBProps`** clamps against the probed video stream and drops what cannot play with a
+  `cutaway_render_degraded` event. It never throws after HeyGen is paid.
 
 ## Retired 2026-09-06 (vault 0023) — do not build on it
 

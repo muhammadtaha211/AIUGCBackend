@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,9 +19,10 @@ import {
   setPersonaImageRetired,
 } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
+import { draftCutawayPlan } from "../src/pipelines/cutaways";
 import { rejectRender } from "../src/pipelines/qc";
 import { CENTRED_HOOK_TEXT_RECT } from "../src/hook-geometry";
-import { createBRender, type VariantParams } from "../src/pipelines/sets";
+import { createBRender, quoteBRender, type VariantParams } from "../src/pipelines/sets";
 import { approveAudio, requestAudio } from "../src/pipelines/tts";
 import {
   MAX_LIPSYNC_SECONDS,
@@ -620,9 +621,12 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(props).toContain(
       '"timeline":{"hookTextMs":1600,"revealAbsMs":1600,"lipsyncStartFromMs":550,"captionOffsetMs":1850,',
     );
-    // The handheld camera is seeded by the row; DRY_RUN measures no colour, so
-    // the talking head carries no grade.
-    expect(props).toContain(`"cameraSeed":"${renderId}"`);
+    // No camera motion any more (vault 0120 §2), so nothing seeds one; and the
+    // B-roll placeholder is gone with it (cutaways are their own prop, 0121).
+    // DRY_RUN measures no colour, so the talking head carries no grade.
+    expect(props).not.toContain("cameraSeed");
+    expect(props).not.toContain("brollPaths");
+    expect(props).not.toContain("cutaways");
     expect(props).not.toContain("talkingHeadGrade");
     expect(props).not.toContain("talkingHeadAlign");
   });
@@ -812,6 +816,144 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
       expect(props).not.toContain(absent);
     }
     expect(props).toContain('"hookTextMs":0');
+  });
+
+  /**
+   * Demo cutaways (vault 0121): a voice long enough for the layout (40 words,
+   * ~18 s under DRY_RUN's 2.2 words/s alignment) and a ready, analysed demo
+   * whose normalized file is in storage, so the render hop downloads it.
+   */
+  async function cutawayRender(extra: { hookEffect?: string } = {}) {
+    const persona = await addPersona(db, { name: "דנה", voiceId: "voice_dana" });
+    await addPersonaImage(db, {
+      personaId: persona.id,
+      filePath: tempFile("dana.jpg"),
+      kind: "selfie",
+    });
+    const words = Array.from({ length: 40 }, (_, i) => `מילה${i}`).join(" ");
+    const script = (
+      await db
+        .insert(dbSchema.scripts)
+        .values({ businessId, personaId: persona.id, kind: "b_script", text: words })
+        .returning()
+    )[0]!;
+    const audio = await requestAudio(db, { scriptId: script.id, voiceId: "voice_dana" });
+    await drainAll();
+    await approveAudio(db, audio.id);
+
+    const demoKey = await setStorageFile(`${businessId}/demo/cutaway/normalized.mp4`);
+    const demo = (
+      await db
+        .insert(dbSchema.demos)
+        .values({ businessId, status: "ready", normalizedPath: demoKey, durationMs: 62_000 })
+        .returning()
+    )[0]!;
+    const states = Array.from({ length: 30 }, (_, i) => ({
+      timestampMs: 600 + i * 2000,
+      screenName: `מסך ${i}`,
+      visibleText: [],
+      action: `step ${i}`,
+      actionType: "tap",
+      screenKind: "product",
+      sameStateAsPrevious: false,
+      legibility: "high",
+      salienceNote: null,
+      thumbPath: `assets/x/${i}.jpg`,
+    }));
+    await db
+      .insert(dbSchema.demoAnalyses)
+      .values({ demoId: demo.id, status: "ready", timeline: states });
+    const hookText =
+      extra.hookEffect && extra.hookEffect !== "none" ? "מילה0 מילה1 מילה2" : undefined;
+    const plan = await draftCutawayPlan(db, {
+      businessId,
+      audioRenderId: audio.id,
+      demoId: demo.id,
+      hookText,
+    });
+    const base = { businessId, audioRenderId: audio.id, personaId: persona.id };
+    const render = await createBRender(db, {
+      ...base,
+      ...(hookText ? { hookEffect: extra.hookEffect, hookText } : {}),
+      cutawayPlanId: plan.planId,
+    });
+    return { render, plan, demoId: demo.id, base, audioId: audio.id };
+  }
+
+  async function setStorageFile(key: string): Promise<string> {
+    const { getStorage } = await import("../src/storage");
+    return getStorage().put("assets", key, tempFile("normalized.mp4"));
+  }
+
+  it("cutaways ride the whole chain keyless: copied onto params, echoed to the composition before the captions", async () => {
+    const { render, plan, demoId } = await cutawayRender({ hookEffect: "zoom" });
+    const params = await paramsOf(render.id);
+    expect(params.cutaways).toEqual({
+      structure: "alternate",
+      planId: plan.planId,
+      demoId,
+      analysisId: expect.any(String),
+      slots: plan.slots.map(({ fromMs, toMs, demoStartMs }) => ({ fromMs, toMs, demoStartMs })),
+    });
+    // The demo is linked on params alone: never a set, which would mark it paid
+    // and waive Service A's analysis charge (decision 0048).
+    expect(render.setId).toBeNull();
+
+    await drainAll();
+    const props = readFileSync(
+      path.join(storageRoot, (await renderRow(render.id)).filePath!),
+      "utf8",
+    );
+    expect(props).toMatch(/"cutaways":\{"demoPath":"[^"]*demo\.mp4","slots":\[\{"fromMs":/);
+    // Still inside the echo's prefix, after the hook animation, before the captions.
+    expect(props).toContain('"captions":[{"text":');
+    expect(props.indexOf('"hookZoom"')).toBeLessThan(props.indexOf('"cutaways"'));
+    expect(props.indexOf('"cutaways"')).toBeLessThan(props.indexOf('"captions"'));
+    expect(props).not.toContain("cameraSeed");
+  });
+
+  it("a demo file gone from storage drops the cutaways and still ships the head-only ad", async () => {
+    const { render } = await cutawayRender();
+    const { getStorage } = await import("../src/storage");
+    const demo = (
+      await db
+        .select()
+        .from(dbSchema.demos)
+        .where(sql`${dbSchema.demos.id} = ${(await paramsOf(render.id)).cutaways!.demoId}`)
+    )[0]!;
+    await getStorage().remove(demo.normalizedPath!);
+    await drainAll();
+    const row = await renderRow(render.id);
+    expect(row.status).toBe("qc_pending");
+    const props = readFileSync(path.join(storageRoot, row.filePath!), "utf8");
+    expect(props).not.toContain('"cutaways"');
+    const degraded = await db
+      .select()
+      .from(dbSchema.events)
+      .where(
+        sql`${dbSchema.events.kind} = 'cutaway_render_degraded' and ${dbSchema.events.subjectId} = ${render.id}`,
+      );
+    expect(degraded).toHaveLength(1);
+  });
+
+  it("a cutaway render is quoted and debited exactly like the head-only one, and a QC re-roll keeps its cutaways", async () => {
+    const { render, base, audioId } = await cutawayRender();
+    const quote = await quoteBRender(db, { businessId, audioRenderId: audioId });
+    const headOnly = await createBRender(db, base);
+    const debits = await db
+      .select()
+      .from(dbSchema.creditLedger)
+      .where(inArray(dbSchema.creditLedger.refId, [render.id, headOnly.id]));
+    // The founder's business is admin-owned: neither is charged, and neither
+    // more than the other — the quote has no cutaway term.
+    expect(debits).toHaveLength(0);
+    expect(quote.creditsPerRender).toBeGreaterThan(0);
+    expect((await paramsOf(headOnly.id)).cutaways).toBeUndefined();
+
+    await drainAll();
+    const { regeneratedRenderId } = await rejectRender(db, render.id, "רגע לא טוב");
+    const retry = await paramsOf(regeneratedRenderId!);
+    expect(retry.cutaways).toEqual((await paramsOf(render.id)).cutaways);
   });
 
   it("validates the opener: it exists, is active, and was made from the render's source image", async () => {

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { CaptionChunk } from "../captions";
+import type { CutawayWindow } from "../cutaway-structure";
 import { getEnv } from "../config";
 import { PermanentError, TransientError } from "../jobs/errors";
 import type { GradeCurve } from "../media/grade";
@@ -72,12 +73,6 @@ export interface RenderServiceAStepsProps {
 
 export interface RenderServiceBProps {
   kind: "service_b";
-  /**
-   * Seeds the composition's handheld camera path — the render id, so a retry
-   * re-renders identical frames. Right after `kind` so the DRY_RUN echo
-   * always carries it.
-   */
-  cameraSeed: string;
   /** Lip-synced talking-head clip (HeyGen output, downloaded locally). */
   talkingHeadPath: string;
   /**
@@ -87,8 +82,6 @@ export interface RenderServiceBProps {
    * Starts at timeline.captionOffsetMs, the frame speech begins in the clip.
    */
   voiceoverPath: string;
-  /** Product B-roll cutaways that hide lip-sync during risky stretches. */
-  brollPaths: string[];
   /**
    * The opener effect (vault 0017): a founder-made clip in front of the
    * talking head with the hook text burned over its palm phase, hard-cut at
@@ -128,6 +121,15 @@ export interface RenderServiceBProps {
   hookFocus?: { blurPx: number; holdMs: number; durationMs: number };
   hookWhip?: { fromX: number; durationMs: number; blurPx: number; sfxPath?: string };
   watermark: boolean;
+  /**
+   * Demo cutaways (vault 0121): the customer's normalized demo, downloaded
+   * locally, and the windows that cover the head with it — VO time, already
+   * clamped to the probed video. The composition mounts the demo muted over the
+   * still-running head and puts each boundary on the frame the captions change
+   * on. Absent = the head-only ad. MIRRORS @aiugc/remotion's
+   * RenderServiceBInput.cutaways; nothing typechecks the mirror.
+   */
+  cutaways?: { demoPath: string; slots: CutawayWindow[] };
   /** Last on purpose: the DRY_RUN render echoes a prefix of these props. */
   captions: CaptionChunk[];
 }
