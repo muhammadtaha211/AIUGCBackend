@@ -33,10 +33,20 @@ async function callClaude<T>(
   promptName: string,
   vars: Record<string, string | number>,
   schema: z.ZodType<T>,
-  maxTokens?: number,
+  opts?: {
+    maxTokens?: number;
+    /** Appended under the rendered prompt — a corrective message naming what
+     *  the previous answer missed, the way correctivePrompt appends
+     *  (demo-analysis.ts), so the prompt file stays the shipped one. */
+    appendix?: string;
+  },
 ): Promise<{ object: T; promptVersion: string }> {
   const { text, promptVersion } = renderPrompt(promptName, vars);
-  const { object, usage } = await generateObject({ prompt: text, schema, maxTokens });
+  const { object, usage } = await generateObject({
+    prompt: opts?.appendix ? `${text}\n\n${opts.appendix}` : text,
+    schema,
+    maxTokens: opts?.maxTokens,
+  });
   await recordUsage(db, {
     provider: "anthropic",
     kind: "llm_tokens",
@@ -355,14 +365,9 @@ export async function generateTextBlocks(
     skipped = [];
   } else {
     const generate = async () => {
-      const result = await callClaude(
-        db,
-        opts.businessId,
-        "text_block",
-        vars,
-        textBlocksOutput,
-        TEXT_BLOCK_MAX_TOKENS,
-      );
+      const result = await callClaude(db, opts.businessId, "text_block", vars, textBlocksOutput, {
+        maxTokens: TEXT_BLOCK_MAX_TOKENS,
+      });
       return {
         ...keepRequestedTextBlocks(result.object, requested, opts.businessId),
         promptVersion: result.promptVersion,
@@ -621,7 +626,9 @@ function assertHookText(hookText: string): string {
  * customer lost a good script to a bad hook line and got "try again". The
  * fallback re-derives the line from the finished script with `hook_text`
  * (prompts/hook_text/v2.md), a verbatim-prefix extractor under the same caps,
- * so the read-then-hear rule still holds. A second failure throws, as before.
+ * so the read-then-hear rule still holds. The extractor gets one corrective
+ * call of its own when ITS line misses (deriveHookTextWithVersion, since
+ * 2026-10-20); a miss after that throws, as before.
  *
  * Nothing is trimmed here: an over-cap line is still never silently shortened
  * (hook-text.ts) — it is replaced by a line the extractor cut on purpose.
@@ -834,6 +841,18 @@ export async function deriveHookText(
  * The same derivation, plus the `hook_text` version that produced the line —
  * recorded on scripts.params when generateBScript falls back to it, so the
  * version is the one actually used rather than one re-resolved afterwards.
+ *
+ * One corrective call when the extractor's line misses a cap. The extractor
+ * is the last step on every path that reaches it — generateBScript's fallback
+ * and the edit save (vault 0030) — so a miss here was the failure the customer
+ * saw: 2026-10-20, "hook_text is 44 characters — the cap is 40" four times in
+ * a row on the generation path, and three edit saves of a customer's the same
+ * night. The model counts words, not characters, and a six-word Hebrew opening
+ * is over 40 characters whenever its words run long. The retry is not a blind
+ * re-roll: it hands back the rejected line with the rule it missed — the
+ * deterministic-check-plus-one-corrective-call shape of findPlanViolations —
+ * so the model cuts one word earlier. Exactly one, so a bad line costs at most
+ * two small calls; the line is still never trimmed here.
  */
 async function deriveHookTextWithVersion(
   db: Db,
@@ -847,14 +866,30 @@ async function deriveHookTextWithVersion(
     return { hookText: dryRunHookText(opts.text), promptVersion };
   }
   await assertBudget(db, "llm_tokens");
-  const { object, promptVersion } = await callClaude(
-    db,
-    opts.businessId,
-    "hook_text",
-    vars,
-    hookTextOutput,
+  const first = await callClaude(db, opts.businessId, "hook_text", vars, hookTextOutput);
+  const problem = hookTextError(first.object.hook_text);
+  if (!problem) {
+    return { hookText: first.object.hook_text.trim(), promptVersion: first.promptVersion };
+  }
+  logger.warn(
+    { businessId: opts.businessId, hookText: first.object.hook_text, problem },
+    "hook_text rejected — one corrective call",
   );
-  return { hookText: assertHookText(object.hook_text), promptVersion };
+  // Gated again, immediately before the paid call, the way the plan
+  // pipeline's callOnce gates each of its corrective rounds.
+  await assertBudget(db, "llm_tokens");
+  const retry = await callClaude(db, opts.businessId, "hook_text", vars, hookTextOutput, {
+    // JSON.stringify, as correctivePrompt quotes the previous answer: a quote
+    // mark or a control character in the line must not break the bullet.
+    appendix:
+      `Your previous answer was not accepted:\n- ${JSON.stringify(first.object.hook_text)} — ${problem}\n` +
+      "Return hook_text again under every rule above, fixing exactly what is named. When it " +
+      "is over a cap, cut as many words earlier as it takes to come under it — the count " +
+      "above says how far over it is, and one word is often not enough — at a natural break: " +
+      "a shorter verbatim prefix of the same opening line, never a paraphrase. When it is a " +
+      "mark or a character, return the same words without it.",
+  });
+  return { hookText: assertHookText(retry.object.hook_text), promptVersion: retry.promptVersion };
 }
 
 // ---------------------------------------------------------------------------

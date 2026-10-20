@@ -116,6 +116,10 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
   /** Nine words — one over HOOK_TEXT_MAX_WORDS, and 37 characters, so the word
    *  cap is the only rule it breaks. */
   const OVER_CAP = "אני לא יכולה להאמין מה קרה לי פה היום";
+  /** Eight words — AT HOOK_TEXT_MAX_WORDS — and 42 characters, so the character
+   *  cap is the only rule it breaks: the shape of the 2026-10-20 production
+   *  failure ("hook_text is 44 characters — the cap is 40", then 41). */
+  const OVER_CHARS = "ניסיתי כמעט הכול לפני שמצאתי את הפתרון הזה";
 
   function reply(object: Record<string, string>) {
     return { object, usage: { inputTokens: 900, outputTokens: 120 } };
@@ -216,18 +220,43 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
     expect(await llmUsageCount()).toBe(usageBefore + 2);
   });
 
-  it("throws and inserts no row when the re-derived line misses a cap too", async () => {
+  it("rescues the script when the extractor's own line misses the character cap and its one corrective call lands", async () => {
+    // 2026-10-20 (Vercel log): b_script's line missed a cap, the re-derivation
+    // came back at 44 characters, and the generation failed — four times in a
+    // row for the founder, ~8k tokens paid each time, no script row.
+    expect(hookTextError(OVER_CHARS)).toBe("hook_text is 42 characters — the cap is 40");
     generateObject
       .mockReset()
       .mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: OVER_CAP }))
-      .mockResolvedValueOnce(reply({ hook_text: OVER_CAP }));
+      .mockResolvedValueOnce(reply({ hook_text: OVER_CHARS }))
+      .mockResolvedValueOnce(reply({ hook_text: HOOK }));
+    const usageBefore = await llmUsageCount();
+    const before = await scriptCount();
+
+    const script = await generateBScript(db, { businessId, personaId, structureId });
+
+    expect(await scriptCount()).toBe(before + 1);
+    const params = script.params as { hookText?: string; hookTextDerived?: boolean };
+    expect(params.hookText).toBe(HOOK);
+    expect(params.hookTextDerived).toBe(true);
+    // Three paid calls, three rows: b_script, the extractor, its corrective.
+    expect(generateObject).toHaveBeenCalledTimes(3);
+    expect(await llmUsageCount()).toBe(usageBefore + 3);
+  });
+
+  it("throws and inserts no row when the re-derived line misses a cap twice — three calls, never a fourth", async () => {
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(reply({ script: SCRIPT, hook_text: OVER_CAP }))
+      .mockResolvedValueOnce(reply({ hook_text: OVER_CHARS }))
+      .mockResolvedValueOnce(reply({ hook_text: OVER_CHARS }));
     const before = await scriptCount();
 
     await expect(generateBScript(db, { businessId, personaId, structureId })).rejects.toThrow(
       PermanentError,
     );
     expect(await scriptCount()).toBe(before);
-    expect(generateObject).toHaveBeenCalledTimes(2);
+    expect(generateObject).toHaveBeenCalledTimes(3);
   });
 
   it("does not re-derive when the model's own line is already in cap", async () => {
@@ -255,9 +284,44 @@ describe("generateBScript / deriveHookText / updateScriptText (real DB, mocked C
     expect(await llmUsageCount()).toBe(usageBefore + 1);
   });
 
-  it("deriveHookText rejects an over-cap answer the same way", async () => {
-    generateObject.mockReset().mockResolvedValueOnce(reply({ hook_text: OVER_CAP }));
-    await expect(deriveHookText(db, { businessId, text: SCRIPT })).rejects.toThrow(PermanentError);
+  it("deriveHookText: one corrective call when the answer misses a cap, naming the line and the miss", async () => {
+    // The edit save is the path with nothing left to fall back to (vault 0030):
+    // a customer's edit failed three times the night of 2026-10-20 this way.
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(reply({ hook_text: OVER_CHARS }))
+      .mockResolvedValueOnce(reply({ hook_text: HOOK }));
+    const usageBefore = await llmUsageCount();
+
+    const hookText = await deriveHookText(db, { businessId, text: SCRIPT });
+
+    expect(hookText).toBe(HOOK);
+    expect(generateObject).toHaveBeenCalledTimes(2);
+    const first = generateObject.mock.calls[0]![0] as { prompt: string };
+    const second = generateObject.mock.calls[1]![0] as { prompt: string };
+    // The same prompt — script included — plus the rejected line and the cap
+    // it missed, so the model cuts earlier instead of re-rolling blind.
+    expect(first.prompt).not.toContain("not accepted");
+    expect(second.prompt.startsWith(first.prompt)).toBe(true);
+    expect(second.prompt).toContain(OVER_CHARS);
+    expect(second.prompt).toContain("hook_text is 42 characters — the cap is 40");
+    // The never-trim ruling (vault 0030) rides on this clause: the retry asks
+    // for a shorter cut of the script's own words, not a rewrite.
+    expect(second.prompt).toContain("verbatim prefix of the same opening line, never a paraphrase");
+    // Both calls are paid and recorded.
+    expect(await llmUsageCount()).toBe(usageBefore + 2);
+  });
+
+  it("deriveHookText: the corrective call is the last — a second miss throws with ITS problem, no third call", async () => {
+    generateObject
+      .mockReset()
+      .mockResolvedValueOnce(reply({ hook_text: OVER_CHARS }))
+      .mockResolvedValueOnce(reply({ hook_text: OVER_CAP }));
+
+    const failure = deriveHookText(db, { businessId, text: SCRIPT });
+    await expect(failure).rejects.toThrow(PermanentError);
+    await expect(failure).rejects.toThrow(/9 words — the cap is 8/);
+    expect(generateObject).toHaveBeenCalledTimes(2);
   });
 
   it("updateScriptText merges params into the one new row and leaves the original alone", async () => {

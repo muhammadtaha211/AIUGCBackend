@@ -17,7 +17,8 @@ import { scriptTextSchema } from "@/lib/service-b";
  * check left is the runaway-cost guard, and only on avatar scripts.
  *
  * A b_script also gets its draft on-screen hook text re-derived from the
- * edited text (one more LLM call, under the llm_tokens cap) so the one new
+ * edited text (one more LLM call — two when the first answer misses a cap,
+ * deriveHookTextWithVersion — under the llm_tokens cap) so the one new
  * row holds both — the same merge `aiugc script edit` does. Hook-line and
  * VO-script rows (Service A) carry no hook text and skip it.
  *
