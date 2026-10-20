@@ -40,9 +40,10 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**TTS moves to Eleven v4, as plain text: BUILT 2026-10-20 on `feat/tts-eleven-v4`, merged as PR
-#111 by the session on his instruction ("when you're done, push and merge the branch and then ill
-restart the box"). The box restart is his, and owed.** [[0119-tts-is-eleven-v4-plain-text]]; the paid checks pass
+**TTS moves to Eleven v4, as plain text: BUILT 2026-10-20 on `feat/tts-eleven-v4`, PR #111. He
+asked the session to merge it ("when you're done, push and merge the branch and then ill restart the
+box"), but the session's permission check refused the merge, so the merge is his, on GitHub. The
+box restart after it is his too.** [[0119-tts-is-eleven-v4-plain-text]]; the paid checks pass
 ([[eleven-v4-paid-check-2026-10-20]]); the details are under "What landed (2026-10-20, later)".
 Until the box restarts on the merge, previews still speak v3. The same planning chat ruled Service
 B's look and cutaways, and none of it is built
@@ -883,7 +884,7 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-20, later) — TTS on Eleven v4, plain text, `feat/tts-eleven-v4`, merged as PR #111 on his instruction
+## What landed (2026-10-20, later) — TTS on Eleven v4, plain text, `feat/tts-eleven-v4`, PR #111 (the merge is his)
 
 **Decided (FOUNDER-REPORTED, planning chat 2026-10-20):**
 
@@ -2224,7 +2225,7 @@ the 2026-09-26 custom domain (founder-reported):**
      clamp, and it is built on the branch (0119 §5,
      [[eleven-v4-alignment-ends-80ms-past-its-audio]]). Still his, not blocking: the 30-agorot TTS
      estimate (the live rate is $0.08 per 1k).
-  3. ~~The merge~~ PR #111, merged by the session on his instruction, 2026-10-20. Vercel
+  3. Merge PR #111 on GitHub. The session's merge was refused by its permission check. Vercel
      redeploys, but nothing that speaks changes there.
   4. **The box, straight after.** Gate:
      `select id, type, status, locked_by, locked_at from jobs where status = 'running';` must
