@@ -95,17 +95,12 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
         return hit(409, "סרטון המוצר עדיין בניתוח — זה לוקח כמה דקות.");
       case "analysis_failed":
         return hit(422, "לא הצלחנו לנתח את סרטון המוצר הזה — בחרו סרטון אחר.");
-      case "vo_too_short":
-      case "no_layout":
-        return hit(422, "אין בהקלטה הזאת מקום לקטעים מסרטון המוצר — אפשר להמשיך בלי קטעים.");
-      case "demo_too_short":
-        return hit(422, "סרטון המוצר קצר מדי בשביל קטעים — בחרו סרטון ארוך יותר.");
       case "invalid_windows":
-        return hit(422, "הקטע לא נכנס במקום שבחרתם — בחרו מקום אחר בסרטון.");
-      case "invalid_hook_text":
-        return hit(400, INVALID_BODY);
+        return hit(422, "הקטע לא נכנס במקום שבחרתם — בחרו מקום אחר.");
+      case "edit_conflict":
+        return hit(409, "הקטעים השתנו בינתיים, אז טענו אותם מחדש. נסו שוב.");
       case "stale":
-        return hit(409, "ההקלטה או משפט הפתיחה השתנו — צריך לשבץ את הקטעים מחדש.");
+        return hit(409, "ההקלטה או סרטון המוצר השתנו — צריך לשבץ את הקטעים מחדש.");
     }
   }
 

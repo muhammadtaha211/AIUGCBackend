@@ -14,10 +14,16 @@ import {
   useHookLineMeasure,
 } from "@/components/a-wizard/placement-editor";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
+import { CutawayChip } from "./cutaway-chip";
 import { HookEffectPreview } from "./hook-effect-preview";
 import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
-import { hookTextFieldError, HOOK_EFFECT_OPTIONS } from "@/lib/service-b-ui";
+import {
+  CUTAWAY_COPY,
+  cutawayLetter,
+  hookTextFieldError,
+  HOOK_EFFECT_OPTIONS,
+} from "@/lib/service-b-ui";
 
 type StepEffectProps = {
   /** The render source — its selfie is the ad's first frame, so the preview is honest. */
@@ -32,6 +38,9 @@ type StepEffectProps = {
   /** The customer-placed rect; null = untouched (the centred default). */
   rect: SafeRect | null;
   setRect: (rect: SafeRect | null) => void;
+  /** Demo cutaways (vault 0122): which clips this line reaches — moved to the
+   *  phrase after it, or dropped. Absent with the option off. */
+  cutawayCollisions?: { moved: number[]; dropped: number[] };
   onBack: () => void;
   onContinue: () => void;
 };
@@ -61,6 +70,7 @@ export function StepEffect({
   setHookText,
   rect,
   setRect,
+  cutawayCollisions,
   onBack,
   onContinue,
 }: StepEffectProps) {
@@ -144,6 +154,18 @@ export function StepEffect({
               onChange={(event) => setHookText(event.target.value)}
               error={textError}
             />
+            {/* Where the customer is typing: a longer line reaching a clip
+                moves it, never blocks (vault 0122). */}
+            {cutawayCollisions &&
+              [
+                ...cutawayCollisions.moved.map((id) => ({ id, line: CUTAWAY_COPY.hookMoved })),
+                ...cutawayCollisions.dropped.map((id) => ({ id, line: CUTAWAY_COPY.hookDropped })),
+              ].map(({ id, line }) => (
+                <p key={id} className="mt-2 flex items-start gap-2 text-[13px] text-amber-700">
+                  <CutawayChip id={id} className="mt-px" />
+                  <span>{line(cutawayLetter(id))}</span>
+                </p>
+              ))}
             <p className="mt-2 text-[13px] text-ink/55">
               נצרב במרכז המסך עד שהדמות מסיימת להגיד אותו, ואז הכתוביות ממשיכות מהשורה הבאה. אפשר
               לערוך חופשי.

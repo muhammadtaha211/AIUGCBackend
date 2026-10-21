@@ -11,10 +11,12 @@ import {
 import { cutawayPlanUpdateSchema, isUuid } from "@/lib/service-b";
 
 /**
- * The window picker's save (vault 0121): every slot's start at once. Core
- * refuses a plan that is not this business's, a start that is not a moment of
- * the demo, a window outside the recording and two windows showing the same
- * footage; the slots' times are the server's and are never sent.
+ * One edit of the clips (vault 0122): the whole list after a move, an add, a
+ * remove or a window change. Core refuses a plan that is not this business's,
+ * a version that is not the row's, a clip off a spoken word, outside 4–6 s,
+ * under the hook text or overlapping another, a start that is not a moment of
+ * the demo, a window outside the recording, and two windows showing the same
+ * footage — and never a long run of the character, which the wizard only notes.
  */
 export async function PATCH(
   request: Request,
@@ -33,7 +35,7 @@ export async function PATCH(
     const body = cutawayPlanUpdateSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
 
-    const plan = await updateCutawayPlan(db, { businessId, planId, starts: body.data.starts });
+    const plan = await updateCutawayPlan(db, { businessId, planId, ...body.data });
     return NextResponse.json(plan);
   } catch (err) {
     return coreErrorResponse(err);

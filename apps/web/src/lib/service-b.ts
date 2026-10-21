@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CUTAWAY_MAX_SLOTS } from "@aiugc/core/cutaway-structure";
 import { hookEffectSchema } from "@aiugc/core/hook-effect";
 import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 
@@ -53,20 +54,36 @@ export const renderRequestSchema = z
       : body.hookText !== undefined,
   );
 
-/** The cutaway draft: the approved audio, the demo, and the final hook text the
- *  slots are laid out from ('' or absent = no hook text). Strict: nothing else. */
+/** The cutaway draft: the approved audio and the demo. The hook text the slots
+ *  are laid out from is the script's own, read on the server (vault 0122).
+ *  Strict: nothing else. */
 export const cutawayPlanRequestSchema = z
   .object({
     audioId: z.string().uuid(),
     demoId: z.string().uuid(),
-    hookText: z.string().max(200).optional(),
   })
   .strict();
 
-/** The window picker's save: every slot's start, in slot order. The slots'
- *  times are the server's and are never sent. */
+const msSchema = z.number().finite().nonnegative();
+
+/** One edit of the clips (vault 0122): the whole list after a move, an add, a
+ *  remove or a window change, and the version of the plan it was made on. */
 export const cutawayPlanUpdateSchema = z
-  .object({ starts: z.array(z.number().int().nonnegative()).min(1).max(12) })
+  .object({
+    expectedUpdatedAt: z.string().min(1).max(64),
+    slots: z
+      .array(
+        z
+          .object({
+            id: z.number().int().min(1).max(CUTAWAY_MAX_SLOTS),
+            fromMs: msSchema,
+            toMs: msSchema,
+            demoStartMs: msSchema,
+          })
+          .strict(),
+      )
+      .max(CUTAWAY_MAX_SLOTS),
+  })
   .strict();
 
 /** Pre-confirm quote lookup — the render's price comes from the approved audio. */

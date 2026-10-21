@@ -22,6 +22,7 @@ import { addPersona, addPersonaImage } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
 import {
   CutawayPlanError,
+  type CutawayEdit,
   cutawayPlacement,
   demoOrderPicks,
   draftCutawayPlan,
@@ -73,11 +74,17 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
   let demoId: string;
   let analysisId: string;
 
-  async function seedAudio(bizId: string, approved = true) {
+  async function seedAudio(bizId: string, opts: { approved?: boolean; hookText?: string } = {}) {
+    const approved = opts.approved ?? true;
     const script = (
       await db
         .insert(dbSchema.scripts)
-        .values({ businessId: bizId, kind: "b_script", text: "תסריט" })
+        .values({
+          businessId: bizId,
+          kind: "b_script",
+          text: "תסריט",
+          params: opts.hookText ? { hookText: opts.hookText } : {},
+        })
         .returning()
     )[0]!;
     return (
@@ -141,6 +148,29 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     return { demoId: demo.id, analysisId: analysis.id };
   }
 
+  /** The questionnaire's product_name — what productMention listens for. */
+  async function nameProduct(productName: string | null) {
+    await db
+      .update(dbSchema.businesses)
+      .set({ questionnaire: productName === null ? null : { product_name: productName } })
+      .where(eq(dbSchema.businesses.id, businessId));
+  }
+
+  /** The footage row's spans, shifted: the anchors move with them. */
+  async function setMoments(shiftMs: number) {
+    await db
+      .update(dbSchema.demoAnalysisFootage)
+      .set({
+        moments: timeline().map((t) => ({
+          t: t.timestampMs,
+          startMs: t.timestampMs + shiftMs,
+          endMs: t.timestampMs + 1000,
+          read: true,
+        })),
+      })
+      .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysisId));
+  }
+
   function setDryRun(on: boolean) {
     process.env.DRY_RUN = on ? "1" : "0";
     resetEnvCache();
@@ -166,6 +196,7 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
   });
 
   afterEach(async () => {
+    await nameProduct(null);
     await db.delete(dbSchema.cutawayPlans);
     await db.delete(dbSchema.usageEvents);
     await db.delete(dbSchema.events);
@@ -177,17 +208,23 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     cleanupStorage();
   });
 
-  it("drafts free and keyless: the demo in order, slots on the layout, windows on moments, never a login screen", async () => {
+  it("drafts free and keyless from the product mention: the demo in order, windows on moments, never a login screen", async () => {
     for (const dryRun of [true, false]) {
       setDryRun(dryRun);
       await db.delete(dbSchema.cutawayPlans);
       const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
       expect(generateObject).not.toHaveBeenCalled();
       expect(plan.slots.length).toBeGreaterThanOrEqual(1);
-      expect(plan.words).toHaveLength(45);
+      expect(plan.captions).toEqual(CAPTIONS);
+      expect(plan.voDurationMs).toBe(VO_MS);
+      expect(plan.captionOffsetMs).toBe(250);
+      // No name in the questionnaire or the words: 40% of the 18 s voice.
+      expect(plan.mentionMs).toBe(7200);
       const anchorStarts = new Set(plan.anchors.map((a) => a.startMs));
       let previous = -1;
-      for (const slot of plan.slots) {
+      for (const [i, slot] of plan.slots.entries()) {
+        expect(slot.id).toBe(i + 1);
+        expect(slot.fromMs).toBeGreaterThanOrEqual(plan.mentionMs);
         expect(slot.lengthMs).toBeGreaterThanOrEqual(4000);
         expect(slot.lengthMs).toBeLessThanOrEqual(6000);
         expect(anchorStarts).toContain(slot.demoStartMs);
@@ -204,8 +241,10 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
       expect(await db.select().from(dbSchema.usageEvents)).toHaveLength(0);
       const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
       expect(row.hookText).toBe("");
+      expect(plan.updatedAt).toBe(row.updatedAt.toISOString());
     }
   });
+
   it("the demo's opening screen is a window start too, clamped to the edge", () => {
     const tl = timeline();
     const p = cutawayPlacement({
@@ -255,40 +294,108 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     }
   });
 
-  it("a stored plan that no longer passes the layout rules is drafted again in place", async () => {
+  it("an untouched draft follows the product mention; a plan the customer edited never moves", async () => {
+    const first = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    expect(first.mentionMs).toBe(7200);
+    // Asked again with nothing changed: the same row, not even rewritten.
+    const same = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    expect(same.updatedAt).toBe(first.updatedAt);
+
+    // The questionnaire now names the product, and the voice says it at word 27.
+    await nameProduct("מילה27");
+    const moved = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    expect(moved.planId).toBe(first.planId);
+    expect(moved.mentionMs).toBe(10_800);
+    expect(moved.slots[0]!.fromMs).toBe(10_800);
+    expect((await db.select().from(dbSchema.cutawayPlans))[0]!.editedAt).toBeNull();
+
+    // The customer removes every clip; the name changes again; their plan stands.
+    const edited = await updateCutawayPlan(db, {
+      businessId,
+      planId: first.planId,
+      expectedUpdatedAt: moved.updatedAt,
+      slots: [],
+    });
+    expect(edited.slots).toEqual([]);
+    await nameProduct(null);
+    const kept = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    expect(kept.slots).toEqual([]);
+    expect(kept.mentionMs).toBe(7200);
+  });
+
+  it("a 0121 row is laid out again from the mention, keeping the window the customer picked", async () => {
     const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    // A row an older build might have stored: a 3 s cutaway.
+    const picked = plan.anchors.find((a) => a.stateIndex === 20)!;
+    // What 0121 stored: no ids, the first cut a few seconds in, its window moved by the customer.
     await db
       .update(dbSchema.cutawayPlans)
       .set({
-        slots: [{ ...plan.slots[0]!, toMs: plan.slots[0]!.fromMs + 3000 }],
+        slots: [
+          {
+            fromMs: 3600,
+            toMs: 8400,
+            wordFrom: 9,
+            wordTo: 21,
+            demoStartMs: picked.startMs,
+            stateIndex: 20,
+            draftDemoStartMs: plan.slots[0]!.draftDemoStartMs,
+            draftStateIndex: plan.slots[0]!.draftStateIndex,
+          },
+        ],
         editedAt: new Date(),
       })
       .where(eq(dbSchema.cutawayPlans.id, plan.planId));
     const again = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
     expect(again.planId).toBe(plan.planId);
-    expect(again.slots.map(({ lengthMs: _l, ...s }) => s)).toEqual(
-      plan.slots.map(({ lengthMs: _l, ...s }) => s),
-    );
-    const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
-    expect(row.editedAt).toBeNull();
+    expect(again.slots[0]).toMatchObject({
+      id: 1,
+      fromMs: plan.slots[0]!.fromMs,
+      toMs: plan.slots[0]!.toMs,
+      demoStartMs: picked.startMs,
+      stateIndex: 20,
+      draftDemoStartMs: plan.slots[0]!.draftDemoStartMs,
+    });
+    expect(again.slots[0]!.fromMs).toBeGreaterThanOrEqual(again.mentionMs);
+    expect((await db.select().from(dbSchema.cutawayPlans))[0]!.editedAt).not.toBeNull();
   });
 
-  it("is idempotent per (audio, analysis, structure, hook text); a new hook text is a fresh draft", async () => {
-    const a = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    const again = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+  it("a 0121 row keyed on the effect step's line is found under any line, its window kept", async () => {
+    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    const picked = plan.anchors.find((a) => a.stateIndex === 22)!;
+    // Under 0121 the key was the effect step's own line; there is no row under the script's.
+    await db
+      .update(dbSchema.cutawayPlans)
+      .set({
+        hookText: "השורה שהלקוח ערך",
+        slots: [
+          {
+            fromMs: 3600,
+            toMs: 8400,
+            wordFrom: 9,
+            wordTo: 21,
+            demoStartMs: picked.startMs,
+            stateIndex: 22,
+            draftDemoStartMs: plan.slots[0]!.draftDemoStartMs,
+            draftStateIndex: plan.slots[0]!.draftStateIndex,
+          },
+        ],
+        editedAt: new Date(),
+      })
+      .where(eq(dbSchema.cutawayPlans.id, plan.planId));
+    const fresh = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    expect(fresh.planId).not.toBe(plan.planId);
+    expect(fresh.hookText).toBe("");
+    expect(fresh.slots[0]).toMatchObject({ id: 1, demoStartMs: picked.startMs, stateIndex: 22 });
+    expect(fresh.slots[0]!.fromMs).toBeGreaterThanOrEqual(fresh.mentionMs);
+  });
+
+  it("is keyed on the script's own hook text — never a line the client sends", async () => {
+    const hooked = await seedAudio(businessId, { hookText: "מילה0 מילה1 מילה2" });
+    const a = await draftCutawayPlan(db, { businessId, audioRenderId: hooked, demoId });
+    expect(a.hookText).toBe("מילה0 מילה1 מילה2");
+    const again = await draftCutawayPlan(db, { businessId, audioRenderId: hooked, demoId });
     expect(again.planId).toBe(a.planId);
-    const hooked = await draftCutawayPlan(db, {
-      businessId,
-      audioRenderId: audioId,
-      demoId,
-      hookText: "מילה0 מילה1 מילה2 מילה3 מילה4",
-    });
-    expect(hooked.planId).not.toBe(a.planId);
-    expect(hooked.hookText).toBe("מילה0 מילה1 מילה2 מילה3 מילה4");
-    const back = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    expect(back.planId).toBe(a.planId);
-    expect(await db.select().from(dbSchema.cutawayPlans)).toHaveLength(2);
+    expect(await db.select().from(dbSchema.cutawayPlans)).toHaveLength(1);
   });
 
   it("refuses what is not this business's, not approved, or not analysed", async () => {
@@ -307,7 +414,7 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     expect(
       await code(draftCutawayPlan(db, { businessId, audioRenderId: otherAudio, demoId })),
     ).toBe("not_found");
-    const unapproved = await seedAudio(businessId, false);
+    const unapproved = await seedAudio(businessId, { approved: false });
     expect(
       await code(draftCutawayPlan(db, { businessId, audioRenderId: unapproved, demoId })),
     ).toBe("audio_not_approved");
@@ -336,60 +443,92 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     ).toBe("demo_not_ready");
   });
 
-  it("the customer's edit moves windows to other moments, keeps the draft beside them, and refuses a bad move", async () => {
-    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
-    const starts = plan.slots.map((s) => s.demoStartMs);
-    const target = plan.anchors.find((a) => a.stateIndex === 25)!.startMs;
-    const moved = [...starts.slice(0, -1), target];
-    const edited = await updateCutawayPlan(db, { businessId, planId: plan.planId, starts: moved });
-    expect(edited.slots.at(-1)!.demoStartMs).toBe(target);
-    expect(edited.slots.at(-1)!.stateIndex).toBe(25);
-    expect(edited.slots.at(-1)!.draftDemoStartMs).toBe(starts.at(-1));
-    const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
-    expect(row.editedAt).not.toBeNull();
-
-    const code = async (s: number[], biz = businessId) =>
-      updateCutawayPlan(db, { businessId: biz, planId: plan.planId, starts: s }).then(
-        () => "ok",
-        (err: unknown) => (err instanceof CutawayPlanError ? err.code : String(err)),
-      );
-    expect(await code([starts[0]!])).toBe(starts.length === 1 ? "ok" : "invalid_windows");
-    expect(await code(starts.map(() => starts[0]!))).toBe(
-      starts.length > 1 ? "invalid_windows" : "ok",
+  /** One PATCH as the wizard sends it: the whole list, and the version it edited. */
+  const send = (
+    planId: string,
+    expectedUpdatedAt: string,
+    slots: CutawayEdit[],
+    biz = businessId,
+  ) => updateCutawayPlan(db, { businessId: biz, planId, expectedUpdatedAt, slots });
+  const edit = (s: CutawayEdit) => ({
+    id: s.id,
+    fromMs: s.fromMs,
+    toMs: s.toMs,
+    demoStartMs: s.demoStartMs,
+  });
+  const codeOf = (p: Promise<unknown>) =>
+    p.then(
+      () => "ok",
+      (err: unknown) => (err instanceof CutawayPlanError ? err.code : String(err)),
     );
-    expect(await code(starts.map((s) => s + 1))).toBe("invalid_windows");
-    expect(await code(starts, otherBusinessId)).toBe("not_found");
+  const windowOf = (plan: { anchors: { startMs: number; stateIndex: number }[] }, state: number) =>
+    plan.anchors.find((a) => a.stateIndex === state)!.startMs;
 
-    // The anchors move when a footage row's spans change: a slot the customer
-    // did not touch keeps its stored pick, and the save still goes through.
-    const stored = (await db.select().from(dbSchema.cutawayPlans))[0]!;
-    const kept = (stored.slots as { demoStartMs: number }[]).map((s) => s.demoStartMs);
-    await db
-      .update(dbSchema.demoAnalysisFootage)
-      .set({
-        moments: timeline().map((t) => ({
-          t: t.timestampMs,
-          startMs: t.timestampMs - 100,
-          endMs: t.timestampMs + 900,
-          read: true,
-        })),
-      })
-      .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysisId));
-    expect(await code(kept)).toBe("ok");
-    await db
-      .update(dbSchema.demoAnalysisFootage)
-      .set({
-        moments: timeline().map((t) => ({
-          t: t.timestampMs,
-          startMs: t.timestampMs - 200,
-          endMs: t.timestampMs + 1000,
-          read: true,
-        })),
-      })
-      .where(eq(dbSchema.demoAnalysisFootage.analysisId, analysisId));
+  it("the customer moves a clip to any phrase, adds one and removes one — the draft's pick kept beside a drafted clip", async () => {
+    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    const drafted = plan.slots[0]!;
+    // Moved to the very first phrase — before the product mention, on purpose: allowed.
+    let current = await send(plan.planId, plan.updatedAt, [
+      { ...edit(drafted), fromMs: 1200, toMs: 1200 + drafted.lengthMs },
+    ]);
+    expect(current.slots).toHaveLength(1);
+    expect(current.slots[0]).toMatchObject({
+      id: 1,
+      fromMs: 1200,
+      toMs: 1200 + drafted.lengthMs,
+      wordFrom: 3,
+      demoStartMs: drafted.demoStartMs,
+      stateIndex: drafted.stateIndex,
+      draftDemoStartMs: drafted.demoStartMs,
+    });
+
+    // Added: a new id, a window of its own, no draft pick.
+    current = await send(plan.planId, current.updatedAt, [
+      edit(current.slots[0]!),
+      { id: 2, fromMs: 9600, toMs: 14_400, demoStartMs: windowOf(plan, 25) },
+    ]);
+    expect(current.slots.map((s) => s.id)).toEqual([1, 2]);
+    expect(current.slots[1]).toMatchObject({ stateIndex: 25, wordFrom: 24, wordTo: 36 });
+    expect(current.slots[1]).not.toHaveProperty("draftDemoStartMs");
+
+    // Removed: clip 1 is simply gone.
+    current = await send(plan.planId, current.updatedAt, [edit(current.slots[1]!)]);
+    expect(current.slots.map((s) => s.id)).toEqual([2]);
+    expect((await db.select().from(dbSchema.cutawayPlans))[0]!.editedAt).not.toBeNull();
   });
 
-  it("enqueue copies the windows only for the same audio and hook text it was laid out from", async () => {
+  it("refuses a stale version, broken slots and reused footage — writing nothing", async () => {
+    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    const a = { id: 1, fromMs: 2400, toMs: 7200, demoStartMs: windowOf(plan, 5) };
+    const b = { id: 2, fromMs: 9600, toMs: 14_400, demoStartMs: windowOf(plan, 15) };
+    const current = await send(plan.planId, plan.updatedAt, [a, b]);
+    const v = current.updatedAt;
+
+    expect(await codeOf(send(plan.planId, plan.updatedAt, [a]))).toBe("edit_conflict");
+    expect(await codeOf(send(plan.planId, v, [{ ...a, fromMs: 2500 }]))).toBe("invalid_windows");
+    expect(await codeOf(send(plan.planId, v, [a, { ...b, id: 1 }]))).toBe("invalid_windows");
+    expect(await codeOf(send(plan.planId, v, [{ ...a, id: 9 }]))).toBe("invalid_windows");
+    expect(await codeOf(send(plan.planId, v, [a, { ...b, fromMs: 6000, toMs: 10_800 }]))).toBe(
+      "invalid_windows",
+    );
+    expect(await codeOf(send(plan.planId, v, [a, { ...b, demoStartMs: a.demoStartMs }]))).toBe(
+      "invalid_windows",
+    );
+    expect(await codeOf(send(plan.planId, v, [{ ...a, demoStartMs: a.demoStartMs + 1 }]))).toBe(
+      "invalid_windows",
+    );
+    expect(await codeOf(send(plan.planId, v, [a], otherBusinessId))).toBe("not_found");
+    const row = (await db.select().from(dbSchema.cutawayPlans))[0]!;
+    expect(row.updatedAt.toISOString()).toBe(v);
+
+    // The anchors move when a footage row's spans change: a clip whose window the
+    // customer did not touch keeps its stored pick, and the save still goes through.
+    await setMoments(-100);
+    expect(await codeOf(send(plan.planId, v, [a, b]))).toBe("ok");
+    await setMoments(-200);
+  });
+
+  it("enqueue copies the windows for the same audio; none left is today's ad; another audio is stale", async () => {
     const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
     const copy = await resolveCutawaysForRender(db, {
       businessId,
@@ -403,23 +542,57 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
       analysisId,
       slots: plan.slots.map(({ fromMs, toMs, demoStartMs }) => ({ fromMs, toMs, demoStartMs })),
     });
-    const stale = async (opts: {
-      audioRenderId?: string;
-      hookText?: string;
-      businessId?: string;
-    }) =>
+    const resolve = (opts: { audioRenderId?: string; businessId?: string }) =>
+      codeOf(
+        resolveCutawaysForRender(db, {
+          businessId,
+          planId: plan.planId,
+          audioRenderId: audioId,
+          ...opts,
+        }),
+      );
+    expect(await resolve({ audioRenderId: await seedAudio(businessId) })).toBe("stale");
+    expect(await resolve({ businessId: otherBusinessId })).toBe("not_found");
+
+    await send(plan.planId, plan.updatedAt, []);
+    expect(
+      await resolveCutawaysForRender(db, {
+        businessId,
+        planId: plan.planId,
+        audioRenderId: audioId,
+      }),
+    ).toBeNull();
+  });
+
+  it("enqueue gives way to a longer final hook text: the clip under it moves to the next phrase, or drops — never stored", async () => {
+    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    const early = { id: 1, fromMs: 1200, toMs: 6000, demoStartMs: windowOf(plan, 5) };
+    let current = await send(plan.planId, plan.updatedAt, [early]);
+    // Five spoken words: the line leaves on the phrase after word 4 — VO 2400.
+    const hookText = "מילה0 מילה1 מילה2 מילה3 מילה4";
+    const resolve = (text?: string) =>
       resolveCutawaysForRender(db, {
         businessId,
         planId: plan.planId,
         audioRenderId: audioId,
-        ...opts,
-      }).then(
-        () => "ok",
-        (err: unknown) => (err instanceof CutawayPlanError ? err.code : String(err)),
-      );
-    expect(await stale({ hookText: "מילה0 מילה1" })).toBe("stale");
-    expect(await stale({ audioRenderId: await seedAudio(businessId) })).toBe("stale");
-    expect(await stale({ businessId: otherBusinessId })).toBe("not_found");
+        hookText: text,
+      });
+    expect((await resolve(hookText))!.slots).toEqual([
+      { fromMs: 2400, toMs: 7200, demoStartMs: early.demoStartMs },
+    ]);
+    // Derived, never written: without the line the clip is where the customer put it.
+    expect((await resolve())!.slots).toEqual([
+      { fromMs: 1200, toMs: 6000, demoStartMs: early.demoStartMs },
+    ]);
+
+    // Boxed in by the clips after it, it has nowhere to go: dropped, and the rest still render.
+    current = await send(plan.planId, current.updatedAt, [
+      early,
+      { id: 2, fromMs: 6000, toMs: 10_800, demoStartMs: windowOf(plan, 10) },
+      { id: 3, fromMs: 10_800, toMs: 15_600, demoStartMs: windowOf(plan, 15) },
+    ]);
+    expect((await resolve(hookText))!.slots.map((s) => s.fromMs)).toEqual([6000, 10_800]);
+    expect(current.slots).toHaveLength(3);
   });
 
   it("createBRender refuses a foreign plan before the paid classifier, with no debit and no render", async () => {

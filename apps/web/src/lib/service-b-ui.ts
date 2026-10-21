@@ -1,4 +1,14 @@
 import { countScriptWords, MAX_B_SCRIPT_WORDS } from "@aiugc/core/b-script-words";
+import {
+  CUTAWAY_ALTERNATE,
+  CUTAWAY_FRAME_SLACK_MS,
+  CUTAWAY_MAX_SLOTS,
+  clearHookText,
+  cutawayWindowStarts,
+  fitCutawayAt,
+  hookLeaveVoMs,
+  snapCutawayStart,
+} from "@aiugc/core/cutaway-structure";
 import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/core/hook-text";
@@ -7,10 +17,10 @@ import { HOOK_TEXT_MAX_CHARS, HOOK_TEXT_MAX_WORDS, hookTextError } from "@aiugc/
  * Pure, client-safe helpers for the homepage and the Service B wizard.
  * No imports from @aiugc/core's main entry — this file is bundled into
  * client components, and core drags in server-only dependencies. The
- * "b-script-words", "hook-effect", "hook-geometry" and "hook-text" subpaths
- * are the deliberate exceptions (pure constants and validation, the same
- * kind service-a-ui.ts leans on). Keep this list exact: a stale allowlist
- * stops reading as a rule.
+ * "b-script-words", "cutaway-structure", "hook-effect", "hook-geometry" and
+ * "hook-text" subpaths are the deliberate exceptions (pure constants,
+ * validation and the cutaway placement rules, the same kind service-a-ui.ts
+ * leans on). Keep this list exact: a stale allowlist stops reading as a rule.
  */
 
 // ---------------------------------------------------------------------------
@@ -180,9 +190,10 @@ export type WizardStep = "persona" | "pointers" | "script" | "audio" | "effect" 
  * customer picks a hook animation — or none — and edits the on-screen hook
  * text it burns (vault 0024; it offered opener clips until 2026-09-06).
  *
- * Demo cutaways (vault 0121) add one step, "demo", after the effect step —
- * the slots are laid out from when the hook text leaves (founder,
- * 2026-10-20) — and only when the customer ticked them on the audio card.
+ * Demo cutaways (vault 0121, 0122) add one step, "demo" — the clips — right
+ * after the audio card that ticks them, so the effect is set last before the
+ * render (founder, 2026-10-21). The clips are laid out from the script's own
+ * hook text; a longer line on the effect step moves only the clip it reaches.
  * With the option off the flow is exactly the six steps it always was.
  */
 export function wizardSteps(opts: { cutaways?: boolean } = {}): WizardStep[] {
@@ -191,8 +202,8 @@ export function wizardSteps(opts: { cutaways?: boolean } = {}): WizardStep[] {
     "pointers",
     "script",
     "audio",
-    "effect",
     ...(opts.cutaways ? (["demo"] as const) : []),
+    "effect",
     "render",
   ];
 }
@@ -557,12 +568,21 @@ export function renderRequestBody(opts: {
 }
 
 // ---------------------------------------------------------------------------
-// Demo cutaways (vault 0121) — the "demo" step, after the effect step
+// Demo cutaways (vault 0121, 0122) — the "demo" step, between the audio and the effect
 // ---------------------------------------------------------------------------
 
-/** One slot as the wizard gets it (VO-time ms): when the demo covers the
- *  character, the words it covers, and where in the demo it plays from. */
+/** One caption phrase as the wizard gets it (VO-time ms). */
+export type CaptionChunkWire = {
+  text: string;
+  startMs: number;
+  endMs: number;
+  words: { word: string; startMs: number; endMs: number }[];
+};
+
+/** One clip as the wizard gets it (VO-time ms): its identity, when the demo
+ *  covers the character, the words it covers, and where in the demo it plays from. */
 export type CutawaySlotWire = {
+  id: number;
   fromMs: number;
   toMs: number;
   lengthMs: number;
@@ -570,8 +590,9 @@ export type CutawaySlotWire = {
   wordTo: number;
   demoStartMs: number;
   stateIndex: number | null;
-  draftDemoStartMs: number;
-  draftStateIndex: number | null;
+  /** The draft's pick — absent on a clip the customer added. */
+  draftDemoStartMs?: number;
+  draftStateIndex?: number | null;
 };
 
 /** A place a window may start — a moment of the analysed demo. */
@@ -583,9 +604,16 @@ export type CutawayPlanWire = {
   audioId: string;
   demoId: string;
   structure: string;
+  /** The script's hook text the plan is laid out from ('' = none). */
   hookText: string;
-  /** The caption words, in order — what each slot's wordFrom/wordTo index. */
-  words: string[];
+  /** The version an edit names; a stale one is refused. */
+  updatedAt: string;
+  captions: CaptionChunkWire[];
+  voDurationMs: number;
+  captionOffsetMs: number;
+  /** Where the script first names the product (VO ms) — or, with no name heard, 40% in ("share"). */
+  mentionMs: number;
+  mentionMethod: "product_name" | "business_name" | "share";
   slots: CutawaySlotWire[];
   anchors: CutawayAnchorWire[];
   /** A window starts at or after minStartMs and ends (with the frame slack) by maxEndMs. */
@@ -593,62 +621,46 @@ export type CutawayPlanWire = {
   maxEndMs: number;
 };
 
-/** Mirrors core's CUTAWAY_FRAME_SLACK_MS (service-b-ui.test.ts pins the two). */
-export const CUTAWAY_FRAME_SLACK_MS = 34;
+/** One clip as an edit sends it. */
+export type CutawayEditWire = { id: number; fromMs: number; toMs: number; demoStartMs: number };
 
-/** The hook text a plan is laid out from: the effect step's line, or none with "none". */
+/** The hook text the render burns: the effect step's line, or none with "none". */
 export function cutawayHookText(hookEffect: HookEffect, hookText: string): string {
   return hookEffect === "none" ? "" : hookText.trim();
 }
 
 /**
  * The plan, if it still belongs to what the wizard holds — the same approved
- * audio, the same demo and the same hook text it was laid out from. Anything
- * else is stale: the step drafts again (a new hook text is a new draft,
- * founder 2026-10-20), and the render never sends it.
+ * audio and the same demo. The hook text no longer makes it stale (vault
+ * 0122): the clips are laid out from the script's own line, and a longer
+ * final line only moves the clip it reaches (cutawaysUnderHookText).
  */
 export function liveCutawayPlan(
   plan: CutawayPlanWire | null,
   audioId: string | undefined,
   demoId: string | undefined,
-  hookText: string,
 ): CutawayPlanWire | null {
-  if (!plan || plan.audioId !== audioId || plan.demoId !== demoId) return null;
-  return plan.hookText === hookText ? plan : null;
+  return plan && plan.audioId === audioId && plan.demoId === demoId ? plan : null;
 }
 
-const footprintEnd = (startMs: number, lengthMs: number) =>
-  startMs + lengthMs + CUTAWAY_FRAME_SLACK_MS;
+/** The plan's clips as an edit sends them. */
+export function cutawayEdits(slots: CutawaySlotWire[]): CutawayEditWire[] {
+  return slots.map(({ id, fromMs, toMs, demoStartMs }) => ({ id, fromMs, toMs, demoStartMs }));
+}
 
 /**
  * Where slot `index` may start, sorted: a moment whose window stays inside
  * the recording and shows none of the footage another slot shows (the others
- * at `starts`). The window picker snaps to these and nothing else, so what the
- * customer can drag to is exactly what the server accepts.
+ * at `starts`) — core's rule, so what the picker offers is what the server takes.
  */
 export function cutawayStarts(plan: CutawayPlanWire, index: number, starts: number[]): number[] {
-  const length = plan.slots[index]!.lengthMs;
-  const valid = new Set<number>();
-  for (const { startMs } of plan.anchors) {
-    if (startMs < plan.minStartMs || footprintEnd(startMs, length) > plan.maxEndMs) continue;
-    const clear = plan.slots.every(
-      (other, j) =>
-        j === index ||
-        footprintEnd(startMs, length) <= starts[j]! ||
-        footprintEnd(starts[j]!, other.lengthMs) <= startMs,
-    );
-    if (clear) valid.add(startMs);
-  }
-  return [...valid].sort((a, b) => a - b);
-}
-
-/** The valid start nearest `targetMs` (the earlier on a tie). */
-export function snapCutawayStart(valid: number[], targetMs: number): number | undefined {
-  let best: number | undefined;
-  for (const start of valid) {
-    if (best === undefined || Math.abs(start - targetMs) < Math.abs(best - targetMs)) best = start;
-  }
-  return best;
+  return cutawayWindowStarts(
+    plan,
+    plan.slots[index]!.lengthMs,
+    plan.slots.flatMap((other, j) =>
+      j === index ? [] : [{ demoStartMs: starts[j]!, lengthMs: other.lengthMs }],
+    ),
+  );
 }
 
 /** The next valid start before (-1) or after (+1) `current`; stays put at either end. */
@@ -660,16 +672,20 @@ export function nudgeCutawayStart(valid: number[], current: number, direction: -
   return next ?? current;
 }
 
-/** The script as runs for highlighting: consecutive words grouped by the slot
- *  they fall in (null = spoken over the character). */
+/** The caption words, in order — what each slot's wordFrom/wordTo index. */
+export function cutawayWords(plan: CutawayPlanWire): string[] {
+  return plan.captions.flatMap((c) => c.words.map((w) => w.word));
+}
+
+/** The script as runs for highlighting: consecutive words grouped by the clip
+ *  (its id) they fall in — null = spoken over the character. */
 export function cutawayScriptRuns(
   words: string[],
-  slots: { wordFrom: number; wordTo: number }[],
+  slots: { id: number; wordFrom: number; wordTo: number }[],
 ): { text: string; slot: number | null }[] {
   const runs: { text: string; slot: number | null }[] = [];
   for (const [i, word] of words.entries()) {
-    const k = slots.findIndex((s) => i >= s.wordFrom && i < s.wordTo);
-    const slot = k === -1 ? null : k;
+    const slot = slots.find((s) => i >= s.wordFrom && i < s.wordTo)?.id ?? null;
     const last = runs[runs.length - 1];
     if (last && last.slot === slot) last.text += ` ${word}`;
     else runs.push({ text: word, slot });
@@ -714,10 +730,232 @@ export function cutawaySeconds(lengthMs: number): string {
   return (Math.round(lengthMs / 100) / 10).toFixed(1);
 }
 
+// --- Identity: one letter and one colour per clip, everywhere (vault 0122) ---
+
+const CUTAWAY_LETTERS = ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח"] as const;
+
+/**
+ * A clip's colour on the script, its card, its chip and the picker's track —
+ * whole class names, so Tailwind finds them in the source. Eight, one per id
+ * (core caps a plan at CUTAWAY_MAX_SLOTS).
+ */
+const CUTAWAY_COLOURS = [
+  {
+    mark: "bg-lime-200",
+    chip: "bg-lime-500 text-ink",
+    edge: "border-s-lime-500",
+    ring: "border-lime-500",
+    track: "bg-lime-500/80 text-ink",
+    window: "border-lime-500 bg-lime-500/20",
+  },
+  {
+    mark: "bg-sky-200",
+    chip: "bg-sky-700 text-white",
+    edge: "border-s-sky-700",
+    ring: "border-sky-700",
+    track: "bg-sky-700/85 text-white",
+    window: "border-sky-700 bg-sky-700/20",
+  },
+  {
+    mark: "bg-amber-200",
+    chip: "bg-amber-500 text-ink",
+    edge: "border-s-amber-500",
+    ring: "border-amber-500",
+    track: "bg-amber-500/80 text-ink",
+    window: "border-amber-500 bg-amber-500/20",
+  },
+  {
+    mark: "bg-pink-200",
+    chip: "bg-pink-700 text-white",
+    edge: "border-s-pink-700",
+    ring: "border-pink-700",
+    track: "bg-pink-700/85 text-white",
+    window: "border-pink-700 bg-pink-700/20",
+  },
+  {
+    mark: "bg-violet-200",
+    chip: "bg-violet-700 text-white",
+    edge: "border-s-violet-700",
+    ring: "border-violet-700",
+    track: "bg-violet-700/85 text-white",
+    window: "border-violet-700 bg-violet-700/20",
+  },
+  {
+    mark: "bg-teal-200",
+    chip: "bg-teal-700 text-white",
+    edge: "border-s-teal-700",
+    ring: "border-teal-700",
+    track: "bg-teal-700/85 text-white",
+    window: "border-teal-700 bg-teal-700/20",
+  },
+  {
+    mark: "bg-orange-200",
+    chip: "bg-orange-700 text-white",
+    edge: "border-s-orange-700",
+    ring: "border-orange-700",
+    track: "bg-orange-700/85 text-white",
+    window: "border-orange-700 bg-orange-700/20",
+  },
+  {
+    mark: "bg-slate-300",
+    chip: "bg-slate-700 text-white",
+    edge: "border-s-slate-700",
+    ring: "border-slate-700",
+    track: "bg-slate-700/85 text-white",
+    window: "border-slate-700 bg-slate-700/20",
+  },
+] as const;
+
+export type CutawayColour = (typeof CUTAWAY_COLOURS)[number];
+
+/** A clip's letter ("א") — its name on every surface; the copy adds the geresh. */
+export function cutawayLetter(id: number): string {
+  return CUTAWAY_LETTERS[(id - 1) % CUTAWAY_LETTERS.length]!;
+}
+
+export function cutawayColour(id: number): CutawayColour {
+  return CUTAWAY_COLOURS[(id - 1) % CUTAWAY_COLOURS.length]!;
+}
+
+/** The id a new clip takes: the smallest free one, so the letters stay א, ב, ג; none past the cap. */
+export function nextCutawayId(slots: { id: number }[]): number | undefined {
+  for (let id = 1; id <= CUTAWAY_MAX_SLOTS; id++) {
+    if (!slots.some((s) => s.id === id)) return id;
+  }
+  return undefined;
+}
+
+// --- Moving and adding (vault 0122): on a tapped phrase, never a model call ---
+
+/** The script as phrases — the caption lines a tap chooses a clip's start from. */
+export function cutawayPhrases(
+  plan: CutawayPlanWire,
+): { startMs: number; text: string; wordFrom: number; wordTo: number }[] {
+  let word = 0;
+  return plan.captions.map((c) => {
+    const wordFrom = word;
+    word += c.words.length;
+    return {
+      startMs: c.startMs,
+      text: c.words.map((w) => w.word).join(" "),
+      wordFrom,
+      wordTo: word,
+    };
+  });
+}
+
+/** When the script's hook text leaves (VO ms): no clip is placed before it. */
+export function scriptHookLeaveMs(plan: CutawayPlanWire): number {
+  return hookLeaveVoMs(plan.hookText, plan.captions, plan.captionOffsetMs);
+}
+
+const footprintEnd = (startMs: number, lengthMs: number) =>
+  startMs + lengthMs + CUTAWAY_FRAME_SLACK_MS;
+
+/**
+ * Where a clip lands when the customer taps the phrase starting at
+ * `phraseStartMs`: `moving` is the clip being moved (null = a new one). Its
+ * end is the cut point 4–6 s on nearest its own length (a new clip: the
+ * structure's target), before the next clip; a moved clip keeps its window
+ * when it still fits, else the nearest that does; a new one takes the next
+ * unused stretch of the demo after the clip before it in the script. Null:
+ * the phrase cannot hold it — under the hook text, inside another clip, too
+ * close to the next one or the end, or no footage left.
+ */
+export function placeCutawayAt(
+  plan: CutawayPlanWire,
+  moving: CutawaySlotWire | null,
+  phraseStartMs: number,
+): CutawayEditWire | null {
+  const others = plan.slots.filter((s) => s.id !== moving?.id);
+  if (phraseStartMs < scriptHookLeaveMs(plan)) return null;
+  if (others.some((o) => phraseStartMs >= o.fromMs && phraseStartMs < o.toMs)) return null;
+  const limitMs = Math.min(
+    plan.voDurationMs,
+    ...others.filter((o) => o.fromMs > phraseStartMs).map((o) => o.fromMs),
+  );
+  const toMs = fitCutawayAt(plan.captions, phraseStartMs, {
+    limitMs,
+    preferMs: moving ? moving.lengthMs : CUTAWAY_ALTERNATE.cut.targetMs,
+  });
+  if (toMs === null) return null;
+  const lengthMs = toMs - phraseStartMs;
+  const valid = cutawayWindowStarts(
+    plan,
+    lengthMs,
+    others.map((o) => ({ demoStartMs: o.demoStartMs, lengthMs: o.lengthMs })),
+  );
+  let demoStartMs: number | undefined;
+  if (moving) {
+    demoStartMs = valid.includes(moving.demoStartMs)
+      ? moving.demoStartMs
+      : snapCutawayStart(valid, moving.demoStartMs);
+  } else {
+    // The next unused stretch: after the footage of the clip before it in the script.
+    const before = others.filter((o) => o.fromMs < phraseStartMs).at(-1);
+    const after = before ? footprintEnd(before.demoStartMs, before.lengthMs) : plan.minStartMs;
+    demoStartMs = valid.find((s) => s >= after) ?? valid[0];
+  }
+  if (demoStartMs === undefined) return null;
+  return {
+    id: moving?.id ?? nextCutawayId(plan.slots) ?? 0,
+    fromMs: phraseStartMs,
+    toMs,
+    demoStartMs,
+  };
+}
+
+/**
+ * A head run past ~5 s after the product mention — the one-line note, never a
+ * block (founder, 2026-10-21: "inform, never restrict"). Each stretch of the
+ * character counted only from the mention on; longer than the draft's soft
+ * max (5.5 s), so a draft never trips its own note. No clips at all is today's
+ * head-only ad, not a long run.
+ */
+export function longHeadRuns(
+  plan: CutawayPlanWire,
+): { afterId: number | null; beforeId: number | null; ms: number }[] {
+  const slots = [...plan.slots].sort((a, b) => a.fromMs - b.fromMs);
+  if (slots.length === 0) return [];
+  const runs: { afterId: number | null; beforeId: number | null; ms: number }[] = [];
+  for (let i = 0; i <= slots.length; i++) {
+    const prevEnd = i === 0 ? 0 : slots[i - 1]!.toMs;
+    const startMs = Math.max(prevEnd, plan.mentionMs);
+    const endMs = i === slots.length ? plan.voDurationMs : slots[i]!.fromMs;
+    if (endMs - startMs > CUTAWAY_ALTERNATE.head.softMaxMs) {
+      runs.push({
+        // A run that began before the mention is counted, and named, from the mention.
+        afterId: i === 0 || prevEnd < plan.mentionMs ? null : slots[i - 1]!.id,
+        beforeId: i === slots.length ? null : slots[i]!.id,
+        ms: endMs - startMs,
+      });
+    }
+  }
+  return runs;
+}
+
+/**
+ * The clips the render will play under the FINAL hook text — core's
+ * clearHookText, the same function enqueue runs: a clip a longer line reaches
+ * moves to the next phrase after it, or drops. Derived, never saved.
+ */
+export function cutawaysUnderHookText(
+  plan: CutawayPlanWire,
+  hookText: string,
+): { slots: CutawaySlotWire[]; moved: number[]; dropped: number[] } {
+  return clearHookText(plan.slots, {
+    captions: plan.captions,
+    voDurationMs: plan.voDurationMs,
+    hookLeaveVoMs: hookLeaveVoMs(hookText, plan.captions, plan.captionOffsetMs),
+    footage: plan,
+  });
+}
+
 /**
  * COPY PENDING FOUNDER REVIEW — every customer-facing string of the cutaway
- * option (vault 0121), in one place, so the step components stay dumb
- * renderers and the founder approves one block.
+ * option (vault 0121, 0122), in one place, so the step components stay dumb
+ * renderers and the founder approves one block. A clip's name is its letter
+ * with a geresh ("קטע א׳").
  */
 export const CUTAWAY_COPY = {
   optIn: "לשלב קטעים מסרטון המוצר",
@@ -730,12 +968,41 @@ export const CUTAWAY_COPY = {
   drafting: "משבצים קטעים מסרטון המוצר…",
   slotsTitle: "קטעים מסרטון המוצר",
   slotsSub:
-    "בזמן המילים המסומנות רואים קטע מסרטון המוצר. שיבצנו קטעים לפי סדר הסרטון, ואפשר להחליף כל אחד.",
-  slotLabel: (n: number, seconds: string) => `קטע ${n} · ${seconds} שנ׳`,
-  change: "שינוי",
+    "בזמן המילים הצבועות רואים קטע מסרטון המוצר. שיבצנו קטעים לפי סדר הסרטון, ואפשר להחליף, להעביר, להוסיף ולהסיר.",
+  clipName: (letter: string) => `קטע ${letter}׳`,
+  slotLabel: (letter: string, seconds: string) => `קטע ${letter}׳ · ${seconds} שנ׳`,
+  changeWindow: "החלפה",
+  move: "העברה",
+  remove: "הסרה",
+  add: "הוספת קטע",
+  pickMove: (letter: string) => `בוחרים את המשפט שבו קטע ${letter}׳ יתחיל.`,
+  pickAdd: "בוחרים את המשפט שבו הקטע החדש יתחיל.",
+  pickNone: "אין משפט פנוי שהקטע נכנס בו.",
+  emptyCanAdd: "אין כרגע קטעים בסרטון. אפשר להוסיף קטע בכל משפט, או להמשיך בלי קטעים.",
+  emptyNoFootage: "אין מקום לקטעים בסרטון המוצר הזה. אפשר להחליף סרטון או להמשיך בלי קטעים.",
+  longRun: (
+    where: { after: string | null; before: string | null; byName: boolean },
+    seconds: string,
+  ) => {
+    // A run counted from the mention says so; with no name heard, "the middle of the recording".
+    const from = where.byName ? "מהרגע שהמוצר מוזכר" : "מאמצע ההקלטה";
+    const span =
+      where.after === null && where.before === null
+        ? `${from} ועד הסוף`
+        : where.after === null
+          ? `${from} ועד קטע ${where.before}׳`
+          : where.before === null
+            ? `מסוף קטע ${where.after}׳ ועד הסוף`
+            : `בין קטע ${where.after}׳ לקטע ${where.before}׳`;
+    return `רק לתשומת לב: ${span} הדמות מדברת ${seconds} שנ׳ ברצף.`;
+  },
+  hookMoved: (letter: string) =>
+    `משפט הפתיחה מגיע עכשיו עד קטע ${letter}׳, אז הקטע זז למשפט הפנוי הבא אחריו.`,
+  hookDropped: (letter: string) =>
+    `משפט הפתיחה ארוך יותר עכשיו, ואין אחריו משפט שקטע ${letter}׳ נכנס בו — הוא לא ייכנס לסרטון.`,
   play: "צפייה בקטע",
-  pickerTitle: (n: number, total: number) => `קטע ${n} מתוך ${total}`,
-  pickerSub: "מזיזים את המסגרת לאורך סרטון המוצר. מה שבתוכה יופיע בזמן המילים המסומנות.",
+  pickerTitle: (letter: string) => `קטע ${letter}׳`,
+  pickerSub: "מזיזים את המסגרת לאורך סרטון המוצר. מה שבתוכה יופיע בזמן המילים הצבועות.",
   slider: "מיקום הקטע בסרטון המוצר",
   earlier: "קצת קודם",
   later: "קצת אחר כך",

@@ -10,11 +10,12 @@ import {
 import { cutawayPlanRequestSchema } from "@/lib/service-b";
 
 /**
- * The demo cutaway draft (vault 0121): the slots laid out from the approved
- * audio and the final hook text, each placed in the demo in order. Free — no
- * model call — and idempotent per (audio, analysis, structure, hook text): a
- * second visit returns the stored plan with the customer's edits. Core checks
- * the audio, the demo and its analysis all belong to this business
+ * The demo cutaway draft (vault 0121, 0122): the slots laid out from the
+ * approved audio — from where the script first names the product, after the
+ * script's own hook text — each placed in the demo in order. Free — no model
+ * call — and idempotent per (audio, analysis, structure, the script's hook
+ * text): a second visit returns the stored plan with the customer's edits.
+ * Core checks the audio, the demo and its analysis all belong to this business
  * (requireDemo would check only the user).
  */
 export async function POST(
@@ -37,7 +38,6 @@ export async function POST(
       businessId,
       audioRenderId: body.data.audioId,
       demoId: body.data.demoId,
-      hookText: body.data.hookText,
     });
     return NextResponse.json(plan);
   } catch (err) {

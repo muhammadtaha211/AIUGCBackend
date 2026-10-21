@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./b-script-words": "./src/b-script-words.ts",
+    "./cutaway-structure": "./src/cutaway-structure.ts",
     "./db": "./src/db/index.ts",
     "./db/schema": "./src/db/schema.ts",
     "./hook-effect": "./src/hook-effect.ts",

@@ -1,20 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { assertBScriptWordCeiling, MAX_B_SCRIPT_WORDS } from "@aiugc/core/b-script-words";
-import { CUTAWAY_FRAME_SLACK_MS as CORE_SLACK } from "../../../packages/core/src/cutaway-structure";
+import { CUTAWAY_FRAME_SLACK_MS } from "@aiugc/core/cutaway-structure";
 import {
   anchorStateAt,
   applyAudioPoll,
   CUTAWAY_COPY,
-  CUTAWAY_FRAME_SLACK_MS,
+  cutawayColour,
+  cutawayEdits,
   cutawayHookText,
+  cutawayLetter,
+  cutawayPhrases,
   cutawayScriptRuns,
   cutawaySeconds,
   cutawayStarts,
+  cutawaysUnderHookText,
   cutawayTrackBox,
+  cutawayWords,
   filmstripStates,
   liveCutawayPlan,
+  longHeadRuns,
+  nextCutawayId,
   nudgeCutawayStart,
-  snapCutawayStart,
+  placeCutawayAt,
   type CutawayPlanWire,
   countWords,
   estimateSpokenSeconds,
@@ -215,15 +222,16 @@ describe("wizardSteps (one flow, vault 0017)", () => {
     expect(wizardSteps()).not.toContain("composite");
   });
 
-  it("demo cutaways add one step, after the effect step, only when ticked (vault 0121)", () => {
+  it("demo cutaways add one step, right after the audio card that ticks them (vault 0122)", () => {
     expect(wizardSteps({ cutaways: false })).toEqual(wizardSteps());
+    // The box, then the clips, then the effect — last before the render (founder, 2026-10-21).
     expect(wizardSteps({ cutaways: true })).toEqual([
       "persona",
       "pointers",
       "script",
       "audio",
-      "effect",
       "demo",
+      "effect",
       "render",
     ]);
   });
@@ -581,96 +589,188 @@ describe("failedRenderNotice", () => {
   });
 });
 
-describe("demo cutaways in the wizard (vault 0121)", () => {
-  // A 60 s demo with a moment every 2 s from 400 ms; two slots, 5 s and 4 s.
+describe("demo cutaways in the wizard (vault 0121, 0122)", () => {
+  // A 19.5 s voice in 3-word phrases 1.2 s apart; a 60 s demo with a moment
+  // every 2 s from 400 ms; the product named at 7.2 s; two clips, 4.8 s each.
+  const captions = Array.from({ length: 16 }, (_, c) => ({
+    text: "",
+    startMs: c * 1200,
+    endMs: c * 1200 + 1100,
+    words: [0, 1, 2].map((w) => ({
+      word: `מילה${c * 3 + w}`,
+      startMs: c * 1200 + w * 400,
+      endMs: c * 1200 + w * 400 + 350,
+    })),
+  }));
+  const slot = (id: number, fromMs: number, toMs: number, demoStartMs: number) => ({
+    id,
+    fromMs,
+    toMs,
+    lengthMs: toMs - fromMs,
+    wordFrom: fromMs / 400,
+    wordTo: toMs / 400,
+    demoStartMs,
+    stateIndex: (demoStartMs - 400) / 2000,
+  });
   const plan: CutawayPlanWire = {
     planId: "plan-1",
     audioId: "audio-1",
     demoId: "demo-1",
     structure: "alternate",
     hookText: "",
-    words: ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח"],
-    slots: [
-      {
-        fromMs: 3600,
-        toMs: 8600,
-        lengthMs: 5000,
-        wordFrom: 2,
-        wordTo: 4,
-        demoStartMs: 10_400,
-        stateIndex: 5,
-        draftDemoStartMs: 10_400,
-        draftStateIndex: 5,
-      },
-      {
-        fromMs: 10_000,
-        toMs: 14_000,
-        lengthMs: 4000,
-        wordFrom: 5,
-        wordTo: 7,
-        demoStartMs: 30_400,
-        stateIndex: 15,
-        draftDemoStartMs: 30_400,
-        draftStateIndex: 15,
-      },
-    ],
+    updatedAt: "2026-10-21T08:00:00.000Z",
+    captions,
+    voDurationMs: 19_500,
+    captionOffsetMs: 250,
+    mentionMs: 7200,
+    mentionMethod: "product_name",
+    slots: [slot(1, 7200, 12_000, 10_400), slot(2, 13_200, 18_000, 30_400)],
     anchors: Array.from({ length: 30 }, (_, i) => ({ startMs: 400 + i * 2000, stateIndex: i })),
     minStartMs: 367,
     maxEndMs: 60_000 - 367,
   };
+  const withSlots = (slots: CutawayPlanWire["slots"], over: Partial<CutawayPlanWire> = {}) => ({
+    ...plan,
+    ...over,
+    slots,
+  });
   const starts = plan.slots.map((s) => s.demoStartMs);
 
-  it("mirrors core's frame slack", () => {
-    expect(CUTAWAY_FRAME_SLACK_MS).toBe(CORE_SLACK);
-  });
-
-  it("offers only starts whose window stays inside and shows no other slot's footage", () => {
+  it("offers only starts whose window stays inside and shows no other clip's footage", () => {
     const valid = cutawayStarts(plan, 0, starts);
     expect(valid).toContain(10_400);
     expect(valid[0]).toBe(400);
-    // Slot 2 holds 30400..34434: a 5 s window may not start in 25400..34433.
+    // Clip 2 holds 30400..35234: a 4.8 s window may not start in 25366..35233.
     for (const s of valid)
-      expect(s + 5000 + CUTAWAY_FRAME_SLACK_MS <= 30_400 || s >= 34_434).toBe(true);
+      expect(s + 4800 + CUTAWAY_FRAME_SLACK_MS <= 30_400 || s >= 35_234).toBe(true);
     expect(valid).not.toContain(28_400);
-    expect(valid).toContain(34_400 + 2000);
-    // Nothing runs past the recording.
+    expect(valid).toContain(36_400);
     for (const s of valid)
-      expect(s + 5000 + CUTAWAY_FRAME_SLACK_MS).toBeLessThanOrEqual(plan.maxEndMs);
+      expect(s + 4800 + CUTAWAY_FRAME_SLACK_MS).toBeLessThanOrEqual(plan.maxEndMs);
   });
 
-  it("snaps to the nearest start and nudges to the neighbour, staying put at the ends", () => {
+  it("nudges to the neighbour, staying put at the ends", () => {
     const valid = [400, 2400, 4400];
-    expect(snapCutawayStart(valid, 3000)).toBe(2400);
-    expect(snapCutawayStart(valid, 3500)).toBe(4400);
-    expect(snapCutawayStart([], 3000)).toBeUndefined();
     expect(nudgeCutawayStart(valid, 2400, 1)).toBe(4400);
     expect(nudgeCutawayStart(valid, 2400, -1)).toBe(400);
     expect(nudgeCutawayStart(valid, 400, -1)).toBe(400);
     expect(nudgeCutawayStart(valid, 4400, 1)).toBe(4400);
   });
 
-  it("marks each slot's words in the script, and none when there are no slots", () => {
-    expect(cutawayScriptRuns(plan.words, plan.slots)).toEqual([
+  it("marks each clip's words by its id, and none when there are no clips", () => {
+    expect(
+      cutawayScriptRuns(
+        ["א", "ב", "ג", "ד", "ה", "ו", "ז", "ח"],
+        [
+          { id: 2, wordFrom: 2, wordTo: 4 },
+          { id: 1, wordFrom: 5, wordTo: 7 },
+        ],
+      ),
+    ).toEqual([
       { text: "א ב", slot: null },
-      { text: "ג ד", slot: 0 },
+      { text: "ג ד", slot: 2 },
       { text: "ה", slot: null },
       { text: "ו ז", slot: 1 },
       { text: "ח", slot: null },
     ]);
     expect(cutawayScriptRuns(["א", "ב"], [])).toEqual([{ text: "א ב", slot: null }]);
+    expect(cutawayWords(plan)).toHaveLength(48);
   });
 
-  it("a plan stops being live when the audio, the demo or the hook text moves on", () => {
-    expect(liveCutawayPlan(plan, "audio-1", "demo-1", "")).toBe(plan);
-    expect(liveCutawayPlan(plan, "audio-2", "demo-1", "")).toBeNull();
-    expect(liveCutawayPlan(plan, "audio-1", "demo-2", "")).toBeNull();
-    expect(liveCutawayPlan(plan, "audio-1", "demo-1", "שורת פתיחה")).toBeNull();
-    expect(liveCutawayPlan(null, "audio-1", "demo-1", "")).toBeNull();
+  it("a plan stays live for its audio and demo, whatever the hook text becomes", () => {
+    expect(liveCutawayPlan(plan, "audio-1", "demo-1")).toBe(plan);
+    expect(liveCutawayPlan(plan, "audio-2", "demo-1")).toBeNull();
+    expect(liveCutawayPlan(plan, "audio-1", "demo-2")).toBeNull();
+    expect(liveCutawayPlan(null, "audio-1", "demo-1")).toBeNull();
   });
 
-  it("lays out from the effect step's line, or none with 'none'", () => {
+  it("the render burns the effect step's line, or none with 'none'", () => {
     expect(cutawayHookText("none", "משהו")).toBe("");
     expect(cutawayHookText("zoom", "  משלוח חינם  ")).toBe("משלוח חינם");
+  });
+
+  it("one letter and one colour per clip, and a new clip takes the smallest free id", () => {
+    expect([1, 2, 3, 8].map(cutawayLetter)).toEqual(["א", "ב", "ג", "ח"]);
+    const colours = Array.from({ length: 8 }, (_, i) => cutawayColour(i + 1));
+    expect(new Set(colours.map((c) => c.chip)).size).toBe(8);
+    expect(new Set(colours.map((c) => c.mark)).size).toBe(8);
+    expect(nextCutawayId([{ id: 1 }, { id: 2 }])).toBe(3);
+    expect(nextCutawayId([{ id: 2 }])).toBe(1);
+    expect(nextCutawayId(Array.from({ length: 8 }, (_, i) => ({ id: i + 1 })))).toBeUndefined();
+  });
+
+  it("the script as phrases a tap chooses from", () => {
+    const phrases = cutawayPhrases(plan);
+    expect(phrases).toHaveLength(16);
+    expect(phrases[2]).toEqual({
+      startMs: 2400,
+      text: "מילה6 מילה7 מילה8",
+      wordFrom: 6,
+      wordTo: 9,
+    });
+  });
+
+  it("moves a clip to a tapped phrase, keeping its length and footage — before the mention too", () => {
+    expect(placeCutawayAt(plan, plan.slots[0]!, 2400)).toEqual({
+      id: 1,
+      fromMs: 2400,
+      toMs: 7200,
+      demoStartMs: 10_400,
+    });
+    // Inside clip 2, or too close to it for 4 s: the phrase cannot hold clip 1.
+    expect(placeCutawayAt(plan, plan.slots[0]!, 14_400)).toBeNull();
+    expect(placeCutawayAt(plan, plan.slots[0]!, 9600)).toBeNull();
+    // Never under the script's hook text (three spoken words: it leaves at 1.2 s).
+    const hooked = withSlots(plan.slots, { hookText: "מילה0 מילה1 מילה2" });
+    expect(placeCutawayAt(hooked, hooked.slots[0]!, 0)).toBeNull();
+    expect(placeCutawayAt(hooked, hooked.slots[0]!, 1200)).toMatchObject({ fromMs: 1200 });
+  });
+
+  it("adds a clip at a tapped phrase on the next unused stretch of the demo", () => {
+    expect(placeCutawayAt(plan, null, 1200)).toEqual({
+      id: 3,
+      fromMs: 1200,
+      toMs: 6000,
+      demoStartMs: 400,
+    });
+    // After clip 1 in the script, so after clip 1's footage in the demo.
+    const one = withSlots([plan.slots[0]!]);
+    expect(placeCutawayAt(one, null, 13_200)).toMatchObject({ id: 2, demoStartMs: 16_400 });
+    // A demo with no stretch left: nowhere to add.
+    const full = withSlots([plan.slots[0]!], { anchors: [{ startMs: 10_400, stateIndex: 5 }] });
+    expect(placeCutawayAt(full, null, 13_200)).toBeNull();
+  });
+
+  it("notes a run of the character past ~5 s after the product mention, never before it", () => {
+    expect(longHeadRuns(plan)).toEqual([]);
+    expect(longHeadRuns(withSlots([plan.slots[0]!]))).toEqual([
+      { afterId: 1, beforeId: null, ms: 7500 },
+    ]);
+    // A clip before the mention: the intro is never a long run; what follows the mention is.
+    expect(longHeadRuns(withSlots([slot(1, 1200, 6000, 400)]))).toEqual([
+      { afterId: null, beforeId: null, ms: 12_300 },
+    ]);
+    expect(longHeadRuns(withSlots([slot(2, 14_400, 19_200, 400)]))).toEqual([
+      { afterId: null, beforeId: 2, ms: 7200 },
+    ]);
+    // No clips is today's head-only ad, not a long run.
+    expect(longHeadRuns(withSlots([]))).toEqual([]);
+  });
+
+  it("a longer final hook text moves the clip it reaches; 'none' moves nothing", () => {
+    const early = withSlots([slot(1, 1200, 6000, 400), plan.slots[1]!]);
+    const under = cutawaysUnderHookText(early, "מילה0 מילה1 מילה2 מילה3 מילה4");
+    expect(under.moved).toEqual([1]);
+    expect(under.dropped).toEqual([]);
+    expect(under.slots.map((s) => [s.id, s.fromMs, s.toMs])).toEqual([
+      [1, 2400, 7200],
+      [2, 13_200, 18_000],
+    ]);
+    expect(cutawaysUnderHookText(early, "").moved).toEqual([]);
+    expect(cutawayEdits(early.slots)).toEqual([
+      { id: 1, fromMs: 1200, toMs: 6000, demoStartMs: 400 },
+      { id: 2, fromMs: 13_200, toMs: 18_000, demoStartMs: 30_400 },
+    ]);
   });
 
   it("places windows on the track and spreads the filmstrip through the recording", () => {
@@ -684,9 +784,27 @@ describe("demo cutaways in the wizard (vault 0121)", () => {
   });
 
   it("every string the customer reads is Hebrew", () => {
-    for (const value of Object.values(CUTAWAY_COPY)) {
-      const text = typeof value === "function" ? value(1, "5.0" as never) : value;
-      expect(String(text)).toMatch(/[\u0590-\u05FF]/);
+    for (const [key, value] of Object.entries(CUTAWAY_COPY)) {
+      const text =
+        key === "longRun"
+          ? CUTAWAY_COPY.longRun({ after: "א", before: "ב", byName: true }, "6.0")
+          : typeof value === "function"
+            ? (value as (a: string, b: string) => string)("א", "5.0")
+            : value;
+      expect(String(text)).toMatch(/[֐-׿]/);
     }
+    for (const byName of [true, false]) {
+      for (const where of [
+        { after: null, before: null },
+        { after: null, before: "א" },
+        { after: "א", before: null },
+        { after: "א", before: "ב" },
+      ]) {
+        expect(CUTAWAY_COPY.longRun({ ...where, byName }, "6.0")).toMatch(/^רק לתשומת לב/);
+      }
+    }
+    expect(CUTAWAY_COPY.longRun({ after: null, before: "ב", byName: false }, "6.0")).toContain(
+      "מאמצע ההקלטה",
+    );
   });
 });

@@ -1,9 +1,147 @@
 [
   {
+    "audio": "cbd62014",
+    "voDurationMs": 20036,
+    "captionOffsetMs": 250,
+    "hookTextMs": 3050,
+    "mentionMs": 11360,
+    "mentionMethod": "product_name",
+    "chunks": [
+      {
+        "startMs": 0,
+        "endMs": 1200,
+        "words": [
+          [0, 320],
+          [400, 800],
+          [960, 1200]
+        ]
+      },
+      {
+        "startMs": 1320,
+        "endMs": 2640,
+        "words": [
+          [1320, 1840],
+          [2080, 2320],
+          [2480, 2640]
+        ]
+      },
+      {
+        "startMs": 2800,
+        "endMs": 4240,
+        "words": [
+          [2800, 2960],
+          [3000, 3120],
+          [3200, 4240]
+        ]
+      },
+      {
+        "startMs": 4320,
+        "endMs": 5760,
+        "words": [
+          [4320, 4720],
+          [4840, 5120],
+          [5240, 5760]
+        ]
+      },
+      {
+        "startMs": 5840,
+        "endMs": 6560,
+        "words": [
+          [5840, 6000],
+          [6080, 6160],
+          [6240, 6560]
+        ]
+      },
+      {
+        "startMs": 6640,
+        "endMs": 7920,
+        "words": [
+          [6640, 6880],
+          [6960, 7760],
+          [7840, 7920]
+        ]
+      },
+      {
+        "startMs": 8040,
+        "endMs": 9040,
+        "words": [
+          [8040, 8400],
+          [8560, 8720],
+          [8880, 9040]
+        ]
+      },
+      {
+        "startMs": 9120,
+        "endMs": 11280,
+        "words": [
+          [9120, 9520],
+          [9640, 10280],
+          [10480, 11280]
+        ]
+      },
+      {
+        "startMs": 11360,
+        "endMs": 13600,
+        "words": [
+          [11360, 11520],
+          [11600, 11760],
+          [11800, 13600]
+        ]
+      },
+      {
+        "startMs": 13680,
+        "endMs": 14720,
+        "words": [
+          [13680, 14160],
+          [14200, 14240],
+          [14320, 14720]
+        ]
+      },
+      {
+        "startMs": 14840,
+        "endMs": 15760,
+        "words": [
+          [14840, 15000],
+          [15040, 15520],
+          [15600, 15760]
+        ]
+      },
+      {
+        "startMs": 15800,
+        "endMs": 17280,
+        "words": [
+          [15800, 16240],
+          [16360, 16480],
+          [16600, 17280]
+        ]
+      },
+      {
+        "startMs": 17440,
+        "endMs": 18720,
+        "words": [
+          [17440, 17760],
+          [17880, 18000],
+          [18080, 18720]
+        ]
+      },
+      {
+        "startMs": 18800,
+        "endMs": 20080,
+        "words": [
+          [18800, 19280],
+          [19320, 19360],
+          [19400, 20080]
+        ]
+      }
+    ]
+  },
+  {
     "audio": "a2f93d2d",
     "voDurationMs": 15229,
     "captionOffsetMs": 250,
     "hookTextMs": 2770,
+    "mentionMs": 7920,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -103,6 +241,8 @@
     "voDurationMs": 17006,
     "captionOffsetMs": 250,
     "hookTextMs": 2970,
+    "mentionMs": 8160,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -210,6 +350,8 @@
     "voDurationMs": 17868,
     "captionOffsetMs": 250,
     "hookTextMs": 4690,
+    "mentionMs": 9680,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -343,6 +485,8 @@
     "voDurationMs": 16274,
     "captionOffsetMs": 250,
     "hookTextMs": 2210,
+    "mentionMs": 6960,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -450,6 +594,8 @@
     "voDurationMs": 16927,
     "captionOffsetMs": 250,
     "hookTextMs": 2410,
+    "mentionMs": 6800,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -565,7 +711,9 @@
     "audio": "86cef649",
     "voDurationMs": 17398,
     "captionOffsetMs": 250,
-    "hookTextMs": 2650,
+    "hookTextMs": 4050,
+    "mentionMs": 9520,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -692,6 +840,8 @@
     "voDurationMs": 18720,
     "captionOffsetMs": 250,
     "hookTextMs": 1510,
+    "mentionMs": 8160,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 0,
@@ -843,6 +993,8 @@
     "voDurationMs": 28320,
     "captionOffsetMs": 250,
     "hookTextMs": 2930,
+    "mentionMs": 12800,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 0,
@@ -1014,6 +1166,8 @@
     "voDurationMs": 18720,
     "captionOffsetMs": 250,
     "hookTextMs": 2250,
+    "mentionMs": 8720,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 0,
@@ -1130,6 +1284,8 @@
     "voDurationMs": 16880,
     "captionOffsetMs": 250,
     "hookTextMs": 2490,
+    "mentionMs": 7040,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 0,
@@ -1281,6 +1437,8 @@
     "voDurationMs": 14640,
     "captionOffsetMs": 250,
     "hookTextMs": 2317,
+    "mentionMs": 11360,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -1396,6 +1554,8 @@
     "voDurationMs": 19200,
     "captionOffsetMs": 250,
     "hookTextMs": 2470,
+    "mentionMs": 8240,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 0,
@@ -1540,6 +1700,8 @@
     "voDurationMs": 19760,
     "captionOffsetMs": 250,
     "hookTextMs": 2410,
+    "mentionMs": 8840,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 72,
@@ -1673,6 +1835,8 @@
     "voDurationMs": 6320,
     "captionOffsetMs": 250,
     "hookTextMs": 3290,
+    "mentionMs": 3040,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 0,
@@ -1734,6 +1898,8 @@
     "voDurationMs": 14000,
     "captionOffsetMs": 250,
     "hookTextMs": 3450,
+    "mentionMs": 10840,
+    "mentionMethod": "product_name",
     "chunks": [
       {
         "startMs": 0,
@@ -1832,7 +1998,9 @@
     "audio": "d3fbdd4e",
     "voDurationMs": 12000,
     "captionOffsetMs": 250,
-    "hookTextMs": 0,
+    "hookTextMs": 1970,
+    "mentionMs": 4880,
+    "mentionMethod": "share",
     "chunks": [
       {
         "startMs": 0,

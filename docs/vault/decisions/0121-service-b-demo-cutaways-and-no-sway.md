@@ -8,6 +8,14 @@ source: founder
 
 # 0121 — Service B: opt-in demo cutaways, and no sway on any B render
 
+> **2026-10-21 — amended by [[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]].**
+> The cutaway step now comes before the effect step (box → clips → effect → render). The draft's
+> first cut waits for the phrase where the script first names the product — rule 4's "a few
+> seconds in" and the amendment's "first cut ≥ 3000 ms" are replaced — and is laid out from the
+> script's own hook text. The customer moves, adds and removes clips freely (a long run is noted,
+> never blocked), and a longer final hook text moves the clip it reaches. The rest of this note
+> stands.
+
 Builds [[0120-service-b-look-propped-phone-and-opt-in-demo-cutaways]] §2 (the sway) and §4 (the
 cutaways). §1 and §3 of 0120 (the propped-phone look as numbered settings) are not built here.
 
