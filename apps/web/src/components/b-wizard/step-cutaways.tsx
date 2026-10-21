@@ -712,7 +712,9 @@ function CutawayPhrasePick({
 }) {
   const root = useRef<HTMLDivElement>(null);
   // The phrases replace a list the customer may have scrolled far down.
-  useEffect(() => root.current?.scrollIntoView({ block: "start" }), []);
+  useEffect(() => {
+    root.current?.scrollIntoView({ block: "start" });
+  }, []);
   // They also mount right under the finger that opened them: the second tap
   // of a double-tap must not place a clip, so taps count after a beat.
   const [armed, setArmed] = useState(false);

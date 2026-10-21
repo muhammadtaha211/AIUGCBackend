@@ -75,7 +75,9 @@ export function CutawayPicker({
   const track = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   // The picker replaces a list the customer may have scrolled far down.
-  useEffect(() => root.current?.scrollIntoView({ block: "start" }), []);
+  useEffect(() => {
+    root.current?.scrollIntoView({ block: "start" });
+  }, []);
   const recordingMs = plan.maxEndMs + plan.minStartMs;
 
   const move = (startMs: number | undefined) => {

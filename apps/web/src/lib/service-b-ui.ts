@@ -978,7 +978,7 @@ export const CUTAWAY_COPY = {
   pickMove: (letter: string) => `בוחרים את המשפט שבו קטע ${letter}׳ יתחיל.`,
   pickAdd: "בוחרים את המשפט שבו הקטע החדש יתחיל.",
   pickNone: "אין משפט פנוי שהקטע נכנס בו.",
-  emptyCanAdd: "לא מצאנו מקום לקטע בטיוטה. אפשר להוסיף קטע בכל משפט, או להמשיך בלי קטעים.",
+  emptyCanAdd: "אין כרגע קטעים בסרטון. אפשר להוסיף קטע בכל משפט, או להמשיך בלי קטעים.",
   emptyNoFootage: "אין מקום לקטעים בסרטון המוצר הזה. אפשר להחליף סרטון או להמשיך בלי קטעים.",
   longRun: (
     where: { after: string | null; before: string | null; byName: boolean },
