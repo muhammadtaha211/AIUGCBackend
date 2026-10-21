@@ -165,15 +165,16 @@ export function cutawayLayout(input: CutawayLayoutInput): CutawayLayout {
 
   /**
    * The best layout from the earliest first cut that has one. `fromCut(i,
-   * used)` is the best continuation from a cutaway starting at points[i], with
-   * `used` demo ms already spent. `openEnd`: the capacity tier, where the ad may
-   * end on a head of any length after any cutaway.
+   * used, left)` is the best continuation from a cutaway starting at points[i],
+   * with `used` demo ms already spent and at most `left` cutaways to go — a
+   * plan holds CUTAWAY_MAX_SLOTS, one letter and colour each. `openEnd`: the
+   * capacity tier, where the ad may end on a head of any length after any cutaway.
    */
   const search = (pts: number[], headMax: number, openEnd: boolean): Best => {
     const memo = new Map<string, Best>();
-    const fromCut = (i: number, used: number): Best => {
+    const fromCut = (i: number, used: number, left: number): Best => {
       // Unbounded capacity: the continuation cannot depend on what was spent.
-      const key = Number.isFinite(input.capacityMs) ? `${i}:${used}` : `${i}`;
+      const key = Number.isFinite(input.capacityMs) ? `${i}:${used}:${left}` : `${i}:${left}`;
       if (memo.has(key)) return memo.get(key)!;
       let best: Best = null;
       const s = pts[i]!;
@@ -195,11 +196,11 @@ export function cutawayLayout(input: CutawayLayoutInput): CutawayLayout {
           });
         }
         // Or a head, then the next cutaway.
-        for (let k = j + 1; k < pts.length; k++) {
+        for (let k = j + 1; left > 1 && k < pts.length; k++) {
           const head = pts[k]! - e;
           if (head < S.head.minMs) continue;
           if (head > headMax) break;
-          const rest = fromCut(k, spent);
+          const rest = fromCut(k, spent, left - 1);
           if (rest) {
             best = better(best, {
               cost: cutCost + sq(head, S.head.targetMs) + rest.cost,
@@ -213,7 +214,7 @@ export function cutawayLayout(input: CutawayLayoutInput): CutawayLayout {
       return best;
     };
     for (const first of firstCuts) {
-      const found = fromCut(pts.indexOf(first), 0);
+      const found = fromCut(pts.indexOf(first), 0, CUTAWAY_MAX_SLOTS);
       if (found) return found;
     }
     return null;
@@ -291,8 +292,8 @@ function searchLongestPrefix(
   const better = (a: Best, b: Best): Best =>
     !a ? b : !b ? a : b.cutMs !== a.cutMs ? (b.cutMs > a.cutMs ? b : a) : b.cost < a.cost ? b : a;
   const memo = new Map<string, Best>();
-  const fromCut = (i: number, used: number): Best => {
-    const key = `${i}:${used}`;
+  const fromCut = (i: number, used: number, left: number): Best => {
+    const key = `${i}:${used}:${left}`;
     if (memo.has(key)) return memo.get(key)!;
     let best: Best = null;
     const s = points[i]!;
@@ -306,11 +307,11 @@ function searchLongestPrefix(
       const cutCost = ((len - S.cut.targetMs) / 1000) ** 2;
       if (end - e >= S.head.minMs)
         best = better(best, { cost: cutCost, cuts: [[s, e]], cutMs: len });
-      for (let k = j + 1; k < points.length; k++) {
+      for (let k = j + 1; left > 1 && k < points.length; k++) {
         const head = points[k]! - e;
         if (head < S.head.minMs) continue;
         if (head > S.head.softMaxMs) break;
-        const rest = fromCut(k, spent);
+        const rest = fromCut(k, spent, left - 1);
         if (rest) {
           best = better(best, {
             cost: cutCost + ((head - S.head.targetMs) / 1000) ** 2 + rest.cost,
@@ -324,7 +325,7 @@ function searchLongestPrefix(
     return best;
   };
   for (const first of firstCuts) {
-    const found = fromCut(points.indexOf(first), 0);
+    const found = fromCut(points.indexOf(first), 0, CUTAWAY_MAX_SLOTS);
     if (found) return found;
   }
   return null;

@@ -98,7 +98,7 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
       case "invalid_windows":
         return hit(422, "הקטע לא נכנס במקום שבחרתם — בחרו מקום אחר.");
       case "edit_conflict":
-        return hit(409, "הקטעים השתנו בינתיים — טענו את העמוד מחדש ונסו שוב.");
+        return hit(409, "הקטעים השתנו בינתיים, אז טענו אותם מחדש. נסו שוב.");
       case "stale":
         return hit(409, "ההקלטה או סרטון המוצר השתנו — צריך לשבץ את הקטעים מחדש.");
     }

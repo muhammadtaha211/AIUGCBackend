@@ -359,6 +359,36 @@ describe("demo cutaways: the draft, the edit, the copy enqueue takes", () => {
     expect((await db.select().from(dbSchema.cutawayPlans))[0]!.editedAt).not.toBeNull();
   });
 
+  it("a 0121 row keyed on the effect step's line is found under any line, its window kept", async () => {
+    const plan = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    const picked = plan.anchors.find((a) => a.stateIndex === 22)!;
+    // Under 0121 the key was the effect step's own line; there is no row under the script's.
+    await db
+      .update(dbSchema.cutawayPlans)
+      .set({
+        hookText: "השורה שהלקוח ערך",
+        slots: [
+          {
+            fromMs: 3600,
+            toMs: 8400,
+            wordFrom: 9,
+            wordTo: 21,
+            demoStartMs: picked.startMs,
+            stateIndex: 22,
+            draftDemoStartMs: plan.slots[0]!.draftDemoStartMs,
+            draftStateIndex: plan.slots[0]!.draftStateIndex,
+          },
+        ],
+        editedAt: new Date(),
+      })
+      .where(eq(dbSchema.cutawayPlans.id, plan.planId));
+    const fresh = await draftCutawayPlan(db, { businessId, audioRenderId: audioId, demoId });
+    expect(fresh.planId).not.toBe(plan.planId);
+    expect(fresh.hookText).toBe("");
+    expect(fresh.slots[0]).toMatchObject({ id: 1, demoStartMs: picked.startMs, stateIndex: 22 });
+    expect(fresh.slots[0]!.fromMs).toBeGreaterThanOrEqual(fresh.mentionMs);
+  });
+
   it("is keyed on the script's own hook text — never a line the client sends", async () => {
     const hooked = await seedAudio(businessId, { hookText: "מילה0 מילה1 מילה2" });
     const a = await draftCutawayPlan(db, { businessId, audioRenderId: hooked, demoId });

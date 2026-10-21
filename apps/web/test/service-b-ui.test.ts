@@ -623,6 +623,7 @@ describe("demo cutaways in the wizard (vault 0121, 0122)", () => {
     voDurationMs: 19_500,
     captionOffsetMs: 250,
     mentionMs: 7200,
+    mentionMethod: "product_name",
     slots: [slot(1, 7200, 12_000, 10_400), slot(2, 13_200, 18_000, 30_400)],
     anchors: Array.from({ length: 30 }, (_, i) => ({ startMs: 400 + i * 2000, stateIndex: i })),
     minStartMs: 367,
@@ -747,7 +748,7 @@ describe("demo cutaways in the wizard (vault 0121, 0122)", () => {
     ]);
     // A clip before the mention: the intro is never a long run; what follows the mention is.
     expect(longHeadRuns(withSlots([slot(1, 1200, 6000, 400)]))).toEqual([
-      { afterId: 1, beforeId: null, ms: 12_300 },
+      { afterId: null, beforeId: null, ms: 12_300 },
     ]);
     expect(longHeadRuns(withSlots([slot(2, 14_400, 19_200, 400)]))).toEqual([
       { afterId: null, beforeId: 2, ms: 7200 },
@@ -786,18 +787,24 @@ describe("demo cutaways in the wizard (vault 0121, 0122)", () => {
     for (const [key, value] of Object.entries(CUTAWAY_COPY)) {
       const text =
         key === "longRun"
-          ? CUTAWAY_COPY.longRun({ after: "א", before: "ב" }, "6.0")
+          ? CUTAWAY_COPY.longRun({ after: "א", before: "ב", byName: true }, "6.0")
           : typeof value === "function"
             ? (value as (a: string, b: string) => string)("א", "5.0")
             : value;
       expect(String(text)).toMatch(/[֐-׿]/);
     }
-    for (const where of [
-      { after: null, before: "א" },
-      { after: "א", before: null },
-      { after: "א", before: "ב" },
-    ]) {
-      expect(CUTAWAY_COPY.longRun(where, "6.0")).toMatch(/^רק לתשומת לב/);
+    for (const byName of [true, false]) {
+      for (const where of [
+        { after: null, before: null },
+        { after: null, before: "א" },
+        { after: "א", before: null },
+        { after: "א", before: "ב" },
+      ]) {
+        expect(CUTAWAY_COPY.longRun({ ...where, byName }, "6.0")).toMatch(/^רק לתשומת לב/);
+      }
     }
+    expect(CUTAWAY_COPY.longRun({ after: null, before: "ב", byName: false }, "6.0")).toContain(
+      "מאמצע ההקלטה",
+    );
   });
 });

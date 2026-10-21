@@ -71,8 +71,11 @@ export function CutawayPicker({
   const [starts, setStarts] = useState(() => plan.slots.map((s) => s.demoStartMs));
   const current = starts[index]!;
   const valid = cutawayStarts(plan, index, starts);
+  const root = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  // The picker replaces a list the customer may have scrolled far down.
+  useEffect(() => root.current?.scrollIntoView({ block: "start" }), []);
   const recordingMs = plan.maxEndMs + plan.minStartMs;
 
   const move = (startMs: number | undefined) => {
@@ -116,7 +119,7 @@ export function CutawayPicker({
     "flex size-10 shrink-0 items-center justify-center rounded-lg border border-ink/[0.12] bg-white text-lg text-ink/75 transition-colors hover:bg-ink/[0.06]";
 
   return (
-    <div className="select-none [-webkit-touch-callout:none]">
+    <div ref={root} className="scroll-mt-24 select-none [-webkit-touch-callout:none]">
       <StepHeader
         title={CUTAWAY_COPY.pickerTitle(cutawayLetter(id))}
         sub={CUTAWAY_COPY.pickerSub}
@@ -213,7 +216,7 @@ export function CutawayPicker({
             return (
               <span
                 key={other.id}
-                className={`pointer-events-none absolute inset-y-0 flex items-center justify-center text-xs font-semibold text-white ${cutawayColour(other.id).track}`}
+                className={`pointer-events-none absolute inset-y-0 flex items-center justify-center text-xs font-semibold ${cutawayColour(other.id).track}`}
                 style={{ left: `${b.left}%`, width: `${b.width}%` }}
               >
                 {cutawayLetter(other.id)}

@@ -273,6 +273,32 @@ describe("cutawayLayout's first cut", () => {
   });
 });
 
+describe("cutawayLayout never drafts more clips than a plan holds", () => {
+  it("a long voice gets at most CUTAWAY_MAX_SLOTS clips, the rules kept", () => {
+    const long: CaptionChunk[] = Array.from({ length: 58 }, (_, c) => ({
+      text: "",
+      startMs: c * 1200,
+      endMs: c * 1200 + 1100,
+      words: [0, 1, 2].map((w) => ({
+        word: "",
+        startMs: c * 1200 + w * 400,
+        endMs: c * 1200 + w * 400 + 350,
+      })),
+    }));
+    const layout = cutawayLayout({
+      captions: long,
+      voDurationMs: 70_000,
+      captionOffsetMs: 250,
+      hookTextMs: 0,
+      mentionMs: 1200,
+      capacityMs: Number.POSITIVE_INFINITY,
+    });
+    if (!("tier" in layout)) throw new Error(`no layout: ${layout.reason}`);
+    expect(layout.slots.length).toBe(CUTAWAY_MAX_SLOTS);
+    expect(70_000 - layout.slots.at(-1)!.toMs).toBeLessThanOrEqual(CUTAWAY_ALTERNATE.head.maxMs);
+  });
+});
+
 describe("cutawayLayout's refusals and the demo's capacity", () => {
   const f = fixture("f76fff01");
 

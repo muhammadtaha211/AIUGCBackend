@@ -147,11 +147,12 @@ export function StepCutaways({
     setDemo(null);
   }
 
-  const skipButton = (
+  const skipButton = (disabled = false) => (
     <button
       type="button"
       onClick={onSkip}
-      className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
+      disabled={disabled}
+      className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink disabled:opacity-50"
     >
       {CUTAWAY_COPY.skip}
     </button>
@@ -172,7 +173,7 @@ export function StepCutaways({
           onContinue={() => {}}
           onFatal={onFatal}
         />
-        {skipButton}
+        {skipButton()}
       </div>
     );
   }
@@ -187,7 +188,7 @@ export function StepCutaways({
       setPlan={setPlan}
       onFatal={onFatal}
     >
-      {(slots) => (
+      {(slots, saving) => (
         <div>
           <StepHeader
             title={CUTAWAY_COPY.slotsTitle}
@@ -274,19 +275,28 @@ export function StepCutaways({
 
           {plan && slots}
 
+          {/* A clip edit still saving holds the step: leaving now would carry
+              the list as it was before it. */}
           {plan && (
-            <Button type="button" size="lg" className="mt-6 w-full" onClick={onContinue}>
+            <Button
+              type="button"
+              size="lg"
+              className="mt-6 w-full"
+              disabled={saving}
+              onClick={onContinue}
+            >
               {CUTAWAY_COPY.continue}
             </Button>
           )}
           <button
             type="button"
             onClick={changeDemo}
-            className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink"
+            disabled={saving}
+            className="mt-4 w-full text-center text-sm text-ink/60 transition-colors duration-150 hover:text-ink disabled:opacity-50"
           >
             {CUTAWAY_COPY.changeDemo}
           </button>
-          {skipButton}
+          {skipButton(saving)}
         </div>
       )}
     </CutawayBody>
@@ -350,7 +360,7 @@ function CutawayBody({
   businessId: string;
   setPlan: (plan: CutawayPlanWire) => void;
   onFatal: (message: string) => void;
-  children: (slots: React.ReactNode) => React.ReactNode;
+  children: (slots: React.ReactNode, saving: boolean) => React.ReactNode;
 }) {
   const player = useClipPlayer(demoId);
   const { thumbs, want } = useStateThumbs(demoId);
@@ -375,16 +385,37 @@ function CutawayBody({
         body: JSON.stringify({ expectedUpdatedAt: plan.updatedAt, slots }),
       },
     );
-    setSaving(false);
     if (!result.ok) {
-      if (result.status === 403 || result.status === 404) onFatal(result.error);
+      if (result.status === 403 || result.status === 404) {
+        setSaving(false);
+        onFatal(result.error);
+        return false;
+      }
       setSaveError(
         result.status === 409 || result.status === 422 ? result.error : CUTAWAY_COPY.saveFailed,
       );
+      // A 409 (another tab, or the demo's analysis replaced) or a lost
+      // response: take the plan as the server now holds it — the same free,
+      // idempotent request the step drafts with — so the next edit is made
+      // on the right version instead of failing again.
+      if (result.status !== 422) {
+        const fresh = await postJson<CutawayPlanWire>(
+          `/api/businesses/${businessId}/cutaway-plans`,
+          { audioId: plan.audioId, demoId: plan.demoId },
+        );
+        if (fresh.ok) setPlan(fresh.body);
+      }
+      setSaving(false);
       return false;
     }
+    setSaving(false);
     setPlan(result.body);
     return true;
+  }
+
+  function openMode(next: CutawayMode) {
+    setSaveError(null);
+    setMode(next);
   }
 
   function closeMode() {
@@ -443,12 +474,13 @@ function CutawayBody({
             thumbs={thumbs}
             saving={saving}
             error={saveError}
-            onWindow={(id) => setMode({ kind: "window", id })}
-            onMove={(id) => setMode({ kind: "move", id })}
-            onAdd={() => setMode({ kind: "add" })}
+            onWindow={(id) => openMode({ kind: "window", id })}
+            onMove={(id) => openMode({ kind: "move", id })}
+            onAdd={() => openMode({ kind: "add" })}
             onRemove={(id) => void save(cutawayEdits(plan.slots).filter((s) => s.id !== id))}
           />
         ),
+        saving,
       )}
     </>
   );
@@ -518,6 +550,7 @@ function CutawaySlots({
               {
                 after: run.afterId === null ? null : cutawayLetter(run.afterId),
                 before: run.beforeId === null ? null : cutawayLetter(run.beforeId),
+                byName: plan.mentionMethod !== "share",
               },
               cutawaySeconds(run.ms),
             )}
@@ -570,7 +603,7 @@ function CutawaySlots({
 }
 
 const CARD_ACTION =
-  "inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg border border-ink/15 bg-white px-2 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-ink/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex h-11 min-w-0 flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-ink/15 bg-white px-1.5 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-ink/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-50";
 
 function CutawayCard({
   slot,
@@ -630,7 +663,7 @@ function CutawayCard({
             <CutawayChip id={slot.id} />
             {CUTAWAY_COPY.slotLabel(letter, cutawaySeconds(slot.lengthMs))}
           </span>
-          <span className="mt-1.5 line-clamp-4 block text-[13px] leading-relaxed text-ink/70">
+          <span className="mt-1.5 line-clamp-4 text-[13px] leading-relaxed text-ink/70">
             {words.slice(slot.wordFrom, slot.wordTo).join(" ")}
           </span>
         </span>
@@ -680,6 +713,13 @@ function CutawayPhrasePick({
   const root = useRef<HTMLDivElement>(null);
   // The phrases replace a list the customer may have scrolled far down.
   useEffect(() => root.current?.scrollIntoView({ block: "start" }), []);
+  // They also mount right under the finger that opened them: the second tap
+  // of a double-tap must not place a clip, so taps count after a beat.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setArmed(true), 400);
+    return () => clearTimeout(timer);
+  }, []);
   const id = moving?.id ?? nextCutawayId(plan.slots) ?? 1;
   const colour = cutawayColour(id);
   const options = phraseOptions(plan, moving);
@@ -703,12 +743,10 @@ function CutawayPhrasePick({
               key={option.startMs}
               type="button"
               disabled={option.edit === null || saving}
-              onClick={() => option.edit && onPick({ ...option.edit, id })}
+              onClick={() => armed && option.edit && onPick({ ...option.edit, id })}
               className={`m-0.5 inline-flex min-h-11 items-center rounded-lg border-2 px-2 text-sm text-ink transition-colors duration-150 ${
-                option.edit
-                  ? `${colour.ring} bg-white hover:bg-ink/[0.04]`
-                  : "border-transparent opacity-40"
-              } ${owner ? cutawayColour(owner.id).mark : ""}`}
+                option.edit ? `${colour.ring} hover:bg-ink/[0.04]` : "border-transparent opacity-40"
+              } ${owner ? cutawayColour(owner.id).mark : "bg-white"}`}
             >
               {option.text}
             </button>

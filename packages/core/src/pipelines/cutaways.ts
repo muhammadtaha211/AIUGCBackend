@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { CaptionChunk } from "../captions";
 import {
@@ -14,6 +14,7 @@ import {
   hookLeaveVoMs,
   productMention,
   type CutawayWindow,
+  type ProductMention,
 } from "../cutaway-structure";
 import type { Db } from "../db";
 import {
@@ -135,6 +136,8 @@ export interface CutawayPlanView {
   captionOffsetMs: number;
   /** VO start of the phrase where the script first names the product. */
   mentionMs: number;
+  /** How it was found — "share": no name heard, 40% of the voice. */
+  mentionMethod: ProductMention["method"];
   slots: (PlacedCutawaySlot & { lengthMs: number })[];
   anchors: CutawayAnchor[];
   /** A window's start is ≥ minStartMs and its start + length + frame slack ≤ maxEndMs. */
@@ -397,6 +400,18 @@ export function demoOrderPicks(p: Placement, lengths: number[]): CutawayAnchor[]
 
 const byFrom = (a: { fromMs: number }, b: { fromMs: number }) => a.fromMs - b.fromMs;
 
+/**
+ * The row, only as it was read: the version an edit or a redraft is made on.
+ * updated_at is microseconds in Postgres and milliseconds in a JS Date, so the
+ * stored value is compared at the precision the reader saw.
+ */
+function atVersion(row: typeof cutawayPlans.$inferSelect) {
+  return and(
+    eq(cutawayPlans.id, row.id),
+    sql`date_trunc('milliseconds', ${cutawayPlans.updatedAt}) = ${row.updatedAt.toISOString()}::timestamptz`,
+  );
+}
+
 /** The stored slots in script order, each with its id — a 0121 row's by position. */
 function placedSlots(raw: unknown): PlacedCutawaySlot[] {
   return cutawaySlotsSchema
@@ -512,7 +527,7 @@ export async function draftCutawayPlan(
     audio.durationMs!,
   );
   const view = (row: typeof cutawayPlans.$inferSelect) =>
-    planView(row, timeline, audio.durationMs!, mention.ms, inventory);
+    planView(row, timeline, audio.durationMs!, mention, inventory);
 
   const key = and(
     eq(cutawayPlans.audioRenderId, opts.audioRenderId),
@@ -535,6 +550,7 @@ export async function draftCutawayPlan(
     if (!legacy && slotsSignature(placedSlots(existing.slots)) === slotsSignature(carry.slots)) {
       return view(existing);
     }
+    // Only over the row as read: an edit that landed meanwhile is never wiped.
     const [redrafted] = await db
       .update(cutawayPlans)
       .set({
@@ -542,10 +558,33 @@ export async function draftCutawayPlan(
         editedAt: carry.carried > 0 ? existing.editedAt : null,
         updatedAt: new Date(),
       })
-      .where(eq(cutawayPlans.id, existing.id))
+      .where(atVersion(existing))
       .returning();
-    return view(redrafted!);
+    return view(redrafted ?? (await db.select().from(cutawayPlans).where(key).limit(1))[0]!);
   }
+  // A 0121 plan for this audio and demo was keyed on the effect step's line
+  // ('' for "none", or the customer's edit) — find it under any line, and keep
+  // the windows its customer picked.
+  const legacyRow = (
+    await db
+      .select()
+      .from(cutawayPlans)
+      .where(
+        and(
+          eq(cutawayPlans.audioRenderId, opts.audioRenderId),
+          eq(cutawayPlans.analysisId, inventory.analysisId),
+          eq(cutawayPlans.structure, structure),
+        ),
+      )
+      .orderBy(desc(cutawayPlans.updatedAt))
+  ).find(
+    (row) =>
+      row.editedAt !== null &&
+      cutawaySlotsSchema.parse(row.slots).some((slot) => slot.id === undefined),
+  );
+  const carry = legacyRow
+    ? carryWindowPicks(placedSlots(legacyRow.slots), draft, inventory)
+    : { slots: draft, carried: 0 };
   await db
     .insert(cutawayPlans)
     .values({
@@ -555,7 +594,8 @@ export async function draftCutawayPlan(
       analysisId: inventory.analysisId,
       structure,
       hookText,
-      slots: draft,
+      slots: carry.slots,
+      editedAt: carry.carried > 0 ? legacyRow!.editedAt : null,
     })
     .onConflictDoNothing();
   return view((await db.select().from(cutawayPlans).where(key).limit(1))[0]!);
@@ -565,7 +605,7 @@ function planView(
   row: typeof cutawayPlans.$inferSelect,
   timeline: { captions: CaptionChunk[]; captionOffsetMs: number },
   voDurationMs: number,
-  mentionMs: number,
+  mention: ProductMention,
   inventory: Inventory,
 ): CutawayPlanView {
   return {
@@ -578,7 +618,8 @@ function planView(
     captions: timeline.captions,
     voDurationMs,
     captionOffsetMs: timeline.captionOffsetMs,
-    mentionMs,
+    mentionMs: mention.ms,
+    mentionMethod: mention.method,
     slots: placedSlots(row.slots).map((s) => ({ ...s, lengthMs: s.toMs - s.fromMs })),
     anchors: inventory.anchors,
     minStartMs: inventory.minStartMs,
@@ -666,17 +707,20 @@ export async function updateCutawayPlan(
   const windows = cutawayWindowsError(next, inventory.maxEndMs + CUTAWAY_EDGE_MS);
   if (windows) throw new CutawayPlanError("invalid_windows", windows);
 
+  // Only over the version the wizard edited: a second tab, or a tap racing a
+  // save, that wrote first wins, and this one is told so.
   const [updated] = await db
     .update(cutawayPlans)
     .set({ slots: next, editedAt: new Date(), updatedAt: new Date() })
-    .where(eq(cutawayPlans.id, row.id))
+    .where(atVersion(row))
     .returning();
+  if (!updated) throw new CutawayPlanError("edit_conflict");
   const mention = productMention(
     timeline.captions,
     await mentionNames(db, opts.businessId),
     audio.durationMs!,
   );
-  return planView(updated!, timeline, audio.durationMs!, mention.ms, inventory);
+  return planView(updated, timeline, audio.durationMs!, mention, inventory);
 }
 
 /**

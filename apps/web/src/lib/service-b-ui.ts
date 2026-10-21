@@ -611,8 +611,9 @@ export type CutawayPlanWire = {
   captions: CaptionChunkWire[];
   voDurationMs: number;
   captionOffsetMs: number;
-  /** Where the script first names the product (VO ms). */
+  /** Where the script first names the product (VO ms) — or, with no name heard, 40% in ("share"). */
   mentionMs: number;
+  mentionMethod: "product_name" | "business_name" | "share";
   slots: CutawaySlotWire[];
   anchors: CutawayAnchorWire[];
   /** A window starts at or after minStartMs and ends (with the frame slack) by maxEndMs. */
@@ -744,63 +745,63 @@ const CUTAWAY_COLOURS = [
     chip: "bg-lime-500 text-ink",
     edge: "border-s-lime-500",
     ring: "border-lime-500",
-    track: "bg-lime-500/70",
+    track: "bg-lime-500/80 text-ink",
     window: "border-lime-500 bg-lime-500/20",
   },
   {
     mark: "bg-sky-200",
-    chip: "bg-sky-600 text-white",
-    edge: "border-s-sky-600",
-    ring: "border-sky-600",
-    track: "bg-sky-600/70",
-    window: "border-sky-600 bg-sky-600/20",
+    chip: "bg-sky-700 text-white",
+    edge: "border-s-sky-700",
+    ring: "border-sky-700",
+    track: "bg-sky-700/85 text-white",
+    window: "border-sky-700 bg-sky-700/20",
   },
   {
     mark: "bg-amber-200",
     chip: "bg-amber-500 text-ink",
     edge: "border-s-amber-500",
     ring: "border-amber-500",
-    track: "bg-amber-500/70",
+    track: "bg-amber-500/80 text-ink",
     window: "border-amber-500 bg-amber-500/20",
   },
   {
     mark: "bg-pink-200",
-    chip: "bg-pink-600 text-white",
-    edge: "border-s-pink-600",
-    ring: "border-pink-600",
-    track: "bg-pink-600/70",
-    window: "border-pink-600 bg-pink-600/20",
+    chip: "bg-pink-700 text-white",
+    edge: "border-s-pink-700",
+    ring: "border-pink-700",
+    track: "bg-pink-700/85 text-white",
+    window: "border-pink-700 bg-pink-700/20",
   },
   {
     mark: "bg-violet-200",
-    chip: "bg-violet-600 text-white",
-    edge: "border-s-violet-600",
-    ring: "border-violet-600",
-    track: "bg-violet-600/70",
-    window: "border-violet-600 bg-violet-600/20",
+    chip: "bg-violet-700 text-white",
+    edge: "border-s-violet-700",
+    ring: "border-violet-700",
+    track: "bg-violet-700/85 text-white",
+    window: "border-violet-700 bg-violet-700/20",
   },
   {
     mark: "bg-teal-200",
-    chip: "bg-teal-600 text-white",
-    edge: "border-s-teal-600",
-    ring: "border-teal-600",
-    track: "bg-teal-600/70",
-    window: "border-teal-600 bg-teal-600/20",
+    chip: "bg-teal-700 text-white",
+    edge: "border-s-teal-700",
+    ring: "border-teal-700",
+    track: "bg-teal-700/85 text-white",
+    window: "border-teal-700 bg-teal-700/20",
   },
   {
     mark: "bg-orange-200",
-    chip: "bg-orange-600 text-white",
-    edge: "border-s-orange-600",
-    ring: "border-orange-600",
-    track: "bg-orange-600/70",
-    window: "border-orange-600 bg-orange-600/20",
+    chip: "bg-orange-700 text-white",
+    edge: "border-s-orange-700",
+    ring: "border-orange-700",
+    track: "bg-orange-700/85 text-white",
+    window: "border-orange-700 bg-orange-700/20",
   },
   {
     mark: "bg-slate-300",
     chip: "bg-slate-700 text-white",
     edge: "border-s-slate-700",
     ring: "border-slate-700",
-    track: "bg-slate-700/70",
+    track: "bg-slate-700/85 text-white",
     window: "border-slate-700 bg-slate-700/20",
   },
 ] as const;
@@ -918,11 +919,13 @@ export function longHeadRuns(
   if (slots.length === 0) return [];
   const runs: { afterId: number | null; beforeId: number | null; ms: number }[] = [];
   for (let i = 0; i <= slots.length; i++) {
-    const startMs = Math.max(i === 0 ? 0 : slots[i - 1]!.toMs, plan.mentionMs);
+    const prevEnd = i === 0 ? 0 : slots[i - 1]!.toMs;
+    const startMs = Math.max(prevEnd, plan.mentionMs);
     const endMs = i === slots.length ? plan.voDurationMs : slots[i]!.fromMs;
     if (endMs - startMs > CUTAWAY_ALTERNATE.head.softMaxMs) {
       runs.push({
-        afterId: i === 0 ? null : slots[i - 1]!.id,
+        // A run that began before the mention is counted, and named, from the mention.
+        afterId: i === 0 || prevEnd < plan.mentionMs ? null : slots[i - 1]!.id,
         beforeId: i === slots.length ? null : slots[i]!.id,
         ms: endMs - startMs,
       });
@@ -965,27 +968,36 @@ export const CUTAWAY_COPY = {
   drafting: "משבצים קטעים מסרטון המוצר…",
   slotsTitle: "קטעים מסרטון המוצר",
   slotsSub:
-    "בזמן המילים הצבועות רואים קטע מסרטון המוצר. שיבצנו קטעים מהרגע שבו מוזכר המוצר, לפי סדר הסרטון, ואפשר להחליף, להעביר, להוסיף ולהסיר.",
+    "בזמן המילים הצבועות רואים קטע מסרטון המוצר. שיבצנו קטעים לפי סדר הסרטון, ואפשר להחליף, להעביר, להוסיף ולהסיר.",
   clipName: (letter: string) => `קטע ${letter}׳`,
   slotLabel: (letter: string, seconds: string) => `קטע ${letter}׳ · ${seconds} שנ׳`,
-  changeWindow: "החלפת הקטע",
+  changeWindow: "החלפה",
   move: "העברה",
   remove: "הסרה",
   add: "הוספת קטע",
   pickMove: (letter: string) => `בוחרים את המשפט שבו קטע ${letter}׳ יתחיל.`,
   pickAdd: "בוחרים את המשפט שבו הקטע החדש יתחיל.",
   pickNone: "אין משפט פנוי שהקטע נכנס בו.",
-  emptyCanAdd:
-    "לא מצאנו מקום לקטע אחרי שהמוצר מוזכר. אפשר להוסיף קטע בכל משפט, או להמשיך בלי קטעים.",
+  emptyCanAdd: "לא מצאנו מקום לקטע בטיוטה. אפשר להוסיף קטע בכל משפט, או להמשיך בלי קטעים.",
   emptyNoFootage: "אין מקום לקטעים בסרטון המוצר הזה. אפשר להחליף סרטון או להמשיך בלי קטעים.",
-  longRun: (where: { after: string | null; before: string | null }, seconds: string) =>
-    where.after === null
-      ? `רק לתשומת לב: מהרגע שהמוצר מוזכר ועד קטע ${where.before}׳ הדמות מדברת ${seconds} שנ׳ ברצף.`
-      : where.before === null
-        ? `רק לתשומת לב: מסוף קטע ${where.after}׳ ועד הסוף הדמות מדברת ${seconds} שנ׳ ברצף.`
-        : `רק לתשומת לב: בין קטע ${where.after}׳ לקטע ${where.before}׳ הדמות מדברת ${seconds} שנ׳ ברצף.`,
+  longRun: (
+    where: { after: string | null; before: string | null; byName: boolean },
+    seconds: string,
+  ) => {
+    // A run counted from the mention says so; with no name heard, "the middle of the recording".
+    const from = where.byName ? "מהרגע שהמוצר מוזכר" : "מאמצע ההקלטה";
+    const span =
+      where.after === null && where.before === null
+        ? `${from} ועד הסוף`
+        : where.after === null
+          ? `${from} ועד קטע ${where.before}׳`
+          : where.before === null
+            ? `מסוף קטע ${where.after}׳ ועד הסוף`
+            : `בין קטע ${where.after}׳ לקטע ${where.before}׳`;
+    return `רק לתשומת לב: ${span} הדמות מדברת ${seconds} שנ׳ ברצף.`;
+  },
   hookMoved: (letter: string) =>
-    `משפט הפתיחה ארוך יותר עכשיו, אז קטע ${letter}׳ יתחיל במשפט שאחריו.`,
+    `משפט הפתיחה מגיע עכשיו עד קטע ${letter}׳, אז הקטע זז למשפט הפנוי הבא אחריו.`,
   hookDropped: (letter: string) =>
     `משפט הפתיחה ארוך יותר עכשיו, ואין אחריו משפט שקטע ${letter}׳ נכנס בו — הוא לא ייכנס לסרטון.`,
   play: "צפייה בקטע",
