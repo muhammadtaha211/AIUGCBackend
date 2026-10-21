@@ -60,14 +60,17 @@ and applied in filename order. Hand-written SQL lives beside the generated files
   ([vault 0077](vault/decisions/0077-moments-keep-their-real-start-and-end.md),
   [0080](vault/decisions/0080-a-moment-is-never-dropped-for-a-failed-read.md),
   [0083](vault/decisions/0083-no-model-names-the-instants-for-now.md)).
-- **cutaway_plans** (0068) — Service B demo cutaways (vault 0121): the customer's picks, on their
-  own rows and never on `demo_step_plans`. One row per (approved audio, analysis, structure, hook
-  text) — the slots are laid out from the audio's chunks and when the hook text leaves, so a new
-  hook text is a new row and a fresh draft. `structure` (a name from `cutaway-structure.ts`, no
-  CHECK), `hook_text` ('' = none), `slots jsonb` (`{ fromMs, toMs, wordFrom, wordTo, demoStartMs,
-stateIndex, draftDemoStartMs, draftStateIndex }[]`, VO time, CHECK array), `edited_at`. Enqueue
-  COPIES the windows onto `video_renders.params.cutaways`; nothing points here after. Server-only
-  (RLS on, no policy).
+- **cutaway_plans** (0068) — Service B demo cutaways (vault 0121, 0122): the customer's picks, on
+  their own rows and never on `demo_step_plans`. One row per (approved audio, analysis, structure,
+  hook text). Since 0122 the hook text is the SCRIPT's own (`scripts.params.hookText`, read on the
+  server); 0121 keyed it on the effect step's line, and such a row is found under any line and its
+  window picks carried. `structure` (a name from `cutaway-structure.ts`, no CHECK), `hook_text`
+  ('' = none), `slots jsonb` (`{ id?, fromMs, toMs, wordFrom, wordTo, demoStartMs, stateIndex,
+draftDemoStartMs?, draftStateIndex? }[]`, VO time, CHECK array — `id` 1–8 is the clip's letter and
+  colour, absent on 0121 rows; the draft fields are absent on a clip the customer added),
+  `edited_at` (an edited row is never redrafted), `updated_at` (the version an edit names). Enqueue
+  COPIES the windows onto `video_renders.params.cutaways`, after moving any clip the final hook text
+  reaches; nothing points here after. Server-only (RLS on, no policy).
 - **hook_clips** — the closed founder bank: file, duration, `tags jsonb` (energy/gender/vibe),
   `text_safe_area jsonb` ({x,y,w,h} in 1080×1920 space), `active`. Clips run **3–4 seconds**; the
   live bank holds 28 active clips across 7 personas, 4 each, plus 1 generic (`persona_id` NULL)

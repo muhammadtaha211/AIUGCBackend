@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-20
+updated: 2026-10-21
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -44,9 +44,18 @@ decisions — prices unchanged, no self-serve free tier, trials granted by hand 
 the same day on his instruction ("when you're done go ahead and apply the migrations and merge
 yourself").** [[0121-service-b-demo-cutaways-and-no-sway]]. A customer can tick "לשלב קטעים מסרטון
 המוצר" on the audio card and cut away to 4–6 s stretches of their own analysed demo; off, the ad is
-today's minus the sway, which is gone from every B render. **The box must pull and restart after the
-merge** — until then the box renders a cutaway render without its cutaways. Details under "What
-landed (2026-10-20, last)"; the merge and box steps under "Owed founder actions".
+today's minus the sway, which is gone from every B render. **MERGED as PR #112 (`c5c85e6`,
+2026-10-20); the box runs it** (MEASURED 2026-10-21, read-only: his render `cbd62014` was run by
+`hetzner:heavy` and its output cuts at the slot edges — a pre-merge box would have ignored them).
+Details under "What landed (2026-10-20, last)".
+
+**Service B cutaways, revised: BUILT 2026-10-21 on `feat/b-cutaway-relayout`, NOT merged, no
+migration.** [[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]]. The clips
+step now comes right after the audio card and before the effect; the draft never cuts before the
+phrase where the script first names the product; the customer moves, adds and removes clips freely
+(a long run is noted, never blocked); a longer hook text moves the clip it reaches; one letter and
+one colour per clip; big cards; the picker's drag selects nothing. Walked on his own Pixel 6a and a
+desktop Chrome. Details under "What landed (2026-10-21)"; the merge under "Owed founder actions".
 
 **TTS moves to Eleven v4, as plain text: MERGED as PR #111 (`cc46f64`, MEASURED by `git log`
 2026-10-20; this paragraph said the merge was his and pending).** The box runs it: he ran the B flow
@@ -888,6 +897,85 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-21) — Service B cutaways revised: clips before the effect, first cut at the product mention, free edits, `feat/b-cutaway-relayout`
+
+[[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]] amends 0121; his
+rulings, the planning defaults and my flagged interpretations are recorded there.
+
+**FOUNDER-REPORTED (2026-10-21):** the cutaways branch is merged; the step works and he likes it; on
+his test the draft put a clip at ~4 s during the intro, before the product came up. MEASURED since
+(read-only): that render is `cbd62014`, its first clip at VO 2.8 s, the name spoken at VO 11.4 s.
+
+**Box status (MEASURED 2026-10-21, read-only):** the newest `render_video` job (`c3c24b41`, render
+`cbd62014`, 02:22 UTC) was run by `hetzner:heavy`; ffmpeg's scene detector over its output finds
+hard cuts at 8.30, 11.63 and 16.07 s — 3 of its 4 slot edges at VO + 250 (the first falls inside the
+focus effect's blur). A box without 0121 ignores `params.cutaways`, so the box was on main at or
+after `c5c85e6`. Nothing is owed on the box for 0121, and **this branch changes no worker code**.
+
+**Built.**
+
+- **Core.** `cutaway-structure.ts`:
+  - `productMention`: `product_name`, else the business name, else 40% — no model call;
+  - `hookLeaveVoMs`;
+  - the mention floor and the 8-clip bound in `cutawayLayout` (`firstCutMinMs` and
+    `cutawayLayoutError` deleted);
+  - `fitCutawayAt`, `cutawayEditError`, `cutawayWindowStarts`/`snapCutawayStart` (moved from the
+    web) and `clearHookText`;
+  - a client-safe subpath.
+- **Plan row** (`pipelines/cutaways.ts`):
+  - slot `id`s in the jsonb;
+  - the key's hook text is the script's own;
+  - edited rows never redrafted;
+  - 0121 rows found under any line, their picks carried;
+  - version-guarded writes;
+  - PATCH takes the whole list;
+  - enqueue moves what the final hook text reaches and copies nothing with no clip left.
+  - No migration.
+- **Web.** The new order, the letter-and-colour clips, big cards, the phrase list, the notes, the
+  409 recovery, the drag fix, and the effect step's collision line.
+
+**Checks.**
+
+- The full gate (see the report).
+- An adversarial review: confirmed findings fixed in `0116a16`.
+- **The draft on his 17 real audios** ([[cutaway-mention-positions-2026-10-21]]):
+  - 14 lay out, all strict; no cut before the mention; heads after it ≤ 5.0 s; ending on the
+    character.
+  - The mention is matched by name on 9 (40–57% on the 7 v17 scripts).
+  - 8 fall back to 40%; on 6 of those the name is spoken in Hebrew letters 1.9–9.8 s later.
+  - 3 have no room: the 6.3 s audio and two scripts that name it at 77–78%.
+- **The local render** ([[cutaway-local-render-check-2026-10-21]]) on `ab7e3837` + `3915c8e2`:
+  - the first cut on the name's phrase (7.23 s);
+  - cuts on chunk boundaries;
+  - audio sample-identical to the head-only render;
+  - no sway.
+- **The walk.** His own Pixel 6a (Chrome 155) with real touches over adb, and a desktop Chrome 155
+  window, both on local `pnpm dev` (DRY_RUN web, production DB) through a minted session.
+  - All of 0122's done-criteria seen on both.
+  - The real-phone pass found a crash the tests and an emulator could not
+    ([[scrollintoview-returns-a-promise-in-chrome-155]], fixed in `d71027f`).
+  - A tap that fired before the demo list loaded opened the phone's photo picker. It was closed
+    with nothing selected (no demo row created, read back), and the tap tool now refuses the upload
+    control.
+  - Screenshots: `packages/core/.work/cutaways/walk-shots-0122/` (gitignored).
+  - **No render was created.**
+  - Rows the walk left in production: 3 scripts, 3 audio renders (their `synth_tts` ran on the box),
+    3 `cutaway_plans` rows. Ordinary wizard leftovers, not deleted.
+
+**Spend.** 15 agorot of ElevenLabs (three TTS of the canned script on the box, 443 characters); ₪0
+else. The local render, the draft and the edits: ₪0.
+
+**Found and not fixed (reported):**
+
+- `productMention` does not catch a Latin `product_name` spoken in Hebrew letters (6 of his older
+  audios); a transliteration tier would be a new rule — his call.
+- Matching does not pass the name through the pronunciation map (empty in production when last
+  measured, 2026-09-08): latent.
+- The audio card's continue button reads "המשך ליצירת הסרטון" even when the clips or the effect
+  come next (pre-existing).
+- Rolling the web back after customers add clips would break those plans: the old schema requires
+  `draftDemoStartMs` on every slot.
 
 ## What landed (2026-10-20, last) — Service B demo cutaways and no sway, `feat/b-demo-cutaways`
 
@@ -2303,23 +2391,38 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Service B cutaways revised (2026-10-21, `feat/b-cutaway-relayout`,
+  [[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]]).** No migration, no
+  worker change. In order:
+  1. Approve the Hebrew strings (the report lists every one): `CUTAWAY_COPY` in
+     `apps/web/src/lib/service-b-ui.ts` and the `CutawayPlanError` lines in
+     `apps/web/src/lib/api-errors.ts`. COPY PENDING FOUNDER REVIEW. This replaces 0121's string
+     approval below.
+  2. The merge (his, on GitHub). Vercel deploys it; the box needs nothing.
+  3. A render of his own with the option on: the draft's first clip on the phrase that names the
+     product; move, add or remove one; render.
+  4. Not rollback-safe once customers add clips (the old schema cannot read their slots).
+
 - **Service B demo cutaways (2026-10-20, `feat/b-demo-cutaways`, [[0121-service-b-demo-cutaways-and-no-sway]]).**
   0068 is pushed (read back: `cutaway_plans` present, RLS on, 0 policies, ledger 69 rows to 0068).
-  In order:
+  MERGED as PR #112 (`c5c85e6`); the box runs it (MEASURED 2026-10-21, above). In order:
   1. Approve the new Hebrew strings: `CUTAWAY_COPY` in `apps/web/src/lib/service-b-ui.ts`, the
      `CutawayPlanError` lines in `apps/web/src/lib/api-errors.ts`, and `bShapeSummary`'s cutaway
-     clause in `apps/web/src/lib/quote-ui.ts`. COPY PENDING FOUNDER REVIEW.
-  2. The merge (he told the session to merge; if its permission check refuses, it is his on
-     GitHub). Vercel deploys the wizard.
-  3. **The box, straight after.** Until it restarts, it renders a cutaway render WITHOUT its
-     cutaways, at full HeyGen price.
+     clause in `apps/web/src/lib/quote-ui.ts`. COPY PENDING FOUNDER REVIEW. (Folded into 0122's
+     approval above.)
+  2. ~~The merge~~ **DONE** (PR #112, `c5c85e6`).
+  3. ~~**The box, straight after.**~~ **DONE** (MEASURED 2026-10-21: his render `cbd62014` was
+     rendered with its cutaways by `hetzner:heavy`). Until it restarts, it renders a cutaway render
+     WITHOUT its cutaways, at full HeyGen price.
      - Gate: `select id, type, status, locked_by, locked_at from jobs where status = 'running';`
        must return no rows.
      - Then `cd ~/AIUGCBackend && git pull && pnpm install && sudo systemctl restart aiugc-worker`.
        No env change; the migration is already in.
-  4. The end-to-end render on the box: tick the option, pick a demo, change one slot, render. Watch
+  4. ~~The end-to-end render on the box~~ **DONE** (FOUNDER-REPORTED 2026-10-21: he rendered with
+     cutaways and likes it; render `cbd62014`). Watch
      for a head-only ad with no sway, and a `cutaway_render_degraded` event if a window was clamped.
-  5. A tap-through of the window picker on his real phone (the walk emulated touch).
+  5. ~~A tap-through of the window picker on his real phone~~ **DONE 2026-10-21** by 0122's walk on
+     his Pixel 6a (real touches over adb).
 
 - **TTS on Eleven v4 (2026-10-20, `feat/tts-eleven-v4`, [[0119-tts-is-eleven-v4-plain-text]]).** In
   order, each its own OK:

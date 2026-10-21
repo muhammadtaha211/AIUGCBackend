@@ -45,7 +45,8 @@ pipeline, `packages/remotion` or the B wizard. The format decisions are in `docs
 `0022-heygen-expressiveness-medium-generic-motion-prompt.md` (the engine settings),
 `0023-hook-is-a-remotion-animation-opener-clips-retired.md` (the hook),
 `0024-hook-effect-is-a-render-param-the-customer-picks.md` (the three animations and how the name
-travels) and `0121-service-b-demo-cutaways-and-no-sway.md` (the opt-in demo cutaways, no sway).
+travels), `0121-service-b-demo-cutaways-and-no-sway.md` (the opt-in demo cutaways, no sway) and
+`0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention.md` (their order, draft and edits).
 
 ## Personas and the render
 
@@ -97,8 +98,9 @@ travels) and `0121-service-b-demo-cutaways-and-no-sway.md` (the opt-in demo cuta
 
 ## The web wizard (`apps/web/src/components/b-wizard`)
 
-- The steps are persona → pointers → script → audio → effect → render, plus a **demo** step between
-  effect and render only when the customer ticks the cutaway option on the audio card (vault 0121).
+- The steps are persona → pointers → script → audio → effect → render, plus a **demo** step (the
+  clips) between audio and effect only when the customer ticks the cutaway option on the audio card
+  (vault 0121; before the effect since 0122, so the effect is set last).
 - The effect step places the animation and its hook text over the persona's selfie. It PLAYS the
   real animation once and then offers a replay button (`hook-effect-preview.tsx`, vault 0026).
 - There is no image step, and the only product input is the optional cutaway step: the persona
@@ -110,24 +112,37 @@ travels) and `0121-service-b-demo-cutaways-and-no-sway.md` (the opt-in demo cuta
 ## Demo cutaways (vault 0120 §4, 0121)
 
 - **Opt-in, never the default.** An unticked checkbox on B's ready-audio card; off = today's six
-  steps and today's request body, byte for byte.
+  steps and today's request body, byte for byte. Ticked, the clips step comes right after the card.
 - **Source:** the customer's analysed demo (Service A's inventory), reused free. The upload is A's
   own; B never charges `a_demo_analysis_credits` (0048) and the quote is unchanged.
 - **Structure as data:** `none | alternate` in `packages/core/src/cutaway-structure.ts`, never in
-  the DB (not the `structures` table).
-  - The first cut is the first caption-chunk start ≥ 3000 ms into the ad and at or after the hook
-    text leaves.
-  - Cutaways are 4–6 s; head runs 1–5 s (5.5 s only when nothing fits under 5).
+  the DB (not the `structures` table). The structure is the DRAFT's rule (vault 0122):
+  - The first cut is never before the phrase where the script first names the product
+    (`productMention`: `product_name`, else the business name, else 40% of the voice — no model
+    call), nor before the script's own hook text leaves; then the earliest chunk start within 5 s
+    of that floor that lays out.
+  - Cutaways are 4–6 s; head runs 1–5 s (5.5 s only when nothing fits under 5); at most 8 clips.
   - The ad ends on the head.
   - Cuts sit on chunk starts. A word start inside a line is used only when no chunk-start layout
-    exists: 3 of the founder's 15 real audios.
-- **Picks live on `cutaway_plans`** (0068), one row per (audio, analysis, structure, hook text). A
-  new hook text is a new draft.
+    exists.
+- **The customer's edits** (vault 0122) answer only to `cutawayEditError`: on spoken words, 4–6 s,
+  after the hook text, inside the voice, no overlap in the script, no reused footage. Move a clip
+  to any phrase, add one (the next unused stretch of the demo, no model call), remove one; zero
+  clips is today's ad. A head run past ~5.5 s after the mention gets a one-line note, never a block.
+- **Identity:** each clip has an `id` (1–8) — one letter and one colour on the script, its card and
+  the picker.
+- **Picks live on `cutaway_plans`** (0068), one row per (audio, analysis, structure, the script's
+  hook text). An edit names the row's version (`updated_at`); a stale one is a 409 and the step
+  reloads the plan.
+- **A longer final hook text** moves the clip it reaches to the next free phrase (or drops it):
+  `clearHookText`, derived in the effect step for its line and in `resolveCutawaysForRender`,
+  never written.
 - **Copied at enqueue:** `createBRender` copies the windows onto `params.cutaways` and never points
-  at the row.
+  at the row; no clip left means no `cutaways` key.
 - **The draft is the demo in order.** A Claude matcher was tested and not adopted
   (`facts/cutaway-matcher-hit-rate-2026-10-20.md`).
-- **The window picker** snaps to the analysis moments and never lets two windows share footage.
+- **The window picker** snaps to the analysis moments and never lets two windows share footage. A
+  drag selects nothing and scrolls nothing (vault 0122).
 - **The composition:**
   - each window is a muted `OffthreadVideo` over the still-running head;
   - outside the static overscan;

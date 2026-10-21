@@ -40,7 +40,7 @@ One pnpm monorepo, boring-tech throughout:
 - **The web wizards are thin shells over the same functions.** Service A
   (`apps/web/src/components/a-wizard`): persona → hook clip → hook studio → demo → step plan →
   render. Service B (`apps/web/src/components/b-wizard`, vault decision 0017): persona →
-  pointers → script → audio → hook animation (zoom hook or none; the opener-clip listing is retired 2026-09-06, its replacement pending — [0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) → (demo cutaways, only when ticked on the audio card — [0121](vault/decisions/0121-service-b-demo-cutaways-and-no-sway.md)) → render. Single setting, so B has no image step, and
+  pointers → script → audio → (demo cutaways, only when ticked on the audio card — [0121](vault/decisions/0121-service-b-demo-cutaways-and-no-sway.md), right after it since [0122](vault/decisions/0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention.md)) → hook animation (zoom hook or none; the opener-clip listing is retired 2026-09-06, its replacement pending — [0023](vault/decisions/0023-hook-is-a-remotion-animation-opener-clips-retired.md)) → render. Single setting, so B has no image step, and
   its only product input is the optional cutaway step: the persona card shows the persona's selfie (`personaSelfie` in
   `apps/web/src/lib/service-b.ts` — the one resolver for the card and the
   render source), the wizard sends that image's id with the render, and the route refuses
