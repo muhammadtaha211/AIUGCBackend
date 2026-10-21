@@ -306,19 +306,18 @@ describe("coreErrorMapping — plan changes and the unconfigured gateway", () =>
   });
 });
 
-describe("coreErrorMapping — demo cutaways (vault 0121)", () => {
+describe("coreErrorMapping — demo cutaways (vault 0121, 0122)", () => {
   it("gives every refusal its status and a Hebrew line, never the generic 500", () => {
+    // A draft with no room is no longer a refusal (0122: zero clips is a plan), and the
+    // hook text is read on the server, so those codes are gone; a stale edit is new.
     const statuses: Record<string, number> = {
       not_found: 404,
       audio_not_approved: 409,
       demo_not_ready: 409,
       analysis_pending: 409,
       analysis_failed: 422,
-      vo_too_short: 422,
-      no_layout: 422,
-      demo_too_short: 422,
       invalid_windows: 422,
-      invalid_hook_text: 400,
+      edit_conflict: 409,
       stale: 409,
     };
     for (const [code, status] of Object.entries(statuses)) {
