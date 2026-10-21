@@ -147,7 +147,7 @@ beforeAll(async () => {
   cleanup = ts.cleanup;
 
   customer = await core.createBusiness(db, { ownerEmail: "c@cutaways.test", name: "עסק" });
-  await core.grantCredits(db, { userId: customer.ownerUserId, credits: 500, note: "test" });
+  await core.grantCredits(db, { userId: customer.ownerUserId, credits: 5000, note: "test" });
   stranger = await core.createBusiness(db, { ownerEmail: "s@cutaways.test", name: "זר" });
   ({ scriptId, audioId } = await approvedAudio(customer.id));
   demoId = await readyDemo(customer.id, "ready");
@@ -161,31 +161,28 @@ afterAll(async () => {
 });
 
 describe("POST /api/businesses/[businessId]/cutaway-plans", () => {
-  it("drafts the demo in order, free, and returns the same plan on a second visit", async () => {
+  it("drafts from the product mention, the demo in order, free, and returns the same plan on a second visit", async () => {
     as(customer);
     const first = await draft(send("POST", "/x", { audioId, demoId }), forBusiness(customer.id));
     expect(first.status).toBe(200);
     const plan = (await first.json()) as Plan;
     expect(plan.slots.length).toBeGreaterThanOrEqual(1);
-    expect(plan.words).toHaveLength(45);
+    expect(plan.captions).toHaveLength(15);
+    // No name to hear: 40% of the 18 s voice.
+    expect(plan.mentionMs).toBe(7200);
+    for (const slot of plan.slots) expect(slot.fromMs).toBeGreaterThanOrEqual(plan.mentionMs);
     const again = await draft(send("POST", "/x", { audioId, demoId }), forBusiness(customer.id));
     expect(((await again.json()) as Plan).planId).toBe(plan.planId);
     expect(await db.select().from(schema.usageEvents)).toHaveLength(0);
   });
 
-  it("a hook text is a different layout and a new plan", async () => {
+  it("takes no hook text from the client: the layout's line is the script's own", async () => {
     as(customer);
-    const plain = (await (
-      await draft(send("POST", "/x", { audioId, demoId }), forBusiness(customer.id))
-    ).json()) as Plan;
-    const hooked = (await (
-      await draft(
-        send("POST", "/x", { audioId, demoId, hookText: "מילה0 מילה1 מילה2" }),
-        forBusiness(customer.id),
-      )
-    ).json()) as Plan;
-    expect(hooked.planId).not.toBe(plain.planId);
-    expect(hooked.hookText).toBe("מילה0 מילה1 מילה2");
+    const hooked = await draft(
+      send("POST", "/x", { audioId, demoId, hookText: "מילה0 מילה1 מילה2" }),
+      forBusiness(customer.id),
+    );
+    expect(hooked.status).toBe(400);
   });
 
   it("refuses another business's demo, a demo still in analysis, extra keys and a stranger", async () => {
@@ -215,58 +212,89 @@ describe("POST /api/businesses/[businessId]/cutaway-plans", () => {
   });
 });
 
-describe("PATCH /api/businesses/[businessId]/cutaway-plans/[planId]", () => {
-  it("moves a window to another moment and refuses what the picker never offers", async () => {
-    as(customer);
-    const plan = (await (
-      await draft(send("POST", "/x", { audioId, demoId }), forBusiness(customer.id))
-    ).json()) as Plan;
-    const starts = plan.slots.map((s) => s.demoStartMs);
-    const later = plan.anchors.find((a) => a.stateIndex === 27)!.startMs;
-    const moved = [...starts.slice(0, -1), later];
-    const ok = await save(
-      send("PATCH", "/x", { starts: moved }),
-      forPlan(customer.id, plan.planId),
-    );
-    expect(ok.status).toBe(200);
-    const saved = (await ok.json()) as Plan;
-    expect(saved.slots.at(-1)!.demoStartMs).toBe(later);
-    expect(saved.slots.at(-1)!.draftDemoStartMs).toBe(starts.at(-1));
+/** The plan as the wizard holds it right now. */
+async function currentPlan(): Promise<Plan> {
+  as(customer);
+  return (await (
+    await draft(send("POST", "/x", { audioId, demoId }), forBusiness(customer.id))
+  ).json()) as Plan;
+}
 
-    const notAMoment = await save(
-      send("PATCH", "/x", { starts: starts.map((s) => s + 1) }),
-      forPlan(customer.id, plan.planId),
-    );
-    expect(notAMoment.status).toBe(422);
-    if (starts.length > 1) {
-      const overlap = await save(
-        send("PATCH", "/x", { starts: starts.map(() => starts[0]) }),
-        forPlan(customer.id, plan.planId),
-      );
-      expect(overlap.status).toBe(422);
+const edits = (plan: Plan) =>
+  plan.slots.map(({ id, fromMs, toMs, demoStartMs }) => ({ id, fromMs, toMs, demoStartMs }));
+
+describe("PATCH /api/businesses/[businessId]/cutaway-plans/[planId]", () => {
+  it("moves a clip to another phrase, adds one, removes one — and refuses what the step never offers", async () => {
+    const plan = await currentPlan();
+    const patch = (body: unknown, planId = plan.planId, businessId = customer.id) =>
+      save(send("PATCH", "/x", body), forPlan(businessId, planId));
+    const window = (state: number) => plan.anchors.find((a) => a.stateIndex === state)!.startMs;
+
+    // Moved to the first phrase: before the product mention, on purpose — allowed.
+    const first = plan.slots[0]!;
+    const moved = await patch({
+      expectedUpdatedAt: plan.updatedAt,
+      slots: [{ ...edits(plan)[0]!, fromMs: 1200, toMs: 1200 + (first.toMs - first.fromMs) }],
+    });
+    expect(moved.status).toBe(200);
+    let saved = (await moved.json()) as Plan;
+    expect(saved.slots[0]).toMatchObject({
+      id: 1,
+      fromMs: 1200,
+      draftDemoStartMs: first.demoStartMs,
+    });
+
+    // Added, then the first removed.
+    const added = await patch({
+      expectedUpdatedAt: saved.updatedAt,
+      slots: [...edits(saved), { id: 2, fromMs: 9600, toMs: 14_400, demoStartMs: window(27) }],
+    });
+    expect(added.status).toBe(200);
+    saved = (await added.json()) as Plan;
+    expect(saved.slots.map((s) => s.id)).toEqual([1, 2]);
+    const removed = await patch({
+      expectedUpdatedAt: saved.updatedAt,
+      slots: edits(saved).filter((s) => s.id === 2),
+    });
+    expect(removed.status).toBe(200);
+    saved = (await removed.json()) as Plan;
+    expect(saved.slots.map((s) => s.id)).toEqual([2]);
+
+    // A stale version: someone else's tab, or a tap racing a save.
+    const stale = await patch({ expectedUpdatedAt: plan.updatedAt, slots: [] });
+    expect(stale.status).toBe(409);
+    expect((await stale.json()).error).toMatch(/השתנו/);
+    const v = saved.updatedAt;
+    const clip = edits(saved)[0]!;
+    // Off a spoken word, overlapping, reused footage, a twin id: 422 with the step's line.
+    for (const slots of [
+      [{ ...clip, fromMs: clip.fromMs + 1 }],
+      [clip, { ...clip, id: 3, fromMs: clip.fromMs + 1200, toMs: clip.toMs + 1200 }],
+      [clip, { id: 3, fromMs: 2400, toMs: 7200, demoStartMs: clip.demoStartMs }],
+      [clip, { ...clip, fromMs: 2400, toMs: 7200 }],
+    ]) {
+      const refused = await patch({ expectedUpdatedAt: v, slots });
+      expect(refused.status).toBe(422);
+      expect((await refused.json()).error).toMatch(/הקטע/);
     }
-    const wrongCount = await save(
-      send("PATCH", "/x", { starts: [...starts, later] }),
-      forPlan(customer.id, plan.planId),
+    // What the schema never lets through: an id past 8, extra keys, a malformed plan id.
+    expect((await patch({ expectedUpdatedAt: v, slots: [{ ...clip, id: 9 }] })).status).toBe(400);
+    expect((await patch({ expectedUpdatedAt: v, slots: [clip], starts: [] })).status).toBe(400);
+    expect((await patch({ expectedUpdatedAt: v, slots: [{ ...clip, label: "א" }] })).status).toBe(
+      400,
     );
-    expect(wrongCount.status).toBe(422);
-    const extra = await save(
-      send("PATCH", "/x", { starts, fromMs: [0] }),
-      forPlan(customer.id, plan.planId),
-    );
-    expect(extra.status).toBe(400);
-    const malformed = await save(send("PATCH", "/x", { starts }), forPlan(customer.id, "plan-1"));
-    expect(malformed.status).toBe(404);
+    expect((await patch({ expectedUpdatedAt: v, slots: [clip] }, "plan-1")).status).toBe(404);
 
     // The stranger's own business, with the customer's plan id: not theirs.
     as(stranger);
-    const foreign = await save(send("PATCH", "/x", { starts }), forPlan(stranger.id, plan.planId));
-    expect(foreign.status).toBe(404);
+    expect(
+      (await patch({ expectedUpdatedAt: v, slots: [] }, plan.planId, stranger.id)).status,
+    ).toBe(404);
   });
 });
 
 describe("POST /api/businesses/[businessId]/renders with a cutaway plan", () => {
-  it("copies the plan's windows onto the render; without one the params carry none", async () => {
+  it("copies the plan's clips onto the render, moves the one a longer hook text reaches, and carries none with none left", async () => {
     as(customer);
     const dir = path.join(tmpdir(), "aiugc-cutaway-route");
     mkdirSync(dir, { recursive: true });
@@ -278,40 +306,63 @@ describe("POST /api/businesses/[businessId]/renders with a cutaway plan", () => 
       filePath: selfie,
       kind: "selfie",
     });
-    const plan = (await (
-      await draft(send("POST", "/x", { audioId, demoId }), forBusiness(customer.id))
-    ).json()) as Plan;
     const body = { scriptId, audioId, personaId: persona.id, personaImageId: image.id };
+    const paramsOf = async (response: Response) => {
+      const [row] = await db
+        .select()
+        .from(schema.videoRenders)
+        .where(eq(schema.videoRenders.id, (await response.json()).renderId));
+      return row!.params as { cutaways?: { planId: string; slots: { fromMs: number }[] } };
+    };
+
+    // One clip early in the script, just after the first phrase.
+    let plan = await currentPlan();
+    const window = plan.anchors.find((a) => a.stateIndex === 5)!.startMs;
+    plan = (await (
+      await save(
+        send("PATCH", "/x", {
+          expectedUpdatedAt: plan.updatedAt,
+          slots: [{ id: 1, fromMs: 1200, toMs: 6000, demoStartMs: window }],
+        }),
+        forPlan(customer.id, plan.planId),
+      )
+    ).json()) as Plan;
 
     const withCutaways = await createRender(
       send("POST", "/x", { ...body, cutawayPlanId: plan.planId }),
       forBusiness(customer.id),
     );
     expect(withCutaways.status).toBe(200);
-    const { renderId } = await withCutaways.json();
-    const [row] = await db
-      .select()
-      .from(schema.videoRenders)
-      .where(eq(schema.videoRenders.id, renderId));
-    expect((row!.params as { cutaways?: { planId: string } }).cutaways?.planId).toBe(plan.planId);
+    const params = await paramsOf(withCutaways);
+    expect(params.cutaways?.planId).toBe(plan.planId);
+    expect(params.cutaways?.slots.map((s) => s.fromMs)).toEqual([1200]);
 
-    const headOnly = await createRender(send("POST", "/x", body), forBusiness(customer.id));
-    const [plain] = await db
-      .select()
-      .from(schema.videoRenders)
-      .where(eq(schema.videoRenders.id, (await headOnly.json()).renderId));
-    expect(plain!.params).not.toHaveProperty("cutaways");
-
-    // A plan laid out for no hook text cannot ride a render that burns one.
-    const stale = await createRender(
+    // Five spoken words leave on the phrase at 2.4 s: the clip under them moves there.
+    const hooked = await createRender(
       send("POST", "/x", {
         ...body,
         hookEffect: "zoom",
-        hookText: "מילה0 מילה1 מילה2",
+        hookText: "מילה0 מילה1 מילה2 מילה3 מילה4",
         cutawayPlanId: plan.planId,
       }),
       forBusiness(customer.id),
     );
-    expect(stale.status).toBe(409);
+    expect(hooked.status).toBe(200);
+    expect((await paramsOf(hooked)).cutaways?.slots.map((s) => s.fromMs)).toEqual([2400]);
+
+    const headOnly = await createRender(send("POST", "/x", body), forBusiness(customer.id));
+    expect(await paramsOf(headOnly)).not.toHaveProperty("cutaways");
+
+    // Every clip removed, the plan still sent: today's ad, no cutaways key.
+    await save(
+      send("PATCH", "/x", { expectedUpdatedAt: plan.updatedAt, slots: [] }),
+      forPlan(customer.id, plan.planId),
+    );
+    const emptied = await createRender(
+      send("POST", "/x", { ...body, cutawayPlanId: plan.planId }),
+      forBusiness(customer.id),
+    );
+    expect(emptied.status).toBe(200);
+    expect(await paramsOf(emptied)).not.toHaveProperty("cutaways");
   });
 });

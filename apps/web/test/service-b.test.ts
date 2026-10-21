@@ -333,7 +333,7 @@ describe("businessAccess (ownership gate)", () => {
   });
 });
 
-describe("demo cutaway bodies (vault 0121)", () => {
+describe("demo cutaway bodies (vault 0121, 0122)", () => {
   const body = {
     scriptId: "11111111-1111-4111-8111-111111111111",
     audioId: "22222222-2222-4222-8222-222222222222",
@@ -350,20 +350,37 @@ describe("demo cutaway bodies (vault 0121)", () => {
     expect(renderRequestSchema.safeParse({ ...body, cutawayPlanId: "plan-1" }).success).toBe(false);
   });
 
-  it("the draft takes the audio, the demo and the hook text — nothing else", () => {
+  it("the draft takes the audio and the demo — the hook text is the script's own (vault 0122)", () => {
     const draft = { audioId: body.audioId, demoId: body.personaId };
     expect(cutawayPlanRequestSchema.safeParse(draft).success).toBe(true);
-    expect(cutawayPlanRequestSchema.safeParse({ ...draft, hookText: "שורה" }).success).toBe(true);
+    expect(cutawayPlanRequestSchema.safeParse({ ...draft, hookText: "שורה" }).success).toBe(false);
     expect(cutawayPlanRequestSchema.safeParse({ ...draft, slots: [] }).success).toBe(false);
     expect(
       cutawayPlanRequestSchema.safeParse({ audioId: "x", demoId: body.personaId }).success,
     ).toBe(false);
   });
 
-  it("the picker's save sends starts only — never the slots' times", () => {
-    expect(cutawayPlanUpdateSchema.safeParse({ starts: [400, 10_400] }).success).toBe(true);
-    expect(cutawayPlanUpdateSchema.safeParse({ starts: [] }).success).toBe(false);
-    expect(cutawayPlanUpdateSchema.safeParse({ starts: [400.5] }).success).toBe(false);
-    expect(cutawayPlanUpdateSchema.safeParse({ starts: [400], fromMs: [0] }).success).toBe(false);
+  it("an edit sends the whole clip list and the version it was made on", () => {
+    const clip = { id: 1, fromMs: 7200, toMs: 12_000, demoStartMs: 10_400 };
+    const edit = { expectedUpdatedAt: "2026-10-21T08:00:00.000Z", slots: [clip] };
+    expect(cutawayPlanUpdateSchema.safeParse(edit).success).toBe(true);
+    // No clips at all is today's ad.
+    expect(cutawayPlanUpdateSchema.safeParse({ ...edit, slots: [] }).success).toBe(true);
+    expect(cutawayPlanUpdateSchema.safeParse({ slots: [clip] }).success).toBe(false);
+    expect(
+      cutawayPlanUpdateSchema.safeParse({ ...edit, slots: [{ ...clip, id: 0 }] }).success,
+    ).toBe(false);
+    expect(
+      cutawayPlanUpdateSchema.safeParse({ ...edit, slots: [{ ...clip, id: 9 }] }).success,
+    ).toBe(false);
+    expect(
+      cutawayPlanUpdateSchema.safeParse({ ...edit, slots: [{ ...clip, fromMs: -1 }] }).success,
+    ).toBe(false);
+    expect(
+      cutawayPlanUpdateSchema.safeParse({ ...edit, slots: [{ ...clip, label: "א" }] }).success,
+    ).toBe(false);
+    expect(cutawayPlanUpdateSchema.safeParse({ ...edit, starts: [400] }).success).toBe(false);
+    const nine = Array.from({ length: 9 }, (_, i) => ({ ...clip, id: (i % 8) + 1 }));
+    expect(cutawayPlanUpdateSchema.safeParse({ ...edit, slots: nine }).success).toBe(false);
   });
 });

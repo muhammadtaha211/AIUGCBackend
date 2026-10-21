@@ -773,12 +773,14 @@ export async function createBRender(
     if (opts.openerClipId !== undefined) {
       throw new Error("demo cutaways and an opener clip are exclusive");
     }
-    cutaways = await resolveCutawaysForRender(db, {
-      businessId: opts.businessId,
-      planId: opts.cutawayPlanId,
-      audioRenderId: opts.audioRenderId,
-      hookText,
-    });
+    // Null: no clip left after the final hook text (vault 0122) — today's ad.
+    cutaways =
+      (await resolveCutawaysForRender(db, {
+        businessId: opts.businessId,
+        planId: opts.cutawayPlanId,
+        audioRenderId: opts.audioRenderId,
+        hookText,
+      })) ?? undefined;
   }
 
   // Fail a typo'd tier here, not as a HeyGen 400 after the render is queued.

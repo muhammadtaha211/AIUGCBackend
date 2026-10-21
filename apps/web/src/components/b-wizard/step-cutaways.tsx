@@ -17,18 +17,27 @@ import {
 } from "@/lib/service-a-ui";
 import {
   CUTAWAY_COPY,
+  cutawayColour,
+  cutawayEdits,
+  cutawayLetter,
+  cutawayPhrases,
   cutawayScriptRuns,
   cutawaySeconds,
+  cutawayWords,
+  longHeadRuns,
+  nextCutawayId,
+  placeCutawayAt,
+  type CutawayEditWire,
   type CutawayPlanWire,
+  type CutawaySlotWire,
 } from "@/lib/service-b-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
+import { CutawayChip } from "./cutaway-chip";
 import { CutawayPicker } from "./cutaway-picker";
 
 type StepCutawaysProps = {
   businessId: string;
   audioId: string;
-  /** The final hook text the slots are laid out from ('' = none; cutawayHookText). */
-  hookText: string;
   demo: DemoState | null;
   setDemo: (demo: DemoState | null) => void;
   /** The live plan, or null — the shell decides liveness (liveCutawayPlan). */
@@ -48,20 +57,25 @@ type AnalysisPoll = {
   requestedElapsedMs?: number;
 };
 
+/** What the step shows instead of the clip list: a clip's window picker, or
+ *  the script's phrases to move a clip to or add one at. */
+type CutawayMode = { kind: "window"; id: number } | { kind: "move"; id: number } | { kind: "add" };
+
 /**
- * Demo cutaways (vault 0121), the step after the effect step when the customer
- * ticked the option on the audio card. In phases: pick (or upload) a demo with
- * Service A's own picker; wait for its analysis (once per demo, free here);
- * draft the slots — the demo in order, no model call — and show each slot with
- * the words it covers; correct any one in the window picker. The draft is
+ * Demo cutaways (vault 0121, 0122), the step right after the audio card where
+ * the customer ticked the option — the effect comes after it. In phases: pick
+ * (or upload) a demo with Service A's own picker; wait for its analysis (once
+ * per demo, free here); draft the clips — from where the script first names
+ * the product, the demo in order, no model call — and show each with the words
+ * it covers. Then the customer changes any clip's footage in the window
+ * picker, moves a clip to another phrase, adds one or removes one, each saved
+ * at once; a long run of the character is noted, never blocked. The draft is
  * requested when a demo's analysis is ready and no live plan is held, never on
- * a revisit of a held plan; a new hook text makes the held plan stale, so the
- * step drafts again (founder, 2026-10-20).
+ * a revisit of a held plan.
  */
 export function StepCutaways({
   businessId,
   audioId,
-  hookText,
   demo,
   setDemo,
   plan,
@@ -76,15 +90,15 @@ export function StepCutaways({
   const [draftError, setDraftError] = useState<string | null>(null);
   const [drafting, setDrafting] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
-  /** The slot being corrected in the picker; null = the slot list. */
-  const [editing, setEditing] = useState<number | null>(null);
+  /** The picker or phrase choice open over the clip list; null = the list. */
+  const [mode, setMode] = useState<CutawayMode | null>(null);
   const requested = useRef<string | null>(null);
 
   // A different demo: its analysis, error and picker state start over.
   useEffect(() => {
     setAnalysis(null);
     setDraftError(null);
-    setEditing(null);
+    setMode(null);
   }, [demo?.id]);
 
   // analyze_demo runs on the heavy lane behind renders: minutes, not seconds —
@@ -104,7 +118,7 @@ export function StepCutaways({
     () => setAnalysis({ status: "missing" }),
   );
 
-  const draftKey = `${demo?.id}|${audioId}|${hookText}|${retryNonce}`;
+  const draftKey = `${demo?.id}|${audioId}|${retryNonce}`;
   useEffect(() => {
     if (!demoReady || !demo || plan !== null || analysis?.status !== "ready") return;
     if (requested.current === draftKey) return;
@@ -114,7 +128,7 @@ export function StepCutaways({
       setDraftError(null);
       const result = await postJson<CutawayPlanWire>(
         `/api/businesses/${businessId}/cutaway-plans`,
-        { audioId, demoId: demo.id, hookText },
+        { audioId, demoId: demo.id },
       );
       setDrafting(false);
       if (!result.ok) {
@@ -167,10 +181,11 @@ export function StepCutaways({
     <CutawayBody
       demoId={demo.id}
       plan={plan}
-      editing={editing}
-      setEditing={setEditing}
+      mode={mode}
+      setMode={setMode}
       businessId={businessId}
       setPlan={setPlan}
+      onFatal={onFatal}
     >
       {(slots) => (
         <div>
@@ -313,46 +328,107 @@ function useStateThumbs(demoId: string) {
   return { thumbs, want };
 }
 
-/** The slot list and the picker share one clip player and one thumbnail cache. */
+/**
+ * The clip list, the window picker and the phrase choice share one clip
+ * player, one thumbnail cache and one save: every change — a window, a move,
+ * an add, a remove — PATCHes the whole list with the version it was made on.
+ */
 function CutawayBody({
   demoId,
   plan,
-  editing,
-  setEditing,
+  mode,
+  setMode,
   businessId,
   setPlan,
+  onFatal,
   children,
 }: {
   demoId: string;
   plan: CutawayPlanWire | null;
-  editing: number | null;
-  setEditing: (index: number | null) => void;
+  mode: CutawayMode | null;
+  setMode: (mode: CutawayMode | null) => void;
   businessId: string;
   setPlan: (plan: CutawayPlanWire) => void;
+  onFatal: (message: string) => void;
   children: (slots: React.ReactNode) => React.ReactNode;
 }) {
   const player = useClipPlayer(demoId);
   const { thumbs, want } = useStateThumbs(demoId);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!plan) return;
     want(plan.slots.map((s) => s.stateIndex).filter((i): i is number => i !== null));
   }, [plan, want]);
 
-  if (plan && editing !== null) {
+  /** One edit, saved at once; true when the server took it. */
+  async function save(slots: CutawayEditWire[]): Promise<boolean> {
+    if (!plan) return false;
+    setSaving(true);
+    setSaveError(null);
+    const result = await apiFetch<CutawayPlanWire>(
+      `/api/businesses/${businessId}/cutaway-plans/${plan.planId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedUpdatedAt: plan.updatedAt, slots }),
+      },
+    );
+    setSaving(false);
+    if (!result.ok) {
+      if (result.status === 403 || result.status === 404) onFatal(result.error);
+      setSaveError(
+        result.status === 409 || result.status === 422 ? result.error : CUTAWAY_COPY.saveFailed,
+      );
+      return false;
+    }
+    setPlan(result.body);
+    return true;
+  }
+
+  function closeMode() {
+    setSaveError(null);
+    setMode(null);
+  }
+
+  const modeSlot =
+    plan && mode && mode.kind !== "add" ? plan.slots.find((s) => s.id === mode.id) : undefined;
+
+  if (plan && mode?.kind === "window" && modeSlot) {
     return (
       <CutawayPicker
-        businessId={businessId}
         plan={plan}
-        index={editing}
+        id={modeSlot.id}
         player={player}
         thumbs={thumbs}
         wantThumbs={want}
-        onSaved={(next) => {
-          setPlan(next);
-          setEditing(null);
+        saving={saving}
+        error={saveError}
+        onSave={async (demoStartMs) => {
+          const edits = cutawayEdits(plan.slots).map((s) =>
+            s.id === modeSlot.id ? { ...s, demoStartMs } : s,
+          );
+          if (await save(edits)) closeMode();
         }}
-        onCancel={() => setEditing(null)}
+        onCancel={closeMode}
+      />
+    );
+  }
+
+  if (plan && (mode?.kind === "add" || (mode?.kind === "move" && modeSlot))) {
+    const moving = modeSlot ?? null;
+    return (
+      <CutawayPhrasePick
+        plan={plan}
+        moving={moving}
+        saving={saving}
+        error={saveError}
+        onPick={async (edit) => {
+          const others = cutawayEdits(plan.slots).filter((s) => s.id !== edit.id);
+          if (await save([...others, edit].sort((a, b) => a.fromMs - b.fromMs))) closeMode();
+        }}
+        onCancel={closeMode}
       />
     );
   }
@@ -360,92 +436,299 @@ function CutawayBody({
   return (
     <>
       {children(
-        plan && <CutawaySlots plan={plan} player={player} thumbs={thumbs} onEdit={setEditing} />,
+        plan && (
+          <CutawaySlots
+            plan={plan}
+            player={player}
+            thumbs={thumbs}
+            saving={saving}
+            error={saveError}
+            onWindow={(id) => setMode({ kind: "window", id })}
+            onMove={(id) => setMode({ kind: "move", id })}
+            onAdd={() => setMode({ kind: "add" })}
+            onRemove={(id) => void save(cutawayEdits(plan.slots).filter((s) => s.id !== id))}
+          />
+        ),
       )}
     </>
   );
 }
 
-/** The script with each slot's words marked, then one row per slot. */
+/** The phrases a clip may start on: where placeCutawayAt lands it, or null. */
+function phraseOptions(plan: CutawayPlanWire, moving: CutawaySlotWire | null) {
+  return cutawayPhrases(plan).map((phrase) => ({
+    ...phrase,
+    edit: placeCutawayAt(plan, moving, phrase.startMs),
+  }));
+}
+
+/**
+ * The script with each clip's words in its colour and its letter at the
+ * start, the notes, then one card per clip — full width at every size: a
+ * 9:16 preview that plays the clip's window when tapped, its words, and its
+ * three actions.
+ */
 function CutawaySlots({
   plan,
   player,
   thumbs,
-  onEdit,
+  saving,
+  error,
+  onWindow,
+  onMove,
+  onAdd,
+  onRemove,
 }: {
   plan: CutawayPlanWire;
   player: ClipPlayer;
   thumbs: Record<number, string>;
-  onEdit: (index: number) => void;
+  saving: boolean;
+  error: string | null;
+  onWindow: (id: number) => void;
+  onMove: (id: number) => void;
+  onAdd: () => void;
+  onRemove: (id: number) => void;
 }) {
-  const runs = cutawayScriptRuns(plan.words, plan.slots);
+  const words = cutawayWords(plan);
+  const runs = cutawayScriptRuns(words, plan.slots);
+  const canAdd =
+    nextCutawayId(plan.slots) !== undefined &&
+    phraseOptions(plan, null).some((option) => option.edit !== null);
   return (
     <>
       <div className="mt-6">
         <p className="text-[13px] text-ink/55">{AUDIO_SCRIPT_LABEL}</p>
-        <p className="mt-1 text-sm leading-relaxed text-ink/75">
+        <p className="mt-1 text-sm leading-loose text-ink/75">
           {runs.map((run, i) =>
             run.slot === null ? (
               <span key={i}>{run.text} </span>
             ) : (
               <span key={i}>
-                <mark className="rounded bg-accent/25 px-0.5 text-ink">
+                <mark className={`rounded px-1 py-0.5 text-ink ${cutawayColour(run.slot).mark}`}>
+                  <CutawayChip id={run.slot} className="me-1 align-[-4px]" />
                   {run.text}
-                  <sup className="ms-0.5 text-[10px] font-semibold">{run.slot + 1}</sup>
                 </mark>{" "}
               </span>
             ),
           )}
         </p>
+        {longHeadRuns(plan).map((run) => (
+          <p key={`${run.afterId}-${run.beforeId}`} className="mt-2 text-[13px] text-amber-700">
+            {CUTAWAY_COPY.longRun(
+              {
+                after: run.afterId === null ? null : cutawayLetter(run.afterId),
+                before: run.beforeId === null ? null : cutawayLetter(run.beforeId),
+              },
+              cutawaySeconds(run.ms),
+            )}
+          </p>
+        ))}
+        {plan.slots.length === 0 && (
+          <p className="mt-3 rounded-lg bg-ink/[0.04] px-3 py-2.5 text-sm text-ink/75">
+            {canAdd ? CUTAWAY_COPY.emptyCanAdd : CUTAWAY_COPY.emptyNoFootage}
+          </p>
+        )}
       </div>
-      <ol className="mt-5 flex flex-col gap-2">
-        {plan.slots.map((slot, k) => {
-          const target = {
-            key: `slot-${k}-${slot.demoStartMs}`,
-            startMs: slot.demoStartMs,
-            endMs: slot.demoStartMs + slot.lengthMs,
-          };
-          const playing = player.active?.key === target.key;
-          const thumb = slot.stateIndex === null ? undefined : thumbs[slot.stateIndex];
+
+      <ol className="mt-5 flex flex-col gap-3">
+        {plan.slots.map((slot) => (
+          <CutawayCard
+            key={slot.id}
+            slot={slot}
+            words={words}
+            player={player}
+            thumb={slot.stateIndex === null ? undefined : thumbs[slot.stateIndex]}
+            canMove={phraseOptions(plan, slot).some(
+              (option) => option.edit !== null && option.startMs !== slot.fromMs,
+            )}
+            saving={saving}
+            onWindow={() => onWindow(slot.id)}
+            onMove={() => onMove(slot.id)}
+            onRemove={() => onRemove(slot.id)}
+          />
+        ))}
+      </ol>
+
+      {canAdd && (
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-3 w-full"
+          disabled={saving}
+          onClick={onAdd}
+        >
+          {CUTAWAY_COPY.add}
+        </Button>
+      )}
+      {error && (
+        <p role="alert" className="mt-4 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+    </>
+  );
+}
+
+const CARD_ACTION =
+  "inline-flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg border border-ink/15 bg-white px-2 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-ink/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-50";
+
+function CutawayCard({
+  slot,
+  words,
+  player,
+  thumb,
+  canMove,
+  saving,
+  onWindow,
+  onMove,
+  onRemove,
+}: {
+  slot: CutawaySlotWire;
+  words: string[];
+  player: ClipPlayer;
+  thumb: string | undefined;
+  canMove: boolean;
+  saving: boolean;
+  onWindow: () => void;
+  onMove: () => void;
+  onRemove: () => void;
+}) {
+  const letter = cutawayLetter(slot.id);
+  const target = {
+    key: `slot-${slot.id}-${slot.demoStartMs}-${slot.lengthMs}`,
+    startMs: slot.demoStartMs,
+    endMs: slot.demoStartMs + slot.lengthMs,
+  };
+  const playing = player.active?.key === target.key;
+  return (
+    <li
+      className={`rounded-xl border border-s-4 border-ink/[0.08] bg-white p-3 ${cutawayColour(slot.id).edge}`}
+      aria-label={CUTAWAY_COPY.clipName(letter)}
+    >
+      <div className="flex flex-wrap gap-3">
+        <span className="relative mx-auto block aspect-[9/16] w-36 shrink-0 overflow-hidden rounded-lg bg-ink/10">
+          {thumb && (
+            // Signed, short-lived URL — next/image optimization would break it.
+            <img src={thumb} alt="" className="absolute inset-0 size-full object-cover" />
+          )}
+          {playing && <ClipVideo player={player} />}
+          <button
+            type="button"
+            aria-label={playing ? "עצירת התצוגה" : CUTAWAY_COPY.play}
+            onClick={() => (playing ? player.stop() : player.play(target))}
+            className="absolute inset-0 flex items-center justify-center"
+          >
+            {!playing && (
+              <span className="flex size-10 items-center justify-center rounded-full bg-ink/60 text-white">
+                <Play className="size-5 translate-x-[1px]" />
+              </span>
+            )}
+          </button>
+        </span>
+        <span className="min-w-[13rem] flex-1">
+          <span className="flex items-center gap-2 text-sm font-medium text-ink">
+            <CutawayChip id={slot.id} />
+            {CUTAWAY_COPY.slotLabel(letter, cutawaySeconds(slot.lengthMs))}
+          </span>
+          <span className="mt-1.5 line-clamp-4 block text-[13px] leading-relaxed text-ink/70">
+            {words.slice(slot.wordFrom, slot.wordTo).join(" ")}
+          </span>
+        </span>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button type="button" className={CARD_ACTION} disabled={saving} onClick={onWindow}>
+          {CUTAWAY_COPY.changeWindow}
+        </button>
+        <button
+          type="button"
+          className={CARD_ACTION}
+          disabled={saving || !canMove}
+          onClick={onMove}
+        >
+          {CUTAWAY_COPY.move}
+        </button>
+        <button type="button" className={CARD_ACTION} disabled={saving} onClick={onRemove}>
+          {CUTAWAY_COPY.remove}
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Moving a clip, or adding one: the script as one button per caption phrase.
+ * A phrase that can hold the clip is outlined in its colour; one that cannot
+ * — under the hook text, inside another clip (tinted in that clip's colour),
+ * too close to the next one or the end, or with no footage left — is dimmed
+ * and inert. One tap places the clip and saves.
+ */
+function CutawayPhrasePick({
+  plan,
+  moving,
+  saving,
+  error,
+  onPick,
+  onCancel,
+}: {
+  plan: CutawayPlanWire;
+  moving: CutawaySlotWire | null;
+  saving: boolean;
+  error: string | null;
+  onPick: (edit: CutawayEditWire) => void;
+  onCancel: () => void;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  // The phrases replace a list the customer may have scrolled far down.
+  useEffect(() => root.current?.scrollIntoView({ block: "start" }), []);
+  const id = moving?.id ?? nextCutawayId(plan.slots) ?? 1;
+  const colour = cutawayColour(id);
+  const options = phraseOptions(plan, moving);
+  const coveredBy = (wordFrom: number) =>
+    plan.slots.find((s) => wordFrom >= s.wordFrom && wordFrom < s.wordTo);
+  return (
+    <div ref={root} className="scroll-mt-24">
+      <StepHeader
+        title={moving ? CUTAWAY_COPY.clipName(cutawayLetter(id)) : CUTAWAY_COPY.add}
+        sub={moving ? CUTAWAY_COPY.pickMove(cutawayLetter(id)) : CUTAWAY_COPY.pickAdd}
+        onBack={onCancel}
+      />
+      {options.every((option) => option.edit === null) && (
+        <p className="mt-4 text-sm text-amber-700">{CUTAWAY_COPY.pickNone}</p>
+      )}
+      <div className="mt-5 flex flex-wrap">
+        {options.map((option) => {
+          const owner = coveredBy(option.wordFrom);
           return (
-            <li
-              key={k}
-              className="flex items-center gap-3 rounded-xl border border-ink/[0.08] bg-white p-3"
+            <button
+              key={option.startMs}
+              type="button"
+              disabled={option.edit === null || saving}
+              onClick={() => option.edit && onPick({ ...option.edit, id })}
+              className={`m-0.5 inline-flex min-h-11 items-center rounded-lg border-2 px-2 text-sm text-ink transition-colors duration-150 ${
+                option.edit
+                  ? `${colour.ring} bg-white hover:bg-ink/[0.04]`
+                  : "border-transparent opacity-40"
+              } ${owner ? cutawayColour(owner.id).mark : ""}`}
             >
-              <span className="relative block aspect-[9/16] w-12 shrink-0 overflow-hidden rounded-lg bg-ink/10">
-                {thumb && (
-                  // Signed, short-lived URL — next/image optimization would break it.
-                  <img src={thumb} alt="" className="absolute inset-0 size-full object-cover" />
-                )}
-                {playing && <ClipVideo player={player} />}
-                <button
-                  type="button"
-                  aria-label={playing ? "עצירת התצוגה" : CUTAWAY_COPY.play}
-                  onClick={() => (playing ? player.stop() : player.play(target))}
-                  className="absolute inset-0 flex items-center justify-center"
-                >
-                  {!playing && (
-                    <span className="flex size-7 items-center justify-center rounded-full bg-ink/60 text-white">
-                      <Play className="size-3.5 translate-x-[1px]" />
-                    </span>
-                  )}
-                </button>
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-ink">
-                  {CUTAWAY_COPY.slotLabel(k + 1, cutawaySeconds(slot.lengthMs))}
-                </span>
-                <span className="mt-0.5 line-clamp-2 block text-[13px] text-ink/60">
-                  {plan.words.slice(slot.wordFrom, slot.wordTo).join(" ")}
-                </span>
-              </span>
-              <Button type="button" variant="secondary" onClick={() => onEdit(k)}>
-                {CUTAWAY_COPY.change}
-              </Button>
-            </li>
+              {option.text}
+            </button>
           );
         })}
-      </ol>
-    </>
+      </div>
+      {error && (
+        <p role="alert" className="mt-4 rounded-lg bg-red-100 px-3 py-2.5 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <Button
+        type="button"
+        size="lg"
+        variant="secondary"
+        className="mt-6 w-full"
+        onClick={onCancel}
+      >
+        {CUTAWAY_COPY.cancel}
+      </Button>
+    </div>
   );
 }

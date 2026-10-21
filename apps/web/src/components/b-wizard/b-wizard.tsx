@@ -11,6 +11,7 @@ import type { DemoState } from "@/lib/service-a-ui";
 import {
   CUTAWAY_COPY,
   cutawayHookText,
+  cutawaysUnderHookText,
   liveCutawayPlan,
   pointersChanged,
   wizardSteps,
@@ -48,9 +49,9 @@ type BWizardProps = {
 };
 
 /**
- * The Service B wizard: persona -> pointers -> script -> audio -> opening
- * animation -> (demo cutaways, when ticked, vault 0121) -> render (vault 0017,
- * 0023). Single setting: the persona's selfie
+ * The Service B wizard: persona -> pointers -> script -> audio -> (demo
+ * cutaways, when ticked, vault 0121, 0122) -> opening animation -> render
+ * (vault 0017, 0023). Single setting: the persona's selfie
  * is the render source, so there is no image step and no product step, and the
  * ad is one HeyGen clip with the hook performed on it rather than stitched in
  * front. State is client-side only — a refresh restarts the wizard. Back
@@ -96,21 +97,22 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
   /** The on-screen line the effect step shows and the render burns: the
    *  customer's edit, else the script call's draft. */
   const effectText = hookText ?? script?.hookText ?? "";
-  /** The plan, if it still belongs to this audio, this demo and this hook
-   *  text — a new hook text on the effect step makes it stale, and the
-   *  cutaway step drafts again (founder, 2026-10-20). */
-  const livePlan = liveCutawayPlan(
-    cutawayPlan,
-    audio?.id,
-    cutawayDemo?.id,
-    cutawayHookText(hookEffect, effectText),
-  );
-  /** What the render sends: the live plan, only with the option on. */
-  const renderPlan = cutaways && livePlan && livePlan.slots.length > 0 ? livePlan : null;
+  /** The plan, if it still belongs to this audio and this demo (vault 0122:
+   *  the hook text no longer makes it stale). */
+  const livePlan = liveCutawayPlan(cutawayPlan, audio?.id, cutawayDemo?.id);
+  /** The clips the render will play under the final hook text: a longer line
+   *  moves the clip it reaches, or drops it — derived, never saved (0122). */
+  const underHook =
+    cutaways && livePlan
+      ? cutawaysUnderHookText(livePlan, cutawayHookText(hookEffect, effectText))
+      : null;
+  /** What the render sends: the live plan, only with the option on and a clip
+   *  left to play — none is today's head-only request body. */
+  const renderPlan = livePlan && underHook && underHook.slots.length > 0 ? livePlan : null;
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
   const goNext = () => setStepIndex((index) => Math.min(steps.length - 1, index + 1));
   /** "Continue without cutaways": the option goes off, and the step that
-   *  followed it — the render — slides into this index. */
+   *  followed it — the effect — slides into this index. */
   function skipCutaways() {
     setCutaways(false);
   }
@@ -276,6 +278,7 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
                 setHookText={setHookText}
                 rect={rect}
                 setRect={setRect}
+                cutawayCollisions={underHook ?? undefined}
                 onBack={goBack}
                 onContinue={goNext}
               />
@@ -285,7 +288,6 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
               <StepCutaways
                 businessId={businessId}
                 audioId={audio.id}
-                hookText={cutawayHookText(hookEffect, effectText)}
                 demo={cutawayDemo}
                 setDemo={setCutawayDemo}
                 plan={livePlan}
@@ -310,7 +312,7 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
                 hookText={effectText}
                 hookTextSafeArea={rect ?? undefined}
                 cutawayPlanId={renderPlan?.planId}
-                cutawayCount={renderPlan?.slots.length ?? 0}
+                cutawayCount={renderPlan ? underHook!.slots.length : 0}
                 render={render}
                 setRender={setRender}
                 onBack={goBack}

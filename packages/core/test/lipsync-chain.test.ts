@@ -19,7 +19,7 @@ import {
   setPersonaImageRetired,
 } from "../src/pipelines/bank";
 import { createBusiness } from "../src/pipelines/businesses";
-import { draftCutawayPlan } from "../src/pipelines/cutaways";
+import { draftCutawayPlan, updateCutawayPlan } from "../src/pipelines/cutaways";
 import { rejectRender } from "../src/pipelines/qc";
 import { CENTRED_HOOK_TEXT_RECT } from "../src/hook-geometry";
 import { createBRender, quoteBRender, type VariantParams } from "../src/pipelines/sets";
@@ -823,7 +823,7 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
    * ~18 s under DRY_RUN's 2.2 words/s alignment) and a ready, analysed demo
    * whose normalized file is in storage, so the render hop downloads it.
    */
-  async function cutawayRender(extra: { hookEffect?: string } = {}) {
+  async function cutawayRender(extra: { hookEffect?: string; removeEveryClip?: boolean } = {}) {
     const persona = await addPersona(db, { name: "דנה", voiceId: "voice_dana" });
     await addPersonaImage(db, {
       personaId: persona.id,
@@ -865,12 +865,19 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
       .values({ demoId: demo.id, status: "ready", timeline: states });
     const hookText =
       extra.hookEffect && extra.hookEffect !== "none" ? "מילה0 מילה1 מילה2" : undefined;
-    const plan = await draftCutawayPlan(db, {
+    const drafted = await draftCutawayPlan(db, {
       businessId,
       audioRenderId: audio.id,
       demoId: demo.id,
-      hookText,
     });
+    const plan = extra.removeEveryClip
+      ? await updateCutawayPlan(db, {
+          businessId,
+          planId: drafted.planId,
+          expectedUpdatedAt: drafted.updatedAt,
+          slots: [],
+        })
+      : drafted;
     const base = { businessId, audioRenderId: audio.id, personaId: persona.id };
     const render = await createBRender(db, {
       ...base,
@@ -910,6 +917,21 @@ describe("lipsync chain (dry-run, real DB + jobs + storage)", () => {
     expect(props.indexOf('"hookZoom"')).toBeLessThan(props.indexOf('"cutaways"'));
     expect(props.indexOf('"cutaways"')).toBeLessThan(props.indexOf('"captions"'));
     expect(props).not.toContain("cameraSeed");
+  });
+
+  it("every clip removed: today's head-only ad — params and the props echo as the option off makes them", async () => {
+    const { render, base } = await cutawayRender({ removeEveryClip: true });
+    const headOnly = await createBRender(db, base);
+    expect(await paramsOf(render.id)).toEqual(await paramsOf(headOnly.id));
+    expect(await paramsOf(render.id)).not.toHaveProperty("cutaways");
+    await drainAll();
+    const echo = async (id: string) =>
+      readFileSync(path.join(storageRoot, (await renderRow(id)).filePath!), "utf8").replaceAll(
+        id,
+        "<render>",
+      );
+    expect(await echo(render.id)).not.toContain('"cutaways"');
+    expect(await echo(render.id)).toBe(await echo(headOnly.id));
   });
 
   it("a demo file gone from storage drops the cutaways and still ships the head-only ad", async () => {
