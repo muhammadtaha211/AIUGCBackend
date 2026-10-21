@@ -49,13 +49,13 @@ today's minus the sway, which is gone from every B render. **MERGED as PR #112 (
 `hetzner:heavy` and its output cuts at the slot edges — a pre-merge box would have ignored them).
 Details under "What landed (2026-10-20, last)".
 
-**Service B cutaways, revised: BUILT 2026-10-21 on `feat/b-cutaway-relayout`, NOT merged, no
-migration.** [[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]]. The clips
+**Service B cutaways, revised: BUILT 2026-10-21 on `feat/b-cutaway-relayout`, MERGED the same day
+as PR #113 on his instruction ("open the PR and merge yourself"); no migration, no box step.** [[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]]. The clips
 step now comes right after the audio card and before the effect; the draft never cuts before the
 phrase where the script first names the product; the customer moves, adds and removes clips freely
 (a long run is noted, never blocked); a longer hook text moves the clip it reaches; one letter and
 one colour per clip; big cards; the picker's drag selects nothing. Walked on his own Pixel 6a and a
-desktop Chrome. Details under "What landed (2026-10-21)"; the merge under "Owed founder actions".
+desktop Chrome. Details under "What landed (2026-10-21)"; what is still his under "Owed founder actions".
 
 **TTS moves to Eleven v4, as plain text: MERGED as PR #111 (`cc46f64`, MEASURED by `git log`
 2026-10-20; this paragraph said the merge was his and pending).** The box runs it: he ran the B flow
@@ -898,7 +898,7 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-21) — Service B cutaways revised: clips before the effect, first cut at the product mention, free edits, `feat/b-cutaway-relayout`
+## What landed (2026-10-21) — Service B cutaways revised: clips before the effect, first cut at the product mention, free edits, `feat/b-cutaway-relayout`, MERGED as PR #113
 
 [[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]] amends 0121; his
 rulings, the planning defaults and my flagged interpretations are recorded there.
@@ -2398,7 +2398,8 @@ the 2026-09-26 custom domain (founder-reported):**
      `apps/web/src/lib/service-b-ui.ts` and the `CutawayPlanError` lines in
      `apps/web/src/lib/api-errors.ts`. COPY PENDING FOUNDER REVIEW. This replaces 0121's string
      approval below.
-  2. The merge (his, on GitHub). Vercel deploys it; the box needs nothing.
+  2. ~~The merge~~ **DONE 2026-10-21**: PR #113, merged by the session on his instruction ("open the PR and
+     merge yourself"). Vercel deploys it; the box needs nothing.
   3. A render of his own with the option on: the draft's first clip on the phrase that names the
      product; move, add or remove one; render.
   4. Not rollback-safe once customers add clips (the old schema cannot read their slots).
