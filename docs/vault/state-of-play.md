@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-21
+updated: 2026-10-22
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -897,6 +897,21 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-22) — new A and B example clips on the landing and the home cards, `feat/new-example-videos`, PUSHED, NOT MERGED
+
+[[0123-new-a-and-b-example-clips-a-ships-unblurred]] records his call. The landing's `demoAfter`
+and `presenterSample` and the home cards' `hook-demo` and `presenter` are re-encoded from his
+`Desktop\AIassets\serviceAExample.mp4` and `bServiceExample.mp4` under the same filenames, so no
+code changed. The A clip's browser text ships unblurred, on his instruction ("thats on purpose,
+dont blur anything"). He first said to merge it himself, then in the same session: wait for his
+permission before merging, he may add more changes to the same merge.
+
+- **Checked:** every burned line inside the home card's crop; the dev server serves all eight files
+  byte-identical; headless Chrome plays the three landing slots and both home-card clips.
+- **Found, not changed (not asked):** the before/after row and step 1 still show the old
+  `demoBefore` (blurred, and the recording of the old ad, not the new one); the A wizard's storage
+  example `samples/a-steps/ad-v2.mp4` is still the old ad.
 
 ## What landed (2026-10-21) — Service B cutaways revised: clips before the effect, first cut at the product mention, free edits, `feat/b-cutaway-relayout`, MERGED as PR #113
 

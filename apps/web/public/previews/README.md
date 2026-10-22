@@ -4,11 +4,11 @@ The example clip each service card on `/home` shows in place of its description
 (`apps/web/src/app/home/pathway-cards.tsx`, vault decision 0100). Served statically at
 `/previews/<filename>`.
 
-| Card               | Clip             | Still            | Source (founder's file) |
-| ------------------ | ---------------- | ---------------- | ----------------------- |
-| `הוק + דמו`        | `hook-demo.mp4`  | `hook-demo.jpg`  | `a`                     |
-| `סרטון עם דמות AI` | `presenter.mp4`  | `presenter.jpg`  | `b`                     |
-| `גוש טקסט`         | `text-block.mp4` | `text-block.jpg` | `c`                     |
+| Card               | Clip             | Still            | Source (founder's file)                                       |
+| ------------------ | ---------------- | ---------------- | ------------------------------------------------------------- |
+| `הוק + דמו`        | `hook-demo.mp4`  | `hook-demo.jpg`  | `AIassets\serviceAExample.mp4` (since 2026-10-22, vault 0123) |
+| `סרטון עם דמות AI` | `presenter.mp4`  | `presenter.jpg`  | `AIassets\bServiceExample.mp4` (since 2026-10-22, vault 0123) |
+| `גוש טקסט`         | `text-block.mp4` | `text-block.jpg` | `c`                                                           |
 
 ## How the card uses them
 
@@ -33,13 +33,10 @@ yuv420p -movflags +faststart`. No denoise: it smears burned text. `-map_metadata
   phone's creation time and location.
 - **Stills** are one frame of the encode, `-ss <t> -frames:v 1 -q:v 4`, picked where the burned
   text is on screen: `hook-demo` at 0.5 s, `presenter` at 1 s, `text-block` at 5 s.
-- **Size.** Keep each file under the largest clip in `public/landing/` (3.7 MB); `hook-demo.mp4`,
-  a filmed monitor whose moiré compresses badly, is the largest at 1.8 MB.
-- **`hook-demo.mp4` has the browser text blurred** (2026-10-15, vault decision 0111): the tab title,
-  the bookmarks bar and the address bar's suggestion and history list in the URL step (2.93–4.93
-  s), the same inside the sample recording the upload step plays (8.93–10.93 s), and the steps
-  screen's first frames (10.93–11.07 s), whose text quotes the tab title. The typed `tavnit.ai` and
-  the burned step labels stay sharp. The blur runs on `a` at its full resolution, before the recipe
-  above. `hook-demo.jpg` (0.5 s) comes before all of it and came out byte-identical.
+- **Size.** Keep each file under the largest clip in `public/landing/` (3.7 MB); `presenter.mp4`
+  is the largest here at 1.1 MB.
+- **`hook-demo.mp4` is not blurred** (2026-10-22, vault decision 0123): its URL step shows the
+  browser's tab title and suggestion list, on purpose — the founder's call. The 2026-10-15 copy it
+  replaced had that text blurred (vault 0111).
 
 Replacing a clip is a file drop under the same name plus a new still; there is nothing to edit.

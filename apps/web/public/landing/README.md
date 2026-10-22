@@ -10,8 +10,9 @@ rather than draws — see its row below.
 Filled 2026-09-25: every clip slot (`demoBefore`, `demoAfter`, the four `hookClips`,
 `presenterSample`); `textBlockSample` added and filled 2026-10-10 (vault decision 0100);
 `demoBefore` (with its poster) and `demoAfter` re-encoded 2026-10-15 with the URL step's browser
-text blurred (vault decision 0111). Still empty: the two screenshots, `hookStudioShot` and
-`instagramShot`.
+text blurred (vault decision 0111); `demoAfter` and `presenterSample` replaced 2026-10-22 with
+new ads, the A one unblurred (vault decision 0123). Still empty: the two screenshots,
+`hookStudioShot` and `instagramShot`.
 
 The dashboard's service cards (`/home`) have their own clips, in `public/previews/` with its own
 README; nothing here is shared with them.
@@ -47,18 +48,20 @@ was four tiles of the same clip under four HTML lines; founder's call to show th
 
 - **Clips**: vertical 9:16, the product's own output shape. They autoplay muted, loop and have no
   controls, so ship them without an audio track. `demoAfter` and `presenterSample` are real
-  renders; `demoBefore` is the raw phone recording that produced `demoAfter`. A clip fetches
+  renders, from the founder's `Desktop\AIassets\serviceAExample.mp4` and `bServiceExample.mp4`
+  (2026-10-22). `demoBefore` is the raw phone recording that produced the ad `demoAfter` held
+  until 2026-10-22, not the current one (vault 0123). A clip fetches
   nothing until it scrolls near the viewport (`components/landing/landing-video.tsx`) — only its
   poster loads with the page.
 - **`demoAfter` is the finished ad, its hook line burned in** — the page draws no line over it.
-- **The URL step's browser text is blurred** in `demoBefore` (0–7.37 s, so its poster too) and
-  `demoAfter` (2.93–5.93 s): the tab title, the bookmarks bar and the address bar's suggestion
-  and history list. The typed `tavnit.ai` and the burned step label stay sharp. A re-encode starts
-  from the source and keeps the blur, applied at the source's resolution before the recipe below:
-  `demoBefore` from the founder's `Desktop\AIassets\finaledited.mp4`, `demoAfter` from his
-  `Downloads\finishedHookAndDemo.mp4`. The regions, the method and the checks are in vault 0111.
-  The same pair is the A wizard's example in storage (`samples/a-steps/recording-v2.mp4`, a 720p
-  `-crf 28` encode of the same blurred recording, and `ad-v2.mp4`, this `demoAfter`).
+- **The URL step's browser text is blurred** in `demoBefore` (0–7.37 s, so its poster too): the
+  tab title, the bookmarks bar and the address bar's suggestion and history list. The typed
+  `tavnit.ai` and the burned step label stay sharp. A re-encode starts from the source and keeps
+  the blur, applied at the source's resolution before the recipe below: `demoBefore` from the
+  founder's `Desktop\AIassets\finaledited.mp4`. The regions, the method and the checks are in vault 0111. **`demoAfter` is not blurred**: its URL step shows that text on purpose, the founder's call
+  (vault 0123). The A wizard's example in storage is still the 2026-10-15 pair
+  (`samples/a-steps/recording-v2.mp4`, a 720p `-crf 28` encode of the blurred recording, and
+  `ad-v2.mp4`, the `demoAfter` of then).
 - **The `hookClips` carry no text, and the page draws none over them.** Step 2 shows the bank
   clips bare, as they sit in the bank.
 - **Encode for the web, not the archive.** The sources were 174 MB; these files are 11 MB. The
@@ -69,7 +72,8 @@ was four tiles of the same clip under four HTML lines; founder's call to show th
   so it is 540×960 with `hqdn3d=4:4:8:8` at `-crf 32` — the same picture at the ~200px the page
   draws it. `-map_metadata -1` is not optional: a phone recording carries its creation time
   (and can carry its location). Posters are each clip's first frame (`-frames:v 1 -q:v 4`), except
-  `textBlockSample`'s, taken at 5 s (`-ss 5`) where the cut watermelon shows.
+  `textBlockSample`'s, taken at 5 s (`-ss 5`) where the cut watermelon shows, and
+  `presenterSample`'s, taken at 1 s (`-ss 1`): its first frame is mid-whip, a motion blur.
 - **Stills**: `hookStudioShot` and `instagramShot` are screenshots. Crop `instagramShot` to a
   phone aspect — its frame is shaped for it.
 - **Hook lines** are copy, not assets: they live beside the clips in `landing-media.ts`, but no

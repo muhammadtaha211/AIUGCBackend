@@ -52,8 +52,8 @@ export function demoUploadPath(businessId: string, uploadId: string, type: strin
  * means new keys and a change here: the objects are cached for an hour
  * (max-age=3600), so an overwrite can keep serving the old bytes.
  * The -v2 pair (2026-10-15, vault 0111) is the 2026-09-25 pair with the URL
- * step's browser text blurred: ad-v2.mp4 IS
- * apps/web/public/landing/demo-after.mp4, and recording-v2.mp4 is its own 720p
+ * step's browser text blurred: ad-v2.mp4 was the landing's demo-after.mp4
+ * until 2026-10-22 (vault 0123), and recording-v2.mp4 is its own 720p
  * CRF 28 encode (19 MB) — the landing's 540p copy smears on-screen text at
  * this size and fullscreen, under a rule that says that text must be readable.
  */
