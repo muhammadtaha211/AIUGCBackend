@@ -51,14 +51,15 @@ export function demoUploadPath(businessId: string, uploadId: string, type: strin
  * recording and the ad it produced. Fixed storage paths. Replacing the example
  * means new keys and a change here: the objects are cached for an hour
  * (max-age=3600), so an overwrite can keep serving the old bytes.
- * The -v2 pair (2026-10-15, vault 0111) is the 2026-09-25 pair with the URL
- * step's browser text blurred: ad-v2.mp4 IS
- * apps/web/public/landing/demo-after.mp4, and recording-v2.mp4 is its own 720p
- * CRF 28 encode (19 MB) — the landing's 540p copy smears on-screen text at
- * this size and fullscreen, under a rule that says that text must be readable.
+ * The -v3 pair (2026-10-22, vault 0123) is the founder's new recording and
+ * the ad made from it, unblurred: ad-v3.mp4 IS
+ * apps/web/public/landing/demo-after.mp4, and recording-v3.mp4 is its own
+ * CRF 28 encode at the recording's 480x854 (16 MB) — the landing's CRF 34
+ * copy smears on-screen text at this size and fullscreen, under a rule that
+ * says that text must be readable.
  */
-export const A_SAMPLE_RECORDING_PATH = "assets/samples/a-steps/recording-v2.mp4";
-export const A_SAMPLE_AD_PATH = "assets/samples/a-steps/ad-v2.mp4";
+export const A_SAMPLE_RECORDING_PATH = "assets/samples/a-steps/recording-v3.mp4";
+export const A_SAMPLE_AD_PATH = "assets/samples/a-steps/ad-v3.mp4";
 
 /** Register accepts only paths this business's own upload-url route minted. */
 export function isOwnedDemoUploadPath(businessId: string, uploadPath: string): boolean {

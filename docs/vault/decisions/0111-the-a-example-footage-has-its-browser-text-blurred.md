@@ -15,6 +15,11 @@ are FOUNDER-REPORTED, 2026-10-15. Where no reason is given, he gave none.
 
 ## 1. The sensitive text in the URL step is blurred on every copy of the footage
 
+**2026-10-22:** superseded for every copy. The home card, both landing slots and the demo step's
+pair (new keys `-v3`) now hold a new recording and its ad, unblurred on the founder's call
+([[0123-new-a-and-b-example-clips-a-ships-unblurred]]). Only the unreferenced `-v2` objects in
+storage still carry this blur.
+
 **FOUNDER-REPORTED.** His reason: the text is sensitive, and the footage is on the public landing.
 This reverses [[0100-home-cards-show-example-clips-landing-sells-three]] §6 S2, where he chose to
 ship `a` unedited after the session flagged its tab titles and an address bar.
