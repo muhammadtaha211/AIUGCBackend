@@ -22,7 +22,7 @@ import {
   stepsConfirmLabel,
   type JobProgressWire,
 } from "@/lib/service-a-ui";
-import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
+import { failedRenderNotice, type NextVersion, type RenderState } from "@/lib/service-b-ui";
 import {
   C_LIBRARY_LINK,
   C_RENDER_COPY,
@@ -135,6 +135,7 @@ export function StepRender({
     downloadUrl?: string;
     scheduleHref?: string;
     pendingPosts?: number;
+    nextVersion?: NextVersion;
     failureReason?: string;
     refunded?: boolean;
     balance?: number;
@@ -153,6 +154,7 @@ export function StepRender({
         downloadUrl: body.downloadUrl,
         scheduleHref: body.scheduleHref,
         pendingPosts: body.pendingPosts,
+        nextVersion: body.nextVersion,
         failureReason: body.failureReason,
         refunded: body.refunded,
         job: body.job,
@@ -334,6 +336,7 @@ export function StepRender({
             downloadUrl={render.downloadUrl}
             scheduleHref={render.scheduleHref}
             pendingPosts={render.pendingPosts}
+            nextVersion={render.nextVersion}
             className="mx-auto mt-6 w-full max-w-60"
             frameClassName="border-ink/10"
           />

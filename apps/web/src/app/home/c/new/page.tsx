@@ -7,6 +7,7 @@ import { introOfferFor } from "@/lib/intro";
 import { ownedBusinesses } from "@/lib/businesses";
 import { loadPersonaCatalog } from "@/lib/persona-catalog";
 import { BUSINESS_COOKIE, pickSelectedBusiness } from "@/lib/service-b-ui";
+import { cWizardEntry } from "@/lib/service-c-ui";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { wizardGate } from "@/lib/wizard-gate";
 
@@ -16,8 +17,14 @@ import { wizardGate } from "@/lib/wizard-gate";
  * id + name to the client wizard. The questionnaire gate stays — the texts
  * are written from it. The catalog ships in the HTML too, narrowed to
  * characters with at least one usable clip, so the gallery never dead-ends.
+ * A finished video's "גרסה נוספת" arrives with ?persona=&clip= (decision 0124),
+ * read here so the wizard knows from its first render that it is restoring.
  */
-export default async function NewCRenderPage() {
+export default async function NewCRenderPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const supabase = await createServerSupabase();
   // authedUser throws on a FAILED read rather than letting it collapse into
   // "signed out" — see the note in @/lib/auth-user.
@@ -58,6 +65,7 @@ export default async function NewCRenderPage() {
           businessId={selected.id}
           businessName={selected.name}
           initialCatalog={personaCatalog}
+          entry={cWizardEntry(await searchParams)}
         />
       ) : (
         <NoCreditsCard service="c" intro={intro} />

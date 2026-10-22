@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { RenderPlayer } from "@/components/render-player";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/icons";
-import { rendersPageCount, SERVICE_LABELS, type RenderRow } from "@/lib/service-b-ui";
+import {
+  rendersPageCount,
+  SERVICE_LABELS,
+  type NextVersion,
+  type RenderRow,
+} from "@/lib/service-b-ui";
 import { apiFetch } from "@/lib/use-api";
 import { RenderTile } from "../render-tile";
 
@@ -26,6 +31,7 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
     downloadUrl?: string;
     scheduleHref?: string;
     pendingPosts?: number;
+    nextVersion?: NextVersion;
   } | null>(null);
   /** The modal's own failure. Kept apart from the list's: this surface has no
    *  poll and no focus refetch, so an error written by a click would otherwise
@@ -75,10 +81,12 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
     // An allowed account's rows carry `postTags` (social posting PR 3): the
     // schedule button takes its place from the open, so nothing moves under
     // the cursor when the signed URLs land.
+    // "גרסה נוספת" the same way, from the row's service (decision 0124).
     const row = renders?.find((render) => render.id === renderId);
     setPlaying({
       id: renderId,
       scheduleHref: row?.postTags !== undefined ? `/schedule/${renderId}` : undefined,
+      nextVersion: row && row.service !== "b" ? { service: row.service } : undefined,
     });
     setPlayError(null);
     const result = await apiFetch<{
@@ -87,6 +95,7 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
       downloadUrl?: string;
       scheduleHref?: string;
       pendingPosts?: number;
+      nextVersion?: NextVersion;
     }>(`/api/renders/${renderId}`);
     if (result.ok && result.body.videoUrl) {
       // Both URLs come from this one response — the download is never a
@@ -97,6 +106,7 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
         downloadUrl: result.body.downloadUrl,
         scheduleHref: result.body.scheduleHref,
         pendingPosts: result.body.pendingPosts,
+        nextVersion: result.body.nextVersion,
       });
     } else {
       setPlaying(null);
@@ -203,6 +213,7 @@ export function RendersLibrary({ businessId }: { businessId: string }) {
               frameClassName="border-white/10"
               scheduleHref={playing.scheduleHref}
               pendingPosts={playing.pendingPosts}
+              nextVersion={playing.nextVersion}
               onDark
             />
             <button

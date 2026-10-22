@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import {
   creditBalance,
   getDb,
@@ -6,11 +7,67 @@ import {
   getStorage,
   HEAVY_JOB_TYPES,
   pendingPostsByRender,
+  quoteStepsASet,
+  quoteTotal,
+  schema,
+  type Db,
   type JobProgress,
 } from "@aiugc/core";
 import { coreErrorResponse, requireRender, requireUser, SIGNED_URL_TTL_SECONDS } from "@/lib/api";
-import { renderDownloadFilename } from "@/lib/service-b-ui";
+import { renderDownloadFilename, type NextVersion } from "@/lib/service-b-ui";
 import { userPlatforms } from "@/lib/social";
+
+/**
+ * The player's "גרסה נוספת" (decision 0124), or undefined: B renders get none,
+ * and neither do the retired full format and a row whose recording or clip
+ * is gone.
+ *
+ * A: back to the wizard's character step with this recording held — the
+ * wizard's own ?demo= restore, which lands on the first step when no step is
+ * given. The price is the one the render step will show and createSet will
+ * charge (quoteStepsASet with this demo), named only when it is the
+ * discount: chargeable, and the analysis already paid for.
+ *
+ * C: back to the text step with the same character and clip.
+ */
+async function nextVersionFor(
+  db: Db,
+  render: typeof schema.videoRenders.$inferSelect,
+): Promise<NextVersion | undefined> {
+  if (render.service === "a") {
+    const params = render.params as { format?: string; stepPlanId?: string };
+    // createSet's own reading: an absent format with a plan is steps.
+    const format = params.format ?? (params.stepPlanId ? "steps" : "full");
+    if (format !== "steps" || !render.setId) return undefined;
+    const [set] = await db
+      .select({ demoId: schema.sets.demoId })
+      .from(schema.sets)
+      .where(eq(schema.sets.id, render.setId))
+      .limit(1);
+    if (!set?.demoId) return undefined;
+    const quote = await quoteStepsASet(db, render.businessId, set.demoId);
+    return {
+      service: "a",
+      href: `/home/a/new?demo=${set.demoId}`,
+      credits:
+        quote.chargeable && quote.analysisCreditsOncePerSet === 0
+          ? quoteTotal(quote, 1)
+          : undefined,
+    };
+  }
+  if (render.service === "c") {
+    const clipId = (render.params as { textBlockClipId?: string }).textBlockClipId;
+    if (!clipId) return undefined;
+    const [clip] = await db
+      .select({ personaId: schema.textBlockClips.personaId })
+      .from(schema.textBlockClips)
+      .where(eq(schema.textBlockClips.id, clipId))
+      .limit(1);
+    if (!clip?.personaId) return undefined;
+    return { service: "c", href: `/home/c/new?persona=${clip.personaId}&clip=${clipId}` };
+  }
+  return undefined;
+}
 
 /**
  * Poll a render. Status passes through core's states; the video (and thumb)
@@ -53,6 +110,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       scheduleHref?: string;
       /** Posts of this video still waiting (scheduled or publishing). */
       pendingPosts?: number;
+      /** The player's "גרסה נוספת" (decision 0124): released A (steps) and
+       *  C renders with a file — absent for B and for everything else. */
+      nextVersion?: NextVersion;
     } = {
       status: render.status,
     };
@@ -79,6 +139,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         body.scheduleHref = `/schedule/${id}`;
         body.pendingPosts = (await pendingPostsByRender(db, [id], platforms)).get(id) ?? 0;
       }
+      if (render.filePath) body.nextVersion = await nextVersionFor(db, render);
     }
     if (render.status === "failed") {
       // Displayable by construction: a PermanentError's Hebrew customer

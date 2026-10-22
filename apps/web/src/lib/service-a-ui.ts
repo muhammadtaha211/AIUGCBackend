@@ -421,7 +421,7 @@ export type DemoSummary = {
  */
 export type AWizardIdentity = { demoId: string | null; step: number };
 
-const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Parse ?demo=&step= — anything malformed degrades to a fresh wizard. */
 export function identityFromSearch(search: string, stepCount: number): AWizardIdentity {

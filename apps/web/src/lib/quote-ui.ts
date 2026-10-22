@@ -105,6 +105,26 @@ export function stepsPriceBreakdown(quote: StepsQuoteView): string | null {
 }
 
 /**
+ * The finished video's third action (decision 0124): back into the wizard for
+ * the next version — A from the same recording, C on the same clip.
+ */
+export const NEXT_VERSION_BUTTON = "גרסה נוספת";
+
+/**
+ * The line under it, A only (C is one flat price, so it has none). The number
+ * is the quote route's price for THIS recording (quoteStepsASet, the call
+ * createSet charges with), never a literal. `undefined` = no discount to name:
+ * the admin bypass, or a recording the quote still charges the analysis on —
+ * then the pitch stands alone, so the line never contradicts the render
+ * step's breakdown ("כל מודעה נוספת מאותה הקלטה תעלה …").
+ */
+export function nextVersionLine(credits: number | undefined): string {
+  const pitch = "כדאי ליצור הרבה גרסאות, עם משפט פתיחה וקליפ פתיחה אחרים בכל פעם, ולראות מה עובד.";
+  if (credits === undefined) return pitch;
+  return `גרסאות נוספות מאותה הקלטה בהנחה: הבאה תעלה ${credits} קרדיטים. ${pitch}`;
+}
+
+/**
  * The demo step's reuse nudge. The number is the analysis part of a quote for
  * a demo that does not exist yet (the quote route with no `demoId`) — never a
  * literal here, because the price is config and moves without a deploy.

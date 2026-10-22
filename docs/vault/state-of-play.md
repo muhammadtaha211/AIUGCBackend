@@ -40,6 +40,15 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**"גרסה נוספת" on finished hook + demo and גוש טקסט videos: BUILT 2026-10-22 on
+`feat/next-version-action`, NOT MERGED; no migration, no box step.**
+[[0124-the-next-version-is-taught-at-the-finished-video]]. A third button on every surface a
+finished A (steps) or C video plays. A opens the wizard's character step with the recording
+already held, under a line naming the next render's price (25 today) and the volume pitch. C
+opens the text step with the same character and clip. Nothing on B. One PostHog event,
+`next_version_started`. Details under "What landed (2026-10-22, later)"; the strings wait for his
+approval under "Owed founder actions".
+
 **Service B demo cutaways and no sway: BUILT 2026-10-20 on `feat/b-demo-cutaways`; 0068 PUSHED
 the same day on his instruction ("when you're done go ahead and apply the migrations and merge
 yourself").** [[0121-service-b-demo-cutaways-and-no-sway]]. A customer can tick "לשלב קטעים מסרטון
@@ -897,6 +906,35 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-22, later) — "גרסה נוספת" at the finished video, `feat/next-version-action`, NOT MERGED
+
+[[0124-the-next-version-is-taught-at-the-finished-video]] records his eight calls and how each is
+built. In short:
+
+- `GET /api/renders/[id]` sends `nextVersion` for released A (steps) and C renders only. Every
+  `RenderPlayer` mount passes it on: the home strip's and the library's modals, and the A and C
+  finish steps. B's finish step does not.
+- **The recording IS carried, with no A wizard change**: the button goes to
+  `/home/a/new?demo=<id>`, and the wizard's own `?demo=` restore lands on the character step when
+  no step is given. MEASURED in headless Chrome against the real `AWizard` (harness, fetch mock):
+  a soft navigation from another page and the full load the finish step uses both landed on step
+  1 with the recording in the strip.
+- C's entry is the only wizard change: `?persona=&clip=` read by the page, resolved by the wizard
+  from the catalog and that character's gallery, onto the text step; the address goes back to bare.
+- The number is `quoteStepsASet` → `quoteTotal(…, 1)`, sent only when it is a discount
+  (chargeable, analysis already paid). The test moves `a_steps_credits` and the number follows.
+- MEASURED 2026-10-22, read-only: `credit_costs` is 25 / 20 / 25 (steps / analysis / C), so the
+  first-render breakdown reads `45 קרדיטים: 25 לסרטון + 20 על ניתוח ההקלטה. כל מודעה נוספת מאותה
+הקלטה תעלה 25.` and the new line says 25. Neither posting switch row exists (admins only), so
+  a customer sees הורדה | גרסה נוספת.
+- **FOUNDER-REPORTED (2026-10-22), not repo-verified:** the Instagram account he markets Tavnit
+  with gets few views and barely any customer conversions, which is why it is not used as an
+  in-app example and `instagramUrl` stays null. The "a few videos are enough" misconception is what
+  he hears from people, not something measured in the product.
+- **Not done:** no signed-in walk. The account he owns as a customer has no finished A video, and
+  making one spends credits on the live box. The screenshots came from a throwaway harness,
+  deleted before the commit.
 
 ## What landed (2026-10-22) — new A and B example clips on the landing and the home cards, `feat/new-example-videos`, MERGED as PR #114 on his instruction ("go ahead and merge")
 
@@ -2408,6 +2446,15 @@ the 2026-09-26 custom domain (founder-reported):**
 [[0097-push-to-main-refused-by-a-git-hook-the-rest-instruction-only]].
 
 ## Owed founder actions
+
+- **"גרסה נוספת" (2026-10-22, `feat/next-version-action`,
+  [[0124-the-next-version-is-taught-at-the-finished-video]]).** No migration, no box step. In order:
+  1. Approve the strings: `NEXT_VERSION_BUTTON` and `nextVersionLine` in
+     `apps/web/src/lib/quote-ui.ts`. COPY PENDING FOUNDER REVIEW.
+  2. The merge (never by the session).
+  3. On his phone, as a customer: open a finished A video from `/home`, tap גרסה נוספת, and check
+     that the character step has the recording in the strip; the same for a C video, which should
+     land on the text step.
 
 - **Service B cutaways revised (2026-10-21, `feat/b-cutaway-relayout`,
   [[0122-service-b-clips-before-the-effect-first-cut-at-the-product-mention]]).** No migration, no

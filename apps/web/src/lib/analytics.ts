@@ -580,6 +580,8 @@ export const STEP_EVENTS = {
     ],
   },
   render_requested: { service: SERVICES, result: ["ok", "no_credits", "refused", "error"] },
+  // The finished video's "גרסה נוספת" (decision 0124). B has no such button.
+  next_version_started: { service: ["a", "c"] },
 } as const satisfies Record<string, Record<string, readonly string[] | RegExp>>;
 
 type StepRules = typeof STEP_EVENTS;
