@@ -898,20 +898,23 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-22) — new A and B example clips on the landing and the home cards, `feat/new-example-videos`, PUSHED, NOT MERGED
+## What landed (2026-10-22) — new A and B example clips on the landing and the home cards, `feat/new-example-videos`, MERGED as PR #114 on his instruction ("go ahead and merge")
 
-[[0123-new-a-and-b-example-clips-a-ships-unblurred]] records his call. The landing's `demoAfter`
-and `presenterSample` and the home cards' `hook-demo` and `presenter` are re-encoded from his
-`Desktop\AIassets\serviceAExample.mp4` and `bServiceExample.mp4` under the same filenames, so no
-code changed. The A clip's browser text ships unblurred, on his instruction ("thats on purpose,
-dont blur anything"). He first said to merge it himself, then in the same session: wait for his
-permission before merging, he may add more changes to the same merge.
+[[0123-new-a-and-b-example-clips-a-ships-unblurred]] records his calls. Every copy of the A
+example is now his new recording (`Desktop\demos\newnewserviceA.mp4`) and the ad made from it
+(`madefromserviceaDemo.mp4`): the landing's `demoBefore` and `demoAfter`, the home card's
+`hook-demo`, and the demo step's pair, uploaded under new keys `samples/a-steps/recording-v3.mp4`
+and `ad-v3.mp4` (no overwrite, no delete; read back byte-identical) that the two constants in
+`apps/web/src/lib/service-a.ts` now name. B's `presenterSample` and home card come from
+`Desktop\AIassets\bServiceExample.mp4`. All of it ships unblurred, on his instruction ("thats on
+purpose, dont blur anything"). His first A clip, `AIassets\serviceAExample.mp4`, was replaced the
+same session before the merge, when he asked for the before/after to match. Merged at his
+instruction ("merge when you're done"), after an earlier "wait for my permission before you merge".
 
-- **Checked:** every burned line inside the home card's crop; the dev server serves all eight files
-  byte-identical; headless Chrome plays the three landing slots and both home-card clips.
-- **Found, not changed (not asked):** the before/after row and step 1 still show the old
-  `demoBefore` (blurred, and the recording of the old ad, not the new one); the A wizard's storage
-  example `samples/a-steps/ad-v2.mp4` is still the old ad.
+- **Checked:** every burned line inside the home card's crop; the dev server serves all ten files
+  byte-identical; headless Chrome plays all five landing slots and both home-card clips, and plays
+  the uploaded recording; both new storage objects serve `200 video/mp4` through a signed URL with
+  the uploaded bytes. The demo step itself was not opened signed in (its code is unchanged).
 
 ## What landed (2026-10-21) — Service B cutaways revised: clips before the effect, first cut at the product mention, free edits, `feat/b-cutaway-relayout`, MERGED as PR #113
 
@@ -2499,7 +2502,9 @@ the 2026-09-26 custom domain (founder-reported):**
   `assets/samples/a-steps/recording.mp4` and `ad.mp4` are referenced by nothing; they still hold
   the unblurred text. The one delete, his call, not run:
   `supabase.storage.from("assets").remove(["samples/a-steps/recording.mp4", "samples/a-steps/ad.mp4"])`
-  (service-role client), or Storage → `assets` → `samples/a-steps` in the dashboard.
+  (service-role client), or Storage → `assets` → `samples/a-steps` in the dashboard. Since
+  2026-10-22 (0123) the `-v2` pair is unreferenced too once the `-v3` constants are live; it holds
+  only blurred text, so deleting it is housekeeping.
 - **The ₪5 intro offer (2026-10-14, `feat/intro-offer`).** Each its own OK, in order:
   1. ~~the test-org ₪5 page~~ DONE 2026-10-14 (`…/138f5dl/14m9m60/14m9m61/payment/`, redirect to
      localhost);
