@@ -106,3 +106,8 @@ _(Pointer 2026-10-11, three facts MEASURED in the tree at `origin/main` 5976063:
 b-wizard :321, render-player :34). The founder decided on 2026-10-10 that a second button,
 **תזמון פרסום**, joins הורדה on every one of those surfaces —
 [[0101-tavnit-schedules-and-posts-to-instagram-and-tiktok]], its web PR.)_
+
+_(Pointer 2026-10-22, MEASURED in the tree at `origin/main` c68282b: still five surfaces, all
+mounting `RenderPlayer` — `renders-strip.tsx`, `renders/renders-library.tsx` and the A, B and C
+`step-render.tsx`. A third button, **גרסה נוספת**, joins it on released A (steps) and C videos
+and never on B — [[0124-the-next-version-is-taught-at-the-finished-video]].)_

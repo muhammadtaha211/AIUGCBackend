@@ -8,6 +8,7 @@ import {
   generatingLine,
   isActiveRenderStatus,
   pickActiveHead,
+  type NextVersion,
   type RenderRow,
 } from "@/lib/service-b-ui";
 import { apiFetch, usePolling } from "@/lib/use-api";
@@ -50,6 +51,7 @@ export function RendersStrip({ businessId }: { businessId: string }) {
     downloadUrl?: string;
     scheduleHref?: string;
     pendingPosts?: number;
+    nextVersion?: NextVersion;
   } | null>(null);
 
   const refetch = useCallback(async () => {
@@ -93,10 +95,12 @@ export function RendersStrip({ businessId }: { businessId: string }) {
     // An allowed account's rows carry `postTags` (social posting PR 3): the
     // schedule button takes its place from the open, so nothing moves under
     // the cursor when the signed URLs land.
+    // "גרסה נוספת" the same way, from the row's service (decision 0124).
     const row = renders?.find((render) => render.id === renderId);
     setPlaying({
       id: renderId,
       scheduleHref: row?.postTags !== undefined ? `/schedule/${renderId}` : undefined,
+      nextVersion: row && row.service !== "b" ? { service: row.service } : undefined,
     });
     const result = await apiFetch<{
       status: string;
@@ -104,6 +108,7 @@ export function RendersStrip({ businessId }: { businessId: string }) {
       downloadUrl?: string;
       scheduleHref?: string;
       pendingPosts?: number;
+      nextVersion?: NextVersion;
     }>(`/api/renders/${renderId}`);
     if (result.ok && result.body.videoUrl) {
       // Both URLs come from this one response — the download is never a
@@ -114,6 +119,7 @@ export function RendersStrip({ businessId }: { businessId: string }) {
         downloadUrl: result.body.downloadUrl,
         scheduleHref: result.body.scheduleHref,
         pendingPosts: result.body.pendingPosts,
+        nextVersion: result.body.nextVersion,
       });
     } else {
       setPlaying(null);
@@ -211,6 +217,7 @@ export function RendersStrip({ businessId }: { businessId: string }) {
               frameClassName="border-white/10"
               scheduleHref={playing.scheduleHref}
               pendingPosts={playing.pendingPosts}
+              nextVersion={playing.nextVersion}
               onDark
             />
             <button

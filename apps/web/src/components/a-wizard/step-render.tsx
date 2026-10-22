@@ -33,7 +33,7 @@ import {
   type StepsQuoteView,
 } from "@/lib/quote-ui";
 import type { AStepsCreateResponse } from "@/lib/service-a";
-import { failedRenderNotice, type RenderState } from "@/lib/service-b-ui";
+import { failedRenderNotice, type NextVersion, type RenderState } from "@/lib/service-b-ui";
 import { apiFetch, postJson, useJobPoll } from "@/lib/use-api";
 
 /** The render poll, and the interval the progress bar glides over — one
@@ -151,6 +151,7 @@ export function StepARender({
     downloadUrl?: string;
     scheduleHref?: string;
     pendingPosts?: number;
+    nextVersion?: NextVersion;
     failureReason?: string;
     refunded?: boolean;
     balance?: number;
@@ -171,6 +172,7 @@ export function StepARender({
         downloadUrl: body.downloadUrl,
         scheduleHref: body.scheduleHref,
         pendingPosts: body.pendingPosts,
+        nextVersion: body.nextVersion,
         failureReason: body.failureReason,
         refunded: body.refunded,
         job: body.job,
@@ -373,6 +375,7 @@ export function StepARender({
             downloadUrl={render.downloadUrl}
             scheduleHref={render.scheduleHref}
             pendingPosts={render.pendingPosts}
+            nextVersion={render.nextVersion}
             className="mx-auto mt-6 w-full max-w-60"
             frameClassName="border-ink/10"
           />

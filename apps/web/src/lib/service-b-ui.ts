@@ -353,7 +353,17 @@ export type RenderState = {
    *  sent only for a released render and an account the switch allows. */
   scheduleHref?: string;
   pendingPosts?: number;
+  /** The player's "גרסה נוספת" (decision 0124): released A (steps) and C renders only. */
+  nextVersion?: NextVersion;
 };
+
+/**
+ * Where the finished video's "גרסה נוספת" goes, as GET /api/renders/[id] sends
+ * it. `href` absent = the modal reserved the button at open and the response
+ * has not landed yet. `credits` (A only) is the next render's price off this
+ * recording, present only when the quote gives the discount.
+ */
+export type NextVersion = { service: "a" | "c"; href?: string; credits?: number };
 
 /**
  * The failed-state copy for both wizards: the reason always renders; the

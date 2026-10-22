@@ -5,6 +5,7 @@ import {
   TEXT_BLOCK_MAX_CHARS,
   textBlockLength,
 } from "@aiugc/core/text-block";
+import { UUID_SHAPE } from "./service-a-ui";
 import type { TextBlockNextResponse } from "./service-c";
 
 /**
@@ -18,6 +19,23 @@ import type { TextBlockNextResponse } from "./service-c";
  */
 
 export type CWizardStep = "persona" | "clip" | "studio" | "render";
+
+/** Where a finished video's "גרסה נוספת" sends the wizard (decision 0124). */
+export type CWizardEntry = { personaId: string; clipId: string };
+
+/**
+ * ?persona=&clip= as the page receives it: both well-formed ids, or no entry
+ * at all — and then the wizard starts at the character step, as it always has.
+ */
+export function cWizardEntry(query: {
+  persona?: string | string[];
+  clip?: string | string[];
+}): CWizardEntry | undefined {
+  const { persona, clip } = query;
+  if (typeof persona !== "string" || !UUID_SHAPE.test(persona)) return undefined;
+  if (typeof clip !== "string" || !UUID_SHAPE.test(clip)) return undefined;
+  return { personaId: persona, clipId: clip };
+}
 
 export const C_WIZARD_STEPS: CWizardStep[] = ["persona", "clip", "studio", "render"];
 

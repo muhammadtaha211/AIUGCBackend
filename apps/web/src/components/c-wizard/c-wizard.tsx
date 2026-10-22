@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { useStepViewed } from "@/components/analytics";
 import { StepPersona } from "@/components/b-wizard/step-persona";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/icons";
 import { WizardNav } from "@/components/wizard-nav";
 import { sameSpeakerGender } from "@/lib/service-a-ui";
 import type { Persona, RenderState } from "@/lib/service-b-ui";
@@ -16,9 +17,11 @@ import {
   C_STEP_TITLES,
   C_WIZARD_STEPS,
   C_WIZARD_TITLE,
+  type CWizardEntry,
   type TextBlockClip,
   type TextBlockOption,
 } from "@/lib/service-c-ui";
+import { apiFetch } from "@/lib/use-api";
 import { StepClip } from "./step-clip";
 import { StepRender } from "./step-render";
 import { StepStudio } from "./step-studio";
@@ -29,6 +32,9 @@ type CWizardProps = {
   /** Catalog server-rendered by the page shell (characters with a usable
    *  clip) — undefined falls back to the mount fetch and its retry UI. */
   initialCatalog?: Persona[];
+  /** A finished video's "גרסה נוספת" (decision 0124): open on the text step
+   *  with this character and clip. */
+  entry?: CWizardEntry;
 };
 
 /**
@@ -39,10 +45,13 @@ type CWizardProps = {
  * only — a refresh restarts the wizard. Back navigation is allowed until the
  * render is enqueued.
  */
-export function CWizard({ businessId, businessName, initialCatalog }: CWizardProps) {
+export function CWizard({ businessId, businessName, initialCatalog, entry }: CWizardProps) {
   const steps = C_WIZARD_STEPS;
   const [stepIndex, setStepIndex] = useState(0);
-  useStepViewed("c", steps[stepIndex]!);
+  /** True while an `entry` is being resolved into its character and clip. */
+  const [restoring, setRestoring] = useState(entry !== undefined);
+  // After the restore, so the step it lands on is the one counted (A's rule).
+  useStepViewed("c", steps[stepIndex]!, !restoring);
   /** 403/404 from any call: the business/resource is gone for this session. */
   const [fatal, setFatal] = useState<string | null>(null);
 
@@ -68,6 +77,39 @@ export function CWizard({ businessId, businessName, initialCatalog }: CWizardPro
   const [rect, setRect] = useState<SafeRect | null>(null);
   const [render, setRender] = useState<RenderState | null>(null);
   const [renderStarting, setRenderStarting] = useState(false);
+
+  // The entry, once, on mount: the character from the catalog the page sent,
+  // the clip from that character's gallery — so a clip the gallery would not
+  // offer today is not offered here either. Anything missing is a fresh
+  // wizard. The address goes back to bare, so a reload restarts the wizard
+  // as it always has.
+  useEffect(() => {
+    if (!entry) return;
+    history.replaceState(null, "", window.location.pathname);
+    let cancelled = false;
+    void (async () => {
+      const found = personaCatalog?.find((each) => each.id === entry.personaId);
+      if (found) {
+        const result = await apiFetch<{ clips: TextBlockClip[] }>(
+          `/api/text-block-clips?personaId=${found.id}`,
+        );
+        if (cancelled) return;
+        const match = result.ok
+          ? result.body.clips.find((each) => each.id === entry.clipId)
+          : undefined;
+        if (match) {
+          setPersona(found);
+          setClip(match);
+          setStepIndex(steps.indexOf("studio"));
+        }
+      }
+      setRestoring(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Mount-only, like A's ?demo= restore.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const step = steps[stepIndex]!;
   const goBack = () => setStepIndex((index) => Math.max(0, index - 1));
@@ -134,8 +176,16 @@ export function CWizard({ businessId, businessName, initialCatalog }: CWizardPro
 
         <div key={stepIndex} className="step-in mt-5 lg:mt-0">
           <div className="rounded-xl border border-ink/[0.08] bg-white p-6 shadow-xl shadow-ink/[0.05] sm:p-10">
-            {/* StepPersona's own empty line is B's; C says why its list is empty. */}
-            {step === "persona" && personaCatalog?.length === 0 && (
+            {restoring && (
+              <div className="flex items-center justify-center gap-2 py-10 text-sm text-ink/55">
+                <Spinner /> טוענים…
+              </div>
+            )}
+
+            {/* StepPersona's own empty line is B's; C says why its list is empty.
+                Only the persona step can show while an entry restores — every
+                later one needs what the restore is fetching. */}
+            {!restoring && step === "persona" && personaCatalog?.length === 0 && (
               <div>
                 <StepHeader title={C_PERSONA_COPY.title} sub={C_PERSONA_COPY.sub} />
                 <p className="mt-6 rounded-xl border border-dashed border-ink/15 bg-ink/[0.04] px-6 py-10 text-center text-sm text-ink/60">
@@ -144,7 +194,7 @@ export function CWizard({ businessId, businessName, initialCatalog }: CWizardPro
               </div>
             )}
 
-            {step === "persona" && personaCatalog?.length !== 0 && (
+            {!restoring && step === "persona" && personaCatalog?.length !== 0 && (
               <StepPersona
                 catalog={personaCatalog}
                 setCatalog={setPersonaCatalog}
