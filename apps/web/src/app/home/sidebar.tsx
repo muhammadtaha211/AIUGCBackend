@@ -28,7 +28,7 @@ const MENU_ITEM =
   "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm text-ink/80 transition-colors duration-150 hover:bg-ink/5 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
 /** The account menu's rows — shared by the desktop popover and the mobile bar. */
-function ProfileMenuItems({
+export function ProfileMenuItems({
   email,
   postingAllowed,
   onClose,
@@ -58,6 +58,11 @@ function ProfileMenuItems({
           after an auth check + DB query the user experiences as a dead click. */}
       <Link href="/home" role="menuitem" onClick={onClose} className={MENU_ITEM}>
         עמוד הבית
+      </Link>
+      {/* The demos page — here too, because below md this menu is the whole
+          nav and the page had no way in on a phone (vault 0126). */}
+      <Link href="/home/demos" role="menuitem" onClick={onClose} className={MENU_ITEM}>
+        סרטוני המוצר
       </Link>
       {/* Social posting's calendar (PR 3) — here too, because below md this
           menu is the whole nav. Only for an account the switch allows. */}
