@@ -63,6 +63,7 @@ export function SoundPicker({
   downloadUrl,
   service,
   voiced,
+  pickOnly = false,
 }: {
   /** An Instagram account whose sound token is good, or null — then the reconnect line. */
   accountId: string | null;
@@ -71,6 +72,12 @@ export function SoundPicker({
   downloadUrl?: string;
   service: "a" | "b" | "c";
   voiced: boolean;
+  /**
+   * The autopilot's sound list (decision 0127): every pick is added to a list,
+   * so there is no "no sound", no chosen line and no download note — an A
+   * video never posts without a sound. Absent: today's picker, byte for byte.
+   */
+  pickOnly?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -176,19 +183,21 @@ export function SoundPicker({
       <p className="text-sm font-medium text-ink">{SOUND_LABEL}</p>
       <audio ref={audio} onEnded={() => setPlaying(null)} onError={() => setPlaying(null)} hidden />
 
-      <button
-        type="button"
-        onClick={() => onChange(null)}
-        aria-pressed={value === null}
-        className={`mt-2 h-9 rounded-lg border px-4 text-sm transition-colors duration-150 ${
-          value === null
-            ? "border-ink bg-ink text-white"
-            : "border-ink/15 bg-white text-ink hover:bg-ink/[0.04]"
-        }`}
-      >
-        {NO_SOUND}
-      </button>
-      {value && (
+      {!pickOnly && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          aria-pressed={value === null}
+          className={`mt-2 h-9 rounded-lg border px-4 text-sm transition-colors duration-150 ${
+            value === null
+              ? "border-ink bg-ink text-white"
+              : "border-ink/15 bg-white text-ink hover:bg-ink/[0.04]"
+          }`}
+        >
+          {NO_SOUND}
+        </button>
+      )}
+      {value && !pickOnly && (
         <p className="mt-2 text-sm text-ink">
           {chosenSoundLine(value.title)}
           <span className="mt-1 block text-xs text-ink/60">{mixLine(service, voiced)}</span>
@@ -282,19 +291,21 @@ export function SoundPicker({
         </>
       )}
 
-      <p className="mt-5 text-xs leading-relaxed text-ink/60">
-        {SOUND_NOTE}{" "}
-        <a
-          href={downloadUrl}
-          download
-          aria-disabled={downloadUrl === undefined || undefined}
-          className={`font-medium text-ink underline underline-offset-4 ${
-            downloadUrl === undefined ? "pointer-events-none opacity-50" : ""
-          }`}
-        >
-          {SOUND_NOTE_DOWNLOAD}
-        </a>
-      </p>
+      {!pickOnly && (
+        <p className="mt-5 text-xs leading-relaxed text-ink/60">
+          {SOUND_NOTE}{" "}
+          <a
+            href={downloadUrl}
+            download
+            aria-disabled={downloadUrl === undefined || undefined}
+            className={`font-medium text-ink underline underline-offset-4 ${
+              downloadUrl === undefined ? "pointer-events-none opacity-50" : ""
+            }`}
+          >
+            {SOUND_NOTE_DOWNLOAD}
+          </a>
+        </p>
+      )}
     </div>
   );
 }

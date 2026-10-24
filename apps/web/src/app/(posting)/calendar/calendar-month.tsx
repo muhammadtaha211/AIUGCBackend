@@ -16,7 +16,14 @@ import {
   PREV_MONTH,
   TODAY_BUTTON,
 } from "@/lib/social-posting-ui";
-import type { PostWire } from "@/lib/social-posting";
+import {
+  AUTOPILOT_CALENDAR_LINK,
+  AUTOPILOT_MARK,
+  AUTOPILOT_MARK_TITLE,
+  SKIPPED_LABEL,
+  skipReasonLine,
+} from "@/lib/autopilot-ui";
+import type { PostWire, SkippedSlotWire } from "@/lib/social-posting";
 import { apiFetch } from "@/lib/use-api";
 
 type Month = { year: number; month: number }; // month 0–11
@@ -87,11 +94,19 @@ function accountLabel(post: PostWire): string {
  * Days are the browser's own (0107 §4: the browser's zone), so the month is
  * fetched a day wider on each side and bucketed here.
  */
-export function CalendarMonth({ initialMonth }: { initialMonth: string | null }) {
+export function CalendarMonth({
+  initialMonth,
+  autopilot = false,
+}: {
+  initialMonth: string | null;
+  /** The account reaches the autopilot (decision 0127): the setup link. */
+  autopilot?: boolean;
+}) {
   const [month, setMonth] = useState<Month | null>(null);
   const [today, setToday] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [posts, setPosts] = useState<PostWire[] | null>(null);
+  const [skipped, setSkipped] = useState<SkippedSlotWire[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // The browser's month and day, after mount: the server's are not the
@@ -124,12 +139,14 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
     const from = cells[0]!;
     const last = cells[cells.length - 1]!;
     const to = new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1);
-    void apiFetch<{ ok: true; posts: PostWire[] }>(
+    void apiFetch<{ ok: true; posts: PostWire[]; skipped?: SkippedSlotWire[] }>(
       `/api/social/posts?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
     ).then((result) => {
       if (!live) return;
-      if (result.ok) setPosts(result.body.posts);
-      else setError(result.error);
+      if (result.ok) {
+        setPosts(result.body.posts);
+        setSkipped(result.body.skipped ?? []);
+      } else setError(result.error);
     });
     window.history.replaceState(null, "", `/calendar?month=${monthParam(month)}`);
     return () => {
@@ -162,6 +179,12 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
     new Date(month.year, month.month, 1),
   );
   const selectedPosts = selected ? (byDay.get(selected) ?? []) : [];
+  const skippedByDay = new Map<string, SkippedSlotWire[]>();
+  for (const slot of skipped) {
+    const key = toDateInput(new Date(slot.scheduledAt));
+    skippedByDay.set(key, [...(skippedByDay.get(key) ?? []), slot]);
+  }
+  const selectedSkipped = selected ? (skippedByDay.get(selected) ?? []) : [];
 
   const navButton =
     "h-9 rounded-lg border border-ink/15 bg-white px-3 text-sm text-ink transition-colors duration-150 hover:bg-ink/[0.04]";
@@ -170,7 +193,12 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
     <div className="mx-auto w-full max-w-5xl px-4 pb-12 pt-6 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-2xl text-ink">{CALENDAR_TITLE}</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {autopilot && (
+            <Link href="/autopilot" className={`${navButton} inline-flex items-center`}>
+              {AUTOPILOT_CALENDAR_LINK}
+            </Link>
+          )}
           <button type="button" className={navButton} onClick={() => setMonth(shift(month, -1))}>
             {PREV_MONTH}
           </button>
@@ -206,6 +234,7 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
         {cells.map((day) => {
           const key = toDateInput(day);
           const dayPosts = byDay.get(key) ?? [];
+          const daySkipped = skippedByDay.get(key) ?? [];
           const outside = day.getMonth() !== month.month;
           const isSelected = key === selected;
           return (
@@ -230,13 +259,17 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                 {day.getDate()}
               </button>
               {/* Phone: dots. */}
-              {dayPosts.length > 0 && (
+              {dayPosts.length + daySkipped.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-0.5 md:hidden">
                   {dayPosts.slice(0, 4).map((post) => (
                     <span
                       key={post.id}
                       className={`size-1.5 rounded-full ${DOT[postDisplayStatus(post)]}`}
                     />
+                  ))}
+                  {/* A skipped autopilot slot: a hollow dot. */}
+                  {daySkipped.slice(0, Math.max(0, 4 - dayPosts.length)).map((slot) => (
+                    <span key={slot.id} className="size-1.5 rounded-full border border-ink/40" />
                   ))}
                 </div>
               )}
@@ -247,14 +280,19 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                     <PostChip post={post} />
                   </li>
                 ))}
-                {dayPosts.length > CHIPS_PER_DAY && (
+                {daySkipped.slice(0, Math.max(0, CHIPS_PER_DAY - dayPosts.length)).map((slot) => (
+                  <li key={slot.id}>
+                    <SkippedChip slot={slot} />
+                  </li>
+                ))}
+                {dayPosts.length + daySkipped.length > CHIPS_PER_DAY && (
                   <li>
                     <button
                       type="button"
                       onClick={() => setSelected(key)}
                       className="px-1 text-xs font-medium text-ink/60 hover:text-ink"
                     >
-                      <span dir="ltr">+{dayPosts.length - CHIPS_PER_DAY}</span>
+                      <span dir="ltr">+{dayPosts.length + daySkipped.length - CHIPS_PER_DAY}</span>
                     </button>
                   </li>
                 )}
@@ -269,11 +307,11 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
           <Spinner className="size-5 text-ink/40" />
         </div>
       )}
-      {posts !== null && inMonth.length === 0 && (
+      {posts !== null && inMonth.length === 0 && skipped.length === 0 && (
         <p className="mt-6 text-center text-sm text-ink/60">{EMPTY_MONTH}</p>
       )}
 
-      {selected && selectedPosts.length > 0 && (
+      {selected && selectedPosts.length + selectedSkipped.length > 0 && (
         <section className="mt-6">
           <h2 className="text-sm font-semibold text-ink">
             {new Intl.DateTimeFormat("he-IL", {
@@ -318,6 +356,7 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                         {formatTime(new Date(post.scheduledAt))}
                       </span>
                     </span>
+                    {post.autopilot && <AutopilotMark />}
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${CHIP[status]}`}>
                       {postStatusLabel(status, post.account.platform)}
                     </span>
@@ -325,6 +364,32 @@ export function CalendarMonth({ initialMonth }: { initialMonth: string | null })
                 </li>
               );
             })}
+            {selectedSkipped.map((slot) => (
+              <li key={slot.id}>
+                <div className="flex items-center gap-3 rounded-xl border border-dashed border-ink/20 bg-white p-3">
+                  <span className="aspect-[9/16] w-8 shrink-0 rounded bg-ink/[0.04]" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <PlatformMark platform="instagram" className="size-3.5" labelled />
+                      <span
+                        className="block min-w-0 truncate text-sm font-medium text-ink"
+                        data-ph-mask
+                      >
+                        <bdi>{slot.account.displayName ?? slot.account.username ?? ""}</bdi>
+                      </span>
+                    </span>
+                    <span className="block text-xs text-ink/60">{skipReasonLine(slot.reason)}</span>
+                    <span dir="ltr" className="block text-end text-xs tabular-nums text-ink/55">
+                      {formatTime(new Date(slot.scheduledAt))}
+                    </span>
+                  </span>
+                  <AutopilotMark />
+                  <span className="shrink-0 rounded-full border border-dashed border-ink/25 px-2 py-0.5 text-xs text-ink/60">
+                    {SKIPPED_LABEL}
+                  </span>
+                </div>
+              </li>
+            ))}
           </ul>
         </section>
       )}
@@ -356,6 +421,40 @@ function PostChip({ post }: { post: PostWire }) {
       <span dir="ltr" className="tabular-nums">
         {formatTime(new Date(post.scheduledAt))}
       </span>
+      {post.autopilot && (
+        <span className="ms-auto text-[10px] font-semibold opacity-70" title={AUTOPILOT_MARK_TITLE}>
+          {AUTOPILOT_MARK}
+        </span>
+      )}
     </Link>
+  );
+}
+
+/** The autopilot's mark on a post (decision 0127 §18). */
+function AutopilotMark() {
+  return (
+    <span
+      className="shrink-0 rounded-full bg-accent/40 px-1.5 py-0.5 text-[11px] font-semibold text-ink"
+      title={AUTOPILOT_MARK_TITLE}
+    >
+      {AUTOPILOT_MARK}
+    </span>
+  );
+}
+
+/** A skipped autopilot slot (decision 0127 §17): dashed, not a link — there is no post. */
+function SkippedChip({ slot }: { slot: SkippedSlotWire }) {
+  return (
+    <span
+      title={`${SKIPPED_LABEL} · ${skipReasonLine(slot.reason)}`}
+      className="flex items-center gap-1 rounded-md border border-dashed border-ink/25 px-1 py-0.5 text-[11px] text-ink/55"
+      data-ph-mask
+    >
+      <PlatformMark platform="instagram" className="size-3" labelled />
+      <span dir="ltr" className="tabular-nums">
+        {formatTime(new Date(slot.scheduledAt))}
+      </span>
+      <span className="ms-auto">{SKIPPED_LABEL}</span>
+    </span>
   );
 }

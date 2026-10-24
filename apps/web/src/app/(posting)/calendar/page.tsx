@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { authedUser } from "@/lib/auth-user";
+import { autopilotAllowed } from "@/lib/autopilot";
 import { postingAllowed } from "@/lib/social";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { CalendarMonth } from "./calendar-month";
@@ -22,6 +23,7 @@ export default async function CalendarPage({
   const { month } = await searchParams;
   return (
     <CalendarMonth
+      autopilot={await autopilotAllowed(user.id)}
       initialMonth={
         typeof month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? month : null
       }

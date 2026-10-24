@@ -38,12 +38,14 @@ export const ACCOUNT_OFF = "כבוי";
 export const ACCOUNT_DISCONNECTED = "החיבור לחשבון פג. מתחברים מחדש בהגדרות.";
 export const ACCOUNT_STARTS_NEXT_NIGHT = "מתחיל מהלילה הבא.";
 export const FIELD_CHARACTERS = "דמויות";
-export const FIELD_CHARACTERS_HINT = "רק הדמויות שנבחרו יופיעו בחשבון הזה. דמות יכולה להיות בחשבון אחד בלבד.";
+export const FIELD_CHARACTERS_HINT =
+  "רק הדמויות שנבחרו יופיעו בחשבון הזה. דמות יכולה להיות בחשבון אחד בלבד.";
 export const FIELD_PER_DAY = "סרטונים ביום";
 export const FIELD_DEMOS = "סרטוני מוצר";
 export const FIELD_DEMOS_HINT = "הסרטונים עוברים ביניהם לפי הסדר.";
 export const FIELD_TIMES = "שעות פרסום";
-export const FIELD_TIMES_HINT = "שעון ישראל, בין 08:00 ל־23:55. כל סרטון ביום יוצא בשעה אחרת, מהמוקדמת.";
+export const FIELD_TIMES_HINT =
+  "שעון ישראל, בין 08:00 ל־23:55. כל סרטון ביום יוצא בשעה אחרת, מהמוקדמת.";
 export const TIME_ADD = "הוספת שעה";
 export const TIME_REMOVE = "הסרת השעה";
 export const SAVE = "שמירה";

@@ -72,6 +72,22 @@ export type PostWire = {
     pictureUrl: string | null;
   };
   render: { id: string; service: "a" | "b" | "c"; thumbUrl: string | null };
+  /** Made and scheduled by the autopilot (decision 0127 §18). */
+  autopilot: boolean;
+};
+
+/** An autopilot slot that did not go out, as the calendar shows it (decision 0127 §17). */
+export type SkippedSlotWire = {
+  id: string;
+  scheduledAt: string;
+  reason: string | null;
+  account: {
+    id: string;
+    platform: "instagram";
+    username: string | null;
+    displayName: string | null;
+    pictureUrl: string | null;
+  };
 };
 
 export async function toPostWire(item: ScheduledPostListItem): Promise<PostWire> {
@@ -98,5 +114,6 @@ export async function toPostWire(item: ScheduledPostListItem): Promise<PostWire>
         ? await getStorage().signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS)
         : null,
     },
+    autopilot: item.autopilot,
   };
 }
