@@ -6,7 +6,9 @@ import { getAutopilotAccess } from "../src/pipelines/autopilot";
 import {
   AutopilotSetupError,
   getAutopilotSetup,
+  resumeAutopilotAccount,
   saveAutopilotSetup,
+  type AutopilotAccountInput,
 } from "../src/pipelines/autopilot-setup";
 import { setMetaGraphProvider } from "../src/providers/meta-graph";
 import { setStorage, type Storage } from "../src/storage";
@@ -23,6 +25,21 @@ import {
 import { createTestDb } from "./helpers/pglite";
 import { FakeMeta, socialTestEnv } from "./helpers/social";
 import { tempStorage } from "./helpers/storage";
+
+/** Runs once inside the resume's checks: what another tab does meanwhile. */
+const raceHook = vi.hoisted(() => ({ during: undefined as undefined | (() => Promise<unknown>) }));
+vi.mock("../src/pipelines/autopilot", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/pipelines/autopilot")>();
+  return {
+    ...actual,
+    usablePersonas: async (...args: Parameters<typeof actual.usablePersonas>) => {
+      const during = raceHook.during;
+      raceHook.during = undefined;
+      await during?.();
+      return actual.usablePersonas(...args);
+    },
+  };
+});
 
 vi.mock("../src/pipelines/copy", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/pipelines/copy")>()),
@@ -308,6 +325,122 @@ describe("the autopilot's plan", () => {
       },
       israel("2026-10-24", "14:00"),
     );
+  });
+
+  it("saves the page around a paused card that cannot run, and refuses that card's resume", async () => {
+    const shira = world.personas.get("שירה")!;
+    const pausedAt = new Date("2026-10-25T10:00:00Z");
+    await db
+      .update(schema.hookClips)
+      .set({ active: false })
+      .where(eq(schema.hookClips.personaId, shira));
+    await db
+      .update(schema.autopilotAccounts)
+      .set({ pausedCause: "no_clips", pausedAt })
+      .where(eq(schema.autopilotAccounts.igUserId, YAEL));
+    // The page clamps yael_creates' count to its clips (none) and saves an edit on another card.
+    const times = ["12:00", "14:00", "17:00", "20:00", "21:00"];
+    await saveAutopilotSetup(
+      db,
+      world.userId,
+      {
+        businessId: world.businessId,
+        sounds: SOUNDS,
+        accounts: world.shape.map((acc) =>
+          accountInput(
+            world,
+            acc,
+            acc.igUserId === YAEL
+              ? { aPerDay: 0 }
+              : acc.igUserId === OMRI
+                ? { postTimes: times }
+                : {},
+          ),
+        ),
+      },
+      israel("2026-10-25", "13:00"),
+    );
+    const [omri] = await db
+      .select()
+      .from(schema.autopilotAccounts)
+      .where(eq(schema.autopilotAccounts.igUserId, OMRI));
+    expect(omri!.postTimes).toEqual(times);
+    // The card itself still cannot run: its resume says so.
+    await expect(
+      resumeAutopilotAccount(
+        db,
+        world.userId,
+        YAEL,
+        pausedAt.toISOString(),
+        israel("2026-10-25", "13:05"),
+      ),
+    ).rejects.toMatchObject({ code: "nothing_to_post" });
+  });
+
+  it("lets a save from another tab win over a resume it raced: the resume is stale, the save stands", async () => {
+    const omriChar = world.personas.get("עומרי")!;
+    const pausedAt = new Date("2026-10-25T10:00:00Z");
+    const pause = () =>
+      db
+        .update(schema.autopilotAccounts)
+        .set({ pausedCause: "nothing_posted", pausedAt, enabled: true })
+        .where(eq(schema.autopilotAccounts.igUserId, OMRI));
+    const otherTab = (overrides: Partial<AutopilotAccountInput>) => () =>
+      saveAutopilotSetup(
+        db,
+        world.userId,
+        {
+          businessId: world.businessId,
+          sounds: SOUNDS,
+          accounts: world.shape.map((acc) =>
+            accountInput(
+              world,
+              acc,
+              acc.igUserId === OMRI
+                ? overrides
+                : acc.igUserId === YAEL && overrides.personaIds
+                  ? { personaIds: [world.personas.get("שירה")!, omriChar] }
+                  : {},
+            ),
+          ),
+        },
+        israel("2026-10-25", "13:00"),
+      );
+    const resume = () =>
+      resumeAutopilotAccount(
+        db,
+        world.userId,
+        OMRI,
+        pausedAt.toISOString(),
+        israel("2026-10-25", "13:00"),
+      );
+
+    // The other tab moves עומרי to yael_creates while the resume checks.
+    await pause();
+    raceHook.during = otherTab({ personaIds: [], aPerDay: 0 });
+    await expect(resume()).rejects.toMatchObject({ code: "stale_pause" });
+    const rows = await db.select().from(schema.autopilotAccounts);
+    expect(
+      rows.filter((r) => (r.personaIds as string[]).includes(omriChar)).map((r) => r.igUserId),
+    ).toEqual([YAEL]);
+
+    // The other tab switches omri.creates off while the resume checks: it stays off.
+    await db
+      .update(schema.autopilotAccounts)
+      .set({ personaIds: [omriChar], aPerDay: 4 })
+      .where(eq(schema.autopilotAccounts.igUserId, OMRI));
+    await db
+      .update(schema.autopilotAccounts)
+      .set({ personaIds: [world.personas.get("שירה")!] })
+      .where(eq(schema.autopilotAccounts.igUserId, YAEL));
+    await pause();
+    raceHook.during = otherTab({ enabled: false });
+    await expect(resume()).rejects.toMatchObject({ code: "stale_pause" });
+    const [omri] = await db
+      .select()
+      .from(schema.autopilotAccounts)
+      .where(eq(schema.autopilotAccounts.igUserId, OMRI));
+    expect(omri!.enabled).toBe(false);
   });
 
   it("lists named demos first, unnamed below, each newest first, and preselects none", async () => {

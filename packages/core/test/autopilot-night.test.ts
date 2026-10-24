@@ -762,6 +762,34 @@ describe("the autopilot's night", () => {
     expect((await emails(israel(DAY, "23:59"))).sent).toBe(0);
   });
 
+  it("cancels every account switched off in one save, even when one account's cancel fails", async () => {
+    await runDay(db, storage, root, DAY, { to: "09:00" });
+    await failOneCancel();
+    await expect(
+      saveAutopilotSetup(
+        db,
+        world.userId,
+        {
+          businessId: world.businessId,
+          sounds: SOUNDS,
+          accounts: world.shape.map((a) =>
+            accountInput(
+              world,
+              a,
+              a.igUserId === SHIR || a.igUserId === OMRI ? { enabled: false } : {},
+            ),
+          ),
+        },
+        israel(DAY, "09:00"),
+      ),
+    ).rejects.toThrow(/not cancelled/);
+    // Before any tick: omri.creates' posts are all cancelled; one of shir_acreates' waits for the tick.
+    expect((await postsOf(await slots(OMRI))).every((p) => p.status === "cancelled")).toBe(true);
+    expect((await postsOf(await slots(SHIR))).filter((p) => p.status !== "cancelled")).toHaveLength(
+      1,
+    );
+  });
+
   it("retries a pause's failed cancel every tick: what waited ends cancelled, not failed", async () => {
     await runDay(db, storage, root, DAY, { to: "12:30" });
     await failOneCancel();

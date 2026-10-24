@@ -440,9 +440,11 @@ merge by audio id) — so a page opened before a pause cannot lift it; only the 
 does, naming the pause it lifts (409 when it moved on). The resume saves the page first (the pause
 lines say to fix it there and then resume), and refuses what the night would pause again at once:
 not connected, nothing to post, a character with no clips, no usable sound. It drops a character
-since retired or left without a gender, which the page no longer shows. Switching an account off
+since retired or left without a gender, which the page no longer shows, and loses to a save from
+another tab that lands while it checks (409). A card the night paused is not run-checked by a save
+(its resume is), so one paused card that cannot run never blocks saving the rest. Switching an account off
 cancels its autopilot posts that have not started and sends nothing; a cancel that fails makes the
-save answer an error, and every tick cancels again what a paused or switched-off account still has
+save answer an error once every switched-off account has had its cancel, and every tick cancels again what a paused or switched-off account still has
 waiting. A save, a switch-on or a resume takes effect from the next 03:00.
 
 **The night** is one singleton job, `autopilot_tick` (light lane, every 60 s, the reaper's shape),

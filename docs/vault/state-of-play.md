@@ -1007,6 +1007,13 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   Every claimed fix now has a test that fails without it (13 core mutants and 1 web mutant, all
   caught). The page-only fixes were checked in a fetch-mock harness, each against its undone fix.
 
+- **The third review (of that commit; 3 of 5 confirmed, all fixed before the PR):**
+  - a save switching off several accounts now cancels all of them before answering one failure;
+  - a resume re-reads its row under a lock, so a save from another tab that lands meanwhile wins;
+  - a card the night paused no longer blocks saving the others (its resume does the checks).
+
+  Three more mutants, all caught.
+
 - **Owed when it opens to customers:** `/privacy` §5 names the emails a customer gets; the
   autopilot's two are admin-only today, so it is unchanged (`legal-pages.test.ts` says so).
 - **Not done:** no signed-in walk; the setup and the calendar were seen in a harness

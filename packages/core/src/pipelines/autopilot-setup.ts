@@ -273,6 +273,21 @@ export async function saveAutopilotSetup(
   const usableIds = new Set(
     usable.filter((p) => p.gender === "female" || p.gender === "male").map((p) => p.id),
   );
+  // Paused by the night and not switched on now: the run-checks below wait for
+  // its resume, which applies them from the stored row, so a paused card that
+  // cannot run (a character left with no clips) never blocks saving the others.
+  const stored = await db
+    .select({
+      igUserId: autopilotAccounts.igUserId,
+      enabled: autopilotAccounts.enabled,
+      pausedCause: autopilotAccounts.pausedCause,
+    })
+    .from(autopilotAccounts)
+    .where(eq(autopilotAccounts.userId, userId));
+  const stillPaused = (igUserId: string) =>
+    stored.some((row) => row.igUserId === igUserId && row.enabled && row.pausedCause !== null);
+  const runs = (account: AutopilotAccountInput) =>
+    account.enabled && !stillPaused(account.igUserId);
   const ownDemos = new Set(
     (
       await db.select({ id: demos.id }).from(demos).where(eq(demos.businessId, input.businessId))
@@ -317,7 +332,7 @@ export async function saveAutopilotSetup(
         max: clips.length,
       });
     }
-    if (account.enabled) {
+    if (runs(account)) {
       if (account.aPerDay < 1 || account.personaIds.length === 0 || account.demoIds.length === 0) {
         throw new AutopilotSetupError("nothing_to_post", { igUserId: account.igUserId });
       }
@@ -341,7 +356,7 @@ export async function saveAutopilotSetup(
       .where(eq(autopilotSetups.userId, userId))
       .for("update");
     const merged = mergeSounds(input.sounds, locked?.sounds);
-    if (input.accounts.some((a) => a.enabled) && usableSounds(merged).length === 0) {
+    if (input.accounts.some(runs) && usableSounds(merged).length === 0) {
       throw new AutopilotSetupError("no_usable_sound");
     }
     await tx
@@ -414,10 +429,17 @@ export async function saveAutopilotSetup(
     .select()
     .from(autopilotAccounts)
     .where(eq(autopilotAccounts.userId, userId));
+  let failure: unknown;
   for (const account of input.accounts) {
     const row = after.find((a) => a.igUserId === account.igUserId);
-    if (row && !row.enabled) await cancelOpenSlots(db, userId, account.igUserId, "off", now);
+    if (!row || row.enabled) continue;
+    try {
+      await cancelOpenSlots(db, userId, account.igUserId, "off", now);
+    } catch (err) {
+      failure ??= err;
+    }
   }
+  if (failure) throw failure;
 }
 
 /** The page's sounds, deduplicated by audio id, each keeping the server's refusedAt. */
@@ -482,16 +504,30 @@ export async function resumeAutopilotAccount(
   if (usableSounds(setup?.sounds).length === 0) {
     throw new AutopilotSetupError("no_usable_sound", detail);
   }
-  await db
-    .update(autopilotAccounts)
-    .set({
-      personaIds,
-      pausedCause: null,
-      pausedAt: null,
-      pauseEmailedAt: null,
-      enabled: true,
-      enabledAt: now,
-      updatedAt: now,
-    })
-    .where(eq(autopilotAccounts.id, row.id));
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select()
+      .from(autopilotAccounts)
+      .where(eq(autopilotAccounts.id, row.id))
+      .for("update");
+    if (
+      !locked?.enabled ||
+      locked.pausedAt?.getTime() !== row.pausedAt!.getTime() ||
+      JSON.stringify(idsOf(locked.personaIds)) !== JSON.stringify(idsOf(row.personaIds))
+    ) {
+      throw new AutopilotSetupError("stale_pause");
+    }
+    await tx
+      .update(autopilotAccounts)
+      .set({
+        personaIds,
+        pausedCause: null,
+        pausedAt: null,
+        pauseEmailedAt: null,
+        enabled: true,
+        enabledAt: now,
+        updatedAt: now,
+      })
+      .where(eq(autopilotAccounts.id, row.id));
+  });
 }

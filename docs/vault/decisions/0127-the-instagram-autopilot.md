@@ -172,6 +172,18 @@ fixed before the PR:
   (resume, the clamp, the business race, the calendar's reset and its empty month) were checked in a
   fetch-mock harness in the browser, each against its own undone fix.
 
+## Built beyond the plan, from the third review (2026-10-24)
+
+A review of the second round's commit (two lenses, a skeptic per finding) confirmed 3 of 5; all
+fixed before the PR, each with a test checked by undoing its fix:
+
+- A save that switches off several accounts cancels every one of them before it answers the error
+  one failed cancel causes.
+- A resume re-reads its row under a lock before it writes: a save from another tab that lands while
+  the resume checks wins, and the resume answers stale.
+- A card the night paused is not run-checked by a save (its resume is), so a paused card that cannot
+  run never blocks saving the rest of the page, nor the resume of another card.
+
 ## Unverified
 
 - What Meta returns for a withdrawn sound (docs/09 check (m)): the swap covers an `ERROR` and a
