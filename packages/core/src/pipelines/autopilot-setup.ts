@@ -256,12 +256,6 @@ export async function saveAutopilotSetup(
     );
   const liveIds = new Set(live.map((a) => a.externalId));
 
-  const [existing] = await db
-    .select()
-    .from(autopilotSetups)
-    .where(eq(autopilotSetups.userId, userId));
-  const sounds = mergeSounds(input.sounds, existing?.sounds);
-
   const usedPersona = new Map<string, string>();
   const allPersonaIds = [...new Set(input.accounts.flatMap((a) => a.personaIds))];
   const usable = allPersonaIds.length
@@ -273,21 +267,7 @@ export async function saveAutopilotSetup(
   const usableIds = new Set(
     usable.filter((p) => p.gender === "female" || p.gender === "male").map((p) => p.id),
   );
-  // Paused by the night and not switched on now: the run-checks below wait for
-  // its resume, which applies them from the stored row, so a paused card that
-  // cannot run (a character left with no clips) never blocks saving the others.
-  const stored = await db
-    .select({
-      igUserId: autopilotAccounts.igUserId,
-      enabled: autopilotAccounts.enabled,
-      pausedCause: autopilotAccounts.pausedCause,
-    })
-    .from(autopilotAccounts)
-    .where(eq(autopilotAccounts.userId, userId));
-  const stillPaused = (igUserId: string) =>
-    stored.some((row) => row.igUserId === igUserId && row.enabled && row.pausedCause !== null);
-  const runs = (account: AutopilotAccountInput) =>
-    account.enabled && !stillPaused(account.igUserId);
+  const clipsOf = new Map<string, { id: string; personaId: string }[]>();
   const ownDemos = new Set(
     (
       await db.select({ id: demos.id }).from(demos).where(eq(demos.businessId, input.businessId))
@@ -332,21 +312,7 @@ export async function saveAutopilotSetup(
         max: clips.length,
       });
     }
-    if (runs(account)) {
-      if (account.aPerDay < 1 || account.personaIds.length === 0 || account.demoIds.length === 0) {
-        throw new AutopilotSetupError("nothing_to_post", { igUserId: account.igUserId });
-      }
-      const bare = account.personaIds.find((id) => !clips.some((c) => c.personaId === id));
-      if (bare) {
-        throw new AutopilotSetupError("character_no_clips", {
-          igUserId: account.igUserId,
-          personaId: bare,
-        });
-      }
-      if (usableSounds(sounds).length === 0) {
-        throw new AutopilotSetupError("no_usable_sound", { igUserId: account.igUserId });
-      }
-    }
+    clipsOf.set(account.igUserId, clips);
   }
 
   await db.transaction(async (tx) => {
@@ -356,6 +322,33 @@ export async function saveAutopilotSetup(
       .where(eq(autopilotSetups.userId, userId))
       .for("update");
     const merged = mergeSounds(input.sounds, locked?.sounds);
+    // The setup row, then the account rows: the resume's lock order too.
+    const others = await tx
+      .select()
+      .from(autopilotAccounts)
+      .where(eq(autopilotAccounts.userId, userId))
+      .for("update");
+    // The run-checks, on the locked rows. A card the night paused and that is not
+    // switched on now waits for its resume, which applies them from the stored
+    // row, so a paused card that cannot run (a character left with no clips)
+    // never blocks saving the others.
+    const runs = (account: AutopilotAccountInput) =>
+      account.enabled &&
+      !others.some((r) => r.igUserId === account.igUserId && r.enabled && r.pausedCause !== null);
+    for (const account of input.accounts) {
+      if (!runs(account)) continue;
+      if (account.aPerDay < 1 || account.personaIds.length === 0 || account.demoIds.length === 0) {
+        throw new AutopilotSetupError("nothing_to_post", { igUserId: account.igUserId });
+      }
+      const clips = clipsOf.get(account.igUserId) ?? [];
+      const bare = account.personaIds.find((id) => !clips.some((c) => c.personaId === id));
+      if (bare) {
+        throw new AutopilotSetupError("character_no_clips", {
+          igUserId: account.igUserId,
+          personaId: bare,
+        });
+      }
+    }
     if (input.accounts.some(runs) && usableSounds(merged).length === 0) {
       throw new AutopilotSetupError("no_usable_sound");
     }
@@ -374,11 +367,6 @@ export async function saveAutopilotSetup(
       });
     const onPage = new Set(input.accounts.map((a) => a.igUserId));
     const taken = new Set(input.accounts.flatMap((a) => a.personaIds));
-    const others = await tx
-      .select()
-      .from(autopilotAccounts)
-      .where(eq(autopilotAccounts.userId, userId))
-      .for("update");
     for (const other of others) {
       if (onPage.has(other.igUserId)) continue;
       const kept = idsOf(other.personaIds).filter((id) => !taken.has(id));
@@ -460,6 +448,10 @@ function idsOf(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+function sameIds(a: unknown, b: unknown): boolean {
+  return JSON.stringify(idsOf(a)) === JSON.stringify(idsOf(b));
+}
+
 /**
  * Lift a pause by hand (PLANNING DEFAULT, 0127: every cause resumes this way).
  * Names the pause it lifts, so a page loaded before a newer pause is a 409.
@@ -497,25 +489,31 @@ export async function resumeAutopilotAccount(
   const clips = await activeClips(db, personaIds);
   const bare = personaIds.find((id) => !clips.some((c) => c.personaId === id));
   if (bare) throw new AutopilotSetupError("character_no_clips", { ...detail, personaId: bare });
-  const [setup] = await db
-    .select({ sounds: autopilotSetups.sounds })
-    .from(autopilotSetups)
-    .where(eq(autopilotSetups.userId, userId));
-  if (usableSounds(setup?.sounds).length === 0) {
-    throw new AutopilotSetupError("no_usable_sound", detail);
-  }
   await db.transaction(async (tx) => {
+    // The save's lock order: the setup row, then the account row.
+    const [setup] = await tx
+      .select({ sounds: autopilotSetups.sounds })
+      .from(autopilotSetups)
+      .where(eq(autopilotSetups.userId, userId))
+      .for("update");
     const [locked] = await tx
       .select()
       .from(autopilotAccounts)
       .where(eq(autopilotAccounts.id, row.id))
       .for("update");
+    // Everything checked above still holds: a save from another tab that
+    // landed meanwhile wins, and this resume is stale.
     if (
       !locked?.enabled ||
       locked.pausedAt?.getTime() !== row.pausedAt!.getTime() ||
-      JSON.stringify(idsOf(locked.personaIds)) !== JSON.stringify(idsOf(row.personaIds))
+      locked.aPerDay !== row.aPerDay ||
+      !sameIds(locked.personaIds, row.personaIds) ||
+      !sameIds(locked.demoIds, row.demoIds)
     ) {
       throw new AutopilotSetupError("stale_pause");
+    }
+    if (usableSounds(setup?.sounds).length === 0) {
+      throw new AutopilotSetupError("no_usable_sound", detail);
     }
     await tx
       .update(autopilotAccounts)

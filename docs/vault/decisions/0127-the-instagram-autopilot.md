@@ -184,6 +184,17 @@ fixed before the PR, each with a test checked by undoing its fix:
 - A card the night paused is not run-checked by a save (its resume is), so a paused card that cannot
   run never blocks saving the rest of the page, nor the resume of another card.
 
+A last pass over that commit confirmed 2 more, both windows of a fraction of a second between two
+tabs, both closed:
+
+- The save decides which cards it run-checks from the account rows it holds locked, not from a read
+  taken before them.
+- The resume re-checks everything it checked (on, the pause, the count, the characters, the demos,
+  a usable sound) under the same two locks, in the save's order: the setup row, then the account row.
+
+Both have tests, each checked by undoing its change. The save's half has none: the window it closes
+needs two connections, and the tests run on one.
+
 ## Unverified
 
 - What Meta returns for a withdrawn sound (docs/09 check (m)): the swap covers an `ERROR` and a

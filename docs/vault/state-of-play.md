@@ -1014,6 +1014,12 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
 
   Three more mutants, all caught.
 
+- **A last pass (2 of 3 confirmed, both two-tab windows of a fraction of a second, closed):** the
+  save decides which cards it run-checks from the rows it holds locked; the resume re-checks
+  everything it checked under the same two locks, in the save's order (the setup row, then the
+  account row). Two more mutants, both caught. The save's half has no test: it needs two
+  connections, and the tests run on one.
+
 - **Owed when it opens to customers:** `/privacy` §5 names the emails a customer gets; the
   autopilot's two are admin-only today, so it is unchanged (`legal-pages.test.ts` says so).
 - **Not done:** no signed-in walk; the setup and the calendar were seen in a harness

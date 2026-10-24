@@ -441,6 +441,21 @@ describe("the autopilot's plan", () => {
       .from(schema.autopilotAccounts)
       .where(eq(schema.autopilotAccounts.igUserId, OMRI));
     expect(omri!.enabled).toBe(false);
+
+    // The other tab sets omri.creates' count to 0 while the resume checks: never resumed at 0.
+    await db
+      .update(schema.autopilotAccounts)
+      .set({ aPerDay: 4 })
+      .where(eq(schema.autopilotAccounts.igUserId, OMRI));
+    await pause();
+    raceHook.during = otherTab({ aPerDay: 0 });
+    await expect(resume()).rejects.toMatchObject({ code: "stale_pause" });
+    const [still] = await db
+      .select()
+      .from(schema.autopilotAccounts)
+      .where(eq(schema.autopilotAccounts.igUserId, OMRI));
+    expect(still!.pausedCause).toBe("nothing_posted");
+    expect(still!.aPerDay).toBe(0);
   });
 
   it("lists named demos first, unnamed below, each newest first, and preselects none", async () => {
