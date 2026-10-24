@@ -92,6 +92,7 @@ Social posting   : schedulePosts (one tx: N scheduled_posts rows + N publish_pos
 Daily            : janitor (retention only) · billing_renewals · expire_trials (settle stale continues, then the ₪5 trials' day-30 expiry) · check_social_tokens — idempotency key = date, so each runs ONCE a day (the server worker re-attempts the enqueue hourly; `aiugc work` doesn't)
 Delayed          : reconcile_continue — one per continue from the ₪5 trial, run_at = the click + 10 min: looks its own attempt's charge up in Sumit's list, activates the month or clears the attempt; reschedules every 5 min for an hour while the list cannot be read (vault 0109)
 Continuous       : reap_dead_renders — singleton (constant key), reschedules itself every ~60s; ensured at both server-worker and `aiugc work` startup
+Continuous       : autopilot_tick — singleton (constant key, light lane), every ~60s, ensured at server-worker startup only: plans each Israel day after 03:00, starts one autopilot render at a time (createSet 1×1), schedules each released one through schedulePosts, skips a slot 2 h past its time, pauses an account and lets the worker email (docs/09 §The autopilot, vault 0127). It never throws: every setup, account and slot is its own try.
 ```
 
 The two human gates (audio approval, founder QC) are represented as _the absence of the next

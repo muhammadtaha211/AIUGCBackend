@@ -128,3 +128,32 @@ export async function reportFatal(err: unknown, message: string): Promise<void> 
     // Exiting matters more than reporting the exit.
   }
 }
+
+/**
+ * The Sentry cron monitor that says the Instagram autopilot's night ran
+ * (decision 0127): due at 03:00 Israel every day, two hours of margin (minutes,
+ * Sentry's unit), an issue on the first miss. The first check-in creates it —
+ * no dashboard step. Every Sentry plan includes one cron monitor
+ * (docs.sentry.io/pricing, read 2026-10-24).
+ */
+export const AUTOPILOT_MONITOR_SLUG = "autopilot-night";
+export const AUTOPILOT_MONITOR_CONFIG = {
+  schedule: { type: "crontab", value: "0 3 * * *" },
+  timezone: "Asia/Jerusalem",
+  checkinMargin: 120,
+  failureIssueThreshold: 1,
+  recoveryThreshold: 1,
+} as const satisfies NonNullable<Parameters<typeof Sentry.captureCheckIn>[1]>;
+
+/** One "ok" check-in for a night the autopilot planned. Never an event, never a worker fault. */
+export function reportAutopilotNight(): void {
+  if (!reportingEnabled) return;
+  try {
+    Sentry.captureCheckIn(
+      { monitorSlug: AUTOPILOT_MONITOR_SLUG, status: "ok" },
+      AUTOPILOT_MONITOR_CONFIG,
+    );
+  } catch {
+    // A reporting fault must never become a worker fault.
+  }
+}

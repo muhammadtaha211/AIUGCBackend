@@ -1,5 +1,6 @@
 import type { Job } from "./jobs/queue";
 import type { HandlerRegistry, JobContext, JobResult } from "./jobs/worker";
+import { autopilotNextSound, handleAutopilotTick } from "./pipelines/autopilot";
 import { handleNormalizeHookClip, handleNormalizeTextBlockClip } from "./pipelines/bank";
 import { handleBillingRenewals } from "./pipelines/billing";
 import {
@@ -88,7 +89,11 @@ export function buildHandlers(): HandlerRegistry {
     reconcile_continue: handleReconcileContinue,
     // Social posting (0101): light lane — network calls that poll through
     // reschedule, never a lock held longer than one round trip.
-    publish_post: handlePublishPost,
+    // The autopilot (0127) hooks in only for its own posts: a refused sound
+    // moves to the next one; every other post publishes exactly as before.
+    publish_post: (job, ctx) => handlePublishPost(job, ctx, { nextSound: autopilotNextSound }),
     check_social_tokens: handleCheckSocialTokens,
+    // The Instagram autopilot (0127): light lane, a singleton every 60 s.
+    autopilot_tick: handleAutopilotTick,
   };
 }

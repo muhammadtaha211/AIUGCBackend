@@ -72,9 +72,32 @@ export type PostWire = {
     pictureUrl: string | null;
   };
   render: { id: string; service: "a" | "b" | "c"; thumbUrl: string | null };
+  /** Made and scheduled by the autopilot (decision 0127 §18). */
+  autopilot: boolean;
 };
 
-export async function toPostWire(item: ScheduledPostListItem): Promise<PostWire> {
+/** An autopilot slot that did not go out, as the calendar shows it (decision 0127 §17). */
+export type SkippedSlotWire = {
+  id: string;
+  scheduledAt: string;
+  reason: string | null;
+  account: {
+    id: string;
+    platform: "instagram";
+    username: string | null;
+    displayName: string | null;
+    pictureUrl: string | null;
+  };
+};
+
+/**
+ * `autopilot`: whether the account reaches the autopilot (decision 0127) — the
+ * mark shows only behind its switch, like every other trace of it.
+ */
+export async function toPostWire(
+  item: ScheduledPostListItem,
+  access: { autopilot?: boolean } = {},
+): Promise<PostWire> {
   const { post, account, render } = item;
   return {
     id: post.id,
@@ -98,5 +121,6 @@ export async function toPostWire(item: ScheduledPostListItem): Promise<PostWire>
         ? await getStorage().signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS)
         : null,
     },
+    autopilot: access.autopilot === true && item.autopilot,
   };
 }

@@ -19,6 +19,7 @@ import {
   toTimeInput,
 } from "@/lib/schedule-form";
 import { VIDEO_SERVICE_LABELS } from "@aiugc/core/social-copy";
+import { AUTOPILOT_MARK_TITLE } from "@/lib/autopilot-ui";
 import type { PostWire } from "@/lib/social-posting";
 import {
   CANCEL_CONFIRM,
@@ -196,6 +197,7 @@ export function PostDetail({
           {postStatusLabel(status, post.account.platform)}
         </span>
       </div>
+      {post.autopilot && <p className="mt-1 text-xs text-ink/60">{AUTOPILOT_MARK_TITLE}</p>}
 
       {post.failureLine && (
         <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">

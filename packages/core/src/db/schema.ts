@@ -1061,6 +1061,109 @@ export const scheduledPosts = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// The Instagram autopilot (0070, decision 0127) — docs/09-social-posting.md
+// ---------------------------------------------------------------------------
+
+// One per Tavnit account: the business the nights use and the saved sound
+// list. Server-only like the social tables (RLS on, no policies).
+export const autopilotSetups = pgTable("autopilot_setups", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id),
+  businessId: uuid("business_id")
+    .notNull()
+    .references(() => businesses.id),
+  // AutopilotSound[]: the picker's SoundSnapshot, plus a server-owned
+  // refusedAt once Meta refused it.
+  sounds: jsonb("sounds").notNull().default([]),
+  lowSoundsAt: timestamp("low_sounds_at", { withTimezone: true }),
+  lowSoundsEmailedAt: timestamp("low_sounds_emailed_at", { withTimezone: true }),
+  // The night's hook-line generation attempts — the runaway valve on a paid call.
+  lineCallsDay: date("line_calls_day"),
+  lineCalls: integer("line_calls").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One per (Tavnit account, Instagram account), keyed on Instagram's own id so a
+// disconnect + reconnect keeps the settings. enabled_at, planned_day and the
+// paused_* columns are the server's; the setup's PUT never writes them.
+export const autopilotAccounts = pgTable(
+  "autopilot_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    igUserId: text("ig_user_id").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    aPerDay: integer("a_per_day").notNull().default(0),
+    // "HH:MM"[] in Israel time, ascending.
+    postTimes: jsonb("post_times").notNull().default([]),
+    personaIds: jsonb("persona_ids").notNull().default([]),
+    demoIds: jsonb("demo_ids").notNull().default([]),
+    enabledAt: timestamp("enabled_at", { withTimezone: true }),
+    plannedDay: date("planned_day"),
+    // 'connection' | 'no_sound' | 'no_clips' | 'file_refused' | 'nothing_posted' — a CHECK in 0070.
+    pausedCause: text("paused_cause"),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    pauseEmailedAt: timestamp("pause_emailed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("autopilot_accounts_user_ig_idx").on(t.userId, t.igUserId)],
+);
+
+// One per planned post. The unique indexes are the rules (0070).
+export const autopilotSlots = pgTable(
+  "autopilot_slots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    igUserId: text("ig_user_id").notNull(),
+    socialAccountId: uuid("social_account_id")
+      .notNull()
+      .references(() => socialAccounts.id),
+    // The Israel day the slot posts on.
+    day: date("day").notNull(),
+    slotIndex: integer("slot_index").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    personaId: uuid("persona_id").references(() => personas.id),
+    hookClipId: uuid("hook_clip_id").references(() => hookClips.id),
+    demoId: uuid("demo_id").references(() => demos.id),
+    stepPlanId: uuid("step_plan_id").references(() => demoStepPlans.id),
+    hookLineScriptId: uuid("hook_line_script_id").references(() => scripts.id),
+    // The SoundSnapshot it posts with.
+    sound: jsonb("sound"),
+    videoRenderId: uuid("video_render_id").references(() => videoRenders.id),
+    scheduledPostId: uuid("scheduled_post_id").references(() => scheduledPosts.id),
+    renderAttempts: integer("render_attempts").notNull().default(0),
+    faults: integer("faults").notNull().default(0),
+    // {audioId, named}[]: sounds Meta refused for this slot's post.
+    refusedSounds: jsonb("refused_sounds").notNull().default([]),
+    // 'planned' | 'rendering' | 'scheduled' | 'skipped' | 'cancelled' — a CHECK in 0070.
+    status: text("status").notNull().default("planned"),
+    skipReason: text("skip_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("autopilot_slots_slot_idx").on(t.userId, t.igUserId, t.day, t.slotIndex),
+    uniqueIndex("autopilot_slots_clip_day_idx")
+      .on(t.igUserId, t.day, t.hookClipId)
+      .where(sql`${t.status} not in ('skipped', 'cancelled')`),
+    uniqueIndex("autopilot_slots_render_idx").on(t.videoRenderId),
+    uniqueIndex("autopilot_slots_post_idx").on(t.scheduledPostId),
+    uniqueIndex("autopilot_slots_line_idx").on(t.hookLineScriptId),
+    index("autopilot_slots_open_idx")
+      .on(t.scheduledFor)
+      .where(sql`${t.status} in ('planned', 'rendering')`),
+  ],
+);
+
 export const appConfig = pgTable("app_config", {
   key: text("key").primaryKey(),
   value: jsonb("value").notNull(),

@@ -973,6 +973,7 @@ describe("TikTok in the schedule flow (0115 §2)", () => {
               pictureUrl: null,
             },
             render: { id: "r", service: "a", thumbUrl: null },
+            autopilot: false,
           },
           downloadUrl: null,
           horizon: null,

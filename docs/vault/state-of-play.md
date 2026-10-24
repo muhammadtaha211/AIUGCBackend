@@ -40,6 +40,26 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**The Instagram autopilot: BUILT 2026-10-24, PR #118 (`feat/instagram-autopilot`); migration 0070
+pushed and read back 2026-10-24; the box step after the merge is his.** [[0127-the-instagram-autopilot]] records his
+decisions 3–19 and his calls at approval. After a one-time setup at `/autopilot`, every night at
+03:00 Israel the box plans each connected Instagram account's day:
+
+- one 1×1 הוק + דמו render per post, one render at a time, scheduled through today's
+  `schedulePosts` → `publish_post` at his times;
+- each account's own characters, a least-used hook clip, demo and sound, a hook line never used
+  before, no caption, no AI label;
+- a refused sound swaps inside `publish_post`, for autopilot posts only;
+- a failed render retries and then tries another version;
+- a lapsed connection, no usable sound, a character with no clips, a refused file, or a day with
+  nothing posted pauses that account and emails him once;
+- the night checks in to Sentry.
+
+Admin-only behind `app_config.autopilot` (no row = admins), so he needs no SQL. MEASURED: the night
+end to end on 2026-10-25 (the clock-change day) with fakes for Meta, Claude, the renderer and Resend,
+in packages/core/test/autopilot-night.test.ts. Details under "What landed (2026-10-24, later)";
+what is his under "Owed founder actions".
+
 **The demos page in the phone menu: BUILT 2026-10-24 on `feat/phone-menu-demos`; no migration,
 no box step; merged by the session on his instruction ("merge the branches when you're done
 yourself").** [[0126-the-demos-page-is-in-the-phone-menu]]. FOUNDER-REPORTED (2026-10-24): checking
@@ -924,6 +944,91 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-24, later) — the Instagram autopilot, `feat/instagram-autopilot`, PR #118
+
+- **0070 pushed 2026-10-24**, before the merge (the build's calendar routes read the new tables),
+  and read back before and after: none of the three tables before; after, each with RLS on, 0
+  policies, the 10 indexes its VERIFY block names, 0 rows; the ledger 71 rows to 0070
+  ([[production-migration-push-log]]).
+
+[[0127-the-instagram-autopilot]] has the decisions; docs/09 §The autopilot has the mechanics. In short:
+
+- **Storage:** 0070, three server-only tables. The slot table's unique indexes are the rules: one
+  row per account, day and slot; no clip twice a day on one account; no render, post or hook line on
+  two slots.
+- **The night:** `autopilot_tick`, a singleton every 60 s.
+  - It plans each account's day after 03:00 Israel, for an account on before that 03:00.
+  - One 1×1 render at a time, each scheduled when released.
+  - A slot is skipped 2 h after its time, and a pause is written once.
+  - The night marker is written every night once planning finishes. The worker checks it in to
+    Sentry (`autopilot-night`).
+  - It never throws: every setup, account and slot has its own try.
+- **Shared code it touches,** with manual posting unchanged and pinned by the existing suites:
+  - `publish_post`'s optional `nextSound` hook;
+  - the failure email's `not exists` for autopilot posts;
+  - the calendar's `autopilot` field;
+  - `emailsSentToday` counting `autopilot_email`;
+  - SoundPicker's optional `pickOnly`, its default markup pinned byte-identical.
+- **MEASURED by test:**
+  - the night across 2026-10-25 in his shape, 15 posts, each with its own render, the account's
+    own characters, a sound, no caption, no label, at his Israel times;
+  - a crash at three points resumes with one render and one post per slot;
+  - each pause cause emails once, and a skipped slot emails nothing;
+  - rotation is fair across three days, and no hook line repeats by id or text;
+  - Israel time is pinned across both clock changes.
+- **Found while building, fixed:** a third attempt needs a fresh hook line, and the pool held only
+  the night's need. It now tops up within the night's valve.
+- **The diff review (four lenses, a skeptic per finding; 33 of 38 confirmed, all fixed before the
+  PR).** The majors:
+  - a resume after a refused-file or lapsed-connection pause was undone a minute later by the same
+    failed post, with a second email. Failures now count only on slots made since the account was
+    last switched on;
+  - the page's resume threw away its unsaved edits;
+  - the videos-a-day select showed a clamped count and saved the old one.
+
+  Among the minors:
+  - a late plan no longer books passed times;
+  - a pause's cancel is retried every tick;
+  - the planning transaction re-checks the account;
+  - the save merges sounds under the row lock;
+  - the pause email's key covers every folded account;
+  - a sound swap checkpoints first and keeps its count through a recreate;
+  - the calendar's mark is behind the access check;
+  - a character with no clips cannot be switched on;
+  - the night renders only for an admin-owned business.
+
+- **The second review (of those fixes; 9 of 13 confirmed, all fixed before the PR).** The majors:
+  - a hand switch-off whose cancel hit a dropped connection answered success, and the post still went
+    out. Every tick now re-cancels a paused or switched-off account's waiting posts, and the save
+    answers an error;
+  - a resume kept a retired character the page no longer shows, so the account was paused again every
+    night. The resume now drops it and refuses what the night would pause again at once.
+
+  Among the minors:
+  - the page's resume saves the page first;
+  - a save's answer outranks a business pick still loading.
+
+  Every claimed fix now has a test that fails without it (13 core mutants and 1 web mutant, all
+  caught). The page-only fixes were checked in a fetch-mock harness, each against its undone fix.
+
+- **The third review (of that commit; 3 of 5 confirmed, all fixed before the PR):**
+  - a save switching off several accounts now cancels all of them before answering one failure;
+  - a resume re-reads its row under a lock, so a save from another tab that lands meanwhile wins;
+  - a card the night paused no longer blocks saving the others (its resume does the checks).
+
+  Three more mutants, all caught.
+
+- **A last pass (2 of 3 confirmed, both two-tab windows of a fraction of a second, closed):** the
+  save decides which cards it run-checks from the rows it holds locked; the resume re-checks
+  everything it checked under the same two locks, in the save's order (the setup row, then the
+  account row). Two more mutants, both caught. The save's half has no test: it needs two
+  connections, and the tests run on one.
+
+- **Owed when it opens to customers:** `/privacy` §5 names the emails a customer gets; the
+  autopilot's two are admin-only today, so it is unchanged (`legal-pages.test.ts` says so).
+- **Not done:** no signed-in walk; the setup and the calendar were seen in a harness
+  (`packages/core/.work/shots-0127/`, gitignored). No live Meta post by the autopilot yet.
 
 ## What landed (2026-10-24) — demo names, `feat/demo-names`
 
@@ -2041,8 +2146,9 @@ until someone measures whether a wallet payment leaves a chargeable saved card.
 
 ## The queue
 
-**Next: the Instagram autopilot.** Decided in planning on 2026-10-23 (FOUNDER-REPORTED); its own
-task records those decisions. Demo names
+**The Instagram autopilot — BUILT 2026-10-24** ([[0127-the-instagram-autopilot]]); what is left is
+the owed list's first bullet: the box step, his setup and the first night. C joins it later (0127
+"Where C slots in", in docs/09). Demo names
 ([[0125-demos-get-an-optional-name-never-read-by-a-model]]) went first because the autopilot picks
 demos by what they show.
 
@@ -2373,10 +2479,16 @@ subscription row was written.
 - **Instagram.** Four accounts are connected: Shira, Omri, Yael and Tavnit's official page. This
   updates [[instagram-connect-live-run-2026-10-12]], where tavnit.ai failed to connect inside Meta's
   window. Each character page posts only its own character's clips.
-- **Demos.** He has three Tavnit recordings, one per service. **Conflict, open until he names
-  them:** [[cutaway-matcher-hit-rate-2026-10-20]] describes his three as the A wizard, the B
-  wizard, and the library with TikTok scheduling (`dfa291b6`, `3915c8e2`, `84889b25`). The name
-  field ([[0125-demos-get-an-optional-name-never-read-by-a-model]]) is where he can settle it.
+- **Demos. FOUNDER-REPORTED 2026-10-24:** he named two Tavnit demos, "Service A" (`17c112d9`) and
+  "Service B" (`32e93f95`), and has no C demo yet. This supersedes his 2026-10-23 "three, one per
+  service" and settles that conflict. Neither named demo is one of the three ids in
+  [[cutaway-matcher-hit-rate-2026-10-20]] (`dfa291b6`, `3915c8e2`, `84889b25`); `32e93f95` is a
+  different take (T4) from the matcher's B wizard `3915c8e2` (T2). MEASURED read-only the same day:
+  both are ready with an approved plan.
+- **Instagram characters. FOUNDER-REPORTED 2026-10-24, at the autopilot's approval:** the page names
+  are not the character names. shir_acreates posts טליה, omri.creates posts עומרי, yael_creates
+  posts שירה, and tavnit.ai gets the three without a page: נטלי, נהוראי, גלעד. MEASURED read-only:
+  active hook clips שירה 6, עומרי 5, טליה 4, נטלי 4, נהוראי 4, גלעד 4.
 
 **Meta (FOUNDER-REPORTED, 2026-10-14…16, from the PR 4 prompt).** Business portfolio "Tavnit" (ID
 1147255727975713); legal name טאהא מוחמד, address ת"ד 929, כאבול 2496300, website tavnit.ai.
@@ -2516,18 +2628,34 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **The Instagram autopilot (2026-10-24, `feat/instagram-autopilot`,
+  [[0127-the-instagram-autopilot]]).** In order:
+  1. ~~0070 pushed and read back~~ DONE 2026-10-24 (the session, on his instruction "apply
+     migrations if you need to"): three tables, RLS on, 0 policies, 10 indexes, 0 rows, ledger 71
+     rows to 0070. Then PR #118's merge (the same instruction). Vercel deploys web.
+  2. The box: `git pull && pnpm install` and a worker restart, gated on no running job (docs/07
+     §11). The tick is ensured at boot. His step.
+  3. Optional, before he switches anything on: add hook clips where a page needs more.
+  4. `/autopilot` (or the link at the top of `/calendar`):
+     - add 3 or more sounds;
+     - on each card, pick its characters, videos a day, the demos and the times;
+     - switch it on and save.
+
+     It starts with the next 03:00 Israel. Creating the setup is his, never the session's.
+
+  5. The next morning: the calendar shows the day's posts marked "אוטו".
+  6. Sentry → Crons: `autopilot-night` exists after the first night. Confirm a missed check-in
+     emails him (his ask at approval).
+  7. Approve the new Hebrew at PR review: `apps/web/src/lib/autopilot-ui.ts` and the autopilot block
+     of `packages/core/src/social-copy.ts`, all DRAFT.
+
 - **Demo names (2026-10-24, `feat/demo-names`,
   [[0125-demos-get-an-optional-name-never-read-by-a-model]]).** The box needs nothing. In order:
   1. ~~Push 0069 before the merge~~ **DONE 2026-10-24** on his instruction, read back before and
      after (verify §RESULTS, the 0069 entry).
-  2. The merge of PR #116, by the session on the same instruction, straight after this record.
-     Vercel deploys web.
-  3. Approve the strings: the field's label, placeholder and line in
-     `apps/web/src/components/a-wizard/step-demo.tsx`, `שמירת השם` in
-     `apps/web/src/app/home/demos/demo-library.tsx`, and the demos line of
-     `docs/legal/database-definitions-document.md`. COPY PENDING FOUNDER REVIEW.
-  4. Name his three Tavnit recordings on `/home/demos`; that settles the conflict under "External
-     state".
+  2. ~~The merge of PR #116~~ **DONE** (`4383fd4`).
+  3. ~~Approve the strings~~ **APPROVED 2026-10-24** (FOUNDER-REPORTED; 0125 carries the dated line).
+  4. ~~Name his Tavnit recordings~~ **DONE**: two, "Service A" and "Service B" (External state).
   5. On his phone: upload a demo in A with a name and see it in the picker and on `/home/demos`;
      rename it; clear it.
 

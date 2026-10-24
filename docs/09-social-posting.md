@@ -13,7 +13,7 @@ What this doc covers: the data model, the life of a post, the publish job's chec
 failure kinds the customer reads, the switches, the env names, TikTok (§TikTok), and three runbooks —
 the Meta app's settings, Meta's review and verification, the TikTok app. Code:
 `packages/core/src/pipelines/social.ts`, `providers/meta-graph.ts`, `providers/tiktok.ts`,
-`secret-box.ts`; migrations 0057–0060, 0064–0065.
+`secret-box.ts`, and the autopilot's `pipelines/autopilot*.ts`; migrations 0057–0060, 0064–0065, 0070.
 
 **Built so far.** PR 1 (core, merged as #89): schema, the Meta wrapper, the pipeline, the publish
 job, the daily token check, the deletion path. PR 2 (connect, `feat/social-posting-connect`):
@@ -39,6 +39,9 @@ delivery by `PULL_FROM_URL`, the webhook, a switch of its own, and the tile's ta
 [`0116`](vault/decisions/0116-tiktok-delivery-email-and-the-door.md)): the delivery email when a
 TikTok video reaches the owner's inbox, the one inbox path printed everywhere, a sentence on the
 TikTok-only time step, and every environment string trimmed (§The delivery email, §TikTok).
+The autopilot (`feat/instagram-autopilot`, decision
+[`0127`](vault/decisions/0127-the-instagram-autopilot.md)): every night, the day's הוק + דמו videos
+for each connected Instagram account, made and scheduled through this path (§The autopilot).
 Everything a customer could reach is behind a switch.
 
 ## Data model (0057–0060, 0064–0065)
@@ -387,6 +390,10 @@ its own line (`socialErrorLine`).
   "Audio codec: AAC, 48khz sample rate maximum, 1 or 2 channels" and "Audio bitrate: 128kbps", and
   says neither "required" nor "optional"; no error code names a missing audio stream (the nearest,
   2207026, is "Unsupported video format"). The first live הוק + דמו post settles it (0107 §5).
+  **2026-10-24, MEASURED read-only in production:** three הוק + דמו posts have gone out with a
+  sound attached, and one with an empty caption — Meta takes the stream-less file with
+  `audio_configuration`, and `caption=` empty. A stream-less file with no sound at all is still
+  unmeasured; the autopilot never sends one.
 - **The audio search's token:** the Audio API page asks for "A valid User access token"
   (`instagram_basic`, `instagram_content_publish`, granted through Facebook Login) and says nothing
   of a Page token. Whether the Page token serves it too is a live reading (checklist (w)).
@@ -411,6 +418,100 @@ its own line (`socialErrorLine`).
 URLs: `developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media`,
 `…/content-publishing/`, `…/content-publishing/audio-api/`, `…/instagram-graph-api/reference/error-codes`,
 `…/instagram-platform/changelog`, `transparency.meta.com/policies/community-standards/misinformation/`.
+
+## The autopilot (decision 0127)
+
+After a one-time setup at `/autopilot`, every night Tavnit makes the day's הוק + דמו videos for each
+connected Instagram account and schedules them across the account's posting times through this
+doc's own path (`schedulePosts` → `publish_post`). Instagram only, Service A only. Admin-only behind
+`app_config.autopilot` (the switches' shape: no row = admins; `named`; `everyone`), and Instagram's
+own switch too (`getAutopilotAccess`). Code: `pipelines/autopilot.ts` (the night), `autopilot-setup.ts`
+(the setup), `autopilot-email.ts` (its emails), `zoned-time.ts`; migration 0070.
+
+**The setup**, one card per connected Instagram account: on/off, its characters (a character on at
+most one account), videos a day, the demos it rotates (named first, unnamed below, nothing
+preselected), its posting times (Israel time, 08:00–23:55, 5-minute steps); and one saved sound list
+for all of them, picked with the schedule flow's own `SoundPicker` (its optional `pickOnly`: no "בלי
+סאונד", no note). The save refuses a count above the account's times or its characters' active clips
+(answered with the maximum), and switching an account on with nothing to post, a character with no
+active clips, or no usable sound. It
+never writes what the night owns — a pause, `enabled_at`, `planned_day`, a sound's `refusedAt` (sounds
+merge by audio id) — so a page opened before a pause cannot lift it; only the card's "החזרה לפעולה"
+does, naming the pause it lifts (409 when it moved on). The resume saves the page first (the pause
+lines say to fix it there and then resume), and refuses what the night would pause again at once:
+not connected, nothing to post, a character with no clips, no usable sound. It drops a character
+since retired or left without a gender, which the page no longer shows, and loses to a save from
+another tab that lands while it checks (409). A card the night paused is not run-checked by a save
+(its resume is), so one paused card that cannot run never blocks saving the rest. Switching an account off
+cancels its autopilot posts that have not started and sends nothing; a cancel that fails makes the
+save answer an error once every switched-off account has had its cancel, and every tick cancels again what a paused or switched-off account still has
+waiting. A save, a switch-on or a resume takes effect from the next 03:00.
+
+**The night** is one singleton job, `autopilot_tick` (light lane, every 60 s, the reaper's shape),
+and each tick moves the slots one guarded step:
+
+1. **Plan**, once per account per Israel day, after 03:00 Israel, for an account that was on before
+   that 03:00. Pause checks first (not connected, no usable sound, a character with no active
+   clips). Then `min(videos a day, open times, active clips)` slots on its earliest times still
+   inside their 2 hours (a late plan books nothing already past), each with,
+   least-used first on that account: a clip of its own characters not out that day (ties to the
+   character used least today, so a three-character page gets all three), a demo that can render
+   (ready, its newest approved plan — `latestApprovedStepPlan`), a usable sound, and a hook line no
+   slot or render ever used, by id or by text, in the character's gender. Lines come from the
+   wizard's own `generateHookLines` (prompt untouched), tagged `params.autopilot`, at most 4 writer runs a
+   setup a night (each at most 2 Claude calls, the writer's own regenerate), failures included, `assertBudget` before each. A slot with no line is skipped
+   `no_line`; no renderable demo, `no_demo`.
+2. **Render one at a time** across every setup: the earliest planned slot of an account that is on,
+   not paused and connected gets a 1×1 steps `createSet` in the same transaction as its move to
+   `rendering`. The business is admin-owned: no debit, no classifier call.
+3. **A failed render**: the same version again, then another version (a clip no live slot of the day
+   holds, else the same clip; a new line; the other demo), then skipped `render_failed`.
+4. **Released** → `schedulePosts` with one account (the live row of its Instagram id), `caption ''`,
+   no AI label, the slot's sound, `timezone 'Asia/Jerusalem'`, at `max(its time, now)`.
+5. **Deadlines**: a slot still planned or rendering 2 h after its time is skipped `late`.
+6. **Watch**: a lapsed connection, or an autopilot post that ended `platform_refused`, pauses the
+   account (`connection`, `file_refused`); no usable sound left pauses every account (`no_sound`); a
+   day whose slots since the account was last switched on all finished with none posted pauses it
+   (`nothing_posted`). A pause is written only once (the first cause wins) and cancels the account's
+   open slots and its autopilot posts that have not started.
+7. **Low sounds**: fewer than 3 usable sounds, while an account is on, sends one email.
+
+Once every due account has planned, the tick writes `events{kind:'autopilot_night', payload:{day}}`
+— every night, with nothing due or no setup too. The worker's 60 s alert tick turns each into a
+Sentry cron check-in (`autopilot-night`, due `0 3 * * *` Asia/Jerusalem, 120 minutes' margin, an issue
+on the first miss; the first check-in creates the monitor). A night that never ran, or whose planning
+kept failing, writes none.
+
+**In `publish_post`**, for autopilot posts only (the `nextSound` hook in `handlers.ts` answers "not
+autopilot" for every other post, which then runs exactly as before): a container `ERROR` or a
+non-lapse refusal of the container's creation moves the post to the next usable sound and a fresh
+container — nothing went out, the EXPIRED recreate's reasoning — at most twice; a refusal whose text
+names the audio marks that sound refused in the list at once, an ambiguous one once another sound
+then posts. An autopilot post with no sound gets one from the list at publish time, or fails
+`sound_unavailable`. A refusal at `media_publish` is never swapped.
+
+**What stays quiet**: autopilot posts are left out of the failure email (one `not exists`); a stop
+reaches the founder once, as the pause email. The `/home` notice, the red chip and Sentry's existing
+`post_failed` / `job failed` events are unchanged.
+
+**The emails** (`sweepAutopilotEmails`, the worker's third email sweep, after the failure and the
+delivery sweeps): one per pause — the accounts paused within one sweep folded into one — and one per
+low-sound episode, on the failure email's gate, Resend ladder and the shared 20-a-UTC-day ceiling
+(`emailsSentToday` counts `autopilot_email` too). Deduplicated on the rows (`pause_emailed_at`,
+`low_sounds_emailed_at`) with an Idempotency-Key. A skipped slot sends nothing. The copy is
+`social-copy.ts` `autopilotPauseEmail`, `autopilotLowSoundsEmail` and `AUTOPILOT_PAUSE_LINES`
+(DRAFT).
+
+**The calendar**: an autopilot post carries `autopilot: true` (a chip mark "אוטו", the day list and
+the post page say so); `GET /api/social/posts` also returns the range's skipped slots for an account
+the autopilot reaches (dashed chips, a hollow dot on the phone, the reason in the day list); the page
+links to `/autopilot`.
+
+**Where C slots in** (not built): C's migration adds a C count and C characters to
+`autopilot_accounts`, and `service` (default `'a'`) and `text_block_clip_id` to `autopilot_slots`;
+the planner splits an account's times by count; the render step calls `createTextBlockRender` for a C
+slot. Sounds, scheduling, the swap, pauses, emails and the mark are shared as they are; C's mix is in
+`SOUND_VOLUMES` already.
 
 ## Connecting an account (PR 2)
 

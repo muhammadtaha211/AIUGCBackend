@@ -1594,4 +1594,77 @@ describe("migrations", () => {
 
     await pg.close();
   });
+
+  it("0070: the autopilot's three tables are server-only, their rules are indexes, idempotent", async () => {
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0070")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0070_autopilot.sql"), "utf8");
+    await pg.exec(migration);
+    await pg.exec(migration);
+
+    const rls = await pg.query<{ relname: string; relrowsecurity: boolean }>(
+      `SELECT relname, relrowsecurity FROM pg_class
+        WHERE relname IN ('autopilot_setups', 'autopilot_accounts', 'autopilot_slots') ORDER BY relname`,
+    );
+    expect(rls.rows).toEqual([
+      { relname: "autopilot_accounts", relrowsecurity: true },
+      { relname: "autopilot_setups", relrowsecurity: true },
+      { relname: "autopilot_slots", relrowsecurity: true },
+    ]);
+    const policies = await pg.query<{ n: string }>(
+      "SELECT count(*)::text AS n FROM pg_policies WHERE tablename LIKE 'autopilot_%'",
+    );
+    expect(policies.rows).toEqual([{ n: "0" }]);
+    const indexes = await pg.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE tablename LIKE 'autopilot_%' ORDER BY indexname",
+    );
+    expect(indexes.rows.map((r) => r.indexname)).toEqual([
+      "autopilot_accounts_pkey",
+      "autopilot_accounts_user_ig_idx",
+      "autopilot_setups_pkey",
+      "autopilot_slots_clip_day_idx",
+      "autopilot_slots_line_idx",
+      "autopilot_slots_open_idx",
+      "autopilot_slots_pkey",
+      "autopilot_slots_post_idx",
+      "autopilot_slots_render_idx",
+      "autopilot_slots_slot_idx",
+    ]);
+
+    const user = "11111111-1111-4111-8111-111111111111";
+    const biz = "22222222-2222-4222-8222-222222222222";
+    const account = "33333333-3333-4333-8333-333333333333";
+    const clip = "44444444-4444-4444-8444-444444444444";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES ('${biz}', '${user}', 'B');
+      INSERT INTO social_accounts (id, user_id, platform, external_id) VALUES ('${account}', '${user}', 'instagram', 'ig1');
+      INSERT INTO hook_clips (id, file_path, duration_ms, text_safe_area) VALUES ('${clip}', 'hooks/a.mp4', 3000, '{}');
+      INSERT INTO autopilot_setups (user_id, business_id) VALUES ('${user}', '${biz}');
+      INSERT INTO autopilot_accounts (user_id, ig_user_id) VALUES ('${user}', 'ig1');
+    `);
+    await expect(
+      pg.query(`INSERT INTO autopilot_accounts (user_id, ig_user_id) VALUES ('${user}', 'ig1')`),
+    ).rejects.toThrow(/autopilot_accounts_user_ig_idx/);
+    await expect(pg.query(`UPDATE autopilot_accounts SET a_per_day = 13`)).rejects.toThrow(
+      /autopilot_accounts_a_per_day_range/,
+    );
+    await expect(pg.query(`UPDATE autopilot_accounts SET paused_cause = 'bored'`)).rejects.toThrow(
+      /autopilot_accounts_paused_cause/,
+    );
+
+    const slot = (index: number, status = "planned") =>
+      `INSERT INTO autopilot_slots (user_id, ig_user_id, social_account_id, day, slot_index, scheduled_for, hook_clip_id, status)
+       VALUES ('${user}', 'ig1', '${account}', '2026-10-25', ${index}, now(), '${clip}', '${status}')`;
+    await pg.exec(slot(0));
+    // The same slot twice, and the same clip twice in a day on one account, are refused.
+    await expect(pg.query(slot(0, "skipped"))).rejects.toThrow(/autopilot_slots_slot_idx/);
+    await expect(pg.query(slot(1))).rejects.toThrow(/autopilot_slots_clip_day_idx/);
+    // A skipped slot holds no clip for the day.
+    await pg.exec(slot(1, "skipped"));
+    await expect(pg.query(slot(2, "posted"))).rejects.toThrow(/autopilot_slots_status/);
+    await pg.close();
+  });
 });

@@ -1,7 +1,8 @@
-import { and, eq, gt, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, notExists, sql } from "drizzle-orm";
 import { getEnv } from "../config";
 import type { Db } from "../db";
 import {
+  autopilotSlots,
   businesses,
   events,
   scheduledPosts,
@@ -62,6 +63,8 @@ export const FAILURE_EMAIL_ACCOUNT_PAUSE_MS = 60 * 60 * 1000;
 
 /** The delivery email's log kind (social-delivery-email.ts); named here so the day's count can sum both. */
 export const POST_DELIVERY_EMAIL = "post_delivery_email";
+/** The autopilot's emails (autopilot-email.ts, decision 0127): the same day's count. */
+export const AUTOPILOT_EMAIL = "autopilot_email";
 
 export type FailureEmailOff = "no_provider" | "local_worker" | "paused";
 
@@ -95,14 +98,14 @@ export function emailSweepGate(
   return { provider };
 }
 
-/** Emails the sweeps sent so far this UTC day, of either kind: the one daily ceiling. */
+/** Emails the sweeps sent so far this UTC day, of every kind: the one daily ceiling. */
 export async function emailsSentToday(db: Db, now: Date): Promise<number> {
   const [today] = await db
     .select({ n: sql<string>`count(*)` })
     .from(events)
     .where(
       and(
-        inArray(events.kind, [POST_FAILURE_EMAIL, POST_DELIVERY_EMAIL]),
+        inArray(events.kind, [POST_FAILURE_EMAIL, POST_DELIVERY_EMAIL, AUTOPILOT_EMAIL]),
         gte(events.createdAt, utcMidnight(now)),
         sql`${events.payload}->>'outcome' = 'sent'`,
       ),
@@ -286,6 +289,14 @@ export async function sweepPostFailureEmails(
       and(
         eq(scheduledPosts.status, "failed"),
         gt(scheduledPosts.failedAt, new Date(now.getTime() - FAILURE_EMAIL_FRESH_MS)),
+        // An autopilot post's stop reaches him once, as its pause email (decision 0127:
+        // email only when his decision is needed) — never as a failure email per post.
+        notExists(
+          db
+            .select({ id: autopilotSlots.id })
+            .from(autopilotSlots)
+            .where(eq(autopilotSlots.scheduledPostId, scheduledPosts.id)),
+        ),
       ),
     );
   const failed: FailedPost[] = rows.flatMap((row) =>

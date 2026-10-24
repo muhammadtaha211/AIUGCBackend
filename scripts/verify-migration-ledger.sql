@@ -965,6 +965,20 @@ ORDER BY migration, layer DESC;
 -- demos with 0 names (nothing backfilled), the ledger 70 rows to 0069, and
 -- `migration list` 0069 local == remote.
 --
+-- **0070** (the Instagram autopilot, decision 0127) on 2026-10-24, on the
+-- founder's instruction at the plan's approval ("merge the branches when you're
+-- done yourself, and apply migrations if you need to"), from
+-- feat/instagram-autopilot BEFORE PR #118 merged: the build's calendar routes
+-- read the new tables. Pre-flight: `migration list` read 0000-0069 local ==
+-- remote and 0070 local only; `db push --dry-run` named 0070_autopilot.sql
+-- alone. The apply printed "Applying migration 0070_autopilot.sql..." and exited
+-- 0; the same Docker catalog-cache warning, not a failure. Read BEFORE and AFTER
+-- in a READ ONLY transaction (packages/core/.work/readback-0070.ts): before, none
+-- of the three tables and the ledger 70 rows to 0069; after, autopilot_setups,
+-- autopilot_accounts and autopilot_slots each with relrowsecurity true, 0
+-- policies, the 10 indexes the file's VERIFY block names, 0 rows each, the
+-- ledger 71 rows to 0070, and `migration list` 0070 local == remote.
+--
 -- 2026-10-20, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0066 + 0067** (own voice: alignment_source 'scribe' and usage_kind
 -- 'stt_seconds' alone in 0066; voice_recordings with RLS on and no policy, and

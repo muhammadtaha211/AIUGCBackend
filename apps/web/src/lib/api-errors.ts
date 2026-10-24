@@ -1,5 +1,6 @@
 import {
   AccountBudgetError,
+  AutopilotSetupError,
   BudgetError,
   ContentPolicyError,
   CutawayPlanError,
@@ -19,6 +20,7 @@ import {
   INTRO_OFF,
 } from "./plans-ui";
 import { STEPS_OVERLAP_BLOCK } from "./service-a-ui";
+import { autopilotErrorLine } from "./autopilot-ui";
 import { socialErrorLine } from "./social-posting-ui";
 
 /**
@@ -102,6 +104,22 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
       case "stale":
         return hit(409, "ההקלטה או סרטון המוצר השתנו — צריך לשבץ את הקטעים מחדש.");
     }
+  }
+
+  // The autopilot setup's refusals (decision 0127): typed, like the others.
+  // 404 for what is not the caller's, 409 for a pause that moved on, 422 for a
+  // well-formed setup a rule refuses (each with its line, the maximum named).
+  if (err instanceof AutopilotSetupError) {
+    const status =
+      err.code === "not_found" ||
+      err.code === "business_not_owned" ||
+      err.code === "account_not_owned" ||
+      err.code === "demo_not_owned"
+        ? 404
+        : err.code === "stale_pause"
+          ? 409
+          : 422;
+    return hit(status, autopilotErrorLine(err.code, err.detail as { max?: number }));
   }
 
   // Social posting's refusals (PR 3): typed, like the one above, so a code can

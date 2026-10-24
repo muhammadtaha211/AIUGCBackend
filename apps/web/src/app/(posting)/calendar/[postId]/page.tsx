@@ -11,6 +11,7 @@ import {
 } from "@aiugc/core";
 import { SIGNED_URL_TTL_SECONDS } from "@/lib/api";
 import { authedUser } from "@/lib/auth-user";
+import { autopilotAllowed } from "@/lib/autopilot";
 import { isUuid } from "@/lib/service-b";
 import { renderDownloadFilename } from "@/lib/service-b-ui";
 import { userPlatforms } from "@/lib/social";
@@ -57,7 +58,7 @@ export default async function PostPage({ params }: { params: Promise<{ postId: s
 
   return (
     <PostDetail
-      post={await toPostWire(item)}
+      post={await toPostWire(item, { autopilot: await autopilotAllowed(user.id) })}
       downloadUrl={downloadUrl}
       horizon={
         horizon && {

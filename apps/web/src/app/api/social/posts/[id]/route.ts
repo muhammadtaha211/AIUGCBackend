@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, getScheduledPostItem, updateScheduledPost } from "@aiugc/core";
 import { coreErrorResponse, INVALID_BODY, jsonError, NOT_FOUND } from "@/lib/api";
+import { autopilotAllowed } from "@/lib/autopilot";
 import { isUuid } from "@/lib/service-b";
 import { requirePostingUser } from "@/lib/social";
 import { editBodySchema, toPostWire } from "@/lib/social-posting";
@@ -36,7 +37,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       platforms: auth.platforms,
     });
     if (!item) return jsonError(404, NOT_FOUND);
-    return NextResponse.json({ ok: true, post: await toPostWire(item) });
+    return NextResponse.json({
+      ok: true,
+      post: await toPostWire(item, { autopilot: await autopilotAllowed(auth.userId) }),
+    });
   } catch (err) {
     return coreErrorResponse(err);
   }
