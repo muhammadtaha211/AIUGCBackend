@@ -150,7 +150,7 @@ sound and one with an empty caption (docs/09 corrected).
   slot's transaction until customers are built on purpose.
 - The hook-line valve counts writer runs (each at most 2 Claude calls), not calls.
 - A character with no active clips cannot be switched on.
-- The autopilot's emails are admin-only today, so §5 is unchanged; it names them before
+- The autopilot's emails are admin-only today, so `/privacy` §5 is unchanged; it names them before
   the switch opens to customers.
 
 ## Unverified

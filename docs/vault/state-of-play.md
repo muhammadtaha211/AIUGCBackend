@@ -993,8 +993,8 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   - a character with no clips cannot be switched on;
   - the night renders only for an admin-owned business.
 
-- **Owed when it opens to customers:** §5 names the emails a customer gets; the
-  autopilot's two are admin-only today, so it is unchanged ( says so).
+- **Owed when it opens to customers:** `/privacy` §5 names the emails a customer gets; the
+  autopilot's two are admin-only today, so it is unchanged (`legal-pages.test.ts` says so).
 - **Not done:** no signed-in walk; the setup and the calendar were seen in a harness
   (`packages/core/.work/shots-0127/`, gitignored). No live Meta post by the autopilot yet.
 
