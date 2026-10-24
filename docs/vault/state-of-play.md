@@ -40,8 +40,8 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**The Instagram autopilot: BUILT 2026-10-24 on `feat/instagram-autopilot`; migration 0070 waiting
-for the push; the box step after the merge is his.** [[0127-the-instagram-autopilot]] records his
+**The Instagram autopilot: BUILT 2026-10-24, PR #118 (`feat/instagram-autopilot`); migration 0070
+pushed and read back 2026-10-24; the box step after the merge is his.** [[0127-the-instagram-autopilot]] records his
 decisions 3–19 and his calls at approval. After a one-time setup at `/autopilot`, every night at
 03:00 Israel the box plans each connected Instagram account's day:
 
@@ -945,7 +945,12 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-24, later) — the Instagram autopilot, `feat/instagram-autopilot`
+## What landed (2026-10-24, later) — the Instagram autopilot, `feat/instagram-autopilot`, PR #118
+
+- **0070 pushed 2026-10-24**, before the merge (the build's calendar routes read the new tables),
+  and read back before and after: none of the three tables before; after, each with RLS on, 0
+  policies, the 10 indexes its VERIFY block names, 0 rows; the ledger 71 rows to 0070
+  ([[production-migration-push-log]]).
 
 [[0127-the-instagram-autopilot]] has the decisions; docs/09 §The autopilot has the mechanics. In short:
 
@@ -2625,8 +2630,9 @@ the 2026-09-26 custom domain (founder-reported):**
 
 - **The Instagram autopilot (2026-10-24, `feat/instagram-autopilot`,
   [[0127-the-instagram-autopilot]]).** In order:
-  1. 0070 pushed and read back (the session, on his instruction "apply migrations if you need to");
-     then the merge (the same instruction). Vercel deploys web.
+  1. ~~0070 pushed and read back~~ DONE 2026-10-24 (the session, on his instruction "apply
+     migrations if you need to"): three tables, RLS on, 0 policies, 10 indexes, 0 rows, ledger 71
+     rows to 0070. Then PR #118's merge (the same instruction). Vercel deploys web.
   2. The box: `git pull && pnpm install` and a worker restart, gated on no running job (docs/07
      §11). The tick is ensured at boot. His step.
   3. Optional, before he switches anything on: add hook clips where a page needs more.
