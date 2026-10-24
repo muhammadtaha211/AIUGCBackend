@@ -109,6 +109,9 @@ stringifies a row. The test runs both generators on one demo, unnamed and then n
 
 ## The strings — COPY PENDING FOUNDER REVIEW
 
+> **2026-10-24 — approved (FOUNDER-REPORTED, in the autopilot task's prompt):** the strings below
+> stand as written.
+
 - The field's label: `שם לסרטון (לא חובה)`
 - Its placeholder: `לדוגמה: הזמנה באפליקציה`
 - The line under it: `שם קצר שיעזור לכם לזהות את הסרטון ברשימה. אפשר לשנות אותו בכל זמן בעמוד

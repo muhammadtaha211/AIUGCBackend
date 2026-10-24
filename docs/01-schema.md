@@ -90,6 +90,13 @@ draftDemoStartMs?, draftStateIndex? }[]`, VO time, CHECK array — `id` 1–8 is
   video × account with the instant, caption, sound snapshot and the publish outcome. Both
   server-only; the enum types `social_platform`, `social_account_status` and
   `scheduled_post_status` are 0057. Columns and the state machine: [09-social-posting.md](09-social-posting.md).
+- **autopilot_setups**, **autopilot_accounts**, **autopilot_slots** (0070) — the Instagram
+  autopilot ([vault 0127](vault/decisions/0127-the-instagram-autopilot.md)): one setup per Tavnit
+  account (the business, the saved sound list), one row per (account, Instagram id) with its on/off,
+  characters, count, demos, times and the server-owned `enabled_at` / `planned_day` / pause, and one
+  row per planned post. The slot table's unique indexes are the rules: one row per (account, day,
+  slot), no hook clip twice a day on one account, no render, post or hook line on two slots.
+  Server-only. The night: [09-social-posting.md](09-social-posting.md) §The autopilot.
 - **text_block_clips** (0052) — the גוש טקסט bank (Service C,
   [vault 0089](vault/decisions/0089-service-c-text-block-exists-admin-only-phase-1.md),
   [0090](vault/decisions/0090-text-block-format-clip-once-with-its-own-sound.md),
@@ -289,7 +296,8 @@ get read-only access. Policies:
 - Server-only (RLS on, no policies): jobs, usage_events, gateway_events, events, app_config,
   pronunciation_entries, `text_block_clips` (0052 — no customer SELECT policy, not even in
   phase 2: every reader is the server over `DATABASE_URL`, vault 0099), `social_accounts` and
-  `scheduled_posts` (0058, the same shape — tokens never reach a browser client), `intro_trials`
+  `scheduled_posts` (0058, the same shape — tokens never reach a browser client), the three
+  `autopilot_*` tables (0070), `intro_trials`
   (0062), and `feedback` — whose ENABLE is in **0035**, not here, because a
   policy-less table needs no Supabase role and so stays portable
   ([vault 0035](vault/decisions/0035-a-policyless-table-keeps-its-rls-in-the-portable-file.md),
