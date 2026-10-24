@@ -40,6 +40,9 @@ type StepCutawaysProps = {
   audioId: string;
   demo: DemoState | null;
   setDemo: (demo: DemoState | null) => void;
+  /** The demo step's name field (decision 0125) — the shell holds and saves it. */
+  demoName: string;
+  setDemoName: (value: string) => void;
   /** The live plan, or null — the shell decides liveness (liveCutawayPlan). */
   plan: CutawayPlanWire | null;
   setPlan: (plan: CutawayPlanWire | null) => void;
@@ -78,6 +81,8 @@ export function StepCutaways({
   audioId,
   demo,
   setDemo,
+  demoName,
+  setDemoName,
   plan,
   setPlan,
   onBack,
@@ -170,6 +175,8 @@ export function StepCutaways({
           setDemo={setDemo}
           description=""
           setDescription={() => {}}
+          name={demoName}
+          setName={setDemoName}
           onContinue={() => {}}
           onFatal={onFatal}
         />

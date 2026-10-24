@@ -170,6 +170,9 @@ export const demos = pgTable(
     // Optional customer note on what the footage shows — soft grounding for the
     // VO script. Once per demo; scripts generated from this demo inherit it.
     description: text("description"),
+    // Optional customer name for the recording, shown wherever a demo is
+    // listed or picked (0069, decision 0125). Never a model input.
+    name: text("name"),
     probe: jsonb("probe"),
     rawPath: text("raw_path"),
     normalizedPath: text("normalized_path"),

@@ -98,6 +98,28 @@ export async function setDemoDescription(
 }
 
 /**
+ * The optional name the customer gives a recording, so they can tell their
+ * demos apart wherever one is listed or picked (decision 0125). A label for
+ * people only: nothing that builds a model input reads it, unlike the
+ * description above. Blank clears. The cap matches the request schema and the
+ * client's MAX_DEMO_NAME_CHARS (pinned by service-a-ui.test.ts).
+ *
+ * Leaves updated_at alone on purpose: the janitor deletes the raw upload
+ * retention_days after demos.updated_at, and renaming a recording must not
+ * keep its raw file longer.
+ */
+export const MAX_DEMO_NAME_CHARS = 40;
+
+export async function setDemoName(db: Db, opts: { demoId: string; name: string }): Promise<void> {
+  const rows = await db.select().from(demos).where(eq(demos.id, opts.demoId)).limit(1);
+  if (!rows[0]) throw new Error(`demo ${opts.demoId} not found`);
+  await db
+    .update(demos)
+    .set({ name: opts.name.trim().slice(0, MAX_DEMO_NAME_CHARS) || null })
+    .where(eq(demos.id, opts.demoId));
+}
+
+/**
  * Every ready demo gets analyzed once — the wizard's plan step needs the state
  * inventory, and starting at ingest hides the minutes of analysis latency. The
  * analyze_demo handler lands with the step-plan pipeline; until a worker knows

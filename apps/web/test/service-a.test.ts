@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aStepsRenderRequestSchema,
-  demoDescriptionRequestSchema,
+  demoPatchRequestSchema,
   demoFileError,
   demoNoteRequestSchema,
   demoUploadPath,
@@ -126,14 +126,23 @@ describe("request schemas", () => {
   });
 
   it("demo description caps at 500 chars; blank is fine (it clears)", () => {
-    expect(demoDescriptionRequestSchema.safeParse({ description: "גלילה בתפריט" }).success).toBe(
-      true,
-    );
-    expect(demoDescriptionRequestSchema.safeParse({ description: "" }).success).toBe(true);
-    expect(demoDescriptionRequestSchema.safeParse({ description: "א".repeat(501) }).success).toBe(
-      false,
-    );
-    expect(demoDescriptionRequestSchema.safeParse({}).success).toBe(false);
+    expect(demoPatchRequestSchema.safeParse({ description: "גלילה בתפריט" }).success).toBe(true);
+    expect(demoPatchRequestSchema.safeParse({ description: "" }).success).toBe(true);
+    expect(demoPatchRequestSchema.safeParse({ description: "א".repeat(501) }).success).toBe(false);
+    expect(demoPatchRequestSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("demo name caps at 40 chars after trimming; blank is fine (it clears); either key alone", () => {
+    expect(demoPatchRequestSchema.safeParse({ name: "Tavnit — אשף הוק + דמו" }).data).toEqual({
+      name: "Tavnit — אשף הוק + דמו",
+    });
+    expect(demoPatchRequestSchema.safeParse({ name: "" }).success).toBe(true);
+    expect(demoPatchRequestSchema.safeParse({ name: ` ${"א".repeat(40)} ` }).data).toEqual({
+      name: "א".repeat(40),
+    });
+    expect(demoPatchRequestSchema.safeParse({ name: "א".repeat(41) }).success).toBe(false);
+    expect(demoPatchRequestSchema.safeParse({ name: null }).success).toBe(false);
+    expect(demoPatchRequestSchema.safeParse({ description: "", name: "שם" }).success).toBe(true);
   });
 
   it("plan edit wants 1-80 integer-indexed steps with 1-60 char labels", () => {

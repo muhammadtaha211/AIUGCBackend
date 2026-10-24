@@ -1,6 +1,6 @@
 -- scripts/verify-migration-ledger.sql
 --
--- Proves that migrations 0008-0030, 0032-0033, 0035-0039, 0041-0056 and 0061-0063 actually landed in
+-- Proves that migrations 0008-0030, 0032-0033, 0035-0039, 0041-0056, 0061-0063 and 0066-0069 actually landed in
 -- a given database. (0031 and 0034 have never had a row here.)
 --
 -- Originally written for docs/vault/defects/migration-ledger-stops-at-0007.md:
@@ -33,7 +33,7 @@
 --                         nothing to do with whether the migration ran.
 --
 -- On a FRESH or REBUILT database, run with `WHERE layer = 'structural'` and
--- expect, of 49 rows: **47 true, 1 false (0022), 1 NULL (0020)**. (0043 added
+-- expect, of 53 rows: **51 true, 1 false (0022), 1 NULL (0020)**. (0043 added
 -- two rows on 2026-09-17 — '0043' and '0043-plans' — taking it from 32 to 34,
 -- which this sentence had missed; 0044-0047 then added one each, to 38,
 -- 0048 one more on 2026-09-21, to 39, 0049 one on 2026-10-01, to 40, 0050
@@ -43,7 +43,9 @@
 -- to 49 rows and 47 true, on feat/intro-offer before any push. 0057-0060 have
 -- no row here. 0063 (2026-10-15) added NO row: it moved the three plan prices
 -- one shekel down, so '0043-plans' folded into '0043+0063-plans' at the current
--- values, as '0038+0040' did.) Two of those
+-- values, as '0038+0040' did. 0066-0068 then added one each on 2026-10-19/20,
+-- to 52, which this sentence had missed, and 0069 one on 2026-10-23, on
+-- feat/demo-names before any push: **53 rows, 51 true**.) Two of those
 -- three need saying out loud, because neither is a finding:
 --
 --   * **0020 is NULL on every database** — see its own comment below.
@@ -857,6 +859,14 @@ WITH checks(migration, layer, applied, note) AS (VALUES
   AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cutaway_plans_slots_array')),
   'cutaway_plans 11 columns, RLS on, no policy, unique audio+analysis+structure+hook key, slots CHECK'),
 
+-- 0069: demos.name (decision 0125) -- the customer's optional name for a
+-- recording, text and nullable. Written 2026-10-23 with the feature, before any push.
+('0069', 'structural', (SELECT EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'demos'
+    AND column_name = 'name' AND data_type = 'text' AND is_nullable = 'YES')),
+  'demos.name: text, nullable (NULL = unnamed)'),
+
 -- ---------------------------------------------------------------------------
 -- DATA LAYER — true only against the old production database. On an empty or
 -- rebuilt database these read false, or pass vacuously, for reasons unrelated
@@ -941,6 +951,19 @@ ORDER BY migration, layer DESC;
 -- transaction (packages/core/.work/readback-0068.ts): before, no table and the
 -- ledger 68 rows to 0067; after, cutaway_plans with relrowsecurity true, 0
 -- policies, its three indexes, 11 columns, 0 rows, and the ledger 69 rows to 0068.
+--
+-- **0069** (demos.name, decision 0125) on 2026-10-24, on the founder's
+-- instruction in session ("when you're done, apply any migrations you need for
+-- this to take affect, push and merge"), from feat/demo-names BEFORE PR #116
+-- merged: the branch names `name` in every demo select and insert (the 0039
+-- rule). Pre-flight: `migration list` read 0000-0068 local == remote and 0069
+-- local only; `db push --dry-run` named 0069_demos_name.sql alone. The apply
+-- printed "Applying migration 0069_demos_name.sql..." and exited 0; the same
+-- Docker catalog-cache warning, not a failure. Read BEFORE and AFTER in a READ
+-- ONLY transaction (packages/core/.work/readback-0069.ts): before, no column,
+-- 23 demos, the ledger 69 rows to 0068; after, demos.name text and nullable, 23
+-- demos with 0 names (nothing backfilled), the ledger 70 rows to 0069, and
+-- `migration list` 0069 local == remote.
 --
 -- 2026-10-20, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0066 + 0067** (own voice: alignment_source 'scribe' and usage_kind

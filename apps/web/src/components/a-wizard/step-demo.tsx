@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { StepHeader } from "@/components/onboarding/steps/step-chrome";
 import { Button } from "@/components/ui/button";
-import { TextAreaField } from "@/components/ui/field";
+import { TextAreaField, TextField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
 import {
   analysisBackgroundLine,
@@ -11,10 +11,13 @@ import {
   clientDemoFileError,
   DEMO_PAGE_SIZE,
   demoDurationError,
+  demoNameDir,
+  demoNamePatch,
   duplicateDemoMatch,
   ingestPhaseView,
   ingestStuckView,
   isIngestingDemoStatus,
+  MAX_DEMO_NAME_CHARS,
   MAX_DEMO_SECONDS,
   restoredDemo,
   type DemoState,
@@ -31,6 +34,12 @@ type StepDemoProps = {
   /** The optional "what the footage shows" note — wizard state, saved on continue. */
   description: string;
   setDescription: (value: string) => void;
+  /** The optional name field (decision 0125) — the caller's state, like the
+   *  note, so leaving the step mid-upload keeps what was typed. A saves it on
+   *  continue; B's shell saves it (B has no continue here — BWizard). `demo.name`
+   *  is the saved value it is compared against. */
+  name: string;
+  setName: (value: string) => void;
   onContinue: () => void;
   onFatal: (message: string) => void;
   /**
@@ -185,6 +194,8 @@ export function StepDemo({
   setDemo,
   description,
   setDescription,
+  name,
+  setName,
   onContinue,
   onFatal,
   variant = "a",
@@ -285,28 +296,39 @@ export function StepDemo({
     };
   }, [pickerShowing, businessId]);
 
-  /** Reuse: the saved description prefills the field and stays editable. */
+  /** Reuse: the saved description and name prefill their fields and stay
+   *  editable; the name also rides on the demo as the saved value. */
   function selectPrevious(row: DemoSummary) {
     setError(null);
-    setDemo({ id: row.id, status: "ready", durationMs: row.durationMs, thumbUrl: row.thumbUrl });
+    setDemo({
+      id: row.id,
+      status: "ready",
+      durationMs: row.durationMs,
+      thumbUrl: row.thumbUrl,
+      name: row.name,
+    });
     setDescription(row.description ?? "");
+    setName(row.name ?? "");
   }
 
-  /** Persist the footage note on the demo row, then advance. Blank clears. */
+  /** Persist the footage note on the demo row, and the name when it moved
+   *  off the saved one, then advance. Blank clears either. */
   async function saveDescriptionAndContinue() {
     if (!demo) return;
     setSaving(true);
     setError(null);
+    const namePatch = demoNamePatch(name, demo.name);
     const result = await apiFetch<{ ok: true }>(`/api/demos/${demo.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ description }),
+      body: JSON.stringify({ description, ...namePatch }),
     });
     setSaving(false);
     if (!result.ok) {
       if (result.status === 403 || result.status === 404) return onFatal(result.error);
       return setError(result.error);
     }
+    if (namePatch.name !== undefined) setDemo({ ...demo, name: namePatch.name || undefined });
     onContinue();
   }
 
@@ -338,6 +360,7 @@ export function StepDemo({
     cancelToken.current = token;
     setUploadPercent(0);
     setDescription("");
+    setName("");
     try {
       const invalid = clientDemoFileError(file);
       if (invalid) return fail(invalid);
@@ -440,6 +463,7 @@ export function StepDemo({
       status: string;
       businessId?: string;
       description?: string;
+      name?: string;
       durationMs?: number;
       thumbUrl?: string;
     }>(`/api/demos/${match.id}`);
@@ -453,6 +477,7 @@ export function StepDemo({
     setPendingDuplicate(null);
     setDemo(restored.demo);
     setDescription(restored.description);
+    setName(restored.name);
   }
 
   const ingesting = demo !== null && isIngestingDemoStatus(demo.status);
@@ -491,6 +516,27 @@ export function StepDemo({
    * `waiting` = upload/ingest still running: the lead line invites filling
    * the dead time; once the demo is ready the same line drops the clause.
    */
+  /**
+   * The optional name (decision 0125) — the first field on every card from
+   * the moment a file is chosen, in A and in B: it is how the customer tells
+   * this recording apart later, in every list and picker. A label for people
+   * only — the note below is what feeds the plan, never this.
+   */
+  const nameField = (
+    <div className="mt-5">
+      <TextField
+        label="שם לסרטון (לא חובה)"
+        maxLength={MAX_DEMO_NAME_CHARS}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        placeholder="לדוגמה: הזמנה באפליקציה"
+      />
+      <p className="mt-1.5 text-[13px] text-ink/55">
+        שם קצר שיעזור לכם לזהות את הסרטון ברשימה. אפשר לשנות אותו בכל זמן בעמוד סרטוני המוצר.
+      </p>
+    </div>
+  );
+
   const descriptionField = (waiting: boolean) =>
     forB ? null : (
       <div className="mt-5">
@@ -551,6 +597,22 @@ export function StepDemo({
                     <span className="aspect-[9/16] w-12 shrink-0 rounded-lg bg-ink/10" />
                   )}
                   <span className="min-w-0">
+                    {/* The name (decision 0125) on a line of its own, so the
+                        line's RTL is its base — the field it was typed in has
+                        the same one. A <bdi> would take its direction from the
+                        first letter and flip a name that starts in Latin. A
+                        name with no Hebrew is set LTR so truncation clips its
+                        end, not its beginning (demoNameDir). */}
+                    {row.name && (
+                      <span
+                        dir={demoNameDir(row.name)}
+                        className={`mb-0.5 block truncate text-sm font-medium text-ink ${
+                          demoNameDir(row.name) ? "text-right" : ""
+                        }`}
+                      >
+                        {row.name}
+                      </span>
+                    )}
                     <span className="block text-sm text-ink/75">
                       {row.durationMs !== undefined &&
                         `${Math.round(row.durationMs / 1000)} שניות · `}
@@ -727,6 +789,7 @@ export function StepDemo({
               </Button>
             )}
           </div>
+          {nameField}
           {descriptionField(true)}
         </>
       )}
@@ -737,6 +800,16 @@ export function StepDemo({
       {demo === null && uploadPercent === null && pendingDuplicate !== null && (
         <div className="mt-6 rounded-xl border border-ink/[0.08] bg-white p-4">
           <p className="text-sm font-medium text-ink">נראה שכבר העליתם את הסרטון הזה</p>
+          {pendingDuplicate.match.name && (
+            <p
+              dir={demoNameDir(pendingDuplicate.match.name)}
+              className={`mt-1.5 truncate text-sm font-medium text-ink ${
+                demoNameDir(pendingDuplicate.match.name) ? "text-right" : ""
+              }`}
+            >
+              {pendingDuplicate.match.name}
+            </p>
+          )}
           <p className="mt-1 text-[13px] text-ink/60">
             יש ברשימה סרטון באורך זהה
             {pendingDuplicate.match.durationMs !== undefined &&
@@ -835,6 +908,7 @@ export function StepDemo({
             {ingestPhase.sub && <p className="text-sm text-ink/55">{ingestPhase.sub}</p>}
             {slow && <p className="text-sm text-ink/55">עדיין עובד… זה יכול לקחת עוד רגע.</p>}
           </div>
+          {nameField}
           {descriptionField(true)}
         </>
       )}
@@ -889,6 +963,7 @@ export function StepDemo({
             </p>
           )}
 
+          {nameField}
           {descriptionField(false)}
 
           <Button

@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-22
+updated: 2026-10-24
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -40,8 +40,18 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
+**Demo names: BUILT 2026-10-24 on `feat/demo-names`, PR #116; 0069 PUSHED 2026-10-24 before
+the merge, both on his instruction ("apply any migrations you need for this to take affect, push
+and merge").** Read back after the push, read-only: `demos.name` text and nullable, 0 of 23 demos
+named, ledger 70 rows to 0069. The merge follows this record on the same instruction.
+[[0125-demos-get-an-optional-name-never-read-by-a-model]]. A customer can name a recording as it
+uploads, in A and in B, and rename or clear it on `/home/demos`. The name shows in every picker and
+list, an unnamed demo looks as before, and no model reads it. Details under "What landed
+(2026-10-24)"; the strings wait for his approval under "Owed founder actions".
+
 **"גרסה נוספת" on finished hook + demo and גוש טקסט videos: BUILT 2026-10-22 on
-`feat/next-version-action`, NOT MERGED; no migration, no box step.**
+`feat/next-version-action`, MERGED as PR #115 (`fc9c1d4`, MEASURED by `git log` 2026-10-23; this
+line said "NOT MERGED"); no migration, no box step.**
 [[0124-the-next-version-is-taught-at-the-finished-video]]. A third button on every surface a
 finished A (steps) or C video plays. A opens the wizard's character step with the recording
 already held, under a line naming the next render's price (25 today) and the volume pitch. C
@@ -907,7 +917,36 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-10-22, later) — "גרסה נוספת" at the finished video, `feat/next-version-action`, NOT MERGED
+## What landed (2026-10-24) — demo names, `feat/demo-names`
+
+[[0125-demos-get-an-optional-name-never-read-by-a-model]] records his four calls and the two that
+came with his approval of the plan (403 for another account's demo; B saves at ready). In short:
+
+- `demos.name` (0069): nullable text, capped at 40 characters in code. `PATCH /api/demos/[id]`
+  takes `name` and `description`, each optional. A rename leaves `updated_at`, the raw file's
+  retention clock, alone.
+- The field is the first one on the A and B upload, ingest and ready cards. The name shows in
+  every picker row, the duplicate card, `/home/demos` (with rename and clear) and the plan
+  editor's header. An unnamed demo looks as before.
+- MEASURED by test: the plan prompt, the stored plan, the VO prompt and its params are identical
+  with and without a name, and a label word found only in the name stays flagged off-screen. Both
+  cases fail when the name is leaked into the plan's description input (checked, reverted).
+- MEASURED in the harness: a `<bdi>` flipped a name that starts in Latin, so the name sits on its
+  own RTL line, the same base as the field. A Latin-only name is set LTR on the two truncating
+  lines, so the ellipsis takes its end.
+- The diff review confirmed four defects in the first build, all fixed before the commit. B lost a
+  name typed before the customer left the step, and could save a stale value; its save now lives
+  in `BWizard`. The library save rewrote the field. A Latin-only name truncated at its beginning.
+- Found while building, left alone: the comments at `0013_demo_description_hook_personas.sql:3-4`,
+  `schema.ts` (`demos.description`) and `pipelines/demos.ts` (`setDemoDescription`) still call the
+  description "soft grounding for the VO script", the retired path; it feeds the step plan.
+  `setDemoDescription` bumps `updated_at`, and A's continue always sends the note, so reusing a
+  demo in A restarts its raw file's 30-day clock. Vault 0061's line cites for the description are
+  stale. The ledger proof's header had missed 0066–0068; corrected with the 0069 row.
+- **Not done:** no signed-in walk. The wizards' save call sites (A's continue, `BWizard`'s
+  effect) are read in the code only; the repo has no component tests.
+
+## What landed (2026-10-22, later) — "גרסה נוספת" at the finished video, `feat/next-version-action`, MERGED as PR #115 (`fc9c1d4`, MEASURED by `git log` 2026-10-23; this heading said "NOT MERGED")
 
 [[0124-the-next-version-is-taught-at-the-finished-video]] records his eight calls and how each is
 built. In short:
@@ -1994,6 +2033,11 @@ until someone measures whether a wallet payment leaves a chargeable saved card.
 
 ## The queue
 
+**Next: the Instagram autopilot.** Decided in planning on 2026-10-23 (FOUNDER-REPORTED); its own
+task records those decisions. Demo names
+([[0125-demos-get-an-optional-name-never-read-by-a-model]]) went first because the autopilot picks
+demos by what they show.
+
 **The ₪5 intro offer — MERGED 2026-10-14 as PR #97, 0061/0062 pushed, LIVE (MEASURED 2026-10-15)** ([[0109-a-five-shekel-intro-offer]]);
 what is still owed (from the real ₪5 purchase on) is the owed list's "The ₪5 intro offer" bullet,
 steps 9 onward.
@@ -2310,6 +2354,22 @@ Founder-reported from a dashboard unless a line says otherwise. **This section c
 2026-09-21**: the Sumit variables now exist in two places, the box was deployed, and the first
 subscription row was written.
 
+**FOUNDER-REPORTED 2026-10-23, not repo-verified (the demo-names prompt).**
+
+- **Hook bank.** One Service A character was removed because its look came out too close to the
+  real person whose photo inspired it. Six Service A characters remain: five with four hook clips
+  and one with six, 26 clips by his count. The last MEASURED count was 30 clips on 2026-10-01; not
+  re-measured.
+- **Service C.** Three characters, one clip each. The last MEASURED count was two characters,
+  2026-10-10 (the Service C phase 2 owed item).
+- **Instagram.** Four accounts are connected: Shira, Omri, Yael and Tavnit's official page. This
+  updates [[instagram-connect-live-run-2026-10-12]], where tavnit.ai failed to connect inside Meta's
+  window. Each character page posts only its own character's clips.
+- **Demos.** He has three Tavnit recordings, one per service. **Conflict, open until he names
+  them:** [[cutaway-matcher-hit-rate-2026-10-20]] describes his three as the A wizard, the B
+  wizard, and the library with TikTok scheduling (`dfa291b6`, `3915c8e2`, `84889b25`). The name
+  field ([[0125-demos-get-an-optional-name-never-read-by-a-model]]) is where he can settle it.
+
 **Meta (FOUNDER-REPORTED, 2026-10-14…16, from the PR 4 prompt).** Business portfolio "Tavnit" (ID
 1147255727975713); legal name טאהא מוחמד, address ת"ד 929, כאבול 2496300, website tavnit.ai.
 Business verification filed 2026-10-14 on the אישור עוסק פטור, confirmed by an email code to
@@ -2334,11 +2394,12 @@ Still not submitted for review.
 muhammad@tavnit.ai → his Gmail; Resend's records untouched.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0065 applied, ledger clean at 66 rows, no gaps, nothing pending** — MEASURED
-2026-10-17 right after the founder-authorized 0064/0065 push (TikTok, PR #107 — pushed before its
-merge, so `origin/main` held 0000–0063 until #107 merged the same day), read-only against
-`supabase_migrations.schema_migrations` (count 66, first `0000`, last `0065`)
-([[production-migration-push-log]]). _(This line said 0000–0062 / 63 rows until 2026-10-17 and
+**Migrations 0000–0069 applied, ledger clean at 70 rows, nothing pending** — MEASURED
+2026-10-24 right after the founder-authorized 0069 push (demo names, PR #116, pushed before its
+merge), read-only against `supabase_migrations.schema_migrations` (count 70, first `0000`, last
+`0069`; `migration list` 0000–0069 local == remote) ([[production-migration-push-log]]). _(This
+line said 0000–0065 / 66 rows, MEASURED 2026-10-17, until 2026-10-24 and missed the 0066–0068
+pushes of 2026-10-20.)_ _(This line said 0000–0062 / 63 rows until 2026-10-17 and
 missed the 0063 push of 2026-10-15.)_ _(This line said
 0000–0059 / 60 rows until today and missed the 0060 push of 2026-10-11.)_ _(The earlier text of this paragraph recorded the 0049 push of
 2026-10-01 and a 49-files-against-50-rows interval that has long since closed.)_ The earlier 49-row line corrected a stale "0000–0047 / 48 rows" here;
@@ -2447,11 +2508,26 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **Demo names (2026-10-24, `feat/demo-names`,
+  [[0125-demos-get-an-optional-name-never-read-by-a-model]]).** The box needs nothing. In order:
+  1. ~~Push 0069 before the merge~~ **DONE 2026-10-24** on his instruction, read back before and
+     after (verify §RESULTS, the 0069 entry).
+  2. The merge of PR #116, by the session on the same instruction, straight after this record.
+     Vercel deploys web.
+  3. Approve the strings: the field's label, placeholder and line in
+     `apps/web/src/components/a-wizard/step-demo.tsx`, `שמירת השם` in
+     `apps/web/src/app/home/demos/demo-library.tsx`, and the demos line of
+     `docs/legal/database-definitions-document.md`. COPY PENDING FOUNDER REVIEW.
+  4. Name his three Tavnit recordings on `/home/demos`; that settles the conflict under "External
+     state".
+  5. On his phone: upload a demo in A with a name and see it in the picker and on `/home/demos`;
+     rename it; clear it.
+
 - **"גרסה נוספת" (2026-10-22, `feat/next-version-action`,
   [[0124-the-next-version-is-taught-at-the-finished-video]]).** No migration, no box step. In order:
   1. Approve the strings: `NEXT_VERSION_BUTTON` and `nextVersionLine` in
      `apps/web/src/lib/quote-ui.ts`. COPY PENDING FOUNDER REVIEW.
-  2. The merge (never by the session).
+  2. ~~The merge~~ **DONE**: PR #115 (`fc9c1d4`), MEASURED by `git log` 2026-10-23.
   3. On his phone, as a customer: open a finished A video from `/home`, tap גרסה נוספת, and check
      that the character step has the recording in the strip; the same for a C video, which should
      land on the text step.

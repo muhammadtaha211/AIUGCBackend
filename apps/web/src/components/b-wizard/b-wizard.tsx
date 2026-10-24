@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { HookEffect } from "@aiugc/core/hook-effect";
 import type { SafeRect } from "@aiugc/core/hook-geometry";
 import { useStepViewed } from "@/components/analytics";
 import { Button } from "@/components/ui/button";
 import { WizardNav } from "@/components/wizard-nav";
-import type { DemoState } from "@/lib/service-a-ui";
+import { demoNamePatch, type DemoState } from "@/lib/service-a-ui";
+import { apiFetch } from "@/lib/use-api";
 import {
   CUTAWAY_COPY,
   cutawayHookText,
@@ -91,8 +92,40 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
    *  it again costs nothing; a plan counts only while it is live. */
   const [cutawayDemo, setCutawayDemo] = useState<DemoState | null>(null);
   const [cutawayPlan, setCutawayPlan] = useState<CutawayPlanWire | null>(null);
+  /** The cutaway demo's name field (decision 0125). */
+  const [cutawayDemoName, setCutawayDemoName] = useState("");
 
   const step = steps[stepIndex]!;
+
+  /**
+   * Saves the cutaway demo's name (decision 0125). B's demo step has no
+   * continue: once the demo is ready the clips replace the field, so the name
+   * is saved when the demo turns ready — or when the customer leaves the step
+   * first (back, a rail jump, skipping the clips), since the demo row exists
+   * from registration on. `name` alone, never the note, whose PATCH would
+   * clear one saved for A. Held here, not in the step, so a return to the step
+   * still has what was typed. A failed save leaves the demo unnamed, and it
+   * is renamable on /home/demos.
+   */
+  useEffect(() => {
+    if (!cutawayDemo || cutawayDemo.status === "rejected") return;
+    if (step === "demo" && cutawayDemo.status !== "ready") return;
+    const patch = demoNamePatch(cutawayDemoName, cutawayDemo.name);
+    if (patch.name === undefined) return;
+    const demoId = cutawayDemo.id;
+    void (async () => {
+      const saved = await apiFetch<{ ok: true }>(`/api/demos/${demoId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!saved.ok) return;
+      setCutawayDemo((current) =>
+        current?.id === demoId ? { ...current, name: patch.name || undefined } : current,
+      );
+    })();
+    // Keyed on the transitions that end the field's life, not on each keystroke.
+  }, [cutawayDemo?.id, cutawayDemo?.status, step]);
   useStepViewed("b", step);
   /** The on-screen line the effect step shows and the render burns: the
    *  customer's edit, else the script call's draft. */
@@ -290,6 +323,8 @@ export function BWizard({ businessId, businessName, initialCatalog }: BWizardPro
                 audioId={audio.id}
                 demo={cutawayDemo}
                 setDemo={setCutawayDemo}
+                demoName={cutawayDemoName}
+                setDemoName={setCutawayDemoName}
                 plan={livePlan}
                 setPlan={setCutawayPlan}
                 onBack={goBack}

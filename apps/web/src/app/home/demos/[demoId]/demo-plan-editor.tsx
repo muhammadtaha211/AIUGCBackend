@@ -14,6 +14,7 @@ type DemoHeader = {
   status: string;
   createdAt: string;
   description?: string;
+  name?: string;
   rejectReason?: string;
   durationMs?: number;
   thumbUrl?: string;
@@ -108,6 +109,12 @@ export function DemoPlanEditor({ demoId }: { demoId: string }) {
             </p>
           ) : (
             <>
+              {/* The customer's name for the recording (decision 0125), under
+                  the fixed title rather than in it, so the h1 never swaps text
+                  when the GET lands. Renamed on the library row. */}
+              {demo.name && (
+                <p className="mt-2 break-words text-base font-medium text-ink">{demo.name}</p>
+              )}
               <p className="mt-2 text-sm text-ink/60">
                 {demo.durationMs !== undefined && `${Math.round(demo.durationMs / 1000)} שניות · `}
                 הועלה ב־{new Date(demo.createdAt).toLocaleDateString("he-IL")}
