@@ -1,7 +1,7 @@
 import { textSafeAreaSchema } from "@aiugc/core/hook-geometry";
 import { MAX_LABEL_CHARS } from "@aiugc/core/plan-format";
 import { z } from "zod";
-import { ANALYSIS_PAGE_SIZE } from "./service-a-ui";
+import { ANALYSIS_PAGE_SIZE, MAX_DEMO_NAME_CHARS } from "./service-a-ui";
 
 /**
  * Pure, unit-testable parts of the Service A HTTP layer: request body schemas
@@ -69,10 +69,18 @@ export function isOwnedDemoUploadPath(businessId: string, uploadPath: string): b
 
 export const registerDemoRequestSchema = z.object({ uploadPath: z.string().min(1).max(300) });
 
-/** The optional footage note; blank clears (server trims and nulls). */
-export const demoDescriptionRequestSchema = z.object({
-  description: z.string().max(500),
-});
+/**
+ * A demo edit: the optional footage note, the optional name (decision 0125),
+ * or both. A key sent is saved, a key left out is untouched — B's demo step
+ * and the library's rename send `name` alone, so A's saved note survives.
+ * Blank clears either (server trims and nulls).
+ */
+export const demoPatchRequestSchema = z
+  .object({
+    description: z.string().max(500).optional(),
+    name: z.string().trim().max(MAX_DEMO_NAME_CHARS).optional(),
+  })
+  .refine((body) => body.description !== undefined || body.name !== undefined);
 
 // ---------------------------------------------------------------------------
 // Copy + set bodies

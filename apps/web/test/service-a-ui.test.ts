@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { backoffMs, DEMO_MAX_DURATION_MS, DEMO_MIN_DURATION_MS } from "@aiugc/core";
+import {
+  backoffMs,
+  DEMO_MAX_DURATION_MS,
+  DEMO_MIN_DURATION_MS,
+  MAX_DEMO_NAME_CHARS as CORE_MAX_DEMO_NAME_CHARS,
+} from "@aiugc/core";
 import { readTimeMs, STEP_MS, stepClip } from "@aiugc/core/plan-format";
 import {
   addWarning,
@@ -14,6 +19,8 @@ import {
   clientDemoFileError,
   deleteWarning,
   demoDurationError,
+  demoNameDir,
+  demoNamePatch,
   DUPLICATE_DURATION_TOLERANCE_MS,
   duplicateDemoMatch,
   fmtElapsedHe,
@@ -39,6 +46,7 @@ import {
   labelWordWarning,
   LONG_PARK_THRESHOLD_MS,
   marksAfterEdit,
+  MAX_DEMO_NAME_CHARS,
   MAX_DEMO_SECONDS,
   MIN_DEMO_SECONDS,
   overlapsBefore,
@@ -193,7 +201,21 @@ describe("durable identity (?demo=&step=)", () => {
     expect(restoredDemo(DEMO, body, "biz-a")).toEqual({
       demo: { id: DEMO, status: "ready", durationMs: 88089, thumbUrl: undefined },
       description: "",
+      name: "",
     });
+  });
+
+  /**
+   * The saved name rides along on restore twice over (decision 0125): on the
+   * demo, as what demoNamePatch compares against, and as the field's prefill.
+   * An untouched continue after a restore therefore sends no name.
+   */
+  it("carries the saved name on the demo and into the field", () => {
+    const body = { status: "ready", businessId: "biz-a", name: "Tavnit — אשף הוק + דמו" };
+    const restored = restoredDemo(DEMO, body, "biz-a")!;
+    expect(restored.demo.name).toBe("Tavnit — אשף הוק + דמו");
+    expect(restored.name).toBe("Tavnit — אשף הוק + דמו");
+    expect(demoNamePatch(restored.name, restored.demo.name)).toEqual({});
   });
 
   /**
@@ -538,6 +560,41 @@ describe("the demo duration limits", () => {
   it("match core's ingest gate exactly", () => {
     expect(MIN_DEMO_SECONDS * 1000).toBe(DEMO_MIN_DURATION_MS);
     expect(MAX_DEMO_SECONDS * 1000).toBe(DEMO_MAX_DURATION_MS);
+  });
+});
+
+describe("the demo name's save (decision 0125)", () => {
+  it("a new upload with the field skipped sends no name — the demo stays unnamed", () => {
+    expect(demoNamePatch("", undefined)).toEqual({});
+    expect(demoNamePatch("   ", undefined)).toEqual({});
+  });
+
+  it("a typed name is sent, trimmed", () => {
+    expect(demoNamePatch("  ספריית הסרטונים ", undefined)).toEqual({ name: "ספריית הסרטונים" });
+  });
+
+  it("a picked demo continued untouched sends nothing, so its name is kept", () => {
+    expect(demoNamePatch("אשף B", "אשף B")).toEqual({});
+    expect(demoNamePatch(" אשף B ", "אשף B")).toEqual({});
+  });
+
+  it("a renamed pick sends the new name; an emptied one sends the clear", () => {
+    expect(demoNamePatch("אשף A", "אשף B")).toEqual({ name: "אשף A" });
+    expect(demoNamePatch("", "Foo")).toEqual({ name: "" });
+  });
+
+  it("a truncating line keeps the page's RTL unless the name has no Hebrew letter", () => {
+    expect(demoNameDir("הזמנה באפליקציה")).toBeUndefined();
+    expect(demoNameDir("Tavnit — אשף הוק + דמו")).toBeUndefined();
+    // Latin only: LTR, so the ellipsis takes the end and the beginning stays.
+    expect(demoNameDir("Shopify checkout demo with Apple Pay")).toBe("ltr");
+    expect(demoNameDir("Wizard B 2")).toBe("ltr");
+  });
+
+  // Two literals on purpose, like the duration limits: core's pipelines/demos
+  // cannot ship in the client bundle. This is what stops the two drifting.
+  it("caps at core's MAX_DEMO_NAME_CHARS", () => {
+    expect(MAX_DEMO_NAME_CHARS).toBe(CORE_MAX_DEMO_NAME_CHARS);
   });
 });
 

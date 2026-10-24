@@ -109,6 +109,8 @@ export function AWizard({ businessId, businessName, initialCatalog }: AWizardPro
   const [rect, setRect] = useState<SafeRect | null>(null);
   const [demo, setDemo] = useState<DemoState | null>(null);
   const [demoDescription, setDemoDescription] = useState("");
+  /** The demo step's name field (decision 0125) — held here beside the note. */
+  const [demoName, setDemoName] = useState("");
   /** §4: the plan the render step composes, pinned at continue-click time —
    *  a fork created after the click cannot switch what renders. */
   const [pinnedPlan, setPinnedPlan] = useState<PinnedPlan | null>(null);
@@ -135,6 +137,7 @@ export function AWizard({ businessId, businessName, initialCatalog }: AWizardPro
         status: string;
         businessId?: string;
         description?: string;
+        name?: string;
         durationMs?: number;
         thumbUrl?: string;
       }>(`/api/demos/${identity.demoId}`);
@@ -144,6 +147,7 @@ export function AWizard({ businessId, businessName, initialCatalog }: AWizardPro
         if (restored) {
           setDemo(restored.demo);
           setDemoDescription(restored.description);
+          setDemoName(restored.name);
           setStepIndex(clampRestoredStep(identity.step, steps, restored.demo));
         }
       } else if (result.status !== 403 && result.status !== 404) {
@@ -357,6 +361,8 @@ export function AWizard({ businessId, businessName, initialCatalog }: AWizardPro
                   setDemo={setDemo}
                   description={demoDescription}
                   setDescription={setDemoDescription}
+                  name={demoName}
+                  setName={setDemoName}
                   onContinue={goNext}
                   onFatal={setFatal}
                 />

@@ -5,6 +5,7 @@ import {
   getLatestDemoAnalysis,
   getStorage,
   setDemoDescription,
+  setDemoName,
   type JobProgress,
 } from "@aiugc/core";
 import {
@@ -15,7 +16,7 @@ import {
   requireUser,
   SIGNED_URL_TTL_SECONDS,
 } from "@/lib/api";
-import { demoDescriptionRequestSchema } from "@/lib/service-a";
+import { demoPatchRequestSchema } from "@/lib/service-a";
 import { isIngestingDemoStatus } from "@/lib/service-a-ui";
 
 /** Poll demo ingest: status, the Hebrew reject reason, thumb when ready. */
@@ -43,6 +44,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
        *  saved note ("blank clears"). Safe beside the 2s ingest poll: the
        *  poll writes demo state only, never the locally-edited note field. */
       description?: string;
+      /** The customer's name for the recording (decision 0125). The restore
+       *  prefills the name field from it, for the same reason as the note. */
+      name?: string;
       rejectReason?: string;
       durationMs?: number;
       thumbUrl?: string;
@@ -59,6 +63,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       createdAt: demo.createdAt.toISOString(),
     };
     if (demo.description) body.description = demo.description;
+    if (demo.name) body.name = demo.name;
     if (demo.rejectReason) body.rejectReason = demo.rejectReason;
     if (demo.durationMs) body.durationMs = demo.durationMs;
     if (isIngestingDemoStatus(demo.status)) {
@@ -78,10 +83,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 }
 
 /**
- * The optional "what the footage shows" note (soft VO grounding). Stored on
- * the demos row; blank clears. The GET echoes it for the URL-restore prefill;
- * the wizard still edits it locally while ingest polls every 2s (the poll
- * never writes the note field).
+ * The optional "what the footage shows" note (soft VO grounding) and the
+ * optional name (decision 0125), each saved only when its key is sent. Stored
+ * on the demos row; blank clears. The GET echoes both for the URL-restore
+ * prefill; the wizard still edits them locally while ingest polls every 2s
+ * (the poll never writes either field).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -93,10 +99,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const found = await requireDemo(db, id, auth.userId);
     if ("response" in found) return found.response;
 
-    const body = demoDescriptionRequestSchema.safeParse(await request.json().catch(() => null));
+    const body = demoPatchRequestSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return jsonError(400, INVALID_BODY);
 
-    await setDemoDescription(db, { demoId: id, description: body.data.description });
+    if (body.data.description !== undefined) {
+      await setDemoDescription(db, { demoId: id, description: body.data.description });
+    }
+    if (body.data.name !== undefined) {
+      await setDemoName(db, { demoId: id, name: body.data.name });
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     return coreErrorResponse(err);

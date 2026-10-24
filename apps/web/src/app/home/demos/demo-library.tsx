@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { TextAreaField } from "@/components/ui/field";
+import { TextAreaField, TextField } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/icons";
-import { isIngestingDemoStatus, type DemoSummary } from "@/lib/service-a-ui";
+import { isIngestingDemoStatus, MAX_DEMO_NAME_CHARS, type DemoSummary } from "@/lib/service-a-ui";
 import { apiFetch } from "@/lib/use-api";
 
 /**
- * The business's demos, newest first, with an editable footage note per ready
- * demo and a way into that demo's step plan. Edits PATCH the demo row — the
+ * The business's demos, newest first, with an editable name and footage note
+ * per ready demo and a way into that demo's step plan. Edits PATCH the demo row — the
  * wizard's reuse picker prefills from the same row, so the library and the
  * wizard never diverge. No delete: sets and scripts reference demos, so
  * removal is a bigger decision than this page.
@@ -98,6 +98,13 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirty = description.trim() !== savedDescription.trim();
+  // The name (decision 0125): its own field and save, sending `name` alone so
+  // a rename never rewrites the note. Emptied and saved, the name is cleared.
+  const [name, setName] = useState(demo.name ?? "");
+  const [savedName, setSavedName] = useState(demo.name ?? "");
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const nameDirty = name.trim() !== savedName;
 
   async function save() {
     setSaving(true);
@@ -110,6 +117,20 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
     setSaving(false);
     if (!result.ok) return setError(result.error);
     setSavedDescription(description);
+  }
+
+  async function saveName() {
+    setSavingName(true);
+    setNameError(null);
+    const result = await apiFetch<{ ok: true }>(`/api/demos/${demo.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    setSavingName(false);
+    if (!result.ok) return setNameError(result.error);
+    // Only the saved value moves: text typed while the save ran stays put.
+    setSavedName(name.trim());
   }
 
   return (
@@ -127,6 +148,9 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
         )}
 
         <div className="min-w-0 flex-1">
+          {savedName && (
+            <p className="mb-1.5 break-words text-base font-medium text-ink">{savedName}</p>
+          )}
           <div className="flex items-center gap-2">
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[demo.status] ?? "bg-ink/10 text-ink/75"}`}
@@ -153,6 +177,32 @@ function DemoRow({ demo }: { demo: DemoSummary }) {
               <Link href={`/home/demos/${demo.id}`} className="inline-block">
                 <Button type="button">עריכת הצעדים והכיתובים</Button>
               </Link>
+
+              <div className="mt-3">
+                <TextField
+                  label="שם לסרטון (לא חובה)"
+                  maxLength={MAX_DEMO_NAME_CHARS}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="לדוגמה: הזמנה באפליקציה"
+                />
+                {nameError && (
+                  <p role="alert" className="mt-2 text-sm text-red-700">
+                    {nameError}
+                  </p>
+                )}
+                {nameDirty && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="mt-2"
+                    loading={savingName}
+                    onClick={() => void saveName()}
+                  >
+                    שמירת השם
+                  </Button>
+                )}
+              </div>
 
               <div className="mt-3">
                 <TextAreaField

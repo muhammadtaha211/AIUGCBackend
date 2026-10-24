@@ -61,6 +61,31 @@ const DEMO_TYPES = ["video/mp4", "video/quicktime"];
 export const MIN_DEMO_SECONDS = 8;
 export const MAX_DEMO_SECONDS = 90;
 
+/** The demo name's cap — core's MAX_DEMO_NAME_CHARS, which a test pins this
+ *  to (core's pipelines/demos.ts can't be imported client-side). */
+export const MAX_DEMO_NAME_CHARS = 40;
+
+/**
+ * The name key a demo save sends, or none (decision 0125). Sent only when the
+ * field moved off the demo's saved name: a picked or restored demo prefills
+ * the field with it, so an untouched continue never writes, and a skipped
+ * field on a new upload never names it. An emptied field is sent ("" clears).
+ */
+export function demoNamePatch(draft: string, saved: string | undefined): { name?: string } {
+  const name = draft.trim();
+  return name === (saved ?? "") ? {} : { name };
+}
+
+/**
+ * The direction for a demo name on a line that truncates. The name keeps the
+ * page's RTL — the same base as the RTL field it was typed in — unless it has
+ * no Hebrew letter: a Latin-only name in an RTL line overflows at its
+ * beginning, so it is set LTR and the ellipsis takes its end instead.
+ */
+export function demoNameDir(name: string): "ltr" | undefined {
+  return /[א-ת]/.test(name) ? undefined : "ltr";
+}
+
 export function clientDemoFileError(file: { type: string; size: number }): string | null {
   if (!DEMO_TYPES.includes(file.type)) return "אפשר להעלות רק וידאו בפורמט MP4 או MOV.";
   if (file.size === 0) return "הקובץ שהועלה ריק.";
@@ -110,6 +135,7 @@ export type ReadyDemoDuration = {
   id: string;
   durationMs?: number;
   description?: string;
+  name?: string;
   createdAt: string;
 };
 
@@ -138,6 +164,9 @@ export type DemoState = {
   rejectReason?: string;
   durationMs?: number;
   thumbUrl?: string;
+  /** The SAVED name (decision 0125) — what demoNamePatch compares the field
+   *  against. Every path that sets it also fills the field from it. */
+  name?: string;
   /** Ingest pipeline progress — present on the demo GET while ingesting. */
   ingest?: JobProgressWire;
   /** Newest analysis attempt's status ("missing" = none yet) — present on the
@@ -402,6 +431,7 @@ export type DemoSummary = {
   status: string;
   rejectReason?: string;
   description?: string;
+  name?: string;
   durationMs?: number;
   thumbUrl?: string;
   createdAt: string;
@@ -494,7 +524,9 @@ export function shouldSyncIdentity(opts: {
  * switch and edit business A's demo under business B's chrome. A rejected
  * demo is not resumable either — the demo step starts it over. The stored
  * footage note rides along: without it, restore + back-to-demo + continue
- * would PATCH an empty description over the saved one ("blank clears").
+ * would PATCH an empty description over the saved one ("blank clears"). The
+ * saved name rides on the demo AND prefills the name field, so demoNamePatch
+ * sees no change and an untouched continue leaves the name alone.
  */
 export function restoredDemo(
   demoId: string,
@@ -502,11 +534,12 @@ export function restoredDemo(
     status: string;
     businessId?: string;
     description?: string;
+    name?: string;
     durationMs?: number;
     thumbUrl?: string;
   },
   businessId: string,
-): { demo: DemoState; description: string } | null {
+): { demo: DemoState; description: string; name: string } | null {
   if (body.businessId !== businessId) return null;
   if (body.status === "rejected") return null;
   return {
@@ -515,8 +548,10 @@ export function restoredDemo(
       status: body.status,
       durationMs: body.durationMs,
       thumbUrl: body.thumbUrl,
+      name: body.name,
     },
     description: body.description ?? "",
+    name: body.name ?? "",
   };
 }
 

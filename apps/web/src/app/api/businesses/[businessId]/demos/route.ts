@@ -95,6 +95,7 @@ export async function GET(
         status: demosTable.status,
         rejectReason: demosTable.rejectReason,
         description: demosTable.description,
+        name: demosTable.name,
         durationMs: demosTable.durationMs,
         thumbPath: demosTable.thumbPath,
         createdAt: demosTable.createdAt,
@@ -117,6 +118,7 @@ export async function GET(
         status: row.status,
         rejectReason: row.rejectReason ?? undefined,
         description: row.description ?? undefined,
+        name: row.name ?? undefined,
         durationMs: row.durationMs ?? undefined,
         createdAt: row.createdAt,
         thumbUrl: row.thumbPath
@@ -133,6 +135,7 @@ export async function GET(
       id: row.id,
       durationMs: row.durationMs ?? undefined,
       description: row.description ?? undefined,
+      name: row.name ?? undefined,
       createdAt: row.createdAt,
     }));
     const samples = await signedSamples(storage);

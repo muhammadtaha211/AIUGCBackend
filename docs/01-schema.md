@@ -42,6 +42,10 @@ and applied in filename order. Hand-written SQL lives beside the generated files
 
 - **demos** — status `uploaded→probing→normalizing→ready|rejected`, `reject_reason` is always a
   human-readable Hebrew string, `probe jsonb`, raw/normalized/thumb storage paths, duration.
+  `description` (0013) is the customer's optional note on what the footage shows; it feeds the
+  step-plan prompt and its caption vocabulary. `name` (0069, decision 0125) is the customer's
+  optional name for the recording, at most 40 characters, shown wherever a demo is listed or
+  picked and read by no model.
 - **demo_segments** — **dropped in 0023** (never held a row). The "a demo becomes an ordered
   list of segments" idea now lives in `demo_analyses` + `demo_step_plans` (the step-plan
   format), which add the plan-level status, approval gate and versioning this table lacked.

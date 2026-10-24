@@ -1562,4 +1562,36 @@ describe("migrations", () => {
     ]);
     await pg.close();
   });
+
+  it("0069: demos.name — text, nullable, existing rows NULL, idempotent", async () => {
+    // The pre-0069 shape with a demo already in it, so "nothing is
+    // backfilled" is tested on a row that predates the column.
+    const pg = new PGlite();
+    for (const file of PORTABLE_MIGRATIONS.filter((f) => f < "0069")) {
+      await pg.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+    }
+    const user = "11111111-1111-4111-8111-111111111111";
+    const biz = "33333333-3333-4333-8333-333333333333";
+    await pg.exec(`
+      INSERT INTO users (id, email) VALUES ('${user}', 'a@test.local');
+      INSERT INTO businesses (id, owner_user_id, name) VALUES ('${biz}', '${user}', 'A');
+      INSERT INTO demos (business_id, description) VALUES ('${biz}', 'תיאור ישן');
+    `);
+    const migration = readFileSync(join(MIGRATIONS_DIR, "0069_demos_name.sql"), "utf8");
+    await pg.exec(migration);
+    // Idempotent: a second apply is a no-op, not a duplicate-column error.
+    await pg.exec(migration);
+
+    const column = await pg.query<{ data_type: string; is_nullable: string }>(
+      `SELECT data_type, is_nullable FROM information_schema.columns
+       WHERE table_name = 'demos' AND column_name = 'name'`,
+    );
+    expect(column.rows).toEqual([{ data_type: "text", is_nullable: "YES" }]);
+    const existing = await pg.query<{ name: string | null; description: string | null }>(
+      "SELECT name, description FROM demos",
+    );
+    expect(existing.rows).toEqual([{ name: null, description: "תיאור ישן" }]);
+
+    await pg.close();
+  });
 });
