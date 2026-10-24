@@ -236,7 +236,7 @@ describe("the emails", () => {
     expect(failure).toContain("post_failure_email");
     expect(delivery).toContain("post_delivery_email");
     // The Resend provider is reached through one gate (the failure file's), and the only code that
-    // sends through it is sendPostEmail, called by exactly the two sweeps.
+    // sends through it is sendPostEmail, called by exactly the three sweeps.
     const files = walk(path.join(repo, "packages/core/src"))
       .concat(walk(path.join(repo, "apps")))
       .map((file) => ({
@@ -258,6 +258,10 @@ describe("the emails", () => {
         .map((f) => f.name)
         .sort(),
     ).toEqual([
+      // The Instagram autopilot's pause and low-sound emails (decision 0127): admin-only
+      // today, so no customer receives them and /privacy is unchanged. When the autopilot
+      // opens to customers, §5 must name them first (vault 0127, owed).
+      "packages/core/src/pipelines/autopilot-email.ts",
       "packages/core/src/pipelines/social-delivery-email.ts",
       "packages/core/src/pipelines/social-failure-email.ts",
     ]);

@@ -21,6 +21,7 @@ import type { JobContext, JobResult } from "../jobs/worker";
 import { logger } from "../logger";
 import { addDays, ISRAEL_TIME_ZONE, zonedDate, zonedWallTimeToInstant } from "../zoned-time";
 import { generateHookLines } from "./copy";
+import { isAdminOwned } from "./businesses";
 import { latestApprovedStepPlan } from "./demo-step-plans";
 import { createSet } from "./sets";
 import {
@@ -70,7 +71,11 @@ export const AUTOPILOT_MAX_PER_DAY = 12;
 export const AUTOPILOT_SLOT_DEADLINE_MS = 2 * 60 * 60 * 1000;
 /** The planned version, the same again, then another version (decision 17). */
 export const AUTOPILOT_MAX_RENDER_ATTEMPTS = 3;
-/** Hook-line generation calls per setup per night, failures included: the runaway valve (CLAUDE.md, paid loops). */
+/**
+ * Hook-line writer runs per setup per night, failures included: the runaway
+ * valve (CLAUDE.md, paid loops). A run is at most two Claude calls — the
+ * writer regenerates once after an unrenderable character — so 8 at worst.
+ */
 export const AUTOPILOT_LINE_CALLS_PER_NIGHT = 4;
 /** Fewer usable sounds than this sends the one "the list runs low" email. */
 export const AUTOPILOT_LOW_SOUNDS = 3;
@@ -500,9 +505,12 @@ export async function cancelOpenSlots(
     try {
       await cancelScheduledPost(db, { userId, postId: slot.postId! });
     } catch (err) {
-      // Posting already started: that one goes out.
-      if (err instanceof SocialSchedulingError) continue;
-      throw err;
+      // Posting already started: that one goes out. Anything else is retried
+      // by the next tick's pass over a paused account (watchSetup).
+      if (!(err instanceof SocialSchedulingError)) {
+        logger.warn({ err, slotId: slot.id }, "autopilot: cancel failed — retrying next tick");
+      }
+      continue;
     }
     await db
       .update(autopilotSlots)
@@ -563,7 +571,7 @@ export async function runAutopilotTick(db: Db, now: Date): Promise<void> {
       for (const account of await accountsOf(db, setup.userId)) {
         if (!isDue(account, today, planFrom)) continue;
         try {
-          await planAccountDay(db, setup, account, today, now);
+          await planAccountDay(db, setup, account, today, planFrom, now);
         } catch (err) {
           logger.warn({ err, igUserId: account.igUserId }, "autopilot: planning failed");
         }
@@ -655,6 +663,7 @@ async function planAccountDay(
   setup: SetupRow,
   account: AccountRow,
   today: string,
+  planFrom: Date,
   now: Date,
 ): Promise<void> {
   const ref = { userId: account.userId, igUserId: account.igUserId };
@@ -682,11 +691,14 @@ async function planAccountDay(
 
   // The count can never exceed the clips (decision 9): clamped here, refused by
   // the setup's save, and the clip-per-day index refuses a second use anyway.
-  const times = [...(account.postTimes as string[])].sort();
-  const count = Math.min(account.aPerDay, times.length, clips.length);
-  const slotTimes = times
-    .slice(0, count)
-    .map((time) => zonedWallTimeToInstant(ISRAEL_TIME_ZONE, today, time));
+  // A time whose deadline already passed (a box that was down at 03:00) is
+  // left out before the count, so a late plan posts what it still can.
+  const open = [...(account.postTimes as string[])]
+    .sort()
+    .map((time) => zonedWallTimeToInstant(ISRAEL_TIME_ZONE, today, time))
+    .filter((at) => at.getTime() + AUTOPILOT_SLOT_DEADLINE_MS > now.getTime());
+  const count = Math.min(account.aPerDay, open.length, clips.length);
+  const slotTimes = open.slice(0, count);
 
   // Clips: least-used on this account, none already out today.
   const usedToday = await clipsUsedOn(db, account.userId, account.igUserId, today);
@@ -741,11 +753,11 @@ async function planAccountDay(
 
   await db.transaction(async (tx) => {
     const [locked] = await tx
-      .select({ plannedDay: autopilotAccounts.plannedDay })
+      .select()
       .from(autopilotAccounts)
       .where(eq(autopilotAccounts.id, account.id))
       .for("update");
-    if (locked?.plannedDay && locked.plannedDay >= today) return;
+    if (!locked || !isDue(locked, today, planFrom)) return;
     for (const [index, clipId] of clipPicks.entries()) {
       const personaId = personaOf.get(clipId)!;
       const gender = characters.get(personaId)!.gender;
@@ -753,8 +765,7 @@ async function planAccountDay(
       const demoId = demoPicks[index];
       const sound = sounds.find((s) => s.audioId === soundPicks[index]);
       const at = slotTimes[index]!;
-      const late = at.getTime() + AUTOPILOT_SLOT_DEADLINE_MS <= now.getTime();
-      const skipReason = late ? "late" : !demoId ? "no_demo" : !line ? "no_line" : null;
+      const skipReason = !demoId ? "no_demo" : !line ? "no_line" : null;
       await tx
         .insert(autopilotSlots)
         .values({
@@ -993,6 +1004,10 @@ async function renderSlot(
   version: Version,
   now: Date,
 ): Promise<void> {
+  if (!(await isAdminOwned(db, setup.businessId))) {
+    await skipSlot(db, slot.id, "not_admin_owned", now);
+    return;
+  }
   const next = { ...slot, ...version };
   try {
     await db.transaction(async (tx) => {
@@ -1086,7 +1101,15 @@ async function pauseEveryAccount(
 async function watchSetup(db: Db, setup: SetupRow, today: string, now: Date): Promise<void> {
   const yesterday = addDays(today, -1);
   for (const account of await accountsOf(db, setup.userId)) {
-    if (!account.enabled || account.pausedCause) continue;
+    if (account.pausedCause) {
+      try {
+        await cancelOpenSlots(db, account.userId, account.igUserId, "paused", now);
+      } catch (err) {
+        logger.warn({ err, igUserId: account.igUserId }, "autopilot: re-cancel failed");
+      }
+      continue;
+    }
+    if (!account.enabled) continue;
     try {
       // A connection that lapsed on a day it is posting.
       if (account.plannedDay === today) {
@@ -1099,6 +1122,7 @@ async function watchSetup(db: Db, setup: SetupRow, today: string, now: Date): Pr
       const rows = await db
         .select({
           slotId: autopilotSlots.id,
+          createdAt: autopilotSlots.createdAt,
           refused: autopilotSlots.refusedSounds,
           postStatus: scheduledPosts.status,
           failureKind: scheduledPosts.failureKind,
@@ -1128,7 +1152,10 @@ async function watchSetup(db: Db, setup: SetupRow, today: string, now: Date): Pr
             .where(eq(autopilotSlots.id, row.slotId));
         }
       }
-      const failed = rows.filter((r) => r.postStatus === "failed");
+      const since = account.enabledAt;
+      const failed = rows.filter(
+        (r) => r.postStatus === "failed" && since !== null && r.createdAt > since,
+      );
       if (failed.some((r) => r.failureKind === "platform_refused")) {
         await pauseAutopilotAccount(db, account, "file_refused", now);
         continue;

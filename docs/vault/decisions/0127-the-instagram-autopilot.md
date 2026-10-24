@@ -125,8 +125,9 @@ mechanics are in `docs/09-social-posting.md` §The autopilot.
   touched.
 - **Emails**: one per pause, accounts paused within one sweep folded; one per low-sound episode,
   under 3 usable sounds; the shared 20-a-UTC-day ceiling, a held email after 00:00 UTC.
-- **Hook lines**: the wizard's own generator and prompt, untouched; at most 4 calls a setup a night,
-  failures included; REASONED cost ~₪0.13 a call, 2–4 a night.
+- **Hook lines**: the wizard's own generator and prompt, untouched; at most 4 writer runs a setup a
+  night, failures included, each at most 2 Claude calls (the writer regenerates once after an
+  unrenderable character), so 8 at worst; REASONED cost ~₪0.13 a call, 2–4 calls on a normal night.
 - **Variety**: among equally used clips, the character used least that day first (7's variety).
 - **No jitter**: posts go out at his times.
 - **The post page** still edits an autopilot post (caption, AI tick, time are his act); a sound he
@@ -139,6 +140,18 @@ yael_creates, tavnit.ai). Tavnit (`1b237001`) is the only admin-owned business. 
 (`17c112d9`) and "Service B" (`32e93f95`) are ready with approved plans. Active hook clips: שירה 6,
 עומרי 5, טליה 4, נטלי 4, נהוראי 4, גלעד 4. No switch rows. Three הוק + דמו posts went out with a
 sound and one with an empty caption (docs/09 corrected).
+
+## Built beyond the plan, from the diff review (2026-10-24)
+
+- Failures pause an account only from slots made since it was last switched on, so a resume is
+  never undone by the post that caused the pause.
+- A late plan books no time already past its 2 hours.
+- The night renders only for an admin-owned business, so no debit or classifier call runs inside the
+  slot's transaction until customers are built on purpose.
+- The hook-line valve counts writer runs (each at most 2 Claude calls), not calls.
+- A character with no active clips cannot be switched on.
+- The autopilot's emails are admin-only today, so §5 is unchanged; it names them before
+  the switch opens to customers.
 
 ## Unverified
 

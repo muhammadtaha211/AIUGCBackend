@@ -145,10 +145,10 @@ describe("the autopilot's night", () => {
     );
   }
 
-  const [SHIR, OMRI, YAEL, TAVNIT] = [0, 1, 2, 3].map((i) => world_ig(i));
-  function world_ig(i: number): string {
-    return ["17841400000000011", "17841400000000012", "17841400000000013", "17841400000000014"][i]!;
-  }
+  const SHIR = "17841400000000011";
+  const OMRI = "17841400000000012";
+  const YAEL = "17841400000000013";
+  const TAVNIT = "17841400000000014";
 
   it("makes and posts every account's videos: own characters, own renders, a sound, no caption, no label, at his times", async () => {
     await day();
@@ -396,6 +396,46 @@ describe("the autopilot's night", () => {
     expect((await emails(israel(DAY, "18:00"))).sent).toBe(0);
   });
 
+  it("keeps a resume after a refused-file pause: the post that caused it does not pause it again", async () => {
+    meta.throwOn.createReelContainer = () =>
+      new MetaGraphError(400, { message: "Invalid parameter", code: 100, error_subcode: 2207026 });
+    await runDay(db, storage, root, DAY, { to: "12:20" });
+    const paused = await accountRow(SHIR);
+    expect(paused.pausedCause).toBe("file_refused");
+    expect((await emails(israel(DAY, "12:20"))).sent).toBe(1);
+    // He fixes it and resumes at 13:00; Meta takes files again.
+    delete meta.throwOn.createReelContainer;
+    await resumeAutopilotAccount(
+      db,
+      world.userId,
+      SHIR,
+      paused.pausedAt!.toISOString(),
+      israel(DAY, "13:00"),
+    );
+    await runDay(db, storage, root, DAY, { from: "13:00", to: "23:59" });
+    expect((await accountRow(SHIR)).pausedCause).toBeNull();
+    const rows = (await autopilotEmailRows()).filter((r) =>
+      ((r.payload as { accounts?: { igUserId: string }[] }).accounts ?? []).some(
+        (a) => a.igUserId === SHIR,
+      ),
+    );
+    expect(rows).toHaveLength(1);
+    // And it plans again from the next night.
+    await runDay(db, storage, root, NEXT, { to: "05:00" });
+    expect((await slots(SHIR)).filter((s) => s.day === NEXT)).toHaveLength(4);
+  });
+
+  it("plans late without booking passed times: a box down until 12:30 posts the rest, and pauses nothing", async () => {
+    await runDay(db, storage, root, DAY, { from: "12:30", to: "23:59" });
+    const all = await slots();
+    expect(all.some((s) => s.skipReason === "late")).toBe(false);
+    // 12:00 is still inside its two hours at 12:30: it posts late. Nothing is left out but what passed.
+    expect((await dayPosts()).filter((p) => p.post.status === "posted")).toHaveLength(15);
+    // A late night is not a day with nothing posted.
+    for (const ig of [SHIR, OMRI, YAEL, TAVNIT])
+      expect((await accountRow(ig)).pausedCause).toBeNull();
+  });
+
   it("pauses a day with nothing posted, and emails once", async () => {
     await runDay(db, storage, root, DAY, { fail: () => true });
     for (const account of world.shape) {
@@ -547,7 +587,7 @@ describe("the autopilot's night", () => {
           .select()
           .from(schema.autopilotSlots)
           .where(eq(schema.autopilotSlots.videoRenderId, renderId));
-        if (slot?.igUserId !== SHIR) return false;
+        if (!slot || slot.igUserId !== SHIR) return false;
         target ??= slot.id;
         if (slot.id !== target || failures >= 2) return false;
         failures++;

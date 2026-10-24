@@ -114,6 +114,8 @@ export function autopilotErrorLine(code: string, detail: { max?: number } = {}):
       return "דמות יכולה להיות בחשבון אחד בלבד.";
     case "character_unusable":
       return "אחת הדמויות שנבחרו לא זמינה.";
+    case "character_no_clips":
+      return "לאחת הדמויות שנבחרו אין קטעי הוק פעילים, אז החשבון לא יכול לפעול. מורידים אותה או מוסיפים לה קטעים.";
     case "nothing_to_post":
       return "כדי להפעיל חשבון צריך לפחות דמות אחת, סרטון מוצר אחד וסרטון אחד ביום.";
     case "no_usable_sound":

@@ -132,6 +132,7 @@ export function CalendarMonth({
     if (!month) return;
     let live = true;
     setPosts(null);
+    setSkipped([]);
     setError(null);
     // Every day the grid draws, the neighbours' spill-over days included —
     // at most six weeks, inside the route's 45 days.
@@ -307,9 +308,12 @@ export function CalendarMonth({
           <Spinner className="size-5 text-ink/40" />
         </div>
       )}
-      {posts !== null && inMonth.length === 0 && skipped.length === 0 && (
-        <p className="mt-6 text-center text-sm text-ink/60">{EMPTY_MONTH}</p>
-      )}
+      {posts !== null &&
+        inMonth.length === 0 &&
+        !skipped.some((slot) => {
+          const at = new Date(slot.scheduledAt);
+          return at.getFullYear() === month.year && at.getMonth() === month.month;
+        }) && <p className="mt-6 text-center text-sm text-ink/60">{EMPTY_MONTH}</p>}
 
       {selected && selectedPosts.length + selectedSkipped.length > 0 && (
         <section className="mt-6">

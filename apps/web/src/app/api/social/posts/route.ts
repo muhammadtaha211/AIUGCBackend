@@ -37,12 +37,13 @@ export async function GET(request: Request) {
       to,
       platforms: auth.platforms,
     });
+    const autopilot = auth.platforms.includes("instagram") && (await autopilotAllowed(auth.userId));
     const posts = await Promise.all(
-      items.filter((item) => item.post.status !== "cancelled").map(toPostWire),
+      items
+        .filter((item) => item.post.status !== "cancelled")
+        .map((item) => toPostWire(item, { autopilot })),
     );
-    if (!auth.platforms.includes("instagram") || !(await autopilotAllowed(auth.userId))) {
-      return NextResponse.json({ ok: true, posts });
-    }
+    if (!autopilot) return NextResponse.json({ ok: true, posts });
     const skipped: SkippedSlotWire[] = (
       await listSkippedAutopilotSlots(getDb(), { userId: auth.userId, from, to })
     ).map((slot) => ({

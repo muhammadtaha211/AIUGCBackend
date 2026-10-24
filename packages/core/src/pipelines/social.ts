@@ -1160,18 +1160,21 @@ async function swapRefusedSound(
 ): Promise<JobResult | null> {
   if (!hooks.nextSound || !post.sound) return null;
   const swaps = state.soundSwaps ?? 0;
-  if (swaps >= AUTOPILOT_SOUND_SWAPS) return null;
+  // Asked even past the limit, so the last refusal is recorded too (an
+  // audio-named one marks the sound refused in the list).
   const answer = await hooks.nextSound(ctx.db, post, { audioNamed });
-  if (!answer.autopilot || !answer.sound) return null;
-  await ctx.db
-    .update(scheduledPosts)
-    .set({ sound: answer.sound, providerContainerId: null, updatedAt: new Date() })
-    .where(and(eq(scheduledPosts.id, post.id), eq(scheduledPosts.status, "publishing")));
+  if (swaps >= AUTOPILOT_SOUND_SWAPS || !answer.autopilot || !answer.sound) return null;
   const fresh: PublishState = {
     soundSwaps: swaps + 1,
     ...(state.recreated ? { recreated: true } : {}),
   };
+  // The checkpoint first: a crash between the two rebuilds a container with the
+  // already-refused sound (one swap spent), never blames one Meta never saw.
   await ctx.checkpoint({ ...fresh });
+  await ctx.db
+    .update(scheduledPosts)
+    .set({ sound: answer.sound, providerContainerId: null, updatedAt: new Date() })
+    .where(and(eq(scheduledPosts.id, post.id), eq(scheduledPosts.status, "publishing")));
   ctx.log.warn(
     { postId: post.id, swaps: swaps + 1, audioNamed },
     "autopilot: sound refused — next",
@@ -1449,6 +1452,7 @@ export async function handlePublishPost(
             .update(scheduledPosts)
             .set({ sound, updatedAt: new Date() })
             .where(eq(scheduledPosts.id, postId));
+          post = { ...post, sound };
         }
       }
       // The live הוק + דמו format is silent; the retired "full" format (CLI
@@ -1524,7 +1528,11 @@ export async function handlePublishPost(
             `container ${state.containerId} expired a second time`,
           );
         }
-        const fresh: PublishState = { recreated: true };
+        // An autopilot post's swaps survive the recreate, so the limit holds.
+        const fresh: PublishState = {
+          recreated: true,
+          ...(state.soundSwaps ? { soundSwaps: state.soundSwaps } : {}),
+        };
         await ctx.checkpoint({ ...fresh });
         return { kind: "reschedule", delayMs: 0, state: { ...fresh } };
       }

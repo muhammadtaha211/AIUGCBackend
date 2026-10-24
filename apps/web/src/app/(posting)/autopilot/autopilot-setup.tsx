@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AutopilotSetupView } from "@aiugc/core";
 import { AUTOPILOT_PAUSE_LINES } from "@aiugc/core/social-copy";
 import { SoundPicker } from "@/components/social/sound-picker";
@@ -54,6 +54,14 @@ const LABEL = "text-sm font-medium text-ink";
 const HINT = "mt-1 text-xs text-ink/60";
 const EARLIEST = "08:00";
 const LATEST = "23:55";
+/** The body's own bounds (lib/autopilot.ts): the page never offers more. */
+const MAX_TIMES = 12;
+const MAX_SOUNDS = 50;
+const DEMO_DATE = new Intl.DateTimeFormat("he-IL", {
+  timeZone: "Asia/Jerusalem",
+  day: "numeric",
+  month: "long",
+});
 
 function maxPerDay(view: View, account: Account): number {
   const clips = account.personaIds.reduce(
@@ -78,6 +86,8 @@ export function AutopilotSetup({ initial }: { initial: View }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [addingTimeFor, setAddingTimeFor] = useState<string | null>(null);
+  const [resuming, setResuming] = useState<string | null>(null);
+  const businessFetch = useRef(0);
 
   function update(igUserId: string, patch: Partial<Account>) {
     setAccounts((current) =>
@@ -99,13 +109,17 @@ export function AutopilotSetup({ initial }: { initial: View }) {
   }
 
   async function changeBusiness(next: string) {
+    const mine = ++businessFetch.current;
     setBusinessId(next);
     // Another business has other demos: the picks are cleared, nothing preselected.
     setAccounts((current) => current.map((a) => ({ ...a, demoIds: [] })));
+    setView((v) => ({ ...v, demos: [] }));
     const result = await apiFetch<{ ok: true; setup: View }>(
       `/api/autopilot?businessId=${encodeURIComponent(next)}`,
     );
-    if (result.ok) setView({ ...result.body.setup, accounts: view.accounts });
+    if (mine !== businessFetch.current) return; // a newer pick answered first
+    if (result.ok) setView((v) => ({ ...v, demos: result.body.setup.demos }));
+    else setMessage({ kind: "error", text: result.error });
   }
 
   async function save() {
@@ -121,7 +135,8 @@ export function AutopilotSetup({ initial }: { initial: View }) {
         accounts: accounts.map((a) => ({
           igUserId: a.igUserId,
           enabled: a.enabled,
-          aPerDay: a.aPerDay,
+          // What the page shows: a count above what its times or clips allow is clamped.
+          aPerDay: Math.min(a.aPerDay, Math.max(maxPerDay(view, a), 0)),
           postTimes: a.postTimes,
           personaIds: a.personaIds,
           demoIds: a.demoIds,
@@ -132,12 +147,31 @@ export function AutopilotSetup({ initial }: { initial: View }) {
     if (await adopt(result)) setMessage({ kind: "ok", text: SAVED });
   }
 
+  /** Resume one account: only its pause changes — every unsaved edit on the page stays. */
   async function resume(account: Account) {
+    if (resuming) return;
+    setResuming(account.igUserId);
+    setMessage(null);
     const result = await postJson<{ ok: true; setup: View }>("/api/autopilot/resume", {
       igUserId: account.igUserId,
       pausedAt: account.pausedAt,
     });
-    await adopt(result);
+    setResuming(null);
+    if (!result.ok) {
+      setMessage({ kind: "error", text: result.error });
+      return;
+    }
+    const fresh = result.body.setup.accounts.find((a) => a.igUserId === account.igUserId);
+    const patch = {
+      pausedCause: fresh?.pausedCause ?? null,
+      pausedAt: fresh?.pausedAt ?? null,
+      enabled: fresh?.enabled ?? true,
+    };
+    update(account.igUserId, patch);
+    setView((v) => ({
+      ...v,
+      accounts: v.accounts.map((a) => (a.igUserId === account.igUserId ? { ...a, ...patch } : a)),
+    }));
   }
 
   const holder = new Map<string, string>();
@@ -203,7 +237,9 @@ export function AutopilotSetup({ initial }: { initial: View }) {
             onChange={(sound) => {
               if (!sound) return;
               setSounds((current) =>
-                current.some((s) => s.audioId === sound.audioId) ? current : [...current, sound],
+                current.some((s) => s.audioId === sound.audioId) || current.length >= MAX_SOUNDS
+                  ? current
+                  : [...current, sound],
               );
               setMessage(null);
             }}
@@ -267,7 +303,12 @@ export function AutopilotSetup({ initial }: { initial: View }) {
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <p className="font-medium">{PAUSED_LABEL}</p>
                   <p className="mt-1">{AUTOPILOT_PAUSE_LINES[account.pausedCause]}</p>
-                  <Button className="mt-2" variant="secondary" onClick={() => void resume(account)}>
+                  <Button
+                    className="mt-2"
+                    variant="secondary"
+                    loading={resuming === account.igUserId}
+                    onClick={() => void resume(account)}
+                  >
                     {RESUME}
                   </Button>
                 </div>
@@ -280,12 +321,14 @@ export function AutopilotSetup({ initial }: { initial: View }) {
                   {view.characters.map((character) => {
                     const on = account.personaIds.includes(character.id);
                     const elsewhere = !on && holder.has(character.id);
+                    // No clips: nothing to post with. A selected one stays tappable, to remove it.
+                    const bare = !on && character.activeClips === 0;
                     return (
                       <button
                         key={character.id}
                         type="button"
                         aria-pressed={on}
-                        disabled={elsewhere}
+                        disabled={elsewhere || bare}
                         onClick={() =>
                           update(account.igUserId, {
                             personaIds: on
@@ -354,10 +397,7 @@ export function AutopilotSetup({ initial }: { initial: View }) {
                           <span>
                             <span className="block">{demo.name ?? DEMO_UNNAMED}</span>
                             <span className="block text-xs text-ink/55">
-                              {new Intl.DateTimeFormat("he-IL", {
-                                day: "numeric",
-                                month: "long",
-                              }).format(new Date(demo.createdAt))}
+                              {DEMO_DATE.format(new Date(demo.createdAt))}
                               {!demo.readiness.ok && ` · ${DEMO_NOT_READY[demo.readiness.reason]}`}
                             </span>
                           </span>
@@ -394,43 +434,45 @@ export function AutopilotSetup({ initial }: { initial: View }) {
                       </button>
                     </span>
                   ))}
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAddingTimeFor(
-                          addingTimeFor === account.igUserId ? null : account.igUserId,
-                        )
-                      }
-                      className="h-8 rounded-lg border border-dashed border-ink/25 px-3 text-sm text-ink/70 hover:bg-ink/[0.03]"
-                    >
-                      {TIME_ADD}
-                    </button>
-                    {addingTimeFor === account.igUserId && (
-                      <TimeList
-                        value="12:00"
-                        autoFocus
-                        onClose={() => setAddingTimeFor(null)}
-                        onPick={(time) => {
-                          setAddingTimeFor(null);
-                          if (time < EARLIEST || time > LATEST) {
-                            setMessage({ kind: "error", text: autopilotErrorLine("bad_time") });
-                            return;
-                          }
-                          if (account.postTimes.includes(time)) return;
-                          update(account.igUserId, {
-                            postTimes: [...account.postTimes, time].sort(),
-                          });
-                        }}
-                        className="absolute top-full z-50 mt-2 w-28 rounded-xl border border-ink/10 bg-white p-1.5 shadow-xl shadow-ink/10"
-                      />
-                    )}
-                  </div>
+                  {account.postTimes.length < MAX_TIMES && (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAddingTimeFor(
+                            addingTimeFor === account.igUserId ? null : account.igUserId,
+                          )
+                        }
+                        className="h-8 rounded-lg border border-dashed border-ink/25 px-3 text-sm text-ink/70 hover:bg-ink/[0.03]"
+                      >
+                        {TIME_ADD}
+                      </button>
+                      {addingTimeFor === account.igUserId && (
+                        <TimeList
+                          value="12:00"
+                          autoFocus
+                          onClose={() => setAddingTimeFor(null)}
+                          onPick={(time) => {
+                            setAddingTimeFor(null);
+                            if (time < EARLIEST || time > LATEST) {
+                              setMessage({ kind: "error", text: autopilotErrorLine("bad_time") });
+                              return;
+                            }
+                            if (account.postTimes.includes(time)) return;
+                            update(account.igUserId, {
+                              postTimes: [...account.postTimes, time].sort(),
+                            });
+                          }}
+                          className="absolute top-full z-50 mt-2 w-28 rounded-xl border border-ink/10 bg-white p-1.5 shadow-xl shadow-ink/10"
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
               {account.enabled &&
-                !initial.accounts.find((a) => a.igUserId === account.igUserId)?.enabled && (
+                !view.accounts.find((a) => a.igUserId === account.igUserId)?.enabled && (
                   <p className="mt-3 text-xs text-ink/60">{ACCOUNT_STARTS_NEXT_NIGHT}</p>
                 )}
             </div>

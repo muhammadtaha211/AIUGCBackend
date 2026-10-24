@@ -974,6 +974,27 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   - Israel time is pinned across both clock changes.
 - **Found while building, fixed:** a third attempt needs a fresh hook line, and the pool held only
   the night's need. It now tops up within the night's valve.
+- **The diff review (four lenses, a skeptic per finding; 33 of 38 confirmed, all fixed before the
+  PR).** The majors:
+  - a resume after a refused-file or lapsed-connection pause was undone a minute later by the same
+    failed post, with a second email. Failures now count only on slots made since the account was
+    last switched on;
+  - the page's resume threw away its unsaved edits;
+  - the videos-a-day select showed a clamped count and saved the old one.
+
+  Among the minors:
+  - a late plan no longer books passed times;
+  - a pause's cancel is retried every tick;
+  - the planning transaction re-checks the account;
+  - the save merges sounds under the row lock;
+  - the pause email's key covers every folded account;
+  - a sound swap checkpoints first and keeps its count through a recreate;
+  - the calendar's mark is behind the access check;
+  - a character with no clips cannot be switched on;
+  - the night renders only for an admin-owned business.
+
+- **Owed when it opens to customers:** §5 names the emails a customer gets; the
+  autopilot's two are admin-only today, so it is unchanged ( says so).
 - **Not done:** no signed-in walk; the setup and the calendar were seen in a harness
   (`packages/core/.work/shots-0127/`, gitignored). No live Meta post by the autopilot yet.
 

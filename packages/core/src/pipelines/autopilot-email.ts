@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, asc, eq, isNotNull, isNull, lte } from "drizzle-orm";
 import type { Db } from "../db";
 import { autopilotAccounts, autopilotSetups, events, socialAccounts, users } from "../db/schema";
@@ -78,7 +79,17 @@ export async function sweepAutopilotEmails(
       now,
       to: rows[0]!.email,
       message,
-      idempotencyKey: `autopilot-pause/${userId}/${rows[0]!.pausedAt!.getTime()}`,
+      // Every folded pause in the key: a set that grew after a lost mark is a
+      // new email (he may hear of one twice, never of none).
+      idempotencyKey: `autopilot-pause/${userId}/${createHash("sha256")
+        .update(
+          rows
+            .map((r) => `${r.igUserId}:${r.pausedAt!.getTime()}`)
+            .sort()
+            .join(","),
+        )
+        .digest("hex")
+        .slice(0, 32)}`,
       label: "autopilot email",
       log: (logged) =>
         logEmail(db, now, userId, {

@@ -187,6 +187,11 @@ const OUTSIDE_HOME: Record<string, { marker: string; why: string }> = {
     marker: "authedUser(",
     why: "under the (posting) layout; a failed read throws to app/error.tsx like the layout's",
   },
+  // The Instagram autopilot's setup (decision 0127), in the same group.
+  "app/(posting)/autopilot/page.tsx": {
+    marker: "authedUser(",
+    why: "under the (posting) layout; a failed read throws to app/error.tsx like the layout's",
+  },
   "app/api/billing/sumit/return/route.ts": {
     marker: "if (authReadFailed(error)) console.error",
     why: "the browser arrives from Sumit's payment page; a failed read is logged and treated as no session, so nothing completes and the customer goes through /login with this URL as next — the payment waits at Sumit, and signing in completes it",

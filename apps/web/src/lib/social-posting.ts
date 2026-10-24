@@ -90,7 +90,14 @@ export type SkippedSlotWire = {
   };
 };
 
-export async function toPostWire(item: ScheduledPostListItem): Promise<PostWire> {
+/**
+ * `autopilot`: whether the account reaches the autopilot (decision 0127) — the
+ * mark shows only behind its switch, like every other trace of it.
+ */
+export async function toPostWire(
+  item: ScheduledPostListItem,
+  access: { autopilot?: boolean } = {},
+): Promise<PostWire> {
   const { post, account, render } = item;
   return {
     id: post.id,
@@ -114,6 +121,6 @@ export async function toPostWire(item: ScheduledPostListItem): Promise<PostWire>
         ? await getStorage().signedUrl(render.thumbPath, SIGNED_URL_TTL_SECONDS)
         : null,
     },
-    autopilot: item.autopilot,
+    autopilot: access.autopilot === true && item.autopilot,
   };
 }

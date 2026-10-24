@@ -47,6 +47,7 @@ export type AutopilotSetupErrorCode =
   | "character_unusable"
   | "demo_not_owned"
   | "nothing_to_post"
+  | "character_no_clips"
   | "no_usable_sound"
   | "stale_pause";
 
@@ -185,6 +186,7 @@ export async function getAutopilotSetup(
       (a.userTokenExpiresAt === null || a.userTokenExpiresAt.getTime() > now),
   );
 
+  const shown = new Set(withGender.map((p) => p.id));
   return {
     businessId,
     businesses: owned,
@@ -202,7 +204,8 @@ export async function getAutopilotSetup(
         enabled: s?.enabled ?? false,
         aPerDay: s?.aPerDay ?? 0,
         postTimes: (s?.postTimes as string[] | undefined) ?? [],
-        personaIds: (s?.personaIds as string[] | undefined) ?? [],
+        // A character since retired or left without a gender is not offered back.
+        personaIds: ((s?.personaIds as string[] | undefined) ?? []).filter((id) => shown.has(id)),
         // Nothing is preselected (his ask, 2026-10-24): an account's demos are his picks only.
         demoIds: (s?.demoIds as string[] | undefined) ?? [],
         pausedCause: (s?.pausedCause as AutopilotPauseCause | null | undefined) ?? null,
@@ -254,16 +257,7 @@ export async function saveAutopilotSetup(
     .select()
     .from(autopilotSetups)
     .where(eq(autopilotSetups.userId, userId));
-  // Merge by audio id: the stored refusedAt is the server's and survives a stale page.
-  const storedSounds = (existing?.sounds as AutopilotSound[] | undefined) ?? [];
-  const seen = new Set<string>();
-  const sounds: AutopilotSound[] = [];
-  for (const sound of input.sounds) {
-    if (seen.has(sound.audioId)) continue;
-    seen.add(sound.audioId);
-    const stored = storedSounds.find((s) => s.audioId === sound.audioId);
-    sounds.push(stored?.refusedAt ? { ...sound, refusedAt: stored.refusedAt } : { ...sound });
-  }
+  const sounds = mergeSounds(input.sounds, existing?.sounds);
 
   const usedPersona = new Map<string, string>();
   const allPersonaIds = [...new Set(input.accounts.flatMap((a) => a.personaIds))];
@@ -324,6 +318,13 @@ export async function saveAutopilotSetup(
       if (account.aPerDay < 1 || account.personaIds.length === 0 || account.demoIds.length === 0) {
         throw new AutopilotSetupError("nothing_to_post", { igUserId: account.igUserId });
       }
+      const bare = account.personaIds.find((id) => !clips.some((c) => c.personaId === id));
+      if (bare) {
+        throw new AutopilotSetupError("character_no_clips", {
+          igUserId: account.igUserId,
+          personaId: bare,
+        });
+      }
       if (usableSounds(sounds).length === 0) {
         throw new AutopilotSetupError("no_usable_sound", { igUserId: account.igUserId });
       }
@@ -331,13 +332,45 @@ export async function saveAutopilotSetup(
   }
 
   await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .select({ sounds: autopilotSetups.sounds })
+      .from(autopilotSetups)
+      .where(eq(autopilotSetups.userId, userId))
+      .for("update");
+    const merged = mergeSounds(input.sounds, locked?.sounds);
+    if (input.accounts.some((a) => a.enabled) && usableSounds(merged).length === 0) {
+      throw new AutopilotSetupError("no_usable_sound");
+    }
     await tx
       .insert(autopilotSetups)
-      .values({ userId, businessId: input.businessId, sounds, createdAt: now, updatedAt: now })
+      .values({
+        userId,
+        businessId: input.businessId,
+        sounds: merged,
+        createdAt: now,
+        updatedAt: now,
+      })
       .onConflictDoUpdate({
         target: autopilotSetups.userId,
-        set: { businessId: input.businessId, sounds, updatedAt: now },
+        set: { businessId: input.businessId, sounds: merged, updatedAt: now },
       });
+    const onPage = new Set(input.accounts.map((a) => a.igUserId));
+    const taken = new Set(input.accounts.flatMap((a) => a.personaIds));
+    const others = await tx
+      .select()
+      .from(autopilotAccounts)
+      .where(eq(autopilotAccounts.userId, userId))
+      .for("update");
+    for (const other of others) {
+      if (onPage.has(other.igUserId)) continue;
+      const kept = idsOf(other.personaIds).filter((id) => !taken.has(id));
+      if (kept.length !== idsOf(other.personaIds).length) {
+        await tx
+          .update(autopilotAccounts)
+          .set({ personaIds: kept, updatedAt: now })
+          .where(eq(autopilotAccounts.id, other.id));
+      }
+    }
     for (const account of input.accounts) {
       const [before] = await tx
         .select()
@@ -382,6 +415,24 @@ export async function saveAutopilotSetup(
     const row = after.find((a) => a.igUserId === account.igUserId);
     if (row && !row.enabled) await cancelOpenSlots(db, userId, account.igUserId, "off", now);
   }
+}
+
+/** The page's sounds, deduplicated by audio id, each keeping the server's refusedAt. */
+function mergeSounds(input: SoundSnapshot[], stored: unknown): AutopilotSound[] {
+  const prior = Array.isArray(stored) ? (stored as AutopilotSound[]) : [];
+  const seen = new Set<string>();
+  const out: AutopilotSound[] = [];
+  for (const sound of input) {
+    if (seen.has(sound.audioId)) continue;
+    seen.add(sound.audioId);
+    const kept = prior.find((s) => s.audioId === sound.audioId);
+    out.push(kept?.refusedAt ? { ...sound, refusedAt: kept.refusedAt } : { ...sound });
+  }
+  return out;
+}
+
+function idsOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
 /**

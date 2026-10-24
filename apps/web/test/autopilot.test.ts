@@ -185,6 +185,30 @@ describe("the setup's refusals", () => {
     expect((await autopilotRoute.PUT(put({ accounts: "x" }))).status).toBe(400);
   });
 
+  it("refuses an account or a demo that is not his, and switching on a character with no clips", async () => {
+    as(world.userId);
+    const account = await autopilotRoute.PUT(
+      put({
+        ...body(),
+        accounts: [{ ...accountInput(world, shir()), igUserId: "17841499999999999" }],
+      }),
+    );
+    expect(account.status).toBe(404);
+    const demo = await autopilotRoute.PUT(
+      put(body({}, { demoIds: ["00000000-0000-4000-8000-000000000001"] })),
+    );
+    expect(demo.status).toBe(404);
+    const [bare] = await db
+      .insert(schema.personas)
+      .values({ name: "בלי קטעים", gender: "female" })
+      .returning();
+    const noClips = await autopilotRoute.PUT(
+      put(body({}, { personaIds: [world.personas.get("טליה")!, bare!.id] })),
+    );
+    expect(noClips.status).toBe(422);
+    expect((await noClips.json()).error).toBe(autopilotUi.autopilotErrorLine("character_no_clips"));
+  });
+
   it("saves a good setup and answers the fresh state", async () => {
     as(world.userId);
     const res = await autopilotRoute.PUT(put(body()));

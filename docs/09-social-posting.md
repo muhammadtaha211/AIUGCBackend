@@ -433,7 +433,8 @@ most one account), videos a day, the demos it rotates (named first, unnamed belo
 preselected), its posting times (Israel time, 08:00–23:55, 5-minute steps); and one saved sound list
 for all of them, picked with the schedule flow's own `SoundPicker` (its optional `pickOnly`: no "בלי
 סאונד", no note). The save refuses a count above the account's times or its characters' active clips
-(answered with the maximum), and switching an account on with nothing to post or no usable sound. It
+(answered with the maximum), and switching an account on with nothing to post, a character with no
+active clips, or no usable sound. It
 never writes what the night owns — a pause, `enabled_at`, `planned_day`, a sound's `refusedAt` (sounds
 merge by audio id) — so a page opened before a pause cannot lift it; only the card's "החזרה לפעולה"
 does, naming the pause it lifts (409 when it moved on). Switching an account off cancels its
@@ -445,13 +446,14 @@ and each tick moves the slots one guarded step:
 
 1. **Plan**, once per account per Israel day, after 03:00 Israel, for an account that was on before
    that 03:00. Pause checks first (not connected, no usable sound, a character with no active
-   clips). Then `min(videos a day, times, active clips)` slots on its earliest times, each with,
+   clips). Then `min(videos a day, open times, active clips)` slots on its earliest times still
+   inside their 2 hours (a late plan books nothing already past), each with,
    least-used first on that account: a clip of its own characters not out that day (ties to the
    character used least today, so a three-character page gets all three), a demo that can render
    (ready, its newest approved plan — `latestApprovedStepPlan`), a usable sound, and a hook line no
    slot or render ever used, by id or by text, in the character's gender. Lines come from the
-   wizard's own `generateHookLines` (prompt untouched), tagged `params.autopilot`, at most 4 calls a
-   setup a night, failures included, `assertBudget` before each. A slot with no line is skipped
+   wizard's own `generateHookLines` (prompt untouched), tagged `params.autopilot`, at most 4 writer runs a
+   setup a night (each at most 2 Claude calls, the writer's own regenerate), failures included, `assertBudget` before each. A slot with no line is skipped
    `no_line`; no renderable demo, `no_demo`.
 2. **Render one at a time** across every setup: the earliest planned slot of an account that is on,
    not paused and connected gets a 1×1 steps `createSet` in the same transaction as its move to
