@@ -35,3 +35,18 @@ export async function ensureReaperJob(db: Db): Promise<void> {
     maxAttempts: 1_000_000,
   });
 }
+
+/**
+ * The Instagram autopilot's night (decision 0127) is the same kind of
+ * singleton: one row, every 60 s, forever — the reaper's shape, so a dead tick
+ * cannot stay dead. Only the box's worker ensures it: a local `aiugc work`
+ * never claims production jobs anyway (claim's guard), and the night is the
+ * box's job.
+ */
+export async function ensureAutopilotJob(db: Db): Promise<void> {
+  await enqueue(db, {
+    type: "autopilot_tick",
+    idempotencyKey: "autopilot_tick",
+    maxAttempts: 1_000_000,
+  });
+}

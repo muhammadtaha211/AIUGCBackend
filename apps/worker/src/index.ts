@@ -1,6 +1,7 @@
 import "dotenv/config";
 import {
   buildHandlers,
+  ensureAutopilotJob,
   ensureDailyJobs,
   ensureReaperJob,
   getDb,
@@ -10,9 +11,11 @@ import {
   logger,
   markEventsNotified,
   pendingAlertEvents,
+  sweepAutopilotEmails,
   sweepPostDeliveryEmails,
   sweepPostFailureEmails,
 } from "@aiugc/core";
+import { sweepAutopilotNights } from "./autopilot-checkin";
 import { superviseLane } from "./lanes";
 import { reportAlertEvent, reportFatal, reportTerminalJob } from "./reporting";
 
@@ -113,6 +116,16 @@ async function sweepFailureEmails(db: ReturnType<typeof getDb>): Promise<void> {
     } catch (err) {
       logger.warn({ err }, "delivery email sweep failed — retrying next interval");
     }
+    // The autopilot's pause and low-sound emails (decision 0127): third, on the
+    // same shared ceiling and pause.
+    try {
+      const autopilot = await sweepAutopilotEmails(db, { workerId });
+      if (autopilot.sent + autopilot.refused + autopilot.heldByCeiling > 0) {
+        logger.info(autopilot, "autopilot email sweep");
+      }
+    } catch (err) {
+      logger.warn({ err }, "autopilot email sweep failed — retrying next interval");
+    }
   } catch (err) {
     // Only reading the worker's own environment can land here.
     logger.warn({ err }, "email sweep failed — retrying next interval");
@@ -143,12 +156,17 @@ async function main(): Promise<void> {
   // dead-render reaper is a singleton that reschedules itself — ensure once.
   await ensureDailyJobs(db);
   await ensureReaperJob(db);
+  // The Instagram autopilot's night (0127): a singleton like the reaper.
+  await ensureAutopilotJob(db);
   const daily = setInterval(() => void ensureDailyJobs(db).catch(() => {}), 60 * 60 * 1000);
 
   // Drain once at startup so a failure written while the worker was down is
   // reported on the next boot rather than waiting out a full interval.
   await sweepAlerts(db);
-  const alerts = setInterval(() => void sweepAlerts(db), ALERT_SWEEP_INTERVAL_MS);
+  const alerts = setInterval(() => {
+    void sweepAlerts(db);
+    void sweepAutopilotNights(db);
+  }, ALERT_SWEEP_INTERVAL_MS);
   // Says once whether failure emails are on, and if not why (no_provider,
   // local_worker) — the sweep's own checks. The key itself is never logged.
   logger.info({ failureEmail: failureEmailState(workerId) }, "failure email");

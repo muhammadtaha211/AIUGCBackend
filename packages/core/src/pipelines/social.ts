@@ -7,6 +7,7 @@ import { retentionDaysSchema } from "../config";
 import type { Db } from "../db";
 import {
   appConfig,
+  autopilotSlots,
   businesses,
   events,
   jobs,
@@ -115,6 +116,8 @@ export const SOCIAL_FAILURE_KINDS = [
 ] as const;
 /** How many times media_publish may fail transiently (the request may have landed) before we give up. */
 export const PUBLISH_MAX_TRIES = 5;
+/** An autopilot post Meta refused moves to another sound at most this many times (decision 0127). */
+export const AUTOPILOT_SOUND_SWAPS = 2;
 export type SocialFailureKind = (typeof SOCIAL_FAILURE_KINDS)[number];
 
 /**
@@ -938,6 +941,8 @@ export interface ScheduledPostListItem {
     pictureUrl: string | null;
   };
   render: { id: string; service: "a" | "b" | "c"; thumbPath: string | null };
+  /** Made and scheduled by the autopilot (decision 0127 §18: marked on the calendar). */
+  autopilot: boolean;
 }
 
 export async function listScheduledPosts(
@@ -983,6 +988,7 @@ async function postItems(db: Db, where: ReturnType<typeof and>): Promise<Schedul
       renderId: videoRenders.id,
       service: videoRenders.service,
       thumbPath: videoRenders.thumbPath,
+      autopilot: sql<boolean>`exists (select 1 from ${autopilotSlots} where ${autopilotSlots.scheduledPostId} = ${scheduledPosts.id})`,
     })
     .from(scheduledPosts)
     .innerJoin(socialAccounts, eq(socialAccounts.id, scheduledPosts.socialAccountId))
@@ -999,6 +1005,7 @@ async function postItems(db: Db, where: ReturnType<typeof and>): Promise<Schedul
       pictureUrl: r.pictureUrl,
     },
     render: { id: r.renderId, service: r.service, thumbPath: r.thumbPath },
+    autopilot: Boolean(r.autopilot),
   }));
 }
 
@@ -1116,6 +1123,60 @@ interface PublishState {
   publishId?: string;
   /** A FAILED internal/video_pull_failed upload was initiated afresh once already. */
   reinitiated?: boolean;
+  /** An autopilot post moved to another sound after a refusal (decision 0127). */
+  soundSwaps?: number;
+}
+
+/**
+ * The autopilot's answer when a post is about to go out without a sound or
+ * Meta refused one (decision 0127): not an autopilot post — the job does what
+ * it always did — or the next usable sound from its list (null: none left).
+ */
+export type NextSoundAnswer =
+  { autopilot: false } | { autopilot: true; sound: SoundSnapshot | null };
+
+/** What `handlers.ts` hands the publish job; absent in a test that drives it bare. */
+export interface PublishHooks {
+  nextSound?: (
+    db: Db,
+    post: { id: string; sound: unknown },
+    refusal: { audioNamed: boolean } | null,
+  ) => Promise<NextSoundAnswer>;
+}
+
+/**
+ * An autopilot post Meta refused — a container ERROR, or the container
+ * refused at creation: nothing went out, the same reasoning as the EXPIRED
+ * recreate below, so a fresh container with the next sound cannot double a
+ * post. At most AUTOPILOT_SOUND_SWAPS times. Any other post: null, and the job
+ * fails as it always has.
+ */
+async function swapRefusedSound(
+  ctx: JobContext,
+  post: { id: string; sound: unknown },
+  state: PublishState,
+  hooks: PublishHooks,
+  audioNamed: boolean,
+): Promise<JobResult | null> {
+  if (!hooks.nextSound || !post.sound) return null;
+  const swaps = state.soundSwaps ?? 0;
+  if (swaps >= AUTOPILOT_SOUND_SWAPS) return null;
+  const answer = await hooks.nextSound(ctx.db, post, { audioNamed });
+  if (!answer.autopilot || !answer.sound) return null;
+  await ctx.db
+    .update(scheduledPosts)
+    .set({ sound: answer.sound, providerContainerId: null, updatedAt: new Date() })
+    .where(and(eq(scheduledPosts.id, post.id), eq(scheduledPosts.status, "publishing")));
+  const fresh: PublishState = {
+    soundSwaps: swaps + 1,
+    ...(state.recreated ? { recreated: true } : {}),
+  };
+  await ctx.checkpoint({ ...fresh });
+  ctx.log.warn(
+    { postId: post.id, swaps: swaps + 1, audioNamed },
+    "autopilot: sound refused — next",
+  );
+  return { kind: "reschedule", delayMs: 0, state: { ...fresh } };
 }
 
 /** Container ERROR subcodes that name the audio — the sound was withdrawn. */
@@ -1273,7 +1334,11 @@ async function markAccountExpired(db: Db, accountId: string, detail: string): Pr
     .where(and(eq(socialAccounts.id, accountId), eq(socialAccounts.status, "connected")));
 }
 
-export async function handlePublishPost(job: Job, ctx: JobContext): Promise<JobResult> {
+export async function handlePublishPost(
+  job: Job,
+  ctx: JobContext,
+  hooks: PublishHooks = {},
+): Promise<JobResult> {
   const { db } = ctx;
   const { postId } = job.payload as { postId: string };
   let post = (
@@ -1367,7 +1432,25 @@ export async function handlePublishPost(job: Job, ctx: JobContext): Promise<JobR
         };
       }
       const videoUrl = await getStorage().signedUrl(render.filePath, POST_SIGNED_URL_TTL_SECONDS);
-      const sound = post.sound as SoundSnapshot | null;
+      let sound = post.sound as SoundSnapshot | null;
+      // An autopilot post never goes out without a sound (decision 13): a
+      // hand edit that removed it gets the list's next one, or none is left.
+      if (!sound && hooks.nextSound) {
+        const answer = await hooks.nextSound(db, post, null);
+        if (answer.autopilot) {
+          if (!answer.sound) {
+            throw new PostFailure(
+              "sound_unavailable",
+              "no usable sound left in the autopilot list",
+            );
+          }
+          sound = answer.sound;
+          await db
+            .update(scheduledPosts)
+            .set({ sound, updatedAt: new Date() })
+            .where(eq(scheduledPosts.id, postId));
+        }
+      }
       // The live הוק + דמו format is silent; the retired "full" format (CLI
       // only, vault 0020) carries a voiceover, so it takes B's speech-on-top mix.
       const format = (render.params as { format?: string } | null)?.format;
@@ -1375,16 +1458,25 @@ export async function handlePublishPost(job: Job, ctx: JobContext): Promise<JobR
         render.service === "a" && format === "full"
           ? SOUND_VOLUMES.b
           : SOUND_VOLUMES[render.service];
-      const { containerId } = await meta.createReelContainer({
-        igUserId: account.externalId,
-        token: accessToken,
-        videoUrl,
-        caption: post.caption,
-        audio: sound ? { audioId: sound.audioId, ...volumes } : undefined,
-        // The customer's own tick (0102); unticked sends no label at all.
-        aiGenerated: post.aiLabel,
-        shareToFeed: SHARE_TO_FEED,
-      });
+      let containerId: string;
+      try {
+        ({ containerId } = await meta.createReelContainer({
+          igUserId: account.externalId,
+          token: accessToken,
+          videoUrl,
+          caption: post.caption,
+          audio: sound ? { audioId: sound.audioId, ...volumes } : undefined,
+          // The customer's own tick (0102); unticked sends no label at all.
+          aiGenerated: post.aiLabel,
+          shareToFeed: SHARE_TO_FEED,
+        }));
+      } catch (err) {
+        if (err instanceof MetaGraphError && !isTokenLapse(err)) {
+          const swapped = await swapRefusedSound(ctx, { id: postId, sound }, state, hooks, false);
+          if (swapped) return swapped;
+        }
+        throw err;
+      }
       // BEFORE anything else: a retry polls this container instead of making another.
       state.containerId = containerId;
       state.polls = 0;
@@ -1410,14 +1502,18 @@ export async function handlePublishPost(job: Job, ctx: JobContext): Promise<JobR
         }
         return { kind: "reschedule", delayMs: CONTAINER_POLL_DELAY_MS, state: { ...state, polls } };
       }
-      case "ERROR":
+      case "ERROR": {
         // Provisional (docs/09): Meta puts the error SUBCODE in `status`, and
         // no audio-specific subcode is documented; the live test records what a
         // withdrawn sound actually returns.
+        const audioNamed = isSoundProblem(status.detail);
+        const swapped = await swapRefusedSound(ctx, post, state, hooks, audioNamed);
+        if (swapped) return swapped;
         throw new PostFailure(
-          isSoundProblem(status.detail) ? "sound_unavailable" : "platform_refused",
+          audioNamed ? "sound_unavailable" : "platform_refused",
           `container ${state.containerId} ERROR: ${status.detail ?? ""}`,
         );
+      }
       case "EXPIRED": {
         // Meta discarded the container unpublished (24 h — the box was down a
         // day). Nothing was judged and nothing went out, so one fresh container

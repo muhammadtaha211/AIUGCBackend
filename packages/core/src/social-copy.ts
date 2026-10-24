@@ -337,3 +337,134 @@ export function deliveryEmail(input: { posts: DeliveryEmailPost[] }): {
 
   return { subject: deliveryEmailSubject(posts.length), text, html };
 }
+
+// ---------------------------------------------------------------------------
+// The Instagram autopilot (decision 0127) — every line DRAFT
+// ---------------------------------------------------------------------------
+
+/** The setup page's address, absolute in the emails. Outside /home, like the calendar. */
+export const AUTOPILOT_PATH = "/autopilot";
+
+/** The feature's name in Hebrew. DRAFT. */
+export const AUTOPILOT_NAME = "אוטופיילוט";
+
+export type AutopilotPauseCauseKey =
+  "connection" | "no_sound" | "no_clips" | "file_refused" | "nothing_posted";
+
+/**
+ * Why an account stopped and what he does about it — the setup card and the
+ * email print the same line. Every one ends in the same act: switch it back
+ * on (resuming is by hand, for every cause — PLANNING DEFAULT, 0127). DRAFT.
+ */
+export const AUTOPILOT_PAUSE_LINES: Record<AutopilotPauseCauseKey, string> = {
+  connection: "החיבור לחשבון באינסטגרם פג. מתחברים מחדש בהגדרות, ואז מחזירים את החשבון לפעולה.",
+  no_sound:
+    "לא נשאר ברשימה סאונד שאינסטגרם מקבלת. מוסיפים סאונדים בהגדרת האוטופיילוט, ואז מחזירים את החשבון לפעולה.",
+  no_clips:
+    "לאחת הדמויות של החשבון אין קטעי הוק פעילים. מוסיפים לה קטעים, או מורידים אותה מהחשבון, ואז מחזירים לפעולה.",
+  file_refused:
+    "אינסטגרם לא קיבלה את הסרטון עצמו, גם עם סאונד אחר. כדאי להציץ בלוח הפרסומים, ואז להחזיר את החשבון לפעולה.",
+  nothing_posted:
+    "עבר יום שלם בלי שסרטון אחד פורסם בחשבון. הפרטים בלוח הפרסומים. אחרי שבודקים, מחזירים את החשבון לפעולה.",
+};
+
+/** One paused account as the email names it. */
+export interface AutopilotPausedAccount {
+  /** `@username`, or the display name when Meta gave no username. */
+  accountName: string;
+  cause: AutopilotPauseCauseKey;
+}
+
+/** DRAFT. */
+export function autopilotPauseEmailSubject(accounts: AutopilotPausedAccount[]): string {
+  return accounts.length === 1
+    ? `האוטופיילוט עצר בחשבון ${isolate(accounts[0]!.accountName)}`
+    : `האוטופיילוט עצר ב־${accounts.length} חשבונות`;
+}
+
+/**
+ * The pause email (decision 17): an account stopped and only he can start it
+ * again. One email for the accounts paused together; each with its own line.
+ */
+export function autopilotPauseEmail(input: { accounts: AutopilotPausedAccount[] }): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const { accounts } = input;
+  const url = `${TAVNIT_ORIGIN}${AUTOPILOT_PATH}`;
+  // DRAFT, every line below.
+  const opening =
+    accounts.length === 1
+      ? "האוטופיילוט של תבנית הפסיק לפרסם בחשבון הזה:"
+      : "האוטופיילוט של תבנית הפסיק לפרסם בחשבונות האלה:";
+  const cancelLine =
+    accounts.length === 1
+      ? "מה שתוזמן לחשבון ועוד לא התחיל לעלות בוטל. שאר החשבונות ממשיכים כרגיל."
+      : "מה שתוזמן לחשבונות האלה ועוד לא התחיל לעלות בוטל. שאר החשבונות ממשיכים כרגיל.";
+  const linkLead = "החזרה לפעולה, בהגדרות האוטופיילוט:";
+  const cta = "להגדרות האוטופיילוט";
+  const signInLine = "הדף נפתח אחרי כניסה לחשבון בתבנית.";
+  const signature = "תבנית";
+  const lines = accounts.map((a) => `${isolate(a.accountName)}: ${AUTOPILOT_PAUSE_LINES[a.cause]}`);
+
+  const text = [
+    opening,
+    ...lines.map((l) => `• ${l}`),
+    "",
+    cancelLine,
+    "",
+    linkLead,
+    url,
+    signInLine,
+    "",
+    signature,
+  ].join("\n");
+  const html = [
+    `<div dir="rtl" lang="he" style="font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#111;text-align:right">`,
+    `<p style="margin:0 0 8px">${escapeHtml(opening)}</p>`,
+    `<ul style="margin:0 0 16px;padding-inline-start:20px">`,
+    ...lines.map((l) => `<li>${escapeHtml(l)}</li>`),
+    `</ul>`,
+    `<p style="margin:0 0 16px">${escapeHtml(cancelLine)}</p>`,
+    `<p style="margin:0 0 8px">${escapeHtml(linkLead)}</p>`,
+    `<p style="margin:0 0 8px"><a href="${url}" style="display:inline-block;padding:10px 18px;background:#111;color:#fff;text-decoration:none;border-radius:8px">${escapeHtml(cta)}</a></p>`,
+    `<p style="margin:0 0 24px;font-size:13px;color:#666">${escapeHtml(signInLine)}</p>`,
+    `<p style="margin:0;color:#666">${escapeHtml(signature)}</p>`,
+    `</div>`,
+  ].join("");
+  return { subject: autopilotPauseEmailSubject(accounts), text, html };
+}
+
+/**
+ * The one email when the saved sound list runs low (decision 13): fewer than 3
+ * sounds Instagram still takes. Nothing stops yet; at none, the accounts pause.
+ */
+export function autopilotLowSoundsEmail(input: { usable: number }): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const url = `${TAVNIT_ORIGIN}${AUTOPILOT_PATH}`;
+  // DRAFT, every line below.
+  const subject = "רשימת הסאונדים של האוטופיילוט מתקצרת";
+  const opening =
+    input.usable === 1
+      ? "ברשימת הסאונדים של האוטופיילוט נשאר סאונד אחד שאינסטגרם מקבלת."
+      : `ברשימת הסאונדים של האוטופיילוט נשארו ${input.usable} סאונדים שאינסטגרם מקבלת.`;
+  const why = "כשלא יישאר אף אחד, האוטופיילוט יעצור בכל החשבונות. כדאי להוסיף עוד סאונדים לרשימה.";
+  const cta = "להגדרות האוטופיילוט";
+  const signInLine = "הדף נפתח אחרי כניסה לחשבון בתבנית.";
+  const signature = "תבנית";
+  const text = [opening, why, "", url, signInLine, "", signature].join("\n");
+  const html = [
+    `<div dir="rtl" lang="he" style="font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#111;text-align:right">`,
+    `<p style="margin:0 0 8px">${escapeHtml(opening)}</p>`,
+    `<p style="margin:0 0 16px">${escapeHtml(why)}</p>`,
+    `<p style="margin:0 0 8px"><a href="${url}" style="display:inline-block;padding:10px 18px;background:#111;color:#fff;text-decoration:none;border-radius:8px">${escapeHtml(cta)}</a></p>`,
+    `<p style="margin:0 0 24px;font-size:13px;color:#666">${escapeHtml(signInLine)}</p>`,
+    `<p style="margin:0;color:#666">${escapeHtml(signature)}</p>`,
+    `</div>`,
+  ].join("");
+  return { subject, text, html };
+}

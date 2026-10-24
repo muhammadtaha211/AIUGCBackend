@@ -82,6 +82,7 @@ export const PORTABLE_MIGRATIONS = [
   "0067_voice_recordings.sql",
   "0068_cutaway_plans.sql",
   "0069_demos_name.sql",
+  "0070_autopilot.sql",
 ];
 
 /** In-process real Postgres (PGlite) with the portable migrations applied. */

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -1850,6 +1850,30 @@ type StepPlan = typeof demoStepPlans.$inferSelect;
 
 export async function getStepPlan(db: Db, planId: string): Promise<StepPlan | undefined> {
   const rows = await db.select().from(demoStepPlans).where(eq(demoStepPlans.id, planId)).limit(1);
+  return rows[0];
+}
+
+/**
+ * The newest APPROVED plan for a demo — what the autopilot renders (decision
+ * 0127). An unapproved fork or a regenerate above it does not hide it, the way
+ * it hides it from getLatestStepPlan.
+ */
+export async function latestApprovedStepPlan(
+  db: Db,
+  demoId: string,
+): Promise<StepPlan | undefined> {
+  const rows = await db
+    .select()
+    .from(demoStepPlans)
+    .where(
+      and(
+        eq(demoStepPlans.demoId, demoId),
+        eq(demoStepPlans.status, "ready"),
+        isNotNull(demoStepPlans.approvedAt),
+      ),
+    )
+    .orderBy(desc(demoStepPlans.approvedAt))
+    .limit(1);
   return rows[0];
 }
 
