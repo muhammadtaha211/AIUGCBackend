@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db";
 import {
@@ -52,7 +53,8 @@ export type AutopilotSetupErrorCode =
   | "character_no_clips"
   | "no_usable_sound"
   | "not_connected"
-  | "stale_pause";
+  | "stale_pause"
+  | "stale_setup";
 
 export class AutopilotSetupError extends Error {
   constructor(
@@ -76,6 +78,12 @@ export interface AutopilotSetupInput {
   businessId: string;
   sounds: SoundSnapshot[];
   accounts: AutopilotAccountInput[];
+  /**
+   * The view's `version` the page was loaded from. A save from a page loaded
+   * before the stored setup changed (a browser's Back restoring an old copy,
+   * another tab) is refused, never written over it. The web route requires it.
+   */
+  version?: string;
 }
 
 const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -89,6 +97,8 @@ export function validPostTime(time: string): boolean {
 }
 
 export interface AutopilotSetupView {
+  /** What is stored, as a stamp: the save sends it back and is refused once it moved on. */
+  version: string;
   businessId: string | null;
   businesses: { id: string; name: string }[];
   sounds: AutopilotSound[];
@@ -191,6 +201,7 @@ export async function getAutopilotSetup(
 
   const shown = new Set(withGender.map((p) => p.id));
   return {
+    version: setupVersion(setup, saved),
     businessId,
     businesses: owned,
     sounds: (setup?.sounds as AutopilotSound[] | undefined) ?? [],
@@ -317,7 +328,7 @@ export async function saveAutopilotSetup(
 
   await db.transaction(async (tx) => {
     const [locked] = await tx
-      .select({ sounds: autopilotSetups.sounds })
+      .select({ businessId: autopilotSetups.businessId, sounds: autopilotSetups.sounds })
       .from(autopilotSetups)
       .where(eq(autopilotSetups.userId, userId))
       .for("update");
@@ -328,6 +339,10 @@ export async function saveAutopilotSetup(
       .from(autopilotAccounts)
       .where(eq(autopilotAccounts.userId, userId))
       .for("update");
+    // A page loaded before what is stored now changed is never written over it.
+    if (input.version !== undefined && input.version !== setupVersion(locked, others)) {
+      throw new AutopilotSetupError("stale_setup");
+    }
     // The run-checks, on the locked rows. A card the night paused and that is not
     // switched on now waits for its resume, which applies them from the stored
     // row, so a paused card that cannot run (a character left with no clips)
@@ -446,6 +461,42 @@ function mergeSounds(input: SoundSnapshot[], stored: unknown): AutopilotSound[] 
 
 function idsOf(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+/**
+ * What a page shows and saves, as stored: the business, the sounds (by audio
+ * id — the night's refusedAt is not the page's), and each account's on/off,
+ * count, times, characters and demos. A pause, enabled_at or planned_day is
+ * not in it: the night writing them never makes a page stale.
+ */
+function setupVersion(
+  setup: { businessId: string; sounds: unknown } | undefined,
+  accounts: {
+    igUserId: string;
+    enabled: boolean;
+    aPerDay: number;
+    postTimes: unknown;
+    personaIds: unknown;
+    demoIds: unknown;
+  }[],
+): string {
+  const page = {
+    businessId: setup?.businessId ?? null,
+    sounds: Array.isArray(setup?.sounds)
+      ? (setup.sounds as { audioId: string }[]).map((s) => s.audioId)
+      : [],
+    accounts: [...accounts]
+      .sort((a, b) => (a.igUserId < b.igUserId ? -1 : a.igUserId > b.igUserId ? 1 : 0))
+      .map((a) => [
+        a.igUserId,
+        a.enabled,
+        a.aPerDay,
+        idsOf(a.postTimes),
+        idsOf(a.personaIds),
+        idsOf(a.demoIds),
+      ]),
+  };
+  return createHash("sha256").update(JSON.stringify(page)).digest("hex").slice(0, 32);
 }
 
 function sameIds(a: unknown, b: unknown): boolean {

@@ -64,11 +64,15 @@ let customer: string;
 const as = (userId: string | null) => {
   fixture.user = userId ? { id: userId, email: "someone@autopilot.test" } : null;
 };
-const put = (body: unknown) =>
+/** A PUT as the page sends it: with the version it read (a body's own wins). */
+const put = async (body: unknown) =>
   new Request("http://localhost/api/autopilot", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      version: (await core.getAutopilotSetup(db, world.userId)).version,
+      ...(body as object),
+    }),
   });
 const post = (body: unknown) =>
   new Request("http://localhost/api/autopilot/resume", {
@@ -123,7 +127,7 @@ describe("who reaches the autopilot", () => {
       const hidden = await autopilotRoute.GET(new Request("http://localhost/api/autopilot"));
       expect(hidden.status).toBe(404);
       expect(await hidden.json()).toEqual({ ok: false, error: "לא נמצא." });
-      expect((await autopilotRoute.PUT(put({}))).status).toBe(404);
+      expect((await autopilotRoute.PUT(await put({}))).status).toBe(404);
       expect((await resume(post({}))).status).toBe(404);
       expect(await thrown(AutopilotPage())).toBe("NEXT_NOT_FOUND");
     }
@@ -153,7 +157,7 @@ describe("the setup's refusals", () => {
   it("refuses a count above the clips with the maximum, in Hebrew", async () => {
     as(world.userId);
     const res = await autopilotRoute.PUT(
-      put(body({}, { aPerDay: 5, postTimes: ["09:00", "10:00", "11:00", "12:00", "13:00"] })),
+      await put(body({}, { aPerDay: 5, postTimes: ["09:00", "10:00", "11:00", "12:00", "13:00"] })),
     );
     expect(res.status).toBe(422);
     expect(await res.json()).toEqual({
@@ -165,7 +169,7 @@ describe("the setup's refusals", () => {
   it("refuses a character on two accounts, a business not his, and a body not shaped like a setup", async () => {
     as(world.userId);
     const two = await autopilotRoute.PUT(
-      put({
+      await put({
         businessId: world.businessId,
         sounds: SOUNDS,
         accounts: [
@@ -179,23 +183,23 @@ describe("the setup's refusals", () => {
       autopilotUi.autopilotErrorLine("character_on_two_accounts"),
     );
     const notHis = await autopilotRoute.PUT(
-      put(body({ businessId: "00000000-0000-4000-8000-000000000000" })),
+      await put(body({ businessId: "00000000-0000-4000-8000-000000000000" })),
     );
     expect(notHis.status).toBe(404);
-    expect((await autopilotRoute.PUT(put({ accounts: "x" }))).status).toBe(400);
+    expect((await autopilotRoute.PUT(await put({ accounts: "x" }))).status).toBe(400);
   });
 
   it("refuses an account or a demo that is not his, and switching on a character with no clips", async () => {
     as(world.userId);
     const account = await autopilotRoute.PUT(
-      put({
+      await put({
         ...body(),
         accounts: [{ ...accountInput(world, shir()), igUserId: "17841499999999999" }],
       }),
     );
     expect(account.status).toBe(404);
     const demo = await autopilotRoute.PUT(
-      put(body({}, { demoIds: ["00000000-0000-4000-8000-000000000001"] })),
+      await put(body({}, { demoIds: ["00000000-0000-4000-8000-000000000001"] })),
     );
     expect(demo.status).toBe(404);
     const [bare] = await db
@@ -203,7 +207,7 @@ describe("the setup's refusals", () => {
       .values({ name: "בלי קטעים", gender: "female" })
       .returning();
     const noClips = await autopilotRoute.PUT(
-      put(body({}, { personaIds: [world.personas.get("טליה")!, bare!.id] })),
+      await put(body({}, { personaIds: [world.personas.get("טליה")!, bare!.id] })),
     );
     expect(noClips.status).toBe(422);
     expect((await noClips.json()).error).toBe(autopilotUi.autopilotErrorLine("character_no_clips"));
@@ -211,12 +215,39 @@ describe("the setup's refusals", () => {
 
   it("saves a good setup and answers the fresh state", async () => {
     as(world.userId);
-    const res = await autopilotRoute.PUT(put(body()));
+    const res = await autopilotRoute.PUT(await put(body()));
     expect(res.status).toBe(200);
     const saved = (await res.json()) as {
       setup: { accounts: { igUserId: string; aPerDay: number }[] };
     };
     expect(saved.setup.accounts.find((a) => a.igUserId === shir().igUserId)!.aPerDay).toBe(4);
+  });
+
+  it("refuses a save from a page loaded before the setup changed, and one with no version", async () => {
+    as(world.userId);
+    const stale = await autopilotRoute.PUT(await put(body({ version: "0".repeat(32) })));
+    expect(stale.status).toBe(409);
+    expect((await stale.json()).error).toBe(autopilotUi.autopilotErrorLine("stale_setup"));
+    const { version: _v, ...unversioned } = JSON.parse(await (await put(body())).text()) as {
+      version: string;
+    };
+    expect(
+      (
+        await autopilotRoute.PUT(
+          new Request("http://localhost/api/autopilot", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(unversioned),
+          }),
+        )
+      ).status,
+    ).toBe(400);
+    const view = (await (
+      await autopilotRoute.GET(new Request("http://localhost/api/autopilot"))
+    ).json()) as {
+      setup: { version: string };
+    };
+    expect(view.setup.version).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it("answers a resume for a pause that moved on with a 409", async () => {

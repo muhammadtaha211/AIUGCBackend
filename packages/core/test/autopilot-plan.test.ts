@@ -458,6 +458,63 @@ describe("the autopilot's plan", () => {
     expect(still!.aPerDay).toBe(0);
   });
 
+  it("refuses a save from a page loaded before the setup changed; the night's writes never stale a page", async () => {
+    const before = await getAutopilotSetup(db, world.userId);
+    const page = (version: string, overrides: Partial<AutopilotAccountInput> = {}) => ({
+      businessId: world.businessId,
+      sounds: SOUNDS,
+      accounts: world.shape.map((acc) => accountInput(world, acc, overrides)),
+      version,
+    });
+    // The night marks a sound refused, counts its line calls and pauses an account: not stale.
+    await db.update(schema.autopilotSetups).set({
+      sounds: SOUNDS.map((s, i) => (i === 0 ? { ...s, refusedAt: "2026-10-25T09:00:00.000Z" } : s)),
+      lineCallsDay: "2026-10-25",
+      lineCalls: 2,
+    });
+    await db
+      .update(schema.autopilotAccounts)
+      .set({
+        pausedCause: "connection",
+        pausedAt: new Date("2026-10-25T10:00:00Z"),
+        plannedDay: "2026-10-25",
+      })
+      .where(eq(schema.autopilotAccounts.igUserId, SHIR));
+    expect((await getAutopilotSetup(db, world.userId)).version).toBe(before.version);
+
+    // A save from that page goes through and moves the setup on.
+    const times = ["12:00", "14:00", "17:00", "20:00"];
+    await saveAutopilotSetup(
+      db,
+      world.userId,
+      page(before.version, { postTimes: times }),
+      israel("2026-10-25", "13:00"),
+    );
+    // The old copy comes back (a browser's Back), everything off: refused, nothing written.
+    await expect(
+      saveAutopilotSetup(
+        db,
+        world.userId,
+        page(before.version, { enabled: false }),
+        israel("2026-10-25", "13:05"),
+      ),
+    ).rejects.toMatchObject({ code: "stale_setup" });
+    const rows = await db.select().from(schema.autopilotAccounts);
+    expect(rows.every((r) => r.enabled)).toBe(true);
+    expect(rows.every((r) => JSON.stringify(r.postTimes) === JSON.stringify(times))).toBe(true);
+
+    // The page read again saves.
+    const fresh = await getAutopilotSetup(db, world.userId);
+    expect(fresh.version).not.toBe(before.version);
+    await saveAutopilotSetup(
+      db,
+      world.userId,
+      page(fresh.version, { postTimes: times, enabled: false }),
+      israel("2026-10-25", "13:10"),
+    );
+    expect((await db.select().from(schema.autopilotAccounts)).every((r) => !r.enabled)).toBe(true);
+  });
+
   it("lists named demos first, unnamed below, each newest first, and preselects none", async () => {
     // A newer unnamed demo, and a new account card that was never saved.
     await db.insert(schema.demos).values({

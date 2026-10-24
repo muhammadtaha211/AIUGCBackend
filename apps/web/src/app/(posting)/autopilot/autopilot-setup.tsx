@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AutopilotSetupView } from "@aiugc/core";
 import { AUTOPILOT_PAUSE_LINES } from "@aiugc/core/social-copy";
 import { SoundPicker } from "@/components/social/sound-picker";
@@ -87,6 +87,8 @@ export function AutopilotSetup({ initial }: { initial: View }) {
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [addingTimeFor, setAddingTimeFor] = useState<string | null>(null);
   const [resuming, setResuming] = useState<string | null>(null);
+  // Nothing saves until the page has read what is stored now (below).
+  const [loaded, setLoaded] = useState(false);
   const businessFetch = useRef(0);
 
   function update(igUserId: string, patch: Partial<Account>) {
@@ -109,6 +111,31 @@ export function AutopilotSetup({ initial }: { initial: View }) {
     return false;
   }
 
+  // The page opens with the copy its first render read, and a browser's Back
+  // brings that copy back long after it changed: read what is stored now
+  // before anything can be saved over it.
+  useEffect(() => {
+    let live = true;
+    void apiFetch<{ ok: true; setup: View }>("/api/autopilot").then(async (result) => {
+      if (live && (await adopt(result))) setLoaded(true);
+    });
+    return () => {
+      live = false;
+    };
+    // Once, on open.
+  }, []);
+
+  /** A save's answer. A page that went stale (409) is reloaded with what is stored, never saved over it. */
+  async function settle(result: Awaited<ReturnType<typeof apiFetch<{ ok: true; setup: View }>>>) {
+    if (!result.ok && result.status === 409) {
+      const fresh = await apiFetch<{ ok: true; setup: View }>("/api/autopilot");
+      if (fresh.ok) await adopt(fresh);
+      setMessage({ kind: "error", text: result.error });
+      return false;
+    }
+    return adopt(result);
+  }
+
   async function changeBusiness(next: string) {
     const mine = ++businessFetch.current;
     setBusinessId(next);
@@ -128,6 +155,7 @@ export function AutopilotSetup({ initial }: { initial: View }) {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        version: view.version,
         businessId,
         sounds: sounds.map(({ refusedAt: _refused, ...sound }) => sound),
         accounts: accounts.map((a) => ({
@@ -144,12 +172,12 @@ export function AutopilotSetup({ initial }: { initial: View }) {
   }
 
   async function save() {
-    if (!businessId || saving || resuming) return;
+    if (!businessId || saving || resuming || !loaded) return;
     setSaving(true);
     setMessage(null);
     const result = await putSetup(businessId);
     setSaving(false);
-    if (await adopt(result)) setMessage({ kind: "ok", text: SAVED });
+    if (await settle(result)) setMessage({ kind: "ok", text: SAVED });
   }
 
   /**
@@ -158,10 +186,10 @@ export function AutopilotSetup({ initial }: { initial: View }) {
    * lifts; a save the server refuses stops the resume with its reason.
    */
   async function resume(account: Account) {
-    if (!businessId || saving || resuming) return;
+    if (!businessId || saving || resuming || !loaded) return;
     setResuming(account.igUserId);
     setMessage(null);
-    if (!(await adopt(await putSetup(businessId)))) {
+    if (!(await settle(await putSetup(businessId)))) {
       setResuming(null);
       return;
     }
@@ -183,6 +211,8 @@ export function AutopilotSetup({ initial }: { initial: View }) {
     update(account.igUserId, patch);
     setView((v) => ({
       ...v,
+      // The resume moved what is stored on (it may drop a retired character).
+      version: result.body.setup.version,
       accounts: v.accounts.map((a) => (a.igUserId === account.igUserId ? { ...a, ...patch } : a)),
     }));
   }
@@ -320,7 +350,9 @@ export function AutopilotSetup({ initial }: { initial: View }) {
                     className="mt-2"
                     variant="secondary"
                     loading={resuming === account.igUserId}
-                    disabled={saving || (resuming !== null && resuming !== account.igUserId)}
+                    disabled={
+                      !loaded || saving || (resuming !== null && resuming !== account.igUserId)
+                    }
                     onClick={() => void resume(account)}
                   >
                     {RESUME}
@@ -498,7 +530,7 @@ export function AutopilotSetup({ initial }: { initial: View }) {
         <Button
           onClick={() => void save()}
           loading={saving}
-          disabled={!businessId || resuming !== null}
+          disabled={!businessId || resuming !== null || !loaded}
         >
           {SAVE}
         </Button>

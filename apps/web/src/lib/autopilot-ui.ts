@@ -122,6 +122,8 @@ export function autopilotErrorLine(code: string, detail: { max?: number } = {}):
       return "כדי להפעיל חשבון צריך לפחות סאונד אחד ברשימה.";
     case "not_connected":
       return "החשבון עדיין לא מחובר לאינסטגרם. מתחברים מחדש בהגדרות, ואז מחזירים לפעולה.";
+    case "stale_setup":
+      return "ההגדרות השמורות השתנו מאז שהדף נפתח, אז הדף נטען מחדש איתן. אפשר לשנות ולשמור שוב.";
     case "stale_pause":
       return "המצב של החשבון השתנה בינתיים. טוענים את הדף מחדש ומנסים שוב.";
     default:

@@ -440,7 +440,10 @@ merge by audio id) — so a page opened before a pause cannot lift it; only the 
 does, naming the pause it lifts (409 when it moved on). The resume saves the page first (the pause
 lines say to fix it there and then resume), and refuses what the night would pause again at once:
 not connected, nothing to post, a character with no clips, no usable sound. It drops a character
-since retired or left without a gender, which the page no longer shows, and loses to a save from
+since retired or left without a gender, which the page no longer shows. The page reads what is
+stored when it opens (a browser's Back restores an old copy), and every save carries the `version`
+it was loaded from: a stale one is refused (409) and the page reloads what is stored. A resume
+loses to a save from
 another tab that lands while it checks (409). A card the night paused is not run-checked by a save
 (its resume is), so one paused card that cannot run never blocks saving the rest. Switching an account off
 cancels its autopilot posts that have not started and sends nothing; a cancel that fails makes the

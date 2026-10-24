@@ -30,6 +30,8 @@ const uuid = z.string().uuid();
 
 /** The whole setup, as the page sends it. Core owns every rule; this only refuses a body that is not shaped like one. */
 export const autopilotSetupBodySchema = z.object({
+  /** The view's version the page was loaded from (core refuses a stale one). */
+  version: z.string().min(1).max(64),
   businessId: uuid,
   sounds: z.array(soundSnapshotSchema).max(50),
   accounts: z

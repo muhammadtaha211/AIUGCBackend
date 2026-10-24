@@ -195,6 +195,28 @@ tabs, both closed:
 Both have tests, each checked by undoing its change. The save's half has none: the window it closes
 needs two connections, and the tests run on one.
 
+## Fixed after the merge: a page opened on an old copy (2026-10-25)
+
+FOUNDER-REPORTED (2026-10-25): after setting up all four accounts, he went to the home page, came
+back, and the setup page showed everything reset. Production, read the same minutes: all four
+accounts still on with their times, characters, demos and 20 sounds. Nothing had been lost.
+
+- **The cause (REASONED, not reproduced signed in).** The page rendered its settings once, on the
+  server, and the client kept them in state. Next.js 15 serves a Back navigation from its router
+  cache, so the page came back with the copy its first visit read: before he set anything up.
+  Pressing save on it would have written that copy over his setup.
+- **The fix (PR after #118):**
+  - The page reads what is stored when it opens, and nothing saves until it has.
+  - Every save carries the `version` it was loaded from: a stamp of what the page owns, as stored
+    (the business, the sounds by id, each account's on/off, count, times, characters and demos).
+    The save refuses a stale stamp (409, `stale_setup`, a new DRAFT line) and the page reloads
+    what is stored.
+  - The night's own writes (a refused sound, a pause, its counters) are not in the stamp, so they
+    never make a page stale.
+- **Checks:** a core test and a web test, each caught when its piece was undone. In a fetch-mock
+  harness, the page opened on the old copy shows the stored setup once its read lands. With that
+  read undone, the harness showed exactly what he saw: everything off, and save enabled.
+
 ## Unverified
 
 - What Meta returns for a withdrawn sound (docs/09 check (m)): the swap covers an `ERROR` and a

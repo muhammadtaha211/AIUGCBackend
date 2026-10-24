@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-24
+updated: 2026-10-25
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -944,6 +944,18 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-25) — the autopilot page never saves an old copy, `fix/autopilot-stale-page`
+
+FOUNDER-REPORTED (2026-10-25): after he set up all four accounts and came back from the home page,
+the setup page showed everything reset. Production was intact (read-only, the same minutes: four
+accounts on, 26 posts a day planned for tonight). The cause (REASONED): the page's first copy,
+served again by Next's router cache on Back; a save there would have wiped his setup.
+
+The fix: the page reads what is stored when it opens and saves nothing before it has. Every save
+carries the setup's `version` and a stale one is a 409 that reloads the stored setup. The night's
+writes never make a page stale. Recorded in [[0127-the-instagram-autopilot]]. Web only: no
+migration, no box step. Not seen signed in.
 
 ## What landed (2026-10-24, later) — the Instagram autopilot, `feat/instagram-autopilot`, PR #118
 
