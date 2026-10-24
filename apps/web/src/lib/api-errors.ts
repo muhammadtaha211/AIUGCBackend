@@ -108,7 +108,8 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
 
   // The autopilot setup's refusals (decision 0127): typed, like the others.
   // 404 for what is not the caller's, 409 for a pause that moved on, 422 for a
-  // well-formed setup a rule refuses (each with its line, the maximum named).
+  // well-formed setup a rule refuses (each with its line, the maximum named);
+  // 409 too for a save from a page loaded before the setup changed.
   if (err instanceof AutopilotSetupError) {
     const status =
       err.code === "not_found" ||
@@ -116,7 +117,7 @@ export function coreErrorMapping(err: unknown): CoreErrorMapping {
       err.code === "account_not_owned" ||
       err.code === "demo_not_owned"
         ? 404
-        : err.code === "stale_pause"
+        : err.code === "stale_pause" || err.code === "stale_setup"
           ? 409
           : 422;
     return hit(status, autopilotErrorLine(err.code, err.detail as { max?: number }));
