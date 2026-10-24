@@ -40,10 +40,18 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**Demo names: BUILT 2026-10-24 on `feat/demo-names`, PR #116; 0069 PUSHED 2026-10-24 before
-the merge, both on his instruction ("apply any migrations you need for this to take affect, push
-and merge").** Read back after the push, read-only: `demos.name` text and nullable, 0 of 23 demos
-named, ledger 70 rows to 0069. The merge follows this record on the same instruction.
+**The demos page in the phone menu: BUILT 2026-10-24 on `feat/phone-menu-demos`; no migration,
+no box step; merged by the session on his instruction ("merge the branches when you're done
+yourself").** [[0126-the-demos-page-is-in-the-phone-menu]]. FOUNDER-REPORTED (2026-10-24): checking
+the demo names on his phone, he found no way to reach `/home/demos`. The account menu (below `md`
+the whole nav; it opens from the avatar, not the logo) gains "סרטוני המוצר" → `/home/demos`, and so
+does the desktop popover that shares it. Pinned by `apps/web/test/profile-menu.test.ts`; seen at
+375 px in a harness (`packages/core/.work/shots-0126/`, gitignored), not on his phone.
+
+**Demo names: BUILT 2026-10-24 on `feat/demo-names`, MERGED as PR #116 (`4383fd4`, MEASURED by
+`git log` 2026-10-24); 0069 PUSHED 2026-10-24 before the merge, both on his instruction ("apply any
+migrations you need for this to take affect, push and merge").** Read back after the push,
+read-only: `demos.name` text and nullable, 0 of 23 demos named, ledger 70 rows to 0069.
 [[0125-demos-get-an-optional-name-never-read-by-a-model]]. A customer can name a recording as it
 uploads, in A and in B, and rename or clear it on `/home/demos`. The name shows in every picker and
 list, an unnamed demo looks as before, and no model reads it. Details under "What landed
