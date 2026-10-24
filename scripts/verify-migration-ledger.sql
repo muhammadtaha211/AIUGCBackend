@@ -952,6 +952,19 @@ ORDER BY migration, layer DESC;
 -- ledger 68 rows to 0067; after, cutaway_plans with relrowsecurity true, 0
 -- policies, its three indexes, 11 columns, 0 rows, and the ledger 69 rows to 0068.
 --
+-- **0069** (demos.name, decision 0125) on 2026-10-24, on the founder's
+-- instruction in session ("when you're done, apply any migrations you need for
+-- this to take affect, push and merge"), from feat/demo-names BEFORE PR #116
+-- merged: the branch names `name` in every demo select and insert (the 0039
+-- rule). Pre-flight: `migration list` read 0000-0068 local == remote and 0069
+-- local only; `db push --dry-run` named 0069_demos_name.sql alone. The apply
+-- printed "Applying migration 0069_demos_name.sql..." and exited 0; the same
+-- Docker catalog-cache warning, not a failure. Read BEFORE and AFTER in a READ
+-- ONLY transaction (packages/core/.work/readback-0069.ts): before, no column,
+-- 23 demos, the ledger 69 rows to 0068; after, demos.name text and nullable, 23
+-- demos with 0 names (nothing backfilled), the ledger 70 rows to 0069, and
+-- `migration list` 0069 local == remote.
+--
 -- 2026-10-20, production (hyaqydcmwbnbaiqqufow), after `db push` applied
 -- **0066 + 0067** (own voice: alignment_source 'scribe' and usage_kind
 -- 'stt_seconds' alone in 0066; voice_recordings with RLS on and no policy, and

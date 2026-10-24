@@ -40,8 +40,10 @@ identifying about the signup is written anywhere in the repo, by instruction. Th
 decisions — prices unchanged, no self-serve free tier, trials granted by hand at ~200 credits — are
 [[0068-prices-stand-no-free-tier-trials-by-hand]].
 
-**Demo names: BUILT 2026-10-24 on `feat/demo-names`; 0069 is pushed before the merge, both on
-his instruction ("apply any migrations you need for this to take affect, push and merge").**
+**Demo names: BUILT 2026-10-24 on `feat/demo-names`, PR #116; 0069 PUSHED 2026-10-24 before
+the merge, both on his instruction ("apply any migrations you need for this to take affect, push
+and merge").** Read back after the push, read-only: `demos.name` text and nullable, 0 of 23 demos
+named, ledger 70 rows to 0069. The merge follows this record on the same instruction.
 [[0125-demos-get-an-optional-name-never-read-by-a-model]]. A customer can name a recording as it
 uploads, in A and in B, and rename or clear it on `/home/demos`. The name shows in every picker and
 list, an unnamed demo looks as before, and no model reads it. Details under "What landed
@@ -2392,11 +2394,12 @@ Still not submitted for review.
 muhammad@tavnit.ai → his Gmail; Resend's records untouched.
 
 **Supabase.** Project `hyaqydcmwbnbaiqqufow`, `eu-central-1` (Frankfurt), Pro, Micro compute.
-**Migrations 0000–0065 applied, ledger clean at 66 rows, no gaps, nothing pending** — MEASURED
-2026-10-17 right after the founder-authorized 0064/0065 push (TikTok, PR #107 — pushed before its
-merge, so `origin/main` held 0000–0063 until #107 merged the same day), read-only against
-`supabase_migrations.schema_migrations` (count 66, first `0000`, last `0065`)
-([[production-migration-push-log]]). _(This line said 0000–0062 / 63 rows until 2026-10-17 and
+**Migrations 0000–0069 applied, ledger clean at 70 rows, nothing pending** — MEASURED
+2026-10-24 right after the founder-authorized 0069 push (demo names, PR #116, pushed before its
+merge), read-only against `supabase_migrations.schema_migrations` (count 70, first `0000`, last
+`0069`; `migration list` 0000–0069 local == remote) ([[production-migration-push-log]]). _(This
+line said 0000–0065 / 66 rows, MEASURED 2026-10-17, until 2026-10-24 and missed the 0066–0068
+pushes of 2026-10-20.)_ _(This line said 0000–0062 / 63 rows until 2026-10-17 and
 missed the 0063 push of 2026-10-15.)_ _(This line said
 0000–0059 / 60 rows until today and missed the 0060 push of 2026-10-11.)_ _(The earlier text of this paragraph recorded the 0049 push of
 2026-10-01 and a 49-files-against-50-rows interval that has long since closed.)_ The earlier 49-row line corrected a stale "0000–0047 / 48 rows" here;
@@ -2507,8 +2510,10 @@ the 2026-09-26 custom domain (founder-reported):**
 
 - **Demo names (2026-10-24, `feat/demo-names`,
   [[0125-demos-get-an-optional-name-never-read-by-a-model]]).** The box needs nothing. In order:
-  1. 0069 pushed before the merge, on his instruction.
-  2. The merge, on the same instruction. Vercel deploys web.
+  1. ~~Push 0069 before the merge~~ **DONE 2026-10-24** on his instruction, read back before and
+     after (verify §RESULTS, the 0069 entry).
+  2. The merge of PR #116, by the session on the same instruction, straight after this record.
+     Vercel deploys web.
   3. Approve the strings: the field's label, placeholder and line in
      `apps/web/src/components/a-wizard/step-demo.tsx`, `שמירת השם` in
      `apps/web/src/app/home/demos/demo-library.tsx`, and the demos line of
