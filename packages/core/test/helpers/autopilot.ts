@@ -95,13 +95,19 @@ export interface World {
 
 export async function seedWorld(
   db: Db,
-  opts: { shape?: AccountShape[]; savedAt: Date; demos?: string[] },
+  opts: {
+    shape?: AccountShape[];
+    savedAt: Date;
+    demos?: string[];
+    /** Another owner than the founder (a customer world beside his). */
+    owner?: { email: string; role: "admin" | "customer" };
+  },
 ): Promise<World> {
   const shape = opts.shape ?? FOUNDER_SHAPE;
-  const { userId, businessId } = await seedOwnerAndBusiness(db, {
-    email: "founder@test.local",
-    role: "admin",
-  });
+  const { userId, businessId } = await seedOwnerAndBusiness(
+    db,
+    opts.owner ?? { email: "founder@test.local", role: "admin" },
+  );
   await db
     .update(schema.businesses)
     .set({ name: "Tavnit", questionnaire: { productName: "Tavnit" } })
@@ -208,7 +214,13 @@ export function accountInput(
 
 let lineCounter = 0;
 /** Unique Hebrew lines per call; `duplicateOf` repeats a used text once (the text dedupe). */
-export const lineScript: { duplicateText?: string; fail?: boolean; calls: number } = { calls: 0 };
+export const lineScript: {
+  duplicateText?: string;
+  fail?: boolean;
+  calls: number;
+  /** Runs inside the writer call: something that happens while a night plans. */
+  during?: () => Promise<void>;
+} = { calls: 0 };
 
 /** The fake behind vi.mock of copy.ts: inserts n hook_line rows like the real one. */
 export async function fakeHookLines(
@@ -216,6 +228,7 @@ export async function fakeHookLines(
   opts: { businessId: string; n?: number; personaId?: string },
 ): Promise<(typeof schema.scripts.$inferSelect)[]> {
   lineScript.calls++;
+  await lineScript.during?.();
   if (lineScript.fail) throw new Error("claude is down");
   const n = opts.n ?? 10;
   const texts = Array.from({ length: n }, () => `משפט פתיחה ${++lineCounter}`);

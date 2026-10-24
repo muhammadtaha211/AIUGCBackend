@@ -153,6 +153,25 @@ sound and one with an empty caption (docs/09 corrected).
 - The autopilot's emails are admin-only today, so `/privacy` §5 is unchanged; it names them before
   the switch opens to customers.
 
+## Built beyond the plan, from the second review (2026-10-24)
+
+A review of the first review's fixes (four lenses, a skeptic per finding) confirmed 9 of 13; all
+fixed before the PR:
+
+- Every tick cancels again what a paused **or switched-off** account still has waiting, and a
+  switch-off whose cancel fails makes the save answer an error. Before, a hand switch-off whose
+  cancel hit a dropped connection answered success, and the post went out.
+- A resume refuses what the night would pause again at once (not connected, nothing to post, a
+  character with no clips, no usable sound). It also drops a character since retired or left without
+  a gender, which the page no longer shows, so the night does not pause the account again every
+  night. The refusal for a lapsed connection is a new line (DRAFT).
+- The page's resume saves the page first, so a fix made there reaches the server before the pause
+  lifts. A save's answer outranks a business pick still loading.
+- Every fix the first review claimed has a test that fails without it. Each was checked by undoing
+  the fix and running its test (13 core mutants and 1 web mutant, all caught). The page-only fixes
+  (resume, the clamp, the business race, the calendar's reset and its empty month) were checked in a
+  fetch-mock harness in the browser, each against its own undone fix.
+
 ## Unverified
 
 - What Meta returns for a withdrawn sound (docs/09 check (m)): the swap covers an `ERROR` and a

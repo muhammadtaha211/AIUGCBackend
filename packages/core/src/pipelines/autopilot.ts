@@ -144,7 +144,7 @@ function idList(value: unknown): string[] {
 }
 
 /** The account's live row (one per user × Instagram id: `social_accounts_live_idx`). */
-async function liveInstagramRow(db: Db, userId: string, igUserId: string) {
+export async function liveInstagramRow(db: Db, userId: string, igUserId: string) {
   const [row] = await db
     .select({ id: socialAccounts.id, status: socialAccounts.status })
     .from(socialAccounts)
@@ -471,7 +471,13 @@ export async function pauseAutopilotAccount(
   return true;
 }
 
-/** What a pause and a switch-off share: nothing more of the account's goes out. */
+/**
+ * What a pause and a switch-off share: nothing more of the account's goes out.
+ * A post whose publishing started goes out anyway (SocialSchedulingError). Any
+ * other failure is retried by every tick's pass over an account that is paused
+ * or off (watchSetup); a switch-off also throws after the pass, so the save
+ * that switched it off answers an error instead of a silent success.
+ */
 export async function cancelOpenSlots(
   db: Db,
   userId: string,
@@ -501,13 +507,13 @@ export async function cancelOpenSlots(
         inArray(scheduledPosts.status, ["scheduled", "publishing"]),
       ),
     );
+  let failed = 0;
   for (const slot of scheduled) {
     try {
       await cancelScheduledPost(db, { userId, postId: slot.postId! });
     } catch (err) {
-      // Posting already started: that one goes out. Anything else is retried
-      // by the next tick's pass over a paused account (watchSetup).
       if (!(err instanceof SocialSchedulingError)) {
+        failed++;
         logger.warn({ err, slotId: slot.id }, "autopilot: cancel failed — retrying next tick");
       }
       continue;
@@ -516,6 +522,9 @@ export async function cancelOpenSlots(
       .update(autopilotSlots)
       .set({ status: "cancelled", skipReason: reason, updatedAt: now })
       .where(eq(autopilotSlots.id, slot.id));
+  }
+  if (failed > 0 && reason === "off") {
+    throw new Error(`autopilot: ${failed} post(s) of a switched-off account not cancelled yet`);
   }
 }
 
@@ -1101,15 +1110,17 @@ async function pauseEveryAccount(
 async function watchSetup(db: Db, setup: SetupRow, today: string, now: Date): Promise<void> {
   const yesterday = addDays(today, -1);
   for (const account of await accountsOf(db, setup.userId)) {
-    if (account.pausedCause) {
+    // Paused or switched off: nothing of its goes out. The cancel ran when it
+    // stopped; it runs again every tick, for a post whose cancel failed then.
+    if (account.pausedCause || !account.enabled) {
       try {
-        await cancelOpenSlots(db, account.userId, account.igUserId, "paused", now);
+        const reason = account.pausedCause ? "paused" : "off";
+        await cancelOpenSlots(db, account.userId, account.igUserId, reason, now);
       } catch (err) {
         logger.warn({ err, igUserId: account.igUserId }, "autopilot: re-cancel failed");
       }
       continue;
     }
-    if (!account.enabled) continue;
     try {
       // A connection that lapsed on a day it is posting.
       if (account.plannedDay === today) {

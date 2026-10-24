@@ -993,6 +993,20 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   - a character with no clips cannot be switched on;
   - the night renders only for an admin-owned business.
 
+- **The second review (of those fixes; 9 of 13 confirmed, all fixed before the PR).** The majors:
+  - a hand switch-off whose cancel hit a dropped connection answered success, and the post still went
+    out. Every tick now re-cancels a paused or switched-off account's waiting posts, and the save
+    answers an error;
+  - a resume kept a retired character the page no longer shows, so the account was paused again every
+    night. The resume now drops it and refuses what the night would pause again at once.
+
+  Among the minors:
+  - the page's resume saves the page first;
+  - a save's answer outranks a business pick still loading.
+
+  Every claimed fix now has a test that fails without it (13 core mutants and 1 web mutant, all
+  caught). The page-only fixes were checked in a fetch-mock harness, each against its undone fix.
+
 - **Owed when it opens to customers:** `/privacy` §5 names the emails a customer gets; the
   autopilot's two are admin-only today, so it is unchanged (`legal-pages.test.ts` says so).
 - **Not done:** no signed-in walk; the setup and the calendar were seen in a harness

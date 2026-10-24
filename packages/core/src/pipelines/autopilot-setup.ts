@@ -15,6 +15,8 @@ import {
   AUTOPILOT_MAX_PER_DAY,
   cancelOpenSlots,
   demoReadiness,
+  liveInstagramRow,
+  usablePersonas,
   usableSounds,
   type AutopilotPauseCause,
   type AutopilotSound,
@@ -49,6 +51,7 @@ export type AutopilotSetupErrorCode =
   | "nothing_to_post"
   | "character_no_clips"
   | "no_usable_sound"
+  | "not_connected"
   | "stale_pause";
 
 export class AutopilotSetupError extends Error {
@@ -439,6 +442,12 @@ function idsOf(value: unknown): string[] {
  * Lift a pause by hand (PLANNING DEFAULT, 0127: every cause resumes this way).
  * Names the pause it lifts, so a page loaded before a newer pause is a 409.
  * It starts with the next night.
+ *
+ * It refuses what the night would pause again at once — not connected, nothing
+ * to post, a character with no clips, no usable sound — so a resume that cannot
+ * run says why now instead of in another email. A character since retired or
+ * left without a gender is dropped from the account here: the page no longer
+ * shows it, so he could never remove it himself.
  */
 export async function resumeAutopilotAccount(
   db: Db,
@@ -455,9 +464,28 @@ export async function resumeAutopilotAccount(
   if (!row.pausedAt || row.pausedAt.toISOString() !== pausedAt) {
     throw new AutopilotSetupError("stale_pause");
   }
+  const detail = { igUserId };
+  const live = await liveInstagramRow(db, userId, igUserId);
+  if (live?.status !== "connected") throw new AutopilotSetupError("not_connected", detail);
+  const characters = await usablePersonas(db, idsOf(row.personaIds));
+  const personaIds = idsOf(row.personaIds).filter((id) => characters.has(id));
+  if (row.aPerDay < 1 || personaIds.length === 0 || idsOf(row.demoIds).length === 0) {
+    throw new AutopilotSetupError("nothing_to_post", detail);
+  }
+  const clips = await activeClips(db, personaIds);
+  const bare = personaIds.find((id) => !clips.some((c) => c.personaId === id));
+  if (bare) throw new AutopilotSetupError("character_no_clips", { ...detail, personaId: bare });
+  const [setup] = await db
+    .select({ sounds: autopilotSetups.sounds })
+    .from(autopilotSetups)
+    .where(eq(autopilotSetups.userId, userId));
+  if (usableSounds(setup?.sounds).length === 0) {
+    throw new AutopilotSetupError("no_usable_sound", detail);
+  }
   await db
     .update(autopilotAccounts)
     .set({
+      personaIds,
       pausedCause: null,
       pausedAt: null,
       pauseEmailedAt: null,

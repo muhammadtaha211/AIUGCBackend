@@ -37,7 +37,7 @@ vi.mock("next/navigation", async (importOriginal) => {
 const core = await import("@aiugc/core");
 const { createTestDb } = await import("../../../packages/core/test/helpers/pglite");
 const { tempStorage } = await import("../../../packages/core/test/helpers/storage");
-const { socialTestEnv, seedReleasedRender } =
+const { socialTestEnv, seedReleasedRender, connectInstagram, samplePage } =
   await import("../../../packages/core/test/helpers/social");
 const { seedWorld, israel, SOUNDS, accountInput } =
   await import("../../../packages/core/test/helpers/autopilot");
@@ -239,6 +239,28 @@ describe("the setup's refusals", () => {
       .where(eq(schema.autopilotAccounts.igUserId, shir().igUserId));
     expect(row!.pausedCause).toBeNull();
   });
+
+  it("refuses a resume the night would pause again at once, with its reason in Hebrew", async () => {
+    as(world.userId);
+    const accountId = world.accounts.get(shir().igUserId)!;
+    const pausedAt = "2026-10-25T11:00:00.000Z";
+    await db
+      .update(schema.autopilotAccounts)
+      .set({ pausedCause: "connection", pausedAt: new Date(pausedAt) })
+      .where(eq(schema.autopilotAccounts.igUserId, shir().igUserId));
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "expired" })
+      .where(eq(schema.socialAccounts.id, accountId));
+    const refused = await resume(post({ igUserId: shir().igUserId, pausedAt }));
+    expect(refused.status).toBe(422);
+    expect((await refused.json()).error).toBe(autopilotUi.autopilotErrorLine("not_connected"));
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "connected" })
+      .where(eq(schema.socialAccounts.id, accountId));
+    expect((await resume(post({ igUserId: shir().igUserId, pausedAt }))).status).toBe(200);
+  });
 });
 
 describe("the calendar", () => {
@@ -302,6 +324,52 @@ describe("the calendar", () => {
       await listPosts(new Request(`http://localhost/api/social/posts?${range}`))
     ).json()) as { skipped?: unknown };
     expect(theirs.skipped).toBeUndefined();
+  });
+
+  it("never marks a post for a viewer the autopilot does not reach, even one the autopilot made", async () => {
+    const named = { access: "named", userIds: [customer] };
+    await db
+      .insert(schema.appConfig)
+      .values({ key: "social_posting", value: named })
+      .onConflictDoUpdate({ target: schema.appConfig.key, set: { value: named } });
+    const [business] = await db
+      .insert(schema.businesses)
+      .values({ ownerUserId: customer, name: "לקוח" })
+      .returning();
+    const igUserId = "17841400000000077";
+    const [accountId] = await connectInstagram(db as never, customer, [samplePage(igUserId, "c7")]);
+    const storageRoot = (globalThis as { __storageRoot?: string }).__storageRoot!;
+    const render = await seedReleasedRender(db as never, core.getStorage(), storageRoot, {
+      businessId: business!.id,
+    });
+    const at = new Date(Date.now() + 3 * 3_600_000);
+    const [scheduled] = await core.schedulePosts(db, {
+      userId: customer,
+      videoRenderId: render.id,
+      accountIds: [accountId!],
+      scheduledAt: at,
+      timezone: "Asia/Jerusalem",
+      caption: "",
+      sound: SOUNDS[0]!,
+      platforms: ["instagram"],
+    });
+    await db.insert(schema.autopilotSlots).values({
+      userId: customer,
+      igUserId,
+      socialAccountId: accountId!,
+      day: at.toISOString().slice(0, 10),
+      slotIndex: 0,
+      scheduledFor: at,
+      scheduledPostId: scheduled!.id,
+      videoRenderId: render.id,
+      status: "scheduled",
+    });
+    const range = `from=${encodeURIComponent(new Date(at.getTime() - 86_400_000).toISOString())}&to=${encodeURIComponent(new Date(at.getTime() + 86_400_000).toISOString())}`;
+    as(customer);
+    const body = (await (
+      await listPosts(new Request(`http://localhost/api/social/posts?${range}`))
+    ).json()) as { posts: { id: string; autopilot: boolean }[] };
+    expect(body.posts.find((p) => p.id === scheduled!.id)!.autopilot).toBe(false);
   });
 });
 

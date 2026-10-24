@@ -98,6 +98,7 @@ export function AutopilotSetup({ initial }: { initial: View }) {
 
   async function adopt(result: Awaited<ReturnType<typeof apiFetch<{ ok: true; setup: View }>>>) {
     if (result.ok) {
+      businessFetch.current++;
       setView(result.body.setup);
       setAccounts(result.body.setup.accounts);
       setSounds(result.body.setup.sounds);
@@ -122,11 +123,8 @@ export function AutopilotSetup({ initial }: { initial: View }) {
     else setMessage({ kind: "error", text: result.error });
   }
 
-  async function save() {
-    if (!businessId) return;
-    setSaving(true);
-    setMessage(null);
-    const result = await apiFetch<{ ok: true; setup: View }>("/api/autopilot", {
+  function putSetup(businessId: string) {
+    return apiFetch<{ ok: true; setup: View }>("/api/autopilot", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -143,15 +141,30 @@ export function AutopilotSetup({ initial }: { initial: View }) {
         })),
       }),
     });
+  }
+
+  async function save() {
+    if (!businessId || saving || resuming) return;
+    setSaving(true);
+    setMessage(null);
+    const result = await putSetup(businessId);
     setSaving(false);
     if (await adopt(result)) setMessage({ kind: "ok", text: SAVED });
   }
 
-  /** Resume one account: only its pause changes — every unsaved edit on the page stays. */
+  /**
+   * Resume one account. The page is saved first — the pause lines say to fix
+   * it here and then resume, so the fix reaches the server before the pause
+   * lifts; a save the server refuses stops the resume with its reason.
+   */
   async function resume(account: Account) {
-    if (resuming) return;
+    if (!businessId || saving || resuming) return;
     setResuming(account.igUserId);
     setMessage(null);
+    if (!(await adopt(await putSetup(businessId)))) {
+      setResuming(null);
+      return;
+    }
     const result = await postJson<{ ok: true; setup: View }>("/api/autopilot/resume", {
       igUserId: account.igUserId,
       pausedAt: account.pausedAt,
@@ -307,6 +320,7 @@ export function AutopilotSetup({ initial }: { initial: View }) {
                     className="mt-2"
                     variant="secondary"
                     loading={resuming === account.igUserId}
+                    disabled={saving || (resuming !== null && resuming !== account.igUserId)}
                     onClick={() => void resume(account)}
                   >
                     {RESUME}
@@ -481,7 +495,11 @@ export function AutopilotSetup({ initial }: { initial: View }) {
       </section>
 
       <div className="mt-8 flex items-center gap-3">
-        <Button onClick={() => void save()} loading={saving} disabled={!businessId}>
+        <Button
+          onClick={() => void save()}
+          loading={saving}
+          disabled={!businessId || resuming !== null}
+        >
           {SAVE}
         </Button>
         {message && (

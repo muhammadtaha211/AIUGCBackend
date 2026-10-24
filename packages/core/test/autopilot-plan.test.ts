@@ -37,6 +37,8 @@ vi.mock("../src/pipelines/copy", async (importOriginal) => ({
 const DAYS = ["2026-10-25", "2026-10-26", "2026-10-27"];
 const YAEL = "17841400000000013"; // שירה: 6 clips, 4 a day
 const SHIR = "17841400000000011"; // טליה: 4 clips, 4 a day
+const OMRI = "17841400000000012"; // עומרי: 5 clips, 4 a day
+const TAVNIT = "17841400000000014"; // נטלי, נהוראי, גלעד: 4 clips each, 3 a day
 
 describe("the autopilot's plan", () => {
   let db: Db;
@@ -247,6 +249,65 @@ describe("the autopilot's plan", () => {
       .from(schema.autopilotAccounts)
       .where(eq(schema.autopilotAccounts.igUserId, SHIR));
     expect(paused!.pausedCause).toBe("connection");
+  });
+
+  it("moves a character off an account not on the page, and never offers back a retired one", async () => {
+    // shir_acreates disconnects: its card leaves the page, its saved row stays.
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "disconnected" })
+      .where(eq(schema.socialAccounts.id, world.accounts.get(SHIR)!));
+    const talia = world.personas.get("טליה")!;
+    await saveAutopilotSetup(
+      db,
+      world.userId,
+      {
+        businessId: world.businessId,
+        sounds: SOUNDS,
+        accounts: world.shape
+          .filter((acc) => acc.igUserId !== SHIR)
+          .map((acc) =>
+            accountInput(
+              world,
+              acc,
+              acc.igUserId === OMRI ? { personaIds: [world.personas.get("עומרי")!, talia] } : {},
+            ),
+          ),
+      },
+      israel("2026-10-24", "13:00"),
+    );
+    const [hidden] = await db
+      .select()
+      .from(schema.autopilotAccounts)
+      .where(eq(schema.autopilotAccounts.igUserId, SHIR));
+    // The pages never share a character, even with one card off the page.
+    expect(hidden!.personaIds).toEqual([]);
+
+    // A character retired since: not offered back, and the page saves as it is.
+    await db
+      .update(schema.personas)
+      .set({ active: false })
+      .where(eq(schema.personas.id, world.personas.get("נטלי")!));
+    const view = await getAutopilotSetup(db, world.userId);
+    const tavnit = view.accounts.find((acc) => acc.igUserId === TAVNIT)!;
+    expect(tavnit.personaIds).toEqual([world.personas.get("נהוראי"), world.personas.get("גלעד")]);
+    await saveAutopilotSetup(
+      db,
+      world.userId,
+      {
+        businessId: view.businessId!,
+        sounds: view.sounds,
+        accounts: view.accounts.map((acc) => ({
+          igUserId: acc.igUserId,
+          enabled: acc.enabled,
+          aPerDay: acc.aPerDay,
+          postTimes: acc.postTimes,
+          personaIds: acc.personaIds,
+          demoIds: acc.demoIds,
+        })),
+      },
+      israel("2026-10-24", "14:00"),
+    );
   });
 
   it("lists named demos first, unnamed below, each newest first, and preselects none", async () => {

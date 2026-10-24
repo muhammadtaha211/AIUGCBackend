@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "../src/db";
 import * as schema from "../src/db/schema";
@@ -12,7 +12,7 @@ import {
   sweepPostFailureEmails,
 } from "../src/pipelines/social-failure-email";
 import { MetaGraphError, setMetaGraphProvider } from "../src/providers/meta-graph";
-import { setEmailProvider, type EmailMessage } from "../src/providers/resend";
+import { EmailSendError, setEmailProvider, type EmailMessage } from "../src/providers/resend";
 import { setStorage, type Storage } from "../src/storage";
 import { ISRAEL_TIME_ZONE } from "../src/zoned-time";
 import {
@@ -77,6 +77,7 @@ describe("the autopilot's night", () => {
     lineScript.fail = false;
     lineScript.duplicateText = undefined;
     lineScript.calls = 0;
+    lineScript.during = undefined;
     world = await seedWorld(db, { savedAt: israel("2026-10-24", "12:00") });
   });
 
@@ -703,6 +704,301 @@ describe("the autopilot's night", () => {
         .from(schema.autopilotSlots)
         .where(eq(schema.autopilotSlots.userId, customer!.id)),
     ).toHaveLength(0);
+  });
+  // --- The second review's fixes (0127): each test fails on the code before it. ---
+
+  /** A trigger that fails one post's cancel, once — a dropped connection mid-cancel. */
+  async function failOneCancel(): Promise<void> {
+    await crashOnce("cancel", `new.status = 'cancelled'`);
+    await db.execute(
+      sql.raw(
+        `create trigger crash_cancel before update on scheduled_posts for each row execute function crash_cancel()`,
+      ),
+    );
+  }
+
+  async function postsOf(slotRows: { scheduledPostId: string | null }[]) {
+    return db
+      .select()
+      .from(schema.scheduledPosts)
+      .where(
+        inArray(
+          schema.scheduledPosts.id,
+          slotRows.map((s) => s.scheduledPostId!),
+        ),
+      );
+  }
+
+  it("retries a switch-off's failed cancel every tick: nothing of an account he switched off goes out", async () => {
+    await runDay(db, storage, root, DAY, { to: "09:00" });
+    await failOneCancel();
+    // Off by hand at 09:00, and one post's cancel fails: the save says so.
+    await expect(
+      saveAutopilotSetup(
+        db,
+        world.userId,
+        {
+          businessId: world.businessId,
+          sounds: SOUNDS,
+          accounts: world.shape.map((a) =>
+            accountInput(world, a, a.igUserId === OMRI ? { enabled: false } : {}),
+          ),
+        },
+        israel(DAY, "09:00"),
+      ),
+    ).rejects.toThrow(/not cancelled/);
+    expect((await accountRow(OMRI)).enabled).toBe(false);
+    // The next tick cancels the one left behind.
+    await runDay(db, storage, root, DAY, { from: "09:10", to: "23:59" });
+    const own = await slots(OMRI);
+    expect(own).toHaveLength(4);
+    expect(own.every((s) => s.status === "cancelled")).toBe(true);
+    expect((await postsOf(own)).map((p) => p.status)).toEqual([
+      "cancelled",
+      "cancelled",
+      "cancelled",
+      "cancelled",
+    ]);
+    expect((await emails(israel(DAY, "23:59"))).sent).toBe(0);
+  });
+
+  it("retries a pause's failed cancel every tick: what waited ends cancelled, not failed", async () => {
+    await runDay(db, storage, root, DAY, { to: "12:30" });
+    await failOneCancel();
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "expired" })
+      .where(eq(schema.socialAccounts.id, world.accounts.get(SHIR)!));
+    await runDay(db, storage, root, DAY, { from: "12:40", to: "23:59" });
+    expect((await accountRow(SHIR)).pausedCause).toBe("connection");
+    const waiting = (await slots(SHIR)).filter((s) => s.scheduledFor > israel(DAY, "12:30"));
+    expect(waiting).toHaveLength(3);
+    expect(waiting.every((s) => s.status === "cancelled")).toBe(true);
+    expect((await postsOf(waiting)).every((p) => p.status === "cancelled")).toBe(true);
+  });
+
+  it("re-checks an account under its lock: switched off while the night plans, it gets nothing", async () => {
+    // He switches every account off while the first one's hook lines are written.
+    lineScript.during = async () => {
+      lineScript.during = undefined;
+      await db.update(schema.autopilotAccounts).set({ enabled: false });
+    };
+    await runDay(db, storage, root, DAY, { to: "04:00" });
+    expect(lineScript.calls).toBeGreaterThan(0);
+    expect(await slots()).toHaveLength(0);
+    for (const ig of [SHIR, OMRI, YAEL, TAVNIT]) {
+      expect((await accountRow(ig)).plannedDay).toBeNull();
+    }
+  });
+
+  it("renders nothing for a business that is not admin-owned, with every switch open", async () => {
+    await db.insert(schema.appConfig).values([
+      { key: "social_posting", value: { access: "everyone" } },
+      { key: "autopilot", value: { access: "everyone" } },
+    ]);
+    const theirs = await seedWorld(db, {
+      savedAt: israel("2026-10-24", "12:00"),
+      owner: { email: "customer@test.local", role: "customer" },
+      shape: [
+        {
+          username: "customer_page",
+          igUserId: "17841400000000099",
+          characters: [{ name: "לקוחה", gender: "female", clips: 2 }],
+          perDay: 1,
+          times: ["12:00"],
+        },
+      ],
+    });
+    await day();
+    const own = (await slots()).filter((s) => s.userId === theirs.userId);
+    expect(own).toHaveLength(1);
+    expect(own[0]!.status).toBe("skipped");
+    expect(own[0]!.skipReason).toBe("not_admin_owned");
+    expect(
+      await db
+        .select()
+        .from(schema.videoRenders)
+        .where(eq(schema.videoRenders.businessId, theirs.businessId)),
+    ).toHaveLength(0);
+    // His own night is untouched.
+    expect((await dayPosts()).filter((p) => p.post.status === "posted")).toHaveLength(15);
+  });
+
+  it("drops a retired character on resume, so the next night does not pause the account again", async () => {
+    const galed = world.personas.get("גלעד")!;
+    await db.update(schema.personas).set({ active: false }).where(eq(schema.personas.id, galed));
+    await runDay(db, storage, root, DAY, { to: "04:00" });
+    const paused = await accountRow(TAVNIT);
+    expect(paused.pausedCause).toBe("no_clips");
+    await resumeAutopilotAccount(
+      db,
+      world.userId,
+      TAVNIT,
+      paused.pausedAt!.toISOString(),
+      israel(DAY, "10:00"),
+    );
+    const resumed = await accountRow(TAVNIT);
+    expect(resumed.pausedCause).toBeNull();
+    expect(resumed.personaIds).toEqual([world.personas.get("נטלי"), world.personas.get("נהוראי")]);
+    await runDay(db, storage, root, NEXT, { to: "05:00" });
+    expect((await accountRow(TAVNIT)).pausedCause).toBeNull();
+    expect((await slots(TAVNIT)).filter((s) => s.day === NEXT)).toHaveLength(3);
+  });
+
+  it("refuses a resume the night would pause again: still disconnected, or no usable sound", async () => {
+    await runDay(db, storage, root, DAY, { to: "12:30" });
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "expired" })
+      .where(eq(schema.socialAccounts.id, world.accounts.get(SHIR)!));
+    await runDay(db, storage, root, DAY, { from: "12:40", to: "12:40" });
+    const paused = await accountRow(SHIR);
+    expect(paused.pausedCause).toBe("connection");
+    const resume = () =>
+      resumeAutopilotAccount(
+        db,
+        world.userId,
+        SHIR,
+        paused.pausedAt!.toISOString(),
+        israel(DAY, "13:00"),
+      );
+    await expect(resume()).rejects.toMatchObject({ code: "not_connected" });
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "connected" })
+      .where(eq(schema.socialAccounts.id, world.accounts.get(SHIR)!));
+    await db
+      .update(schema.autopilotSetups)
+      .set({ sounds: SOUNDS.map((s) => ({ ...s, refusedAt: "2026-10-25T09:00:00.000Z" })) });
+    await expect(resume()).rejects.toMatchObject({ code: "no_usable_sound" });
+    expect((await accountRow(SHIR)).pausedCause).toBe("connection");
+    await db.update(schema.autopilotSetups).set({ sounds: SOUNDS });
+    await resume();
+    expect((await accountRow(SHIR)).pausedCause).toBeNull();
+  });
+
+  it("emails a pause that joins one already told after a lost mark: a new key, never a swallowed 409", async () => {
+    // Resend as it is: a key sent again with another body is a 409.
+    const bodies = new Map<string, string>();
+    setEmailProvider({
+      send: async (message) => {
+        const seen = bodies.get(message.idempotencyKey);
+        if (seen !== undefined && seen !== message.text) {
+          throw new EmailSendError("key reused", 409, "invalid_idempotent_request", false, false);
+        }
+        bodies.set(message.idempotencyKey, message.text);
+        sent.push(message);
+        return { id: `email_${sent.length}` };
+      },
+    });
+    await runDay(db, storage, root, DAY, { to: "12:30" });
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "expired" })
+      .where(eq(schema.socialAccounts.id, world.accounts.get(SHIR)!));
+    await runDay(db, storage, root, DAY, { from: "12:40", to: "12:40" });
+    expect((await emails(israel(DAY, "12:40"))).sent).toBe(1);
+    // The mark is lost (a crash after the send), and another account pauses.
+    await db
+      .update(schema.autopilotAccounts)
+      .set({ pauseEmailedAt: null })
+      .where(eq(schema.autopilotAccounts.igUserId, SHIR));
+    await db
+      .update(schema.socialAccounts)
+      .set({ status: "expired" })
+      .where(eq(schema.socialAccounts.id, world.accounts.get(OMRI)!));
+    await runDay(db, storage, root, DAY, { from: "13:00", to: "13:00" });
+    expect((await accountRow(OMRI)).pausedCause).toBe("connection");
+    await emails(israel(DAY, "13:00"));
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.text).toContain("omri.creates");
+    expect((await accountRow(OMRI)).pauseEmailedAt).not.toBeNull();
+  });
+
+  /** One post a day, at 12:00, on shir_acreates alone: one publish job to script. */
+  async function onePost(): Promise<void> {
+    await saveAutopilotSetup(
+      db,
+      world.userId,
+      {
+        businessId: world.businessId,
+        sounds: SOUNDS,
+        accounts: world.shape.map((a) =>
+          accountInput(
+            world,
+            a,
+            a.igUserId === SHIR ? { aPerDay: 1, postTimes: ["12:00"] } : { enabled: false },
+          ),
+        ),
+      },
+      israel("2026-10-24", "13:00"),
+    );
+  }
+  const audioError = () => ({ code: "ERROR" as const, detail: "The audio track is not available" });
+
+  async function theOnePost() {
+    const [slot] = await slots(SHIR);
+    const [post] = await postsOf([slot!]);
+    const [setup] = await db.select().from(schema.autopilotSetups);
+    const refused = (setup!.sounds as { audioId: string; refusedAt?: string }[]).filter(
+      (s) => s.refusedAt,
+    );
+    return { slot: slot!, post: post!, refused: refused.map((s) => s.audioId) };
+  }
+
+  it("survives a crash right after a sound swap's checkpoint: only the refused sound is blamed", async () => {
+    await onePost();
+    await crashOnce("swap", `(new.state->>'soundSwaps') = '1'`);
+    await db.execute(
+      sql.raw(
+        `create trigger crash_swap before update on jobs for each row execute function crash_swap()`,
+      ),
+    );
+    meta.statuses = [audioError(), audioError(), { code: "FINISHED" }];
+    await day();
+    const { slot, post, refused } = await theOnePost();
+    expect(post.status).toBe("posted");
+    expect(refused).toEqual([(slot.sound as { audioId: string }).audioId]);
+    expect((post.sound as { audioId: string }).audioId).not.toBe(refused[0]);
+  });
+
+  it("keeps a post's sound swaps through an expired container: two swaps in all, then it fails", async () => {
+    await onePost();
+    meta.statuses = [audioError(), audioError(), { code: "EXPIRED" }, audioError()];
+    await day();
+    const { post } = await theOnePost();
+    expect(post.status).toBe("failed");
+    expect(post.failureKind).toBe("sound_unavailable");
+    // Three sounds; the third twice (the recreate) — never a fourth sound.
+    expect(meta.calls.createReelContainer).toBe(4);
+    expect(new Set(meta.containers.map((c) => c.audio?.audioId)).size).toBe(3);
+  });
+
+  it("records the refusal past the swap limit: every sound Meta named is marked", async () => {
+    await onePost();
+    meta.statuses = [audioError()];
+    await runDay(db, storage, root, DAY, { to: "12:10" });
+    const { slot, post, refused } = await theOnePost();
+    expect(post.status).toBe("failed");
+    expect(meta.calls.createReelContainer).toBe(3);
+    expect(refused).toHaveLength(3);
+    expect(slot.refusedSounds as unknown[]).toHaveLength(3);
+  });
+
+  it("swaps the sound it put back on a post whose sound was removed, when Meta refuses that one", async () => {
+    await onePost();
+    await runDay(db, storage, root, DAY, { to: "09:00" });
+    const { slot } = await theOnePost();
+    await db
+      .update(schema.scheduledPosts)
+      .set({ sound: null })
+      .where(eq(schema.scheduledPosts.id, slot.scheduledPostId!));
+    meta.statuses = [audioError(), { code: "FINISHED" }];
+    await runDay(db, storage, root, DAY, { from: "12:00", to: "12:00" });
+    const { post } = await theOnePost();
+    expect(post.status).toBe("posted");
+    expect(meta.calls.createReelContainer).toBe(2);
+    expect(meta.containers.every((c) => c.audio !== undefined)).toBe(true);
   });
 });
 

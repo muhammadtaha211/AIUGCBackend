@@ -120,6 +120,8 @@ export function autopilotErrorLine(code: string, detail: { max?: number } = {}):
       return "כדי להפעיל חשבון צריך לפחות דמות אחת, סרטון מוצר אחד וסרטון אחד ביום.";
     case "no_usable_sound":
       return "כדי להפעיל חשבון צריך לפחות סאונד אחד ברשימה.";
+    case "not_connected":
+      return "החשבון עדיין לא מחובר לאינסטגרם. מתחברים מחדש בהגדרות, ואז מחזירים לפעולה.";
     case "stale_pause":
       return "המצב של החשבון השתנה בינתיים. טוענים את הדף מחדש ומנסים שוב.";
     default:
