@@ -12,6 +12,13 @@ Tags as in 0099: **FOUNDER-REPORTED** (his ruling or reason), **MEASURED**, **RE
 **PLANNING DEFAULT** (the build's choice under the prompt's latitude, kept at his approval). The
 mechanics are in `docs/09-social-posting.md` §The autopilot.
 
+> **2026-10-28 — a second job, and none of this note's rulings changed
+> ([[0128-the-autopilot-is-the-demand-test-engine]]):** besides posting Tavnit's own ads, the
+> autopilot is the founder's demand-test engine for candidate consumer apps, one Instagram account
+> per candidate. What that test would need from it (a business, a caption and a hook-line list per
+> account) is inventoried, not built, in [[autopilot-as-built-against-the-demand-test-2026-10-28]].
+> §14's "No caption" needs his ruling before a caption path is built.
+
 ## The decisions (FOUNDER-REPORTED, 2026-10-24, not up for relitigation)
 
 3. **Founder-only first, behind its own switch, shaped like `social_posting`.** No row means admins
@@ -232,4 +239,5 @@ accounts still on with their times, characters, demos and 20 sounds. Nothing had
 [[0124-the-next-version-is-taught-at-the-finished-video]] ·
 [[0125-demos-get-an-optional-name-never-read-by-a-model]] ·
 [[0126-the-demos-page-is-in-the-phone-menu]] ·
-[[0037-the-worker-reports-to-sentry-the-web-apps-do-not]]
+[[0037-the-worker-reports-to-sentry-the-web-apps-do-not]] ·
+[[0128-the-autopilot-is-the-demand-test-engine]]

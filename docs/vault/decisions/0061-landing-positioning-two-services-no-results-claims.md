@@ -109,6 +109,11 @@ Narrowing the ICP was raised and **deferred as its own decision**. `WhatChooser`
 `מוצר פיזי` first and the landing still addresses it. Recorded so that the absence of narrowing
 reads as a decision deferred, not an oversight.
 
+> **Pointer, 2026-10-28.** Answered for his own marketing by
+> [[0128-the-autopilot-is-the-demand-test-engine]] decision 3: Tavnit's own posts address anyone
+> with something showable who posts to sell, not app founders (the widest audience, no narrowing).
+> That record changes no landing copy.
+
 ## Reasoned, not founder-decided
 
 - **The anchors `#features` and `#how` are kept.** `site-header.tsx` and `site-footer.tsx` link to
