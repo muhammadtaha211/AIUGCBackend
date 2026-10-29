@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-25
+updated: 2026-10-28
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -59,6 +59,13 @@ Admin-only behind `app_config.autopilot` (no row = admins), so he needs no SQL. 
 end to end on 2026-10-25 (the clock-change day) with fakes for Meta, Claude, the renderer and Resend,
 in packages/core/test/autopilot-night.test.ts. Details under "What landed (2026-10-24, later)";
 what is his under "Owed founder actions".
+
+**The autopilot is also his demand-test engine (RULED 2026-10-28, FOUNDER-REPORTED; no code, no
+migration).** [[0128-the-autopilot-is-the-demand-test-engine]]: Tavnit stays as it is and nothing
+more is built for customers until there is data; the autopilot keeps running; each candidate
+consumer app gets its own Instagram account, a clickable prototype, one demo recording, A variants
+and a waitlist page in the bio; his own posts name the widest audience. What the test would need
+from the autopilot is not built: see "What landed (2026-10-28)" and the queue.
 
 **The demos page in the phone menu: BUILT 2026-10-24 on `feat/phone-menu-demos`; no migration,
 no box step; merged by the session on his instruction ("merge the branches when you're done
@@ -944,6 +951,50 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-10-28) — the autopilot as the demand-test engine, `docs/autopilot-demand-test`
+
+Docs only: no code, no migration, no box step, nothing read or written in production, no paid call.
+[[0128-the-autopilot-is-the-demand-test-engine]] records his four rulings and the planning default;
+two facts notes are the inventory, each line with its file:line at `0fc8ab0`:
+[[autopilot-as-built-against-the-demand-test-2026-10-28]] and
+[[connecting-a-new-instagram-account-while-the-meta-app-is-unapproved-2026-10-28]]. Dated pointers
+sit on 0061 §5 and 0127.
+
+**FOUNDER-REPORTED, 2026-10-28, not repo-verified:**
+
+- Organic only; nothing is paid.
+- The autopilot posts about 22 videos a day across his accounts; each gets about 100 views; the
+  landing averages about 2 visits a day.
+- Best single videos: about 400 views (TikTok) and about 300 (Instagram).
+- The official account has about 2,700 views in total, the others about half each; about 6k views
+  in all; three signups in all.
+- The two demos the autopilot rotates are recordings of Tavnit's own Service A and Service B flows.
+- **Open, his call:** whether Tavnit's own demo, with the wide audience word, is one candidate in
+  the test.
+
+**The inventory, one line each (MEASURED by reading, `0fc8ab0`):**
+
+1. **A business per account: not built.** One business per login (`autopilot_setups`), read at ten
+   sites in `autopilot.ts`; the page's select picks it for every account. A second business is made
+   in the app, and a second admin login per candidate works today.
+2. **A caption per account: not built.** `caption: ""` is a literal at `autopilot.ts:901`; the path
+   under it (`schedulePosts`, the container) already carries a caption.
+3. **A hook-line list: not built.** The pool serves `scripts` rows tagged with a gender, so a list
+   would be spent before any model call, but nothing inserts one except a SQL write.
+4. **A new account's connect:** a professional account, its own linked Page, his Facebook profile's
+   role on the Meta app, then Continue in Facebook's window (Edit settings if the account does not
+   come back); the bio link by hand. Nothing here was run.
+
+**Discoveries:**
+
+- He cited `every-upload-spends-2.40` for the analysis cost. That note is the falsified claim, and
+  [[analyze-demo-cost]] is the live one (not re-measured on 5.5; older than 14 days). The reason it
+  supports stands. Recorded in 0128.
+- 0128's REASONED check of the build threshold: at the reported reach, a candidate's 14 days give
+  about three signups where the threshold asks for hundreds. A reach floor is his to set.
+- A connect upserts every professional account the Facebook profile returns, under whichever login
+  runs it, so a second admin login would also list his other four accounts as cards.
 
 ## What landed (2026-10-25) — the autopilot page never saves an old copy, `fix/autopilot-stale-page`
 
@@ -2158,6 +2209,31 @@ until someone measures whether a wallet payment leaves a chargeable saved card.
 
 ## The queue
 
+**The demand test — RULED 2026-10-28 ([[0128-the-autopilot-is-the-demand-test-engine]]); nothing
+is built for it, and none of the three builds below is ruled.** What it would need from the
+autopilot ([[autopilot-as-built-against-the-demand-test-2026-10-28]]), sized (REASONED, from the
+call sites listed there; none was tried):
+
+- **A caption per account — S.** One text column on `autopilot_accounts`, carried in the save body,
+  the version stamp and one textarea per card; `scheduleSlot` passes it where `autopilot.ts:901`
+  has `""`. No night logic. It amends 0127 §14, so it needs his ruling first, and its Hebrew is
+  DRAFT until he approves it.
+- **A hook-line list — S.** One function that inserts his lines as `scripts` rows with the pool's
+  gender tag, after the character guard (`findIllegalHookLineChar`) and v7's length rule; one route;
+  one textarea per gender. An "only mine" switch (skip the top-up) adds a boolean. The pool is per
+  business and gender, so it serves one candidate per business.
+- **Its own business per account — M.** A nullable `business_id` on `autopilot_accounts` (null =
+  the setup's), read in place of `setup.businessId` at the ten sites in `autopilot.ts`, checked in
+  the save for each account's demos, and a select per card; the night's tests move with it. No
+  prompt change and no new paid path. The hook-line valve is four writer runs a night per setup
+  (`autopilot.ts:79`), counted across businesses: two businesses of two genders exactly fill it at
+  worst, and a failed run counts. A candidate on the same login also needs a character taken from a
+  page.
+- **One migration (0071) would carry the columns**; it would be written and pushed only on his
+  instruction. The caption and the list are independent; the list serves one candidate only once
+  the business is per account, or on a second admin login.
+- **Without code, today:** a second admin login per candidate (the autopilot facts note, §1).
+
 **The Instagram autopilot — BUILT 2026-10-24** ([[0127-the-instagram-autopilot]]); what is left is
 the owed list's first bullet: the box step, his setup and the first night. C joins it later (0127
 "Where C slots in", in docs/09). Demo names
@@ -2640,6 +2716,18 @@ the 2026-09-26 custom domain (founder-reported):**
 
 ## Owed founder actions
 
+- **The demand test (2026-10-28, `docs/autopilot-demand-test`,
+  [[0128-the-autopilot-is-the-demand-test-engine]]).** Docs only: no migration, no box step. In
+  order:
+  1. Review the docs PR; the merge is his.
+  2. Say the waitlist-to-paid rate he assumes, and keep or strike the build threshold (0128).
+  3. Say whether Tavnit's own demo, with the wide audience word, is a candidate.
+  4. Before the first candidate account, in Instagram and Facebook (the connect facts note): a
+     professional account; its own Facebook Page linked to it in the Instagram app; his Facebook
+     profile's role on the Meta app. Then connect it under the login that will run it.
+  5. Rule which of the autopilot's three builds the first candidate needs, if any (the queue), and,
+     if it is the caption, the amendment of 0127 §14.
+
 - **The Instagram autopilot (2026-10-24, `feat/instagram-autopilot`,
   [[0127-the-instagram-autopilot]]).** In order:
   1. ~~0070 pushed and read back~~ DONE 2026-10-24 (the session, on his instruction "apply
@@ -3083,6 +3171,18 @@ the 2026-09-26 custom domain (founder-reported):**
   the closing section of `docs/legal-review.md`.
 
 ## Open decisions
+
+**Whether Tavnit's own demo, with the wide audience word, is one candidate in the demand test
+(2026-10-28, his call, FOUNDER-REPORTED as open).**
+[[0128-the-autopilot-is-the-demand-test-engine]].
+
+**The demand test's build threshold (2026-10-28, PLANNING DEFAULT, not ruled).** A candidate is
+built at waitlist signups ≥ 500 ÷ its monthly price ÷ the waitlist-to-paid rate he assumes, within
+14 days of its first post. It waits on his rate, or on his striking it; 0128 has the REASONED check
+of it against the reported reach.
+
+**Which of the autopilot's three demand-test builds, if any (2026-10-28, his call).** A caption, a
+hook-line list, a business per account: sized in the queue, none ruled. The caption amends 0127 §14.
 
 **Demo cutaways: a cut on a word start, or no cutaways (2026-10-20, his call).** 3 of his 15
 distinct real B audios have a 2.5–2.8 s caption line exactly where a cut has to land, so no
