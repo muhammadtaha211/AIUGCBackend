@@ -952,7 +952,11 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
 
-## What landed (2026-11-17) — the README rewritten for a reader evaluating the engineering, `docs/readme-recruiter`
+## What landed (2026-11-17) — the README rewritten for a reader evaluating the engineering, `docs/readme-recruiter`, PR #121
+
+PR #121 was opened by this session on his instruction (2026-11-17: "open the PR and merge it
+yourself"); the merge follows this commit, by the same session through the GitHub API, and its sha
+is the next session's to measure by `git log`.
 
 Docs only: `README.md` alone. No code, no migration, no box step, nothing read or written in
 production, no paid call. The old README still described the retired opener clip, ElevenLabs V3 and
