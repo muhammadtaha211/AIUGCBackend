@@ -1,7 +1,7 @@
 ---
 type: state
 status: current
-updated: 2026-10-28
+updated: 2026-11-17
 source: founder
 note: >
   Mutable working state, NOT a fact note. The 14-day staleness rule in CONVENTIONS.md
@@ -951,6 +951,48 @@ correctly tested and dropped, **not** a mistake — the point is that asking bea
   merged 2026-09-25 (PR #63) and was called "pending merge" here for five days. Both were caught
   by `git merge-base --is-ancestor` against `origin/main` `d57b60a`. The same pass checked all 43
   remote branches besides `main`: every one is an ancestor of `origin/main`, none unmerged.
+
+## What landed (2026-11-17) — the README rewritten for a reader evaluating the engineering, `docs/readme-recruiter`
+
+Docs only: `README.md` alone. No code, no migration, no box step, nothing read or written in
+production, no paid call. The old README still described the retired opener clip, ElevenLabs V3 and
+a QC gate before the customer, and sent a reader to `pnpm test`. The new one is written for a
+recruiter: what the three formats make (the three `apps/web/public/previews` stills, each linking
+to its clip), the system shape as a Mermaid flowchart, ten design decisions with their reasons
+(each taken from docs/00–05 and CLAUDE.md's locked decisions, none new), the non-goals, the security
+posture, the job chains, the data model as a Mermaid ER diagram plus the 39 tables by domain, the
+`jobs` columns and a job state diagram, the layout, the stack, how to run it, how the project is
+run, and a reading list. Nothing identifying: no project ref, no account, no customer, no revenue.
+
+**MEASURED 2026-11-17, repo only (`find`/`wc`/`git rev-list`/grep; repo statistics, not vault
+facts):** 76,954 lines of TypeScript under `apps/` and `packages/` outside tests, build output and
+`.work`; 55,648 lines in `*.test.ts(x)`; 149 test files (core 91, web 41, remotion 10, admin 5,
+worker 2); 71 migration files; 704 commits on `origin/main` since 2026-07-16; the vault at 131
+decisions, 104 facts, 74 defects, 12 falsified, 5 phases; `ENABLE ROW LEVEL SECURITY` on every one of
+the 39 live tables. The 66 s render figure is [[service-a-render-wall-clock-on-the-box]] and the
+40–60 UI states figure is the `demo-analysis.ts` header, neither re-measured. The three Mermaid
+blocks were rendered with mermaid 11.4.1 in the browser pane from a page generated out of the
+README (scratchpad only): all three parse. NOT checked: GitHub's own Mermaid renderer, the page on
+a phone, and the README's internal links beyond their targets existing on disk (all do).
+
+A read-only fact-check subagent then read the draft against docs/00–05, 09, CLAUDE.md, `schema.ts`,
+`jobs/`, `handlers.ts` and the middlewares and returned 21 findings, every one pinned to a file and
+line; all 20 wording and fact corrections were applied (the billing tables DO have owner SELECT
+policies; `events.notified_at` and `gateway_events.processed_at` are written, so only
+`credit_ledger` and `usage_events` are append-only; `generate_copy` is registered but nothing
+enqueues it, the B script is made in the route; `plan_demo_steps` and `synth_tts` are
+customer-started hops; the QC gate is bypassed in production; `jobs/` is 899 lines, not ~200; the
+claim guard matches `local:*`/`cli:*` ids, not machines; Basic auth on admin is an env switch;
+`usage_events` rows exist for the four paid providers only; the Anthropic DRY_RUN stub lives in the
+pipelines; `voice_recordings` is migration-only; the job status is `succeeded`; the
+`credit_ledger.ref_id` edge has no FK; the autopilot is Instagram-only and `autopilot_tick` is a
+60 s singleton; the worker reaches Sumit for renewals; Sumit webhooks are not subscribed; the
+platform-wide caps are migrations-only). The same stale sentences sit in docs/01:26-27 (append-only
+list) and docs/02:10-11 (~200 lines) and :191-193 (the e2e runs "every chain"); NOT fixed here, one
+task one concern. The 21st is his call: `previews/hook-demo.mp4`, embedded in the README, shows his
+browser's tab title and suggestion list unblurred, by his own ruling for the dashboard (0123); the
+same unblurred A pair is already on the public landing (0123), so the README adds no exposure the
+landing does not have, and it stays in unless he says otherwise.
 
 ## What landed (2026-10-28) — the autopilot as the demand-test engine, `docs/autopilot-demand-test`
 
